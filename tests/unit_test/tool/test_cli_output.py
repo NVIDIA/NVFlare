@@ -112,12 +112,12 @@ class TestOutput:
         assert len(lines) >= 3  # header + separator + 2 rows
 
 
-# --- output_ok() tests (Phase 0+1 commands) ---
+# --- output_ok() tests (Phase 0+1 commands — always JSON) ---
 
 
-class TestOutputOkJson:
+class TestOutputOk:
     def test_envelope_shape(self, capsys):
-        output_ok({"key": "value"}, fmt="json")
+        output_ok({"key": "value"})
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert envelope["schema_version"] == SCHEMA_VERSION
@@ -125,50 +125,23 @@ class TestOutputOkJson:
         assert envelope["data"] == {"key": "value"}
 
     def test_list_data(self, capsys):
-        output_ok([1, 2, 3], fmt="json")
+        output_ok([1, 2, 3])
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert envelope["data"] == [1, 2, 3]
 
-    def test_unknown_fmt_falls_back_to_json(self, capsys):
-        output_ok("hello", fmt="xml")
+    def test_string_data(self, capsys):
+        output_ok("hello")
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
+        assert envelope["data"] == "hello"
         assert envelope["status"] == "ok"
 
 
-class TestOutputOkTxt:
-    def test_string_printed_as_is(self, capsys):
-        output_ok("hello world", fmt="txt")
-        captured = capsys.readouterr()
-        assert "hello world" in captured.out
-        try:
-            json.loads(captured.out)
-            pytest.fail("Expected non-JSON output")
-        except (json.JSONDecodeError, ValueError):
-            pass
-
-    def test_dict_rendered_as_key_value(self, capsys):
-        output_ok({"status": "running", "id": "abc"}, fmt="txt")
-        captured = capsys.readouterr()
-        assert "status: running" in captured.out
-        assert "id: abc" in captured.out
-
-    def test_list_of_dicts_rendered_as_table(self, capsys):
-        rows = [{"id": "job1", "status": "RUNNING"}, {"id": "job2", "status": "FINISHED_OK"}]
-        output_ok(rows, fmt="txt")
-        captured = capsys.readouterr()
-        assert "id" in captured.out
-        assert "status" in captured.out
-        assert "-" in captured.out
-        assert "job1" in captured.out
-        assert "FINISHED_OK" in captured.out
+# --- output_error() tests: cert/package pattern (explicit message/hint/fmt) ---
 
 
-# --- output_error() tests: cert/package pattern (explicit message/hint) ---
-
-
-class TestOutputError:
+class TestOutputErrorCertPackage:
     def test_exits_with_code_1_by_default(self):
         with pytest.raises(SystemExit) as exc_info:
             output_error("SOME_ERROR", "Something went wrong.", "Try again.", None)
@@ -206,13 +179,13 @@ class TestOutputError:
         assert exc_info.value.code == 1
 
 
-# --- output_error() tests: Phase 0+1 pattern (ERROR_REGISTRY lookup) ---
+# --- output_error() tests: Phase 0+1 pattern (ERROR_REGISTRY, always JSON to stdout) ---
 
 
-class TestOutputErrorJson:
+class TestOutputError:
     def test_error_envelope_shape(self, capsys):
         with pytest.raises(SystemExit) as exc_info:
-            output_error("CONNECTION_FAILED", fmt="json")
+            output_error("CONNECTION_FAILED")
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
@@ -224,67 +197,49 @@ class TestOutputErrorJson:
 
     def test_custom_exit_code(self, capsys):
         with pytest.raises(SystemExit) as exc_info:
-            output_error("AUTH_FAILED", fmt="json", exit_code=2)
+            output_error("AUTH_FAILED", exit_code=2)
         assert exc_info.value.code == 2
 
     def test_unknown_error_code_uses_code_as_message(self, capsys):
         with pytest.raises(SystemExit):
-            output_error("UNKNOWN_CODE_XYZ", fmt="json")
+            output_error("UNKNOWN_CODE_XYZ")
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert envelope["error_code"] == "UNKNOWN_CODE_XYZ"
         assert envelope["message"] == "UNKNOWN_CODE_XYZ"
         assert envelope["hint"] == ""
 
-
-class TestOutputErrorTxt:
-    def test_stderr_output(self, capsys):
-        with pytest.raises(SystemExit):
-            output_error("TIMEOUT", fmt="txt")
-        captured = capsys.readouterr()
-        assert "ERROR_CODE: TIMEOUT" in captured.err
-        assert len(captured.err) > 0
-
-    def test_hint_included(self, capsys):
-        with pytest.raises(SystemExit):
-            output_error("TIMEOUT", fmt="txt")
-        captured = capsys.readouterr()
-        assert "Hint:" in captured.err
-
-
-class TestOutputErrorKwargs:
     def test_format_substitution(self, capsys):
         with pytest.raises(SystemExit):
-            output_error("JOB_NOT_FOUND", fmt="json", job_id="abc123")
+            output_error("JOB_NOT_FOUND", job_id="abc123")
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert "abc123" in envelope["message"]
 
     def test_missing_substitution_key_uses_template(self, capsys):
         with pytest.raises(SystemExit):
-            output_error("JOB_NOT_FOUND", fmt="json", wrong_key="abc")
+            output_error("JOB_NOT_FOUND", wrong_key="abc")
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert "{job_id}" in envelope["message"]
 
-
-class TestOutputErrorDetail:
     def test_detail_appended_to_message(self, capsys):
         with pytest.raises(SystemExit):
-            output_error("INTERNAL_ERROR", fmt="json", detail="something went wrong")
+            output_error("INTERNAL_ERROR", detail="something went wrong")
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert "something went wrong" in envelope["message"]
 
     def test_detail_appended_with_separator(self, capsys):
         with pytest.raises(SystemExit):
-            output_error("INTERNAL_ERROR", fmt="json", detail="extra context")
+            output_error("INTERNAL_ERROR", detail="extra context")
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert " \u2014 " in envelope["message"]
 
-    def test_detail_appended_txt_fmt(self, capsys):
+    def test_output_goes_to_stdout_not_stderr(self, capsys):
         with pytest.raises(SystemExit):
-            output_error("INTERNAL_ERROR", fmt="txt", detail="extra context txt")
+            output_error("TIMEOUT")
         captured = capsys.readouterr()
-        assert "extra context txt" in captured.err
+        assert len(captured.out) > 0
+        assert captured.err == ""

@@ -139,13 +139,13 @@ class TestPreflightOutput:
             assert "status" in check
             assert check["status"] in ("pass", "fail")
 
-    def test_preflight_parser_has_output_flag(self):
-        """preflight_check parser should have --output flag."""
+    def test_preflight_parser_has_schema_flag(self):
+        """preflight_check parser should have --schema flag."""
         import argparse
 
         from nvflare.tool.preflight_check import define_preflight_check_parser
 
         parser = argparse.ArgumentParser()
         define_preflight_check_parser(parser)
-        args = parser.parse_args(["-p", "/some/path", "--output", "txt"])
-        assert args.output == "txt"
+        args = parser.parse_args(["-p", "/some/path", "--schema"])
+        assert args.schema is True

@@ -25,7 +25,6 @@ def define_preflight_check_parser(parser):
     global _preflight_parser
     _preflight_parser = parser
     parser.add_argument("-p", "--package_path", required=True, type=str, help="path to specific package")
-    parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
     parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
@@ -39,15 +38,14 @@ def check_packages(args):
         ["nvflare preflight_check -p /path/to/package"],
         sys.argv[1:],
     )
-    fmt = getattr(args, "output", "json")
     package_path = args.package_path
 
     if not os.path.isdir(package_path):
-        output_error("INVALID_ARGS", fmt, exit_code=4, detail=f"package_path {package_path} is not a valid directory")
+        output_error("INVALID_ARGS", exit_code=4, detail=f"package_path {package_path} is not a valid directory")
         return
 
     if not os.path.isdir(os.path.join(package_path, "startup")):
-        output_error("INVALID_ARGS", fmt, exit_code=4, detail=f"package in {package_path} is not in the correct format")
+        output_error("INVALID_ARGS", exit_code=4, detail=f"package in {package_path} is not in the correct format")
         return
 
     package_checkers = [
@@ -83,8 +81,7 @@ def check_packages(args):
             "package": os.path.abspath(package_path),
             "checks": checks,
             "overall": overall,
-        },
-        fmt,
+        }
     )
 
     if not overall_pass:

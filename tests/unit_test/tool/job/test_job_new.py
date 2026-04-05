@@ -23,7 +23,6 @@ class TestJobNew:
 
     def _make_args(self, **kwargs):
         args = MagicMock()
-        args.output = kwargs.get("output", "json")
         args.recipe = kwargs.get("recipe", "fedavg")
         args.script = kwargs.get("script", "train.py")
         args.job_folder = kwargs.get("job_folder", "/tmp/test_job")
@@ -141,7 +140,7 @@ class TestJobNew:
             "script": "train.py",
             "params": {"rounds": 10, "lr": 0.01},
         }
-        output_ok(data, "json")
+        output_ok(data)
         captured = capsys.readouterr()
         result = json.loads(captured.out)
         assert result["status"] == "ok"
@@ -150,56 +149,3 @@ class TestJobNew:
         assert result["data"]["min_clients"] == 2
         assert result["data"]["script"] == "train.py"
         assert result["data"]["params"]["rounds"] == 10
-
-    def test_txt_output_prints_folder_path(self, capsys):
-        """--output txt: verify only folder path printed."""
-        folder = "/tmp/test_job_output"
-
-        # Simulate what cmd_job_new does in txt mode
-        print(folder)
-        captured = capsys.readouterr()
-        assert captured.out.strip() == folder
-
-    def test_txt_output_via_cmd(self, capsys):
-        """--output txt integration: cmd_job_new prints folder path."""
-        from nvflare.tool.job.job_cli import cmd_job_new
-
-        args = self._make_args(output="txt", job_folder="/tmp/my_new_job")
-
-        fake_catalog = [{"name": "fedavg", "module": "fake.module", "class": "FakeClass"}]
-        fake_instance = MagicMock()
-        fake_class = MagicMock(return_value=fake_instance)
-        fake_module = MagicMock()
-        setattr(fake_module, "FakeClass", fake_class)
-        fake_job = MagicMock()
-
-        mock_recipe_cli = MagicMock()
-        mock_recipe_cli._load_catalog = MagicMock(return_value=fake_catalog)
-
-        with patch.dict("sys.modules", {"nvflare.tool.recipe.recipe_cli": mock_recipe_cli}):
-            with patch("nvflare.tool.cli_schema.handle_schema_flag", return_value=None):
-                import importlib
-
-                original_import = importlib.import_module
-
-                def mock_import(name, *a, **kw):
-                    if name == "fake.module":
-                        return fake_module
-                    return original_import(name, *a, **kw)
-
-                with patch("importlib.import_module", side_effect=mock_import):
-                    import nvflare.job_config.api as job_api
-
-                    original_fedjob = getattr(job_api, "FedJob", None)
-                    job_api.FedJob = MagicMock(return_value=fake_job)
-                    try:
-                        cmd_job_new(args)
-                    except Exception:
-                        pass
-                    finally:
-                        if original_fedjob is not None:
-                            job_api.FedJob = original_fedjob
-
-        captured = capsys.readouterr()
-        # In txt mode, the folder path should appear in output
-        assert "/tmp/my_new_job" in captured.out

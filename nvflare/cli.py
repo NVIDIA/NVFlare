@@ -30,6 +30,7 @@ from nvflare.tool.job.job_cli import def_job_cli_parser, handle_job_cli_cmd
 from nvflare.tool.package.package_cli import def_package_cli_parser, handle_package_cmd
 from nvflare.tool.poc.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
+from nvflare.tool.system.system_cli import def_system_cli_parser, handle_system_cmd
 from nvflare.utils.cli_utils import (
     create_job_template_config,
     create_poc_workspace_config,
@@ -48,6 +49,7 @@ CMD_JOB = "job"
 CMD_CONFIG = "config"
 CMD_CERT = "cert"
 CMD_PACKAGE = "package"
+CMD_SYSTEM = "system"
 
 
 def def_provision_parser(sub_cmd):
@@ -116,7 +118,6 @@ def def_config_parser(sub_cmd):
         "-jt", "--job_templates_dir", type=str, nargs="?", default=None, help="job templates location"
     )
     config_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
-    config_parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
     config_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     return {cmd: config_parser}
 
@@ -125,13 +126,12 @@ def handle_config_cmd(args):
     from nvflare.tool.cli_output import output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
-    fmt = getattr(args, "output", "json")
     handle_schema_flag(
         _config_parser,
         "nvflare config",
         [
             "nvflare config -d /path/to/startup",
-            "nvflare config -pw /path/to/poc --output json",
+            "nvflare config -pw /path/to/poc",
         ],
         sys.argv[1:],
     )
@@ -149,8 +149,7 @@ def handle_config_cmd(args):
                 "startup_kit_dir": startup_kit_dir,
                 "poc_workspace_dir": poc_workspace_dir,
                 "job_templates_dir": job_templates_dir,
-            },
-            fmt,
+            }
         )
         return
 
@@ -170,8 +169,7 @@ def handle_config_cmd(args):
             "startup_kit_dir": startup_kit_dir,
             "poc_workspace_dir": poc_workspace_dir,
             "job_templates_dir": job_templates_dir,
-        },
-        fmt,
+        }
     )
 
 
@@ -190,6 +188,9 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_config_parser(sub_cmd))
     sub_cmd_parsers.update(def_cert_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_package_cli_parser(sub_cmd))
+    system_parser = sub_cmd.add_parser(CMD_SYSTEM, help="FL system operations (status, shutdown, version, ...)")
+    sub_cmd_parsers.update({CMD_SYSTEM: system_parser})
+    def_system_cli_parser(system_parser)
 
     args, argv = _parser.parse_known_args(None, None)
     cmd = args.__dict__.get("sub_command")
@@ -214,6 +215,7 @@ handlers = {
     CMD_CONFIG: handle_config_cmd,
     CMD_CERT: handle_cert_cmd,
     CMD_PACKAGE: handle_package_cmd,
+    CMD_SYSTEM: handle_system_cmd,
 }
 
 
@@ -240,15 +242,15 @@ def run(prog_name):
     except NoConnection:
         from nvflare.tool.cli_output import output_error
 
-        output_error("CONNECTION_FAILED", getattr(prog_args, "output", "json"), exit_code=2)
+        output_error("CONNECTION_FAILED", exit_code=2)
     except AuthenticationError:
         from nvflare.tool.cli_output import output_error
 
-        output_error("AUTH_FAILED", getattr(prog_args, "output", "json"), exit_code=2)
+        output_error("AUTH_FAILED", exit_code=2)
     except TimeoutError:
         from nvflare.tool.cli_output import output_error
 
-        output_error("TIMEOUT", getattr(prog_args, "output", "json"), exit_code=3)
+        output_error("TIMEOUT", exit_code=3)
     except SystemExit:
         raise
     except Exception as e:
@@ -256,7 +258,7 @@ def run(prog_name):
 
         if hasattr(prog_args, "debug") and prog_args.debug:
             print(traceback.format_exc())
-        output_error("INTERNAL_ERROR", getattr(prog_args, "output", "json"), exit_code=5, detail=str(e))
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
 
 
 def print_help(prog_parser, sub_cmd, sub_cmd_parsers):

@@ -75,6 +75,14 @@ CMD_JOB_CLONE = "clone"
 CMD_JOB_DOWNLOAD = "download"
 CMD_JOB_DELETE = "delete"
 
+# Section 5: Job observability commands
+CMD_JOB_STATS = "stats"
+CMD_JOB_ERRORS = "errors"
+CMD_JOB_WAIT = "wait"
+CMD_JOB_LOGS = "logs"
+CMD_JOB_LOG_LEVEL = "log-level"
+CMD_JOB_DIAGNOSE = "diagnose"
+
 
 def find_filename_basename(f: str):
     basename = os.path.basename(f)
@@ -369,7 +377,6 @@ def submit_job(cmd_args):
             "nvflare job submit -j ./my_job",
             "nvflare job submit -j ./my_job --wait --timeout 3600",
             "nvflare job submit -j ./my_job --study my_study",
-            "nvflare job submit -j ./my_job --output txt",
         ],
         sys.argv[1:],
     )
@@ -422,14 +429,12 @@ def find_admin_user_and_dir() -> Tuple[str, str]:
 def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
     from nvflare.tool.cli_output import output_error, output_ok
 
-    fmt = getattr(cmd_args, "output", "json") if cmd_args else "json"
-
     print("trying to connect to the server")
     sess = new_secure_session(username=username, startup_kit_location=admin_user_dir)
     try:
         job_id = sess.submit_job(temp_job_dir)
     except Exception as e:
-        output_error("JOB_INVALID", fmt, detail=str(e))
+        output_error("JOB_INVALID", detail=str(e))
 
     wait = getattr(cmd_args, "wait", False) if cmd_args else False
     timeout = getattr(cmd_args, "timeout", 0) if cmd_args else 0
@@ -437,14 +442,11 @@ def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
     if wait:
         try:
             meta = sess.monitor_job(job_id, timeout=timeout if timeout else 0)
-            output_ok(meta if isinstance(meta, dict) else {"job_id": job_id, "status": str(meta)}, fmt)
+            output_ok(meta if isinstance(meta, dict) else {"job_id": job_id, "status": str(meta)})
         except TimeoutError:
-            output_error("TIMEOUT", fmt, exit_code=3)
+            output_error("TIMEOUT", exit_code=3)
     else:
-        if fmt == "txt":
-            print(job_id)
-        else:
-            output_ok({"job_id": job_id}, fmt)
+        output_ok({"job_id": job_id})
 
 
 job_sub_cmd_handlers = {
@@ -459,6 +461,12 @@ job_sub_cmd_handlers = {
     CMD_JOB_CLONE: None,
     CMD_JOB_DOWNLOAD: None,
     CMD_JOB_DELETE: None,
+    CMD_JOB_STATS: None,
+    CMD_JOB_ERRORS: None,
+    CMD_JOB_WAIT: None,
+    CMD_JOB_LOGS: None,
+    CMD_JOB_LOG_LEVEL: None,
+    CMD_JOB_DIAGNOSE: None,
 }
 
 job_sub_cmd_parser = {
@@ -473,6 +481,12 @@ job_sub_cmd_parser = {
     CMD_JOB_CLONE: None,
     CMD_JOB_DOWNLOAD: None,
     CMD_JOB_DELETE: None,
+    CMD_JOB_STATS: None,
+    CMD_JOB_ERRORS: None,
+    CMD_JOB_WAIT: None,
+    CMD_JOB_LOGS: None,
+    CMD_JOB_LOG_LEVEL: None,
+    CMD_JOB_DIAGNOSE: None,
 }
 
 
@@ -501,6 +515,12 @@ def def_job_cli_parser(sub_cmd):
     define_clone_job_parser(job_subparser)
     define_download_job_parser(job_subparser)
     define_delete_job_parser(job_subparser)
+    define_job_stats_parser(job_subparser)
+    define_job_errors_parser(job_subparser)
+    define_job_wait_parser(job_subparser)
+    define_job_logs_parser(job_subparser)
+    define_job_log_level_parser(job_subparser)
+    define_job_diagnose_parser(job_subparser)
 
     return {cmd: parser}
 
@@ -527,7 +547,6 @@ def define_submit_job_parser(job_subparser):
     )
 
     submit_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
-    submit_parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
     submit_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     submit_parser.add_argument(
         "--wait", action="store_true", default=False, help="block until job reaches terminal state"
@@ -858,14 +877,11 @@ def cmd_job_new(cmd_args):
         sys.argv[1:],
     )
 
-    fmt = cmd_args.output
-
     try:
         from nvflare.tool.recipe.recipe_cli import _load_catalog
     except ImportError:
         output_error(
             "INVALID_ARGS",
-            fmt,
             exit_code=4,
             detail="recipe catalog not available",
         )
@@ -874,7 +890,7 @@ def cmd_job_new(cmd_args):
     catalog = _load_catalog()
     entry = next((r for r in catalog if r["name"] == cmd_args.recipe), None)
     if entry is None:
-        output_error("INVALID_ARGS", fmt, exit_code=4, detail=f"unknown recipe '{cmd_args.recipe}'")
+        output_error("INVALID_ARGS", exit_code=4, detail=f"unknown recipe '{cmd_args.recipe}'")
         return  # unreachable; output_error exits
 
     params = {}
@@ -895,25 +911,21 @@ def cmd_job_new(cmd_args):
         job.to(recipe)
         job.export_job(os.path.dirname(job_folder) or ".")
     except ImportError as e:
-        output_error("INVALID_ARGS", fmt, exit_code=4, detail=str(e))
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         return
     except Exception as e:
-        output_error("INTERNAL_ERROR", fmt, exit_code=5, detail=str(e))
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         return
 
-    if fmt == "txt":
-        print(job_folder)
-    else:
-        output_ok(
-            {
-                "job_folder": job_folder,
-                "recipe": cmd_args.recipe,
-                "min_clients": cmd_args.min_clients,
-                "script": cmd_args.script,
-                "params": params,
-            },
-            fmt,
-        )
+    output_ok(
+        {
+            "job_folder": job_folder,
+            "recipe": cmd_args.recipe,
+            "min_clients": cmd_args.min_clients,
+            "script": cmd_args.script,
+            "params": params,
+        }
+    )
 
 
 def cmd_job_list(cmd_args):
@@ -931,7 +943,6 @@ def cmd_job_list(cmd_args):
         sys.argv[1:],
     )
 
-    fmt = cmd_args.output
     try:
         sess = _get_session()
         jobs = sess.list_jobs(
@@ -941,21 +952,14 @@ def cmd_job_list(cmd_args):
             limit=getattr(cmd_args, "max", None),
         )
     except Exception as e:
-        output_error("CONNECTION_FAILED", fmt, exit_code=2, detail=str(e))
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
 
     for j in jobs:
         if "study" not in j:
             j["study"] = getattr(cmd_args, "study", "default")
 
-    if fmt == "txt":
-        for job in jobs:
-            if isinstance(job, dict):
-                print(job.get("job_id", job.get("id", str(job))))
-            else:
-                print(str(job))
-    else:
-        output_ok(jobs, fmt)
+    output_ok(jobs)
 
 
 def cmd_job_meta(cmd_args):
@@ -969,22 +973,21 @@ def cmd_job_meta(cmd_args):
         sys.argv[1:],
     )
 
-    fmt = cmd_args.output
     try:
         sess = _get_session()
         meta = sess.get_job_meta(cmd_args.job_id)
     except Exception as e:
         err = str(e).lower()
         if "not found" in err or "does not exist" in err:
-            output_error("JOB_NOT_FOUND", fmt, job_id=cmd_args.job_id)
+            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         else:
-            output_error("CONNECTION_FAILED", fmt, exit_code=2, detail=str(e))
+            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
 
     if meta is None:
-        output_error("JOB_NOT_FOUND", fmt, job_id=cmd_args.job_id)
+        output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
     else:
-        output_ok(meta, fmt)
+        output_ok(meta)
 
 
 def cmd_job_abort(cmd_args):
@@ -998,10 +1001,9 @@ def cmd_job_abort(cmd_args):
         sys.argv[1:],
     )
 
-    fmt = cmd_args.output
     if not cmd_args.force:
         if not sys.stdin.isatty():
-            output_error("INVALID_ARGS", fmt, exit_code=4, detail="use --force in non-interactive mode")
+            output_error("INVALID_ARGS", exit_code=4, detail="use --force in non-interactive mode")
             return
         answer = input(f"Abort job '{cmd_args.job_id}'? [y/N] ")
         if answer.strip().upper() != "Y":
@@ -1014,14 +1016,14 @@ def cmd_job_abort(cmd_args):
     except Exception as e:
         err = str(e).lower()
         if "not found" in err or "does not exist" in err:
-            output_error("JOB_NOT_FOUND", fmt, job_id=cmd_args.job_id)
+            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         elif "not running" in err or "not active" in err:
-            output_error("JOB_NOT_RUNNING", fmt, job_id=cmd_args.job_id)
+            output_error("JOB_NOT_RUNNING", job_id=cmd_args.job_id)
         else:
-            output_error("CONNECTION_FAILED", fmt, exit_code=2, detail=str(e))
+            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
 
-    output_ok({"job_id": cmd_args.job_id, "status": "ABORTED"}, fmt)
+    output_ok({"job_id": cmd_args.job_id, "status": "ABORTED"})
 
 
 def cmd_job_clone(cmd_args):
@@ -1035,19 +1037,18 @@ def cmd_job_clone(cmd_args):
         sys.argv[1:],
     )
 
-    fmt = cmd_args.output
     try:
         sess = _get_session()
         new_job_id = sess.clone_job(cmd_args.job_id)
     except Exception as e:
         err = str(e).lower()
         if "not found" in err or "does not exist" in err:
-            output_error("JOB_NOT_FOUND", fmt, job_id=cmd_args.job_id)
+            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         else:
-            output_error("CONNECTION_FAILED", fmt, exit_code=2, detail=str(e))
+            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
 
-    output_ok({"source_job_id": cmd_args.job_id, "new_job_id": new_job_id}, fmt)
+    output_ok({"source_job_id": cmd_args.job_id, "new_job_id": new_job_id})
 
 
 def cmd_job_download(cmd_args):
@@ -1061,7 +1062,6 @@ def cmd_job_download(cmd_args):
         sys.argv[1:],
     )
 
-    fmt = cmd_args.output
     destination = os.path.abspath(getattr(cmd_args, "output_dir", "./"))
     try:
         sess = _get_session()
@@ -1069,12 +1069,12 @@ def cmd_job_download(cmd_args):
     except Exception as e:
         err = str(e).lower()
         if "not found" in err or "does not exist" in err:
-            output_error("JOB_NOT_FOUND", fmt, job_id=cmd_args.job_id)
+            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         else:
-            output_error("CONNECTION_FAILED", fmt, exit_code=2, detail=str(e))
+            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
 
-    output_ok({"job_id": cmd_args.job_id, "path": path or destination}, fmt)
+    output_ok({"job_id": cmd_args.job_id, "path": path or destination})
 
 
 def cmd_job_delete(cmd_args):
@@ -1088,10 +1088,9 @@ def cmd_job_delete(cmd_args):
         sys.argv[1:],
     )
 
-    fmt = cmd_args.output
     if not cmd_args.force:
         if not sys.stdin.isatty():
-            output_error("INVALID_ARGS", fmt, exit_code=4, detail="use --force in non-interactive mode")
+            output_error("INVALID_ARGS", exit_code=4, detail="use --force in non-interactive mode")
             return
         answer = input(f"Delete job '{cmd_args.job_id}'? [y/N] ")
         if answer.strip().upper() != "Y":
@@ -1104,12 +1103,12 @@ def cmd_job_delete(cmd_args):
     except Exception as e:
         err = str(e).lower()
         if "not found" in err or "does not exist" in err:
-            output_error("JOB_NOT_FOUND", fmt, job_id=cmd_args.job_id)
+            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         else:
-            output_error("CONNECTION_FAILED", fmt, exit_code=2, detail=str(e))
+            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
 
-    output_ok({"job_id": cmd_args.job_id}, fmt)
+    output_ok({"job_id": cmd_args.job_id})
 
 
 # ---------------------------------------------------------------------------
@@ -1128,7 +1127,6 @@ def define_job_new_parser(job_subparser):
     p.add_argument(
         "--param", type=str, action="append", default=[], metavar="key=value", help="recipe parameter (repeatable)"
     )
-    p.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_NEW] = p
     job_sub_cmd_handlers[CMD_JOB_NEW] = cmd_job_new
@@ -1141,7 +1139,6 @@ def define_list_jobs_parser(job_subparser):
     p.add_argument("-r", "--reverse", action="store_true", default=False, help="reverse sort order")
     p.add_argument("-m", "--max", type=int, default=None, help="max results to return")
     p.add_argument("--study", type=str, default="default", help="study to list jobs from; use 'all' for all studies")
-    p.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_LIST] = p
     job_sub_cmd_handlers[CMD_JOB_LIST] = cmd_job_list
@@ -1150,7 +1147,6 @@ def define_list_jobs_parser(job_subparser):
 def define_job_meta_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_META, help="get metadata for a job")
     p.add_argument("job_id", type=str, help="job ID")
-    p.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_META] = p
     job_sub_cmd_handlers[CMD_JOB_META] = cmd_job_meta
@@ -1160,7 +1156,6 @@ def define_abort_job_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_ABORT, help="abort a running job")
     p.add_argument("job_id", type=str, help="job ID")
     p.add_argument("--force", action="store_true", help="skip confirmation prompt")
-    p.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_ABORT] = p
     job_sub_cmd_handlers[CMD_JOB_ABORT] = cmd_job_abort
@@ -1169,7 +1164,6 @@ def define_abort_job_parser(job_subparser):
 def define_clone_job_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_CLONE, help="clone an existing job")
     p.add_argument("job_id", type=str, help="job ID to clone")
-    p.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_CLONE] = p
     job_sub_cmd_handlers[CMD_JOB_CLONE] = cmd_job_clone
@@ -1179,7 +1173,6 @@ def define_download_job_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_DOWNLOAD, help="download job result")
     p.add_argument("job_id", type=str, help="job ID")
     p.add_argument("-o", "--output-dir", dest="output_dir", type=str, default="./", help="destination directory")
-    p.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_DOWNLOAD] = p
     job_sub_cmd_handlers[CMD_JOB_DOWNLOAD] = cmd_job_download
@@ -1189,7 +1182,326 @@ def define_delete_job_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_DELETE, help="delete a job")
     p.add_argument("job_id", type=str, help="job ID")
     p.add_argument("--force", action="store_true", help="skip confirmation prompt")
-    p.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_DELETE] = p
     job_sub_cmd_handlers[CMD_JOB_DELETE] = cmd_job_delete
+
+
+# ---------------------------------------------------------------------------
+# Section 5: Job observability commands
+# ---------------------------------------------------------------------------
+
+_DIAGNOSE_PATTERNS = [
+    (r"CUDA out of memory|OOM", "GPU memory exhaustion", "Reduce batch_size or enable gradient checkpointing"),
+    (r"Connection refused|SERVER_UNREACHABLE", "Network / firewall issue", "Check server status and network policy"),
+    (r"signature verification failed", "Certificate mismatch", "Re-provision or verify rootCA"),
+    (r"Job validation failed", "Bad job configuration", "Check meta.json and config_fed_server.json"),
+    (r"timed out", "Client too slow", "Increase task_timeout in job config"),
+    (r"ModuleNotFoundError", "Missing dependency", "Install required package on the client"),
+    (r"ResourceExhaustedError", "Server memory pressure", "Reduce concurrent jobs or client batch size"),
+    (r"SSLError|certificate verify failed", "TLS misconfiguration", "Check cert expiry and rootCA chain"),
+]
+
+_TERMINAL_JOB_STATES = {"FINISHED_OK", "FINISHED_EXCEPTION", "ABORTED", "ABANDONED", "FAILED"}
+
+
+def cmd_job_stats(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_STATS],
+        "nvflare job stats",
+        ["nvflare job stats abc123", "nvflare job stats abc123 --site server"],
+        sys.argv[1:],
+    )
+
+    try:
+        sess = _get_session()
+        result = sess.show_stats(cmd_args.job_id, "all", None)
+    except Exception as e:
+        err = str(e).lower()
+        if "not found" in err or "does not exist" in err:
+            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        else:
+            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
+
+    output_ok({"job_id": cmd_args.job_id, "stats": result})
+
+
+def cmd_job_errors(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_ERRORS],
+        "nvflare job errors",
+        ["nvflare job errors abc123"],
+        sys.argv[1:],
+    )
+
+    try:
+        sess = _get_session()
+        result = sess.show_errors(cmd_args.job_id, "all", None)
+    except Exception as e:
+        err = str(e).lower()
+        if "not found" in err or "does not exist" in err:
+            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        else:
+            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
+
+    output_ok({"job_id": cmd_args.job_id, "errors": result})
+
+
+def cmd_job_wait(cmd_args):
+    import time
+
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_WAIT],
+        "nvflare job wait",
+        ["nvflare job wait abc123 --timeout 300"],
+        sys.argv[1:],
+    )
+
+    start = time.time()
+    try:
+        sess = _get_session()
+        meta = sess.wait_for_job(cmd_args.job_id, timeout=cmd_args.timeout, poll_interval=cmd_args.interval)
+    except TimeoutError:
+        output_error("TIMEOUT", exit_code=3, detail="job did not reach terminal state within timeout")
+        return
+    except Exception as e:
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
+
+    status = meta.get("status", "UNKNOWN")
+    duration = round(time.time() - start, 1)
+    data = {"job_id": cmd_args.job_id, "status": status, "duration_s": duration}
+
+    if status in ("FAILED", "ABORTED", "FINISHED_EXCEPTION", "ABANDONED"):
+        output_ok(data)
+        sys.exit(1)
+
+    output_ok(data)
+
+
+def cmd_job_logs(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_LOGS],
+        "nvflare job logs",
+        ["nvflare job logs abc123", "nvflare job logs abc123 --tail 100 --site server"],
+        sys.argv[1:],
+    )
+
+    try:
+        sess = _get_session()
+        result = sess.get_job_logs(
+            cmd_args.job_id,
+            target=cmd_args.site,
+            tail_lines=cmd_args.tail,
+            grep_pattern=cmd_args.grep,
+        )
+    except Exception as e:
+        err = str(e).lower()
+        if "not found" in err or "does not exist" in err:
+            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        else:
+            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
+
+    output_ok(
+        {
+            "job_id": cmd_args.job_id,
+            "log_source": result.get("log_source", "workspace"),
+            "logs": result.get("logs", {}),
+        }
+    )
+
+
+def cmd_job_log_level(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+    from nvflare.tool.system.system_cli import resolve_log_config
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_LOG_LEVEL],
+        "nvflare job log-level",
+        ["nvflare job log-level abc123 DEBUG", "nvflare job log-level abc123 --config /path/to/logging.json"],
+        sys.argv[1:],
+    )
+
+    level = getattr(cmd_args, "level", None)
+    config_str = getattr(cmd_args, "config", None)
+    site = getattr(cmd_args, "site", "all")
+
+    log_config = resolve_log_config(level, config_str)
+    if log_config is None:
+        output_error("LOG_CONFIG_INVALID", detail="provide a valid level name or --config JSON/file")
+        return
+
+    try:
+        sess = _get_session()
+        # Check job state first
+        meta = sess.get_job_meta(cmd_args.job_id)
+        job_status = meta.get("status", "UNKNOWN") if meta else "UNKNOWN"
+        if job_status in _TERMINAL_JOB_STATES:
+            output_error(
+                "JOB_NOT_RUNNING",
+                exit_code=1,
+                detail=f"job is in terminal state: {job_status}",
+            )
+            return
+        sess.configure_job_log(cmd_args.job_id, log_config, target=site)
+    except Exception as e:
+        from nvflare.fuel.flare_api.api_spec import NoConnection
+
+        if isinstance(e, NoConnection):
+            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        elif "not found" in str(e).lower() or "does not exist" in str(e).lower():
+            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        else:
+            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
+
+    output_ok({"job_id": cmd_args.job_id, "site": site, "log_config": log_config, "status": "applied"})
+
+
+def cmd_job_diagnose(cmd_args):
+    import re
+
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_DIAGNOSE],
+        "nvflare job diagnose",
+        ["nvflare job diagnose abc123", "nvflare job diagnose abc123 --site server"],
+        sys.argv[1:],
+    )
+
+    try:
+        sess = _get_session()
+        meta = sess.get_job_meta(cmd_args.job_id)
+        logs_result = sess.get_job_logs(cmd_args.job_id, target=cmd_args.site)
+        errors_result = sess.show_errors(cmd_args.job_id, "all", None)
+    except Exception as e:
+        err = str(e).lower()
+        if "not found" in err or "does not exist" in err:
+            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        else:
+            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
+
+    job_status = meta.get("status", "UNKNOWN") if meta else "UNKNOWN"
+    logs = logs_result.get("logs", {})
+    findings = []
+    unexplained = []
+
+    for site, log_text in logs.items():
+        matched = False
+        for pattern, diagnosis, action in _DIAGNOSE_PATTERNS:
+            m = re.search(pattern, log_text, re.IGNORECASE)
+            if m:
+                excerpt_lines = [ln for ln in log_text.splitlines() if re.search(pattern, ln, re.IGNORECASE)]
+                excerpt = "\n".join(excerpt_lines[:5])
+                findings.append(
+                    {
+                        "site": site,
+                        "pattern": m.group(0),
+                        "diagnosis": diagnosis,
+                        "action": action,
+                        "log_excerpt": excerpt,
+                    }
+                )
+                matched = True
+                break
+        if not matched and log_text.strip():
+            lines = log_text.splitlines()
+            unexplained.append({"site": site, "log_excerpt": "\n".join(lines[:20])})
+
+    report_lines = [f"## Job Diagnosis: {cmd_args.job_id}\n\n**Status:** {job_status}\n"]
+    if findings:
+        for f in findings:
+            report_lines.append(
+                f"### {f['site']} — {f['diagnosis']}\n- **Action:** {f['action']}\n- **Excerpt:** `{f['log_excerpt'][:200]}`\n"
+            )
+    else:
+        report_lines.append("No known failure patterns detected.\n")
+    report = "\n".join(report_lines)
+
+    data = {
+        "job_id": cmd_args.job_id,
+        "job_status": job_status,
+        "findings": findings,
+        "unexplained": unexplained,
+        "report": report,
+    }
+
+    output_ok(data)
+
+
+def define_job_stats_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_STATS, help="show running job statistics")
+    p.add_argument("job_id", type=str, help="job ID")
+    p.add_argument("--site", default="all", help="target site name or all")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_STATS] = p
+    job_sub_cmd_handlers[CMD_JOB_STATS] = cmd_job_stats
+
+
+def define_job_errors_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_ERRORS, help="show job errors per site")
+    p.add_argument("job_id", type=str, help="job ID")
+    p.add_argument("--site", default="all", help="target site name or all")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_ERRORS] = p
+    job_sub_cmd_handlers[CMD_JOB_ERRORS] = cmd_job_errors
+
+
+def define_job_wait_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_WAIT, help="wait for a job to reach terminal state")
+    p.add_argument("job_id", type=str, help="job ID")
+    p.add_argument("--timeout", type=int, default=0, help="seconds to wait (0 = no timeout)")
+    p.add_argument("--interval", type=int, default=2, help="poll interval in seconds")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_WAIT] = p
+    job_sub_cmd_handlers[CMD_JOB_WAIT] = cmd_job_wait
+
+
+def define_job_logs_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_LOGS, help="retrieve job logs from server workspace")
+    p.add_argument("job_id", type=str, help="job ID")
+    p.add_argument("--site", default="all", help="target site name or all")
+    p.add_argument("--tail", type=int, default=None, help="number of tail lines to retrieve")
+    p.add_argument("--grep", default=None, help="grep pattern to filter log lines")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_LOGS] = p
+    job_sub_cmd_handlers[CMD_JOB_LOGS] = cmd_job_logs
+
+
+def define_job_log_level_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_LOG_LEVEL, help="change logging level for a running job")
+    p.add_argument("job_id", type=str, help="job ID")
+    p.add_argument("level", nargs="?", default=None, help="log level: DEBUG, INFO, WARNING, ERROR, CRITICAL")
+    p.add_argument("--config", default=None, help="path to dictConfig JSON file or inline JSON")
+    p.add_argument("--site", default="all", help="target site name or all")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_LOG_LEVEL] = p
+    job_sub_cmd_handlers[CMD_JOB_LOG_LEVEL] = cmd_job_log_level
+
+
+def define_job_diagnose_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_DIAGNOSE, help="analyze job logs and errors for known failure patterns")
+    p.add_argument("job_id", type=str, help="job ID")
+    p.add_argument("--site", default="all", help="target site name or all")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_DIAGNOSE] = p
+    job_sub_cmd_handlers[CMD_JOB_DIAGNOSE] = cmd_job_diagnose

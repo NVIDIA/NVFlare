@@ -76,17 +76,6 @@ class TestProvisionOutput:
         args = parser.parse_args(["--force"])
         assert args.force is True
 
-    def test_provision_parser_output_flag(self):
-        """provision parser should have --output flag."""
-        import argparse
-
-        from nvflare.lighter.provision import define_provision_parser
-
-        parser = argparse.ArgumentParser()
-        define_provision_parser(parser)
-        args = parser.parse_args(["--output", "txt"])
-        assert args.output == "txt"
-
     def test_install_skills_called_on_success(self, capsys, tmp_path):
         """install_skills should be called (and its failure ignored) on success."""
         from nvflare.lighter.provision import handle_provision

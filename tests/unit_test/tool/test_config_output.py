@@ -21,7 +21,6 @@ class TestConfigOutput:
 
     def _make_args(self, **kwargs):
         args = MagicMock()
-        args.output = kwargs.get("output", "json")
         args.startup_kit_dir = kwargs.get("startup_kit_dir", None)
         args.poc_workspace_dir = kwargs.get("poc_workspace_dir", None)
         args.job_templates_dir = kwargs.get("job_templates_dir", None)
@@ -49,18 +48,6 @@ class TestConfigOutput:
         assert "startup_kit_dir" in data["data"]
         assert "poc_workspace_dir" in data["data"]
         assert "job_templates_dir" in data["data"]
-
-    def test_config_parser_has_output_flag(self):
-        """config parser should have --output flag."""
-        import argparse
-
-        from nvflare.cli import def_config_parser
-
-        root = argparse.ArgumentParser()
-        subs = root.add_subparsers()
-        def_config_parser(subs)
-        args = root.parse_args(["config", "--output", "json"])
-        assert args.output == "json"
 
     def test_config_parser_has_schema_flag(self):
         """config parser should have --schema flag."""

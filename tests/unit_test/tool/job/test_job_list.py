@@ -21,7 +21,6 @@ class TestJobList:
 
     def _make_args(self, **kwargs):
         args = MagicMock()
-        args.output = kwargs.get("output", "json")
         args.name = kwargs.get("name", None)
         args.id = kwargs.get("id", None)
         args.reverse = kwargs.get("reverse", False)
@@ -34,37 +33,18 @@ class TestJobList:
         from nvflare.tool.cli_output import output_ok
 
         jobs = [{"job_id": "abc123", "name": "test_job", "status": "FINISHED_OK"}]
-        output_ok(jobs, "json")
+        output_ok(jobs)
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["status"] == "ok"
         assert isinstance(data["data"], list)
         assert data["data"][0]["job_id"] == "abc123"
 
-    def test_list_txt_one_job_id_per_line(self, capsys):
-        """--output txt: one job_id per line."""
-        from nvflare.tool.job.job_cli import cmd_job_list
-
-        args = self._make_args(output="txt")
-        mock_sess = MagicMock()
-        mock_sess.list_jobs.return_value = [
-            {"job_id": "id1", "name": "job1"},
-            {"job_id": "id2", "name": "job2"},
-        ]
-
-        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
-            cmd_job_list(args)
-
-        captured = capsys.readouterr()
-        lines = [line for line in captured.out.strip().split("\n") if line]
-        assert "id1" in lines
-        assert "id2" in lines
-
     def test_list_with_name_filter(self):
         """name filter is passed to list_jobs."""
         from nvflare.tool.job.job_cli import cmd_job_list
 
-        args = self._make_args(output="json", name="cifar")
+        args = self._make_args(name="cifar")
         mock_sess = MagicMock()
         mock_sess.list_jobs.return_value = []
 
@@ -77,7 +57,7 @@ class TestJobList:
         """reverse flag is passed to list_jobs."""
         from nvflare.tool.job.job_cli import cmd_job_list
 
-        args = self._make_args(output="json", reverse=True)
+        args = self._make_args(reverse=True)
         mock_sess = MagicMock()
         mock_sess.list_jobs.return_value = []
 
@@ -121,7 +101,7 @@ class TestJobList:
 
         from nvflare.tool.job.job_cli import cmd_job_list
 
-        args = self._make_args(output="json", study="my_study")
+        args = self._make_args(study="my_study")
         mock_sess = MagicMock()
         mock_sess.list_jobs.return_value = [
             {"job_id": "id1", "name": "job1"},
@@ -145,7 +125,7 @@ class TestJobList:
 
         from nvflare.tool.job.job_cli import cmd_job_list
 
-        args = self._make_args(output="json", study="default")
+        args = self._make_args(study="default")
         mock_sess = MagicMock()
         mock_sess.list_jobs.return_value = [
             {"job_id": "id1"},
@@ -170,13 +150,12 @@ class TestJobList:
 
         parser = argparse.ArgumentParser()
         parser.add_argument("job_id", nargs="?", default=None)
-        parser.add_argument("--output", choices=["json", "txt"], default="json")
         parser.add_argument("--schema", action="store_true")
 
         import pytest
 
         with pytest.raises(SystemExit) as exc_info:
-            handle_schema_flag(parser, "nvflare job list", ["nvflare job list --output json"], ["--schema"])
+            handle_schema_flag(parser, "nvflare job list", ["nvflare job list"], ["--schema"])
         assert exc_info.value.code == 0
 
         captured = capsys.readouterr()
@@ -195,7 +174,7 @@ class TestJobList:
         from nvflare.tool.cli_schema import handle_schema_flag
 
         parser = argparse.ArgumentParser()
-        parser.add_argument("--output", choices=["json", "txt"], default="json")
+        parser.add_argument("--schema", action="store_true")
 
         with pytest.raises(SystemExit) as exc_info:
             handle_schema_flag(

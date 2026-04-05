@@ -23,7 +23,6 @@ class TestJobSubmitOutput:
 
     def _make_args(self, **kwargs):
         args = MagicMock()
-        args.output = kwargs.get("output", "json")
         args.wait = kwargs.get("wait", False)
         args.timeout = kwargs.get("timeout", 0)
         args.study = kwargs.get("study", "default")
@@ -36,28 +35,19 @@ class TestJobSubmitOutput:
         """On success, output_ok emits JSON envelope with job_id."""
         from nvflare.tool.cli_output import output_ok
 
-        output_ok({"job_id": "abc123"}, "json")
+        output_ok({"job_id": "abc123"})
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["schema_version"] == "1"
         assert data["status"] == "ok"
         assert data["data"]["job_id"] == "abc123"
 
-    def test_txt_output_prints_only_job_id(self, capsys):
-        """--output txt should print only the job_id."""
-        job_id = "xyz789"
-        # In txt mode, the handler prints job_id directly
-        # Simulate what internal_submit_job does in txt mode
-        print(job_id)
-        captured = capsys.readouterr()
-        assert captured.out.strip() == job_id
-
     def test_output_error_exits_with_code(self):
         """output_error should raise SystemExit with given exit_code."""
         from nvflare.tool.cli_output import output_error
 
         with pytest.raises(SystemExit) as exc_info:
-            output_error("JOB_INVALID", "json", exit_code=1)
+            output_error("JOB_INVALID", exit_code=1)
         assert exc_info.value.code == 1
 
     def test_connection_failed_exits_2(self):
@@ -65,7 +55,7 @@ class TestJobSubmitOutput:
         from nvflare.tool.cli_output import output_error
 
         with pytest.raises(SystemExit) as exc_info:
-            output_error("CONNECTION_FAILED", "json", exit_code=2)
+            output_error("CONNECTION_FAILED", exit_code=2)
         assert exc_info.value.code == 2
 
     def test_timeout_exits_3(self):
@@ -73,7 +63,7 @@ class TestJobSubmitOutput:
         from nvflare.tool.cli_output import output_error
 
         with pytest.raises(SystemExit) as exc_info:
-            output_error("TIMEOUT", "json", exit_code=3)
+            output_error("TIMEOUT", exit_code=3)
         assert exc_info.value.code == 3
 
     def test_wait_flag_in_submit_parser(self):
@@ -91,11 +81,10 @@ class TestJobSubmitOutput:
         parser = job_sub_cmd_parser["submit"]
         assert parser is not None
         # Check that the parser has these arguments by parsing with them
-        args = parser.parse_args(["-j", "/some/job", "--wait", "--timeout", "60", "--study", "test", "--output", "txt"])
+        args = parser.parse_args(["-j", "/some/job", "--wait", "--timeout", "60", "--study", "test"])
         assert args.wait is True
         assert args.timeout == 60
         assert args.study == "test"
-        assert args.output == "txt"
 
     def test_wait_flag_triggers_monitor(self, capsys):
         """When --wait is set, internal_submit_job calls monitor_job."""
@@ -103,7 +92,7 @@ class TestJobSubmitOutput:
 
         # Simulate the wait path: monitor returns a dict
         meta = {"job_id": "abc123", "status": "FINISHED_OK"}
-        output_ok(meta, "json")
+        output_ok(meta)
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["data"]["status"] == "FINISHED_OK"

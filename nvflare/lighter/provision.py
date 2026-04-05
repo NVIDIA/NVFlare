@@ -73,7 +73,6 @@ def define_provision_parser(parser):
     parser.add_argument("--add_client", type=str, default="", help="yaml file for added client")
     parser.add_argument("-s", "--gen_scripts", action="store_true", help="generate test scripts like start_all.sh")
     parser.add_argument("--force", action="store_true", help="skip Y/N confirmation prompts")
-    parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
     parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
@@ -99,8 +98,6 @@ def handle_provision(args):
         ["nvflare provision -p project.yml", "nvflare provision -g"],
         sys.argv[1:],
     )
-    fmt = getattr(args, "output", "json")
-
     current_path = os.getcwd()
     custom_folder_path = os.path.join(current_path, args.custom_folder)
     sys.path.append(custom_folder_path)
@@ -110,7 +107,7 @@ def handle_provision(args):
     # Default when no project_file and no -g: generate sample project.yml (pre-2.7.0 behavior)
     if args.gen_edge:
         copy_project("edge_project.yml", current_project_yml)
-        output_ok({"workspace": current_path, "packages": [], "project_yml": current_project_yml}, fmt)
+        output_ok({"workspace": current_path, "packages": [], "project_yml": current_project_yml})
         try:
             install_skills()
         except Exception:
@@ -119,7 +116,7 @@ def handle_provision(args):
 
     if not args.project_file or args.generate:
         copy_project("dummy_project.yml", current_project_yml)
-        output_ok({"workspace": current_path, "packages": [], "project_yml": current_project_yml}, fmt)
+        output_ok({"workspace": current_path, "packages": [], "project_yml": current_project_yml})
         try:
             install_skills()
         except Exception:
@@ -148,7 +145,7 @@ def handle_provision(args):
             if os.path.isdir(item_path):
                 packages.append(item)
 
-    output_ok({"workspace": workspace_full_path, "packages": packages}, fmt)
+    output_ok({"workspace": workspace_full_path, "packages": packages})
     try:
         install_skills()
     except Exception:

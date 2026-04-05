@@ -156,20 +156,19 @@ def prepare_jobs_dir(cmd_args):
         ["nvflare poc prepare-jobs-dir -j /path/to/jobs"],
         sys.argv[1:],
     )
-    fmt = getattr(cmd_args, "output", "json")
     force = getattr(cmd_args, "force", False)
     poc_workspace = get_poc_workspace()
 
     try:
         _prepare_jobs_dir(cmd_args.jobs_dir, poc_workspace, force=force)
     except CLIException as e:
-        output_error("INVALID_ARGS", fmt, exit_code=4, detail=str(e))
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         return
     except Exception as e:
-        output_error("INTERNAL_ERROR", fmt, exit_code=5, detail=str(e))
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         return
 
-    output_ok({"workspace": poc_workspace, "jobs_dir": cmd_args.jobs_dir}, fmt)
+    output_ok({"workspace": poc_workspace, "jobs_dir": cmd_args.jobs_dir})
     try:
         install_skills()
     except Exception:
@@ -453,10 +452,9 @@ def prepare_poc(cmd_args):
     handle_schema_flag(
         _poc_sub_cmd_parsers.get(CMD_PREPARE_POC),
         "nvflare poc prepare",
-        ["nvflare poc prepare -n 2", "nvflare poc prepare -n 3 --force --output json"],
+        ["nvflare poc prepare -n 2", "nvflare poc prepare -n 3 --force"],
         sys.argv[1:],
     )
-    fmt = getattr(cmd_args, "output", "json")
     poc_workspace = get_poc_workspace()
     project_conf_path = ""
     if cmd_args.project_input:
@@ -468,7 +466,6 @@ def prepare_poc(cmd_args):
         if not sys.stdin.isatty():
             output_error(
                 "INVALID_ARGS",
-                fmt,
                 exit_code=4,
                 detail="workspace exists; use --force to overwrite in non-interactive mode",
             )
@@ -489,7 +486,7 @@ def prepare_poc(cmd_args):
             force=force,
         )
     except Exception as e:
-        output_error("INTERNAL_ERROR", fmt, exit_code=5, detail=str(e))
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         return
 
     if result is False:
@@ -507,7 +504,7 @@ def prepare_poc(cmd_args):
     except Exception:
         pass
 
-    output_ok({"workspace": poc_workspace, "clients": clients}, fmt)
+    output_ok({"workspace": poc_workspace, "clients": clients})
     try:
         install_skills()
     except Exception:
@@ -680,7 +677,6 @@ def start_poc(cmd_args):
         ["nvflare poc start", "nvflare poc start -p server"],
         sys.argv[1:],
     )
-    fmt = getattr(cmd_args, "output", "json")
     poc_workspace = get_poc_workspace()
 
     services_list = get_service_list(cmd_args)
@@ -690,10 +686,10 @@ def start_poc(cmd_args):
     try:
         _start_poc(poc_workspace, gpu_ids, excluded, services_list)
     except CLIException as e:
-        output_error("INVALID_ARGS", fmt, exit_code=4, detail=str(e))
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         return
     except Exception as e:
-        output_error("INTERNAL_ERROR", fmt, exit_code=5, detail=str(e))
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         return
 
     # Get client names from project config
@@ -706,12 +702,7 @@ def start_poc(cmd_args):
     except Exception:
         pass
 
-    data = {"status": "running", "server_url": server_url, "clients": clients}
-    if fmt == "txt":
-        print(f"READY: {server_url}")
-        output_ok(data, "txt")
-    else:
-        output_ok(data, fmt)
+    output_ok({"status": "running", "server_url": server_url, "clients": clients})
 
 
 def get_gpis(cmd_args):
@@ -794,7 +785,6 @@ def stop_poc(cmd_args):
         ["nvflare poc stop", "nvflare poc stop -p server"],
         sys.argv[1:],
     )
-    fmt = getattr(cmd_args, "output", "json")
     poc_workspace = get_poc_workspace()
     excluded = get_excluded(cmd_args)
     services_list = get_service_list(cmd_args)
@@ -802,13 +792,13 @@ def stop_poc(cmd_args):
     try:
         _stop_poc(poc_workspace, excluded, services_list)
     except CLIException as e:
-        output_error("INVALID_ARGS", fmt, exit_code=4, detail=str(e))
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         return
     except Exception as e:
-        output_error("INTERNAL_ERROR", fmt, exit_code=5, detail=str(e))
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         return
 
-    output_ok({"status": "stopped"}, fmt)
+    output_ok({"status": "stopped"})
 
 
 def _stop_poc(poc_workspace: str, excluded=None, services_list=None):
@@ -971,19 +961,18 @@ def clean_poc(cmd_args):
         ["nvflare poc clean"],
         sys.argv[1:],
     )
-    fmt = getattr(cmd_args, "output", "json")
     poc_workspace = get_poc_workspace()
 
     try:
         _clean_poc(poc_workspace)
     except CLIException as e:
-        output_error("INVALID_ARGS", fmt, exit_code=4, detail=str(e))
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         return
     except Exception as e:
-        output_error("INTERNAL_ERROR", fmt, exit_code=5, detail=str(e))
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         return
 
-    output_ok({"status": "cleaned"}, fmt)
+    output_ok({"status": "cleaned"})
 
 
 def is_poc_running(poc_workspace, service_config, project_config):
@@ -1130,7 +1119,6 @@ def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optio
 
     prepare_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     prepare_parser.add_argument("--force", action="store_true", help="overwrite existing workspace without prompting")
-    prepare_parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
     prepare_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
@@ -1142,7 +1130,6 @@ def define_prepare_jobs_parser(poc_parser):
     prepare_jobs_dir_parser.add_argument(
         "--force", action="store_true", help="overwrite existing jobs directory without prompting"
     )
-    prepare_jobs_dir_parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
     prepare_jobs_dir_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
@@ -1150,7 +1137,6 @@ def define_clean_parser(poc_parser):
     clean_parser = poc_parser.add_parser(CMD_CLEAN_POC, help="clean up poc workspace")
     _poc_sub_cmd_parsers[CMD_CLEAN_POC] = clean_parser
     clean_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
-    clean_parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
     clean_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
@@ -1184,7 +1170,6 @@ def define_start_parser(poc_parser):
         help="gpu device ids will be used as CUDA_VISIBLE_DEVICES. used for poc start command",
     )
     start_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
-    start_parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
     start_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
@@ -1209,7 +1194,6 @@ def define_stop_parser(poc_parser):
         help="exclude service directory during 'stop', default to " ", i.e. nothing to exclude",
     )
     stop_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
-    stop_parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
     stop_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
