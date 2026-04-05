@@ -12,12 +12,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import os
 import shutil
 import sys
 import traceback
 from tempfile import mkdtemp
 from typing import List, Optional, Tuple
+
+
+class _WiderSubcmdFormatter(argparse.HelpFormatter):
+    """Formatter that prevents long subcommand names from wrapping to the next line.
+
+    argparse computes _action_max_length at section-indent level (2) but renders at
+    subsection-indent level (4), causing a 2-char gap that makes names like
+    'list_templates' (14 chars) wrap.  Adding indent_increment to the computation
+    closes the gap.
+    """
+
+    def add_arguments(self, actions):
+        for action in actions:
+            invocations = [self._format_action_invocation(action)]
+            for subaction in self._iter_indented_subactions(action):
+                invocations.append(self._format_action_invocation(subaction))
+            invocation_length = max(map(len, invocations))
+            self._action_max_length = max(
+                self._action_max_length,
+                invocation_length + self._current_indent + self._indent_increment,
+            )
+        super().add_arguments(actions)
+
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
@@ -502,25 +526,25 @@ def handle_job_cli_cmd(cmd_args):
 
 def def_job_cli_parser(sub_cmd):
     cmd = "job"
-    parser = sub_cmd.add_parser(cmd, help="submit, manage, and monitor FL jobs")
+    parser = sub_cmd.add_parser(cmd, help="submit, manage, and monitor FL jobs", formatter_class=_WiderSubcmdFormatter)
     job_subparser = parser.add_subparsers(title="job subcommands", metavar="", dest="job_sub_cmd")
-    define_list_templates_parser(job_subparser)
-    define_create_job_parser(job_subparser)
-    define_submit_job_parser(job_subparser)
-    define_variables_parser(job_subparser)
     define_job_new_parser(job_subparser)
+    define_submit_job_parser(job_subparser)
     define_list_jobs_parser(job_subparser)
-    define_job_meta_parser(job_subparser)
     define_abort_job_parser(job_subparser)
-    define_clone_job_parser(job_subparser)
-    define_download_job_parser(job_subparser)
-    define_delete_job_parser(job_subparser)
-    define_job_stats_parser(job_subparser)
-    define_job_errors_parser(job_subparser)
-    define_job_wait_parser(job_subparser)
+    define_job_meta_parser(job_subparser)
     define_job_logs_parser(job_subparser)
     define_job_log_level_parser(job_subparser)
+    define_job_wait_parser(job_subparser)
+    define_job_stats_parser(job_subparser)
+    define_job_errors_parser(job_subparser)
     define_job_diagnose_parser(job_subparser)
+    define_download_job_parser(job_subparser)
+    define_clone_job_parser(job_subparser)
+    define_delete_job_parser(job_subparser)
+    define_list_templates_parser(job_subparser)
+    define_create_job_parser(job_subparser)
+    define_variables_parser(job_subparser)
 
     return {cmd: parser}
 
@@ -557,7 +581,7 @@ def define_submit_job_parser(job_subparser):
 
 
 def define_list_templates_parser(job_subparser):
-    show_jobs_parser = job_subparser.add_parser("list_templates", help="show available job templates")
+    show_jobs_parser = job_subparser.add_parser("list_templates", help="[DEPRECATED] use 'nvflare recipe list'")
     show_jobs_parser.add_argument(
         "-d",
         "--job_templates_dir",
@@ -572,9 +596,7 @@ def define_list_templates_parser(job_subparser):
 
 
 def define_variables_parser(job_subparser):
-    show_variables_parser = job_subparser.add_parser(
-        "show_variables", help="show template variable values in configuration"
-    )
+    show_variables_parser = job_subparser.add_parser("show_variables", help="[DEPRECATED] use the Job Recipe API")
     show_variables_parser.add_argument(
         "-j",
         "--job_folder",
@@ -588,7 +610,7 @@ def define_variables_parser(job_subparser):
 
 
 def define_create_job_parser(job_subparser):
-    create_parser = job_subparser.add_parser("create", help="create job")
+    create_parser = job_subparser.add_parser("create", help="[DEPRECATED] use 'nvflare job new'")
     create_parser.add_argument(
         "-j",
         "--job_folder",
@@ -888,9 +910,18 @@ def cmd_job_new(cmd_args):
         return  # unreachable; output_error exits
 
     catalog = _load_catalog()
+
+    if not cmd_args.recipe:
+        output_ok({"available_recipes": [r["name"] for r in catalog], "hint": "re-run with -r <recipe> to scaffold"})
+        return
+
     entry = next((r for r in catalog if r["name"] == cmd_args.recipe), None)
     if entry is None:
-        output_error("INVALID_ARGS", exit_code=4, detail=f"unknown recipe '{cmd_args.recipe}'")
+        output_error(
+            "INVALID_ARGS",
+            exit_code=4,
+            detail=f"unknown recipe '{cmd_args.recipe}'. Available: {[r['name'] for r in catalog]}",
+        )
         return  # unreachable; output_error exits
 
     params = {}
@@ -1118,7 +1149,7 @@ def cmd_job_delete(cmd_args):
 
 def define_job_new_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_NEW, help="scaffold a new job from a recipe")
-    p.add_argument("-r", "--recipe", type=str, required=True, help="recipe name from 'nvflare recipe list'")
+    p.add_argument("-r", "--recipe", type=str, default=None, help="recipe name; omit to list available recipes")
     p.add_argument("--script", type=str, required=True, help="path to the training script")
     p.add_argument("-j", "--job-folder", dest="job_folder", type=str, default="./current_job", help="output job folder")
     p.add_argument("--script-dir", dest="script_dir", type=str, default=None, help="additional files directory")
