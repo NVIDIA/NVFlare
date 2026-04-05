@@ -13,8 +13,11 @@
 # limitations under the License.
 
 import argparse
+import json
 
-from nvflare.tool.cli_schema import SCHEMA_VERSION, parser_to_schema
+import pytest
+
+from nvflare.tool.cli_schema import SCHEMA_VERSION, handle_schema_flag, parser_to_schema
 
 
 def _make_parser(**kwargs) -> argparse.ArgumentParser:
@@ -197,3 +200,20 @@ class TestParserToSchema:
         assert "--name" in names
         assert "--output-dir" in names
         assert "--force" in names
+
+
+class TestHandleSchemaFlag:
+    def test_with_schema_flag_prints_json_and_exits(self, capsys):
+        parser = _make_parser()
+        with pytest.raises(SystemExit) as exc_info:
+            handle_schema_flag(parser, "nvflare job get", ["example"], ["--schema", "abc"])
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        schema = json.loads(captured.out)
+        assert schema["command"] == "nvflare job get"
+
+    def test_without_schema_flag_does_nothing(self, capsys):
+        parser = _make_parser()
+        handle_schema_flag(parser, "nvflare job get", [], ["abc123", "--output", "json"])
+        captured = capsys.readouterr()
+        assert captured.out == ""

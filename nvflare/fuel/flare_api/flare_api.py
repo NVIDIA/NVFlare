@@ -476,12 +476,12 @@ class Session(SessionSpec):
         meta = result[ResultKey.META]
         return meta.get(MetaKey.CLIENT_STATUS, None)
 
-    def restart(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
+    def restart(self, target_type: str, targets: Optional[List[str]] = None) -> dict:
         """Restart specified system target(s).
 
         Args:
             target_type (str): what system target (server, client, or all) to restart
-            client_names (List[str]): clients to be restarted if target_type is client. If not specified, all clients.
+            targets (List[str]): clients to be restarted if target_type is client. If not specified, all clients.
 
         Returns: a dict that contains detailed info about the restart request:
             status - the overall status of the result.
@@ -494,20 +494,20 @@ class Session(SessionSpec):
             raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
 
         parts = [AdminCommandNames.RESTART, target_type]
-        if target_type == TargetType.CLIENT and client_names:
-            processed_targets_str = process_targets_into_str(client_names)
+        if target_type == TargetType.CLIENT and targets:
+            processed_targets_str = process_targets_into_str(targets)
             parts.append(processed_targets_str)
 
         command = " ".join(parts)
         result = self._do_command(command)
         return result[ResultKey.META]
 
-    def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None):
+    def shutdown(self, target_type: TargetType, targets: Optional[List[str]] = None):
         """Shut down specified system target(s).
 
         Args:
             target_type: what system target (server, client, or all) to shut down
-            client_names: clients to be shut down if target_type is client. If not specified, all clients.
+            targets: clients to be shut down if target_type is client. If not specified, all clients.
 
         Returns: None
         """
@@ -515,8 +515,8 @@ class Session(SessionSpec):
             raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
 
         parts = [AdminCommandNames.SHUTDOWN, target_type]
-        if target_type == TargetType.CLIENT and client_names:
-            processed_targets_str = process_targets_into_str(client_names)
+        if target_type == TargetType.CLIENT and targets:
+            processed_targets_str = process_targets_into_str(targets)
             parts.append(processed_targets_str)
 
         command = " ".join(parts)
@@ -793,6 +793,146 @@ class Session(SessionSpec):
         command = " ".join(parts)
         reply = self._do_command(command, enforce_meta=False)
         return self._get_dict_data(reply)
+
+    def check_status(self, target_type: str, targets=None) -> dict:
+        """Get status of specified system target(s).
+
+        Args:
+            target_type (str): type of target (server, client, or all)
+            targets: list of client names if target type is "client". All clients if not specified.
+
+        Returns: a dict with status information
+
+        """
+        if target_type not in _VALID_TARGET_TYPES:
+            raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
+
+        parts = [AdminCommandNames.CHECK_STATUS, target_type]
+        if target_type == TargetType.CLIENT and targets:
+            processed_targets_str = process_targets_into_str(targets)
+            parts.append(processed_targets_str)
+
+        command = " ".join(parts)
+        result = self._do_command(command)
+        return result[ResultKey.META]
+
+    def report_resources(self, target_type: str, targets=None) -> dict:
+        """Report resources of specified system target(s).
+
+        Args:
+            target_type (str): type of target (server, client, or all)
+            targets: list of client names if target type is "client". All clients if not specified.
+
+        Returns: a dict with resource information
+
+        """
+        if target_type not in _VALID_TARGET_TYPES:
+            raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
+
+        parts = [AdminCommandNames.REPORT_RESOURCES, target_type]
+        if target_type == TargetType.CLIENT and targets:
+            processed_targets_str = process_targets_into_str(targets)
+            parts.append(processed_targets_str)
+
+        command = " ".join(parts)
+        result = self._do_command(command)
+        return result[ResultKey.META]
+
+    def remove_client(self, client_name: str) -> None:
+        """Remove a client from the system.
+
+        Args:
+            client_name (str): name of the client to remove
+
+        Returns: None
+
+        """
+        if not client_name or not isinstance(client_name, str):
+            raise ValueError("client_name must be a non-empty str")
+
+        self._do_command(f"{AdminCommandNames.REMOVE_CLIENT} {client_name}")
+
+    def get_job_logs(self, job_id: str, target: str = "all", tail_lines: int = None, grep_pattern: str = None) -> dict:
+        """Retrieve job logs from server workspace.
+
+        Args:
+            job_id (str): ID of the job
+            target (str): target site name or "all"
+            tail_lines (int): optional number of tail lines to retrieve
+            grep_pattern (str): optional grep pattern to filter log lines
+
+        Returns: dict with "log_source" and "logs" keys
+
+        """
+        self._validate_job_id(job_id)
+        parts = ["get_job_log", job_id, target]
+        if tail_lines is not None:
+            parts.extend(["-n", str(tail_lines)])
+        if grep_pattern is not None:
+            parts.extend(["-g", grep_pattern])
+
+        command = " ".join(parts)
+        reply = self._do_command(command, enforce_meta=False)
+        logs = self._get_dict_data(reply)
+        return {"log_source": "workspace", "logs": logs}
+
+    def configure_job_log(self, job_id: str, config, target: str = "all") -> None:
+        """Configure logging for a running job.
+
+        Args:
+            job_id (str): ID of the job (must be RUNNING)
+            config: str (level or LogMode), dict (dictConfig), or file path
+            target (str): target site name or "all"
+
+        Returns: None
+
+        """
+        import json as _json
+
+        self._validate_job_id(job_id)
+        if isinstance(config, dict):
+            config_str = _json.dumps(config)
+        else:
+            config_str = str(config)
+
+        self._do_command(f"{AdminCommandNames.CONFIGURE_JOB_LOG} {job_id} {target} {config_str}")
+
+    def configure_site_log(self, config, target: str = "all") -> None:
+        """Configure site-level logging.
+
+        Args:
+            config: str (level or LogMode), dict (dictConfig), or file path
+            target (str): target site name or "all"
+
+        Returns: None
+
+        """
+        import json as _json
+
+        if isinstance(config, dict):
+            config_str = _json.dumps(config)
+        else:
+            config_str = str(config)
+
+        self._do_command(f"{AdminCommandNames.CONFIGURE_SITE_LOG} {target} {config_str}")
+
+    def wait_for_job(self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0) -> dict:
+        """Block until job reaches a terminal state.
+
+        Args:
+            job_id (str): ID of the job to wait for
+            timeout (float): how long to wait; 0 means wait indefinitely
+            poll_interval (float): seconds between status polls
+
+        Returns: final job meta dict
+
+        Raises: TimeoutError if timeout is exceeded before job finishes
+
+        """
+        rc, job_meta = self.monitor_job_and_return_job_meta(job_id, timeout=timeout, poll_interval=poll_interval)
+        if rc == MonitorReturnCode.TIMEOUT:
+            raise TimeoutError(f"job {job_id} did not finish within {timeout}s")
+        return job_meta
 
     def do_app_command(self, job_id: str, topic: str, cmd_data) -> dict:
         """Ask a running job to execute an app command

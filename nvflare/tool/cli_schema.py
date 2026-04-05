@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import json
 from typing import List, Optional
 
 SCHEMA_VERSION = "1"
@@ -83,3 +84,10 @@ def parser_to_schema(
         "args": args,
         "examples": examples or [],
     }
+
+
+def handle_schema_flag(parser: argparse.ArgumentParser, command: str, examples: List[str], args_list: List[str]) -> None:
+    """Call before parse_args(). If --schema in args_list, print schema and exit."""
+    if "--schema" in args_list:
+        print(json.dumps(parser_to_schema(parser, command, examples), indent=2))
+        raise SystemExit(0)

@@ -176,6 +176,7 @@ def run(prog_name):
     sys.path.append(cwd)
     prog_parser, prog_args, sub_cmd_parsers = parse_args(prog_name)
     sub_cmd = None
+    fmt = getattr(prog_args, "output", "json")
     try:
         sub_cmd = prog_args.sub_command
         if sub_cmd:
@@ -191,13 +192,21 @@ def run(prog_name):
     except CLIException as e:
         print(e)
         sys.exit(1)
+    except SystemExit:
+        raise
     except Exception as e:
-        print(f"\nError: {e} \n")
-        if hasattr(prog_args, "debug"):
-            if prog_args.debug:
-                print(traceback.format_exc())
+        from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
+
+        from nvflare.tool.cli_output import output_error
+
+        if isinstance(e, NoConnection):
+            output_error("CONNECTION_FAILED", fmt, exit_code=2)
+        elif isinstance(e, AuthenticationError):
+            output_error("AUTH_FAILED", fmt, exit_code=2)
+        elif isinstance(e, TimeoutError):
+            output_error("TIMEOUT", fmt, exit_code=3)
         else:
-            print_help(prog_parser, sub_cmd, sub_cmd_parsers)
+            output_error("INTERNAL_ERROR", fmt, exit_code=5, detail=str(e))
 
 
 def print_help(prog_parser, sub_cmd, sub_cmd_parsers):

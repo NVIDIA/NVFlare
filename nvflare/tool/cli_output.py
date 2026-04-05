@@ -41,8 +41,22 @@ def _render_table(data: Any) -> None:
         print(str(data))
 
 
+def _render_dict(data: dict) -> None:
+    for k, v in data.items():
+        print(f"{k}: {v}")
+
+
+def _human_output(data: Any) -> None:
+    if isinstance(data, list):
+        _render_table(data)
+    elif isinstance(data, dict):
+        _render_dict(data)
+    else:
+        print(str(data))
+
+
 def output(data: Any, fmt: Optional[str]) -> None:
-    """Print command result in requested format."""
+    """Print command result in requested format. Used by cert/package commands."""
     if fmt == "json":
         print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "data": data}))
     elif fmt == "quiet":
@@ -56,15 +70,52 @@ def output(data: Any, fmt: Optional[str]) -> None:
         _render_table(data)
 
 
+def output_ok(data: Any, fmt: str = "json") -> None:
+    """Print success envelope. fmt: 'json' (default) | 'txt'. Used by Phase 0+1 commands."""
+    if fmt == "txt":
+        _human_output(data)
+    else:
+        print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "data": data}))
+
+
 def output_error(
     error_code: str,
-    message: str,
-    hint: str,
-    fmt: Optional[str],
+    message: str = None,
+    hint: str = None,
+    fmt: Optional[str] = None,
     exit_code: int = 1,
+    detail: str = None,
+    **kwargs,
 ) -> None:
-    """Print error envelope and exit. Never returns."""
-    if fmt == "json":
+    """Print error envelope and exit. Never returns.
+
+    Two calling patterns:
+    - Cert/package: output_error(code, message, hint, fmt, exit_code=N)
+    - Phase 0+1:    output_error(code, fmt="json", job_id="abc", detail="...")
+    """
+    if message is None:
+        # Phase 0+1: look up from ERROR_REGISTRY
+        from nvflare.tool.cli_errors import ERROR_REGISTRY
+
+        entry = ERROR_REGISTRY.get(error_code, {"message": error_code, "hint": ""})
+        try:
+            message = entry["message"].format_map(kwargs) if kwargs else entry["message"]
+        except KeyError:
+            message = entry["message"]
+        if detail:
+            message = f"{message} \u2014 {detail}"
+        resolved_hint = entry["hint"]
+        # Phase 0+1 default format is JSON
+        resolved_fmt = fmt if fmt is not None else "json"
+    else:
+        # Cert/package: explicit message/hint provided
+        resolved_hint = hint or ""
+        if detail:
+            message = f"{message} \u2014 {detail}"
+        # fmt=None means text stderr for cert/package commands
+        resolved_fmt = fmt if fmt is not None else "txt"
+
+    if resolved_fmt == "json":
         print(
             json.dumps(
                 {
@@ -72,12 +123,25 @@ def output_error(
                     "status": "error",
                     "error_code": error_code,
                     "message": message,
-                    "hint": hint,
+                    "hint": resolved_hint,
                 }
             )
         )
     else:
         print(f"ERROR_CODE: {error_code}", file=sys.stderr)
         print(message, file=sys.stderr)
-        print(f"Hint: {hint}", file=sys.stderr)
+        if resolved_hint:
+            print(f"Hint: {resolved_hint}", file=sys.stderr)
     sys.exit(exit_code)
+
+
+def print_human(msg: str) -> None:
+    """Print a human-readable message to stderr (not captured by --output json)."""
+    print(msg, file=sys.stderr)
+
+
+def prompt_yn(question: str) -> bool:
+    """Prompt the user with a yes/no question. Returns True for yes."""
+    print_human(f"{question} [y/N] ")
+    response = sys.stdin.readline().strip().lower()
+    return response in ("y", "yes")
