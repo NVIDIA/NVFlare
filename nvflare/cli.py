@@ -52,28 +52,28 @@ CMD_PACKAGE = "package"
 
 def def_provision_parser(sub_cmd):
     cmd = CMD_PROVISION
-    provision_parser = sub_cmd.add_parser(cmd)
+    provision_parser = sub_cmd.add_parser(cmd, help="provision a project")
     define_provision_parser(provision_parser)
     return {cmd: provision_parser}
 
 
 def def_dashboard_parser(sub_cmd):
     cmd = CMD_DASHBOARD
-    dashboard_parser = sub_cmd.add_parser(cmd)
+    dashboard_parser = sub_cmd.add_parser(cmd, help="start the NVFlare dashboard")
     define_dashboard_parser(dashboard_parser)
     return {cmd: dashboard_parser}
 
 
 def def_preflight_check_parser(sub_cmd):
     cmd = CMD_PREFLIGHT_CHECK
-    checker_parser = sub_cmd.add_parser(cmd)
+    checker_parser = sub_cmd.add_parser(cmd, help="check a provisioned package before deployment")
     define_preflight_check_parser(checker_parser)
     return {cmd: checker_parser}
 
 
 def def_simulator_parser(sub_cmd):
     cmd = CMD_SIMULATOR
-    simulator_parser = sub_cmd.add_parser(cmd)
+    simulator_parser = sub_cmd.add_parser(cmd, help="[deprecated] run a job in local simulator")
     define_simulator_parser(simulator_parser)
     return {cmd: simulator_parser}
 
@@ -88,7 +88,7 @@ def handle_simulator_cmd(simulator_args):
 
 def def_authz_preview_parser(sub_cmd):
     cmd = CMD_AUTHZ_PREVIEW
-    authz_preview_parser = sub_cmd.add_parser(cmd)
+    authz_preview_parser = sub_cmd.add_parser(cmd, help="[deprecated] preview authorization policy")
     define_authz_preview_parser(authz_preview_parser)
     return {cmd: authz_preview_parser}
 
@@ -104,7 +104,7 @@ _config_parser = None
 def def_config_parser(sub_cmd):
     global _config_parser
     cmd = "config"
-    config_parser = sub_cmd.add_parser(cmd)
+    config_parser = sub_cmd.add_parser(cmd, help="configure local NVFlare settings (startup kit path, POC workspace)")
     _config_parser = config_parser
     config_parser.add_argument(
         "-d", "--startup_kit_dir", type=str, nargs="?", default=None, help="startup kit location"
@@ -178,7 +178,7 @@ def handle_config_cmd(args):
 def parse_args(prog_name: str):
     _parser = argparse.ArgumentParser(description=prog_name)
     _parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
-    sub_cmd = _parser.add_subparsers(description="sub command parser", dest="sub_command")
+    sub_cmd = _parser.add_subparsers(title="commands", metavar="", dest="sub_command")
     sub_cmd_parsers = {}
     sub_cmd_parsers.update(def_poc_parser(sub_cmd))
     sub_cmd_parsers.update(def_preflight_check_parser(sub_cmd))

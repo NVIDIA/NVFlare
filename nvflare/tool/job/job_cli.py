@@ -488,8 +488,8 @@ def handle_job_cli_cmd(cmd_args):
 
 def def_job_cli_parser(sub_cmd):
     cmd = "job"
-    parser = sub_cmd.add_parser(cmd)
-    job_subparser = parser.add_subparsers(title="job", dest="job_sub_cmd", help="job subcommand")
+    parser = sub_cmd.add_parser(cmd, help="submit, manage, and monitor FL jobs")
+    job_subparser = parser.add_subparsers(title="job subcommands", metavar="", dest="job_sub_cmd")
     define_list_templates_parser(job_subparser)
     define_create_job_parser(job_subparser)
     define_submit_job_parser(job_subparser)

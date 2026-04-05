@@ -1026,7 +1026,7 @@ _poc_sub_cmd_parsers = {}
 
 def def_poc_parser(sub_cmd):
     cmd = "poc"
-    parser = sub_cmd.add_parser(cmd)
+    parser = sub_cmd.add_parser(cmd, help="manage a local proof-of-concept FL system")
     add_legacy_options(parser)
 
     poc_parser = parser.add_subparsers(title=cmd, dest="poc_sub_cmd", help="poc subcommand")
