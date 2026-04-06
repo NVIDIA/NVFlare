@@ -16,11 +16,14 @@
 Stream contract for all nvflare CLI command handlers
 =====================================================
 
-stdout — exactly one JSON envelope per command invocation, nothing else:
-    {"schema_version": "1", "status": "ok"|"error", "data": {...}}
+Default (human-first):
+    stdout — human-readable output (tables, summaries, prompts).
+    stderr — errors and diagnostics.
 
-stderr — all human-readable output: progress, warnings, prompts, diagnostics.
-    Use print_human() and prompt_yn() from this module; never bare print().
+Agent mode (set NVFLARE_CLI_MODE=agent):
+    stdout — exactly one JSON envelope per command invocation:
+        {"schema_version": "1", "status": "ok"|"error", "data": {...}}
+    stderr — all human-readable output: progress, warnings, prompts, diagnostics.
 
 Exceptions (plain text, outside the JSON contract):
     --help / -h         argparse usage text; agents use --schema instead
@@ -29,10 +32,21 @@ Exceptions (plain text, outside the JSON contract):
 """
 
 import json
+import os
 import sys
 from typing import Any, Optional
 
 SCHEMA_VERSION = "1"
+_CLI_MODE_ENV = "NVFLARE_CLI_MODE"
+
+
+def _agent_mode() -> bool:
+    value = os.getenv(_CLI_MODE_ENV, "")
+    return value.strip().lower() in {"agent", "json", "machine", "1", "true", "yes"}
+
+
+def _human_stream():
+    return sys.stderr if _agent_mode() else sys.stdout
 
 
 def _render_table(data: Any) -> None:
@@ -59,6 +73,8 @@ def _render_table(data: Any) -> None:
 
 def output(data: Any, fmt: Optional[str]) -> None:
     """Print command result in requested format. Used by cert/package commands."""
+    if fmt is None and _agent_mode():
+        fmt = "json"
     if fmt == "json":
         print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "data": data}))
     elif fmt == "quiet":
@@ -73,8 +89,11 @@ def output(data: Any, fmt: Optional[str]) -> None:
 
 
 def output_ok(data: Any) -> None:
-    """Print JSON success envelope to stdout."""
-    print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "data": data}))
+    """Print command success output."""
+    if _agent_mode():
+        print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "data": data}))
+    else:
+        _render_table(data)
 
 
 def output_error(
@@ -93,7 +112,7 @@ def output_error(
     - Phase 0+1:    output_error(code, exit_code=N, job_id="abc", detail="...")
     """
     if message is None:
-        # Phase 0+1: look up from ERROR_REGISTRY, always emit JSON
+        # Phase 0+1: look up from ERROR_REGISTRY, emit JSON in agent mode
         from nvflare.tool.cli_errors import ERROR_REGISTRY
 
         entry = ERROR_REGISTRY.get(error_code, {"message": error_code, "hint": ""})
@@ -103,23 +122,29 @@ def output_error(
             message = entry["message"]
         if detail:
             message = f"{message} \u2014 {detail}"
-        print(
-            json.dumps(
-                {
-                    "schema_version": SCHEMA_VERSION,
-                    "status": "error",
-                    "error_code": error_code,
-                    "message": message,
-                    "hint": entry["hint"],
-                }
+        if _agent_mode():
+            print(
+                json.dumps(
+                    {
+                        "schema_version": SCHEMA_VERSION,
+                        "status": "error",
+                        "error_code": error_code,
+                        "message": message,
+                        "hint": entry["hint"],
+                    }
+                )
             )
-        )
+        else:
+            print(f"ERROR_CODE: {error_code}", file=sys.stderr)
+            print(message, file=sys.stderr)
+            if entry["hint"]:
+                print(f"Hint: {entry['hint']}", file=sys.stderr)
     else:
         # Cert/package: explicit message/hint provided; fmt determines output format
         resolved_hint = hint or ""
         if detail:
             message = f"{message} \u2014 {detail}"
-        if fmt == "json":
+        if fmt == "json" or (fmt is None and _agent_mode()):
             print(
                 json.dumps(
                     {
@@ -140,21 +165,21 @@ def output_error(
 
 
 def print_human(*args, **kwargs):
-    """Print any human-readable text (progress, warnings, tables, diagnostics) to stderr.
+    """Print any human-readable text (progress, warnings, tables, diagnostics).
 
     Drop-in replacement for print() in CLI command handlers.
-    Keeps stdout clean for the JSON envelope.
+    Keeps stdout clean for the JSON envelope in agent mode.
     Usage: print_human("Starting shutdown of NVFLARE")
     """
-    kwargs.setdefault("file", sys.stderr)
+    kwargs.setdefault("file", _human_stream())
     print(*args, **kwargs)
 
 
 def prompt_yn(question: str, default_no: bool = True) -> bool:
-    """Write a Y/N prompt to stderr and read the answer from stdin.
+    """Write a Y/N prompt to stderr (agent mode) or stdout (human mode) and read the answer from stdin.
 
     Returns True if the user answered Y/y, False otherwise.
-    Writes the prompt to stderr so that stdout contains only JSON.
+    Writes the prompt to stderr in agent mode so that stdout contains only JSON.
     Callers must check sys.stdin.isatty() and handle --force before calling.
 
     Usage:
@@ -167,7 +192,8 @@ def prompt_yn(question: str, default_no: bool = True) -> bool:
                 return
     """
     suffix = " [y/N] " if default_no else " [Y/n] "
-    sys.stderr.write(question + suffix)
-    sys.stderr.flush()
+    stream = _human_stream()
+    stream.write(question + suffix)
+    stream.flush()
     answer = sys.stdin.readline().strip().upper()
     return answer == "Y"

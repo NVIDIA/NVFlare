@@ -276,7 +276,7 @@ class TestSchemaWithMissingRequiredArgs:
             with pytest.raises(SystemExit):
                 check_packages(args)
         captured = capsys.readouterr()
-        assert "deprecated" in captured.err.lower()
+        assert "deprecated" in (captured.out + captured.err).lower()
 
     def test_job_abort_schema_with_missing_job_id(self, capsys, monkeypatch):
         """nvflare job abort --schema (no job_id) must print schema JSON and exit 0."""

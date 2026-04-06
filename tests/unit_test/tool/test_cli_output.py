@@ -112,11 +112,14 @@ class TestOutput:
         assert len(lines) >= 3  # header + separator + 2 rows
 
 
-# --- output_ok() tests (Phase 0+1 commands — always JSON) ---
+# --- output_ok() tests (Phase 0+1 commands) ---
 
 
 class TestOutputOk:
-    def test_envelope_shape(self, capsys):
+    """Tests for output_ok() — JSON envelope in agent mode, human table in default mode."""
+
+    def test_agent_mode_envelope_shape(self, capsys, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
         output_ok({"key": "value"})
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
@@ -124,18 +127,37 @@ class TestOutputOk:
         assert envelope["status"] == "ok"
         assert envelope["data"] == {"key": "value"}
 
-    def test_list_data(self, capsys):
+    def test_agent_mode_list_data(self, capsys, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
         output_ok([1, 2, 3])
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert envelope["data"] == [1, 2, 3]
 
-    def test_string_data(self, capsys):
+    def test_agent_mode_string_data(self, capsys, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
         output_ok("hello")
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert envelope["data"] == "hello"
         assert envelope["status"] == "ok"
+
+    def test_human_mode_dict_renders_as_table(self, capsys, monkeypatch):
+        monkeypatch.delenv("NVFLARE_CLI_MODE", raising=False)
+        output_ok({"status": "running", "id": "abc"})
+        captured = capsys.readouterr()
+        assert "status: running" in captured.out
+        assert "id: abc" in captured.out
+
+    def test_human_mode_no_json_envelope(self, capsys, monkeypatch):
+        monkeypatch.delenv("NVFLARE_CLI_MODE", raising=False)
+        output_ok({"key": "value"})
+        captured = capsys.readouterr()
+        try:
+            json.loads(captured.out)
+            pytest.fail("Expected non-JSON output in human mode")
+        except (json.JSONDecodeError, ValueError):
+            pass
 
 
 # --- output_error() tests: cert/package pattern (explicit message/hint/fmt) ---
@@ -179,11 +201,14 @@ class TestOutputErrorCertPackage:
         assert exc_info.value.code == 1
 
 
-# --- output_error() tests: Phase 0+1 pattern (ERROR_REGISTRY, always JSON to stdout) ---
+# --- output_error() tests: Phase 0+1 pattern (ERROR_REGISTRY lookup) ---
 
 
 class TestOutputError:
-    def test_error_envelope_shape(self, capsys):
+    """Agent-mode JSON output for Phase 0+1 error paths."""
+
+    def test_error_envelope_shape(self, capsys, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
         with pytest.raises(SystemExit) as exc_info:
             output_error("CONNECTION_FAILED")
         assert exc_info.value.code == 1
@@ -195,12 +220,14 @@ class TestOutputError:
         assert "message" in envelope
         assert "hint" in envelope
 
-    def test_custom_exit_code(self, capsys):
+    def test_custom_exit_code(self, capsys, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
         with pytest.raises(SystemExit) as exc_info:
             output_error("AUTH_FAILED", exit_code=2)
         assert exc_info.value.code == 2
 
-    def test_unknown_error_code_uses_code_as_message(self, capsys):
+    def test_unknown_error_code_uses_code_as_message(self, capsys, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
         with pytest.raises(SystemExit):
             output_error("UNKNOWN_CODE_XYZ")
         captured = capsys.readouterr()
@@ -209,37 +236,50 @@ class TestOutputError:
         assert envelope["message"] == "UNKNOWN_CODE_XYZ"
         assert envelope["hint"] == ""
 
-    def test_format_substitution(self, capsys):
+    def test_format_substitution(self, capsys, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
         with pytest.raises(SystemExit):
             output_error("JOB_NOT_FOUND", job_id="abc123")
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert "abc123" in envelope["message"]
 
-    def test_missing_substitution_key_uses_template(self, capsys):
+    def test_missing_substitution_key_uses_template(self, capsys, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
         with pytest.raises(SystemExit):
             output_error("JOB_NOT_FOUND", wrong_key="abc")
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert "{job_id}" in envelope["message"]
 
-    def test_detail_appended_to_message(self, capsys):
+    def test_detail_appended_to_message(self, capsys, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
         with pytest.raises(SystemExit):
             output_error("INTERNAL_ERROR", detail="something went wrong")
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert "something went wrong" in envelope["message"]
 
-    def test_detail_appended_with_separator(self, capsys):
+    def test_detail_appended_with_separator(self, capsys, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
         with pytest.raises(SystemExit):
             output_error("INTERNAL_ERROR", detail="extra context")
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert " \u2014 " in envelope["message"]
 
-    def test_output_goes_to_stdout_not_stderr(self, capsys):
+    def test_agent_mode_output_goes_to_stdout_not_stderr(self, capsys, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
         with pytest.raises(SystemExit):
             output_error("TIMEOUT")
         captured = capsys.readouterr()
         assert len(captured.out) > 0
         assert captured.err == ""
+
+    def test_human_mode_output_goes_to_stderr(self, capsys, monkeypatch):
+        monkeypatch.delenv("NVFLARE_CLI_MODE", raising=False)
+        with pytest.raises(SystemExit):
+            output_error("TIMEOUT")
+        captured = capsys.readouterr()
+        assert "TIMEOUT" in captured.err
+        assert captured.out == ""
