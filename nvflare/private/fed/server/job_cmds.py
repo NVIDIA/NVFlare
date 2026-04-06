@@ -609,6 +609,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     conn.append_error(error, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, error))
                     return
 
+                # Strip privileged meta keys that must only be set by internal server components.
+                # A user-submitted job is never "from hub site" — only HubAppDeployer sets this flag
+                # after verifying the job, and it operates on the server side.
+                meta.pop(JobMetaKey.FROM_HUB_SITE.value, None)
+
                 job_def_manager = engine.job_def_manager
                 if not isinstance(job_def_manager, JobDefManagerSpec):
                     raise TypeError(
