@@ -49,9 +49,9 @@ FLARE 2.8.0 — Target: Q2 2026
 FLARE 2.9.0 — Target: Q3 2026
 *******************************
 
-**New Callable API**
+**New Collab API**
 
-- Introduce a new Callable API designed to improve research productivity
+- Introduce a new Collaboration (Collab) API designed to improve research productivity
 - Enables more flexible and composable FL workflow definitions with reduced boilerplate
 
 **FLARE Agent Readiness**
