@@ -29,7 +29,7 @@ class TestJobAbort:
         return args
 
     def test_abort_with_force_no_prompt(self, capsys):
-        """--force skips confirmation prompt."""
+        """--force skips confirmation prompt; stdout is one JSON line."""
         from nvflare.tool.job.job_cli import cmd_job_abort
 
         args = self._make_args(force=True)
@@ -37,14 +37,20 @@ class TestJobAbort:
         mock_sess.abort_job.return_value = None
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
-            with patch("builtins.input") as mock_input:
+            with patch("sys.stdin") as mock_stdin:
                 cmd_job_abort(args)
-                mock_input.assert_not_called()
+                # readline must not be called when --force is set
+                mock_stdin.readline.assert_not_called()
 
         captured = capsys.readouterr()
-        data = json.loads(captured.out)
+        # stdout: exactly one JSON line
+        stdout_lines = [ln for ln in captured.out.splitlines() if ln.strip()]
+        assert len(stdout_lines) == 1
+        data = json.loads(stdout_lines[0])
         assert data["status"] == "ok"
         assert data["data"]["status"] == "ABORTED"
+        # no JSON on stderr
+        assert not captured.err.strip().startswith("{")
 
     def test_abort_non_interactive_without_force_exits_4(self):
         """Non-interactive without --force exits 4."""
@@ -59,7 +65,7 @@ class TestJobAbort:
         assert exc_info.value.code == 4
 
     def test_abort_interactive_user_confirms(self, capsys):
-        """Interactive mode: user says Y → abort proceeds."""
+        """Interactive mode: user says Y → abort proceeds; stdout is one JSON line."""
         from nvflare.tool.job.job_cli import cmd_job_abort
 
         args = self._make_args(force=False)
@@ -68,28 +74,49 @@ class TestJobAbort:
 
         with patch("sys.stdin") as mock_stdin:
             mock_stdin.isatty.return_value = True
-            with patch("builtins.input", return_value="Y"):
-                with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
-                    cmd_job_abort(args)
+            mock_stdin.readline.return_value = "Y\n"
+            with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+                cmd_job_abort(args)
 
         captured = capsys.readouterr()
-        data = json.loads(captured.out)
+        # stdout: exactly one JSON line
+        stdout_lines = [ln for ln in captured.out.splitlines() if ln.strip()]
+        assert len(stdout_lines) == 1
+        data = json.loads(stdout_lines[0])
         assert data["status"] == "ok"
 
     def test_abort_interactive_user_cancels(self, capsys):
-        """Interactive mode: user says N → abort cancelled."""
+        """Interactive mode: user says N → abort cancelled; nothing on stdout; prompt on stderr."""
         from nvflare.tool.job.job_cli import cmd_job_abort
 
         args = self._make_args(force=False)
 
         with patch("sys.stdin") as mock_stdin:
             mock_stdin.isatty.return_value = True
-            with patch("builtins.input", return_value="N"):
-                cmd_job_abort(args)
+            mock_stdin.readline.return_value = "N\n"
+            cmd_job_abort(args)
 
         captured = capsys.readouterr()
-        # Nothing to stdout (no JSON output)
-        assert captured.out.strip() == "" or "Aborted" in captured.out
+        # stdout must be empty — no JSON envelope emitted when user cancels
+        assert captured.out.strip() == ""
+        # prompt and cancellation message go to stderr
+        assert "Abort job" in captured.err
+        assert "Aborted" in captured.err
+
+    def test_abort_prompt_is_on_stderr_not_stdout(self, capsys):
+        """Prompt text must appear on stderr, not stdout."""
+        from nvflare.tool.job.job_cli import cmd_job_abort
+
+        args = self._make_args(job_id="job999", force=False)
+
+        with patch("sys.stdin") as mock_stdin:
+            mock_stdin.isatty.return_value = True
+            mock_stdin.readline.return_value = "N\n"
+            cmd_job_abort(args)
+
+        captured = capsys.readouterr()
+        assert "job999" in captured.err
+        assert "job999" not in captured.out
 
     def test_abort_job_not_found_exits_1(self):
         """JOB_NOT_FOUND exits with code 1."""

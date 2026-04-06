@@ -70,7 +70,11 @@ def def_dashboard_parser(sub_cmd):
 
 def def_preflight_check_parser(sub_cmd):
     cmd = CMD_PREFLIGHT_CHECK
-    checker_parser = sub_cmd.add_parser(cmd, help="check a provisioned package before deployment")
+    checker_parser = sub_cmd.add_parser(
+        cmd,
+        aliases=["preflight"],
+        help="check a provisioned package before deployment",
+    )
     define_preflight_check_parser(checker_parser)
     return {cmd: checker_parser}
 
@@ -195,14 +199,33 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update({CMD_SYSTEM: system_parser})
     def_system_cli_parser(system_parser)
 
+    # Normalize CLI aliases so the handlers dict can use canonical names.
+    _CMD_ALIASES = {"preflight": CMD_PREFLIGHT_CHECK}
+
+    if "--schema" in sys.argv:
+        # When --schema is present, bypass argparse entirely to avoid required-arg
+        # validation failures. Build just enough namespace to route to the handler;
+        # the handler calls handle_schema_flag() as its first line and exits before
+        # accessing any command-specific args.
+        positionals = [a for a in sys.argv[1:] if not a.startswith("-")]
+        ns = argparse.Namespace()
+        raw_cmd = positionals[0] if positionals else None
+        ns.sub_command = _CMD_ALIASES.get(raw_cmd, raw_cmd)
+        # Two-level dispatch: each multi-level handler reads a different dest attribute.
+        sub_sub = positionals[1] if len(positionals) > 1 else None
+        ns.job_sub_cmd = sub_sub
+        ns.poc_sub_cmd = sub_sub
+        ns.system_sub_cmd = sub_sub
+        return _parser, ns, sub_cmd_parsers
+
     args, argv = _parser.parse_known_args(None, None)
     cmd = args.__dict__.get("sub_command")
     sub_cmd_parser = sub_cmd_parsers.get(cmd)
     if argv:
         msg = f"{prog_name} {cmd}: unrecognized arguments: {' '.join(argv)}\n"
-        print(f"\nerror: {msg}")
+        print(f"\nerror: {msg}", file=sys.stderr)
         if sub_cmd_parser:
-            sub_cmd_parser.print_help()
+            sub_cmd_parser.print_help(sys.stderr)
         _parser.exit(2, "\n")
     return _parser, _parser.parse_args(), sub_cmd_parsers
 
@@ -237,11 +260,11 @@ def run(prog_name):
         else:
             prog_parser.print_help()
     except CLIUnknownCmdException as e:
-        print(e)
+        print(e, file=sys.stderr)
         print_help(prog_parser, sub_cmd, sub_cmd_parsers)
         sys.exit(1)
     except CLIException as e:
-        print(e)
+        print(e, file=sys.stderr)
         sys.exit(1)
     except NoConnection:
         from nvflare.tool.cli_output import output_error
@@ -261,7 +284,7 @@ def run(prog_name):
         from nvflare.tool.cli_output import output_error
 
         if hasattr(prog_args, "debug") and prog_args.debug:
-            print(traceback.format_exc())
+            print(traceback.format_exc(), file=sys.stderr)
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
 
 
@@ -269,12 +292,12 @@ def print_help(prog_parser, sub_cmd, sub_cmd_parsers):
     if sub_cmd:
         sub_parser = sub_cmd_parsers[sub_cmd]
         if sub_parser:
-            print(f"Usage for subcommand '{sub_cmd}':\n")
-            sub_parser.print_help()
+            print(f"Usage for subcommand '{sub_cmd}':\n", file=sys.stderr)
+            sub_parser.print_help(sys.stderr)
         else:
-            prog_parser.print_help()
+            prog_parser.print_help(sys.stderr)
     else:
-        prog_parser.print_help()
+        prog_parser.print_help(sys.stderr)
 
 
 def print_nvflare_version():

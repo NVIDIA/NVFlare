@@ -177,18 +177,27 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "Remote server and client sites are running different NVFlare versions.",
         "hint": "Run 'nvflare system version' to see per-site versions. Run 'nvflare preflight' to verify compatibility.",
     },
+    # --- Job lifecycle ---
+    "JOB_FAILED": {
+        "message": "Job '{job_id}' reached terminal state FAILED.",
+        "hint": "Use 'nvflare job errors <job_id>' to see per-site error details.",
+    },
+    "JOB_ABORTED": {
+        "message": "Job '{job_id}' was aborted.",
+        "hint": "Use 'nvflare job meta <job_id>' to see abort details.",
+    },
     # --- Recipe / run ---
     "RECIPE_ENTRY_NOT_FOUND": {
-        "message": "No Recipe class found.",
-        "hint": "Specify --entry module:ClassName or add a Recipe subclass to the recipe folder.",
+        "message": "Recipe entry not found.",
+        "hint": "Check --entry module:symbol matches a file in --recipe-folder. Run with --entry to specify explicitly.",
     },
     "RECIPE_ENTRY_AMBIGUOUS": {
-        "message": "Multiple Recipe subclasses found; cannot auto-select.",
+        "message": "Multiple Recipe subclasses found; use --entry to select one.",
         "hint": "Use --entry module:ClassName to select one explicitly.",
     },
     "RECIPE_EXPORT_FAILED": {
         "message": "Recipe export failed.",
-        "hint": "Check the recipe class export() method for errors.",
+        "hint": "Check the recipe.export() implementation for errors.",
     },
     "RECIPE_RUNNER_FAILED": {
         "message": "Recipe runner failed.",

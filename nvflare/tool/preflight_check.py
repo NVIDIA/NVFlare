@@ -29,15 +29,18 @@ def define_preflight_check_parser(parser):
 
 
 def check_packages(args):
-    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_output import output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
         _preflight_parser,
-        "nvflare preflight_check",
-        ["nvflare preflight_check -p /path/to/package"],
+        "nvflare preflight",
+        ["nvflare preflight -p /path/to/package"],
         sys.argv[1:],
     )
+
+    if len(sys.argv) > 1 and sys.argv[1] == "preflight_check":
+        print_human("Note: 'preflight_check' is deprecated; use 'nvflare preflight' instead.")
     package_path = args.package_path
 
     if not os.path.isdir(package_path):

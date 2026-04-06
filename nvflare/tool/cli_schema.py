@@ -49,15 +49,16 @@ def parser_to_schema(
     """Serialize an argparse parser to a JSON-compatible schema dict."""
     args = []
     for action in parser._actions:
-        if isinstance(action, (argparse._HelpAction, argparse._VersionAction)):
+        if isinstance(action, (argparse._HelpAction, argparse._SubParsersAction)):
             continue
 
-        if action.option_strings:
+        is_positional = not action.option_strings
+        if is_positional:
+            name = action.dest
+            required = action.nargs not in ("?", "*", argparse.OPTIONAL, argparse.ZERO_OR_MORE)
+        else:
             name = max(action.option_strings, key=len)
             required = bool(getattr(action, "required", False))
-        else:
-            name = action.dest
-            required = True
 
         entry = {
             "name": name,
@@ -76,6 +77,9 @@ def parser_to_schema(
 
         if action.option_strings and len(action.option_strings) > 1:
             entry["aliases"] = action.option_strings[:-1]
+
+        if action.nargs in ("*", "+", "?"):
+            entry["nargs"] = action.nargs
 
         args.append(entry)
 

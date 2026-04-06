@@ -81,7 +81,9 @@ def copy_project(project: str, dest: str):
     dummy_project = os.path.join(file_path, project)
     shutil.copyfile(dummy_project, dest)
     rel_path = os.path.relpath(dest)
-    print(
+    from nvflare.tool.cli_output import print_human
+
+    print_human(
         f"{dest} was generated.  Please edit it to fit your NVFlare configuration. "
         + f"Once done please run 'nvflare provision -p {rel_path}' to perform the provisioning"
     )
@@ -130,7 +132,9 @@ def handle_provision(args):
     workspace_full_path = os.path.join(current_path, workspace)
 
     project_full_path = os.path.join(current_path, project_file)
-    print(f"Project yaml file: {project_full_path}.")
+    from nvflare.tool.cli_output import print_human
+
+    print_human(f"Project yaml file: {project_full_path}.")
 
     add_user_full_path = os.path.join(current_path, args.add_user) if args.add_user else None
     add_client_full_path = os.path.join(current_path, args.add_client) if args.add_client else None
@@ -146,6 +150,13 @@ def handle_provision(args):
                 packages.append(item)
 
     output_ok({"workspace": workspace_full_path, "packages": packages})
+    from nvflare.tool.cli_output import print_human
+
+    print_human(f"\nProvisioning complete. Packages written to: {workspace_full_path}")
+    if packages:
+        print_human(f"  Packages: {', '.join(packages)}")
+        print_human("  Verify each package with: nvflare preflight -p <package_path>")
+    print_human("  Distribute packages to each participant and run their start.sh")
     try:
         install_skills()
     except Exception:
@@ -198,7 +209,9 @@ def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=
         raise ValueError(f"API version expected 3 but found {api_version}")
     project_name = project_dict.get(PropKey.NAME)
     if len(project_name) > 63:
-        print(f"Project name {project_name} is longer than 63.  Will truncate it to {project_name[:63]}.")
+        from nvflare.tool.cli_output import print_human
+
+        print_human(f"Project name {project_name} is longer than 63.  Will truncate it to {project_name[:63]}.")
         project_name = project_name[:63]
         project_dict[PropKey.NAME] = project_name
     project_description = project_dict.get(PropKey.DESCRIPTION, "")
@@ -222,10 +235,12 @@ def add_extra_clients(add_client_file_path, participant_defs):
         extra.update({"type": "client"})
         participant_defs.append(extra)
     except Exception:
-        print("** Error during adding client **")
-        print("The yaml file format is")
-        print(adding_client_error_msg)
-        exit(0)
+        from nvflare.tool.cli_output import output_error, print_human
+
+        print_human("** Error during adding client **")
+        print_human("The yaml file format is")
+        print_human(adding_client_error_msg)
+        output_error("INVALID_ARGS", exit_code=4, detail="invalid client yaml format")
 
 
 def add_extra_users(add_user_file_path, participant_defs):
@@ -234,16 +249,20 @@ def add_extra_users(add_user_file_path, participant_defs):
         extra.update({"type": "admin"})
         participant_defs.append(extra)
     except Exception:
-        print("** Error during adding user **")
-        print("The yaml file format is")
-        print(adding_user_error_msg)
-        exit(0)
+        from nvflare.tool.cli_output import output_error, print_human
+
+        print_human("** Error during adding user **")
+        print_human("The yaml file format is")
+        print_human(adding_user_error_msg)
+        output_error("INVALID_ARGS", exit_code=4, detail="invalid user yaml format")
 
 
 def main():
-    print("*****************************************************************************")
-    print("** provision command is deprecated, please use 'nvflare provision' instead **")
-    print("*****************************************************************************")
+    from nvflare.tool.cli_output import print_human
+
+    print_human("*****************************************************************************")
+    print_human("** provision command is deprecated, please use 'nvflare provision' instead **")
+    print_human("*****************************************************************************")
 
     parser = argparse.ArgumentParser()
     define_provision_parser(parser)

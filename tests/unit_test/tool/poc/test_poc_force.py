@@ -90,7 +90,8 @@ class TestPocForce:
         workspace = str(tmp_path / "poc_ws2")
         os.makedirs(workspace)
 
-        # Simulate user saying "N"
-        with patch("builtins.input", return_value="N"):
+        # Simulate user saying "N" — prompt_yn uses sys.stdin.readline, not input()
+        with patch("sys.stdin") as mock_stdin:
+            mock_stdin.readline.return_value = "N\n"
             result = _prepare_poc([], 2, workspace, force=False)
         assert result is False

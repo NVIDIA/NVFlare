@@ -169,6 +169,10 @@ def prepare_jobs_dir(cmd_args):
         return
 
     output_ok({"workspace": poc_workspace, "jobs_dir": cmd_args.jobs_dir})
+    from nvflare.tool.cli_output import print_human
+
+    print_human(f"\nJobs directory linked: {cmd_args.jobs_dir}")
+    print_human("  Jobs in that folder are now accessible to the FL admin console.")
     try:
         install_skills()
     except Exception:
@@ -192,26 +196,26 @@ def _prepare_jobs_dir(jobs_dir: str, workspace: str, config_packages: Optional[T
     startup_dir = os.path.join(console_dir, SC.STARTUP)
     transfer = get_upload_dir(startup_dir)
     dst = os.path.join(console_dir, transfer)
+    from nvflare.tool.cli_output import print_human, prompt_yn
+
     if not is_dir_empty(dst):
         if not force:
             if not sys.stdin.isatty():
                 raise CLIException(
                     f"jobs directory {dst} already exists; use --force to overwrite in non-interactive mode"
                 )
-            print(" ")
-            answer = input(f"job directory at {dst} is already exists, replace with new one ? (y/N) ")
-            if answer.strip().upper() != "Y":
+            if not prompt_yn(f"Jobs directory already exists: {dst}. Replace it?"):
                 return
         if os.path.islink(dst):
             os.unlink(dst)
         if os.path.isdir(dst):
             shutil.rmtree(dst, ignore_errors=True)
-        print(f"link job directory from {src} to {dst}")
+        print_human(f"link job directory from {src} to {dst}")
         os.symlink(src, dst)
     else:
         if os.path.isdir(dst):
             shutil.rmtree(dst, ignore_errors=True)
-        print(f"link job directory from {src} to {dst}")
+        print_human(f"link job directory from {src} to {dst}")
         os.symlink(src, dst)
 
 
@@ -240,8 +244,9 @@ def verify_hosts(project_config: OrderedDict):
     hosts: List[str] = get_project_hosts(project_config)
     for h in hosts:
         if not verify_host(h):
-            print(f"host name: '{h}' is not defined, considering modify /etc/hosts to add localhost alias")
-            exit(0)
+            from nvflare.tool.cli_output import print_human
+
+            print_human(f"host name: '{h}' is not defined, considering modify /etc/hosts to add localhost alias")
 
 
 def get_project_hosts(project_config) -> List[str]:
@@ -302,7 +307,9 @@ def local_provision(
         src_project_file = gen_project_config_file(workspace)
         dst_project_file = src_project_file
 
-    print(f"provision at {workspace} for {number_of_clients} clients with {src_project_file}")
+    from nvflare.tool.cli_output import print_human
+
+    print_human(f"provision at {workspace} for {number_of_clients} clients with {src_project_file}")
     project_config: OrderedDict = load_yaml(src_project_file)
     if not project_config:
         raise CLIException(f"empty or invalid project config from project yaml file: {src_project_file}")
@@ -505,6 +512,11 @@ def prepare_poc(cmd_args):
         pass
 
     output_ok({"workspace": poc_workspace, "clients": clients})
+    from nvflare.tool.cli_output import print_human
+
+    print_human(f"\nPOC workspace ready at: {poc_workspace}")
+    print_human(f"  Clients: {', '.join(clients) if clients else '(none)'}")
+    print_human("  Next: place your jobs under the admin transfer folder, then run 'nvflare poc start'")
     try:
         install_skills()
     except Exception:
@@ -523,20 +535,19 @@ def _prepare_poc(
 ) -> bool:
     if clients:
         number_of_clients = len(clients)
+    from nvflare.tool.cli_output import print_human, prompt_yn
+
     if not project_conf_path:
-        print(f"prepare poc at {workspace} for {number_of_clients} clients")
+        print_human(f"Preparing POC workspace at {workspace} for {number_of_clients} clients...")
     else:
-        print(f"prepare poc at {workspace} with {project_conf_path}")
+        print_human(f"Preparing POC workspace at {workspace} using {project_conf_path}...")
 
     project_config = None
     if os.path.exists(workspace):
         if not force:
-            prompt = (
-                f"This will delete poc workspace directory: '{workspace}' and create a new one. "
-                "Is it OK to proceed? (y/N) "
-            )
-            answer = input(prompt)
-            if answer.strip().upper() != "Y":
+            if not prompt_yn(
+                f"This will delete poc workspace directory: '{workspace}' and create a new one. Is it OK to proceed?"
+            ):
                 return False
 
         workspace_path = Path(workspace)
@@ -703,6 +714,12 @@ def start_poc(cmd_args):
         pass
 
     output_ok({"status": "running", "server_url": server_url, "clients": clients})
+    from nvflare.tool.cli_output import print_human
+
+    print_human(f"\nPOC system started. Server: {server_url}")
+    if clients:
+        print_human(f"  Clients: {', '.join(clients)}")
+    print_human("  Submit jobs with: nvflare job submit -j <job_folder>")
 
 
 def get_gpis(cmd_args):
@@ -761,8 +778,7 @@ def validate_services(project_config, services_list: List, excluded: List):
 def validate_participants(participant_names, list_participants):
     for p in list_participants:
         if p not in participant_names:
-            print(f"participant '{p}' is not defined, expecting one of followings: {participant_names}")
-            exit(1)
+            raise CLIException(f"participant '{p}' is not defined, expecting one of: {participant_names}")
 
 
 def setup_service_config(poc_workspace) -> Tuple:
@@ -820,10 +836,14 @@ def _stop_poc(poc_workspace: str, excluded=None, services_list=None):
 
     p_size = len(services_list)
     if p_size == 0 or service_config[SC.FLARE_SERVER] in services_list:
-        print("Starting shutdown of NVFLARE")
+        from nvflare.tool.cli_output import print_human
+
+        print_human("Starting shutdown of NVFLARE")
         shutdown_system(prod_dir, username=service_config[SC.FLARE_PROJ_ADMIN])
     else:
-        print(f"Starting shutdown of {services_list} using the stop_fl.sh script")
+        from nvflare.tool.cli_output import print_human
+
+        print_human(f"Starting shutdown of {services_list} using the stop_fl.sh script")
 
         _run_poc(
             SC.CMD_STOP,
@@ -992,9 +1012,13 @@ def _clean_poc(poc_workspace: str):
             if is_poc_ready(poc_workspace, service_config, project_config):
                 if not is_poc_running(poc_workspace, service_config, project_config):
                     shutil.rmtree(poc_workspace, ignore_errors=True)
-                    print(f"{poc_workspace} is removed")
+                    from nvflare.tool.cli_output import print_human
+
+                    print_human(f"{poc_workspace} is removed")
                 else:
-                    print("system is still running, please stop the system first.")
+                    from nvflare.tool.cli_output import print_human
+
+                    print_human("system is still running, please stop the system first.")
             else:
                 raise CLIException(f"{poc_workspace} is not valid poc directory")
     else:
@@ -1059,19 +1083,27 @@ def add_legacy_options(parser):
 
 
 def old_start_poc():
-    print(f"'nvflare poc --{CMD_START_POC}' is deprecated, please use 'nvflare poc {CMD_START_POC}' ")
+    from nvflare.tool.cli_output import print_human
+
+    print_human(f"'nvflare poc --{CMD_START_POC}' is deprecated, please use 'nvflare poc {CMD_START_POC}' ")
 
 
 def old_stop_poc():
-    print(f"'nvflare poc --{CMD_STOP_POC}' is deprecated, please use 'nvflare poc {CMD_STOP_POC}' ")
+    from nvflare.tool.cli_output import print_human
+
+    print_human(f"'nvflare poc --{CMD_STOP_POC}' is deprecated, please use 'nvflare poc {CMD_STOP_POC}' ")
 
 
 def old_clean_poc():
-    print(f"'nvflare poc --{CMD_CLEAN_POC}' is deprecated, please use 'nvflare poc {CMD_CLEAN_POC}' ")
+    from nvflare.tool.cli_output import print_human
+
+    print_human(f"'nvflare poc --{CMD_CLEAN_POC}' is deprecated, please use 'nvflare poc {CMD_CLEAN_POC}' ")
 
 
 def old_prepare_poc():
-    print(f"'nvflare poc --{CMD_PREPARE_POC}' is deprecated, please use 'nvflare poc {CMD_PREPARE_POC}' ")
+    from nvflare.tool.cli_output import print_human
+
+    print_human(f"'nvflare poc --{CMD_PREPARE_POC}' is deprecated, please use 'nvflare poc {CMD_PREPARE_POC}' ")
 
 
 def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optional[str] = None):

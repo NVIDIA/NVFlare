@@ -107,6 +107,12 @@ CMD_JOB_LOGS = "logs"
 CMD_JOB_LOG_LEVEL = "log-level"
 CMD_JOB_DIAGNOSE = "diagnose"
 
+# Section 3 additions: new lifecycle commands
+CMD_JOB_MONITOR = "monitor"
+CMD_JOB_LOG = "log"
+CMD_JOB_EXPORT = "export"
+CMD_JOB_RUN = "run"
+
 
 def find_filename_basename(f: str):
     basename = os.path.basename(f)
@@ -163,6 +169,16 @@ def get_app_dirs_from_job_folder(job_folder):
 
 
 def create_job(cmd_args):
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_CREATE_JOB],
+        "nvflare job create",
+        [],
+        sys.argv[1:],
+        deprecated=True,
+        deprecated_message="Use 'nvflare job new -r <recipe> --script <train.py>' instead.",
+    )
     print(
         "WARNING: 'nvflare job create' is deprecated. Use 'nvflare job new -r <recipe> --script <train.py>' instead."
         " Run 'nvflare recipe list' to see available recipes.",
@@ -183,7 +199,9 @@ def create_job(cmd_args):
 
         fmt, real_config_path = ConfigFactory.search_config_format(CONFIG_FED_CLIENT_CONF, config_dirs)
         if real_config_path and not cmd_args.force:
-            print(
+            from nvflare.tool.cli_output import print_human
+
+            print_human(
                 f"""\nwarning: configuration files:\n
                     {"config_fed_server.[json|conf|yml]"} already exists.
                 \nNot generating the config files. If you would like to overwrite, use -force option"""
@@ -208,12 +226,14 @@ def create_job(cmd_args):
         display_template_variables(job_folder, app_variable_values)
 
     except ValueError as e:
-        print(f"\nUnable to handle command: {CMD_CREATE_JOB} due to: {e} \n")
+        from nvflare.tool.cli_output import print_human
+
+        print_human(f"\nUnable to handle command: {CMD_CREATE_JOB} due to: {e} \n")
         if cmd_args.debug:
-            print(traceback.format_exc())
+            print_human(traceback.format_exc())
         sub_cmd_parser = job_sub_cmd_parser[CMD_CREATE_JOB]
         if sub_cmd_parser:
-            sub_cmd_parser.print_help()
+            sub_cmd_parser.print_help(sys.stderr)
 
 
 def get_src_template_by_name(cmd_args):
@@ -254,6 +274,16 @@ def remove_extra_files(config_dir):
 
 
 def show_variables(cmd_args):
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_SHOW_VARIABLES],
+        "nvflare job show_variables",
+        [],
+        sys.argv[1:],
+        deprecated=True,
+        deprecated_message="Use the Job Recipe API instead.",
+    )
     print("WARNING: 'nvflare job show_variables' is deprecated. Use the Job Recipe API instead.", file=sys.stderr)
     try:
         if not os.path.isdir(cmd_args.job_folder):
@@ -267,12 +297,14 @@ def show_variables(cmd_args):
         display_template_variables(cmd_args.job_folder, variable_values)
 
     except ValueError as e:
-        print(f"\nUnable to handle command: {CMD_SHOW_VARIABLES} due to: {e} \n")
+        from nvflare.tool.cli_output import print_human
+
+        print_human(f"\nUnable to handle command: {CMD_SHOW_VARIABLES} due to: {e} \n")
         if cmd_args.debug:
-            print(traceback.format_exc())
+            print_human(traceback.format_exc())
         sub_cmd_parser = job_sub_cmd_parser[CMD_SHOW_VARIABLES]
         if sub_cmd_parser:
-            sub_cmd_parser.print_help()
+            sub_cmd_parser.print_help(sys.stderr)
 
 
 def check_template_exists(target_template_name, template_index_conf):
@@ -287,15 +319,17 @@ def check_template_exists(target_template_name, template_index_conf):
 
 
 def display_template_variables(job_folder, app_variable_values):
-    print("\nThe following are the variables you can change in the template\n")
+    from nvflare.tool.cli_output import print_human
+
+    print_human("\nThe following are the variables you can change in the template\n")
     total_length = 135
     left_margin = 1
-    print("-" * total_length)
+    print_human("-" * total_length)
     job_folder_header = fix_length_format(f"job folder: {job_folder}", total_length)
-    print(" " * total_length)
-    print(" " * left_margin, job_folder_header)
-    print(" " * total_length)
-    print("-" * total_length)
+    print_human(" " * total_length)
+    print_human(" " * left_margin, job_folder_header)
+    print_human(" " * total_length)
+    print_human("-" * total_length)
     file_name_fix_length = 30
     var_name_fix_length = 30
     var_value_fix_length = 35
@@ -304,13 +338,13 @@ def display_template_variables(job_folder, app_variable_values):
     var_name = fix_length_format(JOB_CONFIG_VAR_NAME, var_name_fix_length)
     var_value = fix_length_format(JOB_CONFIG_VAR_VALUE, var_value_fix_length)
     var_comp = fix_length_format(JOB_CONFIG_COMP_NAME, var_comp_fix_length)
-    print(" " * left_margin, file_name, var_name, var_value, var_comp)
-    print("-" * total_length)
+    print_human(" " * left_margin, file_name, var_name, var_value, var_comp)
+    print_human("-" * total_length)
     for app_name, variable_values in app_variable_values.items():
         if app_name != DEFAULT_APP_NAME and app_name != META_APP_NAME:
             app_header = fix_length_format(f"app: {app_name}", total_length)
-            print(" " * left_margin, app_header)
-            print(" " * total_length)
+            print_human(" " * left_margin, app_header)
+            print_human(" " * total_length)
 
         for file in sorted(variable_values.keys()):
             indices = variable_values.get(file)
@@ -324,13 +358,23 @@ def display_template_variables(job_folder, app_variable_values):
                 var_value = fix_length_format(str(key_index.value), var_value_fix_length)
                 var_comp = " " if key_index.component_name is None else key_index.component_name
                 var_comp = fix_length_format(var_comp, var_comp_fix_length)
-                print(" " * left_margin, file_name, var_name, var_value, var_comp)
+                print_human(" " * left_margin, file_name, var_name, var_value, var_comp)
 
-            print("")
-    print("-" * total_length)
+            print_human("")
+    print_human("-" * total_length)
 
 
 def list_templates(cmd_args):
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_LIST_TEMPLATES],
+        "nvflare job list_templates",
+        [],
+        sys.argv[1:],
+        deprecated=True,
+        deprecated_message="Use 'nvflare recipe list' instead.",
+    )
     print("WARNING: 'nvflare job list_templates' is deprecated. Use 'nvflare recipe list' instead.", file=sys.stderr)
     try:
         job_templates_dir = find_job_templates_location(cmd_args.job_templates_dir)
@@ -342,12 +386,14 @@ def list_templates(cmd_args):
             update_job_templates_dir(job_templates_dir)
 
     except ValueError as e:
-        print(f"\nUnable to handle command: {CMD_LIST_TEMPLATES} due to: {e} \n")
+        from nvflare.tool.cli_output import print_human
+
+        print_human(f"\nUnable to handle command: {CMD_LIST_TEMPLATES} due to: {e} \n")
         if cmd_args.debug:
-            print(traceback.format_exc())
+            print_human(traceback.format_exc())
         sub_cmd_parser = job_sub_cmd_parser[CMD_LIST_TEMPLATES]
         if sub_cmd_parser:
-            sub_cmd_parser.print_help()
+            sub_cmd_parser.print_help(sys.stderr)
 
 
 def update_job_templates_dir(job_templates_dir: str):
@@ -357,11 +403,13 @@ def update_job_templates_dir(job_templates_dir: str):
 
 
 def display_available_templates(template_index_conf):
-    print("\nThe following job templates are available: \n")
+    from nvflare.tool.cli_output import print_human
+
+    print_human("\nThe following job templates are available: \n")
     template_registry = template_index_conf.get("templates")
     total_length = 120
     left_margin = 1
-    print("-" * total_length)
+    print_human("-" * total_length)
     name_fix_length = 20
     description_fix_length = 60
     controller_type_fix_length = 17
@@ -370,8 +418,8 @@ def display_available_templates(template_index_conf):
     description = fix_length_format(JOB_INFO_DESC, description_fix_length)
     execution_api_type = fix_length_format(JOB_INFO_EXECUTION_API_TYPE, execution_api_type_fix_length)
     controller_type = fix_length_format(JOB_INFO_CONTROLLER_TYPE, controller_type_fix_length)
-    print(" " * left_margin, name, description, controller_type, execution_api_type)
-    print("-" * total_length)
+    print_human(" " * left_margin, name, description, controller_type, execution_api_type)
+    print_human("-" * total_length)
     for file_path in sorted(template_registry.keys()):
         name = os.path.basename(file_path)
         template_info = template_registry.get(file_path, None)
@@ -383,8 +431,8 @@ def display_available_templates(template_index_conf):
             template_info.get(JOB_INFO_EXECUTION_API_TYPE_KEY), execution_api_type_fix_length
         )
         controller_type = fix_length_format(template_info.get(JOB_INFO_CONTROLLER_TYPE_KEY), controller_type_fix_length)
-        print(" " * left_margin, name, description, controller_type, execution_api_type)
-    print("-" * total_length)
+        print_human(" " * left_margin, name, description, controller_type, execution_api_type)
+    print_human("-" * total_length)
 
 
 def fix_length_format(name: str, name_fix_length: int):
@@ -397,11 +445,7 @@ def submit_job(cmd_args):
     handle_schema_flag(
         job_sub_cmd_parser[CMD_SUBMIT_JOB],
         "nvflare job submit",
-        [
-            "nvflare job submit -j ./my_job",
-            "nvflare job submit -j ./my_job --wait --timeout 3600",
-            "nvflare job submit -j ./my_job --study my_study",
-        ],
+        ["nvflare job submit -j ./my_job"],
         sys.argv[1:],
     )
 
@@ -422,16 +466,22 @@ def submit_job(cmd_args):
         internal_submit_job(admin_user_dir, admin_username, temp_job_dir, cmd_args)
 
     except ValueError as e:
-        print(f"\nUnable to handle command: {CMD_SUBMIT_JOB} due to: {e} \n")
+        from nvflare.tool.cli_output import print_human
+
+        print_human(f"\nUnable to handle command: {CMD_SUBMIT_JOB} due to: {e} \n")
         if cmd_args.debug:
-            print(traceback.format_exc())
+            print_human(traceback.format_exc())
         sub_cmd_parser = job_sub_cmd_parser[CMD_SUBMIT_JOB]
         if sub_cmd_parser:
-            sub_cmd_parser.print_help()
+            sub_cmd_parser.print_help(sys.stderr)
     finally:
         if temp_job_dir:
             if cmd_args.debug:
-                print(f"in debug mode, job configurations can be examined in temp job directory '{temp_job_dir}'")
+                from nvflare.tool.cli_output import print_human
+
+                print_human(
+                    f"in debug mode, job configurations can be examined in temp job directory '{temp_job_dir}'"
+                )
             else:
                 shutil.rmtree(temp_job_dir)
 
@@ -453,7 +503,9 @@ def find_admin_user_and_dir() -> Tuple[str, str]:
 def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
     from nvflare.tool.cli_output import output_error, output_ok
 
-    print("trying to connect to the server")
+    from nvflare.tool.cli_output import print_human
+
+    print_human("trying to connect to the server")
     sess = new_secure_session(username=username, startup_kit_location=admin_user_dir)
     try:
         job_id = sess.submit_job(temp_job_dir)
@@ -491,6 +543,10 @@ job_sub_cmd_handlers = {
     CMD_JOB_LOGS: None,
     CMD_JOB_LOG_LEVEL: None,
     CMD_JOB_DIAGNOSE: None,
+    CMD_JOB_MONITOR: None,
+    CMD_JOB_LOG: None,
+    CMD_JOB_EXPORT: None,
+    CMD_JOB_RUN: None,
 }
 
 job_sub_cmd_parser = {
@@ -511,6 +567,10 @@ job_sub_cmd_parser = {
     CMD_JOB_LOGS: None,
     CMD_JOB_LOG_LEVEL: None,
     CMD_JOB_DIAGNOSE: None,
+    CMD_JOB_MONITOR: None,
+    CMD_JOB_LOG: None,
+    CMD_JOB_EXPORT: None,
+    CMD_JOB_RUN: None,
 }
 
 
@@ -530,10 +590,14 @@ def def_job_cli_parser(sub_cmd):
     job_subparser = parser.add_subparsers(title="job subcommands", metavar="", dest="job_sub_cmd")
     define_job_new_parser(job_subparser)
     define_submit_job_parser(job_subparser)
+    define_job_monitor_parser(job_subparser)
+    define_job_export_parser(job_subparser)
+    define_job_run_parser(job_subparser)
     define_list_jobs_parser(job_subparser)
     define_abort_job_parser(job_subparser)
     define_job_meta_parser(job_subparser)
     define_job_logs_parser(job_subparser)
+    define_job_log_parser(job_subparser)
     define_job_log_level_parser(job_subparser)
     define_job_wait_parser(job_subparser)
     define_job_stats_parser(job_subparser)
@@ -569,7 +633,6 @@ def define_submit_job_parser(job_subparser):
                                        If key presents in the preceding config file, the value in the config
                                        file will be overwritten by the new value """,
     )
-
     submit_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     submit_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     submit_parser.add_argument(
@@ -592,11 +655,14 @@ def define_list_templates_parser(job_subparser):
         "will search from ~/.nvflare/config.conf and NVFLARE_HOME env. variables",
     )
     show_jobs_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    show_jobs_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_LIST_TEMPLATES] = show_jobs_parser
 
 
 def define_variables_parser(job_subparser):
-    show_variables_parser = job_subparser.add_parser("show_variables", help="[DEPRECATED] use the Job Recipe API")
+    show_variables_parser = job_subparser.add_parser(
+        "show_variables", help="[DEPRECATED] use 'nvflare recipe list' or the Job Recipe API"
+    )
     show_variables_parser.add_argument(
         "-j",
         "--job_folder",
@@ -606,11 +672,14 @@ def define_variables_parser(job_subparser):
         help="job_folder path, default to ./current_job directory",
     )
     show_variables_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    show_variables_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_SHOW_VARIABLES] = show_variables_parser
 
 
 def define_create_job_parser(job_subparser):
-    create_parser = job_subparser.add_parser("create", help="[DEPRECATED] use 'nvflare job new'")
+    create_parser = job_subparser.add_parser(
+        "create", help="[DEPRECATED] use 'nvflare job new -r <recipe> --script <train.py>'"
+    )
     create_parser.add_argument(
         "-j",
         "--job_folder",
@@ -656,6 +725,7 @@ def define_create_job_parser(job_subparser):
         action="store_true",
         help="force create is on, if -force, " "overwrite existing configuration with newly created configurations",
     )
+    create_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
     job_sub_cmd_parser[CMD_CREATE_JOB] = create_parser
 
@@ -802,7 +872,9 @@ def prepare_job_folder(cmd_args):
         if cmd_args.force:
             shutil.rmtree(app_folder)
         else:
-            print(
+            from nvflare.tool.cli_output import print_human
+
+            print_human(
                 """\nwarning: app directory already exists.
                 \nIf you would like to overwrite, use -force option"""
             )
@@ -1036,9 +1108,10 @@ def cmd_job_abort(cmd_args):
         if not sys.stdin.isatty():
             output_error("INVALID_ARGS", exit_code=4, detail="use --force in non-interactive mode")
             return
-        answer = input(f"Abort job '{cmd_args.job_id}'? [y/N] ")
-        if answer.strip().upper() != "Y":
-            print("Aborted.")
+        from nvflare.tool.cli_output import print_human, prompt_yn
+
+        if not prompt_yn(f"Abort job '{cmd_args.job_id}'?"):
+            print_human("Aborted.")
             return
 
     try:
@@ -1123,9 +1196,10 @@ def cmd_job_delete(cmd_args):
         if not sys.stdin.isatty():
             output_error("INVALID_ARGS", exit_code=4, detail="use --force in non-interactive mode")
             return
-        answer = input(f"Delete job '{cmd_args.job_id}'? [y/N] ")
-        if answer.strip().upper() != "Y":
-            print("Cancelled.")
+        from nvflare.tool.cli_output import print_human, prompt_yn
+
+        if not prompt_yn(f"Delete job '{cmd_args.job_id}'?"):
+            print_human("Cancelled.")
             return
 
     try:
@@ -1536,3 +1610,298 @@ def define_job_diagnose_parser(job_subparser):
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_DIAGNOSE] = p
     job_sub_cmd_handlers[CMD_JOB_DIAGNOSE] = cmd_job_diagnose
+
+
+# ---------------------------------------------------------------------------
+# Section 3 additions: monitor, log, export, run
+# ---------------------------------------------------------------------------
+
+
+def cmd_job_monitor(cmd_args):
+    import time
+
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_MONITOR],
+        "nvflare job monitor",
+        ["nvflare job monitor abc123", "nvflare job monitor abc123 --timeout 3600"],
+        sys.argv[1:],
+    )
+
+    start = time.time()
+    timeout = getattr(cmd_args, "timeout", 0)
+    interval = getattr(cmd_args, "interval", 2)
+
+    try:
+        sess = _get_session()
+        meta = sess.wait_for_job(cmd_args.job_id, timeout=timeout, poll_interval=interval)
+    except TimeoutError:
+        output_error("TIMEOUT", exit_code=3, detail="job did not reach terminal state within timeout")
+        return
+    except Exception as e:
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
+
+    status = meta.get("status", "UNKNOWN")
+    duration = round(time.time() - start, 1)
+    data = {"job_id": cmd_args.job_id, "status": status, "duration_s": duration}
+
+    if status in ("FAILED", "FINISHED_EXCEPTION"):
+        output_ok(data)
+        sys.exit(1)
+    elif status in ("ABORTED", "ABANDONED"):
+        output_ok(data)
+        sys.exit(1)
+
+    output_ok(data)
+
+
+def cmd_job_log(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+    from nvflare.tool.system.system_cli import resolve_log_config
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_LOG],
+        "nvflare job log",
+        ["nvflare job log abc123 DEBUG", "nvflare job log abc123 --config /path/to/logging.json"],
+        sys.argv[1:],
+    )
+
+    level = getattr(cmd_args, "level", None)
+    config_str = getattr(cmd_args, "config", None)
+    site = getattr(cmd_args, "site", "all")
+
+    log_config = resolve_log_config(level, config_str)
+    if log_config is None:
+        output_error("LOG_CONFIG_INVALID", detail="provide a valid level name or --config JSON/file")
+        return
+
+    try:
+        sess = _get_session()
+        meta = sess.get_job_meta(cmd_args.job_id)
+        job_status = meta.get("status", "UNKNOWN") if meta else "UNKNOWN"
+        if job_status in _TERMINAL_JOB_STATES:
+            output_error(
+                "JOB_NOT_RUNNING",
+                exit_code=1,
+                detail=f"job is in terminal state: {job_status}",
+            )
+            return
+        sess.configure_job_log(cmd_args.job_id, log_config, target=site)
+    except Exception as e:
+        from nvflare.fuel.flare_api.api_spec import NoConnection
+
+        if isinstance(e, NoConnection):
+            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        elif "not found" in str(e).lower() or "does not exist" in str(e).lower():
+            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        else:
+            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
+
+    output_ok({"job_id": cmd_args.job_id, "site": site, "log_config": log_config, "status": "applied"})
+
+
+def cmd_job_export(cmd_args):
+    import importlib
+    import inspect
+
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_EXPORT],
+        "nvflare job export",
+        [
+            "nvflare job export --recipe-folder . --out ./fl_job",
+            "nvflare job export --recipe-folder . --entry recipe:MyRecipe --out ./fl_job",
+        ],
+        sys.argv[1:],
+    )
+
+    recipe_folder = os.path.abspath(cmd_args.recipe_folder)
+    out_dir = os.path.abspath(cmd_args.out)
+    entry = getattr(cmd_args, "entry", None)
+
+    # Discover Recipe subclass
+    try:
+        from nvflare.recipe.spec import Recipe
+
+        if entry:
+            module_name, _, class_name = entry.partition(":")
+            mod = importlib.import_module(module_name)
+            RecipeClass = getattr(mod, class_name)
+        else:
+            # Auto-discover: scan .py files in recipe_folder for Recipe subclasses
+            import glob as _glob
+            import importlib.util
+
+            found = []
+            for py_file in _glob.glob(os.path.join(recipe_folder, "*.py")):
+                spec = importlib.util.spec_from_file_location("_recipe_scan", py_file)
+                mod = importlib.util.module_from_spec(spec)
+                try:
+                    spec.loader.exec_module(mod)
+                except Exception:
+                    continue
+                for name, obj in inspect.getmembers(mod, inspect.isclass):
+                    if issubclass(obj, Recipe) and obj is not Recipe:
+                        found.append((name, obj))
+            if not found:
+                output_error("RECIPE_ENTRY_NOT_FOUND")
+                return
+            if len(found) > 1:
+                output_error("RECIPE_ENTRY_AMBIGUOUS")
+                return
+            _, RecipeClass = found[0]
+
+        recipe_instance = RecipeClass()
+        recipe_instance.export(out_dir)
+    except (ImportError, AttributeError) as e:
+        output_error("RECIPE_ENTRY_NOT_FOUND", detail=str(e))
+        return
+    except Exception as e:
+        output_error("RECIPE_EXPORT_FAILED", detail=str(e))
+        return
+
+    output_ok({"job_folder": out_dir, "recipe_folder": recipe_folder})
+
+
+def cmd_job_run(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_RUN],
+        "nvflare job run",
+        [
+            "nvflare job run --recipe-folder . --env poc",
+            "nvflare job run --recipe-folder . --env sim",
+        ],
+        sys.argv[1:],
+    )
+
+    import tempfile
+
+    recipe_folder = os.path.abspath(cmd_args.recipe_folder)
+    env = getattr(cmd_args, "env", "poc")
+
+    with tempfile.TemporaryDirectory() as tmp_out:
+        # Step 1: export
+        export_args = argparse.Namespace(
+            recipe_folder=cmd_args.recipe_folder,
+            out=tmp_out,
+            entry=getattr(cmd_args, "entry", None),
+        )
+        # Inline export logic (reuse cmd_job_export internals)
+        import importlib
+        import inspect
+
+        try:
+            from nvflare.recipe.spec import Recipe
+
+            entry = getattr(cmd_args, "entry", None)
+            if entry:
+                module_name, _, class_name = entry.partition(":")
+                mod = importlib.import_module(module_name)
+                RecipeClass = getattr(mod, class_name)
+            else:
+                import glob as _glob
+                import importlib.util
+
+                found = []
+                for py_file in _glob.glob(os.path.join(recipe_folder, "*.py")):
+                    spec = importlib.util.spec_from_file_location("_recipe_scan", py_file)
+                    mod = importlib.util.module_from_spec(spec)
+                    try:
+                        spec.loader.exec_module(mod)
+                    except Exception:
+                        continue
+                    for name, obj in inspect.getmembers(mod, inspect.isclass):
+                        if issubclass(obj, Recipe) and obj is not Recipe:
+                            found.append((name, obj))
+                if not found:
+                    output_error("RECIPE_ENTRY_NOT_FOUND")
+                    return
+                if len(found) > 1:
+                    output_error("RECIPE_ENTRY_AMBIGUOUS")
+                    return
+                _, RecipeClass = found[0]
+
+            recipe_instance = RecipeClass()
+            recipe_instance.export(tmp_out)
+        except (ImportError, AttributeError) as e:
+            output_error("RECIPE_ENTRY_NOT_FOUND", detail=str(e))
+            return
+        except Exception as e:
+            output_error("RECIPE_EXPORT_FAILED", detail=str(e))
+            return
+
+        # Step 2: submit or simulate
+        if env == "sim":
+            try:
+                from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
+
+                runner = SimulatorRunner(job_folder=tmp_out, workspace=getattr(cmd_args, "workspace", "/tmp/sim_ws"))
+                runner.run()
+                output_ok({"status": "FINISHED_OK", "env": env, "job_folder": tmp_out})
+            except Exception as e:
+                output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
+        else:
+            try:
+                sess = _get_session()
+                job_id = sess.submit_job(tmp_out)
+                output_ok({"job_id": job_id, "env": env})
+            except Exception as e:
+                output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+
+
+def define_job_monitor_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_MONITOR, help="wait for a job and stream progress to stderr")
+    p.add_argument("job_id", type=str, help="job ID")
+    p.add_argument("--timeout", type=int, default=0, help="seconds to wait (0 = no timeout)")
+    p.add_argument("--interval", type=int, default=2, help="poll interval in seconds")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_MONITOR] = p
+    job_sub_cmd_handlers[CMD_JOB_MONITOR] = cmd_job_monitor
+
+
+def define_job_log_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_LOG, help="change logging configuration for a running job")
+    p.add_argument("job_id", type=str, help="job ID")
+    p.add_argument("level", nargs="?", default=None, help="log level: DEBUG, INFO, WARNING, ERROR, CRITICAL")
+    p.add_argument("--config", default=None, help="path to dictConfig JSON file or inline JSON")
+    p.add_argument("--site", default="all", help="target site name or all")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_LOG] = p
+    job_sub_cmd_handlers[CMD_JOB_LOG] = cmd_job_log
+
+
+def define_job_export_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_EXPORT, help="export a recipe folder to a job config folder")
+    p.add_argument("--recipe-folder", dest="recipe_folder", type=str, default=".", help="folder containing recipe.py")
+    p.add_argument("--out", type=str, required=True, help="output job folder path")
+    p.add_argument("--entry", type=str, default=None, help="module:ClassName of the Recipe subclass")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_EXPORT] = p
+    job_sub_cmd_handlers[CMD_JOB_EXPORT] = cmd_job_export
+
+
+def define_job_run_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_RUN, help="export recipe and submit/simulate in one step")
+    p.add_argument("--recipe-folder", dest="recipe_folder", type=str, default=".", help="folder containing recipe.py")
+    p.add_argument(
+        "--env",
+        type=str,
+        default="poc",
+        choices=["sim", "poc", "prod"],
+        help="execution environment: sim (simulator), poc, or prod",
+    )
+    p.add_argument("--entry", type=str, default=None, help="module:ClassName of the Recipe subclass")
+    p.add_argument("--workspace", type=str, default="/tmp/sim_ws", help="simulator workspace (--env sim only)")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_RUN] = p
+    job_sub_cmd_handlers[CMD_JOB_RUN] = cmd_job_run

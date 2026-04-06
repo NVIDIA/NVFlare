@@ -217,3 +217,84 @@ class TestHandleSchemaFlag:
         handle_schema_flag(parser, "nvflare job get", [], ["abc123", "--output", "json"])
         captured = capsys.readouterr()
         assert captured.out == ""
+
+
+class TestSchemaWithMissingRequiredArgs:
+    """--schema must reach the handler even when required positional args are absent."""
+
+    def test_preflight_check_schema_with_missing_required_p_arg(self, capsys, monkeypatch):
+        """nvflare preflight_check --schema (no -p) must print schema JSON and exit 0, not argparse error."""
+        import sys
+
+        from nvflare.cli import parse_args
+
+        monkeypatch.setattr(sys, "argv", ["nvflare", "preflight_check", "--schema"])
+        _parser, args, _ = parse_args("nvflare")
+        # parse_args must return without raising — lenient path taken when --schema present.
+        # The handler calls handle_schema_flag() which prints indented schema JSON and exits 0.
+        from nvflare.tool.preflight_check import check_packages
+
+        with pytest.raises(SystemExit) as exc_info:
+            check_packages(args)
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        # handle_schema_flag uses indent=2 → multi-line JSON; parse the whole stdout blob.
+        schema = json.loads(captured.out)
+        assert schema["command"] == "nvflare preflight"
+        assert schema["schema_version"] == "1"
+        # stderr must not contain an argparse "required" error
+        assert "required" not in captured.err.lower() or "required" in str(schema["args"])
+
+    def test_preflight_alias_schema(self, capsys, monkeypatch):
+        """nvflare preflight --schema (alias) routes to preflight handler and prints schema."""
+        import sys
+
+        from nvflare.cli import parse_args
+
+        monkeypatch.setattr(sys, "argv", ["nvflare", "preflight", "--schema"])
+        _parser, args, _ = parse_args("nvflare")
+        from nvflare.tool.preflight_check import check_packages
+
+        with pytest.raises(SystemExit) as exc_info:
+            check_packages(args)
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        schema = json.loads(captured.out)
+        assert schema["command"] == "nvflare preflight"
+        assert schema["schema_version"] == "1"
+
+    def test_preflight_check_deprecated_notice(self, capsys, monkeypatch):
+        """nvflare preflight_check (old name) emits a deprecation notice to stderr."""
+        import sys
+        from unittest.mock import patch
+
+        monkeypatch.setattr(sys, "argv", ["nvflare", "preflight_check", "-p", "/nonexistent"])
+        from nvflare.tool.preflight_check import check_packages
+
+        args = pytest.importorskip("argparse").Namespace(package_path="/nonexistent", schema=False)
+        with patch("os.path.isdir", return_value=False):
+            with pytest.raises(SystemExit):
+                check_packages(args)
+        captured = capsys.readouterr()
+        assert "deprecated" in captured.err.lower()
+
+    def test_job_abort_schema_with_missing_job_id(self, capsys, monkeypatch):
+        """nvflare job abort --schema (no job_id) must print schema JSON and exit 0."""
+        import sys
+
+        from nvflare.cli import parse_args
+
+        monkeypatch.setattr(sys, "argv", ["nvflare", "job", "abort", "--schema"])
+        _parser, args, _ = parse_args("nvflare")
+        from nvflare.tool.job.job_cli import cmd_job_abort
+
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_job_abort(args)
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        # handle_schema_flag uses indent=2 → multi-line JSON; parse the whole stdout blob.
+        schema = json.loads(captured.out)
+        assert schema["command"] == "nvflare job abort"
+        assert schema["schema_version"] == "1"
+        # stderr must not contain an argparse "required" error
+        assert "error" not in captured.err.lower()
