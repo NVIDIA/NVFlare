@@ -68,6 +68,18 @@ The tracked Compose example now binds ports to `127.0.0.1`, reads the Grafana pa
 - The default local URLs are `http://127.0.0.1:3000`, `http://127.0.0.1:9090`, and `http://127.0.0.1:9102/metrics`.
 - For a Kubernetes deployment of the same monitoring stack, see [../k8s/README.md](../k8s/README.md).
 
+## Validated Kubernetes Production Example
+
+For a validated production-style Kubernetes run, see [k8s_hello_numpy/README.md](./k8s_hello_numpy/README.md).
+
+That path was exercised against a live MicroK8s deployment with:
+
+- a K8s monitoring stack in namespace `nvflare-monitoring`
+- an NVFLARE server pod and one connected client pod
+- job-level metrics visible in `statsd-exporter` with `job_id` tags
+
+The example also preserves the signed admin startup kit and avoids editing `fed_admin.json` directly.
+
 
 ## Prepare FLARE Metrics Monitoring Configuration
 

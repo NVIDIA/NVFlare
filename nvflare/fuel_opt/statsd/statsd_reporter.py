@@ -25,15 +25,17 @@ from nvflare.metrics.metrics_keys import MetricKeys, MetricTypes
 
 class StatsDReporter:
     def __init__(self, site: str = "", host="localhost", port=9125):
+        self.site = site
+        self.host = host
+        self.port = port
 
         # Initialize the DataDog StatsD client
-        initialize(statsd_host=host, statsd_port=port)
+        initialize(statsd_host=self.host, statsd_port=self.port)
         self.metrics = {}
         self.data_bus = DataBus()
 
         self.data_bus.subscribe([ReservedTopic.APP_METRICS], self.process_metrics)
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.site = site
 
     def process_metrics(self, topic, metrics, data_bus):
 
