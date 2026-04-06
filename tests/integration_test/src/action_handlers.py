@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import typing
 
-from nvflare.fuel.hci.client.api_status import APIStatus
+from nvflare.fuel.flare_api.api_spec import AuthorizationError, InvalidJobDefinition
+from nvflare.fuel.flare_api.flare_api import Session
 
 if typing.TYPE_CHECKING:
     from .nvf_test_driver import NVFTestDriver
@@ -24,18 +25,24 @@ if typing.TYPE_CHECKING:
 import time
 from abc import ABC, abstractmethod
 
-from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
-from tests.integration_test.src.utils import check_job_done, run_admin_api_tests
+from tests.integration_test.src.utils import (
+    build_authorization_error_details,
+    build_authorization_error_message,
+    build_error_response_items,
+    check_job_done,
+    normalize_invalid_job_definition_message,
+    run_admin_api_tests,
+)
 
 
 class _CmdHandler(ABC):
     @abstractmethod
-    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
         pass
 
 
 class _StartHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
         if command_args[0] == "server":
             if len(command_args) == 2:
                 # if server id is provided
@@ -45,7 +52,7 @@ class _StartHandler(_CmdHandler):
                 server_ids = list(admin_controller.site_launcher.server_properties.keys())
             for sid in server_ids:
                 admin_controller.site_launcher.start_server(sid)
-            admin_controller.super_admin_api.login(username=admin_controller.super_admin_user_name)
+            admin_controller.super_admin_api.try_connect(10.0)
         elif command_args[0] == "client":
             if len(command_args) == 2:
                 # if client id is provided
@@ -60,14 +67,14 @@ class _StartHandler(_CmdHandler):
 
 
 class _KillHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
         if command_args[0] == "server":
             if len(command_args) == 2:
                 # if server id is provided
                 server_id = command_args[1]
             else:
                 # kill active server
-                server_id = admin_controller.site_launcher.get_active_server_id(admin_api.port)
+                server_id = admin_controller.site_launcher.get_active_server_id(admin_api.api.port)
             admin_controller.site_launcher.stop_server(server_id)
         elif command_args[0] == "client":
             if len(command_args) == 2:
@@ -77,84 +84,84 @@ class _KillHandler(_CmdHandler):
                 # close all clients
                 client_ids = list(admin_controller.site_launcher.client_properties.keys())
             for cid in client_ids:
-                admin_api.remove_client([admin_controller.site_launcher.client_properties[cid].name])
+                admin_controller.remove_client(admin_api, admin_controller.site_launcher.client_properties[cid].name)
                 admin_controller.site_launcher.stop_client(cid)
 
 
 class _SleepHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
         time.sleep(int(command_args[0]))
 
 
 class _AdminCommandsHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
         run_admin_api_tests(admin_api)
 
 
 class _NoopHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
         pass
 
 
 class _TestDoneHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
         admin_controller.test_done = True
 
 
 class _SubmitJobHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
+        admin_controller.admin_api_response = None
         job_name = str(command_args[0])
-
-        response = admin_api.submit_job(job_name)
-        if response["status"] == APIStatus.ERROR_RUNTIME:
-            admin_controller.admin_api_response = response.get("raw", {}).get("data")
-        elif response["status"] == APIStatus.ERROR_AUTHORIZATION:
-            admin_controller.admin_api_response = response["details"]
-        elif response["status"] == APIStatus.SUCCESS:
-            admin_controller.job_id = response["details"]["job_id"]
+        job_path = admin_controller.resolve_job_path(job_name)
+        try:
+            admin_controller.job_id = admin_api.submit_job(job_path)
             admin_controller.last_job_name = job_name
+        except AuthorizationError:
+            admin_controller.admin_api_response = build_authorization_error_details(admin_api, "submit_job")
+        except InvalidJobDefinition as e:
+            admin_controller.admin_api_response = build_error_response_items(
+                normalize_invalid_job_definition_message(str(e))
+            )
 
 
 class _CloneJobHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: FLAdminAPI):
-        response = admin_api.clone_job(admin_controller.job_id)
-        if response["status"] == APIStatus.ERROR_RUNTIME:
-            admin_controller.admin_api_response = response.get("raw", {}).get("data")
-        elif response["status"] == APIStatus.ERROR_AUTHORIZATION:
-            admin_controller.admin_api_response = response["details"]
-        if response["status"] == APIStatus.SUCCESS:
-            admin_controller.job_id = response["details"]["job_id"]
+    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
+        admin_controller.admin_api_response = None
+        try:
+            admin_controller.job_id = admin_api.clone_job(admin_controller.job_id)
+        except AuthorizationError:
+            admin_controller.admin_api_response = build_authorization_error_details(admin_api, "clone_job")
 
 
 class _AbortJobHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: FLAdminAPI):
-        response = admin_api.abort_job(admin_controller.job_id)
-        if response["status"] == APIStatus.ERROR_RUNTIME:
-            admin_controller.admin_api_response = response.get("raw", {}).get("data")
-        elif response["status"] == APIStatus.ERROR_AUTHORIZATION:
-            admin_controller.admin_api_response = response["details"]
+    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
+        admin_controller.admin_api_response = None
+        try:
+            admin_api.abort_job(admin_controller.job_id)
+        except AuthorizationError:
+            admin_controller.admin_api_response = build_authorization_error_details(admin_api, "abort_job")
 
 
 class _ListJobHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: FLAdminAPI):
-        response = admin_api.list_jobs()
-        assert response["status"] == APIStatus.SUCCESS
+    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
+        admin_api.list_jobs()
 
 
 class _ShellCommandHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
+        admin_controller.admin_api_response = None
         if str(command_args[0]) == "ls":
-            response = admin_api.ls_target(str(command_args[1]))
-            if response["status"] == APIStatus.ERROR_RUNTIME:
-                admin_controller.admin_api_response = response.get("raw", {}).get("data")
-            elif response["status"] == APIStatus.ERROR_AUTHORIZATION:
-                admin_controller.admin_api_response = response["details"]["message"]
-            elif response["status"] == APIStatus.SUCCESS:
-                admin_controller.admin_api_response = " ".join(response["details"]["message"].splitlines())
+            try:
+                response = admin_api.ls_target(str(command_args[1]))
+                admin_controller.admin_api_response = " ".join(response.splitlines())
+            except AuthorizationError:
+                admin_controller.admin_api_response = build_authorization_error_message(
+                    admin_api, "ls", include_authz_prefix=False
+                )
 
 
 class _CheckJobHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: Session):
         timeout = 1
         if command_args:
             timeout = float(command_args[0])

@@ -12,6 +12,7 @@ Guide for project Admin and Org Admin
    :maxdepth: 2
 
    deployment/index
+   multi_study_guide
    configurations/configurations.rst
    monitoring
    diagnostic_commands

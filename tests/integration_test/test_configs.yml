@@ -30,3 +30,9 @@ test_configs:
     - ./data/test_configs/standalone_job/client_api_qa.yml
   model_controller_api:
     - ./data/test_configs/standalone_job/model_controller_api.yml
+
+  standalone: []
+
+pytest_files:
+  standalone:
+    - study_session_test.py
