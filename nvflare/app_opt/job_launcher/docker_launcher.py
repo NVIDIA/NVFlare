@@ -117,6 +117,9 @@ class DockerJobLauncher(JobLauncherSpec):
         command = f' /bin/bash -c "export PYTHONPATH={python_path};{cmd}"'
         self.logger.info(f"Launch image:{job_image}, run command: {command}")
 
+        # TODO: Keep Docker launch behavior unchanged for now. The final Docker
+        # implementation should add study-aware workspace/network resolution in
+        # one place, similar to the planned K8s settings lookup.
         docker_workspace = os.environ.get("NVFL_DOCKER_WORKSPACE")
         self.logger.info(f"launch_job {job_id} in docker_workspace: {docker_workspace}")
         docker_client = docker.from_env()

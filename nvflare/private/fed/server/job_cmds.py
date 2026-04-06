@@ -21,7 +21,15 @@ from typing import Dict, List
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ReturnCode, ServerCommandKey
-from nvflare.apis.job_def import Job, JobMetaKey, is_valid_job_id
+from nvflare.apis.job_def import (
+    ALL_SITES,
+    DEFAULT_STUDY,
+    SERVER_SITE_NAME,
+    Job,
+    JobMetaKey,
+    get_job_meta_study,
+    is_valid_job_id,
+)
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.storage import DATA, JOB_ZIP, META, META_JSON, WORKSPACE, WORKSPACE_ZIP, StorageSpec
@@ -38,7 +46,9 @@ from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
+from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
+from nvflare.security.study_registry import StudyRegistryService
 
 from .cmd_utils import CommandUtil
 
@@ -53,6 +63,7 @@ CLONED_META_KEYS = {
     JobMetaKey.MIN_CLIENTS.value,
     JobMetaKey.MANDATORY_CLIENTS.value,
     JobMetaKey.DATA_STORAGE_FORMAT.value,
+    JobMetaKey.STUDY.value,
 }
 
 
@@ -213,10 +224,19 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             )
             return PreAuthzReturnCode.ERROR
 
+        requested_study = conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY)
+        if requested_study and get_job_meta_study(job.meta) != requested_study:
+            conn.append_error(
+                f"Job with ID {job_id} doesn't exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
+            )
+            return PreAuthzReturnCode.ERROR
+
         conn.set_prop(self.JOB, job)
         conn.set_prop(ConnProps.SUBMITTER_NAME, job.meta.get(JobMetaKey.SUBMITTER_NAME, ""))
         conn.set_prop(ConnProps.SUBMITTER_ORG, job.meta.get(JobMetaKey.SUBMITTER_ORG, ""))
         conn.set_prop(ConnProps.SUBMITTER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE, ""))
+        if not self._apply_study_role_for_authz(conn):
+            return PreAuthzReturnCode.ERROR
         return PreAuthzReturnCode.REQUIRE_AUTHZ
 
     def authorize_job(self, conn: Connection, args: List[str]):
@@ -317,6 +337,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         try:
             parser = _create_list_job_cmd_parser()
             parsed_args = parser.parse_args(args[1:])
+            requested_study = conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY)
 
             engine = conn.app_ctx
             job_def_manager = engine.job_def_manager
@@ -333,7 +354,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 max_jobs_listed = parsed_args.m
                 user_name = conn.get_prop(ConnProps.USER_NAME, "") if parsed_args.u else None
 
-                filtered_jobs = [job for job in jobs if self._job_match(job.meta, id_prefix, name_prefix, user_name)]
+                filtered_jobs = [
+                    job for job in jobs if self._job_match(job.meta, id_prefix, name_prefix, user_name, requested_study)
+                ]
                 if not filtered_jobs:
                     conn.append_string(
                         "No jobs matching the specified criteria.",
@@ -408,7 +431,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         with engine.new_context() as fl_ctx:
             job = job_def_manager.get_job(jid=job_id, fl_ctx=fl_ctx)
             if job:
-                conn.append_dict(job.meta, meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_META: job.meta}))
+                normalized_meta = dict(job.meta)
+                normalized_meta[JobMetaKey.STUDY.value] = get_job_meta_study(job.meta)
+                conn.append_dict(
+                    normalized_meta, meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_META: normalized_meta})
+                )
             else:
                 conn.append_error(
                     f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
@@ -500,8 +527,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 # set the submitter info for the new job
                 job_meta[JobMetaKey.SUBMITTER_NAME.value] = conn.get_prop(ConnProps.USER_NAME)
                 job_meta[JobMetaKey.SUBMITTER_ORG.value] = conn.get_prop(ConnProps.USER_ORG)
-                job_meta[JobMetaKey.SUBMITTER_ROLE.value] = conn.get_prop(ConnProps.USER_ROLE)
+                job_meta[JobMetaKey.SUBMITTER_ROLE.value] = conn.get_prop(ConnProps.USER_ROLE, "")
                 job_meta[JobMetaKey.CLONED_FROM.value] = job_id
+                job_meta[JobMetaKey.STUDY.value] = get_job_meta_study(job.meta)
 
                 meta = job_def_manager.clone(from_jid=job_id, meta=job_meta, fl_ctx=fl_ctx)
                 new_job_id = meta.get(JobMetaKey.JOB_ID)
@@ -515,11 +543,12 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         conn.append_success("", meta=make_meta(status=MetaStatusValue.OK, extra={MetaKey.JOB_ID: new_job_id}))
 
     @staticmethod
-    def _job_match(job_meta: Dict, id_prefix: str, name_prefix: str, user_name: str) -> bool:
+    def _job_match(job_meta: Dict, id_prefix: str, name_prefix: str, user_name: str, requested_study: str) -> bool:
         return (
             ((not id_prefix) or job_meta.get("job_id").lower().startswith(id_prefix.lower()))
             and ((not name_prefix) or job_meta.get("name").lower().startswith(name_prefix.lower()))
             and ((not user_name) or job_meta.get("submitter_name") == user_name)
+            and (get_job_meta_study(job_meta) == requested_study)
         )
 
     @staticmethod
@@ -527,8 +556,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         list_of_jobs = []
         for job in jobs:
             JobCommandModule._set_duration(job)
-            conn.append_string(json.dumps(job.meta, indent=4))
-            list_of_jobs.append(job.meta)
+            normalized_meta = dict(job.meta)
+            normalized_meta[JobMetaKey.STUDY.value] = get_job_meta_study(job.meta)
+            conn.append_string(json.dumps(normalized_meta, indent=4))
+            list_of_jobs.append(normalized_meta)
         conn.append_string("", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOBS: list_of_jobs}))
 
     @staticmethod
@@ -551,6 +582,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     MetaKey.STATUS: job.meta.get(JobMetaKey.STATUS.value, ""),
                     MetaKey.SUBMIT_TIME: job.meta.get(JobMetaKey.SUBMIT_TIME_ISO.value, ""),
                     MetaKey.DURATION: str(job.meta.get(JobMetaKey.DURATION.value, "N/A")),
+                    JobMetaKey.STUDY.value: get_job_meta_study(job.meta),
                 },
             )
 
@@ -582,6 +614,32 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     raise TypeError(
                         f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
                     )
+
+                meta[JobMetaKey.STUDY.value] = conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY)
+                registry = StudyRegistryService.get_registry()
+                requested_study = meta[JobMetaKey.STUDY.value]
+                if registry:
+                    enrolled_sites = registry.get_sites(requested_study)
+                    if enrolled_sites is not None:
+                        deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value, {})
+                        invalid_sites = []
+                        seen_invalid_sites = set()
+                        for deployments in deploy_map.values():
+                            for site_name in extract_participants(deployments):
+                                if site_name == SERVER_SITE_NAME or site_name.upper() == ALL_SITES:
+                                    continue
+                                if site_name not in enrolled_sites:
+                                    if site_name not in seen_invalid_sites:
+                                        invalid_sites.append(site_name)
+                                        seen_invalid_sites.add(site_name)
+                        if invalid_sites:
+                            if len(invalid_sites) == 1:
+                                error = f"site '{invalid_sites[0]}' is not enrolled in study '{requested_study}'"
+                            else:
+                                quoted_names = ", ".join(f"'{name}'" for name in invalid_sites)
+                                error = f"sites {quoted_names} are not enrolled in study '{requested_study}'"
+                            conn.append_error(error, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, error))
+                            return
 
                 fl_ctx.set_prop(FLContextKey.JOB_META, meta, private=True, sticky=False)
                 engine.fire_event(EventType.SUBMIT_JOB, fl_ctx)

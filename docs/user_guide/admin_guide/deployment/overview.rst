@@ -63,6 +63,9 @@ which you can use to customize configurations to fit your own requirements.
 Edit the :ref:`Project yaml file <project_yml>` in the directory with the provisioning tool to meet your project requirements (make sure the
 server, client sites, admin, orgs, and everything else are right for your project).
 
+For multi-study deployments, set ``api_version: 4`` and add a ``studies:`` section to define per-study
+site enrollment and admin role mappings. See :ref:`multi_study_guide`.
+
 Then run the provision command with (here we assume your
 project.yml is in current working directory):
 
@@ -304,8 +307,8 @@ Running federated learning from the administration console
 ==========================================================
 With all connections between the FL server, FL clients, and administration consoles open and all of the parties
 started successfully as described in the preceding section, `Federated Learning Administration Console`_,
-admin commands can be used to operate a federated learning project. The FLAdminAPI provides a way to programmatically
-issue commands to operate the system so it can be run with a script.
+admin commands can be used to operate a federated learning project. The :ref:`flare_api` provides the supported Python
+interface for issuing these commands from scripts and notebooks.
 
 For a complete list of admin commands, see :ref:`operating_nvflare`.
 
@@ -344,7 +347,6 @@ Administrator side folder and file structure
                 config/
                 models/
                 resources/
-
 
 
 

@@ -43,6 +43,7 @@ from nvflare.private.fed.utils.decomposers import private_decomposers
 from nvflare.private.privacy_manager import PrivacyManager, PrivacyService
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
+from nvflare.security.study_registry import StudyRegistry, StudyRegistryService
 
 from ..simulator.simulator_const import SimulatorConstants
 from .app_authz import AppAuthzService
@@ -145,6 +146,13 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
     if err:
         print("AuthorizationService error: {}".format(err))
         sys.exit(1)
+
+    studies_file = workspace.get_file_path_in_site_config("study_registry.json")
+    registry = None
+    if os.path.exists(studies_file):
+        with open(studies_file, "rt") as f:
+            registry = StudyRegistry(json.load(f))
+    StudyRegistryService.initialize(registry)
 
 
 def security_init_for_job(secure_train: bool, workspace: Workspace, site_type: str, job_id: str):

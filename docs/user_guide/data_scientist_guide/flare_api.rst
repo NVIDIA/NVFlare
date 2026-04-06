@@ -24,6 +24,21 @@ certs and keys:
         "/workspace/example_project/prod_00/super@nvidia.com"
     )
 
+To scope the session to a specific study, pass the ``study`` parameter:
+
+.. code-block:: python
+
+    sess = new_secure_session(
+        "super@nvidia.com",
+        "/workspace/example_project/prod_00/super@nvidia.com",
+        study="cancer-research"
+    )
+
+If ``study`` is omitted, the session uses the ``"default"`` study. Study-aware commands issued through
+the session (``submit_job``, ``list_jobs``, ``get_job_meta``, ``clone_job``, etc.) are scoped to the
+active study. Named studies require a multi-study-configured deployment. See :ref:`multi_study_guide`
+for details.
+
 Logging in is automatically handled, and commands can be executed with the session object returned (``sess`` in the preceding code block).
 
 Using the FLARE API should be similar to the previous FLAdminAPI but simpler. The return structure is no longer an object with a status and a
