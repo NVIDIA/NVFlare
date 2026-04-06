@@ -222,24 +222,74 @@ If NVFLARE runs outside the cluster and the monitoring stack runs inside Kuberne
 - an internal LoadBalancer or NodePort restricted to trusted NVFLARE nodes
 - setup 2 so only the server site needs to reach StatsD
 
-## Common Metrics
+## Event Reference
 
-Some commonly emitted metrics include:
+The following event-to-metric mapping is the reference for the current monitoring path:
 
 | Event | Metric Count | Metric Time Taken |
 |-------|--------------|-------------------|
 | `SYSTEM_START` | `_system_start_count` | |
 | `SYSTEM_END` | `_system_end_count` | `_system_time_taken` |
+| `ABOUT_TO_START_RUN` | `_about_to_start_run_count` | |
+| `START_RUN` | `_start_run_count` | |
+| `ABOUT_TO_END_RUN` | `_about_to_end_run_count` | |
+| `END_RUN` | `_end_run_count` | `_run_time_taken` |
+| `CHECK_END_RUN_READINESS` | `_check_end_run_readiness_count` | |
+| `SWAP_IN` | `_swap_in_count` | |
+| `SWAP_OUT` | `_swap_out_count` | |
+| `START_WORKFLOW` | `_start_workflow_count` | |
+| `END_WORKFLOW` | `_end_workflow_count` | `_workflow_time_taken` |
+| `ABORT_TASK` | `_abort_task_count` | |
+| `FATAL_SYSTEM_ERROR` | `_fatal_system_error_count` | |
+| `JOB_DEPLOYED` | `_job_deployed_count` | |
 | `JOB_STARTED` | `_job_started_count` | |
 | `JOB_COMPLETED` | `_job_completed_count` | `_job_time_taken` |
+| `JOB_ABORTED` | `_job_aborted_count` | |
+| `JOB_CANCELLED` | `_job_cancelled_count` | |
 | `CLIENT_DISCONNECTED` | `_client_disconnected_count` | |
 | `CLIENT_RECONNECTED` | `_client_reconnected_count` | |
+| `BEFORE_PULL_TASK` | `_before_pull_task_count` | |
+| `AFTER_PULL_TASK` | `_after_pull_task_count` | `_pull_task_time_taken` |
+| `BEFORE_PROCESS_TASK_REQUEST` | `_before_process_task_request_count` | |
+| `AFTER_PROCESS_TASK_REQUEST` | `_after_process_task_request_count` | `_process_task_request_time_taken` |
+| `BEFORE_PROCESS_SUBMISSION` | `_before_process_submission_count` | |
+| `AFTER_PROCESS_SUBMISSION` | `_after_process_submission_count` | `_process_submission_time_taken` |
+| `BEFORE_TASK_DATA_FILTER` | `_before_task_data_filter_count` | |
+| `AFTER_TASK_DATA_FILTER` | `_after_task_data_filter_count` | `_data_filter_time_taken` |
+| `BEFORE_TASK_RESULT_FILTER` | `_before_task_result_filter_count` | |
+| `AFTER_TASK_RESULT_FILTER` | `_after_task_result_filter_count` | `_result_filter_time_taken` |
 | `BEFORE_TASK_EXECUTION` | `_before_task_execution_count` | |
 | `AFTER_TASK_EXECUTION` | `_after_task_execution_count` | `_task_execution_time_taken` |
+| `BEFORE_SEND_TASK_RESULT` | `_before_send_task_result_count` | |
+| `AFTER_SEND_TASK_RESULT` | `_after_send_task_result_count` | `_send_task_result_time_taken` |
+| `BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK` | `_before_process_result_of_unknown_task_count` | |
+| `AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK` | `_after_process_result_of_unknown_task_count` | `_process_result_of_unknown_task_time_taken` |
+| `PRE_RUN_RESULT_AVAILABLE` | `_pre_run_result_available_count` | |
+| `BEFORE_CHECK_CLIENT_RESOURCES` | `_before_check_client_resources_count` | |
+| `AFTER_CHECK_CLIENT_RESOURCES` | `_after_check_client_resources_count` | `_check_client_resources_time_taken` |
+| `SUBMIT_JOB` | `_submit_job_count` | |
+| `DEPLOY_JOB_TO_SERVER` | `_deploy_job_to_server_count` | |
+| `DEPLOY_JOB_TO_CLIENT` | `_deploy_job_to_client_count` | |
+| `BEFORE_CHECK_RESOURCE_MANAGER` | `_before_check_resource_manager_count` | |
+| `BEFORE_SEND_ADMIN_COMMAND` | `_before_send_admin_command_count` | |
+| `BEFORE_CLIENT_REGISTER` | `_before_client_register_count` | |
+| `AFTER_CLIENT_REGISTER` | `_after_client_register_count` | `client_register_time_taken` |
+| `CLIENT_REGISTER_RECEIVED` | `_client_register_received_count` | |
+| `CLIENT_REGISTER_PROCESSED` | `_client_register_processed_count` | |
+| `CLIENT_QUIT` | `_client_quit_count` | |
+| `SYSTEM_BOOTSTRAP` | `_system_bootstrap_count` | |
+| `BEFORE_AGGREGATION` | `_before_aggregation_count` | |
+| `END_AGGREGATION` | `_end_aggregation_count` | `_aggregation_time_taken` |
+| `RECEIVE_BEST_MODEL` | `_receive_best_model_count` | |
+| `BEFORE_TRAIN` | `_before_train_count` | |
+| `AFTER_TRAIN` | `_after_train_count` | `_train_time_taken` |
+| `TRAIN_DONE` | `_train_done_count` | |
+| `TRAINING_STARTED` | `_training_count` | |
+| `TRAINING_FINISHED` | `_training_count` | `_training_time_taken` |
 | `ROUND_STARTED` | `_round_started_count` | |
 | `ROUND_DONE` | `_round_done_count` | `_round_time_taken` |
 
-System metrics are associated with server and client parent processes. Job metrics are associated with the federated job itself.
+These metrics can be separated into Job Metrics and System Metrics. System Metrics are associated with the client and server parent processes, while Job Metrics are associated with each job.
 
 ## Job Example
 

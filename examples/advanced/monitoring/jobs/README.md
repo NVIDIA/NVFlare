@@ -281,7 +281,56 @@ The detailed configurations can be found [here](./setup-2/local_config). We need
 cd setup-2
 ```
 
-### Complete with rest of the steps
-  * start the POC and ./prepare_local_config.sh
-  * submit job
-  * review the metrics and visualization
+Use the setup-2 local configuration files in the generated POC startup kits:
+
+```bash
+./prepare_local_config.sh
+```
+
+Then run the same end-to-end flow as setup 1, but with the setup-2 job configuration:
+
+1. Start the monitoring stack if it is not already running:
+
+    ```bash
+    cd ../setup
+    cp .env.example .env
+    # edit .env and set GRAFANA_ADMIN_PASSWORD
+    docker compose up -d
+    ```
+
+2. Prepare and start the POC:
+
+    ```bash
+    cd ../jobs
+    nvflare poc prepare
+    cd setup-2
+    ./prepare_local_config.sh
+    nvflare poc start -ex admin@nvidia.com
+    ```
+
+3. Generate and submit the setup-2 job:
+
+    ```bash
+    ./submit_job.sh
+    ```
+
+4. Review the metrics:
+
+    - `statsd-exporter`: `http://127.0.0.1:9102/metrics`
+    - Prometheus: `http://127.0.0.1:9090`
+    - Grafana: `http://127.0.0.1:3000`
+
+   In this topology, client job metrics are streamed to the server and then published by the server-side `StatsDReporter`, so you should see client-tagged metrics even though only the server site connects directly to the monitoring stack.
+
+5. Stop the POC when you are done:
+
+    ```bash
+    nvflare poc stop
+    ```
+
+6. Stop the monitoring stack if you no longer need it:
+
+    ```bash
+    cd ../setup
+    docker compose down
+    ```
