@@ -20,22 +20,28 @@ You can also choose to run just one set of tests using "-m" option.
 ---
 **NOTE**
 
-There are 7 options: numpy, tensorflow, pytorch, ha, auth, overseer, preflight.
-The overseer and preflight tests have their own entry files.
-All other options share the same test entry file `tests/integration_test/system_test.py`
+The backend options are:
+`numpy`, `tensorflow`, `pytorch`, `auth`, `preflight`, `cifar`, `stats`, `xgboost`,
+`client_api`, `client_api_qa`, `model_controller_api`, and `standalone`.
+
+`preflight` has its own entry file. Most backend options run through
+`tests/integration_test/system_test.py`, and `standalone` runs explicit pytest files listed in
+`pytest_files` in `tests/integration_test/test_configs.yml`.
 
 ---
 
 ## Test structure
 
-The integration tests have 3 entry files:
+The integration tests have these main entry paths:
   - The integration tests entry file is `tests/integration_test/system_test.py`.
     It will read all test configurations from `./test_configs.yml`.
     
     By default, it will run all the test configs.
     If specified, the chosen set of test configs will be run.
-  - The overseer tests entry file is `tests/integration_test/overseer_test.py`.
   - The preflight tests entry file is `tests/integration_test/preflight_check_test.py`.
+  - Standalone pytest files can also be listed under `pytest_files` in `tests/integration_test/test_configs.yml`.
+    An example is `tests/integration_test/study_session_test.py`, which is run by
+    `./run_integration_tests.sh -m standalone`.
 
 ### Test configuration
 

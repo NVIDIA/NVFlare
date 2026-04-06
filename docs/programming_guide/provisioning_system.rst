@@ -453,7 +453,7 @@ will ask you if you would like to have one sample copy of this file created.
 
 Edit the project.yml configuration file to meet your project requirements:
 
-    - "api_version" must be 3 for current release of provisioning tool
+    - "api_version" should be set to 3 or 4. Version 4 adds support for multi-study configuration (see :ref:`multi_study_guide`)
     - "name" is used to identify this project.
     - "participants" describes the different parties in the FL system, distinguished by type. For all participants, "name"
       should be unique, and "org" should be defined in AuthPolicyBuilder. The "name" of the server should
@@ -467,6 +467,7 @@ Edit the project.yml configuration file to meet your project requirements:
         - Type "client" describes the FL clients, with one "org" and "name" for each client as well as "enable_byoc" settings.
         - Type "admin" describes the admin clients with the name being a unique email. The role must be one of "project_admin", "org_admin", "lead" and "member".
     - "builders" contains all of the builders and the args to be passed into each. See the details in docstrings of the :ref:`bundled_builders`.
+    - "studies" (optional, requires ``api_version: 4``): defines named studies with per-study site enrollment and admin role mappings. See :ref:`multi_study_guide` for the full schema and examples.
 
 .. _project_yml:
 

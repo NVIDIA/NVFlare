@@ -712,14 +712,20 @@ Decentralized federated learning without a central server.
         num_rounds=5,
         train_script="client.py",
         initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
+        round_timeout=3600,  # P2P model-transfer ACK budget (seconds); increase for large models
     )
     env = SimEnv(num_clients=3)
     run = recipe.execute(env)
 
 .. note::
-   ``SimpleSwarmLearningRecipe`` is a backward-compatible alias for ``SwarmLearningRecipe``.
-   It is also available from the original location:
-   ``from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe``
+   For large models (>2 GB), tune the following parameters:
+
+   - ``round_timeout`` (default 3600 s): P2P model-transfer ACK budget between peers.
+     Increase for 7B+ models where P2P tensor streaming can take several minutes.
+   - ``pipe_type`` (default ``"cell_pipe"``): set to ``"file_pipe"`` when cell networking
+     is unavailable or for third-party subprocess integrations.
+   - ``submit_result_timeout`` and ``tensor_min_download_timeout``: set via
+     ``recipe.add_client_config({...})`` — see :ref:`timeout_troubleshooting`.
 
 
 Edge Recipes

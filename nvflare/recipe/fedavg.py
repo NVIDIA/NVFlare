@@ -105,6 +105,7 @@ class FedAvgRecipe(Recipe):
         framework: The framework type. One of:
             - FrameworkType.PYTORCH (default)
             - FrameworkType.TENSORFLOW
+            - FrameworkType.NUMPY
             - FrameworkType.RAW (for custom frameworks, e.g., sklearn, XGBoost)
         server_expected_format: What format to exchange the parameters between server and client.
             Defaults to ExchangeFormat.NUMPY.
@@ -450,6 +451,34 @@ class FedAvgRecipe(Recipe):
             )
             return None
 
+    def _setup_numpy_model_and_persistor(self, job: BaseFedJob, *, model: Any, initial_ckpt: Optional[str]) -> str:
+        """Configure NPModelPersistor for unified NumPy recipe usage."""
+        import numpy as np
+
+        from nvflare.app_common.np.np_model_persistor import NPModelPersistor
+        from nvflare.recipe.utils import extract_persistor_id, resolve_initial_ckpt
+
+        model_list = None
+        if model is not None:
+            if isinstance(model, np.ndarray):
+                model_list = model.tolist()
+            elif isinstance(model, list):
+                model_list = model
+            else:
+                raise TypeError(
+                    f"FrameworkType.NUMPY requires model to be a numpy array or list, got {type(model).__name__}."
+                )
+
+        ckpt_path = resolve_initial_ckpt(initial_ckpt, getattr(self, "_prepared_initial_ckpt", None), job)
+        persistor = NPModelPersistor(
+            model=model_list,
+            source_ckpt_file_full_name=ckpt_path,
+        )
+        persistor_id = extract_persistor_id(job.to_server(persistor, id="persistor"))
+        if persistor_id and hasattr(job, "comp_ids"):
+            job.comp_ids["persistor_id"] = persistor_id
+        return persistor_id
+
     def _setup_model_and_persistor(self, job: BaseFedJob) -> str:
         """Setup generic custom persistor only.
 
@@ -461,4 +490,13 @@ class FedAvgRecipe(Recipe):
         """
         from nvflare.recipe.utils import setup_custom_persistor
 
-        return setup_custom_persistor(job=job, model_persistor=self.model_persistor)
+        persistor_id = setup_custom_persistor(job=job, model_persistor=self.model_persistor)
+        if persistor_id:
+            if hasattr(job, "comp_ids"):
+                job.comp_ids.setdefault("persistor_id", persistor_id)
+            return persistor_id
+
+        if self.framework == FrameworkType.NUMPY and (self.model is not None or self.initial_ckpt is not None):
+            return self._setup_numpy_model_and_persistor(job, model=self.model, initial_ckpt=self.initial_ckpt)
+
+        return ""

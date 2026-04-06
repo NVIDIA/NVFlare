@@ -16,7 +16,6 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as get_package_version
 from typing import Optional
 
-from packaging.specifiers import SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from nvflare.app_common.tie.defs import Constant
@@ -25,10 +24,8 @@ from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.recipe.spec import Recipe
 
-SUPPORTED_FLWR_MIN_VERSION_SPEC = ">=1.16"
-SUPPORTED_FLWR_MAX_VERSION_EXCLUSIVE = Version("1.26")
-SUPPORTED_FLWR_SPEC = "flwr>=1.16,<1.26"
-SUPPORTED_FLWR_MIN_SPEC_SET = SpecifierSet(SUPPORTED_FLWR_MIN_VERSION_SPEC)
+SUPPORTED_FLWR_MIN_VERSION = Version("1.26")
+SUPPORTED_FLWR_SPEC = "flwr>=1.26"
 
 
 def _validate_flwr_version():
@@ -47,11 +44,7 @@ def _validate_flwr_version():
             f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
         ) from ex
 
-    # Use a SpecifierSet for the lower bound and Version comparison for the upper bound.
-    # This keeps 1.16rc0 excluded while allowing 1.26.0rc0 as < 1.26.
-    is_supported = SUPPORTED_FLWR_MIN_SPEC_SET.contains(parsed_version, prereleases=True) and (
-        parsed_version < SUPPORTED_FLWR_MAX_VERSION_EXCLUSIVE
-    )
+    is_supported = parsed_version >= SUPPORTED_FLWR_MIN_VERSION
     if not is_supported:
         raise RuntimeError(
             f"incompatible flwr version '{installed_version}'. " f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
@@ -74,9 +67,9 @@ class FlowerRecipe(Recipe):
     Enables metric streaming and use of client API by default.
 
     Flower CLI compatibility:
-        This recipe requires ``flwr>=1.16,<1.26``. The current
-        integration relies on legacy federation CLI arguments that are not
-        available in newer Flower CLI versions.
+        This recipe requires ``flwr>=1.26``. The integration uses Flower
+        Configuration under ``$FLWR_HOME/config.toml`` and the newer
+        SuperLink-based CLI workflow.
 
     Example usage:
         ```python
@@ -131,10 +124,20 @@ class FlowerRecipe(Recipe):
         _validate_flwr_version()
         if run_config is not None:
             check_object_type("run_config", run_config, dict)
+        if extra_env is not None:
+            check_object_type("extra_env", extra_env, dict)
 
         # needs to init client api to stream metrics
         # only external client api works with the current flower integration
-        env = {CLIENT_API_TYPE_KEY: ClientAPIType.EX_PROCESS_API.value}
+        env = extra_env.copy() if extra_env is not None else {}
+        if CLIENT_API_TYPE_KEY in env and env[CLIENT_API_TYPE_KEY] != ClientAPIType.EX_PROCESS_API.value:
+            raise ValueError(
+                f"'extra_env[{CLIENT_API_TYPE_KEY}]' must be "
+                f"{ClientAPIType.EX_PROCESS_API.value!r} for the Flower integration; "
+                f"got {env[CLIENT_API_TYPE_KEY]!r}."
+            )
+
+        env[CLIENT_API_TYPE_KEY] = ClientAPIType.EX_PROCESS_API.value
 
         job = _create_flower_job(
             name=name,

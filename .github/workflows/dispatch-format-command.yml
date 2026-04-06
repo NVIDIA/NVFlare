@@ -11,7 +11,7 @@ jobs:
 
     steps:
       - name: Trigger Format Workflow
-        uses: peter-evans/slash-command-dispatch@v3
+        uses: peter-evans/slash-command-dispatch@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           command: format

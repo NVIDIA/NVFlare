@@ -599,6 +599,50 @@ class TestFedAvgRecipeInitialCkpt:
         assert recipe.model["args"] == {"input_size": 10}
         assert recipe.initial_ckpt == "/abs/path/to/pretrained.pt"
 
+    def test_unified_numpy_initial_ckpt_only(self, mock_file_system, base_recipe_params):
+        """Test unified FedAvgRecipe supports NumPy initial_ckpt without a custom persistor."""
+        from nvflare.app_common.np.np_model_persistor import NPModelPersistor
+        from nvflare.client.config import ExchangeFormat
+        from nvflare.fuel.utils.constants import FrameworkType
+        from nvflare.recipe import FedAvgRecipe as UnifiedFedAvgRecipe
+
+        recipe = UnifiedFedAvgRecipe(
+            name="test_unified_numpy_ckpt",
+            model=None,
+            initial_ckpt="/abs/path/to/model.npy",
+            framework=FrameworkType.NUMPY,
+            server_expected_format=ExchangeFormat.NUMPY,
+            **base_recipe_params,
+        )
+
+        assert recipe.initial_ckpt == "/abs/path/to/model.npy"
+        server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+        persistor = server_app.app_config.components.get("persistor")
+        assert isinstance(persistor, NPModelPersistor)
+        assert persistor.source_ckpt_file_full_name == "/abs/path/to/model.npy"
+
+    def test_unified_numpy_array_model(self, mock_file_system, base_recipe_params):
+        """Test unified FedAvgRecipe converts NumPy array models for NPModelPersistor."""
+        import numpy as np
+
+        from nvflare.app_common.np.np_model_persistor import NPModelPersistor
+        from nvflare.client.config import ExchangeFormat
+        from nvflare.fuel.utils.constants import FrameworkType
+        from nvflare.recipe import FedAvgRecipe as UnifiedFedAvgRecipe
+
+        recipe = UnifiedFedAvgRecipe(
+            name="test_unified_numpy_model",
+            model=np.array([1.0, 2.0, 3.0], dtype=np.float32),
+            framework=FrameworkType.NUMPY,
+            server_expected_format=ExchangeFormat.NUMPY,
+            **base_recipe_params,
+        )
+
+        server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+        persistor = server_app.app_config.components.get("persistor")
+        assert isinstance(persistor, NPModelPersistor)
+        assert persistor.model == [1.0, 2.0, 3.0]
+
 
 class TestFedAvgRecipeDictConfigJobExport:
     """Test that dict model config works end-to-end with job export."""
