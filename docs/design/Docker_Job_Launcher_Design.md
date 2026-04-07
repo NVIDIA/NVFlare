@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Docker Job Launcher provides container-based job execution for NVFlare deployments where each site has Docker available but no Kubernetes. It sits between the process launcher (subprocess, no isolation) and the K8s launcher (full cluster).
+The Docker Job Launcher provides container-based job execution for NVFlare deployments where each site has Docker available.
 
 The federation topology is the same as always: one server site and N client sites, each on their own machine. The difference from process mode is that SP/CP and all their job processes run as Docker containers instead of bare subprocesses. Each site manages its own containers independently — there is no shared orchestrator across sites.
 
@@ -12,16 +12,16 @@ The primary value is **dependency isolation**: each job can specify its own Dock
 
 ## Target Persona
 
-- Developer testing container-based job execution locally before going to K8s
-- Small-scale deployment with Docker available but no K8s cluster
-- Site operator who wants job isolation (different image per job) without cluster overhead
+- Developer or researcher who wants job isolation (different image per job) without cluster overhead
+- Site operator running Docker on bare metal or VM where a K8s cluster is not available or not needed
+- Small-scale deployment where Docker is available on each site machine
 
 ---
 
 ## Assumptions
 
 ### Topology
-- **Server and clients are on separate machines** — same as process mode. Docker mode does not change the federation topology.
+- **Server and clients are typically on separate machines**, but they can also run on the same machine (e.g. local testing). Docker mode does not change the federation topology.
 - **Each site runs on one Docker host** — SP runs on the server machine, each CP runs on its own client machine. No Docker Swarm, no multi-host networking within a site.
 - **SP/CP runs as a container** — this mirrors the K8s model and avoids host/container networking issues for `PARENT_URL` (see Networking section).
 
@@ -86,7 +86,7 @@ DinD runs a separate Docker daemon inside the SP/CP container. It does not impro
 
 Socket mounting is the right pragmatic choice for this use case: simpler, better debuggability, SJ/CJ containers visible in `docker ps` on the host.
 
-#### Honest security comparison
+#### Security comparison
 
 | Mode | Security posture | Notes |
 |---|---|---|
@@ -165,6 +165,7 @@ The site admin starts SP/CP via `start_docker.sh`:
 - **Workspace bind mount** — same host directory as SP/CP, mounted at `mount_path`
 - **Docker network** — access to SP/CP via container name DNS only
 - **GPU** — `device_requests` added if `num_of_gpus` is set in the job's resource spec
+- **Extra docker flags** — `container_kwargs` in the job's resource spec (per-job) merged with site-level `extra_container_kwargs` from `resources.json`; job-level takes precedence on conflict
 
 ```
 SP/CP container (site admin grants)
@@ -331,7 +332,10 @@ Jobs specify which Docker image to use per-site in `meta.json`:
     ]
   },
   "resource_spec": {
-    "site-1": { "num_of_gpus": 1 }
+    "site-1": {
+      "num_of_gpus": 1,
+      "container_kwargs": {"shm_size": "8g", "ipc_mode": "host"}
+    }
   },
   "min_clients": 1
 }
@@ -357,6 +361,7 @@ When SP/CP receives a runnable job:
    - `PARENT_URL` overridden to SP/CP container name + port (Docker DNS)
    - `PYTHONPATH` set to container-internal `app_custom_folder` path
    - `device_requests` added if `num_of_gpus` > 0
+   - `container_kwargs` from job resource spec merged with site-level defaults; job-level wins on conflict
    - **No Docker socket** passed to job container
 5. `DockerJobHandle` tracks the container via `terminal_state` pattern
 6. On completion, container is removed; results are in `workspace/runs/{job_id}/`

@@ -1,8 +1,8 @@
 # Docker Job Launcher — Open Discussion Points
 
-## 1. `listening_host.port` — new provisioning concept
+## 1. `listening_host.port` — required for Docker mode, optional in process mode
 
-The Docker launcher requires a dedicated TCP port for job containers (SJ/CJ) to connect back to the SP/CP container (`PARENT_URL`). This is a new field in `project.yml` that process-mode users have never needed.
+`listening_host` is an existing provisioning concept. Docker mode requires its `.port` field to be set because SJ/CJ containers connect back to SP/CP over the Docker network via `PARENT_URL`, which needs a dedicated TCP port. In process mode this was never needed — SJ/CJ subprocesses connect via localhost and no separate listener port is required.
 
 - Must differ from `fed_learn_port`
 - Currently only documented in the design doc — should it also appear in the provisioning guide?
@@ -25,20 +25,7 @@ If SP/CP crashes or is restarted while a job is running, the SJ/CJ containers fr
 - Should SP/CP scan for and terminate orphaned containers on startup?
 - Currently listed as out-of-scope in the design doc.
 
-## 4. Single-machine testing requires `/etc/hosts` edit
-
-When testing server and client on the same machine (e.g. local dev), the client needs to resolve the server's hostname (e.g. `server`) to `127.0.0.1`. This requires:
-
-```bash
-echo "127.0.0.1 server" | sudo tee -a /etc/hosts
-```
-
-This is not great UX for local testing.
-
-- Should the design doc suggest using `localhost` or `127.0.0.1` as the server `name` for single-machine testing?
-- Or should `start_docker.sh` add a `--add-host` flag automatically for local testing?
-
-## 5. `admin_port` not published in `start_docker.sh`
+## 4. `admin_port` not published in `start_docker.sh`
 
 `start_docker.sh` currently only publishes `fed_learn_port` and `listening_host.port` to the host. If `admin_port` differs from `fed_learn_port` (which is valid config — `admin_port` defaults to `fed_learn_port` but can be set independently), the admin CLI cannot reach the server's admin service from outside the container.
 
@@ -46,7 +33,7 @@ This is not great UX for local testing.
 - Option B: Constrain `admin_port == fed_learn_port` for Docker mode and document this limitation
 - Option C: Document that if `admin_port != fed_learn_port`, users must add the port mapping manually (but `start_docker.sh` is signed, so they can't edit it)
 
-## 6. Container runs as root — host workspace file ownership
+## 5. Container runs as root — host workspace file ownership
 
 `start_docker.sh` runs the SP/CP container as the image's default user (typically root). Since the host workspace is bind-mounted, any files written by the container (run artifacts, logs, etc.) will be owned by root on the host, making them inaccessible to the site admin without `sudo`.
 
@@ -54,7 +41,7 @@ This is not great UX for local testing.
 - Option B: Add a `chown` step in `sub_start.sh` or a post-job hook
 - Option C: Document the issue and leave it to the site admin to handle (e.g. `chmod`/`chown` after job completion)
 
-## 7. No Python API for specifying job image
+## 6. No Python API for specifying job image
 
 Currently the job image is specified in `meta.json` under `deploy_map`:
 
@@ -67,7 +54,7 @@ There is no Python API (e.g. `FedJob`) support for setting the image. Users buil
 - Should `FedJob` (or job config API) support `job.set_image("nvflare-job:latest")` or per-site `job.set_image("nvflare-job:latest", sites=["site-1"])`?
 - This would be a separate PR but worth noting as a follow-up.
 
-## 8. No way to pass extra docker flags to SP/CP container
+## 7. No way to pass extra docker flags to SP/CP container
 
 `start_docker.sh` is signed and cannot be edited by the site admin. There is currently no mechanism to pass extra `docker run` flags (e.g. `--gpus all`, `--shm-size 8g`, `--ipc host`) to the SP/CP container.
 
@@ -77,4 +64,4 @@ For SJ/CJ job containers this is handled via `extra_container_kwargs` in `resour
 - Option B: Add an `extra_docker_args` field to `DockerLauncherBuilder` in `project.yml`, baked in at provision time.
 - Option C: Document that SP/CP extra flags require re-provisioning with a custom template.
 
-Note: GPU for SJ/CJ job containers is already handled via `resource_spec` in `meta.json` (`num_of_gpus`), which maps to `device_requests` in `docker run`. Only SP/CP GPU access is unaddressed.
+Note: For SJ/CJ job containers, both GPU (`num_of_gpus`) and extra docker flags (`container_kwargs`) are supported per-job via `resource_spec` in `meta.json`, merged with site-level defaults from `resources.json`. Only SP/CP extra flags are unaddressed.

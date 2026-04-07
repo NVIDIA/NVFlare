@@ -397,10 +397,17 @@ def _make_fl_ctx(
     return fl_ctx, job_args
 
 
-def _make_job_meta(job_id="job-1", job_image="nvflare/nvflare:test", site_name="site-1", num_of_gpus=None):
+def _make_job_meta(
+    job_id="job-1", job_image="nvflare/nvflare:test", site_name="site-1", num_of_gpus=None, container_kwargs=None
+):
     meta = {JobConstants.JOB_ID: job_id, "job_image": job_image}
+    site_spec = {}
     if num_of_gpus is not None:
-        meta[JobMetaKey.RESOURCE_SPEC.value] = {site_name: {"num_of_gpus": num_of_gpus}}
+        site_spec["num_of_gpus"] = num_of_gpus
+    if container_kwargs is not None:
+        site_spec["container_kwargs"] = container_kwargs
+    if site_spec:
+        meta[JobMetaKey.RESOURCE_SPEC.value] = {site_name: site_spec}
     return meta
 
 
@@ -546,6 +553,54 @@ class TestDockerJobLauncherLaunchJob:
         with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
             with pytest.raises(RuntimeError, match="not found"):
                 launcher.launch_job(_make_job_meta(), fl_ctx)
+
+
+# ---------------------------------------------------------------------------
+# DockerJobLauncher — container_kwargs merge (site-level defaults + job-level overrides)
+# ---------------------------------------------------------------------------
+
+
+class TestContainerKwargsMerge:
+    def _run_launch(self, launcher, job_meta):
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
+            launcher.launch_job(job_meta, fl_ctx)
+        return dc.containers.run.call_args[1]
+
+    def test_site_kwargs_passed_when_no_job_kwargs(self):
+        launcher = _make_launcher(extra_container_kwargs={"ipc_mode": "host"})
+        call_kwargs = self._run_launch(launcher, _make_job_meta())
+        assert call_kwargs.get("ipc_mode") == "host"
+
+    def test_job_kwargs_passed_when_no_site_kwargs(self):
+        launcher = _make_launcher()
+        job_meta = _make_job_meta(container_kwargs={"shm_size": "8g"})
+        call_kwargs = self._run_launch(launcher, job_meta)
+        assert call_kwargs.get("shm_size") == "8g"
+
+    def test_job_and_site_kwargs_merged(self):
+        launcher = _make_launcher(extra_container_kwargs={"ipc_mode": "host"})
+        job_meta = _make_job_meta(container_kwargs={"shm_size": "8g"})
+        call_kwargs = self._run_launch(launcher, job_meta)
+        assert call_kwargs.get("ipc_mode") == "host"
+        assert call_kwargs.get("shm_size") == "8g"
+
+    def test_job_kwargs_override_site_kwargs_on_conflict(self):
+        launcher = _make_launcher(extra_container_kwargs={"shm_size": "2g"})
+        job_meta = _make_job_meta(container_kwargs={"shm_size": "8g"})
+        call_kwargs = self._run_launch(launcher, job_meta)
+        assert call_kwargs.get("shm_size") == "8g"
+
+    def test_no_kwargs_results_in_no_extra_keys(self):
+        launcher = _make_launcher()
+        call_kwargs = self._run_launch(launcher, _make_job_meta())
+        assert "shm_size" not in call_kwargs
+        assert "ipc_mode" not in call_kwargs
 
 
 # ---------------------------------------------------------------------------

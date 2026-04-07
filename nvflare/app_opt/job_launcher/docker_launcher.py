@@ -388,12 +388,16 @@ class DockerJobLauncher(JobLauncherSpec):
                 container_custom_folder = app_custom_folder.replace(workspace, self.mount_path, 1)
                 environment["PYTHONPATH"] = container_custom_folder
 
-        # GPU: read num_of_gpus from job resource spec (same as K8s launcher)
+        # GPU and extra container kwargs: read from job resource spec (per-job), merged with site-level defaults
         site_resources = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}).get(site_name, {})
         num_of_gpus = site_resources.get("num_of_gpus", None)
         device_requests = None
         if num_of_gpus:
             device_requests = [docker.types.DeviceRequest(count=int(num_of_gpus), capabilities=[["gpu"]])]
+
+        # Merge site-level defaults with job-level overrides; job-level takes precedence on conflict
+        job_container_kwargs = site_resources.get("container_kwargs", {})
+        merged_container_kwargs = {**self.extra_container_kwargs, **job_container_kwargs}
 
         self.logger.info(f"launching job {job_id} as container {container_name} using image {job_image}")
 
@@ -414,7 +418,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 },
                 device_requests=device_requests,
                 # Never pass Docker socket to job containers
-                **self.extra_container_kwargs,
+                **merged_container_kwargs,
             )
         except docker.errors.ImageNotFound:
             raise RuntimeError(f"image '{job_image}' not found for job {job_id}")
