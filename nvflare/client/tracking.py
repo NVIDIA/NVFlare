@@ -32,6 +32,10 @@ class SummaryWriter(_BaseWriter):
     Users can replace the import of Tensorboard's SummaryWriter with FLARE's SummaryWriter.
     They would then use SummaryWriter the same as before.
     SummaryWriter will send log records to the FLARE system.
+
+    For TensorBoard-style time-series plots, pass ``global_step`` explicitly.
+    If it is omitted, the receiver writes records at TensorBoard's default step ``0``
+    rather than auto-incrementing on the server side.
     """
 
     def add_scalar(self, tag: str, scalar: float, global_step: Optional[int] = None, **kwargs):
@@ -40,7 +44,7 @@ class SummaryWriter(_BaseWriter):
         Args:
             tag (str): Data identifier.
             scalar (float): Value to send.
-            global_step (optional, int): Global step value.
+            global_step (optional, int): Global step value. If omitted, TensorBoard records this at step 0.
             **kwargs: Additional arguments to pass to the receiver side.
         """
         log(
@@ -59,7 +63,7 @@ class SummaryWriter(_BaseWriter):
         Args:
             tag (str): The parent name for the tags.
             scalars (dict): Key-value pair storing the tag and corresponding values.
-            global_step (optional, int): Global step value.
+            global_step (optional, int): Global step value. If omitted, TensorBoard records these at step 0.
             **kwargs: Additional arguments to pass to the receiver side.
         """
         log(

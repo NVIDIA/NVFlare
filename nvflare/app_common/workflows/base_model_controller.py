@@ -227,6 +227,16 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             AppEventType.BEFORE_TRAIN_TASK, fl_ctx, AppConstants.TRAIN_SHAREABLE, client_task.task.data
         )
 
+    @staticmethod
+    def _set_ctx_prop_preserving_attrs(
+        fl_ctx: FLContext, key: str, value, default_private: bool = True, default_sticky: bool = False
+    ) -> None:
+        detail = fl_ctx.get_prop_detail(key)
+        if detail is not None:
+            fl_ctx.set_prop(key, value, private=detail["private"], sticky=detail["sticky"])
+        else:
+            fl_ctx.set_prop(key, value, private=default_private, sticky=default_sticky)
+
     def _process_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         self.fl_ctx = fl_ctx
         result = client_task.result
@@ -237,7 +247,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         if current_round is None:
             current_round = result.get_header(AppConstants.CURRENT_ROUND, None)
         if current_round is not None:
-            fl_ctx.set_prop(AppConstants.CURRENT_ROUND, current_round, private=True, sticky=True)
+            self._set_ctx_prop_preserving_attrs(fl_ctx, AppConstants.CURRENT_ROUND, current_round)
 
         # Check return code and handle errors first
         self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
@@ -457,37 +467,9 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         if not data:
             return
         if data.current_round is not None:
-            detail = self.fl_ctx.get_prop_detail(AppConstants.CURRENT_ROUND)
-            if detail is not None:
-                self.fl_ctx.set_prop(
-                    AppConstants.CURRENT_ROUND,
-                    data.current_round,
-                    private=detail["private"],
-                    sticky=detail["sticky"],
-                )
-            else:
-                self.fl_ctx.set_prop(
-                    AppConstants.CURRENT_ROUND,
-                    data.current_round,
-                    private=True,
-                    sticky=False,
-                )
+            self._set_ctx_prop_preserving_attrs(self.fl_ctx, AppConstants.CURRENT_ROUND, data.current_round)
         if data.total_rounds is not None:
-            detail = self.fl_ctx.get_prop_detail(AppConstants.NUM_ROUNDS)
-            if detail is not None:
-                self.fl_ctx.set_prop(
-                    AppConstants.NUM_ROUNDS,
-                    data.total_rounds,
-                    private=detail["private"],
-                    sticky=detail["sticky"],
-                )
-            else:
-                self.fl_ctx.set_prop(
-                    AppConstants.NUM_ROUNDS,
-                    data.total_rounds,
-                    private=True,
-                    sticky=False,
-                )
+            self._set_ctx_prop_preserving_attrs(self.fl_ctx, AppConstants.NUM_ROUNDS, data.total_rounds)
 
     def get_component(self, component_id: str):
         return self.engine.get_component(component_id)

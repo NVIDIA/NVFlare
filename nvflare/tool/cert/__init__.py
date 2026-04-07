@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,19 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from enum import Enum
-
-
-class FLDetailKey(str, Enum):
-    """Constants for FL details that can be returned in the FLAdminAPI."""
-
-    APP_NAME = "app_name"
-    REGISTERED_CLIENTS = "registered_clients"
-    CONNECTED_CLIENTS = "connected_clients"
-    SERVER_ENGINE_STATUS = "server_engine_status"
-    SERVER_LOG = "server_log"
-    CLIENT_LOG = "client_log"
-    STATUS_TABLE = "status_table"
-    RESPONSES = "responses"
-    SUBMITTED_MODELS = "submitted_models"

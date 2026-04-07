@@ -14,6 +14,8 @@
 import traceback
 from typing import List
 
+from nvflare.apis.job_def import DEFAULT_STUDY
+from nvflare.apis.utils.format_check import name_check
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.conn import Connection
@@ -24,6 +26,7 @@ from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.lighter.utils import cert_to_dict, load_crt_bytes
 from nvflare.security.logging import secure_format_exception
+from nvflare.security.study_registry import StudyRegistryService
 
 from .reg import CommandFilter
 from .sess import Session, SessionManager
@@ -75,6 +78,7 @@ class LoginModule(CommandModule, CommandFilter):
         headers = conn.get_prop(ConnProps.CMD_HEADERS)
         cert_data = headers.get("cert")
         signature = headers.get("signature")
+        study = headers.get("study", DEFAULT_STUDY)
 
         self.logger.debug(f"got cert login headers: {headers=}")
         hci = conn.get_prop(ConnProps.HCI_SERVER)
@@ -99,6 +103,30 @@ class LoginModule(CommandModule, CommandFilter):
             conn.append_string("REJECT")
             return
 
+        if not isinstance(study, str):
+            conn.append_string("REJECT")
+            return
+
+        invalid, _ = name_check(study, "study")
+        if invalid:
+            conn.append_string("REJECT")
+            return
+
+        registry = StudyRegistryService.get_registry()
+        if study != DEFAULT_STUDY:
+            if not registry:
+                self.logger.warning(f"rejecting login for user '{user_name}': no study registry for study '{study}'")
+                conn.append_string("REJECT")
+                return
+            if not registry.has_study(study):
+                self.logger.warning(f"rejecting login for user '{user_name}': unknown study '{study}'")
+                conn.append_string("REJECT")
+                return
+            if not registry.get_role(user_name, study):
+                self.logger.warning(f"rejecting login for user '{user_name}': no mapping for study '{study}'")
+                conn.append_string("REJECT")
+                return
+
         cert_dict = cert_to_dict(cert)
         self.logger.debug(f"got cert dict: {cert_dict}")
         identity = get_identity_info(cert_dict)
@@ -109,9 +137,10 @@ class LoginModule(CommandModule, CommandFilter):
 
         session = self.session_mgr.create_session(
             user_name=user_name,
-            user_org=identity.get(IdentityKey.ORG, ""),
-            user_role=identity.get(IdentityKey.ROLE, ""),
+            user_org=identity.get(IdentityKey.ORG) or "",
+            user_role=identity.get(IdentityKey.ROLE) or "",
             origin_fqcn=origin,
+            active_study=study,
         )
         token = session.make_token(id_asserter)
         self.logger.info(f"Created user session for {user_name}")
@@ -165,6 +194,7 @@ class LoginModule(CommandModule, CommandFilter):
         conn.set_prop(ConnProps.USER_NAME, sess.user_name)
         conn.set_prop(ConnProps.USER_ORG, sess.user_org)
         conn.set_prop(ConnProps.USER_ROLE, sess.user_role)
+        conn.set_prop(ConnProps.ACTIVE_STUDY, sess.active_study)
         conn.set_prop(ConnProps.TOKEN, token)
         return True
 
