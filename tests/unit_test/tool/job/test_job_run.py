@@ -32,7 +32,17 @@ class TestJobRun:
 
     @pytest.fixture(autouse=True)
     def agent_mode(self, monkeypatch):
+        import argparse
+        import sys
+
+        from nvflare.tool.job.job_cli import def_job_cli_parser
+
         monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+        # Ensure the run parser is registered
+        root = argparse.ArgumentParser()
+        def_job_cli_parser(root.add_subparsers())
+        # Default argv so the no-args guard doesn't fire in most tests
+        monkeypatch.setattr(sys, "argv", ["nvflare", "job", "run", "--recipe-folder", "."])
 
     def _patch_recipe(self, entry="mymod:MyRecipe"):
         """Return a context manager that patches importlib so a mock Recipe is found."""
@@ -231,6 +241,23 @@ class TestJobRun:
         # stdout must parse as JSON
         json.loads(captured.out)
         assert not captured.err.strip().startswith("{")
+
+    def test_run_no_args_prints_help_and_exits_0(self, capsys, monkeypatch):
+        """nvflare job run with no arguments prints help and exits 0."""
+        import sys
+
+        from nvflare.tool.job.job_cli import cmd_job_run
+
+        monkeypatch.setattr(sys, "argv", ["nvflare", "job", "run"])
+        args = _make_args()
+
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_job_run(args)
+        assert exc_info.value.code == 0
+
+        captured = capsys.readouterr()
+        assert "--recipe-folder" in captured.out
+        assert "--env" in captured.out
 
     def test_run_parser_args(self):
         """run parser: --recipe-folder, --env choices, --entry."""

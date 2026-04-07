@@ -1793,6 +1793,16 @@ def cmd_job_run(cmd_args):
         sys.argv[1:],
     )
 
+    # No arguments supplied — print help and exit
+    try:
+        run_idx = sys.argv.index("run")
+        has_args = len(sys.argv) > run_idx + 1
+    except ValueError:
+        has_args = False
+    if not has_args:
+        job_sub_cmd_parser[CMD_JOB_RUN].print_help()
+        sys.exit(0)
+
     import tempfile
 
     recipe_folder = os.path.abspath(cmd_args.recipe_folder)
