@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-NVFlare job recipe for federated MedGemma LoRA fine-tuning.
+NVFlare job recipe for federated MedGemma LoRA fine-tuning with optional HLoRA aggregation.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ import os
 import re
 import shlex
 
+from custom_aggregators import HLoraAggregator
 from data_utils import DEFAULT_MODEL_NAME_OR_PATH
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
@@ -88,6 +89,16 @@ def define_parser():
         help="Enable optional Weights & Biases tracking.",
     )
     parser.add_argument(
+        "--lora_aggregation",
+        type=str,
+        choices=("naive", "hlora"),
+        default="naive",
+        help=(
+            "LoRA aggregation strategy: 'naive' separately averages LoRA A/B factors like the original example, "
+            "while 'hlora' reconstructs B@A updates on the server before projecting back to rank-r factors."
+        ),
+    )
+    parser.add_argument(
         "--workspace",
         type=str,
         default="/tmp/nvflare/simulation",
@@ -152,12 +163,19 @@ def _build_train_args(args, site_data_path: str, image_root: str, report_to: str
     return shlex.join(train_args)
 
 
+def _get_aggregator(lora_aggregation: str):
+    if lora_aggregation == "hlora":
+        return HLoraAggregator()
+    return None
+
+
 def main():
     args = define_parser()
     n_clients = args.n_clients
     client_names = [f"site-{idx}" for idx in range(1, n_clients + 1)]
     data_dir = os.path.abspath(args.data_dir)
     image_root = os.path.abspath(args.image_root)
+    job_name = "medgemma" if args.lora_aggregation == "naive" else "medgemma-hlora"
 
     per_site_config = {}
     report_to = "wandb" if args.wandb else "none"
@@ -172,12 +190,13 @@ def main():
     }
 
     recipe = FedAvgRecipe(
-        name="medgemma",
+        name=job_name,
         min_clients=n_clients,
         num_rounds=args.num_rounds,
         model=model,
         train_script="client.py",
         per_site_config=per_site_config,
+        aggregator=_get_aggregator(args.lora_aggregation),
         launch_external_process=True,
         server_expected_format="pytorch",
         key_metric="",
@@ -190,7 +209,7 @@ def main():
             tracking_type="wandb",
             tracking_config={
                 "wandb_args": {
-                    "name": "medgemma-fedavg",
+                    "name": f"{job_name}-fedavg",
                     "project": "nvflare",
                     "group": "nvidia",
                     "job_type": "training",

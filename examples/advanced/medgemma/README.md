@@ -22,7 +22,8 @@ Weights for [`google/medgemma-4b-it`](https://huggingface.co/google/medgemma-4b-
 | `data_utils.py` | Shared prompt, class-label mappings, dataset splitting helpers, and response parsing helpers. |
 | `model.py` | MedGemma LoRA wrapper used by the server and clients. The server exchanges only LoRA adapter weights. |
 | `client.py` | NVFlare client entry point. Loads MedGemma in 4-bit, applies the received LoRA adapters, runs local SFT with `SFTTrainer`, and sends the updated adapters back. |
-| `job.py` | FedAvg recipe for 3 clients with per-site data paths. |
+| `custom_aggregators.py` | Optional HLoRA-style server aggregator that reconstructs client `B @ A` updates before projecting them back to LoRA factors. |
+| `job.py` | FedAvg recipe for 3 clients with per-site data paths and selectable LoRA aggregation (`naive` or `hlora`). |
 | `download_data.py` | Downloads and extracts `NCT-CRC-HE-100K.zip` from Zenodo. |
 | `prepare_data.py` | Discovers image files, builds random site shards, and writes `train.json` / `validation.json` for each client. |
 | `run_inference.py` | Runs before/after inference on prepared validation samples using either the base model, an adapter directory, or NVFlare `FL_global_model.pt`. |
@@ -93,9 +94,11 @@ Important notes:
 
 - The example always uses LoRA-only FL exchange. The MedGemma base model stays frozen on every client, and FedAvg aggregates only the adapter weights.
 - This keeps the full MedGemma checkpoint local to each client and exchanges only the smaller LoRA adapter updates between clients and server.
+- `job.py` defaults to `--lora_aggregation naive`, which matches the original example and the HLoRA paper's baseline by averaging LoRA `A` and `B` factors separately.
+- `python job.py --lora_aggregation hlora` enables HLoRA-style server aggregation: the server reconstructs each client's LoRA update as `B @ A`, averages those reconstructed updates, and projects the result back to the configured LoRA rank. Non-LoRA tensors such as `modules_to_save` still use ordinary weighted averaging.
 - `job.py` defaults to 3 clients and one GPU per client. If needed, override the GPU mapping with `--gpu "[0],[1],[2]"`.
 - The client uses the same prompt format, 4-bit quantization, LoRA config, and multimodal collator pattern as the official notebook.
-- Under heterogeneous or non-IID client data, simple FedAvg over LoRA adapters can introduce aggregation noise and dilute client-specific information, so heterogeneity-aware aggregation may perform better.
+- When `--lora_aggregation hlora` is used, the default simulator output path changes from `/tmp/nvflare/simulation/medgemma/...` to `/tmp/nvflare/simulation/medgemma-hlora/...`.
 
 Useful flags:
 
@@ -106,6 +109,7 @@ Useful flags:
 | `--num_rounds` | Number of FL rounds. | `python job.py --num_rounds 5` |
 | `--max_steps` | Limit local steps per round for quick tests. | `python job.py --max_steps 50` |
 | `--learning_rate` | Peak learning rate for local SFT. | `python job.py --learning_rate 1e-4` |
+| `--lora_aggregation` | LoRA aggregation strategy: `naive` for separate factor averaging, `hlora` for reconstructed-update aggregation. | `python job.py --lora_aggregation hlora` |
 | `--wandb` | Enable Weights & Biases tracking if `WANDB_API_KEY` is set. | `python job.py --wandb` |
 
 ## 4. Run inference
@@ -210,3 +214,4 @@ Useful flags:
 - MedGemma model: [google/medgemma-4b-it](https://huggingface.co/google/medgemma-4b-it)
 - Training data: [NCT-CRC-HE-100K on Zenodo](https://zenodo.org/records/1214456)
 - Heterogeneous LoRA reference: [Heterogeneous LoRA for Federated Fine-tuning of On-Device Foundation Models (HetLoRA)](https://research.google/pubs/heterogeneous-lora-for-federated-fine-tuning-of-on-device-foundation-models/)
+- HLoRA reference: HLoRA: Towards Efficient Federated Fine-Tuning of Large Language Models with Heterogeneous LoRA
