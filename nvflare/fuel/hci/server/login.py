@@ -137,8 +137,8 @@ class LoginModule(CommandModule, CommandFilter):
 
         session = self.session_mgr.create_session(
             user_name=user_name,
-            user_org=identity.get(IdentityKey.ORG, ""),
-            user_role=identity.get(IdentityKey.ROLE, ""),
+            user_org=identity.get(IdentityKey.ORG) or "",
+            user_role=identity.get(IdentityKey.ROLE) or "",
             origin_fqcn=origin,
             active_study=study,
         )
