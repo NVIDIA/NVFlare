@@ -82,7 +82,7 @@ def _make_docker_client():
     return dc
 
 
-def _make_launcher(cls=None, workspace="/ws", parent_url="nvflare-cp:8002", **kwargs):
+def _make_launcher(cls=None, workspace="/ws", **kwargs):
     """Create a launcher with a pre-wired mock Docker client (no real Docker needed)."""
     if cls is None:
         cls = ClientDockerJobLauncher
@@ -90,7 +90,7 @@ def _make_launcher(cls=None, workspace="/ws", parent_url="nvflare-cp:8002", **kw
     dc = _make_docker_client()
     with patch("docker.from_env", return_value=dc):
         launcher = cls.__new__(cls)
-        DockerJobLauncher.__init__(launcher, workspace=workspace, parent_url=parent_url, **kwargs)
+        DockerJobLauncher.__init__(launcher, workspace=workspace, **kwargs)
     launcher._docker_client = dc
     return launcher
 
@@ -315,7 +315,7 @@ class TestDockerJobLauncherInit:
         """workspace is validated lazily in launch_job, not __init__."""
         with patch.dict("os.environ", {}, clear=True):
             launcher = ClientDockerJobLauncher.__new__(ClientDockerJobLauncher)
-            DockerJobLauncher.__init__(launcher, workspace=None, parent_url="cp:8002")
+            DockerJobLauncher.__init__(launcher, workspace=None)
             launcher._docker_client = _make_docker_client()
             fl_ctx, _ = _make_fl_ctx()
             with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
@@ -327,12 +327,8 @@ class TestDockerJobLauncherInit:
         with patch("docker.from_env", return_value=dc):
             with patch.dict("os.environ", {"NVFL_DOCKER_WORKSPACE": "/host/ws"}):
                 launcher = ClientDockerJobLauncher.__new__(ClientDockerJobLauncher)
-                DockerJobLauncher.__init__(launcher, workspace=None, parent_url="cp:8002")
+                DockerJobLauncher.__init__(launcher, workspace=None)
         assert launcher.workspace == "/host/ws"
-
-    def test_raises_if_parent_url_empty(self):
-        with pytest.raises(ValueError, match="parent_url"):
-            _make_launcher(workspace="/ws", parent_url="")
 
     def test_raises_if_extra_container_kwargs_contains_reserved_key(self):
         for reserved in ("volumes", "network", "device_requests", "environment", "command", "name", "detach"):
@@ -348,7 +344,7 @@ class TestDockerJobLauncherInit:
         dc = _make_docker_client()
         dc.ping.side_effect = Exception("connection refused")
         launcher = ClientDockerJobLauncher.__new__(ClientDockerJobLauncher)
-        DockerJobLauncher.__init__(launcher, workspace="/ws", parent_url="cp:8002")
+        DockerJobLauncher.__init__(launcher, workspace="/ws")
         with patch("docker.from_env", return_value=dc):
             with pytest.raises(RuntimeError, match="cannot connect"):
                 launcher._get_docker_client()
@@ -358,7 +354,7 @@ class TestDockerJobLauncherInit:
         dc = _make_docker_client()
         dc.networks.get.side_effect = _NotFound()
         launcher = ClientDockerJobLauncher.__new__(ClientDockerJobLauncher)
-        DockerJobLauncher.__init__(launcher, workspace="/ws", parent_url="cp:8002")
+        DockerJobLauncher.__init__(launcher, workspace="/ws")
         with patch("docker.from_env", return_value=dc):
             with pytest.raises(RuntimeError, match="does not exist"):
                 launcher._get_docker_client()
@@ -429,7 +425,8 @@ class TestDockerJobLauncherLaunchJob:
         assert isinstance(handle, DockerJobHandle)
 
     def test_launch_overrides_parent_url(self):
-        launcher = _make_launcher(parent_url="nvflare-cp:8002")
+        """Launcher must derive parent_url from site name + port; localhost must not reach job container."""
+        launcher = _make_launcher()
         dc = launcher._docker_client
         container = MagicMock()
         container.id = "abc123"
@@ -437,16 +434,16 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.run.return_value = container
         dc.containers.get.return_value = _make_container("running")
 
-        fl_ctx, job_args = _make_fl_ctx(parent_url="localhost:8002")
+        fl_ctx, job_args = _make_fl_ctx(identity_name="site-1", parent_url="tcp://localhost:8004")
         with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
             launcher.launch_job(_make_job_meta(), fl_ctx)
 
-        # The launcher must NOT pass job_args' original PARENT_URL to containers.run —
-        # it should pass self.parent_url ("nvflare-cp:8002") instead.
         call_kwargs = dc.containers.run.call_args
         command = call_kwargs[1]["command"] if call_kwargs[1] else call_kwargs[0][1]
-        # The command list must not contain localhost:8002
-        assert "localhost:8002" not in " ".join(str(a) for a in command)
+        command_str = " ".join(str(a) for a in command)
+        # Must replace localhost with container name (site name)
+        assert "localhost" not in command_str
+        assert "tcp://site-1:8004" in command_str
 
     def test_launch_raises_on_missing_job_id(self):
         launcher = _make_launcher()

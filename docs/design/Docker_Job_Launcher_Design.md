@@ -112,7 +112,6 @@ SJ/CJ containers do not receive the Docker socket, which limits lateral movement
   "id": "docker_launcher",
   "path": "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher",
   "args": {
-    "parent_url": "site-1:8102",
     "network": "nvflare-network",
     "mount_path": "/var/nvflare/workspace",
     "allowed_image_prefixes": ["myregistry.corp.com/", "nvflare/nvflare:"]
@@ -120,7 +119,7 @@ SJ/CJ containers do not receive the Docker socket, which limits lateral movement
 }
 ```
 
-This config is injected into `local/resources.json.default` by `DockerLauncherBuilder` during provisioning. `parent_url` and `network` are filled in from the site config; `allowed_image_prefixes` must be added manually or via a custom provisioning step.
+This config is injected into `local/resources.json.default` by `DockerLauncherBuilder` during provisioning. `allowed_image_prefixes` must be added manually or via a custom provisioning step.
 
 If `allowed_image_prefixes` is `null` / not set, all images are permitted (default, no restriction).
 
@@ -448,9 +447,9 @@ Mirrors `K8sJobHandle`. Once a container exits or is removed, `terminal_state` i
 
 ### PARENT_URL
 
-In process mode `PARENT_URL = localhost:port`. In Docker mode it must be the SP/CP **container name** on the Docker network (e.g. `server:8004`) so SJ/CJ can connect back via Docker DNS.
+In process mode `PARENT_URL = tcp://localhost:port`. In Docker mode it must be the SP/CP **container name** on the Docker network (e.g. `tcp://server:8004`) so SJ/CJ can connect back via Docker DNS.
 
-`DockerJobLauncher` takes `parent_url` as a constructor parameter and overrides `PARENT_URL` in `JOB_PROCESS_ARGS` when creating job containers. Provisioning generates the correct value from the site config.
+`DockerJobLauncher` derives the correct `parent_url` at runtime: it takes the port from `PARENT_URL` in `JOB_PROCESS_ARGS` and combines it with the site name (which equals the container name). No provisioning-time baking needed.
 
 ---
 

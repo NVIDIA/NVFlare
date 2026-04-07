@@ -237,13 +237,12 @@ class DockerJobLauncher(JobLauncherSpec):
     - Docker network already exists (created by start_docker.sh or site admin).
     - Workspace is a host directory bind-mounted into all containers at mount_path.
     - SP/CP container name is known and reachable via Docker DNS on the network.
-    - parent_url is the SP/CP container name + port (e.g. "nvflare-cp:8002").
+    - parent_url is derived at runtime from the site name and the port in JOB_PROCESS_ARGS.
     """
 
     def __init__(
         self,
         workspace: str = None,
-        parent_url: str = None,
         network: str = "nvflare-network",
         mount_path: str = "/var/nvflare/workspace",
         python_path: str = "/usr/local/bin/python",
@@ -258,8 +257,6 @@ class DockerJobLauncher(JobLauncherSpec):
                        If not provided, reads from NVFL_DOCKER_WORKSPACE environment variable.
                        Must be the HOST path (not the container-internal path) because it is passed
                        directly to the Docker daemon as a volume bind source.
-            parent_url: SP/CP container name + port for SJ/CJ to connect back to parent
-                        (e.g. "nvflare-cp:8002"). Overrides PARENT_URL in JOB_PROCESS_ARGS.
             network: Docker network name. Must already exist.
             mount_path: mount path inside the job container for the workspace bind mount.
             python_path: Python executable path inside the job container.
@@ -282,14 +279,8 @@ class DockerJobLauncher(JobLauncherSpec):
 
         if not workspace:
             workspace = os.environ.get("NVFL_DOCKER_WORKSPACE")
-        if not parent_url:
-            raise ValueError(
-                "parent_url must be set to the SP/CP container name + port (e.g. 'nvflare-cp:8002') "
-                "so job containers can connect back to the parent"
-            )
 
         self.workspace = workspace
-        self.parent_url = parent_url
         self.network = network
         self.mount_path = mount_path
         self.python_path = python_path
@@ -357,12 +348,15 @@ class DockerJobLauncher(JobLauncherSpec):
                 "or set the NVFL_DOCKER_WORKSPACE environment variable"
             )
 
-        # Override PARENT_URL so the job container connects to SP/CP container name,
-        # not localhost (which is meaningless from inside a Docker container).
+        # Derive parent_url at runtime: site name (= container name on Docker DNS) + port
+        # from the original PARENT_URL in job_args. This avoids baking parent_url into
+        # resources.json at provision time.
         if JobProcessArgs.PARENT_URL in job_args:
-            flag, _ = job_args[JobProcessArgs.PARENT_URL]
+            flag, original_url = job_args[JobProcessArgs.PARENT_URL]
+            port = original_url.rsplit(":", 1)[-1]
+            parent_url = f"tcp://{site_name}:{port}"
             job_args = dict(job_args)
-            job_args[JobProcessArgs.PARENT_URL] = (flag, self.parent_url)
+            job_args[JobProcessArgs.PARENT_URL] = (flag, parent_url)
 
         module_args = self.get_module_args(job_args)
         module_args_list = []

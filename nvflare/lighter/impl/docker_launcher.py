@@ -58,10 +58,8 @@ class DockerLauncherBuilder(Builder):
 
     def _build_server(self, server: Participant, ctx: ProvisionContext):
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
-        admin_port = ctx.get(CtxKey.ADMIN_PORT)
 
         lh = server.get_listening_host()
-        comm_port = lh.port if lh and lh.port else fed_learn_port
 
         # Inject launcher config — workspace resolved at runtime from NVFL_DOCKER_WORKSPACE
         dest_dir = ctx.get_local_dir(server)
@@ -69,7 +67,6 @@ class DockerLauncherBuilder(Builder):
             dest_dir,
             path=ServerDockerJobLauncher.__module__ + ".ServerDockerJobLauncher",
             args={
-                "parent_url": f"tcp://{server.name}:{comm_port}",
                 "network": "nvflare-network",
                 "mount_path": "/var/nvflare/workspace",
                 "python_path": "/usr/local/bin/python",
@@ -100,10 +97,8 @@ class DockerLauncherBuilder(Builder):
 
     def _build_client(self, client: Participant, ctx: ProvisionContext):
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
-        admin_port = ctx.get(CtxKey.ADMIN_PORT)
 
         lh = client.get_listening_host()
-        comm_port = lh.port if lh and lh.port else fed_learn_port
 
         # Inject launcher config — workspace resolved at runtime from NVFL_DOCKER_WORKSPACE
         dest_dir = ctx.get_local_dir(client)
@@ -111,7 +106,6 @@ class DockerLauncherBuilder(Builder):
             dest_dir,
             path=ClientDockerJobLauncher.__module__ + ".ClientDockerJobLauncher",
             args={
-                "parent_url": f"tcp://{client.name}:{comm_port}",
                 "network": "nvflare-network",
                 "mount_path": "/var/nvflare/workspace",
                 "python_path": "/usr/local/bin/python",
