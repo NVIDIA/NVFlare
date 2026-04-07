@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,15 +34,15 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
-from nvflare.private.fed.utils.fed_utils import extract_participants, set_message_security_data
+from nvflare.private.fed.utils.fed_utils import extract_participants, require_signed_jobs, set_message_security_data
 from nvflare.security.logging import secure_format_exception
 
 
@@ -161,16 +161,20 @@ class JobRunner(FLComponent):
                         deploy_detail.append(f"server: {err}")
                         raise RuntimeError(f"Failed to deploy app '{app_name}': {err}")
 
-                    kv_list = parse_vars(engine.args.set)
-                    secure_train = kv_list.get("secure_train", True)
                     from_hub_site = job.meta.get(JobMetaKey.FROM_HUB_SITE.value)
-                    if secure_train and not from_hub_site:
+                    if not from_hub_site:
                         app_path = workspace.get_app_dir(job.job_id)
                         root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
-                        if not verify_folder_signature(app_path, root_ca_path):
-                            err = "job signature verification failed"
+                        sig_file = os.path.join(app_path, NVFLARE_SIG_FILE)
+                        if os.path.exists(sig_file):
+                            if not verify_folder_signature(app_path, root_ca_path):
+                                err = "job signature verification failed"
+                                deploy_detail.append(f"server: {err}")
+                                raise RuntimeError(f"Failed to verify app '{app_name}': {err}")
+                        elif require_signed_jobs(workspace):
+                            err = "unsigned job rejected — require_signed_jobs is enabled"
                             deploy_detail.append(f"server: {err}")
-                            raise RuntimeError(f"Failed to verify app '{app_name}': {err}")
+                            raise RuntimeError(f"UNSIGNED_JOB_REJECTED: {err}")
 
                     self.log_info(
                         fl_ctx, f"Application {app_name} deployed to the server for job: {run_number}", fire_event=False

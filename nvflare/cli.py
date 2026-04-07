@@ -24,7 +24,9 @@ from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, ru
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
 from nvflare.private.fed.app.utils import version_check
+from nvflare.tool.cert.cert_cli import def_cert_cli_parser, handle_cert_cmd
 from nvflare.tool.job.job_cli import def_job_cli_parser, handle_job_cli_cmd
+from nvflare.tool.package.package_cli import def_package_cli_parser, handle_package_cmd
 from nvflare.tool.poc.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
 from nvflare.utils.cli_utils import (
@@ -44,6 +46,8 @@ CMD_DASHBOARD = "dashboard"
 CMD_AUTHZ_PREVIEW = "authz_preview"
 CMD_JOB = "job"
 CMD_CONFIG = "config"
+CMD_CERT = "cert"
+CMD_PACKAGE = "package"
 
 
 def def_provision_parser(sub_cmd):
@@ -138,6 +142,8 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_authz_preview_parser(sub_cmd))
     sub_cmd_parsers.update(def_job_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_config_parser(sub_cmd))
+    sub_cmd_parsers.update(def_cert_cli_parser(sub_cmd))
+    sub_cmd_parsers.update(def_package_cli_parser(sub_cmd))
 
     args, argv = _parser.parse_known_args(None, None)
     cmd = args.__dict__.get("sub_command")
@@ -160,6 +166,8 @@ handlers = {
     CMD_AUTHZ_PREVIEW: handle_authz_preview,
     CMD_JOB: handle_job_cli_cmd,
     CMD_CONFIG: handle_config_cmd,
+    CMD_CERT: handle_cert_cmd,
+    CMD_PACKAGE: handle_package_cmd,
 }
 
 
