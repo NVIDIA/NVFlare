@@ -18,9 +18,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-def _make_args(recipe_folder=".", env="poc", entry=None, workspace="/tmp/sim_ws"):
+def _make_args(recipe_dir=".", env="poc", entry=None, workspace="/tmp/sim_ws"):
     args = MagicMock()
-    args.recipe_folder = recipe_folder
+    args.recipe_dir = recipe_dir
     args.env = env
     args.entry = entry
     args.workspace = workspace
@@ -42,7 +42,7 @@ class TestJobRun:
         root = argparse.ArgumentParser()
         def_job_cli_parser(root.add_subparsers())
         # Default argv so the no-args guard doesn't fire in most tests
-        monkeypatch.setattr(sys, "argv", ["nvflare", "job", "run", "--recipe-folder", "."])
+        monkeypatch.setattr(sys, "argv", ["nvflare", "job", "run", "--recipe-dir", "."])
 
     def _patch_recipe(self, entry="mymod:MyRecipe"):
         """Return a context manager that patches importlib so a mock Recipe is found."""
@@ -67,7 +67,7 @@ class TestJobRun:
         """--env poc: submit_job returns job_id; stdout is one JSON envelope."""
         from nvflare.tool.job.job_cli import cmd_job_run
 
-        args = _make_args(recipe_folder=str(tmp_path), env="poc", entry="mymod:MyRecipe")
+        args = _make_args(recipe_dir=str(tmp_path), env="poc", entry="mymod:MyRecipe")
         mock_sess = MagicMock()
         mock_sess.submit_job.return_value = "job-xyz"
 
@@ -86,7 +86,7 @@ class TestJobRun:
         """--env sim: runs simulator, output has status=FINISHED_OK."""
         from nvflare.tool.job.job_cli import cmd_job_run
 
-        args = _make_args(recipe_folder=str(tmp_path), env="sim", entry="mymod:MyRecipe")
+        args = _make_args(recipe_dir=str(tmp_path), env="sim", entry="mymod:MyRecipe")
 
         mock_runner = MagicMock()
         patch_import, mock_inst = self._patch_recipe()
@@ -107,7 +107,7 @@ class TestJobRun:
         # Empty folder — no .py files so auto-discovery finds nothing
         recipe_dir = tmp_path / "empty"
         recipe_dir.mkdir()
-        args = _make_args(recipe_folder=str(recipe_dir), env="poc")
+        args = _make_args(recipe_dir=str(recipe_dir), env="poc")
 
         with pytest.raises(SystemExit) as exc_info:
             cmd_job_run(args)
@@ -122,7 +122,7 @@ class TestJobRun:
         from nvflare.tool.job.job_cli import cmd_job_run
 
         (tmp_path / "helper.py").write_text("def foo(): pass\n")
-        args = _make_args(recipe_folder=str(tmp_path), env="poc")
+        args = _make_args(recipe_dir=str(tmp_path), env="poc")
 
         with pytest.raises(SystemExit) as exc_info:
             cmd_job_run(args)
@@ -140,7 +140,7 @@ class TestJobRun:
         recipe_src = "from nvflare.recipe.spec import Recipe\nclass {name}(Recipe):\n    def export(self, out): pass\n"
         (tmp_path / "recipe_a.py").write_text(recipe_src.format(name="RecipeA"))
         (tmp_path / "recipe_b.py").write_text(recipe_src.format(name="RecipeB"))
-        args = _make_args(recipe_folder=str(tmp_path), env="poc")
+        args = _make_args(recipe_dir=str(tmp_path), env="poc")
 
         with pytest.raises(SystemExit) as exc_info:
             cmd_job_run(args)
@@ -163,7 +163,7 @@ class TestJobRun:
         )
         (tmp_path / "recipe.py").write_text(recipe_src)
 
-        args = _make_args(recipe_folder=str(tmp_path), env="poc", entry=None)
+        args = _make_args(recipe_dir=str(tmp_path), env="poc", entry=None)
         mock_sess = MagicMock()
         mock_sess.submit_job.return_value = "job-auto"
 
@@ -179,7 +179,7 @@ class TestJobRun:
         """poc submit connection failure → CONNECTION_FAILED, exit 2."""
         from nvflare.tool.job.job_cli import cmd_job_run
 
-        args = _make_args(recipe_folder=str(tmp_path), env="poc", entry="mymod:MyRecipe")
+        args = _make_args(recipe_dir=str(tmp_path), env="poc", entry="mymod:MyRecipe")
         mock_sess = MagicMock()
         mock_sess.submit_job.side_effect = Exception("connection refused")
 
@@ -198,7 +198,7 @@ class TestJobRun:
         """recipe.export() raises → RECIPE_EXPORT_FAILED, exit 1; temp dir cleaned up."""
         from nvflare.tool.job.job_cli import cmd_job_run
 
-        args = _make_args(recipe_folder=str(tmp_path), env="poc", entry="mymod:MyRecipe")
+        args = _make_args(recipe_dir=str(tmp_path), env="poc", entry="mymod:MyRecipe")
 
         import importlib
 
@@ -228,7 +228,7 @@ class TestJobRun:
         """No human-readable text on stdout."""
         from nvflare.tool.job.job_cli import cmd_job_run
 
-        args = _make_args(recipe_folder=str(tmp_path), env="poc", entry="mymod:MyRecipe")
+        args = _make_args(recipe_dir=str(tmp_path), env="poc", entry="mymod:MyRecipe")
         mock_sess = MagicMock()
         mock_sess.submit_job.return_value = "job-abc"
 
@@ -256,12 +256,12 @@ class TestJobRun:
         assert exc_info.value.code == 2
 
         captured = capsys.readouterr()
-        assert "--recipe-folder" in captured.err
+        assert "--recipe-dir" in captured.err
         assert "--env" in captured.err
         assert "required" in captured.err
 
     def test_run_parser_args(self):
-        """run parser: --recipe-folder, --env choices, --entry."""
+        """run parser: --recipe-dir, --env choices, --entry."""
         import argparse
 
         from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser

@@ -1542,11 +1542,11 @@ def cmd_job_log(cmd_args):
     output_ok({"job_id": cmd_args.job_id, "site": site, "log_config": log_config, "status": "applied"})
 
 
-def _resolve_and_export_recipe(recipe_folder: str, out_dir: str, entry=None):
+def _resolve_and_export_recipe(recipe_dir: str, out_dir: str, entry=None):
     """Resolve a Recipe subclass and export it to *out_dir*.
 
     If *entry* is given (``"module:ClassName"``), load it directly.
-    Otherwise scan *.py files in *recipe_folder* for a unique Recipe subclass.
+    Otherwise scan *.py files in *recipe_dir* for a unique Recipe subclass.
 
     Calls ``output_error`` and returns ``False`` on any failure; returns ``True``
     on success.  Callers should ``return`` immediately when ``False`` is returned.
@@ -1567,7 +1567,7 @@ def _resolve_and_export_recipe(recipe_folder: str, out_dir: str, entry=None):
             RecipeClass = getattr(mod, class_name)
         else:
             found = []
-            for py_file in _glob.glob(os.path.join(recipe_folder, "*.py")):
+            for py_file in _glob.glob(os.path.join(recipe_dir, "*.py")):
                 spec = importlib.util.spec_from_file_location("_recipe_scan", py_file)
                 mod = importlib.util.module_from_spec(spec)
                 try:
@@ -1605,19 +1605,19 @@ def cmd_job_export(cmd_args):
         job_sub_cmd_parser[CMD_JOB_EXPORT],
         "nvflare job export",
         [
-            "nvflare job export --recipe-folder . --out ./fl_job",
-            "nvflare job export --recipe-folder . --entry recipe:MyRecipe --out ./fl_job",
+            "nvflare job export --recipe-dir . --out ./fl_job",
+            "nvflare job export --recipe-dir . --entry recipe:MyRecipe --out ./fl_job",
         ],
         sys.argv[1:],
     )
 
-    recipe_folder = os.path.abspath(cmd_args.recipe_folder)
+    recipe_dir = os.path.abspath(cmd_args.recipe_dir)
     out_dir = os.path.abspath(cmd_args.out)
 
-    if not _resolve_and_export_recipe(recipe_folder, out_dir, entry=getattr(cmd_args, "entry", None)):
+    if not _resolve_and_export_recipe(recipe_dir, out_dir, entry=getattr(cmd_args, "entry", None)):
         return
 
-    output_ok({"job_folder": out_dir, "recipe_folder": recipe_folder})
+    output_ok({"job_folder": out_dir, "recipe_dir": recipe_dir})
 
 
 def cmd_job_run(cmd_args):
@@ -1628,8 +1628,8 @@ def cmd_job_run(cmd_args):
         job_sub_cmd_parser[CMD_JOB_RUN],
         "nvflare job run",
         [
-            "nvflare job run --recipe-folder . --env poc",
-            "nvflare job run --recipe-folder . --env sim",
+            "nvflare job run --recipe-dir . --env poc",
+            "nvflare job run --recipe-dir . --env sim",
         ],
         sys.argv[1:],
     )
@@ -1642,16 +1642,16 @@ def cmd_job_run(cmd_args):
         has_args = False
     if not has_args:
         job_sub_cmd_parser[CMD_JOB_RUN].print_help(sys.stderr)
-        print("\nerror: nvflare job run: --recipe-folder is required", file=sys.stderr)
+        print("\nerror: nvflare job run: --recipe-dir is required", file=sys.stderr)
         sys.exit(2)
 
     import tempfile
 
-    recipe_folder = os.path.abspath(cmd_args.recipe_folder)
+    recipe_dir = os.path.abspath(cmd_args.recipe_dir)
     env = getattr(cmd_args, "env", "poc")
 
     with tempfile.TemporaryDirectory() as tmp_out:
-        if not _resolve_and_export_recipe(recipe_folder, tmp_out, entry=getattr(cmd_args, "entry", None)):
+        if not _resolve_and_export_recipe(recipe_dir, tmp_out, entry=getattr(cmd_args, "entry", None)):
             return
 
         # Step 2: submit or simulate
@@ -1696,7 +1696,7 @@ def define_job_log_parser(job_subparser):
 
 def define_job_export_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_EXPORT, help="export a recipe folder to a job config folder")
-    p.add_argument("--recipe-folder", dest="recipe_folder", type=str, default=".", help="folder containing recipe.py")
+    p.add_argument("--recipe-dir", dest="recipe_dir", type=str, default=".", help="folder containing recipe.py")
     p.add_argument("--out", type=str, required=True, help="output job folder path")
     p.add_argument("--entry", type=str, default=None, help="module:ClassName of the Recipe subclass")
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
@@ -1706,7 +1706,7 @@ def define_job_export_parser(job_subparser):
 
 def define_job_run_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_RUN, help="export recipe and submit/simulate in one step")
-    p.add_argument("--recipe-folder", dest="recipe_folder", type=str, default=".", help="folder containing recipe.py")
+    p.add_argument("--recipe-dir", dest="recipe_dir", type=str, default=".", help="folder containing recipe.py")
     p.add_argument(
         "--env",
         type=str,
@@ -1718,7 +1718,7 @@ def define_job_run_parser(job_subparser):
         "--entry",
         type=str,
         default=None,
-        help="module:ClassName of the Recipe subclass. If omitted, auto-searches --recipe-folder for a Recipe subclass.",
+        help="module:ClassName of the Recipe subclass. If omitted, auto-searches --recipe-dir for a Recipe subclass.",
     )
     p.add_argument("--workspace", type=str, default="/tmp/sim_ws", help="workspace directory for the job run.")
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")

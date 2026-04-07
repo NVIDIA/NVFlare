@@ -19,9 +19,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-def _make_args(recipe_folder=".", out="/tmp/fl_job", entry=None):
+def _make_args(recipe_dir=".", out="/tmp/fl_job", entry=None):
     args = MagicMock()
-    args.recipe_folder = recipe_folder
+    args.recipe_dir = recipe_dir
     args.out = out
     args.entry = entry
     return args
@@ -46,7 +46,7 @@ class TestJobExport:
         mock_recipe_inst = MagicMock()
         mock_recipe_cls.return_value = mock_recipe_inst
 
-        args = _make_args(recipe_folder=str(recipe_dir), out=str(out_dir), entry="mymod:MyRecipe")
+        args = _make_args(recipe_dir=str(recipe_dir), out=str(out_dir), entry="mymod:MyRecipe")
 
         with patch("importlib.import_module") as mock_import:
             mock_mod = MagicMock()
@@ -59,14 +59,14 @@ class TestJobExport:
         data = json.loads(captured.out)
         assert data["status"] == "ok"
         assert "job_folder" in data["data"]
-        assert "recipe_folder" in data["data"]
+        assert "recipe_dir" in data["data"]
 
     def test_export_entry_not_found_exits_4(self, capsys, tmp_path):
         """ImportError on explicit --entry → RECIPE_ENTRY_NOT_FOUND, exit 1."""
         from nvflare.tool.job.job_cli import cmd_job_export
 
         args = _make_args(
-            recipe_folder=str(tmp_path),
+            recipe_dir=str(tmp_path),
             out=str(tmp_path / "out"),
             entry="nonexistent_mod:Foo",
         )
@@ -89,7 +89,7 @@ class TestJobExport:
         recipe_dir = tmp_path / "empty_recipe"
         recipe_dir.mkdir()
 
-        args = _make_args(recipe_folder=str(recipe_dir), out=str(tmp_path / "out"))
+        args = _make_args(recipe_dir=str(recipe_dir), out=str(tmp_path / "out"))
 
         with pytest.raises(SystemExit) as exc_info:
             cmd_job_export(args)
@@ -118,7 +118,7 @@ class TestJobExport:
             )
         )
 
-        args = _make_args(recipe_folder=str(recipe_dir), out=str(tmp_path / "out"))
+        args = _make_args(recipe_dir=str(recipe_dir), out=str(tmp_path / "out"))
 
         with pytest.raises(SystemExit) as exc_info:
             cmd_job_export(args)
@@ -133,7 +133,7 @@ class TestJobExport:
         from nvflare.tool.job.job_cli import cmd_job_export
 
         args = _make_args(
-            recipe_folder=str(tmp_path),
+            recipe_dir=str(tmp_path),
             out=str(tmp_path / "out"),
             entry="mymod:MyRecipe",
         )
@@ -161,7 +161,7 @@ class TestJobExport:
         from nvflare.tool.job.job_cli import cmd_job_export
 
         args = _make_args(
-            recipe_folder=str(tmp_path),
+            recipe_dir=str(tmp_path),
             out=str(tmp_path / "out"),
             entry="mymod:MyRecipe",
         )
@@ -178,7 +178,7 @@ class TestJobExport:
         assert not captured.err.strip().startswith("{")
 
     def test_export_parser_args(self):
-        """export parser: --recipe-folder, --out required, optional --entry."""
+        """export parser: --recipe-dir, --out required, optional --entry."""
         import argparse
 
         from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser
