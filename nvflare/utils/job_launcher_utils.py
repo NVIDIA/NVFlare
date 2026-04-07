@@ -117,6 +117,22 @@ def extract_job_image(job_meta, site_name):
     return None
 
 
+def extract_container_kwargs(job_meta, site_name):
+    """Extract container_kwargs for a site from deploy_map.
+
+    Returns a dict of extra docker run kwargs (e.g. {"device_requests": [...], "shm_size": "8g"})
+    or an empty dict if none are specified.
+    """
+    deploy_map = job_meta.get(JobMetaKey.DEPLOY_MAP, {})
+    for _, participants in deploy_map.items():
+        for item in participants:
+            if isinstance(item, dict):
+                sites = item.get(JobConstants.SITES) or []
+                if "@ALL" in sites or site_name in sites:
+                    return item.get("container_kwargs") or {}
+    return {}
+
+
 def add_custom_dir_to_path(app_custom_folder, new_env):
     """Util method to add app_custom_folder into the sys.path and carry into the child process."""
     sys_path = copy.copy(sys.path)

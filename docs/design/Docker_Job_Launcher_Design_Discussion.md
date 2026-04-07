@@ -64,4 +64,14 @@ For SJ/CJ job containers this is handled via `extra_container_kwargs` in `resour
 - Option B: Add an `extra_docker_args` field to `DockerLauncherBuilder` in `project.yml`, baked in at provision time.
 - Option C: Document that SP/CP extra flags require re-provisioning with a custom template.
 
-Note: For SJ/CJ job containers, both GPU (`num_of_gpus`) and extra docker flags (`container_kwargs`) are supported per-job via `resource_spec` in `meta.json`, merged with site-level defaults from `resources.json`. Only SP/CP extra flags are unaddressed.
+Note: For SJ/CJ job containers, `container_kwargs` in `deploy_map` covers all extra docker flags including GPU (`device_requests`), merged with site-level defaults from `resources.json`. Only SP/CP extra flags are unaddressed.
+
+## 8. GPU specification and resource management in Docker mode
+
+GPU for job containers is currently specified via `device_requests` in `container_kwargs` in `deploy_map`. This is a pass-through to `docker run` — there is no resource checking or reservation. Contrast with K8s mode where GPU requests go through the cluster scheduler.
+
+The existing `GPUResourceManager` (process mode) could in principle work in Docker mode if SP/CP has GPU passthrough (`--gpus all` in `start_docker.sh`), so it can run `nvidia-smi`. But Docker has no admission control — resource "reservations" would be soft, tracked only within NVFlare with no enforcement against external processes.
+
+- Should we support a `DockerResourceManager` that does soft GPU tracking (prevent NVFlare from over-scheduling on a site)?
+- Or document that Docker mode has no resource management and users must coordinate manually?
+- What is the expected UX for specifying GPU — raw `device_requests` dict, or a friendlier `num_of_gpus` shorthand that gets translated?

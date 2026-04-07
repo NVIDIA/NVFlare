@@ -163,8 +163,7 @@ The site admin starts SP/CP via `start_docker.sh`:
 - **No Docker socket** — job containers cannot create further containers
 - **Workspace bind mount** — same host directory as SP/CP, mounted at `mount_path`
 - **Docker network** — access to SP/CP via container name DNS only
-- **GPU** — `device_requests` added if `num_of_gpus` is set in the job's resource spec
-- **Extra docker flags** — `container_kwargs` in the job's resource spec (per-job) merged with site-level `extra_container_kwargs` from `resources.json`; job-level takes precedence on conflict
+- **Extra docker flags** — `container_kwargs` in `deploy_map` (per-job) merged with site-level `extra_container_kwargs` from `resources.json`; job-level takes precedence on conflict. GPU is also specified here (e.g. `device_requests`).
 
 ```
 SP/CP container (site admin grants)
@@ -326,15 +325,14 @@ Jobs specify which Docker image to use per-site in `meta.json`:
     "app": [
       {
         "sites": ["server", "site-1"],
-        "image": "nvflare-pt:latest"
+        "image": "nvflare-pt:latest",
+        "container_kwargs": {
+          "device_requests": [{"Count": 1, "Capabilities": [["gpu"]]}],
+          "shm_size": "8g",
+          "ipc_mode": "host"
+        }
       }
     ]
-  },
-  "resource_spec": {
-    "site-1": {
-      "num_of_gpus": 1,
-      "container_kwargs": {"shm_size": "8g", "ipc_mode": "host"}
-    }
   },
   "min_clients": 1
 }
@@ -359,8 +357,7 @@ When SP/CP receives a runnable job:
    - Workspace bind-mounted at `mount_path`
    - `PARENT_URL` overridden to SP/CP container name + port (Docker DNS)
    - `PYTHONPATH` set to container-internal `app_custom_folder` path
-   - `device_requests` added if `num_of_gpus` > 0
-   - `container_kwargs` from job resource spec merged with site-level defaults; job-level wins on conflict
+   - `container_kwargs` from `deploy_map` merged with site-level `extra_container_kwargs`; job-level wins on conflict (GPU, shm_size, etc. go here)
    - **No Docker socket** passed to job container
 5. `DockerJobHandle` tracks the container via `terminal_state` pattern
 6. On completion, container is removed; results are in `workspace/runs/{job_id}/`

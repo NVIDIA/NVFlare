@@ -23,10 +23,14 @@ import docker.errors
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
-from nvflare.utils.job_launcher_utils import extract_job_image, get_client_job_args, get_server_job_args
+from nvflare.utils.job_launcher_utils import (
+    extract_container_kwargs,
+    extract_job_image,
+    get_client_job_args,
+    get_server_job_args,
+)
 
 
 # Docker container status strings
@@ -288,7 +292,7 @@ class DockerJobLauncher(JobLauncherSpec):
         self.pending_timeout = pending_timeout
         self.allowed_image_prefixes = allowed_image_prefixes
         extra_container_kwargs = extra_container_kwargs or {}
-        _RESERVED_KWARGS = {"volumes", "network", "device_requests", "environment", "command", "name", "detach"}
+        _RESERVED_KWARGS = {"volumes", "network", "environment", "command", "name", "detach"}
         reserved_used = _RESERVED_KWARGS & set(extra_container_kwargs.keys())
         if reserved_used:
             raise ValueError(
@@ -382,15 +386,9 @@ class DockerJobLauncher(JobLauncherSpec):
                 container_custom_folder = app_custom_folder.replace(workspace, self.mount_path, 1)
                 environment["PYTHONPATH"] = container_custom_folder
 
-        # GPU and extra container kwargs: read from job resource spec (per-job), merged with site-level defaults
-        site_resources = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}).get(site_name, {})
-        num_of_gpus = site_resources.get("num_of_gpus", None)
-        device_requests = None
-        if num_of_gpus:
-            device_requests = [docker.types.DeviceRequest(count=int(num_of_gpus), capabilities=[["gpu"]])]
-
-        # Merge site-level defaults with job-level overrides; job-level takes precedence on conflict
-        job_container_kwargs = site_resources.get("container_kwargs", {})
+        # container_kwargs: per-job from deploy_map, merged with site-level defaults from resources.json.
+        # Job-level takes precedence on conflict. GPU is specified here too (e.g. device_requests).
+        job_container_kwargs = extract_container_kwargs(job_meta, site_name)
         merged_container_kwargs = {**self.extra_container_kwargs, **job_container_kwargs}
 
         self.logger.info(f"launching job {job_id} as container {container_name} using image {job_image}")
@@ -410,7 +408,6 @@ class DockerJobLauncher(JobLauncherSpec):
                         "mode": "rw",
                     }
                 },
-                device_requests=device_requests,
                 # Never pass Docker socket to job containers
                 **merged_container_kwargs,
             )
