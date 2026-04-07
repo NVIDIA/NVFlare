@@ -1800,8 +1800,9 @@ def cmd_job_run(cmd_args):
     except ValueError:
         has_args = False
     if not has_args:
-        job_sub_cmd_parser[CMD_JOB_RUN].print_help()
-        sys.exit(0)
+        job_sub_cmd_parser[CMD_JOB_RUN].print_help(sys.stderr)
+        print("\nerror: nvflare job run: --recipe-folder is required", file=sys.stderr)
+        sys.exit(2)
 
     import tempfile
 

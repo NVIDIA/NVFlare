@@ -253,11 +253,12 @@ class TestJobRun:
 
         with pytest.raises(SystemExit) as exc_info:
             cmd_job_run(args)
-        assert exc_info.value.code == 0
+        assert exc_info.value.code == 2
 
         captured = capsys.readouterr()
-        assert "--recipe-folder" in captured.out
-        assert "--env" in captured.out
+        assert "--recipe-folder" in captured.err
+        assert "--env" in captured.err
+        assert "required" in captured.err
 
     def test_run_parser_args(self):
         """run parser: --recipe-folder, --env choices, --entry."""
