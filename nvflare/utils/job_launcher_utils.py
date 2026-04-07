@@ -111,7 +111,7 @@ def extract_job_image(job_meta, site_name):
     for _, participants in deploy_map.items():
         for item in participants:
             if isinstance(item, dict):
-                sites = item.get(JobConstants.SITES)
+                sites = item.get(JobConstants.SITES) or []
                 if "@ALL" in sites or site_name in sites:
                     return item.get(JobConstants.JOB_IMAGE)
     return None

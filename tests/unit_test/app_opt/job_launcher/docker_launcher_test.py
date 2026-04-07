@@ -50,7 +50,7 @@ for _mod_name, _mod_obj in [
     ("docker.errors", _docker_errors),
     ("docker.types", _docker_types),
 ]:
-    sys.modules.setdefault(_mod_name, _mod_obj)
+    sys.modules[_mod_name] = _mod_obj
 
 # Patch docker.from_env and docker.errors at import time so DockerJobLauncher.__init__
 # doesn't actually try to connect to the Docker daemon.
@@ -312,9 +312,15 @@ class TestDockerJobHandleEnterStates:
 
 class TestDockerJobLauncherInit:
     def test_raises_if_workspace_empty_and_no_env(self):
+        """workspace is validated lazily in launch_job, not __init__."""
         with patch.dict("os.environ", {}, clear=True):
-            with pytest.raises(ValueError, match="workspace"):
-                _make_launcher(workspace="", parent_url="cp:8002")
+            launcher = ClientDockerJobLauncher.__new__(ClientDockerJobLauncher)
+            DockerJobLauncher.__init__(launcher, workspace=None, parent_url="cp:8002")
+            launcher._docker_client = _make_docker_client()
+            fl_ctx, _ = _make_fl_ctx()
+            with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
+                with pytest.raises(ValueError, match="workspace"):
+                    launcher.launch_job(_make_job_meta(), fl_ctx)
 
     def test_workspace_read_from_env_if_not_provided(self):
         dc = _make_docker_client()
@@ -328,19 +334,34 @@ class TestDockerJobLauncherInit:
         with pytest.raises(ValueError, match="parent_url"):
             _make_launcher(workspace="/ws", parent_url="")
 
+    def test_raises_if_extra_container_kwargs_contains_reserved_key(self):
+        for reserved in ("volumes", "network", "device_requests", "environment", "command", "name", "detach"):
+            with pytest.raises(ValueError, match="reserved"):
+                _make_launcher(extra_container_kwargs={reserved: "anything"})
+
+    def test_extra_container_kwargs_non_reserved_accepted(self):
+        launcher = _make_launcher(extra_container_kwargs={"shm_size": "2g", "ipc_mode": "host"})
+        assert launcher.extra_container_kwargs == {"shm_size": "2g", "ipc_mode": "host"}
+
     def test_raises_if_docker_not_reachable(self):
+        """Docker connectivity is validated lazily in _get_docker_client."""
         dc = _make_docker_client()
         dc.ping.side_effect = Exception("connection refused")
+        launcher = ClientDockerJobLauncher.__new__(ClientDockerJobLauncher)
+        DockerJobLauncher.__init__(launcher, workspace="/ws", parent_url="cp:8002")
         with patch("docker.from_env", return_value=dc):
             with pytest.raises(RuntimeError, match="cannot connect"):
-                ClientDockerJobLauncher(workspace="/ws", parent_url="cp:8002")
+                launcher._get_docker_client()
 
     def test_raises_if_network_not_found(self):
+        """Network existence is validated lazily in _get_docker_client."""
         dc = _make_docker_client()
         dc.networks.get.side_effect = _NotFound()
+        launcher = ClientDockerJobLauncher.__new__(ClientDockerJobLauncher)
+        DockerJobLauncher.__init__(launcher, workspace="/ws", parent_url="cp:8002")
         with patch("docker.from_env", return_value=dc):
             with pytest.raises(RuntimeError, match="does not exist"):
-                ClientDockerJobLauncher(workspace="/ws", parent_url="cp:8002")
+                launcher._get_docker_client()
 
 
 # ---------------------------------------------------------------------------

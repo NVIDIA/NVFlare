@@ -46,6 +46,36 @@ Within a single site, SP/CP and all SJ/CJ containers must use the same launcher 
 - `PARENT_URL` passed to SJ/CJ is the **SP/CP container name** on the Docker network. Docker's built-in DNS resolves it — no `host.docker.internal` hacks needed.
 - Cross-site communication (client → server) uses the same HTTPS/WSS as process mode.
 
+```mermaid
+graph TD
+    subgraph server_machine["Server Machine"]
+        SP["SP container\n(name: server)\nnvflare-server:latest"]
+        SJ["SJ container\nnvflare-job:latest"]
+        DS1["/var/run/docker.sock"]
+        WS1["host workspace\n(bind mount)"]
+        SP -- "creates via docker.sock" --> SJ
+        SP -. "docker.sock mounted" .-> DS1
+        SP -- "workspace bind mount" --> WS1
+        SJ -- "workspace bind mount" --> WS1
+        SJ -- "PARENT_URL\ntcp://server:8004\n(Docker DNS)" --> SP
+    end
+
+    subgraph client_machine["Client Machine"]
+        CP["CP container\n(name: site-1)\nnvflare-site:latest"]
+        CJ["CJ container\nnvflare-job:latest"]
+        DS2["/var/run/docker.sock"]
+        WS2["host workspace\n(bind mount)"]
+        CP -- "creates via docker.sock" --> CJ
+        CP -. "docker.sock mounted" .-> DS2
+        CP -- "workspace bind mount" --> WS2
+        CJ -- "workspace bind mount" --> WS2
+        CJ -- "PARENT_URL\ntcp://site-1:8102\n(Docker DNS)" --> CP
+    end
+
+    CP -- "FL comms\nhttps://server:8002" --> SP
+    Admin["Admin CLI"] -- "https://server:8002" --> SP
+```
+
 ### Docker Socket and Security Posture
 
 SP/CP container mounts `/var/run/docker.sock` to create SJ/CJ containers at job time. SJ/CJ containers do **not** get the Docker socket — they have no reason to create further containers. The launcher enforces this boundary.
@@ -146,6 +176,38 @@ SJ/CJ container (DockerJobLauncher controls)
   ├── NO Docker socket               ← cannot create further containers
   ├── workspace bind mount           ← own job subdirectory only
   └── nvflare-network                ← intra-site to SP/CP only
+```
+
+---
+
+## Job Launch Sequence
+
+```mermaid
+sequenceDiagram
+    participant Admin as Admin CLI
+    participant SP as SP/CP Container
+    participant Launcher as DockerJobLauncher
+    participant Docker as Docker Daemon
+    participant SJ as SJ/CJ Container
+
+    Admin->>SP: submit job (meta.json with image)
+    SP->>SP: schedule job
+    SP->>Launcher: fire BEFORE_JOB_LAUNCH event
+    Launcher->>Launcher: extract_job_image(meta, site_name)
+    Launcher->>Launcher: check allowed_image_prefixes
+    Launcher->>SP: add_launcher(self, fl_ctx)
+    SP->>Launcher: launch_job(job_meta, fl_ctx)
+    Launcher->>Launcher: override PARENT_URL → SP/CP container name
+    Launcher->>Docker: containers.run(job_image, command, network, volumes, ...)
+    Docker->>SJ: start container
+    SJ->>SP: connect via PARENT_URL (Docker DNS)
+    SJ->>SJ: run FL training
+    SJ-->>Docker: exit (rc=0 or rc=1)
+    Launcher->>Docker: poll container status
+    Docker-->>Launcher: exited (rc=0)
+    Launcher->>Launcher: set terminal_state = SUCCESS
+    Launcher->>Docker: remove container
+    SP->>SP: job complete, results in workspace
 ```
 
 ---

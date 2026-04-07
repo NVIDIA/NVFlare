@@ -17,9 +17,9 @@ import re
 import time
 from abc import abstractmethod
 
-import docker.errors
 
 import docker
+import docker.errors
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
@@ -180,9 +180,7 @@ class DockerJobHandle(JobHandleSpec):
         Returns True if the target state was reached, False otherwise
         (timeout, stuck, or terminal state reached before target).
         """
-        import time as _time
-
-        starting_time = _time.time()
+        starting_time = time.time()
         if not isinstance(states_to_enter, (list, tuple)):
             states_to_enter = [states_to_enter]
 
@@ -209,7 +207,7 @@ class DockerJobHandle(JobHandleSpec):
                 self._remove_container()
                 return False
 
-            if self.timeout is not None and _time.time() - starting_time > self.timeout:
+            if self.timeout is not None and time.time() - starting_time > self.timeout:
                 self.logger.warning(f"container {self.container_name} timed out waiting for {states_to_enter}")
                 self.terminate()
                 return False
@@ -298,7 +296,15 @@ class DockerJobLauncher(JobLauncherSpec):
         self.timeout = timeout
         self.pending_timeout = pending_timeout
         self.allowed_image_prefixes = allowed_image_prefixes
-        self.extra_container_kwargs = extra_container_kwargs or {}
+        extra_container_kwargs = extra_container_kwargs or {}
+        _RESERVED_KWARGS = {"volumes", "network", "device_requests", "environment", "command", "name", "detach"}
+        reserved_used = _RESERVED_KWARGS & set(extra_container_kwargs.keys())
+        if reserved_used:
+            raise ValueError(
+                f"extra_container_kwargs must not contain reserved keys: {sorted(reserved_used)}. "
+                f"These are controlled by the launcher."
+            )
+        self.extra_container_kwargs = extra_container_kwargs
 
         self._docker_client = None
 
