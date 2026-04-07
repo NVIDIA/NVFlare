@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-import os
 import textwrap
 from unittest.mock import MagicMock, patch
 
@@ -30,6 +29,10 @@ def _make_args(recipe_folder=".", out="/tmp/fl_job", entry=None):
 
 class TestJobExport:
     """Tests for nvflare job export command."""
+
+    @pytest.fixture(autouse=True)
+    def agent_mode(self, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
 
     def test_export_success_json_envelope(self, capsys, tmp_path):
         """Successful export: stdout is one JSON envelope with job_folder."""
@@ -104,13 +107,15 @@ class TestJobExport:
         recipe_dir.mkdir()
         # Write a .py with two Recipe subclasses
         (recipe_dir / "recipe.py").write_text(
-            textwrap.dedent("""
+            textwrap.dedent(
+                """
                 from nvflare.recipe.spec import Recipe
                 class RecipeA(Recipe):
                     def export(self, out): pass
                 class RecipeB(Recipe):
                     def export(self, out): pass
-            """)
+            """
+            )
         )
 
         args = _make_args(recipe_folder=str(recipe_dir), out=str(tmp_path / "out"))

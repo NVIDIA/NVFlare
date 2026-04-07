@@ -30,6 +30,10 @@ def _make_args(recipe_folder=".", env="poc", entry=None, workspace="/tmp/sim_ws"
 class TestJobRun:
     """Tests for nvflare job run command."""
 
+    @pytest.fixture(autouse=True)
+    def agent_mode(self, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+
     def _patch_recipe(self, entry="mymod:MyRecipe"):
         """Return a context manager that patches importlib so a mock Recipe is found."""
         mock_cls = MagicMock()
@@ -102,6 +106,64 @@ class TestJobRun:
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["error_code"] == "RECIPE_ENTRY_NOT_FOUND"
+
+    def test_run_recipe_not_found_py_exists_but_no_subclass(self, capsys, tmp_path):
+        """RECIPE_ENTRY_NOT_FOUND when .py files exist but none define a Recipe subclass."""
+        from nvflare.tool.job.job_cli import cmd_job_run
+
+        (tmp_path / "helper.py").write_text("def foo(): pass\n")
+        args = _make_args(recipe_folder=str(tmp_path), env="poc")
+
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_job_run(args)
+        assert exc_info.value.code == 1
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["error_code"] == "RECIPE_ENTRY_NOT_FOUND"
+
+    def test_run_recipe_ambiguous_exits_1(self, capsys, tmp_path):
+        """RECIPE_ENTRY_AMBIGUOUS when multiple Recipe subclasses are found."""
+        from nvflare.tool.job.job_cli import cmd_job_run
+
+        # Two files each with a Recipe subclass
+        recipe_src = "from nvflare.recipe.spec import Recipe\nclass {name}(Recipe):\n    def export(self, out): pass\n"
+        (tmp_path / "recipe_a.py").write_text(recipe_src.format(name="RecipeA"))
+        (tmp_path / "recipe_b.py").write_text(recipe_src.format(name="RecipeB"))
+        args = _make_args(recipe_folder=str(tmp_path), env="poc")
+
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_job_run(args)
+        assert exc_info.value.code == 1
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["error_code"] == "RECIPE_ENTRY_AMBIGUOUS"
+
+    def test_run_auto_search_single_recipe(self, capsys, tmp_path):
+        """Auto-search finds exactly one Recipe subclass and submits the job."""
+        from nvflare.tool.job.job_cli import cmd_job_run
+
+        recipe_src = (
+            "from nvflare.recipe.spec import Recipe\n"
+            "class MyAutoRecipe(Recipe):\n"
+            "    def __init__(self): pass\n"
+            "    def export(self, out_dir):\n"
+            "        import os; os.makedirs(out_dir, exist_ok=True)\n"
+        )
+        (tmp_path / "recipe.py").write_text(recipe_src)
+
+        args = _make_args(recipe_folder=str(tmp_path), env="poc", entry=None)
+        mock_sess = MagicMock()
+        mock_sess.submit_job.return_value = "job-auto"
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            cmd_job_run(args)
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["status"] == "ok"
+        assert data["data"]["job_id"] == "job-auto"
 
     def test_run_connection_failed_exits_2(self, capsys, tmp_path):
         """poc submit connection failure → CONNECTION_FAILED, exit 2."""

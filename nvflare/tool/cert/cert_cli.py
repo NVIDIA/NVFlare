@@ -71,13 +71,6 @@ def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         help="Overwrite existing CA files without prompting. Backs up existing files first.",
     )
     p.add_argument(
-        "--output",
-        dest="output_fmt",
-        choices=["json", "quiet"],
-        default=None,
-        help="Output format. 'json' implies --force. Default: human-readable text.",
-    )
-    p.add_argument(
         "--schema",
         action="store_true",
         default=False,
@@ -122,6 +115,14 @@ def _def_cert_csr_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argum
         help="Organization name for the certificate.",
     )
     p.add_argument(
+        "--project-file",
+        required=False,
+        default=None,
+        dest="project_file",
+        metavar="SITE_YAML",
+        help="Single-site YAML with name/org/type. Use this instead of --name/--org/--type.",
+    )
+    p.add_argument(
         "-t",
         "--type",
         required=False,
@@ -139,13 +140,6 @@ def _def_cert_csr_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argum
         action="store_true",
         default=False,
         help="Overwrite existing key/CSR without prompting.",
-    )
-    p.add_argument(
-        "--output",
-        dest="output_fmt",
-        choices=["json", "quiet"],
-        default=None,
-        help="Output format. 'json' implies --force. Default: human-readable text.",
     )
     p.add_argument(
         "--schema",
@@ -213,13 +207,6 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         action="store_true",
         default=False,
         help="Overwrite existing signed cert without prompting.",
-    )
-    p.add_argument(
-        "--output",
-        dest="output_fmt",
-        choices=["json", "quiet"],
-        default=None,
-        help="Output format. 'json' implies --force. Default: human-readable text.",
     )
     p.add_argument(
         "--schema",

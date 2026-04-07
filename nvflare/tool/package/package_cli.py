@@ -111,8 +111,9 @@ def def_package_cli_parser(sub_cmd) -> dict:
         default=None,
         dest="project_file",
         help=(
-            "Site-scoped project YAML defining participants and optional custom builders "
-            "(schema-compatible with 'nvflare provision' project.yaml). "
+            "Project YAML defining participants and optional custom builders "
+            "(schema-compatible with 'nvflare provision' project.yaml), "
+            "or a single-site YAML with name/org/type. "
             "When given, -t becomes an optional type filter. "
             "WorkspaceBuilder and StaticFileBuilder are always managed by nvflare package "
             "(scheme is derived from --endpoint); any YAML entries for these builders, "
@@ -133,13 +134,6 @@ def def_package_cli_parser(sub_cmd) -> dict:
         action="store_true",
         default=False,
         help="Allow re-packaging when this participant name already appears in the most recent prod_NN directory (a new prod_NN is created alongside).",
-    )
-    p.add_argument(
-        "--output",
-        choices=["json", "quiet"],
-        default=None,
-        dest="output_fmt",
-        help="Output format. Default: human-readable text.",
     )
     p.add_argument(
         "--schema",

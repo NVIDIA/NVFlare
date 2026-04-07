@@ -1,0 +1,4 @@
+# Single-site template (fill in values)
+name: <site_name>
+org: <org_name>
+type: <client|server|org_admin|lead|member>

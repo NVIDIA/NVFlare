@@ -31,7 +31,7 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "INVALID_ARGS": {
         "message": "Invalid arguments.",
-        "hint": "Run the command with --schema for usage.",
+        "hint": "Run the command with -h for usage.",
     },
     "STARTUP_KIT_MISSING": {
         "message": "Startup kit not found.",

@@ -479,9 +479,7 @@ def submit_job(cmd_args):
             if cmd_args.debug:
                 from nvflare.tool.cli_output import print_human
 
-                print_human(
-                    f"in debug mode, job configurations can be examined in temp job directory '{temp_job_dir}'"
-                )
+                print_human(f"in debug mode, job configurations can be examined in temp job directory '{temp_job_dir}'")
             else:
                 shutil.rmtree(temp_job_dir)
 
@@ -501,9 +499,7 @@ def find_admin_user_and_dir() -> Tuple[str, str]:
 
 
 def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
-    from nvflare.tool.cli_output import output_error, output_ok
-
-    from nvflare.tool.cli_output import print_human
+    from nvflare.tool.cli_output import output_error, output_ok, print_human
 
     print_human("trying to connect to the server")
     sess = new_secure_session(username=username, startup_kit_location=admin_user_dir)
@@ -1705,11 +1701,63 @@ def cmd_job_log(cmd_args):
     output_ok({"job_id": cmd_args.job_id, "site": site, "log_config": log_config, "status": "applied"})
 
 
-def cmd_job_export(cmd_args):
+def _resolve_and_export_recipe(recipe_folder: str, out_dir: str, entry=None):
+    """Resolve a Recipe subclass and export it to *out_dir*.
+
+    If *entry* is given (``"module:ClassName"``), load it directly.
+    Otherwise scan *.py files in *recipe_folder* for a unique Recipe subclass.
+
+    Calls ``output_error`` and returns ``False`` on any failure; returns ``True``
+    on success.  Callers should ``return`` immediately when ``False`` is returned.
+    """
+    import glob as _glob
     import importlib
+    import importlib.util
     import inspect
 
-    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_output import output_error
+
+    try:
+        from nvflare.recipe.spec import Recipe
+
+        if entry:
+            module_name, _, class_name = entry.partition(":")
+            mod = importlib.import_module(module_name)
+            RecipeClass = getattr(mod, class_name)
+        else:
+            found = []
+            for py_file in _glob.glob(os.path.join(recipe_folder, "*.py")):
+                spec = importlib.util.spec_from_file_location("_recipe_scan", py_file)
+                mod = importlib.util.module_from_spec(spec)
+                try:
+                    spec.loader.exec_module(mod)
+                except Exception:
+                    continue
+                for name, obj in inspect.getmembers(mod, inspect.isclass):
+                    if issubclass(obj, Recipe) and obj is not Recipe:
+                        found.append((name, obj))
+            if not found:
+                output_error("RECIPE_ENTRY_NOT_FOUND")
+                return False
+            if len(found) > 1:
+                output_error("RECIPE_ENTRY_AMBIGUOUS")
+                return False
+            _, RecipeClass = found[0]
+
+        recipe_instance = RecipeClass()
+        recipe_instance.export(out_dir)
+    except (ImportError, AttributeError) as e:
+        output_error("RECIPE_ENTRY_NOT_FOUND", detail=str(e))
+        return False
+    except Exception as e:
+        output_error("RECIPE_EXPORT_FAILED", detail=str(e))
+        return False
+
+    return True
+
+
+def cmd_job_export(cmd_args):
+    from nvflare.tool.cli_output import output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -1724,47 +1772,8 @@ def cmd_job_export(cmd_args):
 
     recipe_folder = os.path.abspath(cmd_args.recipe_folder)
     out_dir = os.path.abspath(cmd_args.out)
-    entry = getattr(cmd_args, "entry", None)
 
-    # Discover Recipe subclass
-    try:
-        from nvflare.recipe.spec import Recipe
-
-        if entry:
-            module_name, _, class_name = entry.partition(":")
-            mod = importlib.import_module(module_name)
-            RecipeClass = getattr(mod, class_name)
-        else:
-            # Auto-discover: scan .py files in recipe_folder for Recipe subclasses
-            import glob as _glob
-            import importlib.util
-
-            found = []
-            for py_file in _glob.glob(os.path.join(recipe_folder, "*.py")):
-                spec = importlib.util.spec_from_file_location("_recipe_scan", py_file)
-                mod = importlib.util.module_from_spec(spec)
-                try:
-                    spec.loader.exec_module(mod)
-                except Exception:
-                    continue
-                for name, obj in inspect.getmembers(mod, inspect.isclass):
-                    if issubclass(obj, Recipe) and obj is not Recipe:
-                        found.append((name, obj))
-            if not found:
-                output_error("RECIPE_ENTRY_NOT_FOUND")
-                return
-            if len(found) > 1:
-                output_error("RECIPE_ENTRY_AMBIGUOUS")
-                return
-            _, RecipeClass = found[0]
-
-        recipe_instance = RecipeClass()
-        recipe_instance.export(out_dir)
-    except (ImportError, AttributeError) as e:
-        output_error("RECIPE_ENTRY_NOT_FOUND", detail=str(e))
-        return
-    except Exception as e:
-        output_error("RECIPE_EXPORT_FAILED", detail=str(e))
+    if not _resolve_and_export_recipe(recipe_folder, out_dir, entry=getattr(cmd_args, "entry", None)):
         return
 
     output_ok({"job_folder": out_dir, "recipe_folder": recipe_folder})
@@ -1790,54 +1799,7 @@ def cmd_job_run(cmd_args):
     env = getattr(cmd_args, "env", "poc")
 
     with tempfile.TemporaryDirectory() as tmp_out:
-        # Step 1: export
-        export_args = argparse.Namespace(
-            recipe_folder=cmd_args.recipe_folder,
-            out=tmp_out,
-            entry=getattr(cmd_args, "entry", None),
-        )
-        # Inline export logic (reuse cmd_job_export internals)
-        import importlib
-        import inspect
-
-        try:
-            from nvflare.recipe.spec import Recipe
-
-            entry = getattr(cmd_args, "entry", None)
-            if entry:
-                module_name, _, class_name = entry.partition(":")
-                mod = importlib.import_module(module_name)
-                RecipeClass = getattr(mod, class_name)
-            else:
-                import glob as _glob
-                import importlib.util
-
-                found = []
-                for py_file in _glob.glob(os.path.join(recipe_folder, "*.py")):
-                    spec = importlib.util.spec_from_file_location("_recipe_scan", py_file)
-                    mod = importlib.util.module_from_spec(spec)
-                    try:
-                        spec.loader.exec_module(mod)
-                    except Exception:
-                        continue
-                    for name, obj in inspect.getmembers(mod, inspect.isclass):
-                        if issubclass(obj, Recipe) and obj is not Recipe:
-                            found.append((name, obj))
-                if not found:
-                    output_error("RECIPE_ENTRY_NOT_FOUND")
-                    return
-                if len(found) > 1:
-                    output_error("RECIPE_ENTRY_AMBIGUOUS")
-                    return
-                _, RecipeClass = found[0]
-
-            recipe_instance = RecipeClass()
-            recipe_instance.export(tmp_out)
-        except (ImportError, AttributeError) as e:
-            output_error("RECIPE_ENTRY_NOT_FOUND", detail=str(e))
-            return
-        except Exception as e:
-            output_error("RECIPE_EXPORT_FAILED", detail=str(e))
+        if not _resolve_and_export_recipe(recipe_folder, tmp_out, entry=getattr(cmd_args, "entry", None)):
             return
 
         # Step 2: submit or simulate
@@ -1900,8 +1862,13 @@ def define_job_run_parser(job_subparser):
         choices=["sim", "poc", "prod"],
         help="execution environment: sim (simulator), poc, or prod",
     )
-    p.add_argument("--entry", type=str, default=None, help="module:ClassName of the Recipe subclass")
-    p.add_argument("--workspace", type=str, default="/tmp/sim_ws", help="simulator workspace (--env sim only)")
+    p.add_argument(
+        "--entry",
+        type=str,
+        default=None,
+        help="module:ClassName of the Recipe subclass. If omitted, auto-searches --recipe-folder for a Recipe subclass.",
+    )
+    p.add_argument("--workspace", type=str, default="/tmp/sim_ws", help="workspace directory for the job run.")
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_RUN] = p
     job_sub_cmd_handlers[CMD_JOB_RUN] = cmd_job_run

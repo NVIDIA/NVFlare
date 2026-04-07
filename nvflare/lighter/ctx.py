@@ -13,6 +13,7 @@
 # limitations under the License.
 import json
 import os
+import sys
 from typing import List, Optional, Union
 
 import yaml
@@ -180,28 +181,32 @@ class ProvisionContext(dict):
         if logger:
             logger.info(msg)
         else:
-            print(f"INFO: {msg}")
+            stream = sys.stderr if os.getenv("NVFLARE_CLI_MODE", "").strip().lower() in {"agent", "json", "machine", "1", "true", "yes"} else sys.stdout
+            print(f"INFO: {msg}", file=stream)
 
     def error(self, msg: str):
         logger = self.get_logger()
         if logger:
             logger.error(msg)
         else:
-            print(f"ERROR: {msg}")
+            stream = sys.stderr if os.getenv("NVFLARE_CLI_MODE", "").strip().lower() in {"agent", "json", "machine", "1", "true", "yes"} else sys.stdout
+            print(f"ERROR: {msg}", file=stream)
 
     def debug(self, msg: str):
         logger = self.get_logger()
         if logger:
             logger.debug(msg)
         else:
-            print(f"DEBUG: {msg}")
+            stream = sys.stderr if os.getenv("NVFLARE_CLI_MODE", "").strip().lower() in {"agent", "json", "machine", "1", "true", "yes"} else sys.stdout
+            print(f"DEBUG: {msg}", file=stream)
 
     def warning(self, msg: str):
         logger = self.get_logger()
         if logger:
             logger.warning(msg)
         else:
-            print(f"WARNING: {msg}")
+            stream = sys.stderr if os.getenv("NVFLARE_CLI_MODE", "").strip().lower() in {"agent", "json", "machine", "1", "true", "yes"} else sys.stdout
+            print(f"WARNING: {msg}", file=stream)
 
     def get_result_location(self) -> Optional[str]:
         """Get the directory of the provision result.
