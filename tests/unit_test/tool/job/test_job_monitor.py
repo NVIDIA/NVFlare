@@ -21,6 +21,10 @@ import pytest
 class TestJobMonitor:
     """Tests for nvflare job monitor command."""
 
+    @pytest.fixture(autouse=True)
+    def agent_mode(self, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+
     def _make_args(self, job_id="abc123", timeout=0, interval=2):
         args = MagicMock()
         args.job_id = job_id

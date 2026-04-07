@@ -21,6 +21,10 @@ import pytest
 class TestJobSubmitOutput:
     """Tests for nvflare job submit output format."""
 
+    @pytest.fixture(autouse=True)
+    def agent_mode(self, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+
     def _make_args(self, **kwargs):
         args = MagicMock()
         args.wait = kwargs.get("wait", False)

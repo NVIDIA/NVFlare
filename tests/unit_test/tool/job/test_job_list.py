@@ -15,9 +15,15 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 class TestJobList:
     """Tests for nvflare job list command."""
+
+    @pytest.fixture(autouse=True)
+    def agent_mode(self, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
 
     def _make_args(self, **kwargs):
         args = MagicMock()
@@ -144,7 +150,6 @@ class TestJobList:
     def test_schema_flag_prints_json_and_exits_0(self, capsys):
         """--schema prints JSON schema to stdout and exits 0."""
         import argparse
-        import sys
 
         from nvflare.tool.cli_schema import handle_schema_flag
 

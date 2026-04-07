@@ -91,7 +91,6 @@ CMD_LIST_TEMPLATES = "list_templates"
 CMD_SHOW_VARIABLES = "show_variables"
 CMD_CREATE_JOB = "create"
 CMD_SUBMIT_JOB = "submit"
-CMD_JOB_NEW = "new"
 CMD_JOB_LIST = "list"
 CMD_JOB_META = "meta"
 CMD_JOB_ABORT = "abort"
@@ -104,7 +103,6 @@ CMD_JOB_STATS = "stats"
 CMD_JOB_ERRORS = "errors"
 CMD_JOB_WAIT = "wait"
 CMD_JOB_LOGS = "logs"
-CMD_JOB_LOG_LEVEL = "log-level"
 CMD_JOB_DIAGNOSE = "diagnose"
 
 # Section 3 additions: new lifecycle commands
@@ -177,10 +175,10 @@ def create_job(cmd_args):
         [],
         sys.argv[1:],
         deprecated=True,
-        deprecated_message="Use 'nvflare job new -r <recipe> --script <train.py>' instead.",
+        deprecated_message="Use 'nvflare job export' or the Job Recipe API instead.",
     )
     print(
-        "WARNING: 'nvflare job create' is deprecated. Use 'nvflare job new -r <recipe> --script <train.py>' instead."
+        "WARNING: 'nvflare job create' is deprecated. Use 'nvflare job export' or the Job Recipe API instead."
         " Run 'nvflare recipe list' to see available recipes.",
         file=sys.stderr,
     )
@@ -526,7 +524,6 @@ job_sub_cmd_handlers = {
     CMD_SUBMIT_JOB: submit_job,
     CMD_LIST_TEMPLATES: list_templates,
     CMD_SHOW_VARIABLES: show_variables,
-    CMD_JOB_NEW: None,  # set after function definition
     CMD_JOB_LIST: None,
     CMD_JOB_META: None,
     CMD_JOB_ABORT: None,
@@ -537,7 +534,6 @@ job_sub_cmd_handlers = {
     CMD_JOB_ERRORS: None,
     CMD_JOB_WAIT: None,
     CMD_JOB_LOGS: None,
-    CMD_JOB_LOG_LEVEL: None,
     CMD_JOB_DIAGNOSE: None,
     CMD_JOB_MONITOR: None,
     CMD_JOB_LOG: None,
@@ -550,7 +546,6 @@ job_sub_cmd_parser = {
     CMD_SUBMIT_JOB: None,
     CMD_LIST_TEMPLATES: None,
     CMD_SHOW_VARIABLES: None,
-    CMD_JOB_NEW: None,
     CMD_JOB_LIST: None,
     CMD_JOB_META: None,
     CMD_JOB_ABORT: None,
@@ -561,7 +556,6 @@ job_sub_cmd_parser = {
     CMD_JOB_ERRORS: None,
     CMD_JOB_WAIT: None,
     CMD_JOB_LOGS: None,
-    CMD_JOB_LOG_LEVEL: None,
     CMD_JOB_DIAGNOSE: None,
     CMD_JOB_MONITOR: None,
     CMD_JOB_LOG: None,
@@ -584,7 +578,6 @@ def def_job_cli_parser(sub_cmd):
     cmd = "job"
     parser = sub_cmd.add_parser(cmd, help="submit, manage, and monitor FL jobs", formatter_class=_WiderSubcmdFormatter)
     job_subparser = parser.add_subparsers(title="job subcommands", metavar="", dest="job_sub_cmd")
-    define_job_new_parser(job_subparser)
     define_submit_job_parser(job_subparser)
     define_job_monitor_parser(job_subparser)
     define_job_export_parser(job_subparser)
@@ -594,7 +587,6 @@ def def_job_cli_parser(sub_cmd):
     define_job_meta_parser(job_subparser)
     define_job_logs_parser(job_subparser)
     define_job_log_parser(job_subparser)
-    define_job_log_level_parser(job_subparser)
     define_job_wait_parser(job_subparser)
     define_job_stats_parser(job_subparser)
     define_job_errors_parser(job_subparser)
@@ -674,7 +666,7 @@ def define_variables_parser(job_subparser):
 
 def define_create_job_parser(job_subparser):
     create_parser = job_subparser.add_parser(
-        "create", help="[DEPRECATED] use 'nvflare job new -r <recipe> --script <train.py>'"
+        "create", help="[DEPRECATED] use 'nvflare job export' or the Job Recipe API"
     )
     create_parser.add_argument(
         "-j",
@@ -951,82 +943,6 @@ def _get_session(admin_user_dir=None, username=None, study="default"):
     return new_secure_session(username=username, startup_kit_location=admin_user_dir)
 
 
-def cmd_job_new(cmd_args):
-    import importlib
-
-    from nvflare.tool.cli_output import output_error, output_ok
-    from nvflare.tool.cli_schema import handle_schema_flag
-
-    handle_schema_flag(
-        job_sub_cmd_parser[CMD_JOB_NEW],
-        "nvflare job new",
-        [
-            "nvflare job new -r fedavg --script train.py",
-            "nvflare job new -r fedavg --script train.py --min-clients 3 --param rounds=20",
-        ],
-        sys.argv[1:],
-    )
-
-    try:
-        from nvflare.tool.recipe.recipe_cli import _load_catalog
-    except ImportError:
-        output_error(
-            "INVALID_ARGS",
-            exit_code=4,
-            detail="recipe catalog not available",
-        )
-        return  # unreachable; output_error exits
-
-    catalog = _load_catalog()
-
-    if not cmd_args.recipe:
-        output_ok({"available_recipes": [r["name"] for r in catalog], "hint": "re-run with -r <recipe> to scaffold"})
-        return
-
-    entry = next((r for r in catalog if r["name"] == cmd_args.recipe), None)
-    if entry is None:
-        output_error(
-            "INVALID_ARGS",
-            exit_code=4,
-            detail=f"unknown recipe '{cmd_args.recipe}'. Available: {[r['name'] for r in catalog]}",
-        )
-        return  # unreachable; output_error exits
-
-    params = {}
-    for p in getattr(cmd_args, "param", []):
-        k, _, v = p.partition("=")
-        params[k.strip()] = _coerce(v.strip())
-
-    job_folder = os.path.abspath(cmd_args.job_folder)
-
-    try:
-        module = importlib.import_module(entry["module"])
-        RecipeClass = getattr(module, entry["class"])
-        recipe = RecipeClass(script=cmd_args.script, **params)
-
-        from nvflare.job_config.api import FedJob
-
-        job = FedJob(name=os.path.basename(job_folder), min_clients=cmd_args.min_clients)
-        job.to(recipe)
-        job.export_job(os.path.dirname(job_folder) or ".")
-    except ImportError as e:
-        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
-        return
-    except Exception as e:
-        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
-        return
-
-    output_ok(
-        {
-            "job_folder": job_folder,
-            "recipe": cmd_args.recipe,
-            "min_clients": cmd_args.min_clients,
-            "script": cmd_args.script,
-            "params": params,
-        }
-    )
-
-
 def cmd_job_list(cmd_args):
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
@@ -1215,22 +1131,6 @@ def cmd_job_delete(cmd_args):
 # ---------------------------------------------------------------------------
 # Parser definitions for new commands
 # ---------------------------------------------------------------------------
-
-
-def define_job_new_parser(job_subparser):
-    p = job_subparser.add_parser(CMD_JOB_NEW, help="scaffold a new job from a recipe")
-    p.add_argument("-r", "--recipe", type=str, default=None, help="recipe name; omit to list available recipes")
-    p.add_argument("--script", type=str, required=True, help="path to the training script")
-    p.add_argument("-j", "--job-folder", dest="job_folder", type=str, default="./current_job", help="output job folder")
-    p.add_argument("--script-dir", dest="script_dir", type=str, default=None, help="additional files directory")
-    p.add_argument("--min-clients", dest="min_clients", type=int, default=2, help="minimum number of FL clients")
-    p.add_argument("--study", type=str, default="default", help="study this job belongs to")
-    p.add_argument(
-        "--param", type=str, action="append", default=[], metavar="key=value", help="recipe parameter (repeatable)"
-    )
-    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
-    job_sub_cmd_parser[CMD_JOB_NEW] = p
-    job_sub_cmd_handlers[CMD_JOB_NEW] = cmd_job_new
 
 
 def define_list_jobs_parser(job_subparser):
@@ -1427,54 +1327,6 @@ def cmd_job_logs(cmd_args):
     )
 
 
-def cmd_job_log_level(cmd_args):
-    from nvflare.tool.cli_output import output_error, output_ok
-    from nvflare.tool.cli_schema import handle_schema_flag
-    from nvflare.tool.system.system_cli import resolve_log_config
-
-    handle_schema_flag(
-        job_sub_cmd_parser[CMD_JOB_LOG_LEVEL],
-        "nvflare job log-level",
-        ["nvflare job log-level abc123 DEBUG", "nvflare job log-level abc123 --config /path/to/logging.json"],
-        sys.argv[1:],
-    )
-
-    level = getattr(cmd_args, "level", None)
-    config_str = getattr(cmd_args, "config", None)
-    site = getattr(cmd_args, "site", "all")
-
-    log_config = resolve_log_config(level, config_str)
-    if log_config is None:
-        output_error("LOG_CONFIG_INVALID", detail="provide a valid level name or --config JSON/file")
-        return
-
-    try:
-        sess = _get_session()
-        # Check job state first
-        meta = sess.get_job_meta(cmd_args.job_id)
-        job_status = meta.get("status", "UNKNOWN") if meta else "UNKNOWN"
-        if job_status in _TERMINAL_JOB_STATES:
-            output_error(
-                "JOB_NOT_RUNNING",
-                exit_code=1,
-                detail=f"job is in terminal state: {job_status}",
-            )
-            return
-        sess.configure_job_log(cmd_args.job_id, log_config, target=site)
-    except Exception as e:
-        from nvflare.fuel.flare_api.api_spec import NoConnection
-
-        if isinstance(e, NoConnection):
-            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        elif "not found" in str(e).lower() or "does not exist" in str(e).lower():
-            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
-        else:
-            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        return
-
-    output_ok({"job_id": cmd_args.job_id, "site": site, "log_config": log_config, "status": "applied"})
-
-
 def cmd_job_diagnose(cmd_args):
     import re
 
@@ -1586,17 +1438,6 @@ def define_job_logs_parser(job_subparser):
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_LOGS] = p
     job_sub_cmd_handlers[CMD_JOB_LOGS] = cmd_job_logs
-
-
-def define_job_log_level_parser(job_subparser):
-    p = job_subparser.add_parser(CMD_JOB_LOG_LEVEL, help="change logging level for a running job")
-    p.add_argument("job_id", type=str, help="job ID")
-    p.add_argument("level", nargs="?", default=None, help="log level: DEBUG, INFO, WARNING, ERROR, CRITICAL")
-    p.add_argument("--config", default=None, help="path to dictConfig JSON file or inline JSON")
-    p.add_argument("--site", default="all", help="target site name or all")
-    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
-    job_sub_cmd_parser[CMD_JOB_LOG_LEVEL] = p
-    job_sub_cmd_handlers[CMD_JOB_LOG_LEVEL] = cmd_job_log_level
 
 
 def define_job_diagnose_parser(job_subparser):

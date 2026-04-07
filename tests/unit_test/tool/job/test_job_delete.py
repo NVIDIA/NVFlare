@@ -21,6 +21,10 @@ import pytest
 class TestJobDelete:
     """Tests for nvflare job delete command."""
 
+    @pytest.fixture(autouse=True)
+    def agent_mode(self, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+
     def _make_args(self, job_id="abc123", output="json", force=False):
         args = MagicMock()
         args.job_id = job_id

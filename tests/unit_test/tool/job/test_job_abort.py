@@ -21,6 +21,10 @@ import pytest
 class TestJobAbort:
     """Tests for nvflare job abort command."""
 
+    @pytest.fixture(autouse=True)
+    def agent_mode(self, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+
     def _make_args(self, job_id="abc123", output="json", force=False):
         args = MagicMock()
         args.job_id = job_id

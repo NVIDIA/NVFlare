@@ -21,6 +21,10 @@ import pytest
 class TestJobClone:
     """Tests for nvflare job clone command."""
 
+    @pytest.fixture(autouse=True)
+    def agent_mode(self, monkeypatch):
+        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+
     def _make_args(self, job_id="abc123", output="json"):
         args = MagicMock()
         args.job_id = job_id
