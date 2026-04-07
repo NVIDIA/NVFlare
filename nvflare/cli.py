@@ -179,6 +179,26 @@ def handle_config_cmd(args):
     )
 
 
+def _patch_help_on_error(parser):
+    """Recursively patch every parser in the tree to print help before error-exit.
+
+    When argparse detects a missing required argument it calls parser.error(),
+    which prints a terse usage line and exits 2.  By wrapping error() we ensure
+    the full help is printed first so users see the complete syntax.
+    """
+
+    def _error_with_help(message):
+        parser.print_help(sys.stderr)
+        print(f"\nerror: {parser.prog}: {message}", file=sys.stderr)
+        parser.exit(2)
+
+    parser.error = _error_with_help
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for sub in action.choices.values():
+                _patch_help_on_error(sub)
+
+
 def parse_args(prog_name: str):
     _parser = argparse.ArgumentParser(description=prog_name)
     _parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
@@ -217,6 +237,9 @@ def parse_args(prog_name: str):
         ns.poc_sub_cmd = sub_sub
         ns.system_sub_cmd = sub_sub
         return _parser, ns, sub_cmd_parsers
+
+    # Patch every parser so it prints full help before exiting on error.
+    _patch_help_on_error(_parser)
 
     args, argv = _parser.parse_known_args(None, None)
     cmd = args.__dict__.get("sub_command")
