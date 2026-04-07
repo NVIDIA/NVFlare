@@ -38,4 +38,5 @@ exclude = '''
 [tool.pytest.ini_options]
 markers = [
     "timeout: mark tests with an execution time limit",
+    "slow: mark tests as slow-running (excluded from the default test run)",
 ]

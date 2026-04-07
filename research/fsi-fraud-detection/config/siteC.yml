@@ -1,0 +1,85 @@
+anomaly_generation_config:
+  field:
+    tower_lat:
+      distributions:
+        - key: uniform
+          low: -1
+          high: 1
+    tower_long:
+      distributions:
+        - key: uniform
+          low: -2
+          high: 2
+    anomalous_tower_NorE_perturbation:
+      distributions:
+        - key: uniform
+          low: -2.1
+          high: -2.1
+    anomalous_tower_SorW_perturbation:
+      distributions:
+        - key: uniform
+          low: -2.25
+          high: -2.25
+    normal_personal_acc_amount:
+      # can be multi-modal
+      distributions:
+        - key: lognormal
+          desired_mean: 500
+          sigma: 150
+    anomalous_personal_acc_amount:
+      distributions:
+        - key: lognormal
+          desired_mean: 10000
+          sigma: 2000
+    normal_business_acc_amount:
+      # can be multi-modal
+      distributions:
+        - key: lognormal
+          desired_mean: 75000
+          sigma: 10000
+    anomalous_business_acc_amount:
+      distributions:
+        - key: lognormal
+          desired_mean: 200000
+          sigma: 10000
+
+dataset_generation_config:
+  # Genesis dataset with Type 3 frauds for bank 1
+  - fraud_insertion_rule_stack: [type4, type3]
+    num_datasets: 1
+    max_num_rows: 100_000
+    apply_probability: 0.9
+    fname_label: "train"
+    fraud_overlap_frac: 0.1
+  # just generate a scaling dataset with all fraud types
+  - fraud_insertion_rule_stack: [type1, type2, type3, type4]
+    num_datasets: 1
+    apply_probability: 1.0
+    fname_label: "scaling"
+    max_num_rows: 25_000
+    fraud_overlap_frac: 0.11
+  # for eval set
+  - fraud_insertion_rule_stack: [type1, type2, type4]
+    num_datasets: 1
+    apply_probability: 0.85
+    fname_label: "eval"
+    max_num_rows: 25_000
+    fraud_overlap_frac: 0.12
+  - fraud_insertion_rule_stack: [type2, type3]
+    num_datasets: 1
+    apply_probability: 0.95
+    fname_label: "eval"
+    max_num_rows: 25_000
+    fraud_overlap_frac: 0.13
+  - fraud_insertion_rule_stack: [type3, type4]
+    num_datasets: 1
+    apply_probability: 0.85
+    fname_label: "eval"
+    max_num_rows: 25_000
+    fraud_overlap_frac: 0.14
+  - fraud_insertion_rule_stack: [type4, type1, type2]
+    num_datasets: 1
+    apply_probability: 0.85
+    fname_label: "eval"
+    max_num_rows: 25_000
+    fraud_overlap_frac: 0.13
