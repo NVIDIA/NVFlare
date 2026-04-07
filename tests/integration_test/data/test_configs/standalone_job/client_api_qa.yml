@@ -59,6 +59,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     setup:
+      - python -m pip install pytorch_lightning
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
     teardown:
       - rm -rf /tmp/nvflare/data
