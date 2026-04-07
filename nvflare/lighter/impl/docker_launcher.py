@@ -126,7 +126,6 @@ class DockerLauncherBuilder(Builder):
                 TemplateSectionKey.DOCKER_LAUNCHER_CLIENT_SH,
                 ProvFileName.DOCKER_LAUNCHER_SH,
                 replacement={
-                    "admin_port": admin_port,
                     "fed_learn_port": fed_learn_port,
                     "communication_port": lh.port,
                     "docker_image": self.docker_image,
