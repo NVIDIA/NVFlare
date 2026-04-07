@@ -409,6 +409,18 @@ Modify your ``job.py`` to use ``PocEnv`` instead of ``SimEnv``:
     env = PocEnv(num_clients=2)
     run = recipe.execute(env)
 
+For a named study, use a custom project config with ``studies:``:
+
+.. code-block:: python
+
+    env = PocEnv(
+        num_clients=2,
+        project_conf_path="/path/to/project.yml",
+        study="cancer-research",
+    )
+
+Named studies require the POC deployment to be provisioned from a custom ``project.yml`` with ``api_version: 4`` and ``studies:``. Otherwise, ``PocEnv`` only supports the ``default`` study.
+
 Then run: ``python job.py``
 
 **Option 2: Export and submit via FLARE Console**:

@@ -118,6 +118,18 @@ Pass the ``study`` parameter to :class:`ProdEnv`:
 
     ProdEnv(startup_kit_location="/path/to/admin", study="cancer-research")
 
+PocEnv (Recipes)
+----------------
+
+Pass the ``study`` parameter to :class:`PocEnv` when your POC deployment is provisioned from a custom
+``project.yml`` that defines ``studies:``:
+
+.. code-block:: python
+
+    PocEnv(num_clients=2, project_conf_path="/path/to/project.yml", study="cancer-research")
+
+If the POC deployment uses the default generated project with no ``studies:``, only the ``default`` study is valid.
+
 Study-Scoped Behavior
 =====================
 
