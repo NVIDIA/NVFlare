@@ -18,6 +18,14 @@ Instead:
 
 This keeps the Kubernetes client simple and avoids exposing the StatsD port to every client environment.
 
+## Validation Status
+
+This directory is reference guidance for the hybrid case.
+
+- The client pod pattern and signed-kit handling are based on the validated in-cluster Kubernetes flow.
+- The setup-2 component split is based on the tracked local and POC setup-2 examples.
+- The exact external server hostname, IP, firewall, and routing path still need to be verified in your environment.
+
 ## What the Client Needs
 
 The Kubernetes client only needs:

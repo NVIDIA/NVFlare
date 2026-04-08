@@ -8,12 +8,12 @@ This directory contains a reference Kubernetes deployment for the current NVFLAR
 
 It is intended for development, validation, and documentation. It is not a complete production bundle.
 
-## Scope
+## When to Use This Guide
 
-This guide adds Kubernetes deployment patterns for the existing monitoring architecture. It does not replace the original local or POC monitoring walkthroughs in [../jobs/README.md](../jobs/README.md).
+Use this guide when the monitoring stack, NVFLARE sites, or both need to run in Kubernetes.
 
-- Use [../jobs/README.md](../jobs/README.md) for the original setup 1 and setup 2 walkthroughs.
-- Use this guide when the monitoring stack, NVFLARE sites, or both need to run in Kubernetes.
+- For the original local and POC walkthroughs for setup 1 and setup 2, see [../jobs/README.md](../jobs/README.md).
+- For the minimal validated job submission example used with this stack, see [../jobs/k8s_hello_numpy/README.md](../jobs/k8s_hello_numpy/README.md).
 - Use the hybrid section below when the NVFLARE server stays outside Kubernetes and one or more clients run inside Kubernetes.
 
 ## Runtime Requirement
@@ -54,7 +54,7 @@ Choose the deployment pattern based on where the NVFLARE server and clients run:
 | Environment | Recommended setup | Notes |
 |-------------|-------------------|-------|
 | server in Kubernetes, clients in Kubernetes | setup 1 or setup 2 | The validated in-cluster path in this guide uses shared in-cluster monitoring. |
-| server outside Kubernetes, one or more clients in Kubernetes | setup 2 | Recommended hybrid pattern. Only the server needs direct reachability to the monitoring stack. |
+| server outside Kubernetes, one or more clients in Kubernetes | setup 2 | Recommended hybrid pattern. Only the server needs direct reachability to the monitoring stack. The hybrid client manifests below are reference guidance built from validated pieces. |
 | server outside Kubernetes, clients outside Kubernetes | setup 1 or setup 2 | Follow [../jobs/README.md](../jobs/README.md) and place the monitoring stack where the chosen topology expects it. |
 | isolated sites that cannot share one monitoring endpoint | setup 3 | Each site runs its own monitoring stack. |
 
@@ -259,7 +259,7 @@ The example manifest set in [hybrid-client/README.md](hybrid-client/README.md) s
 
 - [hybrid-client/10-client-pod-hostaliases.yaml](hybrid-client/10-client-pod-hostaliases.yaml) mounts the provisioned startup kit and uses `hostAliases` to map the expected server hostname to the external server IP.
 
-This manifest set is based on the validated client pod pattern used in the in-cluster K8s flow plus the tracked setup-2 monitoring configuration split. The exact off-cluster server network path still needs to be verified in your environment.
+This manifest set is based on the validated client pod pattern used in the in-cluster K8s flow plus the tracked setup-2 monitoring configuration split. Treat it as reference guidance for the hybrid case. The exact off-cluster server network path still needs to be verified in your environment.
 
 ## 5. Exposing StatsD for external NVFLARE
 

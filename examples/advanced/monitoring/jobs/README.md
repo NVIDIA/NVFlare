@@ -1,17 +1,16 @@
 # FLARE Monitoring
-FLARE Monitoring provides a initial solution for tracking system metrics of your federated learning jobs.
-Different from Machine learning experiment tracking, where it focused on the training metrics, the monitoring here focused on the FL system: i.e. job and system lifecycle metrics.
+FLARE Monitoring provides an initial solution for tracking system metrics of your federated learning jobs.
+Different from machine learning experiment tracking, which focuses on training metrics, the monitoring here focuses on the FL system itself: job and system lifecycle metrics.
 
 This guide will walk you through the steps to set up and use the monitoring system effectively.
 Please see [hello-pytorch](../../../hello-world/hello-pt/README.md) for details on how to run hello-pt.
 
-## Scope of This Guide
+## When to Use This Guide
 
-This document preserves the original local and POC monitoring walkthroughs for setup 1 and setup 2.
+Use this guide when the NVFLARE server and clients are running as local processes or in the classic POC layout.
 
-- Use this guide when the NVFLARE server and clients are running as local processes or in the classic POC layout.
-- Use [../k8s/README.md](../k8s/README.md) for Kubernetes deployment guidance layered on top of the same monitoring topologies.
-- For the validated production-style K8s job submission example, see [k8s_hello_numpy/README.md](./k8s_hello_numpy/README.md).
+- For Kubernetes deployment guidance for the monitoring stack or hybrid environments, see [../k8s/README.md](../k8s/README.md).
+- For the minimal validated production-style K8s job submission example, see [k8s_hello_numpy/README.md](./k8s_hello_numpy/README.md).
 
 ## Prepare Code
 Create a bash script to copy the hello-world example to the current directory:
@@ -88,7 +87,7 @@ That path was exercised against a live MicroK8s deployment with:
 
 The example also preserves the signed admin startup kit and avoids editing `fed_admin.json` directly.
 
-It supplements the local and POC walkthrough below. The setup 1 and setup 2 flows in this document still describe the original monitoring model and remain useful for non-Kubernetes or mixed-environment deployments.
+Use that example when you want a small validated Kubernetes submission flow. Use the setup 1 and setup 2 walkthroughs below when you want to learn or test the original monitoring model in the local or POC layout.
 
 
 ## Prepare FLARE Metrics Monitoring Configuration

@@ -2,15 +2,17 @@
 
 NVFLARE monitoring publishes FL system metrics through `StatsDReporter`, converts them with `statsd-exporter`, stores them in Prometheus, and visualizes them in Grafana.
 
-This guide focuses on operational setup for the current monitoring path. It complements the Job API walkthrough in [jobs/README.md](jobs/README.md).
+This guide explains the monitoring architecture, supported topologies, and how to choose the right deployment path.
 
-## Scope
+## Choose a Guide
 
-The original monitoring walkthroughs are still the primary reference for the existing topologies:
+Use the guide that matches your environment:
 
-- [jobs/README.md](jobs/README.md) remains the canonical step-by-step guide for the local POC flows for setup 1 and setup 2.
-- setup 3 remains the same architecture described in this guide: one monitoring stack per site.
-- [k8s/README.md](k8s/README.md) adds Kubernetes deployment guidance for the same monitoring patterns. It does not replace the original local or mixed-environment monitoring model.
+| If you want to... | Start here | Notes |
+|-------------------|------------|-------|
+| run the original local or POC monitoring walkthroughs for setup 1 and setup 2 | [jobs/README.md](jobs/README.md) | Best for learning the existing monitoring model end to end on one machine or in the classic POC layout. |
+| deploy the monitoring stack in Kubernetes | [k8s/README.md](k8s/README.md) | Covers the monitoring stack manifests, in-cluster validation, and hybrid deployment guidance. |
+| submit a minimal monitored job to a production-style Kubernetes deployment | [jobs/k8s_hello_numpy/README.md](jobs/k8s_hello_numpy/README.md) | Validated against MicroK8s with job-level metrics visible in `statsd-exporter`. |
 
 ## Architecture
 
@@ -55,7 +57,7 @@ Default local URLs:
 
 ### Kubernetes Reference Deployment
 
-For a Kubernetes deployment of the monitoring stack, use the reference manifests in [k8s/README.md](k8s/README.md).
+For a Kubernetes deployment of the monitoring stack, use the manifests and guidance in [k8s/README.md](k8s/README.md).
 
 The Kubernetes reference stack includes:
 
@@ -64,7 +66,7 @@ The Kubernetes reference stack includes:
 - Grafana with a Secret-backed admin password
 - optional Grafana Ingress and example NetworkPolicy
 
-This path is a reference deployment for development and documentation. It is not a full production bundle.
+This path is intended for development, validation, and documentation. It is not a full production bundle.
 
 ## Setup Types
 
@@ -207,7 +209,7 @@ Server-side example:
 },
 {
   "id": "remote_metrics_receiver",
-  "path": "nvflare.metrics.remote_metrics_reciever.RemoteMetricsReceiver",
+  "path": "nvflare.metrics.remote_metrics_receiver.RemoteMetricsReceiver",
   "args": {
     "events": ["fed.metrics_event"]
   }
