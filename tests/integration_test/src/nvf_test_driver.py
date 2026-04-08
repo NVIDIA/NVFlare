@@ -275,12 +275,12 @@ class NVFTestDriver:
         if self.job_id and self.super_admin_api:
             try:
                 job_meta = get_job_meta(self.super_admin_api, job_id=self.job_id)
-            except JobNotFound:
+            except (JobNotFound, ConnectionError, SessionClosed):
                 return run_state
             job_run_status = job_meta.get("status")
             try:
                 stats = self._get_stats(target=TargetType.SERVER, job_id=self.job_id)
-            except (JobNotFound, JobNotRunning):
+            except (JobNotFound, JobNotRunning, ConnectionError, SessionClosed):
                 stats = None
             # update run_state
             changed, run_state = _update_run_state(stats=stats, run_state=run_state, job_run_status=job_run_status)
