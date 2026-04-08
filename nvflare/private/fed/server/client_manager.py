@@ -262,25 +262,13 @@ class ClientManager:
                 self.logger.debug(f"Receive heartbeat from Client:{token}")
                 return False
             else:
-                for _token, _client in self.clients.items():
-                    if _client.name == client_name:
-                        fl_ctx.set_prop(
-                            FLContextKey.COMMUNICATION_ERROR,
-                            "Client ID already registered as a client: {}".format(client_name),
-                            sticky=False,
-                        )
-                        self.logger.info(
-                            f"Failed to re-activate the client:{client_name} with token: {token}. "
-                            f"Client already exist with token: {_token}."
-                        )
-                        return False
-
-                client = Client(client_name, token)
-                self._set_client_props(client, client_fqcn, fl_ctx)
-                self.clients.update({token: client})
-                self.name_to_clients[client.name] = client
-                self.logger.info(f"Re-activate the client: {client_name} at {client_fqcn} with token: {token}")
-                return True
+                # Reject heartbeat from unknown or revoked tokens.
+                self.logger.warning(
+                    f"Rejecting heartbeat from unknown/revoked token for client "
+                    f"'{client_name}' (token: {token}). "
+                    f"Client must re-register to obtain a new token."
+                )
+                return False
 
     @staticmethod
     def _set_client_props(client: Client, fqcn: str, fl_ctx: FLContext):
