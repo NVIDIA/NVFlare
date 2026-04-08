@@ -73,9 +73,17 @@ class AppDeployer(AppDeployerSpec):
                 submitter_role=submitter_role,
             )
             if err:
+                import shutil
+
+                if os.path.exists(app_path):
+                    shutil.rmtree(app_path, ignore_errors=True)
                 return err
 
             if not authorized:
+                import shutil
+
+                if os.path.exists(app_path):
+                    shutil.rmtree(app_path, ignore_errors=True)
                 return "not authorized"
 
         except Exception as e:
