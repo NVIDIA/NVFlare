@@ -107,7 +107,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
             if isinstance(deployments, list):
                 for item in deployments:
                     if isinstance(item, dict):
-                        known_keys = {JobConstants.SITES, "targets", JobConstants.JOB_IMAGE}
+                        known_keys = {JobConstants.SITES, "targets", JobConstants.JOB_IMAGE, "container_kwargs"}
                         unknown_keys = set(item.keys()) - known_keys
                         if unknown_keys:
                             raise ValueError(
