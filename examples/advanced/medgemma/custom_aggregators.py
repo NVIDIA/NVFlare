@@ -174,7 +174,14 @@ class HLoraAggregator(ModelAggregator):
         aggregated_params = {key: value / self.total_weight for key, value in self.non_lora_weighted_sum.items()}
         if self.client_lora_params:
             lora_keys = list(self.client_lora_params[0][1].keys())
-            for a_key, b_key in _get_lora_factor_pairs(lora_keys):
+            lora_pairs = _get_lora_factor_pairs(lora_keys)
+            self.info(
+                "HLoRA aggregation: "
+                f"clients={len(self.client_lora_params)} "
+                f"lora_pairs={len(lora_pairs)} "
+                f"aux_tensors={len(self.non_lora_weighted_sum)}"
+            )
+            for a_key, b_key in lora_pairs:
                 weighted_b_factors = []
                 weighted_a_factors = []
                 b_template = self.client_lora_params[0][1][b_key]
