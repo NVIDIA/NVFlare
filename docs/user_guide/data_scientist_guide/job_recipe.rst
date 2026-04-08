@@ -235,7 +235,7 @@ Let's first set the path to the POC environment:
 
    from nvflare.recipe.poc_env import PocEnv
 
-   # Create a simple POC environment
+   # Create a POC environment
    env = PocEnv(
        num_clients=2
    )
