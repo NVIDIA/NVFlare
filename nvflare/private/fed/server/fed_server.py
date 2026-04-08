@@ -742,6 +742,16 @@ class FederatedServer(BaseServer):
     def process_job_failure(self, request: Message):
         payload = request.payload
         client = request.get_header(key=MessageHeaderKey.ORIGIN)
+
+        # Validate sender identity before processing
+        with self.engine.new_context() as fl_ctx:
+            validated = self.client_manager.validate_client(request, fl_ctx)
+            if not validated:
+                self.logger.warning(
+                    f"Dropped unauthenticated Job Failure report from {client}"
+                )
+                return
+
         if not isinstance(payload, dict):
             self.logger.error(
                 f"dropped bad Job Failure report from {client}: expect payload to be dict but got {type(payload)}"
