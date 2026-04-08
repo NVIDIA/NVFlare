@@ -214,15 +214,15 @@ class LoginModule(CommandModule, CommandFilter):
             conn.append_error("not authenticated - no token")
             return False
 
-        sess = self.session_mgr.get_session(token)
+        hci = conn.get_prop(ConnProps.HCI_SERVER)
+        id_asserter = hci.get_id_asserter()
+
+        sess = self.session_mgr.get_session(token, id_asserter)
         if not sess:
             # try to recreate the session
             request = conn.get_prop(ConnProps.REQUEST)
             assert isinstance(request, CellMessage)
             origin = request.get_header(MessageHeaderKey.ORIGIN)
-
-            hci = conn.get_prop(ConnProps.HCI_SERVER)
-            id_asserter = hci.get_id_asserter()
 
             try:
                 sess = self.session_mgr.recreate_session(token, origin, id_asserter)
