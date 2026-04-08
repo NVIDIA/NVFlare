@@ -25,6 +25,7 @@ import shlex
 from custom_aggregators import HLoraAggregator
 from data_utils import DEFAULT_MODEL_NAME_OR_PATH
 
+from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
@@ -133,6 +134,22 @@ def _configure_timeouts(
     )
 
 
+def _configure_client_launchers(recipe, client_names, max_resends: int = 3) -> None:
+    # add_client_config() updates the subprocess config file, but the warning about
+    # unbounded resends is emitted earlier by the client-job launcher itself.
+    deploy_map = getattr(recipe.job, "_deploy_map", {})
+    for site_name in client_names:
+        app = deploy_map.get(site_name)
+        if app is None:
+            continue
+        app_config = getattr(app, "app_config", None)
+        executors = getattr(app_config, "executors", [])
+        for executor_def in executors:
+            executor = getattr(executor_def, "executor", None)
+            if isinstance(executor, ClientAPILauncherExecutor):
+                executor._max_resends = max_resends
+
+
 def _build_train_args(args, site_data_path: str, image_root: str, report_to: str) -> str:
     train_args = [
         "--data_path",
@@ -163,12 +180,6 @@ def _build_train_args(args, site_data_path: str, image_root: str, report_to: str
     return shlex.join(train_args)
 
 
-def _get_aggregator(lora_aggregation: str):
-    if lora_aggregation == "hlora":
-        return HLoraAggregator()
-    return None
-
-
 def main():
     args = define_parser()
     n_clients = args.n_clients
@@ -196,12 +207,13 @@ def main():
         model=model,
         train_script="client.py",
         per_site_config=per_site_config,
-        aggregator=_get_aggregator(args.lora_aggregation),
+        aggregator=HLoraAggregator() if args.lora_aggregation == "hlora" else None,
         launch_external_process=True,
         server_expected_format="pytorch",
         key_metric="",
     )
     _configure_timeouts(recipe, client_names)
+    _configure_client_launchers(recipe, client_names)
 
     if args.wandb:
         add_experiment_tracking(
