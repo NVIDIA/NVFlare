@@ -175,6 +175,14 @@ class JobRunner(FLComponent):
                             err = "unsigned job rejected — require_signed_jobs is enabled"
                             deploy_detail.append(f"server: {err}")
                             raise RuntimeError(f"UNSIGNED_JOB_REJECTED: {err}")
+                        else:
+                            self.log_warning(
+                                fl_ctx,
+                                f"SECURITY WARNING: Running unsigned job '{job.job_id}'. "
+                                f"Job signature verification is disabled. "
+                                f"In production, ensure rootCA.pem is present and "
+                                f"set 'require_signed_jobs: true' in fed_server.json.",
+                            )
 
                     self.log_info(
                         fl_ctx, f"Application {app_name} deployed to the server for job: {run_number}", fire_event=False
