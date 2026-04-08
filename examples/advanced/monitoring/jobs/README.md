@@ -5,6 +5,14 @@ Different from Machine learning experiment tracking, where it focused on the tra
 This guide will walk you through the steps to set up and use the monitoring system effectively.
 Please see [hello-pytorch](../../../hello-world/hello-pt/README.md) for details on how to run hello-pt.
 
+## Scope of This Guide
+
+This document preserves the original local and POC monitoring walkthroughs for setup 1 and setup 2.
+
+- Use this guide when the NVFLARE server and clients are running as local processes or in the classic POC layout.
+- Use [../k8s/README.md](../k8s/README.md) for Kubernetes deployment guidance layered on top of the same monitoring topologies.
+- For the validated production-style K8s job submission example, see [k8s_hello_numpy/README.md](./k8s_hello_numpy/README.md).
+
 ## Prepare Code
 Create a bash script to copy the hello-world example to the current directory:
 
@@ -79,6 +87,8 @@ That path was exercised against a live MicroK8s deployment with:
 - job-level metrics visible in `statsd-exporter` with `job_id` tags
 
 The example also preserves the signed admin startup kit and avoids editing `fed_admin.json` directly.
+
+It supplements the local and POC walkthrough below. The setup 1 and setup 2 flows in this document still describe the original monitoring model and remain useful for non-Kubernetes or mixed-environment deployments.
 
 
 ## Prepare FLARE Metrics Monitoring Configuration

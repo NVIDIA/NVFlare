@@ -118,7 +118,7 @@ def main():
             job_id = session.submit_job(job_dir)
             print(f"Submitted job '{recipe.job.name}' with ID: {job_id}")
             print()
-            print("Connecting to FLARE ...")
+            print("Monitoring job progress ...")
             result_dir = _monitor_and_download_result(session, job_id)
             print()
             print("Result can be found in:", result_dir)

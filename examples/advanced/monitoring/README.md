@@ -4,6 +4,14 @@ NVFLARE monitoring publishes FL system metrics through `StatsDReporter`, convert
 
 This guide focuses on operational setup for the current monitoring path. It complements the Job API walkthrough in [jobs/README.md](jobs/README.md).
 
+## Scope
+
+The original monitoring walkthroughs are still the primary reference for the existing topologies:
+
+- [jobs/README.md](jobs/README.md) remains the canonical step-by-step guide for the local POC flows for setup 1 and setup 2.
+- setup 3 remains the same architecture described in this guide: one monitoring stack per site.
+- [k8s/README.md](k8s/README.md) adds Kubernetes deployment guidance for the same monitoring patterns. It does not replace the original local or mixed-environment monitoring model.
+
 ## Architecture
 
 Today the metrics pipeline is:
@@ -77,6 +85,8 @@ Clients stream metrics to the server site, and the server site publishes them to
 ![setup-2](figures/setup-2.png)
 
 This is usually the best fit when clients are remote and you do not want to expose the StatsD port at every site.
+
+It is also the recommended pattern when the NVFLARE server runs outside Kubernetes and one or more clients run inside Kubernetes. See the hybrid deployment notes in [k8s/README.md](k8s/README.md).
 
 ### 3. Individual Monitoring System for Each Site
 

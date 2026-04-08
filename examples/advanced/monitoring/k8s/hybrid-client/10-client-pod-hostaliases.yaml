@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "nvflare-client-<client-site-name>"
+  namespace: "<client-namespace>"
+  labels:
+    app.kubernetes.io/name: nvflare-client
+    app.kubernetes.io/component: worker
+spec:
+  restartPolicy: Never
+  hostAliases:
+    # Preserve the signed client kit and route the expected hostname here
+    # instead of editing fed_client.json inside the provisioned startup kit.
+    - ip: "<external-server-ip>"
+      hostnames:
+        - "<server-hostname-from-signed-kit>"
+  containers:
+    - name: client
+      image: "<nvflare-runtime-image>"
+      imagePullPolicy: IfNotPresent
+      workingDir: /workspace
+      command: ["/bin/bash", "-lc"]
+      args:
+        - |
+          export PYTHONUNBUFFERED=1
+          exec /workspace/startup/sub_start.sh
+      volumeMounts:
+        - name: startup-kit
+          mountPath: /workspace
+          readOnly: false
+  volumes:
+    - name: startup-kit
+      hostPath:
+        path: "<path-to-provisioned-client-kit>"
+        type: Directory
