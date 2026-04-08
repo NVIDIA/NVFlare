@@ -14,6 +14,8 @@
 
 import re
 import threading
+
+import numpy as np
 from typing import Any, Callable, Dict, Optional, Set
 
 
@@ -103,8 +105,32 @@ class WeightedAggregationHelper(object):
         """Check if tensor is a PyTorch tensor with in-place operation support."""
         return hasattr(tensor, "add_") and hasattr(tensor, "mul_") and hasattr(tensor, "clone")
 
+    @staticmethod
+    def _check_finite(v, key, contributor_name, contribution_round):
+        """Validate that tensor values are all finite (no NaN or Inf)."""
+        try:
+            if hasattr(v, 'cpu'):
+                arr = v.cpu().numpy()
+            else:
+                arr = np.asarray(v)
+            if not np.all(np.isfinite(arr)):
+                raise ValueError(
+                    f"Non-finite values (NaN/Inf) detected in key '{key}' "
+                    f"from contributor '{contributor_name}' at round {contribution_round}. "
+                    f"Contribution rejected."
+                )
+        except (TypeError, ValueError) as e:
+            if 'Non-finite' in str(e):
+                raise
+
     def add(self, data, weight, contributor_name, contribution_round):
         """Compute weighted sum and sum of weights."""
+        if not isinstance(weight, (int, float)) or not np.isfinite(weight) or weight < 0:
+            raise ValueError(
+                f"Invalid weight {weight} from {contributor_name}: "
+                f"must be a finite non-negative number"
+            )
+
         with self.lock:
             for k, v in data.items():
                 if self.exclude_vars is not None and self.exclude_vars.search(k):
@@ -116,6 +142,8 @@ class WeightedAggregationHelper(object):
                 materialize_fn = getattr(v, "materialize", None)
                 if callable(materialize_fn):
                     v = materialize_fn()
+
+                self._check_finite(v, k, contributor_name, contribution_round)
 
                 current_total = self.total.get(k, None)
 
