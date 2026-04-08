@@ -32,7 +32,8 @@ services:
       - monitoring
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env before running}
+      # Fail fast if unset or empty (requires Docker Compose v2.24+ interpolation). Set in setup/.env.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in setup/.env (non-empty) before docker compose up}
       GF_USERS_ALLOW_SIGN_UP: "false"
     restart: unless-stopped
     depends_on:

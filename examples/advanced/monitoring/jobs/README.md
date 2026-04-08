@@ -11,6 +11,7 @@ Use this guide when the NVFLARE server and clients are running as local processe
 
 - For Kubernetes deployment guidance for the monitoring stack or hybrid environments, see [../k8s/README.md](../k8s/README.md).
 - For the minimal validated production-style K8s job submission example, see [k8s_hello_numpy/README.md](./k8s_hello_numpy/README.md).
+- For Grafana, Prometheus, StatsD, and submitter issues, see [Troubleshooting](../README.md#troubleshooting) in the parent monitoring README.
 
 ## Prepare Code
 Create a bash script to copy the hello-world example to the current directory:

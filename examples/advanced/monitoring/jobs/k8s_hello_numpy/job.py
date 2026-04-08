@@ -14,15 +14,12 @@
 """Submit a minimal monitored NumPy job to a production NVFlare environment."""
 
 import argparse
-import os
-import tempfile
 
 from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
 from nvflare.client.config import TransferType
-from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
-from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel_opt.statsd.statsd_reporter import StatsDReporter
 from nvflare.metrics.job_metrics_collector import JobMetricsCollector
+from nvflare.recipe.prod_env import ProdEnv
 
 
 def _parse_client_sites(raw: str) -> list[str]:
@@ -43,27 +40,6 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num_rounds", type=int, default=2)
     parser.add_argument("--update_type", choices=["full", "diff"], default="full")
     return parser
-
-
-def _monitor_and_download_result(session, job_id: str) -> str:
-    first = {"value": True}
-
-    def _monitor_cb(sess, monitored_job_id, job_meta, *cb_args, **cb_kwargs):
-        if first["value"]:
-            print("Job ID: ", monitored_job_id)
-            print("Job Meta: ", job_meta)
-            first["value"] = False
-        elif job_meta["status"] == "RUNNING":
-            print(".", end="")
-        else:
-            print("\n" + str(job_meta))
-        return True
-
-    rc = session.monitor_job(job_id, timeout=0.0, cb=_monitor_cb)
-    print(f"\njob monitor done: rc={rc!r}")
-    if rc != MonitorReturnCode.JOB_FINISHED:
-        raise RuntimeError(f"job {job_id} did not finish cleanly: {rc}")
-    return session.download_job_result(job_id)
 
 
 def main():
@@ -104,28 +80,18 @@ def main():
         id="client_statsd_reporter",
     )
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        recipe.job.export_job(temp_dir)
-        job_dir = os.path.join(temp_dir, recipe.job.name)
-
-        session = new_secure_session(
-            username=args.username,
-            startup_kit_location=args.startup_kit_location,
-            timeout=args.login_timeout,
-        )
-        try:
-            print("Connecting to FLARE ...")
-            job_id = session.submit_job(job_dir)
-            print(f"Submitted job '{recipe.job.name}' with ID: {job_id}")
-            print()
-            print("Monitoring job progress ...")
-            result_dir = _monitor_and_download_result(session, job_id)
-            print()
-            print("Result can be found in:", result_dir)
-            print("Job Status is:", session.get_job_status(job_id))
-            print()
-        finally:
-            session.close()
+    env = ProdEnv(
+        startup_kit_location=args.startup_kit_location,
+        username=args.username,
+        login_timeout=args.login_timeout,
+    )
+    run = recipe.execute(env)
+    print()
+    result_dir = run.get_result(timeout=0.0)
+    if result_dir is None:
+        raise RuntimeError("Job did not complete successfully or result is unavailable.")
+    print("Result can be found in:", result_dir)
+    print("Job Status is:", run.get_status())
 
 
 if __name__ == "__main__":

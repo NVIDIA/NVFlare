@@ -14,6 +14,8 @@ Use the guide that matches your environment:
 | deploy the monitoring stack in Kubernetes | [k8s/README.md](k8s/README.md) | Covers the monitoring stack manifests, in-cluster validation, and hybrid deployment guidance. |
 | submit a minimal monitored job to a production-style Kubernetes deployment | [jobs/k8s_hello_numpy/README.md](jobs/k8s_hello_numpy/README.md) | Validated against MicroK8s with job-level metrics visible in `statsd-exporter`. |
 
+Common issues (Grafana datasource, StatsD reachability, submitter host, `datadog`) are covered in [Troubleshooting](#troubleshooting) below.
+
 ## Architecture
 
 Today the metrics pipeline is:
@@ -45,9 +47,11 @@ Create the environment file first:
 ```bash
 cd examples/advanced/monitoring/setup
 cp .env.example .env
-# edit .env and set GRAFANA_ADMIN_PASSWORD
+# edit .env and set a non-empty GRAFANA_ADMIN_PASSWORD
 docker compose up -d
 ```
+
+`docker-compose.yml` uses required variable interpolation for the Grafana password; **`docker compose up` fails** if `GRAFANA_ADMIN_PASSWORD` is unset or empty (Docker Compose **v2.24+**). Upgrade Compose if you see a substitution error.
 
 Default local URLs:
 
@@ -233,6 +237,22 @@ If NVFLARE runs outside the cluster and the monitoring stack runs inside Kuberne
 - VPN or private connectivity to the cluster
 - an internal LoadBalancer or NodePort restricted to trusted NVFLARE nodes
 - setup 2 so only the server site needs to reach StatsD
+
+## Troubleshooting
+
+- **Grafana cannot query Prometheus (`lookup … no such host`, or empty data).** If Grafana runs **inside Docker or Kubernetes**, set the Prometheus datasource URL to **`http://prometheus:9090`** (the Compose/K8s service name), **not** `http://127.0.0.1:9090`. From inside the Grafana container, `127.0.0.1` is the Grafana pod/container itself. Check for typos such as **`127.0.0.01`**. After changing a UI-saved datasource, you may need to remove the override so file-based provisioning applies again, or fix the URL in the UI to match the service name.
+
+- **Prometheus has no NVFLARE metrics.** Metrics only appear after **StatsD** traffic hits **`statsd-exporter` on port 9125** (UDP and/or TCP). Ensure `JobMetricsCollector` / `SysMetricsCollector` and `StatsDReporter` are configured, and that `StatsDReporter` `host`/`port` are reachable from the process or pod that runs them. On the same host as Compose, you can sanity-check with: `echo "demo.test:1|c" | nc -u -w1 127.0.0.1 9125` (then look for series on `http://127.0.0.1:9102/metrics` or in Prometheus after a scrape).
+
+- **Prometheus target `statsd` is DOWN.** Confirm the `statsd-exporter` container or pod is running, the scrape target matches your network (e.g. `statsd-exporter:9102` on the Docker/K8s network), and nothing blocks port **9102** between Prometheus and `statsd-exporter`.
+
+- **NVFLARE on your laptop, monitoring stack on a remote server with ports bound to `127.0.0.1` on the server.** Other machines cannot send StatsD to that bind address. Either run FL on the server, publish **9125** on an address the clients can reach (with firewall rules), use **setup 2** so only the server sends StatsD, or use private networking.
+
+- **SSH local port forward for StatsD from a laptop.** OpenSSH `ssh -L` forwards **TCP** by default. The Datadog-based `StatsDReporter` typically sends **UDP**. A plain TCP tunnel is not enough; use a **UDP→TCP bridge** (e.g. `socat`) on the laptop, expose **9125** properly, or run the submitter/workloads where cluster DNS and UDP/TCP to StatsD work.
+
+- **`ModuleNotFoundError: datadog` or failure when loading `StatsDReporter`.** Install **`datadog`** in the Python environment (see [jobs/requirements.txt](jobs/requirements.txt)). Container images that use `StatsDReporter` must include `datadog` in the image (see [k8s/README.md](k8s/README.md#runtime-requirement)).
+
+- **Grafana dashboards.** The minimal Compose and K8s examples provision a **Prometheus datasource only**; they do not ship curated NVFLARE JSON dashboards. Use **Explore** or build/import your own panels.
 
 ## Event Reference
 

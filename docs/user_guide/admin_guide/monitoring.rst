@@ -45,6 +45,14 @@ The configuration involves:
 * Installing and configuring Grafana
 * Setting up FLARE monitoring components
 
+Documentation paths in the repository:
+
+* :github_nvflare_link:`Monitoring overview, paths, and troubleshooting <examples/advanced/monitoring/README.md>`
+* :github_nvflare_link:`Local and POC walkthrough (hello-pt monitoring) <examples/advanced/monitoring/jobs/README.md>`
+* :github_nvflare_link:`Kubernetes monitoring stack manifests <examples/advanced/monitoring/k8s/README.md>`
+* :github_nvflare_link:`Validated K8s job-level monitoring example <examples/advanced/monitoring/jobs/k8s_hello_numpy/README.md>`
+* :github_nvflare_link:`Hybrid client reference (server off-cluster) <examples/advanced/monitoring/k8s/hybrid-client/README.md>`
+
 Visualization
 -------------
 
@@ -67,4 +75,4 @@ The monitoring system provides:
 * Comprehensive visualization capabilities
 * Integration with industry-standard monitoring tools
 
-For more detailed information about setup, configuration, and usage, please refer to the :github_nvflare_link:`Monitoring README <examples/advanced/monitoring/README.md>`. 
+For more detailed information about setup, configuration, and usage, please refer to the :github_nvflare_link:`Monitoring README <examples/advanced/monitoring/README.md>`.

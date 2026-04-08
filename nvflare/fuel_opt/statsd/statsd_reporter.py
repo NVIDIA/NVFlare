@@ -12,35 +12,48 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import threading
 import traceback
-
-from datadog import initialize, statsd
 
 from nvflare.apis.fl_constant import ReservedTopic
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.metrics.metrics_keys import MetricKeys, MetricTypes
 
-# require datalog statsd dependency
-
 
 class StatsDReporter:
+    """Publishes metrics to DogStatsd. Importing this class does not require ``datadog`` to be installed.
+
+    ``datadog.initialize`` runs on first ``process_metrics`` call (lazy), so Job API export on a submitter
+    machine does not open StatsD or require the monitoring endpoint to be reachable at export time.
+    Server and client runtimes still need ``datadog`` installed when metrics are actually emitted.
+    """
+
     def __init__(self, site: str = "", host="localhost", port=9125):
         self.site = site
         self.host = host
         self.port = port
-
-        # Initialize the DataDog StatsD client
-        initialize(statsd_host=self.host, statsd_port=self.port)
         self.metrics = {}
+        self._statsd = None
+        self._statsd_init_lock = threading.Lock()
         self.data_bus = DataBus()
 
         self.data_bus.subscribe([ReservedTopic.APP_METRICS], self.process_metrics)
         self.logger = logging.getLogger(self.__class__.__name__)
 
+    def _ensure_statsd(self):
+        with self._statsd_init_lock:
+            if self._statsd is not None:
+                return
+            from datadog import initialize, statsd
+
+            initialize(statsd_host=self.host, statsd_port=self.port)
+            self._statsd = statsd
+
     def process_metrics(self, topic, metrics, data_bus):
 
         if topic == ReservedTopic.APP_METRICS:
             try:
+                self._ensure_statsd()
                 for metric in metrics:
                     metric_name = metric.get(MetricKeys.metric_name)
                     metric_value = metric.get(MetricKeys.value)
@@ -54,10 +67,10 @@ class StatsDReporter:
                     metric_timestamp = metric.get(MetricKeys.timestamp)
 
                     if metric_type == MetricTypes.COUNTER:
-                        statsd.increment(metric_name, metric_value, tags=metric_tags)
+                        self._statsd.increment(metric_name, metric_value, tags=metric_tags)
 
                     elif metric_type == MetricTypes.GAUGE:
-                        statsd.gauge(metric_name, metric_value, tags=metric_tags)
+                        self._statsd.gauge(metric_name, metric_value, tags=metric_tags)
                     elif metric_type == MetricTypes.HISTOGRAM:
                         pass
                     elif metric_type == MetricTypes.SUMMARY:

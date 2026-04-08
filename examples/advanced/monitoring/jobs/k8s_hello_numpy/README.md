@@ -29,7 +29,7 @@ python3 -m pip install -e .
 
 ## Submit the Job
 
-From this directory:
+From this directory in the repository, run:
 
 ```bash
 python3 job.py \
@@ -39,9 +39,9 @@ python3 job.py \
   --statsd_port 9125
 ```
 
-If the submitter cannot resolve the admin kit hostname, preserve the signed kit and add the hostname mapping outside the kit.
+Set `--startup_kit_location` to your provisioned admin startup kit and `--client_sites` to the site name(s) that will run the job.
 
-For example, a containerized submitter can use Docker `--add-host` instead of editing `fed_admin.json`.
+The default `--statsd_host` is correct when the NVFLARE **server and clients** run in the **same Kubernetes cluster** as the monitoring stack. If not, set it to a hostname or IP those processes can reach on port 9125.
 
 ## What the Example Does
 

@@ -118,7 +118,7 @@ kubectl port-forward -n nvflare-monitoring svc/prometheus 9090:9090
 
 Then open `http://127.0.0.1:9090/targets` and confirm the `statsd` target is `UP`.
 
-## 4. Point NVFLARE at the in-cluster StatsD endpoint
+## 4. In-cluster StatsD endpoint for NVFLARE
 
 If NVFLARE runs in the cluster, configure `StatsDReporter` to send to:
 
@@ -129,7 +129,9 @@ Pods in the same namespace can also use the short service name `statsd-exporter`
 
 If you use setup 2 with an external NVFLARE server, only that server needs to reach the StatsD endpoint. Kubernetes clients in setup 2 do not need direct `StatsDReporter` connectivity to the monitoring stack.
 
-## 4.1 Validated End-to-End K8s Flow
+## 5. Validated in-cluster flows
+
+### 5.1 System-level validation (MicroK8s)
 
 The following path was validated against a MicroK8s cluster:
 
@@ -149,7 +151,7 @@ The validated metrics included:
 - `_before_client_heartbeat_count` and `_after_client_heartbeat_count` for the client
 - `_client_heartbeat_received_count` and `_client_heartbeat_processed_count` on the server
 
-## 4.2 Validated Job-Level K8s Flow
+### 5.2 Job-level validation
 
 Job-level monitoring was also validated against the same MicroK8s deployment using the minimal example in [../jobs/k8s_hello_numpy/README.md](../jobs/k8s_hello_numpy/README.md).
 
@@ -175,7 +177,7 @@ The validated job-level metrics included:
 - `_run_time_taken`
 - `_task_execution_time_taken`
 
-Example client pod pattern:
+#### Example client pod pattern
 
 ```yaml
 apiVersion: v1
@@ -210,7 +212,7 @@ spec:
 
 This approach lets you validate the K8s monitoring path without modifying signed startup-kit files inside the mounted client kit.
 
-## 4.3 Recommended Hybrid Pattern: Server Outside Kubernetes, Client Inside Kubernetes
+## 6. Hybrid pattern: server outside Kubernetes, client inside
 
 For the mixed deployment case where the NVFLARE server remains outside Kubernetes and one or more clients run in Kubernetes, use setup 2 from [../README.md](../README.md).
 
@@ -228,7 +230,7 @@ This means:
 - the external server is the only site that must be able to send StatsD traffic to the chosen monitoring stack
 - multiple Kubernetes clients can stream through the same server to the same monitoring stack
 
-### Hybrid Setup 2 Configuration Split
+### 6.1 Hybrid setup 2 configuration split
 
 Use the existing setup-2 component pattern:
 
@@ -240,7 +242,7 @@ The tracked example resources already show this split:
 - server example: [../jobs/setup-2/local_config/server/resources.json](../jobs/setup-2/local_config/server/resources.json)
 - client example: [../jobs/setup-2/local_config/site-1/resources.json](../jobs/setup-2/local_config/site-1/resources.json)
 
-### Hostname Routing from the Kubernetes Client to the External Server
+### 6.2 Hostname routing from the Kubernetes client to the external server
 
 Keep the signed startup kit unchanged when possible.
 
@@ -253,7 +255,7 @@ If the client kit expects a hostname that the Kubernetes cluster cannot resolve 
 
 Do not edit the signed `fed_client.json` in place just to change hostname resolution.
 
-### Hybrid Client Pod Example
+### 6.3 Hybrid client pod example
 
 The example manifest set in [hybrid-client/README.md](hybrid-client/README.md) shows the recommended signed-kit-safe pod pattern for this topology.
 
@@ -261,7 +263,7 @@ The example manifest set in [hybrid-client/README.md](hybrid-client/README.md) s
 
 This manifest set is based on the validated client pod pattern used in the in-cluster K8s flow plus the tracked setup-2 monitoring configuration split. Treat it as reference guidance for the hybrid case. The exact off-cluster server network path still needs to be verified in your environment.
 
-## 5. Exposing StatsD for external NVFLARE
+## 7. Exposing StatsD for external NVFLARE
 
 Standard HTTP Ingress does not carry StatsD traffic. If NVFLARE runs outside the cluster, use one of these patterns:
 
@@ -271,7 +273,7 @@ Standard HTTP Ingress does not carry StatsD traffic. If NVFLARE runs outside the
 
 Do not expose Prometheus `:9090` or raw `statsd-exporter` metrics `:9102` publicly without authentication and network controls.
 
-## 6. Production Notes
+## 8. Production notes
 
 These manifests are intentionally minimal.
 
@@ -281,7 +283,7 @@ These manifests are intentionally minimal.
 - If you use `StatsDReporter` in containerized NVFLARE workloads, make sure the image includes `datadog`.
 - Avoid editing signed startup-kit files such as `fed_client.json` in place. Prefer changing pod or service routing around the signed kit.
 
-## Files
+## 9. Files
 
 | File | Purpose |
 |------|---------|
