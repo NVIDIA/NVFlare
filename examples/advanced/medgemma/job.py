@@ -25,7 +25,6 @@ import shlex
 from custom_aggregators import HLoraAggregator
 from data_utils import DEFAULT_MODEL_NAME_OR_PATH
 
-from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
@@ -114,15 +113,17 @@ def _parse_gpu_string(gpu_str: str) -> list[str]:
     return re.findall(r"\[[^\]]*\]", gpu_str.strip())
 
 
-def _configure_timeouts(
-    recipe, client_names, task_timeout: int = 1800, tensor_timeout: int = 600, max_resends: int = 3
-):
+def _configure_timeouts(recipe, client_names, task_timeout: int = 1200, tensor_timeout: int = 600):
+    """Add client and server timeouts for large model / tensor streaming.
+
+    Ensures tensor_min_download_timeout >= tensor_streaming_per_request_timeout
+    so transactions are not killed mid-download.
+    """
     recipe.add_client_config(
         {
             "get_task_timeout": task_timeout,
             "submit_task_result_timeout": task_timeout,
             "tensor_min_download_timeout": tensor_timeout,
-            "max_resends": max_resends,
         },
         clients=client_names,
     )
@@ -132,22 +133,6 @@ def _configure_timeouts(
             "tensor_min_download_timeout": tensor_timeout,
         }
     )
-
-
-def _configure_client_launchers(recipe, client_names, max_resends: int = 3) -> None:
-    # add_client_config() updates the subprocess config file, but the warning about
-    # unbounded resends is emitted earlier by the client-job launcher itself.
-    deploy_map = getattr(recipe.job, "_deploy_map", {})
-    for site_name in client_names:
-        app = deploy_map.get(site_name)
-        if app is None:
-            continue
-        app_config = getattr(app, "app_config", None)
-        executors = getattr(app_config, "executors", [])
-        for executor_def in executors:
-            executor = getattr(executor_def, "executor", None)
-            if isinstance(executor, ClientAPILauncherExecutor):
-                executor._max_resends = max_resends
 
 
 def _build_train_args(args, site_data_path: str, image_root: str, report_to: str) -> str:
@@ -213,7 +198,6 @@ def main():
         key_metric="",
     )
     _configure_timeouts(recipe, client_names)
-    _configure_client_launchers(recipe, client_names)
 
     if args.wandb:
         add_experiment_tracking(
