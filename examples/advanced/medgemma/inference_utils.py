@@ -83,7 +83,9 @@ def load_model_and_processor(
         processor.tokenizer.padding_side = "left"
 
     model.eval()
+    model.config.use_cache = True
     model.generation_config.do_sample = False
+    model.generation_config.use_cache = True
     model.generation_config.pad_token_id = processor.tokenizer.eos_token_id
     return model, processor
 
@@ -95,32 +97,44 @@ def get_model_device(model) -> torch.device:
     return next(model.parameters()).device
 
 
-def generate_response_text(model, processor, image, max_new_tokens: int) -> str:
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "image", "image": image},
-                {"type": "text", "text": PROMPT},
-            ],
-        }
-    ]
-    inputs = processor.apply_chat_template(
-        messages,
-        tokenize=True,
-        return_dict=True,
-        return_tensors="pt",
-        add_generation_prompt=True,
-    )
+def generate_response_texts(model, processor, images: list, max_new_tokens: int) -> list[str]:
+    texts = []
+    batch_images = []
+    for image in images:
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": PROMPT},
+                ],
+            }
+        ]
+        texts.append(processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False).strip())
+        batch_images.append([image])
+
+    inputs = processor(text=texts, images=batch_images, return_tensors="pt", padding=True)
     inputs = inputs.to(get_model_device(model))
-    with torch.no_grad():
+    prompt_length = inputs["input_ids"].shape[1]
+    with torch.inference_mode():
         output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens)
-    generated_ids = output_ids[:, inputs["input_ids"].shape[1] :]
-    return processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
+    generated_ids = output_ids[:, prompt_length:]
+    return [text.strip() for text in processor.batch_decode(generated_ids, skip_special_tokens=True)]
+
+
+def generate_response_text(model, processor, image, max_new_tokens: int) -> str:
+    return generate_response_texts(model, processor, [image], max_new_tokens)[0]
+
+
+def predict_labels(model, processor, images: list, max_new_tokens: int) -> list[tuple[str, int, str]]:
+    responses = generate_response_texts(model, processor, images, max_new_tokens)
+    results = []
+    for response_text in responses:
+        predicted_index = parse_prediction_label(response_text)
+        predicted_label = TISSUE_CLASSES[predicted_index] if predicted_index >= 0 else "<unparsed>"
+        results.append((response_text, predicted_index, predicted_label))
+    return results
 
 
 def predict_label(model, processor, image, max_new_tokens: int) -> tuple[str, int, str]:
-    response_text = generate_response_text(model, processor, image, max_new_tokens)
-    predicted_index = parse_prediction_label(response_text)
-    predicted_label = TISSUE_CLASSES[predicted_index] if predicted_index >= 0 else "<unparsed>"
-    return response_text, predicted_index, predicted_label
+    return predict_labels(model, processor, [image], max_new_tokens)[0]

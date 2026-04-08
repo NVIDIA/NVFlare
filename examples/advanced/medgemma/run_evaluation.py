@@ -25,7 +25,7 @@ import os
 import sys
 
 from data_utils import DEFAULT_EVAL_DATASET_DIR, DEFAULT_MODEL_NAME_OR_PATH, collect_image_records, sample_records
-from inference_utils import load_model_and_processor, predict_label
+from inference_utils import load_model_and_processor, predict_labels
 from PIL import Image
 
 
@@ -59,6 +59,7 @@ def _evaluate_model(
     max_new_tokens: int,
     show_examples: int,
     progress_interval: int,
+    batch_size: int,
 ) -> dict:
     _log_progress(f"\nEvaluating {label}: {model_path}")
     model, processor = load_model_and_processor(model_path=model_path, base_model=base_model, device=device)
@@ -69,35 +70,46 @@ def _evaluate_model(
     unparsed = 0
     total = len(records)
     progress_interval = max(1, progress_interval)
+    batch_size = max(1, batch_size)
 
-    for idx, record in enumerate(records, start=1):
-        with Image.open(os.path.join(dataset_dir, record["image"])) as image_file:
-            image = image_file.convert("RGB")
-        response_text, predicted_index, predicted_label = predict_label(
+    for start_idx in range(0, total, batch_size):
+        batch_records = records[start_idx : start_idx + batch_size]
+        batch_images = []
+        for record in batch_records:
+            with Image.open(os.path.join(dataset_dir, record["image"])) as image_file:
+                batch_images.append(image_file.convert("RGB"))
+
+        batch_results = predict_labels(
             model=model,
             processor=processor,
-            image=image,
+            images=batch_images,
             max_new_tokens=max_new_tokens,
         )
-        predictions.append(predicted_index)
-        references.append(record["label"])
-        if predicted_index == record["label"]:
-            correct += 1
-        if predicted_index < 0:
-            unparsed += 1
 
-        if idx <= show_examples:
-            print(f"--- {label} sample {idx} ---")
-            print(f"Ground truth: {record['label_name']}")
-            print(f"Prediction:   {predicted_label}")
-            print(f"Raw output:   {response_text[:240]}{'...' if len(response_text) > 240 else ''}")
+        for offset, (record, (response_text, predicted_index, predicted_label)) in enumerate(
+            zip(batch_records, batch_results),
+            start=1,
+        ):
+            idx = start_idx + offset
+            predictions.append(predicted_index)
+            references.append(record["label"])
+            if predicted_index == record["label"]:
+                correct += 1
+            if predicted_index < 0:
+                unparsed += 1
 
-        should_log_progress = idx == 1 or idx == total or idx % progress_interval == 0
-        if should_log_progress:
-            _log_progress(
-                f"{label} progress: {idx}/{total} ({100.0 * idx / total:.1f}%) "
-                f"correct_so_far={correct} unparsed={unparsed}"
-            )
+            if idx <= show_examples:
+                print(f"--- {label} sample {idx} ---")
+                print(f"Ground truth: {record['label_name']}")
+                print(f"Prediction:   {predicted_label}")
+                print(f"Raw output:   {response_text[:240]}{'...' if len(response_text) > 240 else ''}")
+
+            should_log_progress = idx == 1 or idx == total or idx % progress_interval == 0
+            if should_log_progress:
+                _log_progress(
+                    f"{label} progress: {idx}/{total} ({100.0 * idx / total:.1f}%) "
+                    f"correct_so_far={correct} unparsed={unparsed}"
+                )
 
     metrics = _compute_accuracy(predictions=predictions, references=references)
     metrics["unparsed"] = unparsed
@@ -156,6 +168,12 @@ def main():
         default=25,
         help="Print evaluation progress every N samples for each model (default: 25).",
     )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=4,
+        help="Batch size for batched generation during evaluation (default: 4).",
+    )
     args = parser.parse_args()
 
     dataset_dir = _abs_path(args.dataset_dir)
@@ -181,6 +199,7 @@ def main():
         max_new_tokens=args.max_new_tokens,
         show_examples=args.show_examples,
         progress_interval=args.progress_interval,
+        batch_size=args.batch_size,
     )
     tuned_metrics = _evaluate_model(
         label="Fine-tuned model",
@@ -192,6 +211,7 @@ def main():
         max_new_tokens=args.max_new_tokens,
         show_examples=args.show_examples,
         progress_interval=args.progress_interval,
+        batch_size=args.batch_size,
     )
 
     print("\nAccuracy summary")
