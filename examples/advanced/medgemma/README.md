@@ -25,7 +25,7 @@ Weights for [`google/medgemma-4b-it`](https://huggingface.co/google/medgemma-4b-
 | `custom_aggregators.py` | Optional HLoRA-style server aggregator that reconstructs client `B @ A` updates before projecting them back to LoRA factors. |
 | `job.py` | FedAvg recipe for 3 clients with per-site data paths and selectable LoRA aggregation (`naive` or `hlora`). |
 | `download_data.py` | Downloads and extracts `NCT-CRC-HE-100K.zip` from Zenodo. |
-| `prepare_data.py` | Discovers image files, builds random site shards, and writes `train.json` / `validation.json` for each client. |
+| `prepare_data.py` | Discovers image files, builds class-skewed site shards by default, and writes `train.json` / `validation.json` for each client. |
 | `run_inference.py` | Runs before/after inference on prepared validation samples using either the base model, an adapter directory, or NVFlare `FL_global_model.pt`. |
 | `run_evaluation.py` | Evaluates base vs fine-tuned accuracy on `CRC-VAL-HE-7K`, following the MedGemma notebook's evaluation setup. |
 
@@ -66,7 +66,11 @@ Then create client splits:
 python prepare_data.py
 ```
 
-By default, `prepare_data.py` creates 3 client shards with `3333` samples per client and `333` validation samples per client. That keeps the total dataset size close to the official MedGemma notebook's 10k-sample walkthrough while preserving a site-based FL layout.
+By default, `prepare_data.py` creates 3 client shards with `3333` samples per client and `333` validation samples per client. It now uses a more heterogeneous, class-skewed split by default so the FL setup is less IID and more informative for comparing naive LoRA averaging against HLoRA. With 3 clients, the dominant label groups are:
+
+- `site-1`: `A: adipose`, `B: background`, `C: debris`
+- `site-2`: `D: lymphocytes`, `E: mucus`, `F: smooth muscle`
+- `site-3`: `G: normal colon mucosa`, `H: cancer-associated stroma`, `I: colorectal adenocarcinoma epithelium`
 
 Output:
 
@@ -74,10 +78,18 @@ Output:
   site-1: train=3000 -> ./data/site-1/train.json, validation=333 -> ./data/site-1/validation.json
   site-2: train=3000 -> ./data/site-2/train.json, validation=333 -> ./data/site-2/validation.json
   site-3: train=3000 -> ./data/site-3/train.json, validation=333 -> ./data/site-3/validation.json
+Wrote label distribution plot to ./data/split_label_distribution.svg
 ```
+
+`prepare_data.py` also writes a `split_label_distribution.svg` chart so you can quickly inspect how non-IID the client training shards are. The image below is an example of the default 3-client heterogeneous split layout:
+
+![Example client label distribution](assets/default_split_label_distribution.svg)
 
 Useful flags:
 
+- `--split_strategy random` restores the older IID-style random sharding.
+- `--dominant_fraction 0.8` controls how strongly each heterogeneous site is biased toward its dominant label group.
+- `--plot_path /path/to/split_label_distribution.svg` overrides where the SVG summary plot is written.
 - `--samples_per_client 0` uses the full dataset evenly across all clients.
 - `--validation_size_per_client 0` disables per-site validation files.
 - `--dataset_dir /path/to/NCT-CRC-HE-100K` points to a different extracted dataset location.

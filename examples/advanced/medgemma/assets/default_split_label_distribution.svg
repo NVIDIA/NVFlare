@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="1102" viewBox="0 0 980 1102" role="img" aria-labelledby="title desc">
+  <title id="title">MedGemma client train label distribution</title>
+  <desc id="desc">Per-client training-label distribution for the heterogeneous MedGemma split.</desc>
+  <rect width="100%" height="100%" fill="#FFFDF8"/>
+  <text x="32" y="26" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#1F2933">Client Train Label Distribution</text>
+  <rect x="20" y="28" width="940" height="334" rx="14" fill="#FFFFFF" stroke="#D8DEE9"/>
+  <text x="36" y="54" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#102A43">site-1</text>
+  <text x="150" y="54" font-family="Arial, sans-serif" font-size="12" fill="#486581">dominant: A: adipose, B: background, C: debris</text>
+  <text x="32" y="95" font-family="Arial, sans-serif" font-size="12" fill="#243B53">A: adipose</text>
+  <rect x="322" y="84" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="84" width="470.0" height="14" rx="7" fill="#D1495B"/>
+  <text x="810" y="95" font-family="Arial, sans-serif" font-size="12" fill="#243B53">84</text>
+  <text x="32" y="123" font-family="Arial, sans-serif" font-size="12" fill="#243B53">B: background</text>
+  <rect x="322" y="112" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="112" width="419.6" height="14" rx="7" fill="#EDA65D"/>
+  <text x="810" y="123" font-family="Arial, sans-serif" font-size="12" fill="#243B53">75</text>
+  <text x="32" y="151" font-family="Arial, sans-serif" font-size="12" fill="#243B53">C: debris</text>
+  <rect x="322" y="140" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="140" width="447.6" height="14" rx="7" fill="#F7DC6F"/>
+  <text x="810" y="151" font-family="Arial, sans-serif" font-size="12" fill="#243B53">80</text>
+  <text x="32" y="179" font-family="Arial, sans-serif" font-size="12" fill="#243B53">D: lymphocytes</text>
+  <rect x="322" y="168" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="168" width="56.0" height="14" rx="7" fill="#5DA271"/>
+  <text x="810" y="179" font-family="Arial, sans-serif" font-size="12" fill="#243B53">10</text>
+  <text x="32" y="207" font-family="Arial, sans-serif" font-size="12" fill="#243B53">E: mucus</text>
+  <rect x="322" y="196" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="196" width="67.1" height="14" rx="7" fill="#2E86AB"/>
+  <text x="810" y="207" font-family="Arial, sans-serif" font-size="12" fill="#243B53">12</text>
+  <text x="32" y="235" font-family="Arial, sans-serif" font-size="12" fill="#243B53">F: smooth muscle</text>
+  <rect x="322" y="224" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="224" width="50.4" height="14" rx="7" fill="#8E6C8A"/>
+  <text x="810" y="235" font-family="Arial, sans-serif" font-size="12" fill="#243B53">9</text>
+  <text x="32" y="263" font-family="Arial, sans-serif" font-size="12" fill="#243B53">G: normal colon mucosa</text>
+  <rect x="322" y="252" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="252" width="44.8" height="14" rx="7" fill="#556B2F"/>
+  <text x="810" y="263" font-family="Arial, sans-serif" font-size="12" fill="#243B53">8</text>
+  <text x="32" y="291" font-family="Arial, sans-serif" font-size="12" fill="#243B53">H: cancer-associated stroma</text>
+  <rect x="322" y="280" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="280" width="78.3" height="14" rx="7" fill="#B56576"/>
+  <text x="810" y="291" font-family="Arial, sans-serif" font-size="12" fill="#243B53">14</text>
+  <text x="32" y="319" font-family="Arial, sans-serif" font-size="12" fill="#243B53">I: colorectal adenocarcinoma epithelium</text>
+  <rect x="322" y="308" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="308" width="44.8" height="14" rx="7" fill="#4D908E"/>
+  <text x="810" y="319" font-family="Arial, sans-serif" font-size="12" fill="#243B53">8</text>
+  <rect x="20" y="384" width="940" height="334" rx="14" fill="#FFFFFF" stroke="#D8DEE9"/>
+  <text x="36" y="410" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#102A43">site-2</text>
+  <text x="150" y="410" font-family="Arial, sans-serif" font-size="12" fill="#486581">dominant: D: lymphocytes, E: mucus, F: smooth muscle</text>
+  <text x="32" y="451" font-family="Arial, sans-serif" font-size="12" fill="#243B53">A: adipose</text>
+  <rect x="322" y="440" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="440" width="50.4" height="14" rx="7" fill="#D1495B"/>
+  <text x="810" y="451" font-family="Arial, sans-serif" font-size="12" fill="#243B53">9</text>
+  <text x="32" y="479" font-family="Arial, sans-serif" font-size="12" fill="#243B53">B: background</text>
+  <rect x="322" y="468" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="468" width="61.5" height="14" rx="7" fill="#EDA65D"/>
+  <text x="810" y="479" font-family="Arial, sans-serif" font-size="12" fill="#243B53">11</text>
+  <text x="32" y="507" font-family="Arial, sans-serif" font-size="12" fill="#243B53">C: debris</text>
+  <rect x="322" y="496" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="496" width="44.8" height="14" rx="7" fill="#F7DC6F"/>
+  <text x="810" y="507" font-family="Arial, sans-serif" font-size="12" fill="#243B53">8</text>
+  <text x="32" y="535" font-family="Arial, sans-serif" font-size="12" fill="#243B53">D: lymphocytes</text>
+  <rect x="322" y="524" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="524" width="470.0" height="14" rx="7" fill="#5DA271"/>
+  <text x="810" y="535" font-family="Arial, sans-serif" font-size="12" fill="#243B53">84</text>
+  <text x="32" y="563" font-family="Arial, sans-serif" font-size="12" fill="#243B53">E: mucus</text>
+  <rect x="322" y="552" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="552" width="447.6" height="14" rx="7" fill="#2E86AB"/>
+  <text x="810" y="563" font-family="Arial, sans-serif" font-size="12" fill="#243B53">80</text>
+  <text x="32" y="591" font-family="Arial, sans-serif" font-size="12" fill="#243B53">F: smooth muscle</text>
+  <rect x="322" y="580" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="580" width="430.8" height="14" rx="7" fill="#8E6C8A"/>
+  <text x="810" y="591" font-family="Arial, sans-serif" font-size="12" fill="#243B53">77</text>
+  <text x="32" y="619" font-family="Arial, sans-serif" font-size="12" fill="#243B53">G: normal colon mucosa</text>
+  <rect x="322" y="608" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="608" width="61.5" height="14" rx="7" fill="#556B2F"/>
+  <text x="810" y="619" font-family="Arial, sans-serif" font-size="12" fill="#243B53">11</text>
+  <text x="32" y="647" font-family="Arial, sans-serif" font-size="12" fill="#243B53">H: cancer-associated stroma</text>
+  <rect x="322" y="636" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="636" width="56.0" height="14" rx="7" fill="#B56576"/>
+  <text x="810" y="647" font-family="Arial, sans-serif" font-size="12" fill="#243B53">10</text>
+  <text x="32" y="675" font-family="Arial, sans-serif" font-size="12" fill="#243B53">I: colorectal adenocarcinoma epithelium</text>
+  <rect x="322" y="664" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="664" width="56.0" height="14" rx="7" fill="#4D908E"/>
+  <text x="810" y="675" font-family="Arial, sans-serif" font-size="12" fill="#243B53">10</text>
+  <rect x="20" y="740" width="940" height="334" rx="14" fill="#FFFFFF" stroke="#D8DEE9"/>
+  <text x="36" y="766" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#102A43">site-3</text>
+  <text x="150" y="766" font-family="Arial, sans-serif" font-size="12" fill="#486581">dominant: G: normal colon mucosa, H: cancer-associated stroma, I: colorectal adenocarcinoma epithelium</text>
+  <text x="32" y="807" font-family="Arial, sans-serif" font-size="12" fill="#243B53">A: adipose</text>
+  <rect x="322" y="796" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="796" width="78.3" height="14" rx="7" fill="#D1495B"/>
+  <text x="810" y="807" font-family="Arial, sans-serif" font-size="12" fill="#243B53">14</text>
+  <text x="32" y="835" font-family="Arial, sans-serif" font-size="12" fill="#243B53">B: background</text>
+  <rect x="322" y="824" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="824" width="56.0" height="14" rx="7" fill="#EDA65D"/>
+  <text x="810" y="835" font-family="Arial, sans-serif" font-size="12" fill="#243B53">10</text>
+  <text x="32" y="863" font-family="Arial, sans-serif" font-size="12" fill="#243B53">C: debris</text>
+  <rect x="322" y="852" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="852" width="61.5" height="14" rx="7" fill="#F7DC6F"/>
+  <text x="810" y="863" font-family="Arial, sans-serif" font-size="12" fill="#243B53">11</text>
+  <text x="32" y="891" font-family="Arial, sans-serif" font-size="12" fill="#243B53">D: lymphocytes</text>
+  <rect x="322" y="880" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="880" width="28.0" height="14" rx="7" fill="#5DA271"/>
+  <text x="810" y="891" font-family="Arial, sans-serif" font-size="12" fill="#243B53">5</text>
+  <text x="32" y="919" font-family="Arial, sans-serif" font-size="12" fill="#243B53">E: mucus</text>
+  <rect x="322" y="908" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="908" width="44.8" height="14" rx="7" fill="#2E86AB"/>
+  <text x="810" y="919" font-family="Arial, sans-serif" font-size="12" fill="#243B53">8</text>
+  <text x="32" y="947" font-family="Arial, sans-serif" font-size="12" fill="#243B53">F: smooth muscle</text>
+  <rect x="322" y="936" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="936" width="44.8" height="14" rx="7" fill="#8E6C8A"/>
+  <text x="810" y="947" font-family="Arial, sans-serif" font-size="12" fill="#243B53">8</text>
+  <text x="32" y="975" font-family="Arial, sans-serif" font-size="12" fill="#243B53">G: normal colon mucosa</text>
+  <rect x="322" y="964" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="964" width="447.6" height="14" rx="7" fill="#556B2F"/>
+  <text x="810" y="975" font-family="Arial, sans-serif" font-size="12" fill="#243B53">80</text>
+  <text x="32" y="1003" font-family="Arial, sans-serif" font-size="12" fill="#243B53">H: cancer-associated stroma</text>
+  <rect x="322" y="992" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="992" width="458.8" height="14" rx="7" fill="#B56576"/>
+  <text x="810" y="1003" font-family="Arial, sans-serif" font-size="12" fill="#243B53">82</text>
+  <text x="32" y="1031" font-family="Arial, sans-serif" font-size="12" fill="#243B53">I: colorectal adenocarcinoma epithelium</text>
+  <rect x="322" y="1020" width="470" height="14" rx="7" fill="#E5E7EB"/>
+  <rect x="322" y="1020" width="458.8" height="14" rx="7" fill="#4D908E"/>
+  <text x="810" y="1031" font-family="Arial, sans-serif" font-size="12" fill="#243B53">82</text>
+</svg>
