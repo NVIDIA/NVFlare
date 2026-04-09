@@ -165,8 +165,8 @@ def main():
     parser.add_argument(
         "--per_device_train_batch_size",
         type=int,
-        default=8,
-        help="Training batch size per device (default: 8).",
+        default=4,
+        help="Training batch size per device (default: 4).",
     )
     parser.add_argument(
         "--per_device_eval_batch_size",
