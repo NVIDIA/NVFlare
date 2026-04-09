@@ -172,6 +172,17 @@ class _DefaultReplyProcessor(ReplyProcessor):
         api.shutdown_msg = msg
 
 
+class _ChallengeReplyProcessor(ReplyProcessor):
+    """Reply processor for capturing the server-generated login challenge nonce."""
+
+    def process_string(self, ctx: CommandContext, item: str):
+        api = ctx.get_api()
+        if item.startswith("CHALLENGE "):
+            api.challenge_nonce = item[len("CHALLENGE "):]
+        else:
+            api.challenge_nonce = None
+
+
 class _LoginReplyProcessor(ReplyProcessor):
     """Reply processor for handling login and setting the token for the admin client."""
 
@@ -650,21 +661,40 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         """Whether the API is ready for executing commands."""
         return self.server_sess_active
 
+    def _request_login_challenge(self) -> str:
+        """Request a one-time challenge nonce from the server.
+
+        Returns:
+            The server-generated nonce, or empty string if server doesn't support challenges.
+        """
+        challenge_cmd = f"{InternalCommands.LOGIN_CHALLENGE} {self.user_name}"
+        self.challenge_nonce = None
+        self.server_execute(challenge_cmd, _ChallengeReplyProcessor())
+        return self.challenge_nonce or ""
+
     def _user_login(self):
-        """Login user
+        """Login user using challenge-response protocol.
+
+        Step 1: Request a one-time nonce from the server.
+        Step 2: Sign (CN + nonce) and send to server for verification.
 
         Returns:
             A dict of login status and details
         """
+        # Step 1: Get server-generated challenge nonce
+        login_nonce = self._request_login_challenge()
+
+        # Step 2: Sign with the challenge nonce and login
         command = f"{InternalCommands.CERT_LOGIN} {self.user_name}"
 
         id_asserter = IdentityAsserter(private_key_file=self.client_key, cert_file=self.client_cert)
-        cn_signature = id_asserter.sign_common_name(nonce="")
+        cn_signature = id_asserter.sign_common_name(nonce=login_nonce)
 
         headers = {
             "user_name": self.user_name,
             "cert": id_asserter.cert_data,
             "signature": cn_signature,
+            "nonce": login_nonce,
             "study": self.study,
         }
 

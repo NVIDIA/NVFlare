@@ -116,13 +116,14 @@ class ReplyKeyword:
 
 class InternalCommands(object):
 
+    LOGIN_CHALLENGE = "_login_challenge"
     CERT_LOGIN = "_cert_login"
     LOGOUT = "_logout"
     GET_CMD_LIST = "_commands"
     CHECK_SESSION = "_check_session"
     LIST_SESSIONS = "list_sessions"
 
-    commands = [CERT_LOGIN, LOGOUT, GET_CMD_LIST, CHECK_SESSION, LIST_SESSIONS]
+    commands = [LOGIN_CHALLENGE, CERT_LOGIN, LOGOUT, GET_CMD_LIST, CHECK_SESSION, LIST_SESSIONS]
 
     @classmethod
     def contains_command(cls, command: str):

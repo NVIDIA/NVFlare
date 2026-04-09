@@ -11,8 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import time
 import traceback
-from typing import List
+import uuid
+from typing import Dict, List, Tuple
 
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.apis.utils.format_check import name_check
@@ -47,11 +49,20 @@ class LoginModule(CommandModule, CommandFilter):
 
         self.session_mgr = sess_mgr
         self.logger = get_obj_logger(self)
+        self._pending_challenges: Dict[str, Tuple[str, float]] = {}
+        self._challenge_timeout = 60  # seconds
 
     def get_spec(self):
         return CommandModuleSpec(
             name="login",
             cmd_specs=[
+                CommandSpec(
+                    name=InternalCommands.LOGIN_CHALLENGE,
+                    description="request a login challenge nonce",
+                    usage="_login_challenge userName",
+                    handler_func=self.handle_login_challenge,
+                    visible=False,
+                ),
                 CommandSpec(
                     name=InternalCommands.CERT_LOGIN,
                     description="login to server with SSL cert",
@@ -69,6 +80,29 @@ class LoginModule(CommandModule, CommandFilter):
             ],
         )
 
+    def handle_login_challenge(self, conn: Connection, args: List[str]):
+        """Step 1 of challenge-response login: generate a one-time nonce."""
+        if len(args) != 2:
+            conn.append_string("REJECT")
+            return
+
+        user_name = args[1]
+        nonce = str(uuid.uuid4())
+        self._pending_challenges[user_name] = (nonce, time.time())
+        self.logger.debug(f"login challenge issued for {user_name}: {nonce}")
+        conn.append_string(f"CHALLENGE {nonce}")
+
+    def _consume_challenge(self, user_name: str) -> str:
+        """Retrieve and consume a pending challenge nonce (one-time use)."""
+        challenge = self._pending_challenges.pop(user_name, None)
+        if not challenge:
+            return ""
+        nonce, timestamp = challenge
+        if time.time() - timestamp > self._challenge_timeout:
+            self.logger.warning(f"login challenge expired for {user_name}")
+            return ""
+        return nonce
+
     def handle_cert_login(self, conn: Connection, args: List[str]):
         if len(args) != 2:
             conn.append_string("REJECT")
@@ -85,13 +119,28 @@ class LoginModule(CommandModule, CommandFilter):
         identity_verifier = hci.get_id_verifier()
         id_asserter = hci.get_id_asserter()
 
+        # Use the server-generated challenge nonce (one-time, consumed here).
+        # If no pending challenge, reject empty nonces to prevent replay.
+        login_nonce = self._consume_challenge(user_name)
+        self.logger.info(f"SEC004_DEBUG: user={user_name}, consumed_nonce='{login_nonce}', headers_keys={list(headers.keys())}")
+        if not login_nonce:
+            # No pending server challenge — check if client sent a non-empty nonce
+            client_nonce = headers.get("nonce", "")
+            if not client_nonce:
+                # Empty nonce = replay attempt or legacy client without challenge support.
+                # Reject to prevent signature replay attacks.
+                self.logger.warning(f"login rejected for {user_name}: empty nonce without server challenge")
+                conn.append_string("REJECT")
+                return
+            login_nonce = client_nonce
+
         cert = load_crt_bytes(cert_data)
         try:
             ok = identity_verifier.verify_common_name(
                 asserter_cert=cert,
                 asserted_cn=user_name,
                 signature=signature,
-                nonce="",
+                nonce=login_nonce,
             )
             self.logger.debug(f"verify common name: {ok=}")
         except Exception as ex:
