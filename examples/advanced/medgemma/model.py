@@ -39,13 +39,13 @@ DEFAULT_TARGET_MODULES = "all-linear"
 MEDGEMMA_IMAGE_TOKEN_ID = 262144
 
 
-def create_lora_config():
+def create_lora_config(lora_rank: int = DEFAULT_LORA_R):
     from peft import LoraConfig
 
     return LoraConfig(
         lora_alpha=DEFAULT_LORA_ALPHA,
         lora_dropout=DEFAULT_LORA_DROPOUT,
-        r=DEFAULT_LORA_R,
+        r=lora_rank,
         bias="none",
         ensure_weight_tying=True,
         target_modules=DEFAULT_TARGET_MODULES,
@@ -130,13 +130,14 @@ def create_peft_medgemma_model(
     *,
     quantized: bool = False,
     device_map=None,
+    lora_rank: int = DEFAULT_LORA_R,
 ):
     from peft import get_peft_model, prepare_model_for_kbit_training
 
     base_model = load_medgemma_base_model(model_name_or_path, quantized=quantized, device_map=device_map)
     if quantized:
         base_model = prepare_model_for_kbit_training(base_model)
-    return get_peft_model(base_model, create_lora_config())
+    return get_peft_model(base_model, create_lora_config(lora_rank=lora_rank))
 
 
 def apply_adapter_state(model, adapter_state: dict[str, Any]) -> None:
@@ -155,10 +156,15 @@ def get_adapter_state_dict(model) -> dict[str, torch.Tensor]:
 class MedGemmaLoRAModel(nn.Module):
     """Server-side initial model that exposes only LoRA adapter weights."""
 
-    def __init__(self, model_name_or_path: str = DEFAULT_MODEL_NAME_OR_PATH):
+    def __init__(self, model_name_or_path: str = DEFAULT_MODEL_NAME_OR_PATH, lora_rank: int = DEFAULT_LORA_R):
         super().__init__()
         self.model_name_or_path = model_name_or_path
-        self.model = create_peft_medgemma_model(model_name_or_path=model_name_or_path, quantized=False)
+        self.lora_rank = lora_rank
+        self.model = create_peft_medgemma_model(
+            model_name_or_path=model_name_or_path,
+            quantized=False,
+            lora_rank=lora_rank,
+        )
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)

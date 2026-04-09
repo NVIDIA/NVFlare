@@ -22,7 +22,7 @@ import os
 import re
 import shlex
 
-from custom_aggregators import HLoraAggregator
+from custom_aggregators import HLoRAMaxRankAggregator, NaiveMaxRankAggregator
 from data_utils import DEFAULT_MODEL_NAME_OR_PATH
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
@@ -68,8 +68,8 @@ def define_parser():
     parser.add_argument(
         "--per_device_train_batch_size",
         type=int,
-        default=4,
-        help="Training batch size per device (default: 4).",
+        default=8,
+        help="Training batch size per device (default: 8).",
     )
     parser.add_argument(
         "--per_device_eval_batch_size",
@@ -94,8 +94,23 @@ def define_parser():
         choices=("naive", "hlora"),
         default="naive",
         help=(
-            "LoRA aggregation strategy: 'naive' separately averages LoRA A/B factors like the original example, "
-            "while 'hlora' reconstructs B@A updates on the server before projecting back to rank-r factors."
+            "LoRA aggregation strategy: 'naive' separately averages LoRA A/B factors in a fixed global rank bank, "
+            "while 'hlora' reconstructs B@A updates on the server before projecting back to that rank bank."
+        ),
+    )
+    parser.add_argument(
+        "--global_lora_rank",
+        type=int,
+        default=16,
+        help="Server-side LoRA bank rank for all layers (default: 16).",
+    )
+    parser.add_argument(
+        "--site_lora_ranks",
+        type=str,
+        default=None,
+        help=(
+            "Optional comma-separated local LoRA ranks per site in client order, e.g. '4,8,16'. "
+            "If omitted, distinct ranks are assigned automatically up to --global_lora_rank."
         ),
     )
     parser.add_argument(
@@ -135,7 +150,61 @@ def _configure_timeouts(recipe, client_names, task_timeout: int = 1200, tensor_t
     )
 
 
-def _build_train_args(args, site_data_path: str, image_root: str, report_to: str) -> str:
+def _build_default_site_lora_ranks(n_clients: int, global_lora_rank: int) -> list[int]:
+    if global_lora_rank <= 0:
+        raise ValueError(f"--global_lora_rank must be positive, got {global_lora_rank}.")
+    if n_clients > global_lora_rank:
+        raise ValueError(
+            f"Cannot auto-assign distinct client LoRA ranks for --n_clients={n_clients} "
+            f"when --global_lora_rank={global_lora_rank}. Specify --site_lora_ranks explicitly "
+            "or increase --global_lora_rank."
+        )
+
+    ranks = []
+    max_exponent = n_clients - 1
+    for exponent in range(max_exponent, -1, -1):
+        rank = max(1, round(global_lora_rank / (2**exponent)))
+        ranks.append(rank)
+
+    for idx in range(1, len(ranks)):
+        ranks[idx] = max(ranks[idx], ranks[idx - 1] + 1)
+
+    if ranks[-1] > global_lora_rank:
+        start_rank = global_lora_rank - n_clients + 1
+        if start_rank <= 0:
+            raise ValueError(
+                f"Cannot auto-assign distinct client LoRA ranks for --n_clients={n_clients} "
+                f"when --global_lora_rank={global_lora_rank}. Specify --site_lora_ranks explicitly."
+            )
+        ranks = list(range(start_rank, global_lora_rank + 1))
+
+    return ranks
+
+
+def _parse_site_lora_ranks(site_lora_ranks: str | None, n_clients: int, global_lora_rank: int) -> list[int]:
+    if site_lora_ranks is None:
+        return _build_default_site_lora_ranks(n_clients, global_lora_rank)
+
+    ranks = [int(part.strip()) for part in site_lora_ranks.split(",") if part.strip()]
+    if not ranks:
+        raise ValueError("--site_lora_ranks must contain at least one positive integer.")
+    if len(ranks) != n_clients:
+        raise ValueError(
+            f"--site_lora_ranks has {len(ranks)} value(s) but --n_clients={n_clients}. "
+            "Expected one rank per client, e.g. '4,8,16'."
+        )
+    for rank in ranks:
+        if rank <= 0:
+            raise ValueError(f"Local LoRA ranks must be positive, got {rank}.")
+        if rank > global_lora_rank:
+            raise ValueError(
+                f"Local LoRA rank {rank} exceeds --global_lora_rank {global_lora_rank}. "
+                "The server rank bank must be at least as large as every client rank."
+            )
+    return ranks
+
+
+def _build_train_args(args, site_data_path: str, image_root: str, report_to: str, local_lora_rank: int) -> str:
     train_args = [
         "--data_path",
         site_data_path,
@@ -143,6 +212,8 @@ def _build_train_args(args, site_data_path: str, image_root: str, report_to: str
         image_root,
         "--model_name_or_path",
         args.model_name_or_path,
+        "--lora_rank",
+        str(local_lora_rank),
     ]
     if args.max_steps is not None:
         train_args.extend(["--max_steps", str(args.max_steps)])
@@ -171,18 +242,27 @@ def main():
     client_names = [f"site-{idx}" for idx in range(1, n_clients + 1)]
     data_dir = os.path.abspath(args.data_dir)
     image_root = os.path.abspath(args.image_root)
+    site_lora_ranks = _parse_site_lora_ranks(args.site_lora_ranks, n_clients, args.global_lora_rank)
     job_name = "medgemma" if args.lora_aggregation == "naive" else "medgemma-hlora"
+    rank_summary = ", ".join(f"{site_name}={rank}" for site_name, rank in zip(client_names, site_lora_ranks))
+    print(f"Client LoRA ranks: {rank_summary}")
 
     per_site_config = {}
     report_to = "wandb" if args.wandb else "none"
-    for site_name in client_names:
+    for site_name, local_lora_rank in zip(client_names, site_lora_ranks):
         site_data_path = os.path.join(data_dir, site_name)
-        train_args = _build_train_args(args, site_data_path=site_data_path, image_root=image_root, report_to=report_to)
+        train_args = _build_train_args(
+            args,
+            site_data_path=site_data_path,
+            image_root=image_root,
+            report_to=report_to,
+            local_lora_rank=local_lora_rank,
+        )
         per_site_config[site_name] = {"train_args": train_args}
 
     model = {
         "class_path": "model.MedGemmaLoRAModel",
-        "args": {"model_name_or_path": args.model_name_or_path},
+        "args": {"model_name_or_path": args.model_name_or_path, "lora_rank": args.global_lora_rank},
     }
 
     recipe = FedAvgRecipe(
@@ -192,7 +272,11 @@ def main():
         model=model,
         train_script="client.py",
         per_site_config=per_site_config,
-        aggregator=HLoraAggregator() if args.lora_aggregation == "hlora" else None,
+        aggregator=(
+            HLoRAMaxRankAggregator(global_lora_rank=args.global_lora_rank)
+            if args.lora_aggregation == "hlora"
+            else NaiveMaxRankAggregator(global_lora_rank=args.global_lora_rank)
+        ),
         launch_external_process=True,
         server_expected_format="pytorch",
         key_metric="",

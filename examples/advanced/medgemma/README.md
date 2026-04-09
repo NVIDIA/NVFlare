@@ -20,10 +20,11 @@ Weights for [`google/medgemma-4b-it`](https://huggingface.co/google/medgemma-4b-
 | File | Role |
 |------|------|
 | `data_utils.py` | Shared prompt, class-label mappings, dataset splitting helpers, and response parsing helpers. |
-| `model.py` | MedGemma LoRA wrapper used by the server and clients. The server exchanges only LoRA adapter weights. |
-| `client.py` | NVFlare client entry point. Loads MedGemma in 4-bit, applies the received LoRA adapters, runs local SFT with `SFTTrainer`, and sends the updated adapters back. |
-| `custom_aggregators.py` | Optional HLoRA-style server aggregator that reconstructs client `B @ A` updates before projecting them back to LoRA factors. |
-| `job.py` | FedAvg recipe for 3 clients with per-site data paths and selectable LoRA aggregation (`naive` or `hlora`). |
+| `lora_utils.py` | Shared LoRA key, rank, and truncation helpers used by the client and custom aggregators. |
+| `model.py` | MedGemma LoRA wrapper used by the server and clients. The server stores a fixed-rank global LoRA bank and exchanges only adapter weights. |
+| `client.py` | NVFlare client entry point. Loads MedGemma in 4-bit, truncates the incoming global LoRA bank to the site's local rank, runs local SFT with `SFTTrainer`, and sends back only the active local factors. |
+| `custom_aggregators.py` | Server-side max-rank LoRA aggregators for the paper baseline (`naive`) and HLoRA (`hlora`). |
+| `job.py` | FedAvg recipe for 3 clients with per-site data paths, configurable local/global LoRA ranks, and selectable LoRA aggregation (`naive` or `hlora`). |
 | `download_data.py` | Downloads and extracts `NCT-CRC-HE-100K.zip` from Zenodo. |
 | `prepare_data.py` | Discovers image files, builds class-skewed site shards by default, and writes `train.json` / `validation.json` for each client. |
 | `run_inference.py` | Runs before/after inference on prepared validation samples using either the base model, an adapter directory, or NVFlare `FL_global_model.pt`. |
@@ -106,8 +107,10 @@ Important notes:
 
 - The example always uses LoRA-only FL exchange. The MedGemma base model stays frozen on every client, and FedAvg aggregates only the adapter weights.
 - This keeps the full MedGemma checkpoint local to each client and exchanges only the smaller LoRA adapter updates between clients and server.
-- `job.py` defaults to `--lora_aggregation naive`, which matches the original example and the HLoRA paper's baseline by averaging LoRA `A` and `B` factors separately.
-- `python job.py --lora_aggregation hlora` enables HLoRA-style server aggregation: the server reconstructs each client's LoRA update as `B @ A`, averages those reconstructed updates, and projects the result back to the configured LoRA rank. Non-LoRA tensors such as `modules_to_save` still use ordinary weighted averaging.
+- The server now keeps a fixed global LoRA rank bank (`--global_lora_rank`, default `16`). By default, the 3-client example uses distinct local ranks `4,8,16`, and the client truncates the incoming global bank to its local rank before training.
+- `job.py` defaults to `--lora_aggregation naive`, which matches the HLoRA paper's baseline by averaging LoRA `A` and `B` factors separately inside that fixed global rank bank.
+- `python job.py --lora_aggregation hlora` enables HLoRA-style server aggregation: the server reconstructs each client's LoRA update as `B @ A`, averages those reconstructed updates, and projects the result back to the configured global rank bank. Non-LoRA tensors such as `modules_to_save` still use ordinary weighted averaging.
+- Both aggregation modes weight clients by the number of local training examples reported by the client (`num_examples`), rather than relying on the first received adapter as a template.
 - `job.py` defaults to 3 clients and one GPU per client. If needed, override the GPU mapping with `--gpu "[0],[1],[2]"`.
 - The client uses the same prompt format, 4-bit quantization, LoRA config, and multimodal collator pattern as the official notebook.
 - When `--lora_aggregation hlora` is used, the default simulator output path changes from `/tmp/nvflare/simulation/medgemma/...` to `/tmp/nvflare/simulation/medgemma-hlora/...`.
@@ -121,8 +124,17 @@ Useful flags:
 | `--num_rounds` | Number of FL rounds. | `python job.py --num_rounds 5` |
 | `--max_steps` | Limit local steps per round for quick tests. | `python job.py --max_steps 50` |
 | `--learning_rate` | Peak learning rate for local SFT. | `python job.py --learning_rate 1e-4` |
-| `--lora_aggregation` | LoRA aggregation strategy: `naive` for separate factor averaging, `hlora` for reconstructed-update aggregation. | `python job.py --lora_aggregation hlora` |
+| `--global_lora_rank` | Server-side LoRA bank rank used for aggregation and checkpoint persistence. | `python job.py --global_lora_rank 16` |
+| `--site_lora_ranks` | Comma-separated local LoRA ranks per site, e.g. `4,8,16` for three clients. If omitted, the job auto-assigns distinct ranks up to `--global_lora_rank`. | `python job.py --site_lora_ranks 4,8,16` |
+| `--lora_aggregation` | LoRA aggregation strategy: `naive` for separate factor averaging in the global bank, `hlora` for reconstructed-update aggregation. | `python job.py --lora_aggregation hlora` |
 | `--wandb` | Enable Weights & Biases tracking if `WANDB_API_KEY` is set. | `python job.py --wandb` |
+
+To compare the paper baseline against HLoRA with heterogeneous client ranks, the default 3-client run already uses `site-1=4`, `site-2=8`, and `site-3=16`. You can also set the layout explicitly:
+
+```bash
+python job.py --lora_aggregation naive --global_lora_rank 16 --site_lora_ranks 4,8,16
+python job.py --lora_aggregation hlora --global_lora_rank 16 --site_lora_ranks 4,8,16
+```
 
 ## 4. Run inference
 

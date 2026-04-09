@@ -30,11 +30,13 @@ import sys
 import torch
 from data_utils import DEFAULT_MODEL_NAME_OR_PATH, format_training_example, resolve_image_path
 from datasets import Image, load_dataset
+from lora_utils import build_uniform_lora_rank_map, truncate_global_bank_for_site
 from model import MEDGEMMA_IMAGE_TOKEN_ID, apply_adapter_state, create_peft_medgemma_model, get_adapter_state_dict
 from transformers import AutoProcessor
 from trl import SFTConfig, SFTTrainer
 
 import nvflare.client as flare
+from nvflare.apis.fl_constant import FLMetaKey
 
 
 def _abs_path(path: str) -> str:
@@ -163,8 +165,8 @@ def main():
     parser.add_argument(
         "--per_device_train_batch_size",
         type=int,
-        default=4,
-        help="Training batch size per device (default: 4).",
+        default=8,
+        help="Training batch size per device (default: 8).",
     )
     parser.add_argument(
         "--per_device_eval_batch_size",
@@ -198,6 +200,12 @@ def main():
         default=None,
         help="Working directory for round-specific trainer outputs (default: ./medgemma_checkpoints under the client workspace).",
     )
+    parser.add_argument(
+        "--lora_rank",
+        type=int,
+        default=16,
+        help="Local site LoRA rank. Incoming global banks are truncated to this rank before loading.",
+    )
     args = parser.parse_args()
 
     signal.signal(signal.SIGTERM, lambda _signum, _frame: sys.exit(0))
@@ -228,8 +236,16 @@ def main():
         )
     eval_dataset = _load_site_split(validation_json, image_root) if os.path.isfile(validation_json) else None
 
-    print(f"site={client_name}, train_samples={len(train_dataset)}, validation_samples={len(eval_dataset or [])}")
-    model = create_peft_medgemma_model(model_name_or_path=args.model_name_or_path, quantized=True, device_map={"": 0})
+    print(
+        f"site={client_name}, train_samples={len(train_dataset)}, validation_samples={len(eval_dataset or [])}, "
+        f"local_lora_rank={args.lora_rank}"
+    )
+    model = create_peft_medgemma_model(
+        model_name_or_path=args.model_name_or_path,
+        quantized=True,
+        device_map={"": 0},
+        lora_rank=args.lora_rank,
+    )
     print(f"site={client_name}")
     model.print_trainable_parameters()
 
@@ -247,7 +263,9 @@ def main():
         current_round = input_model.current_round
         received_mb = _params_size_mb(input_model.params)
         print(f"site={client_name}, round={current_round}, received adapter size: {received_mb:.2f} MB")
-        apply_adapter_state(model, input_model.params)
+        site_rank_map = build_uniform_lora_rank_map(input_model.params.keys(), args.lora_rank)
+        local_adapter_state = truncate_global_bank_for_site(input_model.params, site_rank_map)
+        apply_adapter_state(model, local_adapter_state)
         model.train()
 
         if eval_dataset is not None and args.eval_subset_size > 0 and len(eval_dataset) > args.eval_subset_size:
@@ -279,15 +297,15 @@ def main():
 
         params = {"model." + key: value for key, value in get_adapter_state_dict(model).items()}
         sent_mb = _params_size_mb(params)
-        meta = (
-            {"NUM_STEPS_CURRENT_ROUND": args.max_steps}
-            if args.max_steps is not None
-            else {"NUM_TRAIN_EPOCHS_CURRENT_ROUND": args.num_train_epochs}
-        )
-        flare.send(flare.FLModel(params=params, metrics=metrics, meta=meta))
+        meta = {"num_examples": len(train_dataset)}
+        if args.max_steps is not None:
+            meta[FLMetaKey.NUM_STEPS_CURRENT_ROUND] = args.max_steps
+        else:
+            meta["NUM_TRAIN_EPOCHS_CURRENT_ROUND"] = args.num_train_epochs
+        flare.send(flare.FLModel(params_type=flare.ParamsType.FULL, params=params, metrics=metrics, meta=meta))
         print(f"site={client_name}, round={current_round}, sent updated adapter size: {sent_mb:.2f} MB")
 
-        del trainer, params, input_model
+        del trainer, params, input_model, local_adapter_state
         _free_memory()
 
 
