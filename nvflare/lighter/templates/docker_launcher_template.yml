@@ -30,6 +30,7 @@ docker_launcher_cln_sh: |
   fi
 
   docker run --name {~~client_name~~} \
+    --user "$(id -u):$(id -g)" \
     --network $NETWORK_NAME \
     -v "$HOST_WORKSPACE":/var/tmp/nvflare/workspace \
     -v /var/run/docker.sock:/var/run/docker.sock \
@@ -70,6 +71,7 @@ docker_launcher_svr_sh: |
   fi
 
   docker run --name {~~server_name~~} \
+    --user "$(id -u):$(id -g)" \
     --network $NETWORK_NAME \
     -v "$HOST_WORKSPACE":/var/tmp/nvflare/workspace \
     -v /var/run/docker.sock:/var/run/docker.sock \

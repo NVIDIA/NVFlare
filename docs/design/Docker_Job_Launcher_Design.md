@@ -291,6 +291,7 @@ cd workspace/server/startup
 # → creates nvflare-network if it doesn't exist
 # → resolves HOST_WORKSPACE=$(cd .. && pwd)
 # → docker run --name server \
+#              --user "$(id -u):$(id -g)" \
 #              --network nvflare-network \
 #              -v $HOST_WORKSPACE:/var/tmp/nvflare/workspace \
 #              -v /var/run/docker.sock:/var/run/docker.sock \
