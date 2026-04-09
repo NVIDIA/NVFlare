@@ -67,7 +67,7 @@ class GrpcServerConnector(FlowerServerConnector):
         # we need 3 free local addresses for flwr's superlink:
         # - address for client to connect to (fleet-api-address)
         # - address for serverapp to connect to (serverapp-api-address)
-        # - address for "flwr run" to connect to (exec-api-address)
+        # - address for "flwr run" to connect to (control-api-address)
         try:
             addresses = get_local_addresses(3)
         except Exception as ex:

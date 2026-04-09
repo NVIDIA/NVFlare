@@ -21,11 +21,12 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, Job, JobMetaKey, RunStatus
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, Job, JobMetaKey, RunStatus, get_job_meta_study
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.private.fed.utils.fed_utils import extract_participants
+from nvflare.security.study_registry import StudyRegistryService
 
 SCHEDULE_RESULT_OK = 0  # the job is scheduled
 SCHEDULE_RESULT_NO_RESOURCE = 1  # job is not scheduled due to lack of resources
@@ -102,6 +103,11 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         engine = fl_ctx.get_engine()
         online_clients = engine.get_clients()
         online_site_names = [x.name for x in online_clients]
+        registry = StudyRegistryService.get_registry()
+        job_study = get_job_meta_study(job.meta)
+        enrolled_sites = registry.get_sites(job_study) if registry else None
+        if enrolled_sites is not None:
+            online_site_names = [site_name for site_name in online_site_names if site_name in enrolled_sites]
 
         if not job.deploy_map:
             self.log_error(fl_ctx, f"Job '{job.job_id}' does not have deploy_map, can't be scheduled.")
@@ -118,6 +124,9 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                     applicable_sites = online_site_names
                     sites_to_app = {x: app_name for x in online_site_names}
                     sites_to_app[SERVER_SITE_NAME] = app_name
+                elif enrolled_sites is not None and site_name != SERVER_SITE_NAME and site_name not in enrolled_sites:
+                    self.log_error(fl_ctx, f"Job {job.job_id} targets site '{site_name}' outside study '{job_study}'")
+                    return SCHEDULE_RESULT_BLOCK, None, f"site '{site_name}' not in study '{job_study}'"
                 elif site_name in online_site_names:
                     applicable_sites.append(site_name)
                     sites_to_app[site_name] = app_name
@@ -126,6 +135,11 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         self.log_debug(fl_ctx, f"Job {job.job_id} is checking against applicable sites: {applicable_sites}")
 
         required_sites = job.required_sites if job.required_sites else []
+        if enrolled_sites is not None:
+            for site_name in required_sites:
+                if site_name not in enrolled_sites:
+                    self.log_error(fl_ctx, f"Job {job.job_id} requires site '{site_name}' outside study '{job_study}'")
+                    return SCHEDULE_RESULT_BLOCK, None, f"site '{site_name}' not in study '{job_study}'"
         if required_sites:
             for s in required_sites:
                 if s not in applicable_sites:

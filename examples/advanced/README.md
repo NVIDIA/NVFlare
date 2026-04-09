@@ -33,6 +33,8 @@ Please also install "./requirements.txt" in each example folder.
 ## Medical Image Analysis
 * [NVFlare + MONAI Integration](./monai/README.md)
   * Demonstrates federated learning with MONAI bundles using NVFlare's Client API and Job Recipe patterns.
+* [Federated MedGemma Fine-Tuning](./medgemma/README.md)
+  * Example of federated MedGemma QLoRA fine-tuning on histopathology image classification data with Hugging Face TRL.
 
 ## Finance
 * [Financial Application with Federated XGBoost Methods](./finance/README.md)

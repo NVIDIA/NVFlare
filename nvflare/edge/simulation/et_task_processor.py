@@ -170,6 +170,13 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
             drop_last=True,
         )
         total_batches = len(dataloader)
+        if total_batches == 0:
+            raise ValueError(
+                "DataLoader produced no batches (dataset may be empty or all batches were dropped by drop_last=True). "
+                "Check your dataset and batch_size configuration."
+            )
+
+        optimizer = None
 
         for epoch in range(total_epochs):
             log.info(f"Epoch {epoch + 1}/{total_epochs}")
@@ -181,14 +188,15 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
                 if initial_params is None:
                     initial_params = clone_params(et_model.named_parameters())
 
-                optimizer = get_sgd_optimizer(
-                    et_model.named_parameters(),
-                    self.training_config["learning_rate"],
-                    self.training_config["momentum"],
-                    self.training_config["weight_decay"],
-                    self.training_config["dampening"],
-                    self.training_config["nesterov"],
-                )
+                if optimizer is None:
+                    optimizer = get_sgd_optimizer(
+                        et_model.named_parameters(),
+                        self.training_config["learning_rate"],
+                        self.training_config["momentum"],
+                        self.training_config["weight_decay"],
+                        self.training_config["dampening"],
+                        self.training_config["nesterov"],
+                    )
 
                 optimizer.step(et_model.named_gradients())
 

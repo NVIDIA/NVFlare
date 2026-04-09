@@ -72,6 +72,12 @@ def get_test_config(test_config_yaml: str) -> dict:
     return test_config
 
 
+def _resolve_test_config_path(config_dir: str, path: str) -> str:
+    if os.path.isabs(path):
+        return path
+    return os.path.abspath(os.path.join(config_dir, path))
+
+
 framework = os.environ.get("NVFLARE_TEST_FRAMEWORK")
 test_configs = read_yaml("test_configs.yml")
 if framework not in test_configs["test_configs"]:
@@ -87,16 +93,19 @@ test_configs = test_configs["test_configs"][framework]
 )
 def setup_and_teardown_system(request):
     _print_newlines()
-    yaml_path = os.path.join(os.path.dirname(__file__), request.param)
+    suite_root = os.path.dirname(__file__)
+    yaml_path = os.path.join(suite_root, request.param)
     print(f"Setting up system using {yaml_path}")
     test_config = get_test_config(yaml_path)
 
     cleanup = test_config["cleanup"]
     has_project_yaml = "project_yaml" in test_config
     poll_period = test_config.get("poll_period", 5)
-    additional_python_paths = test_config.get("additional_python_paths", [])
+    additional_python_paths = [
+        _resolve_test_config_path(suite_root, p) for p in test_config.get("additional_python_paths", [])
+    ]
     for additional_python_path in additional_python_paths:
-        sys.path.append(os.path.abspath(additional_python_path))
+        sys.path.append(additional_python_path)
 
     test_temp_dir = tempfile.mkdtemp()
 
@@ -104,7 +113,7 @@ def setup_and_teardown_system(request):
     site_launcher = None
     try:
         if has_project_yaml:
-            project_yaml_path = test_config.get("project_yaml")
+            project_yaml_path = _resolve_test_config_path(suite_root, test_config.get("project_yaml"))
             if not os.path.isfile(project_yaml_path):
                 raise NVFTestError(f"Missing project_yaml at {project_yaml_path}.")
             site_launcher = ProvisionSiteLauncher(project_yaml=project_yaml_path)
@@ -125,7 +134,7 @@ def setup_and_teardown_system(request):
 
         # testing cases
         test_cases = []
-        jobs_root_dir = test_config["jobs_root_dir"]
+        jobs_root_dir = _resolve_test_config_path(suite_root, test_config["jobs_root_dir"])
         for x in test_config["tests"]:
             test_cases.append(
                 (
