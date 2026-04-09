@@ -42,9 +42,8 @@ Within a single site, SP/CP and all SJ/CJ containers must use the same launcher 
 
 ### Networking
 - A Docker network (`nvflare-network` by default) is created automatically by `start_docker.sh` if it does not exist.
-- SP/CP container and all SJ/CJ containers join this network.
-- `PARENT_URL` passed to SJ/CJ is the **SP/CP container name** on the Docker network. Docker's built-in DNS resolves it — no `host.docker.internal` hacks needed.
-- Cross-site communication (client → server) uses the same HTTPS/WSS as process mode.
+- SP/CP and all SJ/CJ containers on the same site join this network. It is used **only for intra-site parent↔child communication** (`PARENT_URL`). Docker's built-in DNS resolves container names — no `host.docker.internal` hacks needed.
+- **Cross-site communication (CP → SP) does not use the Docker network.** It goes over the host network via the published `fed_learn_port`, using the same HTTPS/gRPC as process mode. From CP's perspective, it connects to the server's hostname/IP just as it would in process mode.
 
 ```mermaid
 graph TD
@@ -105,33 +104,40 @@ SJ/CJ containers do not receive the Docker socket, which limits lateral movement
 
 ### Image Policy
 
-`DockerJobLauncher` supports an `allowed_image_prefixes` configuration. If set, only images whose name starts with one of the configured prefixes are permitted to run. Jobs requesting a disallowed image are **hard-blocked** — the job will not launch.
+Image allowlisting is not implemented in this version — all images specified in `meta.json` are permitted. This is intentional for the first draft; a prefix-based allowlist can be added as a follow-up if site operators need to restrict which registries or images jobs may use.
+
+### GPU and Resource Management
+
+Docker mode uses **`BEResourceManager` (Best-Effort)** — the same approach as the K8s launcher. It approves every resource request unconditionally; no pre-scheduling check is done.
+
+**Why not `GPUResourceManager`?**
+
+`GPUResourceManager` would require the SP/CP container to have GPU passthrough (`--gpus N` in `start_docker.sh`) just so it can count available GPUs. SP/CP never uses GPUs — it only manages the federation. Giving it GPU access solely for resource counting adds unnecessary privilege with no benefit.
+
+**How GPU is requested per job:**
+
+Use `resource_spec` in `meta.json` — the same field used by K8s and process launchers:
 
 ```json
-{
-  "id": "docker_launcher",
-  "path": "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher",
-  "args": {
-    "network": "nvflare-network",
-    "mount_path": "/var/nvflare/workspace",
-    "allowed_image_prefixes": ["myregistry.corp.com/", "nvflare/nvflare:"]
-  }
+"resource_spec": {
+  "site-1": {"num_of_gpus": 1}
 }
 ```
 
-This config is injected into `local/resources.json.default` by `DockerLauncherBuilder` during provisioning. `allowed_image_prefixes` must be added manually or via a custom provisioning step.
+`DockerJobLauncher` reads `num_of_gpus` from `resource_spec` and translates it to `device_requests` before calling `docker run`. If a job also specifies `device_requests` explicitly in `container_kwargs`, that takes precedence (fine-grain override).
 
-If `allowed_image_prefixes` is `null` / not set, all images are permitted (default, no restriction).
+If the GPU is not available or over-subscribed, the job container fails at startup — not at scheduling time. This is acceptable for small-scale deployments.
 
-This is site-local policy — each site admin controls what images run on their infrastructure independently.
+**Future:** A `DockerResourceManager` that queries the host GPU inventory (e.g. via `nvidia-smi` or the Docker API) without needing SP/CP GPU passthrough is a natural follow-up.
 
 ### Workspace / Storage
 - Workspace is shared via a **bind mount** of the host workspace directory into all containers (SP/CP and SJ/CJ).
+- The container-internal mount point is always `/var/tmp/nvflare/workspace` (hardcoded).
 - Each job writes to its own subdirectory (`workspace/runs/job_id/`) — same guarantee as the process launcher today.
 - Multiple concurrent job containers writing to the same workspace root is safe because each job has its own subfolder. No special locking needed — same behavior as multiple subprocesses today.
 
 ```
-workspace/               ← bind-mounted into all containers at /var/nvflare/workspace
+workspace/               ← bind-mounted into all containers at /var/tmp/nvflare/workspace
   startup/               ← certs, config, sub_start.sh
   runs/
     job_001/             ← written by SJ/CJ for job 1
@@ -156,25 +162,28 @@ docker run ... -e NVFL_DOCKER_WORKSPACE="$HOST_WORKSPACE" ...
 #### SP/CP Container (site admin controls)
 The site admin starts SP/CP via `start_docker.sh`:
 - Docker socket mounted (`/var/run/docker.sock`) — required to create job containers
-- Workspace bind mount at `/var/nvflare/workspace` — required to access startup kit and run artifacts
-- `nvflare-network` attached — required for cross-site and intra-site communication
+- Workspace bind mount at `/var/tmp/nvflare/workspace` — required to access startup kit and run artifacts
+- `nvflare-network` attached — intra-site only (SP↔SJ / CP↔CJ via PARENT_URL)
+- `fed_learn_port` published to host — cross-site communication (CP→SP over HTTPS)
 
 #### SJ/CJ Container (DockerJobLauncher controls)
 - **No Docker socket** — job containers cannot create further containers
-- **Workspace bind mount** — same host directory as SP/CP, mounted at `mount_path`
+- **Workspace bind mount** — same host directory as SP/CP, mounted at `/var/tmp/nvflare/workspace`
 - **Docker network** — access to SP/CP via container name DNS only
-- **Extra docker flags** — `container_kwargs` in `deploy_map` (per-job) merged with site-level `extra_container_kwargs` from `resources.json`; job-level takes precedence on conflict. GPU is also specified here (e.g. `device_requests`).
+- **Extra docker flags** — `container_kwargs` in `deploy_map` (per-job) merged with site-level `extra_container_kwargs` from `resources.json`; job-level takes precedence on conflict.
+- **GPU** — specified via `resource_spec.num_of_gpus` in `meta.json` (consistent with K8s/process launchers); launcher translates to `device_requests` internally.
 
 ```
 SP/CP container (site admin grants)
-  ├── /var/run/docker.sock mounted   ← can create job containers
-  ├── workspace bind mount           ← full workspace access
-  └── nvflare-network                ← cross-site + intra-site comms
+  ├── /var/run/docker.sock mounted            ← can create job containers
+  ├── workspace bind mount at /var/tmp/nvflare/workspace
+  ├── nvflare-network                         ← intra-site: SP↔SJ / CP↔CJ (PARENT_URL, Docker DNS)
+  └── host network (-p fed_learn_port)        ← cross-site: CP→SP over HTTPS, same as process mode
 
 SJ/CJ container (DockerJobLauncher controls)
-  ├── NO Docker socket               ← cannot create further containers
-  ├── workspace bind mount           ← own job subdirectory only
-  └── nvflare-network                ← intra-site to SP/CP only
+  ├── NO Docker socket                        ← cannot create further containers
+  ├── workspace bind mount at /var/tmp/nvflare/workspace
+  └── nvflare-network                         ← intra-site to SP/CP only (PARENT_URL)
 ```
 
 ---
@@ -193,7 +202,6 @@ sequenceDiagram
     SP->>SP: schedule job
     SP->>Launcher: fire BEFORE_JOB_LAUNCH event
     Launcher->>Launcher: extract_job_image(meta, site_name)
-    Launcher->>Launcher: check allowed_image_prefixes
     Launcher->>SP: add_launcher(self, fl_ctx)
     SP->>Launcher: launch_job(job_meta, fl_ctx)
     Launcher->>Launcher: override PARENT_URL → SP/CP container name
@@ -222,19 +230,13 @@ participants:
   - name: server
     type: server
     org: nvidia
-    fed_learn_port: 8002  # admin_port defaults to fed_learn_port if not specified
-    run_in_docker: true
-    listening_host:
-      name: server
-      port: 8004  # TCP port for SJ/CJ job containers to connect back to SP/CP (PARENT_URL); must differ from fed_learn_port
+    fed_learn_port: 8002
+    run_in_docker: true   # DockerLauncherBuilder auto-injects 0.0.0.0 internal listener binding
 
   - name: site-1
     type: client
     org: nvidia
     run_in_docker: true
-    listening_host:
-      name: site-1
-      port: 8102  # TCP port for CJ job containers to connect back to CP (PARENT_URL)
 
 builders:
   - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
@@ -290,12 +292,12 @@ cd workspace/server/startup
 # → resolves HOST_WORKSPACE=$(cd .. && pwd)
 # → docker run --name server \
 #              --network nvflare-network \
-#              -v $HOST_WORKSPACE:/var/nvflare/workspace \
+#              -v $HOST_WORKSPACE:/var/tmp/nvflare/workspace \
 #              -v /var/run/docker.sock:/var/run/docker.sock \
 #              -e NVFL_DOCKER_WORKSPACE=$HOST_WORKSPACE \
-#              -p 8002:8002 -p 8004:8004 \
+#              -p 8002:8002 \
 #              --rm nvflare-site:latest \
-#              /var/nvflare/workspace/startup/sub_start.sh
+#              /var/tmp/nvflare/workspace/startup/sub_start.sh
 ```
 
 The `--rm` flag means the container is automatically removed when stopped. SP/CP containers are long-lived; when the site admin stops the container (e.g. `docker stop server-parent`), it is cleaned up automatically. To restart, simply run `start_docker.sh` again.
@@ -327,12 +329,14 @@ Jobs specify which Docker image to use per-site in `meta.json`:
         "sites": ["server", "site-1"],
         "image": "nvflare-pt:latest",
         "container_kwargs": {
-          "device_requests": [{"Count": 1, "Capabilities": [["gpu"]]}],
           "shm_size": "8g",
           "ipc_mode": "host"
         }
       }
     ]
+  },
+  "resource_spec": {
+    "site-1": {"num_of_gpus": 1}
   },
   "min_clients": 1
 }
@@ -349,22 +353,22 @@ When SP/CP receives a runnable job:
 
 1. `handle_event(BEFORE_JOB_LAUNCH)` fires
 2. `DockerJobLauncher` reads `image` from the `deploy_map` entry in `meta.json`
-3. If `allowed_image_prefixes` is configured, the image is checked — **hard block if not permitted**
-4. `launch_job()` calls `docker run`:
+3. `launch_job()` calls `docker run`:
    - Image: `job_image` from `meta.json`
    - Container name: `{site_name}-{job_id}` (sanitized)
    - Network: `nvflare-network`
-   - Workspace bind-mounted at `mount_path`
+   - Workspace bind-mounted at `/var/tmp/nvflare/workspace`
    - `PARENT_URL` overridden to SP/CP container name + port (Docker DNS)
    - `PYTHONPATH` set to container-internal `app_custom_folder` path
-   - `container_kwargs` from `deploy_map` merged with site-level `extra_container_kwargs`; job-level wins on conflict (GPU, shm_size, etc. go here)
+   - `container_kwargs` from `deploy_map` merged with site-level `extra_container_kwargs`; job-level wins on conflict
+   - `resource_spec.num_of_gpus` translated to `device_requests` (explicit `container_kwargs.device_requests` overrides)
    - **No Docker socket** passed to job container
-5. `DockerJobHandle` tracks the container via `terminal_state` pattern
-6. On completion, container is removed; results are in `workspace/runs/{job_id}/`
+4. `DockerJobHandle` tracks the container via `terminal_state` pattern
+5. On completion, container is removed; results are in `workspace/runs/{job_id}/`
 
 ### Step 6 — Results
 
-Job output is written to `/var/nvflare/workspace/runs/{job_id}/` inside the container, which is bind-mounted from the host. Results are immediately visible on the host at:
+Job output is written to `/var/tmp/nvflare/workspace/runs/{job_id}/` inside the container, which is bind-mounted from the host. Results are immediately visible on the host at:
 
 ```
 workspace/server/runs/job_001/      ← server-side artifacts
@@ -387,7 +391,6 @@ Job submitted (via admin CLI or API)
   → meta.json specifies image per site (inside deploy_map)
   → SP/CP receives runnable job
   → BEFORE_JOB_LAUNCH event fires
-  → DockerJobLauncher checks image against allowed_image_prefixes (hard block if denied)
   → DockerJobLauncher calls docker run with job_image
   → SJ/CJ container starts, mounts shared workspace, connects to SP/CP via PARENT_URL (Docker DNS)
   → Job runs
@@ -458,6 +461,23 @@ In process mode `PARENT_URL = tcp://localhost:port`. In Docker mode it must be t
 | `nvflare/lighter/impl/docker_launcher.py` | `DockerLauncherBuilder` — provisioning builder |
 | `nvflare/lighter/templates/docker_launcher_template.yml` | Templates for `start_docker.sh` (server and client) |
 | `nvflare/lighter/constants.py` | `ProvFileName.DOCKER_LAUNCHER_SH`, `TemplateSectionKey.DOCKER_LAUNCHER_*` |
+
+### Docker SDK import
+
+`docker` and `docker.errors` are imported at module level inside a `try/except ImportError` block:
+
+```python
+try:
+    import docker
+    import docker.errors
+    _DOCKER_AVAILABLE = True
+except ImportError:
+    _DOCKER_AVAILABLE = False
+```
+
+**Why:** `DockerJobLauncher` is injected into `local/resources.json` and loaded by all processes on a site — including SJ/CJ job containers. Job containers have no reason to call Docker APIs and do not need the `docker` SDK installed. The try/except means the module loads cleanly on containers without the SDK; `_DOCKER_AVAILABLE` is only checked in `_get_docker_client()`, which is only called from SP/CP via `launch_job()`.
+
+This is a temporary solution. The root cause is that `resources.json` is shared across SP/CP and job containers — a future refactor could avoid loading SP/CP-only components in job containers entirely.
 
 ---
 

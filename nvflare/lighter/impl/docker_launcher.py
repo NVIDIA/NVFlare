@@ -17,9 +17,12 @@ import os
 
 from nvflare.app_opt.job_launcher.docker_launcher import ClientDockerJobLauncher, ServerDockerJobLauncher
 from nvflare.lighter import utils
-from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName, TemplateSectionKey
+from nvflare.lighter.constants import CommConfigArg, CtxKey, PropKey, ProvFileName, TemplateSectionKey
 from nvflare.lighter.entity import Participant
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
+
+_WORKSPACE_MOUNT = "/var/tmp/nvflare/workspace"
+_ETC_MOUNT = "/var/tmp/nvflare/etc"
 
 
 class DockerLauncherBuilder(Builder):
@@ -56,10 +59,14 @@ class DockerLauncherBuilder(Builder):
         resources["components"].append({"id": "docker_launcher", "path": path, "args": args})
         utils.write(resources_file, json.dumps(resources, indent=4), "t")
 
+    def _set_internal_listener_host(self, participant: Participant):
+        """Override internal listener host to 0.0.0.0 so SJ/CJ containers on the Docker network can connect."""
+        comm_config_args = participant.get_prop(PropKey.COMM_CONFIG_ARGS)
+        if comm_config_args is not None:
+            comm_config_args[CommConfigArg.HOST] = "0.0.0.0"
+
     def _build_server(self, server: Participant, ctx: ProvisionContext):
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
-
-        lh = server.get_listening_host()
 
         # Inject launcher config — workspace resolved at runtime from NVFL_DOCKER_WORKSPACE
         dest_dir = ctx.get_local_dir(server)
@@ -68,7 +75,6 @@ class DockerLauncherBuilder(Builder):
             path=ServerDockerJobLauncher.__module__ + ".ServerDockerJobLauncher",
             args={
                 "network": "nvflare-network",
-                "mount_path": "/var/nvflare/workspace",
                 "python_path": "/usr/local/bin/python",
                 "pending_timeout": 30,
             },
@@ -76,10 +82,8 @@ class DockerLauncherBuilder(Builder):
 
         run_in_docker = server.get_prop(PropKey.RUN_IN_DOCKER)
         if run_in_docker:
-            if not lh:
-                raise RuntimeError(f"run_in_docker requires listening_host but it's missing from {server.name}")
-            if not lh.port:
-                raise RuntimeError(f"run_in_docker requires listening_host.port but it's missing from {server.name}")
+            # Auto-inject 0.0.0.0 binding so SJ containers can reach SP via Docker DNS
+            self._set_internal_listener_host(server)
 
             dest_dir = ctx.get_kit_dir(server)
             ctx.build_from_template(
@@ -88,7 +92,6 @@ class DockerLauncherBuilder(Builder):
                 ProvFileName.DOCKER_LAUNCHER_SH,
                 replacement={
                     "fed_learn_port": fed_learn_port,
-                    "communication_port": lh.port,
                     "server_name": server.name,
                     "docker_image": self.docker_image,
                 },
@@ -98,8 +101,6 @@ class DockerLauncherBuilder(Builder):
     def _build_client(self, client: Participant, ctx: ProvisionContext):
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
 
-        lh = client.get_listening_host()
-
         # Inject launcher config — workspace resolved at runtime from NVFL_DOCKER_WORKSPACE
         dest_dir = ctx.get_local_dir(client)
         self._inject_launcher(
@@ -107,7 +108,6 @@ class DockerLauncherBuilder(Builder):
             path=ClientDockerJobLauncher.__module__ + ".ClientDockerJobLauncher",
             args={
                 "network": "nvflare-network",
-                "mount_path": "/var/nvflare/workspace",
                 "python_path": "/usr/local/bin/python",
                 "pending_timeout": 30,
             },
@@ -115,10 +115,8 @@ class DockerLauncherBuilder(Builder):
 
         run_in_docker = client.get_prop(PropKey.RUN_IN_DOCKER)
         if run_in_docker:
-            if not lh:
-                raise RuntimeError(f"run_in_docker requires listening_host but it's missing from {client.name}")
-            if not lh.port:
-                raise RuntimeError(f"run_in_docker requires listening_host.port but it's missing from {client.name}")
+            # Auto-inject 0.0.0.0 binding so CJ containers can reach CP via Docker DNS
+            self._set_internal_listener_host(client)
 
             dest_dir = ctx.get_kit_dir(client)
             ctx.build_from_template(
@@ -127,7 +125,6 @@ class DockerLauncherBuilder(Builder):
                 ProvFileName.DOCKER_LAUNCHER_SH,
                 replacement={
                     "fed_learn_port": fed_learn_port,
-                    "communication_port": lh.port,
                     "docker_image": self.docker_image,
                     "client_name": client.name,
                 },

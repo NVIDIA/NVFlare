@@ -17,11 +17,17 @@ import re
 import time
 from abc import abstractmethod
 
+try:
+    import docker
+    import docker.errors
 
-import docker
-import docker.errors
+    _DOCKER_AVAILABLE = True
+except ImportError:
+    _DOCKER_AVAILABLE = False
+
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
@@ -239,44 +245,41 @@ class DockerJobLauncher(JobLauncherSpec):
 
     Assumptions:
     - Docker network already exists (created by start_docker.sh or site admin).
-    - Workspace is a host directory bind-mounted into all containers at mount_path.
+    - Workspace is a host directory bind-mounted into all containers at /var/tmp/nvflare/workspace.
     - SP/CP container name is known and reachable via Docker DNS on the network.
     - parent_url is derived at runtime from the site name and the port in JOB_PROCESS_ARGS.
     """
+
+    WORKSPACE_MOUNT = "/var/tmp/nvflare/workspace"
+    DATA_MOUNT = "/var/tmp/nvflare/data"
+    ETC_MOUNT = "/var/tmp/nvflare/etc"
+    STUDY_DATA_PATH_FILE = "study_data_path.json"
 
     def __init__(
         self,
         workspace: str = None,
         network: str = "nvflare-network",
-        mount_path: str = "/var/nvflare/workspace",
         python_path: str = "/usr/local/bin/python",
         timeout=None,
         pending_timeout: int = 30,
-        allowed_image_prefixes: list = None,
         extra_container_kwargs: dict = None,
     ):
         """
         Args:
-            workspace: host path to the NVFlare workspace directory (bind-mounted into job containers).
-                       If not provided, reads from NVFL_DOCKER_WORKSPACE environment variable.
-                       Must be the HOST path (not the container-internal path) because it is passed
-                       directly to the Docker daemon as a volume bind source.
+            workspace: host path to the NVFlare workspace directory (bind-mounted into job containers
+                       at /var/tmp/nvflare/workspace). If not provided, reads from NVFL_DOCKER_WORKSPACE
+                       environment variable. Must be the HOST path because it is passed directly to the
+                       Docker daemon as a volume bind source.
             network: Docker network name. Must already exist.
-            mount_path: mount path inside the job container for the workspace bind mount.
             python_path: Python executable path inside the job container.
             timeout: max seconds to wait for container to reach RUNNING state.
-                     Also used as stuck-detection threshold.
             pending_timeout: stuck-detection threshold (poll iterations) when timeout is None.
-            allowed_image_prefixes: if set, only images whose name starts with one of these prefixes
-                                    are permitted to run. Jobs requesting a disallowed image are hard-
-                                    blocked (the job will not launch). None means no restriction.
-                                    Example: ["myregistry.corp.com/", "nvflare/nvflare:"]
-            extra_container_kwargs: additional keyword arguments passed directly to docker containers.run()
-                                    for any docker run flags not explicitly supported above.
-                                    Keys use Docker SDK naming (underscores, not hyphens).
-                                    Example: {"shm_size": "8g", "ipc_mode": "host", "mem_limit": "16g"}
-                                    Note: "volumes", "network", "device_requests", "environment", and
-                                    "command" are controlled by the launcher and cannot be overridden here.
+            extra_container_kwargs: site-level default docker run kwargs passed to all job containers
+                                    on this site. Job-level container_kwargs in deploy_map take precedence
+                                    on conflict. Keys use Docker SDK naming (underscores, not hyphens).
+                                    Example: {"shm_size": "8g", "ipc_mode": "host"}
+                                    Note: "volumes", "network", "environment", "command", "name", "detach"
+                                    are controlled by the launcher and cannot be overridden here.
         """
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -286,11 +289,9 @@ class DockerJobLauncher(JobLauncherSpec):
 
         self.workspace = workspace
         self.network = network
-        self.mount_path = mount_path
         self.python_path = python_path
         self.timeout = timeout
         self.pending_timeout = pending_timeout
-        self.allowed_image_prefixes = allowed_image_prefixes
         extra_container_kwargs = extra_container_kwargs or {}
         _RESERVED_KWARGS = {"volumes", "network", "environment", "command", "name", "detach"}
         reserved_used = _RESERVED_KWARGS & set(extra_container_kwargs.keys())
@@ -305,6 +306,8 @@ class DockerJobLauncher(JobLauncherSpec):
 
     def _get_docker_client(self):
         if self._docker_client is None:
+            if not _DOCKER_AVAILABLE:
+                raise RuntimeError("docker SDK not installed; install it with: pip install docker")
             try:
                 self._docker_client = docker.from_env()
                 self._docker_client.ping()
@@ -339,12 +342,6 @@ class DockerJobLauncher(JobLauncherSpec):
         site_name = fl_ctx.get_identity_name()
         container_name = _sanitize_container_name(f"{site_name}-{job_id}")
 
-        # TODO(multi-study): resolve workspace per study once Phase 2 lands.
-        # study = get_job_meta_study(job_meta)  # returns DEFAULT_STUDY ("default") for legacy jobs
-        # workspace = os.path.join(self.workspace_root, study)
-        # The volume mount should use the study-specific host path so job workspaces are
-        # physically isolated across studies (e.g. /host/workspaces/study-a/, /host/workspaces/study-b/).
-        # For now self.workspace is a single root shared across all studies.
         workspace = self.workspace
         if not workspace:
             raise ValueError(
@@ -383,13 +380,41 @@ class DockerJobLauncher(JobLauncherSpec):
         if workspace_obj is not None:
             app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
             if app_custom_folder:
-                container_custom_folder = app_custom_folder.replace(workspace, self.mount_path, 1)
+                container_custom_folder = app_custom_folder.replace(workspace, self.WORKSPACE_MOUNT, 1)
                 environment["PYTHONPATH"] = container_custom_folder
 
         # container_kwargs: per-job from deploy_map, merged with site-level defaults from resources.json.
-        # Job-level takes precedence on conflict. GPU is specified here too (e.g. device_requests).
+        # Job-level takes precedence on conflict.
         job_container_kwargs = extract_container_kwargs(job_meta, site_name)
         merged_container_kwargs = {**self.extra_container_kwargs, **job_container_kwargs}
+
+        # GPU: translate resource_spec.num_of_gpus → device_requests (consistent with K8s/process launchers).
+        # Explicit device_requests in container_kwargs takes precedence (fine-grain override).
+        resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
+        num_gpus = (resource_spec.get(site_name) or {}).get("num_of_gpus", 0)
+        if num_gpus:
+            merged_container_kwargs.setdefault(
+                "device_requests", [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
+            )
+
+        # Volumes: always mount workspace; optionally mount study data if study_data_path.json exists
+        volumes = {
+            workspace: {"bind": self.WORKSPACE_MOUNT, "mode": "rw"},
+        }
+        # Read study data path from /var/tmp/nvflare/etc/study_data_path.json if it exists
+        study_data_file = os.path.join(self.ETC_MOUNT, self.STUDY_DATA_PATH_FILE)
+        if os.path.isfile(study_data_file):
+            try:
+                import json as _json
+                with open(study_data_file) as f:
+                    study_data_map = _json.load(f)
+                study = job_meta.get("study", "default")
+                data_host_path = study_data_map.get(study)
+                if data_host_path:
+                    volumes[data_host_path] = {"bind": self.DATA_MOUNT, "mode": "ro"}
+                    self.logger.info(f"mounting study '{study}' data from {data_host_path} -> {self.DATA_MOUNT}")
+            except Exception as e:
+                self.logger.warning(f"failed to read {study_data_file}: {e}")
 
         self.logger.info(f"launching job {job_id} as container {container_name} using image {job_image}")
 
@@ -402,12 +427,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 network=self.network,
                 detach=True,
                 environment=environment if environment else None,
-                volumes={
-                    workspace: {
-                        "bind": self.mount_path,
-                        "mode": "rw",
-                    }
-                },
+                volumes=volumes,
                 # Never pass Docker socket to job containers
                 **merged_container_kwargs,
             )
@@ -434,28 +454,12 @@ class DockerJobLauncher(JobLauncherSpec):
         # Always return a handle — caller detects failure via poll()
         return job_handle
 
-    def _is_image_allowed(self, image: str) -> bool:
-        """Return True if the image is permitted to run on this site.
-
-        If allowed_image_prefixes is None, all images are allowed.
-        Otherwise the image name must start with at least one of the configured prefixes.
-        """
-        if self.allowed_image_prefixes is None:
-            return True
-        return any(image.startswith(prefix) for prefix in self.allowed_image_prefixes)
-
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
             job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
             job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
-            if not job_image:
-                return
-            if not self._is_image_allowed(job_image):
-                raise RuntimeError(
-                    f"image '{job_image}' is not permitted on this site. "
-                    f"Allowed prefixes: {self.allowed_image_prefixes}"
-                )
-            add_launcher(self, fl_ctx)
+            if job_image:
+                add_launcher(self, fl_ctx)
 
     @abstractmethod
     def get_module_args(self, job_args: dict) -> dict:
