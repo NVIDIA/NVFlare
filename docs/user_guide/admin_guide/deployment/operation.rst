@@ -13,6 +13,13 @@ Admin command prompt
 After running ``fl_admin.sh``, log in by following the prompt and entering the name of the participant that the admin
 package was provisioned for (or for poc mode, "admin" as the name and password).
 
+To scope the terminal to a study, launch it with ``fl_admin.sh --study cancer-research``. If ``--study`` is omitted,
+the admin terminal uses the ``default`` study for that terminal session.
+
+Study-aware commands issued within a study session are scoped to that study: ``list_jobs`` shows only
+jobs from the active study, ``check_status client`` shows only enrolled sites, and ``submit_job`` tags
+jobs with the active study. See :ref:`multi_study_guide` for full details.
+
 Typing "help" or "?" will display a list of the commands and a brief description for each. Typing "? " before a command
 like "? check_status" or "?ls" will provide additional details for the usage of a command. Provided below is a list of
 commands shown as examples of how they may be run with a description.
@@ -75,7 +82,6 @@ commands shown as examples of how they may be run with a description.
    whitespace before the filename. For example, you may run ``sys_info server >serverinfo.txt``. To only save the
    file output without printing it, use two greater-than symbols ">>" instead: ``sys_info server >>serverinfo.txt``.
 
-The FLARE API is the redesigned FLAdminAPI with a better user experience introduced in version 2.3.0.
-We recommend using the FLARE API as the FLAdminAPI is now deprecated and will soon sunset.
+The FLARE API is the supported Python interface for programmatically issuing admin commands to the FL server.
 
 For job management via Python, see the :ref:`FLARE API <flare_api>`.

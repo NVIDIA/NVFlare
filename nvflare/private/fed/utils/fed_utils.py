@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 # limitations under the License.
 import importlib
 import json
+import logging
 import os
 import pkgutil
 import subprocess
@@ -43,9 +44,49 @@ from nvflare.private.fed.utils.decomposers import private_decomposers
 from nvflare.private.privacy_manager import PrivacyManager, PrivacyService
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
+from nvflare.security.study_registry import StudyRegistry, StudyRegistryService
 
 from ..simulator.simulator_const import SimulatorConstants
 from .app_authz import AppAuthzService
+
+
+def require_signed_jobs(workspace: Workspace) -> bool:
+    """Return True if the server requires all submitted jobs to carry __nvfl_sig.json.
+
+    Reads fed_server.json at call time (not cached) to allow hot-reload: an operator can
+    change the policy without restarting the server.
+
+    Default: True when rootCA.pem is present (any PKI deployment); False otherwise.
+    Explicit "require_signed_jobs" key in fed_server.json overrides the inferred default.
+    """
+    import stat as _stat
+
+    logger = logging.getLogger(__name__)
+
+    server_config_path = os.path.join(workspace.get_startup_kit_dir(), "fed_server.json")
+    if os.path.exists(server_config_path):
+        st = os.stat(server_config_path)
+        if st.st_mode & (_stat.S_IWGRP | _stat.S_IWOTH):
+            logger.warning(
+                "fed_server.json is group/world-writable — require_signed_jobs policy "
+                "can be altered by other local users (TOCTOU risk)"
+            )
+        try:
+            with open(server_config_path) as f:
+                cfg = json.load(f)
+            if "require_signed_jobs" in cfg:
+                value = bool(cfg["require_signed_jobs"])
+                logger.debug("require_signed_jobs=%s (explicit config)", value)
+                return value
+        except Exception as e:
+            logger.warning(
+                "failed to parse fed_server.json for require_signed_jobs: %s — falling back to rootCA.pem heuristic", e
+            )
+
+    root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
+    value = os.path.exists(root_ca_path)
+    logger.debug("require_signed_jobs=%s (inferred from rootCA.pem presence)", value)
+    return value
 
 
 def _check_secure_content(site_type: str) -> List[str]:
@@ -110,7 +151,7 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
     startup_dir = workspace.get_startup_kit_dir()
     SecurityContentService.initialize(content_folder=startup_dir)
 
-    if secure_train:
+    if secure_train and SecurityContentService.security_content_manager.valid_config:
         insecure_list = _check_secure_content(site_type=site_type)
         if len(insecure_list):
             print("The following files are not secure content.")
@@ -146,6 +187,13 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
         print("AuthorizationService error: {}".format(err))
         sys.exit(1)
 
+    studies_file = workspace.get_file_path_in_site_config("study_registry.json")
+    registry = None
+    if os.path.exists(studies_file):
+        with open(studies_file, "rt") as f:
+            registry = StudyRegistry(json.load(f))
+    StudyRegistryService.initialize(registry)
+
 
 def security_init_for_job(secure_train: bool, workspace: Workspace, site_type: str, job_id: str):
     """Initialize security processing for a job process (SJ or CJ).
@@ -160,7 +208,7 @@ def security_init_for_job(secure_train: bool, workspace: Workspace, site_type: s
     startup_dir = workspace.get_startup_kit_dir()
     SecurityContentService.initialize(content_folder=startup_dir)
 
-    if secure_train:
+    if secure_train and SecurityContentService.security_content_manager.valid_config:
         insecure_list = _check_secure_content(site_type=site_type)
         if len(insecure_list):
             print("The following files are not secure content.")

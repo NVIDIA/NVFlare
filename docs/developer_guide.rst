@@ -161,7 +161,6 @@ Low-Level APIs
 These are foundational APIs that higher-level abstractions (Client API, FLARE API) are built on top of.
 Most users do not need these directly, but they are available for advanced customization.
 
-- :doc:`FLAdminAPI <deprecated/FLAdminAPI>`
 - :doc:`Executor <programming_guide/execution_api_type/executor>`
 - :doc:`Shareable <programming_guide/shareable>`
 - :doc:`Data Exchange Object <programming_guide/data_exchange_object>`
@@ -172,7 +171,6 @@ Most users do not need these directly, but they are available for advanced custo
    :maxdepth: 1
    :hidden:
 
-   deprecated/FLAdminAPI
    programming_guide/execution_api_type/executor
    programming_guide/shareable
    programming_guide/data_exchange_object
