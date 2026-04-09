@@ -21,6 +21,7 @@ Weights for [`google/medgemma-4b-it`](https://huggingface.co/google/medgemma-4b-
 |------|------|
 | `data_utils.py` | Shared prompt, class-label mappings, dataset splitting helpers, and response parsing helpers. |
 | `lora_utils.py` | Shared LoRA key, rank, and truncation helpers used by the client and custom aggregators. |
+| `utils.py` | Shared path, memory, and CUDA runtime helpers used by the client. |
 | `model.py` | MedGemma LoRA wrapper used by the server and clients. The server stores a fixed-rank global LoRA bank and exchanges only adapter weights. |
 | `client.py` | NVFlare client entry point. Loads MedGemma in 4-bit, truncates the incoming global LoRA bank to the site's local rank, runs local SFT with `SFTTrainer`, and sends back only the active local factors. |
 | `custom_aggregators.py` | Server-side max-rank LoRA aggregators for the paper baseline (`naive`) and HLoRA (`hlora`). |

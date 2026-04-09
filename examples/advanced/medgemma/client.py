@@ -21,51 +21,30 @@ https://github.com/google-health/medgemma/blob/main/notebooks/fine_tune_with_hug
 from __future__ import annotations
 
 import argparse
-import gc
-import os
 import shutil
 import signal
 import sys
+import time
 
-import torch
 from data_utils import DEFAULT_MODEL_NAME_OR_PATH, format_training_example, resolve_image_path
 from datasets import Image, load_dataset
 from lora_utils import build_uniform_lora_rank_map, truncate_global_bank_for_site
 from model import MEDGEMMA_IMAGE_TOKEN_ID, apply_adapter_state, create_peft_medgemma_model, get_adapter_state_dict
 from transformers import AutoProcessor
 from trl import SFTConfig, SFTTrainer
+from utils import (
+    abs_path,
+    free_memory,
+    get_cuda_memory_usage_mb,
+    get_peak_cuda_memory_usage_mb,
+    params_size_mb,
+    require_supported_gpu,
+    reset_peak_cuda_memory_stats,
+    sync_cuda,
+)
 
 import nvflare.client as flare
 from nvflare.apis.fl_constant import FLMetaKey
-
-
-def _abs_path(path: str) -> str:
-    return os.path.abspath(os.path.expanduser(path))
-
-
-def _params_size_mb(params) -> float:
-    if not params:
-        return 0.0
-    nbytes = 0
-    for value in params.values():
-        if isinstance(value, torch.Tensor):
-            nbytes += value.numel() * value.element_size()
-        elif hasattr(value, "nbytes"):
-            nbytes += value.nbytes
-    return nbytes / (1024.0 * 1024.0)
-
-
-def _free_memory() -> None:
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
-
-def _require_supported_gpu() -> None:
-    if not torch.cuda.is_available():
-        raise RuntimeError("This example requires a CUDA GPU because MedGemma QLoRA uses bitsandbytes 4-bit loading.")
-    if torch.cuda.get_device_capability()[0] < 8:
-        raise RuntimeError("MedGemma fine-tuning requires a GPU with bfloat16 support (compute capability >= 8.0).")
 
 
 def _load_site_split(json_path: str, image_root: str):
@@ -214,14 +193,14 @@ def main():
     if example_dir not in sys.path:
         sys.path.insert(0, example_dir)
 
-    data_path = _abs_path(args.data_path)
-    image_root = _abs_path(args.image_root)
+    data_path = abs_path(args.data_path)
+    image_root = abs_path(args.image_root)
     train_json = os.path.join(data_path, "train.json")
     validation_json = os.path.join(data_path, "validation.json")
     if not os.path.isfile(train_json):
         raise FileNotFoundError(f"Expected train.json at {train_json}. Run prepare_data.py first.")
 
-    _require_supported_gpu()
+    require_supported_gpu()
     flare.init()
     client_name = flare.system_info().get("site_name", "unknown")
 
@@ -252,7 +231,7 @@ def main():
     if args.work_dir is None:
         work_dir = os.path.join(os.getcwd(), "medgemma_checkpoints")
     else:
-        work_dir = _abs_path(args.work_dir)
+        work_dir = abs_path(args.work_dir)
     os.makedirs(work_dir, exist_ok=True)
 
     while flare.is_running():
@@ -261,7 +240,7 @@ def main():
             break
 
         current_round = input_model.current_round
-        received_mb = _params_size_mb(input_model.params)
+        received_mb = params_size_mb(input_model.params)
         print(f"site={client_name}, round={current_round}, received adapter size: {received_mb:.2f} MB")
         site_rank_map = build_uniform_lora_rank_map(input_model.params.keys(), args.lora_rank)
         local_adapter_state = truncate_global_bank_for_site(input_model.params, site_rank_map)
@@ -277,6 +256,11 @@ def main():
         if os.path.isdir(round_output_dir):
             shutil.rmtree(round_output_dir)
 
+        sync_cuda()
+        round_start_time = time.perf_counter()
+        reset_peak_cuda_memory_stats()
+        round_start_allocated_mb, round_start_reserved_mb = get_cuda_memory_usage_mb()
+
         trainer = SFTTrainer(
             model=model,
             args=_build_training_args(args, round_output_dir, round_eval_dataset is not None),
@@ -286,27 +270,52 @@ def main():
             data_collator=collate_fn,
         )
 
+        sync_cuda()
+        train_start_time = time.perf_counter()
         train_result = trainer.train()
+        sync_cuda()
+        train_runtime_sec = time.perf_counter() - train_start_time
         train_loss = float(getattr(train_result, "training_loss", float("nan")))
         metrics = {"loss": train_loss}
+        eval_runtime_sec = 0.0
         if round_eval_dataset is not None:
+            sync_cuda()
+            eval_start_time = time.perf_counter()
             eval_metrics = trainer.evaluate()
+            sync_cuda()
+            eval_runtime_sec = time.perf_counter() - eval_start_time
             eval_loss = float(eval_metrics["eval_loss"])
             metrics["eval_loss"] = eval_loss
             metrics["neg_eval_loss"] = -eval_loss
 
         params = {"model." + key: value for key, value in get_adapter_state_dict(model).items()}
-        sent_mb = _params_size_mb(params)
+        sent_mb = params_size_mb(params)
+        sync_cuda()
+        round_runtime_sec = time.perf_counter() - round_start_time
+        peak_allocated_mb, peak_reserved_mb = get_peak_cuda_memory_usage_mb()
+        peak_allocated_delta_mb = max(0.0, peak_allocated_mb - round_start_allocated_mb)
+        peak_reserved_delta_mb = max(0.0, peak_reserved_mb - round_start_reserved_mb)
         meta = {"num_examples": len(train_dataset)}
         if args.max_steps is not None:
             meta[FLMetaKey.NUM_STEPS_CURRENT_ROUND] = args.max_steps
         else:
             meta["NUM_TRAIN_EPOCHS_CURRENT_ROUND"] = args.num_train_epochs
         flare.send(flare.FLModel(params_type=flare.ParamsType.FULL, params=params, metrics=metrics, meta=meta))
+        print(
+            f"site={client_name}, round={current_round}, local_lora_rank={args.lora_rank}, "
+            f"train_runtime_sec={train_runtime_sec:.2f}, eval_runtime_sec={eval_runtime_sec:.2f}, "
+            f"round_runtime_sec={round_runtime_sec:.2f}, "
+            f"cuda_allocated_start_mb={round_start_allocated_mb:.2f}, "
+            f"cuda_reserved_start_mb={round_start_reserved_mb:.2f}, "
+            f"cuda_peak_allocated_mb={peak_allocated_mb:.2f}, "
+            f"cuda_peak_reserved_mb={peak_reserved_mb:.2f}, "
+            f"cuda_peak_allocated_delta_mb={peak_allocated_delta_mb:.2f}, "
+            f"cuda_peak_reserved_delta_mb={peak_reserved_delta_mb:.2f}"
+        )
         print(f"site={client_name}, round={current_round}, sent updated adapter size: {sent_mb:.2f} MB")
 
         del trainer, params, input_model, local_adapter_state
-        _free_memory()
+        free_memory()
 
 
 if __name__ == "__main__":
