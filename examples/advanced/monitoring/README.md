@@ -16,6 +16,19 @@ Use the guide that matches your environment:
 
 Common issues (Grafana datasource, StatsD reachability, submitter host, `datadog`) are covered in [Troubleshooting](#troubleshooting) below.
 
+## Typical Paths
+
+If you want the shortest path from zero to working monitoring, follow one of these:
+
+1. Local or POC learning path:
+   Start the Compose monitoring stack, follow [jobs/README.md](jobs/README.md) setup 1 or setup 2, submit the example job, then inspect metrics in `statsd-exporter`, Prometheus, or Grafana.
+
+2. In-cluster Kubernetes path:
+   Deploy the monitoring stack from [k8s/README.md](k8s/README.md), start the NVFLARE server and client pods in the cluster, then use [jobs/k8s_hello_numpy/README.md](jobs/k8s_hello_numpy/README.md) to submit a minimal monitored job and verify job-level metrics.
+
+3. Hybrid path:
+   Keep the NVFLARE server outside Kubernetes, use setup 2 so Kubernetes clients stream metrics to the server, make sure the server can reach the monitoring stack, then follow the hybrid guidance in [k8s/README.md](k8s/README.md).
+
 ## Architecture
 
 Today the metrics pipeline is:

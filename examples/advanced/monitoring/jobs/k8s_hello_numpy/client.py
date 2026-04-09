@@ -35,7 +35,6 @@ def main():
     args = parser.parse_args()
 
     flare.init()
-    client_name = flare.system_info()["site_name"]
 
     while flare.is_running():
         input_model = flare.receive()

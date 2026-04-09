@@ -230,6 +230,21 @@ This means:
 - the external server is the only site that must be able to send StatsD traffic to the chosen monitoring stack
 - multiple Kubernetes clients can stream through the same server to the same monitoring stack
 
+### 6.0 Hybrid checklist
+
+Before you try the hybrid path, make sure each side has the right responsibilities:
+
+- Server:
+  Use the setup-2 server configuration with `SysMetricsCollector`, `RemoteMetricsReceiver`, and `StatsDReporter`.
+- Server:
+  Make sure the external NVFLARE server can reach the monitoring stack on the configured StatsD host and port.
+- Client:
+  Use the setup-2 client configuration with `SysMetricsCollector` set to `streaming_to_server: true` and `ConvertToFedEvent`.
+- Client:
+  Mount the provisioned startup kit without editing signed files in place.
+- Networking:
+  Make sure each Kubernetes client can still reach the external NVFLARE server over the FL connection expected by the signed startup kit. A client cannot stream metrics to the server if it cannot connect to the server itself.
+
 ### 6.1 Hybrid setup 2 configuration split
 
 Use the existing setup-2 component pattern:
@@ -254,6 +269,8 @@ If the client kit expects a hostname that the Kubernetes cluster cannot resolve 
 - or provide normal cluster DNS for the hostname expected by the signed kit
 
 Do not edit the signed `fed_client.json` in place just to change hostname resolution.
+
+Also confirm that the Kubernetes client can reach the external server on the FL port expected by the signed startup kit. Hostname routing alone is not enough if firewalls, security groups, or cluster egress rules block that connection.
 
 ### 6.3 Hybrid client pod example
 

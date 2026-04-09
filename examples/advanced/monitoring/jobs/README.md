@@ -76,20 +76,6 @@ The tracked Compose example now binds ports to `127.0.0.1`, reads the Grafana pa
 - The default local URLs are `http://127.0.0.1:3000`, `http://127.0.0.1:9090`, and `http://127.0.0.1:9102/metrics`.
 - For a Kubernetes deployment of the same monitoring stack, see [../k8s/README.md](../k8s/README.md).
 
-## Validated Kubernetes Production Example
-
-For a validated production-style Kubernetes run, see [k8s_hello_numpy/README.md](./k8s_hello_numpy/README.md).
-
-That path was exercised against a live MicroK8s deployment with:
-
-- a K8s monitoring stack in namespace `nvflare-monitoring`
-- an NVFLARE server pod and one connected client pod
-- job-level metrics visible in `statsd-exporter` with `job_id` tags
-
-The example also preserves the signed admin startup kit and avoids editing `fed_admin.json` directly.
-
-Use that example when you want a small validated Kubernetes submission flow. Use the setup 1 and setup 2 walkthroughs below when you want to learn or test the original monitoring model in the local or POC layout.
-
 
 ## Prepare FLARE Metrics Monitoring Configuration
 
@@ -195,30 +181,26 @@ nvflare job submit -j /tmp/nvflare/jobs/job_config/hello-pt
 
 ## Monitoring View
 
-Once you setup the system, you can view from the following website
-for statsd-exporter, you can look at
+After the monitoring stack and FL system are running, check these views:
 
 ### Statsd-exporter metrics view
 
-metrics page: "http://localhost:9102/metrics"
-
-for the metrics published to statsd-export, which can be scraped by prometheus.
-Here is a screenshot
+- Metrics page: `http://localhost:9102/metrics`
+- Use this view to confirm that StatsD traffic is reaching `statsd-exporter` and being converted into Prometheus-style metrics.
 
 ![screenshot](../figures/statsd_export_metrics_view.png)
 
 
 ### Prometheus metrics view
-The same metrics is scraped by Prometheus can be found in this URL
 
-metrics page: "http://localhost:9090/metrics"
+- Metrics page: `http://localhost:9090/metrics`
+- Use Prometheus to confirm the exported series are being scraped successfully.
 
 
 ### Grafana Dashboard views
 
-We can visualize them better via Grafana.
-
-Visualization: http://localhost:3000
+- UI: `http://localhost:3000`
+- Use Grafana to explore the metrics visually after you confirm the data exists in `statsd-exporter` or Prometheus.
 
 Here are two metrics dashboards examples
 

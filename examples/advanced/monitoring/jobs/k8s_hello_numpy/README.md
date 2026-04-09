@@ -43,6 +43,8 @@ Set `--startup_kit_location` to your provisioned admin startup kit and `--client
 
 The default `--statsd_host` is correct when the NVFLARE **server and clients** run in the **same Kubernetes cluster** as the monitoring stack. If not, set it to a hostname or IP those processes can reach on port 9125.
 
+This example is meant for the direct-reachability case where the job's server and clients can both send to the chosen StatsD endpoint. If your NVFLARE server runs outside Kubernetes and the client runs inside Kubernetes, prefer the setup-2 hybrid pattern in [../../k8s/README.md](../../k8s/README.md) instead of treating this example as the recommended deployment model.
+
 ## What the Example Does
 
 - creates a minimal NumPy FedAvg job with one train script: [client.py](./client.py)

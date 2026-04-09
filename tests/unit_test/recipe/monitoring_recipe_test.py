@@ -19,9 +19,22 @@ import types
 from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
 from nvflare.metrics.job_metrics_collector import JobMetricsCollector
 
+
+def initialize_stub(**kwargs):
+    return None
+
+
+def increment_stub(*args, **kwargs):
+    return None
+
+
+def gauge_stub(*args, **kwargs):
+    return None
+
+
 fake_datadog = types.ModuleType("datadog")
-fake_datadog.initialize = lambda **kwargs: None
-fake_datadog.statsd = types.SimpleNamespace(increment=lambda *args, **kwargs: None, gauge=lambda *args, **kwargs: None)
+fake_datadog.initialize = initialize_stub
+fake_datadog.statsd = types.SimpleNamespace(increment=increment_stub, gauge=gauge_stub)
 sys.modules.setdefault("datadog", fake_datadog)
 
 from nvflare.fuel_opt.statsd.statsd_reporter import StatsDReporter

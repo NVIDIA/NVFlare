@@ -53,6 +53,21 @@ The tracked setup-2 server example is:
 
 Only the server needs direct `StatsDReporter` connectivity to the monitoring stack in this pattern.
 
+## Quick Checklist
+
+- Server:
+  Apply the setup-2 server resources with `RemoteMetricsReceiver` and `StatsDReporter`.
+- Server:
+  Make sure the server can reach the monitoring stack on the configured StatsD host and port.
+- Client:
+  Apply the setup-2 client resources that stream metrics to the server.
+- Client:
+  Mount the signed startup kit without editing `fed_client.json` in place.
+- Networking:
+  Make sure the Kubernetes client can reach the external NVFLARE server on the hostname and FL port expected by the signed startup kit.
+- Networking:
+  Add hostname routing in the pod only if cluster DNS does not already resolve the expected server hostname.
+
 ## Hostname Routing
 
 Keep the signed startup kit unchanged when possible.
@@ -60,6 +75,8 @@ Keep the signed startup kit unchanged when possible.
 If the signed `fed_client.json` already references a hostname that resolves correctly from the cluster, the pod can connect without extra routing changes.
 
 If the expected hostname does not resolve inside the cluster, preserve the signed kit and add hostname routing outside the kit. The example manifest uses `hostAliases` for that purpose.
+
+Also confirm that the cluster can actually reach the external server on the FL port expected by the signed startup kit. DNS or `hostAliases` only solves name resolution; it does not open blocked network paths.
 
 ## Example Manifest
 
