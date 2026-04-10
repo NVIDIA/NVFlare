@@ -202,8 +202,9 @@ class _BaseMaxRankLoraAggregator(ModelAggregator):
 
     def aggregate_model(self) -> FLModel:
         if self.total_weight == 0:
-            self.error("Total weight is zero, cannot aggregate!")
-            return FLModel(params_type=ParamsType.FULL, params={})
+            message = "Total aggregation weight is zero; refusing to broadcast an empty LoRA bank."
+            self.error(message)
+            raise RuntimeError(message)
 
         aggregated_params = {}
         for key, value in self.non_lora_weighted_sum.items():
