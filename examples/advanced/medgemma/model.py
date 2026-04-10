@@ -153,6 +153,24 @@ def get_adapter_state_dict(model) -> dict[str, torch.Tensor]:
     return {key: value.detach().cpu().contiguous() for key, value in adapter_state.items()}
 
 
+def infer_uniform_lora_rank_from_state_dict(adapter_state: dict[str, Any]) -> int:
+    ranks = set()
+    for key, value in adapter_state.items():
+        if ".lora_A." in key:
+            ranks.add(int(value.shape[0]))
+        elif ".lora_B." in key:
+            ranks.add(int(value.shape[1]))
+
+    if not ranks:
+        raise ValueError("No LoRA A/B tensors found in adapter state dict.")
+    if len(ranks) != 1:
+        raise ValueError(
+            f"Expected a uniform LoRA rank in adapter state dict, found multiple ranks: {sorted(ranks)}. "
+            "This loader currently supports a single server-side global rank."
+        )
+    return next(iter(ranks))
+
+
 class MedGemmaLoRAModel(nn.Module):
     """Server-side initial model that exposes only LoRA adapter weights."""
 

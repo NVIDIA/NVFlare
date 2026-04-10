@@ -24,7 +24,12 @@ import os
 
 import torch
 from data_utils import DEFAULT_MODEL_NAME_OR_PATH, PROMPT, TISSUE_CLASSES, parse_prediction_label
-from model import apply_adapter_state, create_peft_medgemma_model, load_medgemma_base_model
+from model import (
+    apply_adapter_state,
+    create_peft_medgemma_model,
+    infer_uniform_lora_rank_from_state_dict,
+    load_medgemma_base_model,
+)
 from peft import PeftModel
 from transformers import AutoProcessor
 
@@ -66,8 +71,16 @@ def load_model_and_processor(
 
     if os.path.isfile(model_path) and model_path.endswith(".pt"):
         print(f"Loading NVFlare global adapter weights from: {model_path}")
-        model = create_peft_medgemma_model(base_model, quantized=quantized, device_map=device_map)
-        apply_adapter_state(model, load_nvflare_global_pt(model_path))
+        adapter_state = load_nvflare_global_pt(model_path)
+        lora_rank = infer_uniform_lora_rank_from_state_dict(adapter_state)
+        print(f"Inferred global LoRA rank from checkpoint: {lora_rank}")
+        model = create_peft_medgemma_model(
+            base_model,
+            quantized=quantized,
+            device_map=device_map,
+            lora_rank=lora_rank,
+        )
+        apply_adapter_state(model, adapter_state)
     elif os.path.isdir(model_path) and os.path.isfile(os.path.join(model_path, "adapter_config.json")):
         print(f"Loading base model + adapter directory from: {model_path}")
         base = load_medgemma_base_model(base_model, quantized=quantized, device_map=device_map)
