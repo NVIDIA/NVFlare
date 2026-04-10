@@ -77,23 +77,21 @@ class DockerLauncherBuilder(Builder):
             },
         )
 
-        run_in_docker = server.get_prop(PropKey.RUN_IN_DOCKER)
-        if run_in_docker:
-            # Auto-inject 0.0.0.0 binding so SJ containers can reach SP via Docker DNS
-            self._set_internal_listener_host(server)
+        # Auto-inject 0.0.0.0 binding so SJ containers can reach SP via Docker DNS
+        self._set_internal_listener_host(server)
 
-            dest_dir = ctx.get_kit_dir(server)
-            ctx.build_from_template(
-                dest_dir,
-                TemplateSectionKey.DOCKER_LAUNCHER_SERVER_SH,
-                ProvFileName.DOCKER_LAUNCHER_SH,
-                replacement={
-                    "fed_learn_port": fed_learn_port,
-                    "server_name": server.name,
-                    "docker_image": self.docker_image,
-                },
-                exe=True,
-            )
+        dest_dir = ctx.get_kit_dir(server)
+        ctx.build_from_template(
+            dest_dir,
+            TemplateSectionKey.DOCKER_LAUNCHER_SERVER_SH,
+            ProvFileName.DOCKER_LAUNCHER_SH,
+            replacement={
+                "fed_learn_port": fed_learn_port,
+                "server_name": server.name,
+                "docker_image": self.docker_image,
+            },
+            exe=True,
+        )
 
     def _build_client(self, client: Participant, ctx: ProvisionContext):
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
@@ -110,23 +108,21 @@ class DockerLauncherBuilder(Builder):
             },
         )
 
-        run_in_docker = client.get_prop(PropKey.RUN_IN_DOCKER)
-        if run_in_docker:
-            # Auto-inject 0.0.0.0 binding so CJ containers can reach CP via Docker DNS
-            self._set_internal_listener_host(client)
+        # Auto-inject 0.0.0.0 binding so CJ containers can reach CP via Docker DNS
+        self._set_internal_listener_host(client)
 
-            dest_dir = ctx.get_kit_dir(client)
-            ctx.build_from_template(
-                dest_dir,
-                TemplateSectionKey.DOCKER_LAUNCHER_CLIENT_SH,
-                ProvFileName.DOCKER_LAUNCHER_SH,
-                replacement={
-                    "fed_learn_port": fed_learn_port,
-                    "docker_image": self.docker_image,
-                    "client_name": client.name,
-                },
-                exe=True,
-            )
+        dest_dir = ctx.get_kit_dir(client)
+        ctx.build_from_template(
+            dest_dir,
+            TemplateSectionKey.DOCKER_LAUNCHER_CLIENT_SH,
+            ProvFileName.DOCKER_LAUNCHER_SH,
+            replacement={
+                "fed_learn_port": fed_learn_port,
+                "docker_image": self.docker_image,
+                "client_name": client.name,
+            },
+            exe=True,
+        )
 
     def initialize(self, project: Project, ctx: ProvisionContext):
         ctx.load_templates("docker_launcher_template.yml")

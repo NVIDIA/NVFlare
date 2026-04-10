@@ -7,18 +7,10 @@ participants:
     type: server
     org: nvidia
     fed_learn_port: 8002
-    run_in_docker: true
-    listening_host:
-      name: server
-      port: 8004  # must differ from fed_learn_port and admin_port
 
   - name: site-1
     type: client
     org: nvidia
-    run_in_docker: true
-    listening_host:
-      name: site-1
-      port: 8102
 
   - name: admin@nvidia.com
     type: admin
