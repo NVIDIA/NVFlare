@@ -144,6 +144,15 @@ workspace/               ← bind-mounted into all containers at /var/tmp/nvflar
     job_002/             ← written by SJ/CJ for job 2
 ```
 
+### Custom Code (BYOC)
+
+Both custom code modes work in Docker mode with no extra configuration:
+
+- **Job-level** (`app/custom/` in job zip) — extracted to `workspace/<job-id>/app_<site>/custom/` at job time. `DockerJobLauncher` sets this as the first entry on `PYTHONPATH` inside SJ/CJ containers.
+- **Site-level** (`workspace/local/custom/`) — shared code across all jobs. `DockerJobLauncher` appends this to `PYTHONPATH` in SJ/CJ containers (after job-level, so job code takes precedence on name collision). Same priority as process mode.
+
+Alternatively, site-level code can be baked into the job image — it will be importable as a regular installed package.
+
 ### Host Workspace Path
 
 `DockerJobLauncher` needs the **host path** of the workspace to pass to the Docker daemon as a volume bind source. `start_docker.sh` resolves this at startup and passes it via `NVFL_DOCKER_WORKSPACE`:
@@ -326,7 +335,7 @@ NVFlare provisioning only embeds the SP/CP image name in `start_docker.sh`. It d
 
 ### Step 1 — Provision
 
-Add `DockerLauncherBuilder` to `project.yml`. Set `run_in_docker: true` on each participant that will run in Docker mode.
+Add `DockerLauncherBuilder` to `project.yml`:
 
 ```yaml
 participants:
@@ -334,12 +343,10 @@ participants:
     type: server
     org: nvidia
     fed_learn_port: 8002
-    run_in_docker: true   # DockerLauncherBuilder auto-injects 0.0.0.0 internal listener binding
 
   - name: site-1
     type: client
     org: nvidia
-    run_in_docker: true
 
 builders:
   - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
@@ -350,12 +357,12 @@ builders:
         path: nvflare.ha.dummy_overseer_agent.DummyOverseerAgent
         overseer_exists: false
         args:
-          sp_end_point: server:8002:8003
+          sp_end_point: server:8002:8002
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder
   - path: nvflare.lighter.impl.docker_launcher.DockerLauncherBuilder
     args:
-      docker_image: nvflare-site:latest   # SP/CP image name; site admin builds this separately
+      docker_image: nvflare-site:latest
 ```
 
 Run provisioning:
@@ -369,7 +376,28 @@ Each site's startup kit gets:
 - `startup/start_docker.sh` — Docker mode (new)
 - `local/resources.json.default` — has `DockerJobLauncher` component injected
 
-### Step 2 — Start SP/CP in Docker mode
+### Step 2 — Persist job storage (server only)
+
+By default, NVFlare stores job zips, results, and snapshots under `/tmp/nvflare/` inside the container. This directory is ephemeral — it is lost when the SP container stops. To survive container restarts, redirect these paths to the workspace bind mount by creating `workspace/server/local/resources.json`:
+
+```json
+{
+  "server": {
+    "job_manager": {
+      "uri_root": "/var/tmp/nvflare/workspace/jobs-storage"
+    },
+    "snapshot_persistor": {
+      "storage": {
+        "root_dir": "/var/tmp/nvflare/workspace/snapshot-storage"
+      }
+    }
+  }
+}
+```
+
+These paths resolve to `workspace/jobs-storage/` and `workspace/snapshot-storage/` on the host — both inside the bind mount and therefore persistent across container restarts.
+
+### Step 3 — Start SP/CP in Docker mode
 
 On the server machine:
 ```bash
@@ -399,7 +427,7 @@ To use a different image without re-provisioning:
 NVFL_P_IMAGE=nvflare-site:2.7.2 ./start_docker.sh
 ```
 
-### Step 3 — Configure site data (optional)
+### Step 4 — Configure site data (optional)
 
 If jobs need access to study data, create `workspace/local/study_data.json`. No change to `resources.json` is needed — `DockerJobLauncher` reads this file fresh on every job launch, so entries can be added or updated at any time without restarting SP/CP.
 
@@ -412,7 +440,7 @@ If jobs need access to study data, create `workspace/local/study_data.json`. No 
 
 Keys are study names (from `meta.json`); values are host paths that will be bind-mounted read-only into SJ/CJ containers at `/var/tmp/nvflare/data`. If the file is absent or the job's study has no entry, no data volume is added and the job runs without a data mount.
 
-### Step 4 — Submit a job
+### Step 5 — Submit a job
 
 See [Job Configuration Reference](#job-configuration-reference) for all available fields. Example:
 
@@ -420,7 +448,7 @@ See [Job Configuration Reference](#job-configuration-reference) for all availabl
 nvflare job submit -j /path/to/job
 ```
 
-### Step 5 — Results
+### Step 6 — Results
 
 Job output is written to `/var/tmp/nvflare/workspace/runs/{job_id}/` inside the container, bind-mounted from the host:
 

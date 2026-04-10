@@ -277,7 +277,7 @@ class DockerJobLauncher(JobLauncherSpec):
                                     on this site. Job-level container_kwargs in deploy_map take precedence
                                     on conflict. Keys use Docker SDK naming (underscores, not hyphens).
                                     Example: {"shm_size": "8g", "ipc_mode": "host"}
-                                    Note: "volumes", "network", "environment", "command", "name", "detach", "user"
+                                    Note: "volumes", "network", "environment", "command", "name", "detach", "user", "working_dir"
                                     are controlled by the launcher and cannot be overridden here.
         """
         super().__init__()
@@ -292,7 +292,7 @@ class DockerJobLauncher(JobLauncherSpec):
         self.timeout = timeout
         self.pending_timeout = pending_timeout
         extra_container_kwargs = extra_container_kwargs or {}
-        _RESERVED_KWARGS = {"volumes", "network", "environment", "command", "name", "detach", "user"}
+        _RESERVED_KWARGS = {"volumes", "network", "environment", "command", "name", "detach", "user", "working_dir"}
         reserved_used = _RESERVED_KWARGS & set(extra_container_kwargs.keys())
         if reserved_used:
             raise ValueError(
@@ -385,10 +385,15 @@ class DockerJobLauncher(JobLauncherSpec):
         }
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         if workspace_obj is not None:
+            python_paths = []
             app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
             if app_custom_folder:
-                container_custom_folder = app_custom_folder.replace(workspace, self.WORKSPACE_MOUNT, 1)
-                environment["PYTHONPATH"] = container_custom_folder
+                python_paths.append(app_custom_folder.replace(workspace, self.WORKSPACE_MOUNT, 1))
+            site_custom_folder = workspace_obj.get_site_custom_dir()
+            if site_custom_folder and os.path.isdir(site_custom_folder):
+                python_paths.append(site_custom_folder.replace(workspace, self.WORKSPACE_MOUNT, 1))
+            if python_paths:
+                environment["PYTHONPATH"] = os.pathsep.join(python_paths)
 
         # container_kwargs: per-job from deploy_map, merged with site-level defaults from resources.json.
         # Job-level takes precedence on conflict.
@@ -436,6 +441,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 detach=True,
                 environment=environment if environment else None,
                 volumes=volumes,
+                working_dir=self.WORKSPACE_MOUNT,
                 # Run as the same user as SP/CP so job-written files are accessible to SP/CP
                 # (e.g. cross_val_results.json written by SJ must be readable/deletable by SP).
                 # Never pass Docker socket to job containers.
