@@ -44,6 +44,7 @@ Within a single site, SP/CP and all SJ/CJ containers must use the same launcher 
 - A Docker network (`nvflare-network` by default) is created automatically by `start_docker.sh` if it does not exist.
 - SP/CP and all SJ/CJ containers on the same site join this network. It is used **only for intra-site parent↔child communication** (`PARENT_URL`). Docker's built-in DNS resolves container names — no `host.docker.internal` hacks needed.
 - **Cross-site communication (CP → SP) does not use the Docker network.** It goes over the host network via the published `fed_learn_port`, using the same HTTPS/gRPC as process mode. From CP's perspective, it connects to the server's hostname/IP just as it would in process mode.
+- **`admin_port` must equal `fed_learn_port`** — the server container only publishes one port. If they differ, `DockerLauncherBuilder` raises an error at provision time. The default provisioning already consolidates them to a single port; only an explicit `admin_port` override in `project.yml` can trigger this.
 
 ```mermaid
 graph TD

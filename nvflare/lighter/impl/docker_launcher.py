@@ -128,6 +128,15 @@ class DockerLauncherBuilder(Builder):
         ctx.load_templates("docker_launcher_template.yml")
 
     def build(self, project: Project, ctx: ProvisionContext):
+        fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
+        admin_port = ctx.get(CtxKey.ADMIN_PORT)
+        if admin_port != fed_learn_port:
+            raise ValueError(
+                f"Docker mode requires fed_learn_port == admin_port, "
+                f"but got fed_learn_port={fed_learn_port}, admin_port={admin_port}. "
+                f"Remove the explicit admin_port from project.yml or set it to match fed_learn_port."
+            )
+
         server = project.get_server()
         if server:
             self._build_server(server, ctx)
