@@ -292,10 +292,9 @@ def _split_records_heterogeneous(
         assigned_by_client[chosen_client].append(record)
         remaining_capacity[chosen_client] -= 1
 
-    if any(capacity > 0 for capacity in remaining_capacity):
-        raise RuntimeError(
-            f"Could not assign enough records for all clients. Remaining capacities: {remaining_capacity}"
-        )
+    assert not any(
+        capacity > 0 for capacity in remaining_capacity
+    ), f"BUG: Could not fill all client capacities. Remaining: {remaining_capacity}"
 
     site_splits: dict[str, dict[str, list[dict[str, Any]]]] = {}
     for client_idx, (count, assigned_records, dominant_labels) in enumerate(
