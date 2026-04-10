@@ -137,6 +137,13 @@ python job.py --lora_aggregation naive --global_lora_rank 16 --site_lora_ranks 4
 python job.py --lora_aggregation hlora --global_lora_rank 16 --site_lora_ranks 4,8,16
 ```
 
+In local runs with this heterogeneous-rank layout, HLoRA consistently outperformed the naive factor-averaging baseline on `CRC-VAL-HE-7K`:
+
+| Seed | Naive | HLoRA | Delta |
+|------|-------|-------|-------|
+| default | `0.8955` (`6430/7180`) | `0.9414` (`6759/7180`) | `+0.0459` |
+| alternate | `0.8961` (`6434/7180`) | `0.9366` (`6725/7180`) | `+0.0405` |
+
 ## 4. Run inference
 
 Compare the base model against the FL-trained global adapter on prepared validation samples.
