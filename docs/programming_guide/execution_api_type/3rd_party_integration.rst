@@ -368,6 +368,8 @@ configure the comm_config.json on the client site as follows:
 
 This file must be placed into the site's "local" folder within its workspace.
 
+For ad-hoc direct connection limitations and behavior, see :ref:`communication_configuration`.
+
 Pay attention to the following:
 
 - For most cases, the "scheme" should be set to "tcp" to get the best performance.
