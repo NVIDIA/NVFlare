@@ -2,7 +2,7 @@ nvflare~=2.7.2rc
 torch==2.6.0
 torchvision==0.21.0
 psutil  # required at build time by flash_attn
-transformers==5.0.0rc3
+transformers==5.0.0
 deepspeed==0.17.1
 flash_attn==2.7.4.post1
 triton==3.2.0
