@@ -24,6 +24,9 @@ from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.utils.job_utils import load_job_def_bytes
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.dict_utils import update_components
+from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
+from nvflare.lighter.utils import verify_folder_signature
+from nvflare.private.fed.utils.fed_utils import require_signed_jobs
 
 
 class HubAppDeployer(AppDeployerSpec, FLComponent):
@@ -141,6 +144,17 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
         submitter_org = t1_meta.get(JobMetaKey.SUBMITTER_ORG.value, "")
         submitter_role = t1_meta.get(JobMetaKey.SUBMITTER_ROLE.value, "")
         scope = t1_meta.get(JobMetaKey.SCOPE.value, "")
+
+        # Verify the job app folder signature before setting FROM_HUB_SITE.
+        # FROM_HUB_SITE=True signals that the hub verified the job, so we must actually do so here.
+        app_path = workspace.get_app_dir(job_id)
+        root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
+        sig_file = os.path.join(app_path, NVFLARE_SIG_FILE)
+        if os.path.exists(sig_file):
+            if not verify_folder_signature(app_path, root_ca_path):
+                return "hub: job signature verification failed before forwarding", None, None
+        elif require_signed_jobs(workspace):
+            return "hub: unsigned job rejected — require_signed_jobs is enabled", None, None
 
         # Note: the app_name is already created like "app_"+site_name, which is also the directory that contains
         # app config files (config_fed_server.json and config_fed_client.json).
