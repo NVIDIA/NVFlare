@@ -27,7 +27,7 @@ except ImportError:
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import JobMetaKey, get_job_meta_study
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
@@ -252,8 +252,7 @@ class DockerJobLauncher(JobLauncherSpec):
 
     WORKSPACE_MOUNT = "/var/tmp/nvflare/workspace"
     DATA_MOUNT = "/var/tmp/nvflare/data"
-    ETC_MOUNT = "/var/tmp/nvflare/etc"
-    STUDY_DATA_PATH_FILE = "study_data_path.json"
+    STUDY_DATA_PATH_FILE = "local/study_data.json"
 
     def __init__(
         self,
@@ -397,19 +396,20 @@ class DockerJobLauncher(JobLauncherSpec):
                 "device_requests", [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
             )
 
-        # Volumes: always mount workspace; optionally mount study data if study_data_path.json exists
+        # Volumes: always mount workspace; optionally mount study data if local/study_data.json exists
         volumes = {
             workspace: {"bind": self.WORKSPACE_MOUNT, "mode": "rw"},
         }
-        # Read study data path from /var/tmp/nvflare/etc/study_data_path.json if it exists
-        study_data_file = os.path.join(self.ETC_MOUNT, self.STUDY_DATA_PATH_FILE)
+        # Read study data map from workspace/local/study_data.json (host path).
+        # Maps study name → host data path; study name comes from meta.json "study" field.
+        study_data_file = os.path.join(workspace, self.STUDY_DATA_PATH_FILE)
         if os.path.isfile(study_data_file):
             try:
                 import json as _json
                 with open(study_data_file) as f:
                     study_data_map = _json.load(f)
-                study = job_meta.get("study", "default")
-                data_host_path = study_data_map.get(study)
+                study = get_job_meta_study(job_meta)
+                data_host_path = study_data_map.get(study) if study else None
                 if data_host_path:
                     volumes[data_host_path] = {"bind": self.DATA_MOUNT, "mode": "ro"}
                     self.logger.info(f"mounting study '{study}' data from {data_host_path} -> {self.DATA_MOUNT}")

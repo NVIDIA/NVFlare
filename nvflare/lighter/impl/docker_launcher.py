@@ -21,9 +21,6 @@ from nvflare.lighter.constants import CommConfigArg, CtxKey, PropKey, ProvFileNa
 from nvflare.lighter.entity import Participant
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
-_WORKSPACE_MOUNT = "/var/tmp/nvflare/workspace"
-_ETC_MOUNT = "/var/tmp/nvflare/etc"
-
 
 class DockerLauncherBuilder(Builder):
     """Generates start_docker.sh per site and injects DockerJobLauncher into resources.json.

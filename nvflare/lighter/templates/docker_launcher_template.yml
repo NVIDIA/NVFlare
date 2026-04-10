@@ -24,10 +24,9 @@ docker_launcher_cln_sh: |
       echo "Created Docker network: $NETWORK_NAME"
   fi
 
-  ETC_MOUNT=""
-  if [ -n "$NVFL_ETC_PATH" ]; then
-    ETC_MOUNT="-v $NVFL_ETC_PATH:/var/tmp/nvflare/etc"
-  fi
+  # Remove stale PID file — in Docker the main process is always PID 1, so the
+  # file left by a previous container would incorrectly block a fresh start.
+  rm -f "$HOST_WORKSPACE/daemon_pid.fl"
 
   docker run --name {~~client_name~~} \
     --user "$(id -u):$(id -g)" \
@@ -35,7 +34,6 @@ docker_launcher_cln_sh: |
     -v "$HOST_WORKSPACE":/var/tmp/nvflare/workspace \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -e NVFL_DOCKER_WORKSPACE="$HOST_WORKSPACE" \
-    $ETC_MOUNT \
     --rm $DOCKER_IMAGE \
     /var/tmp/nvflare/workspace/startup/sub_start.sh
 
@@ -65,10 +63,9 @@ docker_launcher_svr_sh: |
       echo "Created Docker network: $NETWORK_NAME"
   fi
 
-  ETC_MOUNT=""
-  if [ -n "$NVFL_ETC_PATH" ]; then
-    ETC_MOUNT="-v $NVFL_ETC_PATH:/var/tmp/nvflare/etc"
-  fi
+  # Remove stale PID file — in Docker the main process is always PID 1, so the
+  # file left by a previous container would incorrectly block a fresh start.
+  rm -f "$HOST_WORKSPACE/daemon_pid.fl"
 
   docker run --name {~~server_name~~} \
     --user "$(id -u):$(id -g)" \
@@ -76,7 +73,6 @@ docker_launcher_svr_sh: |
     -v "$HOST_WORKSPACE":/var/tmp/nvflare/workspace \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -e NVFL_DOCKER_WORKSPACE="$HOST_WORKSPACE" \
-    $ETC_MOUNT \
     -p {~~fed_learn_port~~}:{~~fed_learn_port~~} \
     --rm $DOCKER_IMAGE \
     /var/tmp/nvflare/workspace/startup/sub_start.sh
