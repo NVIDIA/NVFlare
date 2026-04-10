@@ -1,0 +1,44 @@
+services:
+  statsd-exporter:
+    image: prom/statsd-exporter:v0.29.0
+    container_name: statsd-exporter
+    ports:
+      - "127.0.0.1:9102:9102"
+      - "127.0.0.1:9125:9125"
+      - "127.0.0.1:9125:9125/udp"
+    networks:
+      - monitoring
+
+  prometheus:
+    image: prom/prometheus:v3.10.0
+    container_name: prometheus
+    depends_on:
+      - statsd-exporter
+    networks:
+      - monitoring
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:12.4.1
+    container_name: grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - monitoring
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      # Fail fast if unset or empty (requires Docker Compose v2.24+ interpolation).
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env.secure-local or your environment before docker compose up}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+networks:
+  monitoring:
+    driver: bridge
