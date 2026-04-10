@@ -33,7 +33,7 @@ class _FakeApiException(Exception):
 
 
 _k8s_rest.ApiException = _FakeApiException
-_k8s_client.Configuration = MagicMock
+_k8s_client.Configuration = MagicMock()  # instance so .set_default() is auto-mocked
 _k8s_client.rest = _k8s_rest
 _k8s_client.api = _k8s_api
 _k8s_core.CoreV1Api = MagicMock
@@ -80,7 +80,6 @@ def _make_job_config(**overrides):
         "volume_list": [
             {"name": PvName.WORKSPACE.value, "persistentVolumeClaim": {"claimName": "ws-pvc"}},
             {"name": PvName.DATA.value, "persistentVolumeClaim": {"claimName": "data-pvc"}},
-            {"name": PvName.ETC.value, "persistentVolumeClaim": {"claimName": "etc-pvc"}},
         ],
         "module_args": {"-m": "val_m", "-w": "val_w"},
         "set_list": ["key1=val1", "key2=val2"],
@@ -262,11 +261,10 @@ class TestK8sJobHandle:
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
         volumes = handle.get_manifest()["spec"]["volumes"]
-        assert len(volumes) == 3
+        assert len(volumes) == 2
         pvc_names = [v["persistentVolumeClaim"]["claimName"] for v in volumes]
         assert "ws-pvc" in pvc_names
         assert "data-pvc" in pvc_names
-        assert "etc-pvc" in pvc_names
 
     def test_manifest_volume_mounts(self):
         cfg = _make_job_config()
@@ -709,12 +707,16 @@ class TestJobArgsDict:
 # K8sJobLauncher handle_event
 # ---------------------------------------------------------------------------
 def _make_k8s_launcher_patches():
+    # kubernetes is imported inside launch_job (not at module level), so we rely
+    # on the sys.modules stubs injected at the top of this file.  The only
+    # module-level name we need to intercept is yaml (used at module scope via
+    # import) and builtins.open (for reading the PVC file).  CoreV1Api on the
+    # already-stubbed _k8s_core module is patched with patch.object so each
+    # test gets a fresh, controllable mock and the original stub is restored.
     return [
-        patch("nvflare.app_opt.job_launcher.k8s_launcher.config"),
-        patch("nvflare.app_opt.job_launcher.k8s_launcher.Configuration"),
-        patch("nvflare.app_opt.job_launcher.k8s_launcher.core_v1_api"),
         patch("builtins.open", create=True),
         patch("nvflare.app_opt.job_launcher.k8s_launcher.yaml"),
+        patch.object(_k8s_core, "CoreV1Api"),
     ]
 
 
@@ -728,16 +730,13 @@ def _exit_patches(patches):
         p.stop()
 
 
-def _setup_launcher(mock_yaml, mock_conf, launcher_cls):
-    mock_yaml.safe_load.return_value = {"data-pvc": "/data"}
-    mock_conf_instance = MagicMock()
-    mock_conf.return_value = mock_conf_instance
-    mock_conf.get_default_copy = Mock(return_value=mock_conf_instance)
+def _setup_launcher(launcher_cls):
+    # K8sJobLauncher.__init__ only stores parameters; kubernetes config and the
+    # PVC file are loaded lazily inside launch_job, so no mocks are needed here.
     return launcher_cls(
         config_file_path="/fake/kube/config",
         workspace_pvc="ws-pvc",
-        etc_pvc="etc-pvc",
-        data_pvc_file_path="/fake/data_pvc.yaml",
+        study_data_pvc_file_path="/fake/data_pvc.yaml",
     )
 
 
@@ -746,9 +745,9 @@ class TestK8sJobLauncherHandleEvent:
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        mock_cfg, mock_conf, mock_core, mock_open, mock_yaml = _enter_patches(patches)
+        _mock_open, _mock_yaml, _mock_core_cls = _enter_patches(patches)
         try:
-            launcher = _setup_launcher(mock_yaml, mock_conf, ClientK8sJobLauncher)
+            launcher = _setup_launcher(ClientK8sJobLauncher)
             fl_ctx = FLContext()
             job_meta = {JobMetaKey.DEPLOY_MAP.value: {"app": [{"sites": ["site-1"], "image": "nvflare/custom:latest"}]}}
             fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
@@ -766,9 +765,9 @@ class TestK8sJobLauncherHandleEvent:
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        mock_cfg, mock_conf, mock_core, mock_open, mock_yaml = _enter_patches(patches)
+        _mock_open, _mock_yaml, _mock_core_cls = _enter_patches(patches)
         try:
-            launcher = _setup_launcher(mock_yaml, mock_conf, ClientK8sJobLauncher)
+            launcher = _setup_launcher(ClientK8sJobLauncher)
             fl_ctx = FLContext()
             job_meta = {JobMetaKey.DEPLOY_MAP.value: {}}
             fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
@@ -785,75 +784,25 @@ class TestK8sJobLauncherHandleEvent:
 # K8sJobLauncher __init__
 # ---------------------------------------------------------------------------
 class TestK8sJobLauncherInit:
-    def test_init_reads_data_pvc(self):
+    def test_init_stores_parameters(self):
+        # __init__ only stores params; kubernetes config and PVC file are loaded
+        # lazily inside launch_job, so no mocks are needed.
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
-        patches = _make_k8s_launcher_patches()
-        mock_cfg, mock_conf, mock_core, mock_open, mock_yaml = _enter_patches(patches)
-        try:
-            mock_yaml.safe_load.return_value = {"my-data-pvc": "/mount/data"}
-            mock_conf_instance = MagicMock()
-            mock_conf.return_value = mock_conf_instance
-            mock_conf.get_default_copy = Mock(return_value=mock_conf_instance)
+        launcher = ClientK8sJobLauncher(
+            config_file_path="/fake/kube/config",
+            workspace_pvc="ws-pvc",
+            study_data_pvc_file_path="/fake/data_pvc.yaml",
+            timeout=60,
+            namespace="test-ns",
+        )
 
-            launcher = ClientK8sJobLauncher(
-                config_file_path="/fake/kube/config",
-                workspace_pvc="ws-pvc",
-                etc_pvc="etc-pvc",
-                data_pvc_file_path="/fake/data_pvc.yaml",
-                timeout=60,
-                namespace="test-ns",
-            )
-
-            assert launcher.workspace_pvc == "ws-pvc"
-            assert launcher.etc_pvc == "etc-pvc"
-            assert launcher.data_pvc == "my-data-pvc"
-            assert launcher.timeout == 60
-            assert launcher.namespace == "test-ns"
-        finally:
-            _exit_patches(patches)
-
-    def test_init_raises_on_empty_pvc_file(self):
-        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
-
-        patches = _make_k8s_launcher_patches()
-        mock_cfg, mock_conf, mock_core, mock_open, mock_yaml = _enter_patches(patches)
-        try:
-            mock_yaml.safe_load.return_value = {}
-            mock_conf_instance = MagicMock()
-            mock_conf.return_value = mock_conf_instance
-            mock_conf.get_default_copy = Mock(return_value=mock_conf_instance)
-
-            with pytest.raises(ValueError, match="empty"):
-                ClientK8sJobLauncher(
-                    config_file_path="/fake/kube/config",
-                    workspace_pvc="ws-pvc",
-                    etc_pvc="etc-pvc",
-                    data_pvc_file_path="/fake/data_pvc.yaml",
-                )
-        finally:
-            _exit_patches(patches)
-
-    def test_init_raises_on_non_dict_pvc_file(self):
-        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
-
-        patches = _make_k8s_launcher_patches()
-        mock_cfg, mock_conf, mock_core, mock_open, mock_yaml = _enter_patches(patches)
-        try:
-            mock_yaml.safe_load.return_value = "not-a-dict"
-            mock_conf_instance = MagicMock()
-            mock_conf.return_value = mock_conf_instance
-            mock_conf.get_default_copy = Mock(return_value=mock_conf_instance)
-
-            with pytest.raises(ValueError, match="dictionary"):
-                ClientK8sJobLauncher(
-                    config_file_path="/fake/kube/config",
-                    workspace_pvc="ws-pvc",
-                    etc_pvc="etc-pvc",
-                    data_pvc_file_path="/fake/data_pvc.yaml",
-                )
-        finally:
-            _exit_patches(patches)
+        assert launcher.workspace_pvc == "ws-pvc"
+        assert launcher.study_data_pvc_file_path == "/fake/data_pvc.yaml"
+        assert launcher.timeout == 60
+        assert launcher.namespace == "test-ns"
+        # PVC dict is populated lazily
+        assert launcher.default_data_pvc is None
 
 
 # ---------------------------------------------------------------------------
@@ -864,9 +813,9 @@ class TestClientK8sJobLauncherGetModuleArgs:
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        mock_cfg, mock_conf, mock_core, mock_open, mock_yaml = _enter_patches(patches)
+        _mock_open, _mock_yaml, _mock_core_cls = _enter_patches(patches)
         try:
-            launcher = _setup_launcher(mock_yaml, mock_conf, ClientK8sJobLauncher)
+            launcher = _setup_launcher(ClientK8sJobLauncher)
             fl_ctx = FLContext()
             job_args = {
                 JobProcessArgs.WORKSPACE: ("-w", "/workspace"),
@@ -884,9 +833,9 @@ class TestClientK8sJobLauncherGetModuleArgs:
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        mock_cfg, mock_conf, mock_core, mock_open, mock_yaml = _enter_patches(patches)
+        _mock_open, _mock_yaml, _mock_core_cls = _enter_patches(patches)
         try:
-            launcher = _setup_launcher(mock_yaml, mock_conf, ClientK8sJobLauncher)
+            launcher = _setup_launcher(ClientK8sJobLauncher)
             fl_ctx = FLContext()
             with pytest.raises(RuntimeError, match="job_process_args"):
                 launcher.get_module_args("job-1", fl_ctx)
@@ -902,9 +851,9 @@ class TestServerK8sJobLauncherGetModuleArgs:
         from nvflare.app_opt.job_launcher.k8s_launcher import ServerK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        mock_cfg, mock_conf, mock_core, mock_open, mock_yaml = _enter_patches(patches)
+        _mock_open, _mock_yaml, _mock_core_cls = _enter_patches(patches)
         try:
-            launcher = _setup_launcher(mock_yaml, mock_conf, ServerK8sJobLauncher)
+            launcher = _setup_launcher(ServerK8sJobLauncher)
             fl_ctx = FLContext()
             job_args = {
                 JobProcessArgs.WORKSPACE: ("-w", "/workspace"),
@@ -923,9 +872,9 @@ class TestServerK8sJobLauncherGetModuleArgs:
         from nvflare.app_opt.job_launcher.k8s_launcher import ServerK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        mock_cfg, mock_conf, mock_core, mock_open, mock_yaml = _enter_patches(patches)
+        _mock_open, _mock_yaml, _mock_core_cls = _enter_patches(patches)
         try:
-            launcher = _setup_launcher(mock_yaml, mock_conf, ServerK8sJobLauncher)
+            launcher = _setup_launcher(ServerK8sJobLauncher)
             fl_ctx = FLContext()
             with pytest.raises(RuntimeError, match="job_process_args"):
                 launcher.get_module_args("job-1", fl_ctx)
@@ -983,18 +932,14 @@ class TestK8sJobLauncherLaunchJob:
     def _setup(self, patches, namespace="test-ns"):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
-        mock_cfg, mock_conf, mock_core_module, mock_open, mock_yaml = _enter_patches(patches)
-        mock_yaml.safe_load.return_value = {"data-pvc": "/data"}
-        mock_conf_instance = MagicMock()
-        mock_conf.return_value = mock_conf_instance
-        mock_conf.get_default_copy = Mock(return_value=mock_conf_instance)
+        mock_open, mock_yaml, mock_core_cls = _enter_patches(patches)
+        mock_yaml.safe_load.return_value = {"default": "data-pvc"}
         mock_api = MagicMock()
-        mock_core_module.CoreV1Api.return_value = mock_api
+        mock_core_cls.return_value = mock_api
         launcher = ClientK8sJobLauncher(
             config_file_path="/fake/kube/config",
             workspace_pvc="ws-pvc",
-            etc_pvc="etc-pvc",
-            data_pvc_file_path="/fake/data_pvc.yaml",
+            study_data_pvc_file_path="/fake/data_pvc.yaml",
             namespace=namespace,
         )
         return launcher, mock_api
@@ -1140,7 +1085,6 @@ class TestK8sJobLauncherLaunchJob:
             claims = {v["name"]: v["persistentVolumeClaim"]["claimName"] for v in manifest["spec"]["volumes"]}
             assert claims[PvName.WORKSPACE.value] == "ws-pvc"
             assert claims[PvName.DATA.value] == "data-pvc"
-            assert claims[PvName.ETC.value] == "etc-pvc"
         finally:
             _exit_patches(patches)
 
@@ -1243,5 +1187,58 @@ class TestK8sJobLauncherLaunchJob:
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             # read_namespaced_pod is the backing call for _query_phase / enter_states
             mock_api.read_namespaced_pod.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    # -- PVC file validation (lazy-loaded in launch_job) ----------------------
+
+    def test_raises_on_empty_pvc_file(self):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        patches = _make_k8s_launcher_patches()
+        mock_open, mock_yaml, _mock_core_cls = _enter_patches(patches)
+        try:
+            mock_yaml.safe_load.return_value = {}
+            launcher = ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                workspace_pvc="ws-pvc",
+                study_data_pvc_file_path="/fake/data_pvc.yaml",
+            )
+            with pytest.raises(ValueError, match="empty"):
+                launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+        finally:
+            _exit_patches(patches)
+
+    def test_raises_on_non_dict_pvc_file(self):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        patches = _make_k8s_launcher_patches()
+        mock_open, mock_yaml, _mock_core_cls = _enter_patches(patches)
+        try:
+            mock_yaml.safe_load.return_value = "not-a-dict"
+            launcher = ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                workspace_pvc="ws-pvc",
+                study_data_pvc_file_path="/fake/data_pvc.yaml",
+            )
+            with pytest.raises(ValueError, match="dictionary"):
+                launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+        finally:
+            _exit_patches(patches)
+
+    def test_raises_on_missing_default_pvc_key(self):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        patches = _make_k8s_launcher_patches()
+        mock_open, mock_yaml, _mock_core_cls = _enter_patches(patches)
+        try:
+            mock_yaml.safe_load.return_value = {"study-A": "pvc-a"}  # no "default" key
+            launcher = ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                workspace_pvc="ws-pvc",
+                study_data_pvc_file_path="/fake/data_pvc.yaml",
+            )
+            with pytest.raises(ValueError, match="default"):
+                launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
         finally:
             _exit_patches(patches)
