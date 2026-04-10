@@ -230,6 +230,7 @@ Delta:            accuracy=+0.5410
 Useful flags:
 
 - `--max_samples 0` evaluates the full CRC-VAL-HE-7K dataset.
+- `--finetune_only` skips the repeated base-model pass and evaluates only the fine-tuned checkpoint.
 - `--show_examples 2` prints a couple of qualitative prediction examples per model before the summary.
 - `--base_model_path /path/to/model` evaluates a different unfine-tuned checkpoint as the baseline.
 

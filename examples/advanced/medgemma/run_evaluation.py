@@ -174,6 +174,11 @@ def main():
         default=4,
         help="Batch size for batched generation during evaluation (default: 4).",
     )
+    parser.add_argument(
+        "--finetune_only",
+        action="store_true",
+        help="Skip the base-model pass and evaluate only the fine-tuned checkpoint.",
+    )
     args = parser.parse_args()
 
     dataset_dir = _abs_path(args.dataset_dir)
@@ -189,18 +194,22 @@ def main():
         return 1
     print(f"Using {len(records)} evaluation sample(s) from {dataset_dir}")
 
-    base_metrics = _evaluate_model(
-        label="Base model",
-        model_path=args.base_model_path,
-        base_model=args.base_model,
-        dataset_dir=dataset_dir,
-        device=args.device,
-        records=records,
-        max_new_tokens=args.max_new_tokens,
-        show_examples=args.show_examples,
-        progress_interval=args.progress_interval,
-        batch_size=args.batch_size,
-    )
+    base_metrics = None
+    if args.finetune_only:
+        print("Skipping base model evaluation (--finetune_only).")
+    else:
+        base_metrics = _evaluate_model(
+            label="Base model",
+            model_path=args.base_model_path,
+            base_model=args.base_model,
+            dataset_dir=dataset_dir,
+            device=args.device,
+            records=records,
+            max_new_tokens=args.max_new_tokens,
+            show_examples=args.show_examples,
+            progress_interval=args.progress_interval,
+            batch_size=args.batch_size,
+        )
     tuned_metrics = _evaluate_model(
         label="Fine-tuned model",
         model_path=args.tuned_model_path,
@@ -215,15 +224,17 @@ def main():
     )
 
     print("\nAccuracy summary")
-    print(
-        f"Base model:       accuracy={base_metrics['accuracy']:.4f} "
-        f"({base_metrics['correct']}/{base_metrics['total']}), unparsed={base_metrics['unparsed']}"
-    )
+    if base_metrics is not None:
+        print(
+            f"Base model:       accuracy={base_metrics['accuracy']:.4f} "
+            f"({base_metrics['correct']}/{base_metrics['total']}), unparsed={base_metrics['unparsed']}"
+        )
     print(
         f"Fine-tuned model: accuracy={tuned_metrics['accuracy']:.4f} "
         f"({tuned_metrics['correct']}/{tuned_metrics['total']}), unparsed={tuned_metrics['unparsed']}"
     )
-    print(f"Delta:            accuracy={tuned_metrics['accuracy'] - base_metrics['accuracy']:+.4f}")
+    if base_metrics is not None:
+        print(f"Delta:            accuracy={tuned_metrics['accuracy'] - base_metrics['accuracy']:+.4f}")
     return 0
 
 
