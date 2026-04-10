@@ -144,6 +144,8 @@ In local runs with this heterogeneous-rank layout, HLoRA consistently outperform
 | default | `0.8955` (`6430/7180`) | `0.9414` (`6759/7180`) | `+0.0459` |
 | alternate | `0.8961` (`6434/7180`) | `0.9366` (`6725/7180`) | `+0.0405` |
 
+Per-site resource logs from H100 runs with local ranks `4,8,16` also showed only modest differences in peak memory and round time. In this example, GPU usage is still dominated by the shared MedGemma base model and dense `modules_to_save`, so changing the LoRA rank mainly affects a much smaller slice of the overall footprint.
+
 This example is inspired by the HLoRA paper, but it is not an exact reproduction:
 
 - The paper evaluates text tasks in the Plato FL framework, while this example adapts the idea to MedGemma histopathology fine-tuning in NVFlare.
