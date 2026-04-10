@@ -34,6 +34,7 @@ class StatsDReporter:
         self.port = port
         self.metrics = {}
         self._statsd = None
+        self._statsd_disabled = False
         self._statsd_init_lock = threading.Lock()
         self.data_bus = DataBus()
 
@@ -43,17 +44,30 @@ class StatsDReporter:
     def _ensure_statsd(self):
         with self._statsd_init_lock:
             if self._statsd is not None:
-                return
-            from datadog import initialize, statsd
+                return True
+            if self._statsd_disabled:
+                return False
 
-            initialize(statsd_host=self.host, statsd_port=self.port)
-            self._statsd = statsd
+            try:
+                from datadog import initialize, statsd
+
+                initialize(statsd_host=self.host, statsd_port=self.port)
+                self._statsd = statsd
+                return True
+            except Exception:
+                self._statsd_disabled = True
+                self.logger.warning(
+                    "Disabling StatsDReporter for this process after initialization failed: %s",
+                    traceback.format_exc(),
+                )
+                return False
 
     def process_metrics(self, topic, metrics, data_bus):
 
         if topic == ReservedTopic.APP_METRICS:
             try:
-                self._ensure_statsd()
+                if not self._ensure_statsd():
+                    return
                 for metric in metrics:
                     metric_name = metric.get(MetricKeys.metric_name)
                     metric_value = metric.get(MetricKeys.value)

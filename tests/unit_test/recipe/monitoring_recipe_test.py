@@ -15,9 +15,12 @@
 import json
 import sys
 import types
+from unittest.mock import Mock
 
+from nvflare.apis.fl_constant import ReservedTopic
 from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
 from nvflare.metrics.job_metrics_collector import JobMetricsCollector
+from nvflare.metrics.metrics_keys import MetricKeys, MetricTypes
 
 
 def initialize_stub(**kwargs):
@@ -90,3 +93,36 @@ def test_statsd_reporter_endpoint_is_preserved_in_exported_job_config(tmp_path, 
     assert client_reporter["args"]["site"] == "site-1"
     assert client_reporter["args"]["host"] == "statsd-exporter.monitoring.svc.cluster.local"
     assert client_reporter["args"]["port"] == test_port
+
+
+def test_statsd_reporter_disables_itself_after_init_failure(monkeypatch):
+    init_calls = 0
+
+    def failing_initialize(**kwargs):
+        nonlocal init_calls
+        init_calls += 1
+        raise RuntimeError("datadog init failed")
+
+    fake_datadog = types.ModuleType("datadog")
+    fake_datadog.initialize = failing_initialize
+    fake_datadog.statsd = types.SimpleNamespace(increment=increment_stub, gauge=gauge_stub)
+    monkeypatch.setitem(sys.modules, "datadog", fake_datadog)
+
+    from nvflare.fuel_opt.statsd.statsd_reporter import StatsDReporter
+
+    reporter = StatsDReporter(site="server", host="statsd-exporter.monitoring.svc.cluster.local", port=9125)
+    reporter.logger = Mock()
+    metrics = [
+        {
+            MetricKeys.metric_name: "_system_start_count",
+            MetricKeys.value: 1,
+            MetricKeys.tags: {"site": "server"},
+            MetricKeys.type: MetricTypes.COUNTER,
+        }
+    ]
+
+    reporter.process_metrics(topic=ReservedTopic.APP_METRICS, metrics=metrics, data_bus=None)
+    reporter.process_metrics(topic=ReservedTopic.APP_METRICS, metrics=metrics, data_bus=None)
+
+    assert init_calls == 1
+    reporter.logger.warning.assert_called_once()

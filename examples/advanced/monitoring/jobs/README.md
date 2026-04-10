@@ -278,10 +278,10 @@ Then run the same end-to-end flow as setup 1, but with the setup-2 job configura
 
     ```bash
     cd ../setup
-    cp .env.example .env
-    # edit .env and set GRAFANA_ADMIN_PASSWORD
     docker compose up -d
     ```
+
+    If you want a separate hardened local stack instead of the legacy Compose example, use [../setup/SECURE_LOCAL.md](../setup/SECURE_LOCAL.md).
 
 2. Prepare and start the POC:
 

@@ -195,7 +195,7 @@ To add Job Metrics Collector, we will add component in job configurations ```fed
 }
 ```
 
-tags can be key, value pair, they are used for group metrics in the report. Here we used "site" to indicate origin of the metrics, the "dev" env. to indicating the dev environment.
+Tags can be key-value pairs. They are used to group metrics in the report. Here we used `site` to indicate the origin of the metrics and `env=dev` to indicate the development environment.
 Tags can be key-value pairs used for grouping metrics in the report. Here we used "site" to indicate the origin of the metrics and "env" to indicate the development environment.
 
 
