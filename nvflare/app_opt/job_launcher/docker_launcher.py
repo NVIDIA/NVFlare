@@ -374,7 +374,15 @@ class DockerJobLauncher(JobLauncherSpec):
 
         # PYTHONPATH: translate app_custom_folder host path to container-internal path
         # so custom Python code in the job app is importable inside the container.
-        environment = {}
+        # USER: some libraries (e.g. torch._dynamo) call getpass.getuser() which falls back to
+        # pwd.getpwuid(os.getuid()). When the container runs as a host UID not in /etc/passwd,
+        # this raises KeyError. Setting USER satisfies the env-var fast path in getpass.getuser().
+        # Pass USER and HOME so libraries that call getpass.getuser() or os.path.expanduser("~")
+        # don't fall back to pwd.getpwuid() — which fails when the host UID has no /etc/passwd entry.
+        environment = {
+            "USER": os.environ.get("USER", "nvflare"),
+            "HOME": os.environ.get("HOME", "/tmp"),
+        }
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         if workspace_obj is not None:
             app_custom_folder = workspace_obj.get_app_custom_dir(job_id)

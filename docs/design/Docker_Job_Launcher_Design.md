@@ -109,7 +109,7 @@ Docker mode should use **`BEResourceManager` (Best-Effort)** — it approves eve
 
 `GPUResourceManager` is not suitable for Docker mode: it would require the SP/CP container itself to have GPU passthrough just to count available GPUs, but SP/CP never uses GPUs — it only manages the federation.
 
-The default provisioning injects `GPUResourceManager`. If a site is **exclusively** running Docker-mode jobs, override it in `workspace/local/resources.json`:
+The default provisioning injects `GPUResourceManager`. If a site is **exclusively** running Docker-mode jobs, override it in `workspace/local/resources.json` **before starting SP/CP** — the resource manager is loaded once at startup and is not re-read at job submission time:
 
 ```json
 {
