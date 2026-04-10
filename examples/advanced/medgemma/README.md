@@ -144,6 +144,13 @@ In local runs with this heterogeneous-rank layout, HLoRA consistently outperform
 | default | `0.8955` (`6430/7180`) | `0.9414` (`6759/7180`) | `+0.0459` |
 | alternate | `0.8961` (`6434/7180`) | `0.9366` (`6725/7180`) | `+0.0405` |
 
+This example is inspired by the HLoRA paper, but it is not an exact reproduction:
+
+- The paper evaluates text tasks in the Plato FL framework, while this example adapts the idea to MedGemma histopathology fine-tuning in NVFlare.
+- The paper discusses estimating suitable client ranks during training. This example uses a fixed server-side LoRA bank plus configured client ranks (`4,8,16` by default for 3 clients) rather than adaptive rank selection.
+- The HLoRA logic here is implemented through a custom aggregator plus a rank-aware client while keeping the stock FedAvg controller path.
+- HLoRA is applied only to the LoRA `A/B` factors. Dense trainable tensors such as `modules_to_save` (`lm_head` and `embed_tokens`) are still aggregated with ordinary weighted averaging.
+
 ## 4. Run inference
 
 Compare the base model against the FL-trained global adapter on prepared validation samples.
@@ -247,4 +254,4 @@ Useful flags:
 - MedGemma model: [google/medgemma-4b-it](https://huggingface.co/google/medgemma-4b-it)
 - Training data: [NCT-CRC-HE-100K on Zenodo](https://zenodo.org/records/1214456)
 - Heterogeneous LoRA reference: [Heterogeneous LoRA for Federated Fine-tuning of On-Device Foundation Models (HetLoRA)](https://research.google/pubs/heterogeneous-lora-for-federated-fine-tuning-of-on-device-foundation-models/)
-- HLoRA reference: HLoRA: Towards Efficient Federated Fine-Tuning of Large Language Models with Heterogeneous LoRA
+- HLoRA reference: [HLoRA: Towards Efficient Federated Fine-Tuning of Large Language Models with Heterogeneous LoRA](https://arxiv.org/abs/2503.00813)
