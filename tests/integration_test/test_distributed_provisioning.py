@@ -313,7 +313,7 @@ class TestDistributedProvisioningE2E:
 
     @pytest.fixture()
     def admin_api(self, provisioned, tmp_path):
-        """Start server + 2 clients from packaged kits; yield a logged-in FLAdminAPI."""
+        """Start server + 2 clients from packaged kits; yield a logged-in Session."""
         env = os.environ.copy()
         python_path = ":".join(p for p in sys.path if p)
         env["PYTHONPATH"] = python_path
@@ -403,7 +403,7 @@ class TestDistributedProvisioningE2E:
 
         # Teardown
         try:
-            api.logout()
+            api.close()
         except Exception:
             pass
         for p in processes:
@@ -417,16 +417,12 @@ class TestDistributedProvisioningE2E:
     def test_hello_numpy_sag_completes(self, admin_api, tmp_path):
         """Submit hello-numpy-sag; verify it finishes with FINISHED_COMPLETED."""
         from nvflare.apis.job_def import RunStatus
-        from nvflare.fuel.hci.client.api_status import APIStatus
-        from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
         from tests.integration_test.src.utils import check_job_done, ensure_admin_api_logged_in, get_job_meta
 
         assert ensure_admin_api_logged_in(admin_api, timeout=60), "Admin API did not log in within 60 s"
 
         job_dir = os.path.join(os.path.dirname(__file__), "data", "jobs", "hello-numpy-sag")
-        response = admin_api.submit_job(job_dir)
-        assert response.get("status") == APIStatus.SUCCESS, f"Job submit failed: {response}"
-        job_id = response["details"]["job_id"]
+        job_id = admin_api.submit_job(job_dir)
 
         # Poll until done; log status every 30 s so a timeout is diagnosable.
         deadline = time.time() + _JOB_TIMEOUT
@@ -435,14 +431,20 @@ class TestDistributedProvisioningE2E:
             if check_job_done(job_id, admin_api):
                 break
             if time.time() - last_log >= 30:
-                srv = admin_api.check_status(target_type=TargetType.SERVER)
-                cli = admin_api.check_status(target_type=TargetType.CLIENT)
+                try:
+                    srv = admin_api.get_system_info()
+                    cli = admin_api.get_client_job_status()
+                except Exception as e:
+                    srv = cli = f"<error: {e}>"
                 print(f"\n[E2E poll] job={job_id}  server={srv}  clients={cli}")
                 last_log = time.time()
             time.sleep(5)
         else:
-            srv = admin_api.check_status(target_type=TargetType.SERVER)
-            cli = admin_api.check_status(target_type=TargetType.CLIENT)
+            try:
+                srv = admin_api.get_system_info()
+                cli = admin_api.get_client_job_status()
+            except Exception as e:
+                srv = cli = f"<error: {e}>"
             meta = get_job_meta(admin_api, job_id)
             pytest.fail(
                 f"Job {job_id} did not complete within {_JOB_TIMEOUT} s\n"
