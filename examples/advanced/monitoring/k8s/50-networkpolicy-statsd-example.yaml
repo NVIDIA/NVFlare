@@ -11,6 +11,15 @@ spec:
   policyTypes:
     - Ingress
   ingress:
+    # Allow Prometheus in the same namespace to scrape statsd-exporter on 9102.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9102
+    # Allow NVFLARE workloads in labelled namespaces to push metrics on 9125.
     - from:
         - namespaceSelector:
             matchLabels:
