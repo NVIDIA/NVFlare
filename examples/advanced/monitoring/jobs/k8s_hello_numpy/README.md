@@ -51,7 +51,7 @@ This example is meant for the direct-reachability case where the job's server an
 - adds `JobMetricsCollector` on server and client
 - adds `StatsDReporter` on server and client
 - exports the job before submission
-- ensures the exported job config keeps the explicit StatsD endpoint
+- configures an explicit StatsD endpoint for server and client reporting
 - submits the job with the admin startup kit and waits for completion
 
 ## Validated Metrics

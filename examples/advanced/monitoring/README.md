@@ -132,7 +132,6 @@ We will describe the component configuration in the following sections, but note
 
 >> sidebar note:
 
-> The NVIDIA FLARE json component configration is very simple, it consists the following patterns
 > The NVIDIA FLARE JSON component configuration is very simple. It consists of the following patterns:
 ```{
    "id": "<any string to represent component>"
@@ -143,7 +142,6 @@ We will describe the component configuration in the following sections, but note
 
 #### 1. Shared Monitoring System for All Sites
 
-In this setup, all sites post the metrics to the common StatsD Exporter service. Therefore, all sites will need StatsD Exporter with the same host and port. Additionally, all sites will need both JobMetricsCollector and SysMetricsCollector components.
 In this setup, all sites post the metrics to the common StatsD Exporter service. Therefore, all sites will need StatsD Exporter with the same host and port. Additionally, all sites will need both JobMetricsCollector and SysMetricsCollector components.
 We don't need streaming metrics, so the ConvertToFedEvent and RemoteMetricsReceiver components are not needed.
 

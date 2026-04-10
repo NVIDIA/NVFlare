@@ -57,8 +57,8 @@ StatsD remains part of the supported path. Kubernetes changes how you expose and
 - **SSH local forwarding for StatsD does not work.**
   OpenSSH `ssh -L` forwards TCP by default. The Datadog-based `StatsDReporter` typically sends UDP. A plain TCP tunnel is not enough; use a UDP-aware bridge or run the workloads where cluster DNS and StatsD connectivity work natively.
 
-- **`ModuleNotFoundError: datadog` when loading `StatsDReporter`.**
-  Install `datadog` in the Python environment, or bake it into the container image. See [README.md](README.md) for the container runtime requirement.
+- **`ModuleNotFoundError: datadog` when `StatsDReporter` processes or emits metrics.**
+  Because `StatsDReporter` uses a lazy import, NVFLARE can start successfully and only fail later when metrics are sent. Install `datadog` in the Python environment, or bake it into the container image. See [README.md](README.md) for the container runtime requirement.
 
 - **You need a safer local Compose example without changing the legacy one.**
   Use [../setup/SECURE_LOCAL.md](../setup/SECURE_LOCAL.md), which keeps the old Compose example untouched and provides a separate secure-local stack.

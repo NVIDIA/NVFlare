@@ -37,8 +37,6 @@ In this example, we simulate the real setup on the local host. To keep the examp
 
 In steps 1 and 2, we only need one monitoring system. Assuming you already have Docker and Docker Compose installed, use the provided [setup/docker-compose.yml](../setup/docker-compose.yml) file to start StatsD Exporter, Prometheus, and Grafana.
 
-The tracked Compose example now binds ports to `127.0.0.1`, reads the Grafana password from `setup/.env`, and pins image tags.
-
 ### Steps:
 
 1. Navigate to the setup directory:
@@ -46,13 +44,7 @@ The tracked Compose example now binds ports to `127.0.0.1`, reads the Grafana pa
     cd setup
     ```
 
-2. Create the Grafana environment file:
-    ```bash
-    cp .env.example .env
-    # edit .env and set GRAFANA_ADMIN_PASSWORD
-    ```
-
-3. Start the services using Docker Compose:
+2. Start the services using Docker Compose:
     ```bash
     docker compose up -d
     ```
@@ -65,7 +57,7 @@ The tracked Compose example now binds ports to `127.0.0.1`, reads the Grafana pa
     Creating grafana         ... done
     ```
 
-4. To stop the services, run:
+3. To stop the services, run:
     ```bash
     docker compose down
     ```
@@ -74,6 +66,7 @@ The tracked Compose example now binds ports to `127.0.0.1`, reads the Grafana pa
 
 - The StatsD Exporter port is `9125` and not `8125`.
 - The default local URLs are `http://127.0.0.1:3000`, `http://127.0.0.1:9090`, and `http://127.0.0.1:9102/metrics`.
+- For a separate hardened local variant that keeps the legacy Compose example untouched, see [../setup/SECURE_LOCAL.md](../setup/SECURE_LOCAL.md).
 - For a Kubernetes deployment of the same monitoring stack, see [../k8s/README.md](../k8s/README.md).
 
 

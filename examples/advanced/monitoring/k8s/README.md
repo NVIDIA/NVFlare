@@ -31,7 +31,7 @@ RUN pip install --no-cache-dir -U pip \
 ENV PYTHONUNBUFFERED=1
 ```
 
-Without `datadog`, NVFLARE fails during config loading when it tries to instantiate `nvflare.fuel_opt.statsd.statsd_reporter.StatsDReporter`.
+Without `datadog`, NVFLARE may still load the configuration successfully because `nvflare.fuel_opt.statsd.statsd_reporter.StatsDReporter` now initializes lazily. The failure usually appears only when metrics are first emitted, and it may only be reported in logs.
 
 ## What It Deploys
 

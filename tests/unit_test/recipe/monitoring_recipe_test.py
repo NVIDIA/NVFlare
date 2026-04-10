@@ -32,19 +32,18 @@ def gauge_stub(*args, **kwargs):
     return None
 
 
-fake_datadog = types.ModuleType("datadog")
-fake_datadog.initialize = initialize_stub
-fake_datadog.statsd = types.SimpleNamespace(increment=increment_stub, gauge=gauge_stub)
-sys.modules.setdefault("datadog", fake_datadog)
-
-from nvflare.fuel_opt.statsd.statsd_reporter import StatsDReporter
-
-
 def _get_component(components: list[dict], component_id: str) -> dict:
     return next(c for c in components if c["id"] == component_id)
 
 
-def test_statsd_reporter_endpoint_is_preserved_in_exported_job_config(tmp_path):
+def test_statsd_reporter_endpoint_is_preserved_in_exported_job_config(tmp_path, monkeypatch):
+    fake_datadog = types.ModuleType("datadog")
+    fake_datadog.initialize = initialize_stub
+    fake_datadog.statsd = types.SimpleNamespace(increment=increment_stub, gauge=gauge_stub)
+    monkeypatch.setitem(sys.modules, "datadog", fake_datadog)
+
+    from nvflare.fuel_opt.statsd.statsd_reporter import StatsDReporter
+
     test_port = 19125
     client_script = tmp_path / "client.py"
     client_script.write_text("print('hello')\n", encoding="utf-8")
