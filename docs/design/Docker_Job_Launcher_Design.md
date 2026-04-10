@@ -105,9 +105,27 @@ SJ/CJ containers do not receive the Docker socket, which limits lateral movement
 
 ### Resource Management
 
-Docker mode uses **`BEResourceManager` (Best-Effort)** — the same approach as the K8s launcher. It approves every resource request unconditionally; no pre-scheduling check is done at scheduling time. If a requested resource (e.g. GPU) is unavailable, the job container fails at startup.
+Docker mode should use **`BEResourceManager` (Best-Effort)** — it approves every resource request unconditionally; no pre-scheduling check is done at scheduling time. If a requested resource (e.g. GPU) is unavailable, the job container fails at startup.
 
-`GPUResourceManager` is intentionally not used: it would require the SP/CP container to have GPU passthrough just to count available GPUs. SP/CP never uses GPUs — it only manages the federation. See [GPU](#gpu) in the Job Configuration Reference for how jobs request GPUs.
+`GPUResourceManager` is not suitable for Docker mode: it would require the SP/CP container itself to have GPU passthrough just to count available GPUs, but SP/CP never uses GPUs — it only manages the federation.
+
+The default provisioning injects `GPUResourceManager`. If a site is **exclusively** running Docker-mode jobs, override it in `workspace/local/resources.json`:
+
+```json
+{
+  "components": [
+    {
+      "id": "resource_manager",
+      "path": "nvflare.app_common.resource_managers.be_resource_manager.BEResourceManager",
+      "args": {}
+    }
+  ]
+}
+```
+
+Remove the `resource_consumer` component (`GPUResourceConsumer`) as well — it is only needed alongside `GPUResourceManager`.
+
+If the site runs a **mix** of Docker and process-mode jobs, leave `GPUResourceManager` in place — process-mode jobs still need it for GPU scheduling. Docker-mode jobs will bypass the GPU check at the launcher level (GPU is passed via `device_requests` to the container).
 
 **Future:** A `DockerResourceManager` that queries the host GPU inventory without needing SP/CP GPU passthrough is a natural follow-up.
 
@@ -378,12 +396,21 @@ nohup ./start_docker.sh > site-1.log 2>&1 &
 
 To use a different image without re-provisioning:
 ```bash
-NVFL_P_IMAGE=nvflare-site:2.6.0 ./start_docker.sh
+NVFL_P_IMAGE=nvflare-site:2.7.2 ./start_docker.sh
 ```
 
 ### Step 3 — Configure site data (optional)
 
-If jobs need access to study data, the site admin creates `workspace/local/study_data.json`. See [Dataset / Study Data](#dataset--study-data) in the Job Configuration Reference.
+If jobs need access to study data, create `workspace/local/study_data.json`. No change to `resources.json` is needed — `DockerJobLauncher` reads this file fresh on every job launch, so entries can be added or updated at any time without restarting SP/CP.
+
+```json
+{
+  "study_A": "/host/data/study_A",
+  "study_B": "/host/data/study_B"
+}
+```
+
+Keys are study names (from `meta.json`); values are host paths that will be bind-mounted read-only into SJ/CJ containers at `/var/tmp/nvflare/data`. If the file is absent or the job's study has no entry, no data volume is added and the job runs without a data mount.
 
 ### Step 4 — Submit a job
 

@@ -277,7 +277,7 @@ class DockerJobLauncher(JobLauncherSpec):
                                     on this site. Job-level container_kwargs in deploy_map take precedence
                                     on conflict. Keys use Docker SDK naming (underscores, not hyphens).
                                     Example: {"shm_size": "8g", "ipc_mode": "host"}
-                                    Note: "volumes", "network", "environment", "command", "name", "detach"
+                                    Note: "volumes", "network", "environment", "command", "name", "detach", "user"
                                     are controlled by the launcher and cannot be overridden here.
         """
         super().__init__()
@@ -292,7 +292,7 @@ class DockerJobLauncher(JobLauncherSpec):
         self.timeout = timeout
         self.pending_timeout = pending_timeout
         extra_container_kwargs = extra_container_kwargs or {}
-        _RESERVED_KWARGS = {"volumes", "network", "environment", "command", "name", "detach"}
+        _RESERVED_KWARGS = {"volumes", "network", "environment", "command", "name", "detach", "user"}
         reserved_used = _RESERVED_KWARGS & set(extra_container_kwargs.keys())
         if reserved_used:
             raise ValueError(
@@ -428,7 +428,10 @@ class DockerJobLauncher(JobLauncherSpec):
                 detach=True,
                 environment=environment if environment else None,
                 volumes=volumes,
-                # Never pass Docker socket to job containers
+                # Run as the same user as SP/CP so job-written files are accessible to SP/CP
+                # (e.g. cross_val_results.json written by SJ must be readable/deletable by SP).
+                # Never pass Docker socket to job containers.
+                user=f"{os.getuid()}:{os.getgid()}",
                 **merged_container_kwargs,
             )
         except docker.errors.ImageNotFound:
