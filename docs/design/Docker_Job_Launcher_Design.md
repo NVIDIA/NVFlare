@@ -141,6 +141,8 @@ docker run ... -e NVFL_DOCKER_WORKSPACE="$HOST_WORKSPACE" ...
 ```
 SP/CP container (site admin grants via start_docker.sh)
   ├── /var/run/docker.sock mounted            ← can create job containers
+  ├── --user $(id -u):$(id -g)               ← runs as calling user (workspace files not root-owned)
+  ├── --group-add <docker-socket-gid>         ← grants socket access; omitted when GID is 0 or unavailable (macOS Docker Desktop)
   ├── workspace bind mount at /var/tmp/nvflare/workspace
   ├── nvflare-network                         ← intra-site: SP↔SJ / CP↔CJ (PARENT_URL, Docker DNS)
   └── host network (-p fed_learn_port)        ← cross-site: CP→SP over HTTPS, same as process mode
@@ -357,6 +359,7 @@ nohup ./start_docker.sh > server.log 2>&1 &
 # → creates nvflare-network if it doesn't exist
 # → docker run --name server \
 #              --user "$(id -u):$(id -g)" \
+#              --group-add <docker-socket-gid> (if non-zero) \
 #              --network nvflare-network \
 #              -v $HOST_WORKSPACE:/var/tmp/nvflare/workspace \
 #              -v /var/run/docker.sock:/var/run/docker.sock \

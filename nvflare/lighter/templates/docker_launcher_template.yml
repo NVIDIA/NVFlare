@@ -28,8 +28,18 @@ docker_launcher_cln_sh: |
   # file left by a previous container would incorrectly block a fresh start.
   rm -f "$HOST_WORKSPACE/daemon_pid.fl"
 
+  # Grant the container process access to the Docker socket by injecting its GID as a
+  # supplementary group. stat syntax differs between Linux (-c) and macOS (-f).
+  # Skip when GID resolves to 0 (root) — that would grant root group membership.
+  SOCK_GID=$(stat -c '%g' /var/run/docker.sock 2>/dev/null || stat -f '%g' /var/run/docker.sock 2>/dev/null || echo "")
+  GROUP_ADD_ARG=""
+  if [ -n "$SOCK_GID" ] && [ "$SOCK_GID" != "0" ]; then
+    GROUP_ADD_ARG="--group-add $SOCK_GID"
+  fi
+
   docker run --name {~~client_name~~} \
     --user "$(id -u):$(id -g)" \
+    $GROUP_ADD_ARG \
     --network $NETWORK_NAME \
     -v "$HOST_WORKSPACE":/var/tmp/nvflare/workspace \
     -v /var/run/docker.sock:/var/run/docker.sock \
@@ -67,8 +77,18 @@ docker_launcher_svr_sh: |
   # file left by a previous container would incorrectly block a fresh start.
   rm -f "$HOST_WORKSPACE/daemon_pid.fl"
 
+  # Grant the container process access to the Docker socket by injecting its GID as a
+  # supplementary group. stat syntax differs between Linux (-c) and macOS (-f).
+  # Skip when GID resolves to 0 (root) — that would grant root group membership.
+  SOCK_GID=$(stat -c '%g' /var/run/docker.sock 2>/dev/null || stat -f '%g' /var/run/docker.sock 2>/dev/null || echo "")
+  GROUP_ADD_ARG=""
+  if [ -n "$SOCK_GID" ] && [ "$SOCK_GID" != "0" ]; then
+    GROUP_ADD_ARG="--group-add $SOCK_GID"
+  fi
+
   docker run --name {~~server_name~~} \
     --user "$(id -u):$(id -g)" \
+    $GROUP_ADD_ARG \
     --network $NETWORK_NAME \
     -v "$HOST_WORKSPACE":/var/tmp/nvflare/workspace \
     -v /var/run/docker.sock:/var/run/docker.sock \
