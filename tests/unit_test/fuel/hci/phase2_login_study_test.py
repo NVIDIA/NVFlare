@@ -111,7 +111,9 @@ class _FakeStudyRegistryService:
 
 
 def _make_conn(study=None):
-    headers = {"cert": "cert-bytes", "signature": "signature"}
+    import time
+
+    headers = {"cert": "cert-bytes", "signature": "signature", "nonce": str(time.time())}
     if study is not None:
         headers["study"] = study
     return _FakeConnection(

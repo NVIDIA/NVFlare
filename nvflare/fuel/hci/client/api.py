@@ -659,12 +659,14 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         command = f"{InternalCommands.CERT_LOGIN} {self.user_name}"
 
         id_asserter = IdentityAsserter(private_key_file=self.client_key, cert_file=self.client_cert)
-        cn_signature = id_asserter.sign_common_name(nonce="")
+        login_ts = str(time.time())
+        cn_signature = id_asserter.sign_common_name(nonce=login_ts)
 
         headers = {
             "user_name": self.user_name,
             "cert": id_asserter.cert_data,
             "signature": cn_signature,
+            "nonce": login_ts,
             "study": self.study,
         }
 

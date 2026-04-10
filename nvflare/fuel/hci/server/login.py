@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import time
 import traceback
 from typing import List
 
@@ -47,6 +48,7 @@ class LoginModule(CommandModule, CommandFilter):
 
         self.session_mgr = sess_mgr
         self.logger = get_obj_logger(self)
+        self._login_nonce_timeout = 60  # seconds
 
     def get_spec(self):
         return CommandModuleSpec(
@@ -85,13 +87,32 @@ class LoginModule(CommandModule, CommandFilter):
         identity_verifier = hci.get_id_verifier()
         id_asserter = hci.get_id_asserter()
 
+        # Validate the timestamp-based nonce from the client.
+        # The nonce must be a recent timestamp (within the allowed window)
+        # to limit the replay window of captured login signatures.
+        login_nonce = headers.get("nonce", "")
+        if not login_nonce:
+            self.logger.warning(f"login rejected for {user_name}: missing nonce")
+            conn.append_string("REJECT")
+            return
+        try:
+            nonce_ts = float(login_nonce)
+            if abs(time.time() - nonce_ts) > self._login_nonce_timeout:
+                self.logger.warning(f"login rejected for {user_name}: nonce timestamp expired")
+                conn.append_string("REJECT")
+                return
+        except (ValueError, TypeError):
+            self.logger.warning(f"login rejected for {user_name}: invalid nonce format")
+            conn.append_string("REJECT")
+            return
+
         cert = load_crt_bytes(cert_data)
         try:
             ok = identity_verifier.verify_common_name(
                 asserter_cert=cert,
                 asserted_cn=user_name,
                 signature=signature,
-                nonce="",
+                nonce=login_nonce,
             )
             self.logger.debug(f"verify common name: {ok=}")
         except Exception as ex:
