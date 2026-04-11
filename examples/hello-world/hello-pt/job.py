@@ -31,6 +31,7 @@ def define_parser():
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--train_script", type=str, default="client.py")
     parser.add_argument("--cross_site_eval", action="store_true")
+    parser.add_argument("--export_config", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument(
         "--launch_external_process",
         action="store_true",
@@ -71,13 +72,18 @@ def main():
     if args.cross_site_eval:
         add_cross_site_evaluation(recipe)
 
-    # Run FL simulation
-    env = SimEnv(num_clients=n_clients)
-    run = recipe.execute(env)
-    print()
-    print("Job Status is:", run.get_status())
-    print("Result can be found in :", run.get_result())
-    print()
+    if args.export_config:
+        job_dir = "/tmp/nvflare/jobs/job_config"
+        recipe.export(job_dir)
+        print(f"Job config exported to {job_dir}")
+    else:
+        # Run FL simulation
+        env = SimEnv(num_clients=n_clients)
+        run = recipe.execute(env)
+        print()
+        print("Job Status is:", run.get_status())
+        print("Result can be found in :", run.get_result())
+        print()
 
 
 if __name__ == "__main__":
