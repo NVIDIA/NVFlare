@@ -40,15 +40,30 @@ from transformers.modeling_utils import PreTrainedModel
 try:
     from transformers.pytorch_utils import (
         apply_chunking_to_forward,
-        find_pruneable_heads_and_indices,
         prune_linear_layer,
     )
 except ImportError:
     from transformers.modeling_utils import (
         apply_chunking_to_forward,
-        find_pruneable_heads_and_indices,
         prune_linear_layer,
     )
+try:
+    from transformers.modeling_utils import find_pruneable_heads_and_indices
+except ImportError:
+
+    def find_pruneable_heads_and_indices(heads, n_heads, head_size, already_pruned_heads):
+        """Compatibility shim for newer Transformers versions that dropped this helper."""
+        mask = torch.ones(n_heads, head_size, dtype=torch.bool)
+        heads = set(heads) - already_pruned_heads
+
+        for head in heads:
+            head = head - sum(1 if pruned_head < head else 0 for pruned_head in already_pruned_heads)
+            mask[head] = False
+
+        mask = mask.view(-1).contiguous()
+        index = torch.arange(len(mask), device=mask.device)[mask].long()
+        return heads, index
+
 from transformers.models.roberta.configuration_roberta import RobertaConfig
 from transformers.utils import logging
 
