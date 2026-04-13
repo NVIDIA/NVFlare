@@ -223,7 +223,9 @@ class CertBuilder(Builder):
         dest_dir = ctx.get_kit_dir(participant)
         with open(os.path.join(dest_dir, f"{base_name}.crt"), "wb") as f:
             f.write(serialize_cert(cert))
-        with open(os.path.join(dest_dir, f"{base_name}.key"), "wb") as f:
+        key_path = os.path.join(dest_dir, f"{base_name}.key")
+        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as f:
             f.write(serialize_pri_key(pri_key))
 
         if participant.type in [ParticipantType.CLIENT, ParticipantType.RELAY]:
@@ -272,7 +274,9 @@ class CertBuilder(Builder):
         bn = CertFileBasename.SERVER
         with open(os.path.join(dest_dir, f"{bn}.crt"), "wb") as f:
             f.write(serialize_cert(tmp_cert))
-        with open(os.path.join(dest_dir, f"{bn}.key"), "wb") as f:
+        key_path_bn = os.path.join(dest_dir, f"{bn}.key")
+        fd = os.open(key_path_bn, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as f:
             f.write(serialize_pri_key(tmp_pri_key))
 
     def build(self, project: Project, ctx: ProvisionContext):
