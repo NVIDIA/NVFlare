@@ -15,8 +15,8 @@
 import base64
 import logging
 import os
-import random
 import re
+import secrets
 import shutil
 import subprocess
 import time
@@ -144,7 +144,7 @@ class SNPAuthorizer(CCAuthorizer):
         raise RuntimeError(f"[{action_name}] Failed after {self.max_retries} attempts.")
 
     def generate(self):
-        nonce = bytearray([random.randint(0, 255) for _ in range(64)])
+        nonce = bytearray(secrets.token_bytes(64))
         with open(REQUEST_PATH, "wb") as request_file:
             request_file.write(nonce)
 

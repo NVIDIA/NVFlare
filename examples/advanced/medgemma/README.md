@@ -20,11 +20,14 @@ Weights for [`google/medgemma-4b-it`](https://huggingface.co/google/medgemma-4b-
 | File | Role |
 |------|------|
 | `data_utils.py` | Shared prompt, class-label mappings, dataset splitting helpers, and response parsing helpers. |
-| `model.py` | MedGemma LoRA wrapper used by the server and clients. The server exchanges only LoRA adapter weights. |
-| `client.py` | NVFlare client entry point. Loads MedGemma in 4-bit, applies the received LoRA adapters, runs local SFT with `SFTTrainer`, and sends the updated adapters back. |
-| `job.py` | FedAvg recipe for 3 clients with per-site data paths. |
+| `lora_utils.py` | Shared LoRA key, rank, and truncation helpers used by the client and custom aggregators. |
+| `utils.py` | Shared path, memory, and CUDA runtime helpers used by the client. |
+| `model.py` | MedGemma LoRA wrapper used by the server and clients. The server stores a fixed-rank global LoRA bank and exchanges only adapter weights. |
+| `client.py` | NVFlare client entry point. Loads MedGemma in 4-bit, truncates the incoming global LoRA bank to the site's local rank, runs local SFT with `SFTTrainer`, and sends back only the active local factors. |
+| `custom_aggregators.py` | Server-side max-rank LoRA aggregators for the paper baseline (`naive`) and HLoRA (`hlora`). |
+| `job.py` | FedAvg recipe for 3 clients with per-site data paths, configurable local/global LoRA ranks, and selectable LoRA aggregation (`naive` or `hlora`). |
 | `download_data.py` | Downloads and extracts `NCT-CRC-HE-100K.zip` from Zenodo. |
-| `prepare_data.py` | Discovers image files, builds random site shards, and writes `train.json` / `validation.json` for each client. |
+| `prepare_data.py` | Discovers image files, builds class-skewed site shards by default, and writes `train.json` / `validation.json` for each client. |
 | `run_inference.py` | Runs before/after inference on prepared validation samples using either the base model, an adapter directory, or NVFlare `FL_global_model.pt`. |
 | `run_evaluation.py` | Evaluates base vs fine-tuned accuracy on `CRC-VAL-HE-7K`, following the MedGemma notebook's evaluation setup. |
 
@@ -65,7 +68,11 @@ Then create client splits:
 python prepare_data.py
 ```
 
-By default, `prepare_data.py` creates 3 client shards with `3333` samples per client and `333` validation samples per client. That keeps the total dataset size close to the official MedGemma notebook's 10k-sample walkthrough while preserving a site-based FL layout.
+By default, `prepare_data.py` creates 3 client shards with `3333` samples per client and `333` validation samples per client. It now uses a more heterogeneous, class-skewed split by default so the FL setup is less IID and more informative for comparing naive LoRA averaging against HLoRA. With 3 clients, the dominant label groups are:
+
+- `site-1`: `A: adipose`, `B: background`, `C: debris`
+- `site-2`: `D: lymphocytes`, `E: mucus`, `F: smooth muscle`
+- `site-3`: `G: normal colon mucosa`, `H: cancer-associated stroma`, `I: colorectal adenocarcinoma epithelium`
 
 Output:
 
@@ -73,10 +80,18 @@ Output:
   site-1: train=3000 -> ./data/site-1/train.json, validation=333 -> ./data/site-1/validation.json
   site-2: train=3000 -> ./data/site-2/train.json, validation=333 -> ./data/site-2/validation.json
   site-3: train=3000 -> ./data/site-3/train.json, validation=333 -> ./data/site-3/validation.json
+Wrote label distribution plot to ./data/split_label_distribution.svg
 ```
+
+`prepare_data.py` also writes a `split_label_distribution.svg` chart so you can quickly inspect how non-IID the client training shards are. The image below is an example of the default 3-client heterogeneous split layout:
+
+![Example client label distribution](assets/default_split_label_distribution.svg)
 
 Useful flags:
 
+- `--split_strategy random` restores the older IID-style random sharding.
+- `--dominant_fraction 0.8` controls how strongly each heterogeneous site is biased toward its dominant label group.
+- `--plot_path /path/to/split_label_distribution.svg` overrides where the SVG summary plot is written.
 - `--samples_per_client 0` uses the full dataset evenly across all clients.
 - `--validation_size_per_client 0` disables per-site validation files.
 - `--dataset_dir /path/to/NCT-CRC-HE-100K` points to a different extracted dataset location.
@@ -93,9 +108,13 @@ Important notes:
 
 - The example always uses LoRA-only FL exchange. The MedGemma base model stays frozen on every client, and FedAvg aggregates only the adapter weights.
 - This keeps the full MedGemma checkpoint local to each client and exchanges only the smaller LoRA adapter updates between clients and server.
+- The server now keeps a fixed global LoRA rank bank (`--global_lora_rank`, default `16`). By default, the 3-client example uses distinct local ranks `4,8,16`, and the client truncates the incoming global bank to its local rank before training.
+- `job.py` defaults to `--lora_aggregation naive`, which matches the HLoRA paper's baseline by averaging LoRA `A` and `B` factors separately inside that fixed global rank bank.
+- `python job.py --lora_aggregation hlora` enables HLoRA-style server aggregation: the server reconstructs each client's LoRA update as `B @ A`, averages those reconstructed updates, and projects the result back to the configured global rank bank. Non-LoRA tensors such as `modules_to_save` still use ordinary weighted averaging.
+- Both aggregation modes weight clients by the number of local training examples reported by the client (`num_examples`), rather than relying on the first received adapter as a template.
 - `job.py` defaults to 3 clients and one GPU per client. If needed, override the GPU mapping with `--gpu "[0],[1],[2]"`.
 - The client uses the same prompt format, 4-bit quantization, LoRA config, and multimodal collator pattern as the official notebook.
-- Under heterogeneous or non-IID client data, simple FedAvg over LoRA adapters can introduce aggregation noise and dilute client-specific information, so heterogeneity-aware aggregation may perform better.
+- When `--lora_aggregation hlora` is used, the default simulator output path changes from `/tmp/nvflare/simulation/medgemma/...` to `/tmp/nvflare/simulation/medgemma-hlora/...`.
 
 Useful flags:
 
@@ -106,7 +125,33 @@ Useful flags:
 | `--num_rounds` | Number of FL rounds. | `python job.py --num_rounds 5` |
 | `--max_steps` | Limit local steps per round for quick tests. | `python job.py --max_steps 50` |
 | `--learning_rate` | Peak learning rate for local SFT. | `python job.py --learning_rate 1e-4` |
+| `--global_lora_rank` | Server-side LoRA bank rank used for aggregation and checkpoint persistence. | `python job.py --global_lora_rank 16` |
+| `--site_lora_ranks` | Comma-separated local LoRA ranks per site, e.g. `4,8,16` for three clients. If omitted, the job auto-assigns distinct ranks up to `--global_lora_rank`. | `python job.py --site_lora_ranks 4,8,16` |
+| `--lora_aggregation` | LoRA aggregation strategy: `naive` for separate factor averaging in the global bank, `hlora` for reconstructed-update aggregation. | `python job.py --lora_aggregation hlora` |
 | `--wandb` | Enable Weights & Biases tracking if `WANDB_API_KEY` is set. | `python job.py --wandb` |
+
+To compare the paper baseline against HLoRA with heterogeneous client ranks, the default 3-client run already uses `site-1=4`, `site-2=8`, and `site-3=16`. You can also set the layout explicitly:
+
+```bash
+python job.py --lora_aggregation naive --global_lora_rank 16 --site_lora_ranks 4,8,16
+python job.py --lora_aggregation hlora --global_lora_rank 16 --site_lora_ranks 4,8,16
+```
+
+In local runs with this heterogeneous-rank layout, HLoRA consistently outperformed the naive factor-averaging baseline on `CRC-VAL-HE-7K`:
+
+| Seed | Naive | HLoRA | Delta |
+|------|-------|-------|-------|
+| default | `0.8955` (`6430/7180`) | `0.9414` (`6759/7180`) | `+0.0459` |
+| alternate | `0.8961` (`6434/7180`) | `0.9366` (`6725/7180`) | `+0.0405` |
+
+Per-site resource logs from H100 runs showed that the impact of local rank depends on how far apart the ranks are. With `4,8,16`, peak memory and round time stayed fairly similar because the shared MedGemma base model and dense `modules_to_save` still dominate the footprint. With larger heterogeneous ranks such as `16,128,256`, the expected rank-dependent memory growth became clearly visible, while round runtime still changed only modestly.
+
+This example is inspired by the HLoRA paper, but it is not an exact reproduction:
+
+- The paper evaluates text tasks in the Plato FL framework, while this example adapts the idea to MedGemma histopathology fine-tuning in NVFlare.
+- The paper discusses estimating suitable client ranks during training. This example uses a fixed server-side LoRA bank plus configured client ranks (`4,8,16` by default for 3 clients) rather than adaptive rank selection.
+- The HLoRA logic here is implemented through a custom aggregator plus a rank-aware client while keeping the stock FedAvg controller path.
+- HLoRA is applied only to the LoRA `A/B` factors. Dense trainable tensors such as `modules_to_save` (`lm_head` and `embed_tokens`) are still aggregated with ordinary weighted averaging.
 
 ## 4. Run inference
 
@@ -201,6 +246,7 @@ Delta:            accuracy=+0.5410
 Useful flags:
 
 - `--max_samples 0` evaluates the full CRC-VAL-HE-7K dataset.
+- `--finetune_only` skips the repeated base-model pass and evaluates only the fine-tuned checkpoint.
 - `--show_examples 2` prints a couple of qualitative prediction examples per model before the summary.
 - `--base_model_path /path/to/model` evaluates a different unfine-tuned checkpoint as the baseline.
 
@@ -210,3 +256,4 @@ Useful flags:
 - MedGemma model: [google/medgemma-4b-it](https://huggingface.co/google/medgemma-4b-it)
 - Training data: [NCT-CRC-HE-100K on Zenodo](https://zenodo.org/records/1214456)
 - Heterogeneous LoRA reference: [Heterogeneous LoRA for Federated Fine-tuning of On-Device Foundation Models (HetLoRA)](https://research.google/pubs/heterogeneous-lora-for-federated-fine-tuning-of-on-device-foundation-models/)
+- HLoRA reference: [HLoRA: Towards Efficient Federated Fine-Tuning of Large Language Models with Heterogeneous LoRA](https://arxiv.org/abs/2503.00813)
