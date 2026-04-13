@@ -171,10 +171,12 @@ class SessionManager(CommandModule):
             self.sessions[sess.sess_id] = sess
         return sess
 
-    def get_session(self, token: str):
+    def get_session(self, token: str, id_asserter=None):
         try:
-            sess = Session.decode_token(token)
-        except:
+            sess = Session.decode_token(token, id_asserter)
+            if sess is None:
+                return None
+        except Exception:
             return None
 
         with self.sess_update_lock:

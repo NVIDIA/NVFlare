@@ -19,10 +19,6 @@ from abc import abstractmethod
 from enum import Enum
 
 import yaml
-from kubernetes import config
-from kubernetes.client import Configuration
-from kubernetes.client.api import core_v1_api
-from kubernetes.client.rest import ApiException
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
@@ -81,13 +77,11 @@ DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT = {
 class PvName(Enum):
     WORKSPACE = "nvflws"
     DATA = "nvfldata"
-    ETC = "nvfletc"
 
 
 VOLUME_MOUNT_LIST = [
     {"name": PvName.WORKSPACE.value, "mountPath": "/var/tmp/nvflare/workspace"},
     {"name": PvName.DATA.value, "mountPath": "/var/tmp/nvflare/data"},
-    {"name": PvName.ETC.value, "mountPath": "/var/tmp/nvflare/etc"},
 ]
 
 
@@ -107,7 +101,7 @@ class K8sJobHandle(JobHandleSpec):
     def __init__(
         self,
         job_id: str,
-        api_instance: core_v1_api,
+        api_instance,
         job_config: dict,
         namespace="default",
         timeout=None,
@@ -217,6 +211,8 @@ class K8sJobHandle(JobHandleSpec):
             time.sleep(1)
 
     def terminate(self):
+        from kubernetes.client.rest import ApiException
+
         try:
             self.api_instance.delete_namespaced_pod(name=self.job_id, namespace=self.namespace, grace_period_seconds=0)
             self.terminal_state = JobState.TERMINATED
@@ -238,6 +234,8 @@ class K8sJobHandle(JobHandleSpec):
         return JOB_RETURN_CODE_MAPPING.get(job_state, JobReturnCode.UNKNOWN)
 
     def _query_phase(self):
+        from kubernetes.client.rest import ApiException
+
         try:
             resp = self.api_instance.read_namespaced_pod(name=self.job_id, namespace=self.namespace)
         except ApiException as e:
@@ -281,8 +279,7 @@ class K8sJobLauncher(JobLauncherSpec):
         self,
         config_file_path: str,
         workspace_pvc: str,
-        etc_pvc: str,
-        data_pvc_file_path: str,
+        study_data_pvc_file_path: str,
         timeout=None,
         namespace="default",
         pending_timeout=30,
@@ -290,34 +287,55 @@ class K8sJobLauncher(JobLauncherSpec):
     ):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
-
+        self.config_file_path = config_file_path
         self.workspace_pvc = workspace_pvc
-        self.etc_pvc = etc_pvc
-        self.data_pvc_file_path = data_pvc_file_path
+        self.study_data_pvc_file_path = study_data_pvc_file_path
         self.timeout = timeout
         self.namespace = namespace
         self.pending_timeout = pending_timeout
         self.python_path = python_path
-        with open(data_pvc_file_path, "rt") as f:
-            data_pvc_dict = yaml.safe_load(f)
-        if not data_pvc_dict:
-            raise ValueError(f"data_pvc_file_path '{data_pvc_file_path}' is empty or contains no PVC entries.")
-        # data_pvc_dict will be pvc: mountPath
-        # currently, support one pvc and always mount to /var/tmp/nvflare/data
-        # ie, ignore the mountPath in data_pvc_dict
-        if not isinstance(data_pvc_dict, dict):
-            raise ValueError(f"file at data_pvc_file_path '{data_pvc_file_path}' does not contain a dictionary.")
-        self.data_pvc = list(data_pvc_dict.keys())[0]
-        config.load_kube_config(config_file_path)
-        try:
-            c = Configuration().get_default_copy()
-        except AttributeError:
-            c = Configuration()
-            c.assert_hostname = False
-        Configuration.set_default(c)
-        self.core_v1 = core_v1_api.CoreV1Api()
+        self.study_data_pvc_dict = None
+        self.default_data_pvc = None
+        self.core_v1 = None
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
+        if self.default_data_pvc is None:
+            with open(self.study_data_pvc_file_path, "rt") as f:
+                study_data_pvc_dict = yaml.safe_load(f)
+            if not study_data_pvc_dict:
+                raise ValueError(
+                    f"study_data_pvc_file_path '{self.study_data_pvc_file_path}' is empty or contains no PVC entries."
+                )
+            # study_data_pvc_file_path file is
+            # a yaml file with this format
+            # study_name_1: data_pvc_1
+            # study_name_2: data_pvc_2
+            # ...
+            # ...
+            # default: default_data_pvc
+            # currently, support one pvc and always mount to /var/tmp/nvflare/data
+            if not isinstance(study_data_pvc_dict, dict):
+                raise ValueError(
+                    f"file at study_data_pvc_file_path '{self.study_data_pvc_file_path}' does not contain a dictionary."
+                )
+            default_data_pvc = study_data_pvc_dict.get("default")
+            if default_data_pvc is None:
+                raise ValueError(f"No default PVC found in '{self.study_data_pvc_file_path}'.")
+            self.default_data_pvc = default_data_pvc
+            self.study_data_pvc_dict = study_data_pvc_dict
+        if self.core_v1 is None:
+            from kubernetes import config
+            from kubernetes.client import Configuration
+            from kubernetes.client.api import core_v1_api
+
+            try:
+                config.load_kube_config(self.config_file_path)
+                c = Configuration().get_default_copy()
+            except AttributeError:
+                c = Configuration()
+                c.assert_hostname = False
+            Configuration.set_default(c)
+            self.core_v1 = core_v1_api.CoreV1Api()
         site_name = fl_ctx.get_identity_name()
         raw_job_id = job_meta.get(JobConstants.JOB_ID)
         if not raw_job_id:
@@ -330,6 +348,7 @@ class K8sJobLauncher(JobLauncherSpec):
         args = fl_ctx.get_prop(FLContextKey.ARGS)
         job_image = extract_job_image(job_meta, site_name)
         site_resources = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}).get(site_name, {})
+        study = job_meta.get(JobMetaKey.STUDY.value)
         job_resource = site_resources.get("num_of_gpus", None)
         job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
         if not job_args:
@@ -339,13 +358,7 @@ class K8sJobLauncher(JobLauncherSpec):
         if not exe_module_entry:
             raise RuntimeError(f"missing {JobProcessArgs.EXE_MODULE} in {FLContextKey.JOB_PROCESS_ARGS}")
         _, job_cmd = exe_module_entry
-        # TODO: Make the K8s launcher study-aware with minimal code churn.
-        # The intended change is only to read the optional job_meta["study"]
-        # and use it to resolve study-specific Kubernetes settings before pod
-        # launch. That settings lookup may include workspace volume/path plus
-        # any other K8s deployment settings required for the selected study.
-        # Keep the existing launch flow unchanged; only the settings resolution
-        # should become study-aware.
+        data_pvc = self.study_data_pvc_dict.get(study, self.default_data_pvc)
         job_config = {
             "name": job_id,
             "image": job_image,
@@ -354,8 +367,7 @@ class K8sJobLauncher(JobLauncherSpec):
             "volume_mount_list": VOLUME_MOUNT_LIST,
             "volume_list": [
                 {"name": PvName.WORKSPACE.value, "persistentVolumeClaim": {"claimName": self.workspace_pvc}},
-                {"name": PvName.DATA.value, "persistentVolumeClaim": {"claimName": self.data_pvc}},
-                {"name": PvName.ETC.value, "persistentVolumeClaim": {"claimName": self.etc_pvc}},
+                {"name": PvName.DATA.value, "persistentVolumeClaim": {"claimName": data_pvc}},
             ],
             "module_args": self.get_module_args(job_id, fl_ctx),
         }
