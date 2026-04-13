@@ -39,10 +39,8 @@ class TestAuxCommunicateAuthCheck:
         request = CellMessage()
         request.payload = {"test": "data"}
         request.set_header(MessageHeaderKey.TOPIC, "test_topic")
+        result = agent.aux_communicate(request)
 
-        try:
-            agent.aux_communicate(request)
-        except Exception:
-            pass
-
+        assert not mock_engine.dispatch.called, "engine.dispatch should NOT be called when authentication fails"
+        assert result is not None, "aux_communicate should return an error reply, not None"
         assert not mock_engine.dispatch.called, "engine.dispatch should NOT be called when authentication fails"
