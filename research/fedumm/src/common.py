@@ -41,9 +41,9 @@ def maybe_subsample(ds, max_samples: Optional[int], seed: int):
     return ds.shuffle(seed=seed).select(range(max_samples))
 
 
-def shard_dataset(ds, num_clients: int, site_id: int,
-                  alpha: float = 0.0, seed: int = 42,
-                  label_key: str = "multiple_choice_answer"):
+def shard_dataset(
+    ds, num_clients: int, site_id: int, alpha: float = 0.0, seed: int = 42, label_key: str = "multiple_choice_answer"
+):
     """Partition a HuggingFace dataset across clients.
 
     Args:
@@ -104,7 +104,7 @@ def shard_dataset(ds, num_clients: int, site_id: int,
 def count_trainable_params(model) -> str:
     t = sum(p.numel() for p in model.parameters() if p.requires_grad)
     a = sum(p.numel() for p in model.parameters())
-    return f"trainable: {t:,} / {a:,} ({100*t/a:.4f}%)"
+    return f"trainable: {t:,} / {a:,} ({100 * t / a:.4f}%)"
 
 
 def get_trainable_params(model) -> Dict[str, torch.Tensor]:
@@ -121,14 +121,25 @@ def load_trainable_params(model, params: Dict[str, Any], device: str) -> None:
         tmap[n].data.copy_(v.to(device=device, dtype=tmap[n].dtype))
 
 
-def train_one_epoch(model, dataloader, optimizer, device, grad_accum, backend) -> float:
+def train_one_epoch(
+    model,
+    dataloader,
+    optimizer,
+    device,
+    grad_accum,
+    backend,
+    prefix: str = "",
+    log_interval: int = 10,
+    writer=None,
+    global_step_offset: int = 0,
+) -> float:
     """Generic training loop - delegates per-batch loss to backend.train_step."""
     model.train()
     optimizer.zero_grad(set_to_none=True)
     total_loss, num_steps = 0.0, len(dataloader)
     if num_steps == 0:
         raise ValueError("Dataloader is empty - check data preparation and filtering")
-        
+
     for step, batch in enumerate(dataloader, 1):
         loss = backend.train_step(model, batch, device)
         total_loss += loss.item()
@@ -136,6 +147,11 @@ def train_one_epoch(model, dataloader, optimizer, device, grad_accum, backend) -
         if step % grad_accum == 0:
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
+        if step % log_interval == 0 or step == num_steps:
+            avg_loss = total_loss / step
+            print(f"{prefix}  step {step}/{num_steps}  loss={avg_loss:.4f}", flush=True)
+            if writer is not None:
+                writer.add_scalar("train/loss", avg_loss, global_step_offset + step)
 
     if num_steps % grad_accum != 0:
         optimizer.step()

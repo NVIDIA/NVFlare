@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,15 +14,17 @@
 
 """BLIP-VQA backend: LoRA on text_encoder + text_decoder."""
 
-from typing import Any, Dict, List, Tuple
-
 import torch
 from peft import LoraConfig, TaskType, get_peft_model
 from torch.utils.data import Dataset
 from transformers import BlipForQuestionAnswering, BlipProcessor
 
-from .common import vqa_soft_score
-from .model_registry import register_backend
+try:
+    from .common import vqa_soft_score
+    from .model_registry import register_backend
+except ImportError:
+    from common import vqa_soft_score  # type: ignore[no-redef]
+    from model_registry import register_backend  # type: ignore[no-redef]
 
 _DEFAULT_MODEL = "Salesforce/blip-vqa-base"
 
@@ -38,17 +40,29 @@ class BLIPVQADataset(Dataset):
     def __getitem__(self, idx):
         ex = self.ds[idx]
         img = ex["image"].convert("RGB")
-        enc = self.proc(images=img, text=ex["question"],
-                        padding="max_length", truncation=True,
-                        max_length=self.max_q, return_tensors="pt")
-        lab = self.proc.tokenizer(ex["multiple_choice_answer"],
-                                  padding="max_length", truncation=True,
-                                  max_length=self.max_a, return_tensors="pt")
-        labels = lab["input_ids"].squeeze(0).clone()
+        enc = self.proc(
+            images=img,
+            text=ex["question"],
+            padding="max_length",
+            truncation=True,
+            max_length=self.max_q,
+            return_tensors="pt",
+        )
+        lab = self.proc.tokenizer(
+            ex["multiple_choice_answer"],
+            padding="max_length",
+            truncation=True,
+            max_length=self.max_a,
+            return_tensors="pt",
+        )
+        decoder_input_ids = lab["input_ids"].squeeze(0).clone()
+        labels = decoder_input_ids.clone()
+        labels[lab["attention_mask"].squeeze(0) == 0] = -100
         return {
             "pixel_values": enc["pixel_values"].squeeze(0),
             "input_ids": enc["input_ids"].squeeze(0),
             "attention_mask": enc["attention_mask"].squeeze(0),
+            "decoder_input_ids": decoder_input_ids,
             "labels": labels,
             "decoder_attention_mask": lab["attention_mask"].squeeze(0),
             "gt_answers": [a["answer"] for a in ex["answers"]],
@@ -58,15 +72,19 @@ class BLIPVQADataset(Dataset):
 class BLIPBackend:
     name = "blip_vqa"
 
-    def build_model_and_processor(self, model_name_or_path, lora_r, lora_alpha,
-                                  lora_dropout, device):
+    def build_model_and_processor(self, model_name_or_path, lora_r, lora_alpha, lora_dropout, device):
         model_id = model_name_or_path or _DEFAULT_MODEL
         processor = BlipProcessor.from_pretrained(model_id)
         model = BlipForQuestionAnswering.from_pretrained(model_id)
 
-        cfg = LoraConfig(task_type=TaskType.FEATURE_EXTRACTION, r=lora_r,
-                         lora_alpha=lora_alpha, lora_dropout=lora_dropout,
-                         bias="none", target_modules=["query", "key", "value"])
+        cfg = LoraConfig(
+            task_type=TaskType.FEATURE_EXTRACTION,
+            r=lora_r,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            bias="none",
+            target_modules=["query", "key", "value"],
+        )
         model.text_encoder = get_peft_model(model.text_encoder, cfg)
         model.text_decoder = get_peft_model(model.text_decoder, cfg)
         for n, p in model.named_parameters():
@@ -80,8 +98,14 @@ class BLIPBackend:
 
     def collate_fn(self, batch):
         out = {}
-        for k in ["pixel_values", "input_ids", "attention_mask",
-                   "labels", "decoder_attention_mask"]:
+        for k in [
+            "pixel_values",
+            "input_ids",
+            "attention_mask",
+            "decoder_input_ids",
+            "labels",
+            "decoder_attention_mask",
+        ]:
             out[k] = torch.stack([b[k] for b in batch])
         out["gt_answers"] = [b["gt_answers"] for b in batch]
         return out
@@ -91,6 +115,7 @@ class BLIPBackend:
             pixel_values=batch["pixel_values"].to(device, non_blocking=True),
             input_ids=batch["input_ids"].to(device, non_blocking=True),
             attention_mask=batch["attention_mask"].to(device, non_blocking=True),
+            decoder_input_ids=batch["decoder_input_ids"].to(device, non_blocking=True),
             labels=batch["labels"].to(device, non_blocking=True),
             decoder_attention_mask=batch["decoder_attention_mask"].to(device, non_blocking=True),
         ).loss
@@ -110,7 +135,9 @@ class BLIPBackend:
             for p, gt in zip(preds, batch["gt_answers"]):
                 total_score += vqa_soft_score(p, gt)
                 total += 1
-        return total_score / max(total, 1)
+        if total == 0:
+            raise ValueError("Evaluation dataloader is empty — check eval dataset and --max_eval_samples.")
+        return total_score / total
 
     def hf_dataset_name(self):
         return "HuggingFaceM4/VQAv2"
@@ -126,3 +153,18 @@ class BLIPBackend:
 
 
 register_backend("blip_vqa", BLIPBackend())
+
+
+class BLIPLoRAModel(torch.nn.Module):
+    """LoRA-wrapped BLIP-VQA model for NVFlare server-side model initialization.
+
+    Delegates to BLIPBackend so the LoRA configuration is defined in one place.
+    """
+
+    def __init__(self, model_name_or_path: str = "", lora_r: int = 16, lora_alpha: int = 32, lora_dropout: float = 0.1):
+        super().__init__()
+        model, _ = BLIPBackend().build_model_and_processor(model_name_or_path, lora_r, lora_alpha, lora_dropout, "cpu")
+        self.model = model
+
+    def forward(self, **kwargs):
+        return self.model(**kwargs)

@@ -248,7 +248,11 @@ def check_job_done(job_id: str, admin_api: Session):
         print(f"Check client status failed: {client_statuses}")
         return False
 
-    job_run_status = admin_api.get_job_status(job_id)
+    try:
+        job_run_status = admin_api.get_job_status(job_id)
+    except Exception as e:
+        print(f"Get job status failed: {e}")
+        return False
     if job_run_status in (
         RunStatus.FINISHED_COMPLETED.value,
         RunStatus.FINISHED_ABORTED.value,
