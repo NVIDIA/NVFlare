@@ -111,11 +111,11 @@ class HelmChartBuilder(Builder):
         templates_dir = os.path.join(chart_dir, "templates")
         os.makedirs(templates_dir, exist_ok=True)
 
-        fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT, 30002)
-        admin_port = ctx.get(CtxKey.ADMIN_PORT, 30003)
+        fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT, 8002)
+        admin_port = ctx.get(CtxKey.ADMIN_PORT, 8003)
 
-        # Align comm_config.json with the chart so that clients can reach the
-        # server at <server.name>:<fed_learn_port> within the cluster namespace.
+        # Align comm_config.json with the chart so that internal jobs can reach the
+        # parent at <nvflare-server>:<parent_port> within the cluster namespace.
         comm_config_args = server.get_prop(PropKey.COMM_CONFIG_ARGS)
         if comm_config_args is not None:
             comm_config_args.update(

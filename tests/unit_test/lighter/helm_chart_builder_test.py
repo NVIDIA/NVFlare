@@ -267,6 +267,34 @@ class TestClientChart:
 
         assert chart["appVersion"] == "latest"
 
+    def test_client_values_persistence_matches_constructor(self):
+        """persistence keys in client values.yaml must reflect the PVC constructor args."""
+        project = _make_project(num_clients=1)
+        with tempfile.TemporaryDirectory() as root:
+            ctx = _make_ctx(root, project)
+            _run(
+                HelmChartBuilder(
+                    docker_image="myregistry/nvflare:2.7.0",
+                    workspace_pvc="my-ws-pvc",
+                    etc_pvc="my-etc-pvc",
+                    workspace_mount_path="/mnt/workspace",
+                    etc_mount_path="/mnt/etc",
+                ),
+                project,
+                ctx,
+            )
+
+            values_path = os.path.join(_client_chart_dir(ctx, "site-1"), ProvFileName.VALUES_YAML)
+            with open(values_path) as f:
+                values = yaml.safe_load(f)
+
+        assert values["persistence"]["workspace"]["claimName"] == "my-ws-pvc"
+        assert values["persistence"]["workspace"]["friendlyName"] == "my-ws-pvc"
+        assert values["persistence"]["workspace"]["mountPath"] == "/mnt/workspace"
+        assert values["persistence"]["etc"]["claimName"] == "my-etc-pvc"
+        assert values["persistence"]["etc"]["friendlyName"] == "my-etc-pvc"
+        assert values["persistence"]["etc"]["mountPath"] == "/mnt/etc"
+
 
 # ---------------------------------------------------------------------------
 # Server chart tests
@@ -299,8 +327,10 @@ class TestServerChart:
             _run(HelmChartBuilder(docker_image="myregistry/nvflare:2.7.0"), project, ctx)
 
             templates_dir = os.path.join(_server_chart_dir(ctx, project), "templates")
+            assert os.path.isfile(os.path.join(templates_dir, "_helpers.tpl"))
             assert os.path.isfile(os.path.join(templates_dir, "server-deployment.yaml"))
             assert os.path.isfile(os.path.join(templates_dir, "server-service.yaml"))
+            assert os.path.isfile(os.path.join(templates_dir, "server-tcp-services.yaml"))
 
     def test_server_deployment_uses_provided_image(self):
         """Image repo and tag are stored in values.yaml; the deployment template references them via .Values.image."""
@@ -443,8 +473,10 @@ class TestServerChart:
                 values = yaml.safe_load(f)
 
             assert values["persistence"]["workspace"]["claimName"] == "my-ws-pvc"
+            assert values["persistence"]["workspace"]["friendlyName"] == "my-ws-pvc"
             assert values["persistence"]["workspace"]["mountPath"] == "/mnt/workspace"
             assert values["persistence"]["etc"]["claimName"] == "my-etc-pvc"
+            assert values["persistence"]["etc"]["friendlyName"] == "my-etc-pvc"
             assert values["persistence"]["etc"]["mountPath"] == "/mnt/etc"
 
     def test_no_overseer_files_generated(self):

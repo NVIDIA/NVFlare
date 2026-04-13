@@ -75,8 +75,10 @@ def _helm_src(role: str, filename: str) -> str:
 | `image.tag` | Container image tag |
 | `image.pullPolicy` | `IfNotPresent` |
 | `persistence.etc.claimName` | PVC name for startup kit |
+| `persistence.etc.friendlyName` | Display name for the etc PVC (same as `claimName`) |
 | `persistence.etc.mountPath` | Mount path for etc PVC |
 | `persistence.workspace.claimName` | PVC name for workspace |
+| `persistence.workspace.friendlyName` | Display name for the workspace PVC (same as `claimName`) |
 | `persistence.workspace.mountPath` | Mount path for workspace PVC |
 | `fedLearnPort` | FL client connection port (from `CtxKey.FED_LEARN_PORT`) |
 | `adminPort` | Admin console port; `null` when equal to `fedLearnPort` |
@@ -181,8 +183,10 @@ Requires `microk8s enable ingress`. The ingress controller DaemonSet must also b
 | `image.tag` | Container image tag |
 | `image.pullPolicy` | `Always` |
 | `persistence.etc.claimName` | PVC name for startup kit |
+| `persistence.etc.friendlyName` | Display name for the etc PVC (same as `claimName`) |
 | `persistence.etc.mountPath` | Mount path for etc PVC |
 | `persistence.workspace.claimName` | PVC name for workspace |
+| `persistence.workspace.friendlyName` | Display name for the workspace PVC (same as `claimName`) |
 | `persistence.workspace.mountPath` | Mount path for workspace PVC |
 | `port` | Port job pods use to communicate back to this client process |
 | `command` | `[/usr/local/bin/python3]` |
