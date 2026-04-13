@@ -743,12 +743,15 @@ class FederatedServer(BaseServer):
         payload = request.payload
         client = request.get_header(key=MessageHeaderKey.ORIGIN)
 
-        # Validate sender identity before processing
-        with self.engine.new_context() as fl_ctx:
-            validated = self.client_manager.validate_client(request, fl_ctx)
-            if not validated:
-                self.logger.warning(f"Dropped unauthenticated Job Failure report from {client}")
-                return
+        # Validate sender identity using token only.
+        # Note: validate_client() cannot be used here because the
+        # REPORT_JOB_FAILURE message (sent by ClientExecutor via
+        # fire_and_forget) does not carry a PROJECT_NAME header —
+        # only TOKEN is injected by the outgoing auth filter.
+        token = request.get_header(CellMessageHeaderKeys.TOKEN)
+        if not token or not self.client_manager.is_from_authorized_client(token):
+            self.logger.warning(f"Dropped unauthenticated Job Failure report from {client}")
+            return
 
         if not isinstance(payload, dict):
             self.logger.error(
