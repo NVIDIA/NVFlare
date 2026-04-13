@@ -18,8 +18,9 @@ import time
 from abc import abstractmethod
 
 try:
-    import docker
     import docker.errors
+
+    import docker
 
     _DOCKER_AVAILABLE = True
 except ImportError:
@@ -27,8 +28,8 @@ except ImportError:
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
-from nvflare.apis.job_def import JobMetaKey, get_job_meta_study
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import JobMetaKey, get_job_meta_study
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
 from nvflare.utils.job_launcher_utils import (
@@ -80,15 +81,21 @@ class DockerJobHandle(JobHandleSpec):
     immediately without querying Docker.
     """
 
-    def __init__(self, container_id: str, container_name: str, docker_client, timeout=None, pending_timeout: int = 30):
+    def __init__(
+        self,
+        container_id: str,
+        container_name: str,
+        docker_client,
+        timeout: int = 30,
+        shutdown_timeout: int = 60,
+    ):
         super().__init__()
         self.container_id = container_id
         self.container_name = container_name
         self.docker_client = docker_client
         self.timeout = timeout
+        self.shutdown_timeout = shutdown_timeout
         self.terminal_state: JobReturnCode = None  # set once, never cleared
-        self._stuck_count = 0
-        self._max_stuck_count = timeout if timeout is not None else pending_timeout
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def _get_container(self):
@@ -118,16 +125,6 @@ class DockerJobHandle(JobHandleSpec):
         exit_code = container.attrs.get("State", {}).get("ExitCode", 1)
         return _exit_code_to_return_code(exit_code)
 
-    def _stuck_in_created(self, status: str) -> bool:
-        """Detect containers stuck in 'created' that never start."""
-        if status == DockerStatus.CREATED:
-            self._stuck_count += 1
-            if self._max_stuck_count is not None and self._stuck_count >= self._max_stuck_count:
-                return True
-        else:
-            self._stuck_count = 0
-        return False
-
     def _remove_container(self):
         """Remove the container after it has reached a terminal state."""
         try:
@@ -154,7 +151,13 @@ class DockerJobHandle(JobHandleSpec):
         return JobReturnCode.UNKNOWN
 
     def wait(self):
-        """Block until the container reaches a terminal state."""
+        """Block until the container reaches a terminal state.
+
+        Uses shutdown_timeout as a workaround for containers that hang during NVFlare
+        shutdown due to non-daemon threads (conn_mgr/frame_mgr) that never fully exit.
+        After shutdown_timeout seconds the container is force-terminated.
+        """
+        start = time.time()
         while True:
             if self.terminal_state is not None:
                 return
@@ -164,6 +167,13 @@ class DockerJobHandle(JobHandleSpec):
             if container.status in TERMINAL_STATUSES:
                 self.terminal_state = self._resolve_terminal_return_code(container)
                 self._remove_container()
+                return
+            if time.time() - start > self.shutdown_timeout:
+                self.logger.warning(
+                    f"container {self.container_name} did not exit within {self.shutdown_timeout}s; "
+                    f"force-terminating (workaround for NVFlare thread shutdown hang)"
+                )
+                self.terminate()
                 return
             time.sleep(1)
 
@@ -203,11 +213,6 @@ class DockerJobHandle(JobHandleSpec):
                 return False
 
             status = container.status
-
-            if self._stuck_in_created(status):
-                self.logger.warning(f"container {self.container_name} stuck in 'created'; terminating")
-                self.terminate()
-                return False
 
             if status in states_to_enter:
                 return True
@@ -259,8 +264,8 @@ class DockerJobLauncher(JobLauncherSpec):
         workspace: str = None,
         network: str = "nvflare-network",
         python_path: str = "/usr/local/bin/python",
-        timeout=None,
-        pending_timeout: int = 30,
+        timeout: int = 30,
+        shutdown_timeout: int = 60,
         extra_container_kwargs: dict = None,
     ):
         """
@@ -271,8 +276,10 @@ class DockerJobLauncher(JobLauncherSpec):
                        Docker daemon as a volume bind source.
             network: Docker network name. Must already exist.
             python_path: Python executable path inside the job container.
-            timeout: max seconds to wait for container to reach RUNNING state.
-            pending_timeout: stuck-detection threshold (poll iterations) when timeout is None.
+            timeout: max seconds to wait for container to reach RUNNING state (default 30).
+            shutdown_timeout: max seconds in wait() before force-terminating after job completes.
+                              Workaround for NVFlare thread shutdown hang (conn_mgr/frame_mgr)
+                              that prevents container from exiting cleanly (default 60).
             extra_container_kwargs: site-level default docker run kwargs passed to all job containers
                                     on this site. Job-level container_kwargs in deploy_map take precedence
                                     on conflict. Keys use Docker SDK naming (underscores, not hyphens).
@@ -290,7 +297,7 @@ class DockerJobLauncher(JobLauncherSpec):
         self.network = network
         self.python_path = python_path
         self.timeout = timeout
-        self.pending_timeout = pending_timeout
+        self.shutdown_timeout = shutdown_timeout
         extra_container_kwargs = extra_container_kwargs or {}
         _RESERVED_KWARGS = {"volumes", "network", "environment", "command", "name", "detach", "user", "working_dir"}
         reserved_used = _RESERVED_KWARGS & set(extra_container_kwargs.keys())
@@ -308,12 +315,12 @@ class DockerJobLauncher(JobLauncherSpec):
             if not _DOCKER_AVAILABLE:
                 raise RuntimeError("docker SDK not installed; install it with: pip install docker")
             try:
-                self._docker_client = docker.from_env()
-                self._docker_client.ping()
+                client = docker.from_env()
+                client.ping()
             except Exception as e:
                 raise RuntimeError(f"cannot connect to Docker daemon: {e}")
             try:
-                self._docker_client.networks.get(self.network)
+                client.networks.get(self.network)
             except docker.errors.NotFound:
                 raise RuntimeError(
                     f"Docker network '{self.network}' does not exist. "
@@ -321,6 +328,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 )
             except docker.errors.APIError as e:
                 raise RuntimeError(f"error checking Docker network '{self.network}': {e}")
+            self._docker_client = client
         return self._docker_client
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
@@ -458,7 +466,7 @@ class DockerJobLauncher(JobLauncherSpec):
             container_name=container_name,
             docker_client=docker_client,
             timeout=self.timeout,
-            pending_timeout=self.pending_timeout,
+            shutdown_timeout=self.shutdown_timeout,
         )
 
         try:

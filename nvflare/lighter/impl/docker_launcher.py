@@ -73,7 +73,6 @@ class DockerLauncherBuilder(Builder):
             args={
                 "network": "nvflare-network",
                 "python_path": "/usr/local/bin/python",
-                "pending_timeout": 30,
             },
         )
 
@@ -104,7 +103,6 @@ class DockerLauncherBuilder(Builder):
             args={
                 "network": "nvflare-network",
                 "python_path": "/usr/local/bin/python",
-                "pending_timeout": 30,
             },
         )
 

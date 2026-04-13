@@ -290,10 +290,10 @@ class TestDockerJobHandleEnterStates:
         assert result is False
         assert h.terminal_state == JobReturnCode.EXECUTION_ERROR
 
-    def test_stuck_in_created_terminates_and_returns_false(self):
+    def test_timeout_in_created_terminates_and_returns_false(self):
         dc = _make_docker_client()
         dc.containers.get.return_value = _make_container("created")
-        h = _make_handle(docker_client=dc, pending_timeout=3)
+        h = _make_handle(docker_client=dc, timeout=1)
         result = h.enter_states(["running"])
         assert result is False
         assert h.terminal_state == JobReturnCode.ABORTED
