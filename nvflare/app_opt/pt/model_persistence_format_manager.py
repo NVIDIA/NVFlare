@@ -132,6 +132,17 @@ class PTModelPersistenceFormatManager(object):
 
         Args:
             ml (ModelLearnable): updated information to be merged into existing ModelLearnable
+
+        Raises:
+            ValueError: if the incoming learnable is invalid, if any matching key
+                has a shape mismatch, if a non-empty update has zero compatible
+                matches with the persisted checkpoint, or if the update would
+                introduce keys that do not already exist in the checkpoint.
+
+        Notes:
+            Partial updates are supported: learned weights only need to cover the
+            subset of checkpoint keys that the client actually trained. The
+            original persisted weights for untouched keys are preserved.
         """
         err = validate_model_learnable(ml)
         if err:

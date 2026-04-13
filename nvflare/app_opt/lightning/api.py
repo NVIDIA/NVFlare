@@ -44,6 +44,10 @@ def patch(
             used to load the received model. Defaults to `True`.
             See https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.load_state_dict for details.
             NVFlare still validates incoming keys and shapes before calling ``load_state_dict()``.
+            With ``True``, any incoming key that does not exist in the local Lightning
+            module is rejected before loading. With ``False``, NVFlare warns and
+            filters the payload down to matching keys, which is useful for partial
+            model updates where the client only keeps part of the server keyspace.
         update_fit_loop: whether to increase `trainer.fit_loop.max_epochs` and `trainer.fit_loop.epoch_loop.max_steps` each FL round.
             Defaults to `True` which is suitable for most PyTorch Lightning applications.
 
@@ -103,6 +107,9 @@ class FLCallback(Callback):
                 used to load the received model. Defaults to `True`.
                 See https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.load_state_dict for details.
                 NVFlare still validates incoming keys and shapes before calling ``load_state_dict()``.
+                With ``True``, unexpected incoming keys are treated as contract
+                drift and fail fast. With ``False``, unexpected keys are logged
+                and ignored, while compatible keys are still loaded.
             update_fit_loop: whether to increase `trainer.fit_loop.max_epochs` and `trainer.fit_loop.epoch_loop.max_steps` each FL round.
                 Defaults to `True` which is suitable for most PyTorch Lightning applications.
         """
@@ -198,6 +205,15 @@ class FLCallback(Callback):
                 self.reset_state(trainer)
 
     def _receive_and_update_model(self, trainer, pl_module):
+        """Receive a global model and apply the compatible portion locally.
+
+        The incoming payload is validated before ``load_state_dict()`` so that
+        wrapper-induced key drift and shape mismatches fail with actionable
+        diagnostics instead of being silently skipped. In non-strict mode,
+        incoming keys that are not present locally are filtered out after a
+        warning, which allows partial model updates as long as some keys match.
+        """
+
         model = self._receive_model(trainer)
         if model:
             if model.params:
