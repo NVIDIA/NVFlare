@@ -225,10 +225,8 @@ class CertBuilder(Builder):
             f.write(serialize_cert(cert))
         key_path = os.path.join(dest_dir, f"{base_name}.key")
         fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        try:
-            os.write(fd, serialize_pri_key(pri_key))
-        finally:
-            os.close(fd)
+        with os.fdopen(fd, "wb") as f:
+            f.write(serialize_pri_key(pri_key))
 
         if participant.type in [ParticipantType.CLIENT, ParticipantType.RELAY]:
             self._build_internal_listener_cert(participant, ctx)
