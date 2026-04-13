@@ -338,8 +338,6 @@ spec:
           mountPath: /var/tmp/nvflare/workspace
         - name: nvfldata
           mountPath: /var/tmp/nvflare/data
-        - name: nvfletc
-          mountPath: /var/tmp/nvflare/etc
       resources:
         limits:
           nvidia.com/gpu: <num_of_gpus>   # omitted if None
@@ -351,9 +349,6 @@ spec:
     - name: nvfldata
       persistentVolumeClaim:
         claimName: <data_pvc>
-    - name: nvfletc
-      persistentVolumeClaim:
-        claimName: <etc_pvc>
 ```
 
 #### K8sJobLauncher
@@ -362,10 +357,9 @@ Constructor parameters:
 
 | Parameter | Default | Purpose |
 |-----------|---------|---------|
-| `config_file_path` | (required) | Path to kubeconfig file. Loaded via `config.load_kube_config()` at init time. |
-| `workspace_pvc` | (required) | PVC claim name for the NVFlare workspace. |
-| `etc_pvc` | (required) | PVC claim name for configuration/etc data. |
-| `data_pvc_file_path` | (required) | Path to a YAML file mapping PVC names to mount paths for training data. Read and validated at init time; raises `ValueError` if the file is empty/contains no entries, or if the parsed YAML is not a `dict`. Only the first key (PVC name) is used. |
+| `config_file_path` | (required) | Path to kubeconfig file. Loaded lazily on first `launch_job` call via `config.load_kube_config()`. |
+| `workspace_pvc` | (required) | PVC claim name for the NVFlare workspace volume (`nvflws`). |
+| `study_data_pvc_file_path` | (required) | Path to a YAML file mapping study names to data PVC claim names. Read and validated lazily on first `launch_job` call; raises `ValueError` if the file is empty, if the parsed YAML is not a `dict`, or if the `"default"` key is absent. |
 | `timeout` | `None` | Maximum wall-clock seconds for `enter_states([RUNNING])`. Also used as `_max_stuck_count`. If `None`, `pending_timeout` governs stuck detection instead. |
 | `namespace` | `"default"` | Kubernetes namespace. |
 | `pending_timeout` | `30` | Stuck-detection threshold (poll iterations) when `timeout` is `None`. Passed to `K8sJobHandle`. |
@@ -375,11 +369,13 @@ Launch sequence:
 
 | Step | Action |
 |------|--------|
-| 1 | Validate and sanitize job ID: `raw_job_id = job_meta.get(JobConstants.JOB_ID)`; raises `RuntimeError` if missing or falsy. Then `job_id = uuid4_to_rfc1123(raw_job_id)`. All subsequent operations use this RFC 1123-compliant name. Extract `job_image`, `site_name`, and optional `num_of_gpus` from `job_meta`. |
-| 2 | Read `JOB_PROCESS_ARGS` from `fl_ctx`; raises `RuntimeError` if the dict is absent. Raises `RuntimeError` if `EXE_MODULE` is missing or falsy. Extract the module name via `_, job_cmd = exe_module_entry`. |
-| 3 | Build `job_config` dict: name (`job_id`), image, container name (`container-{job_id}`), command, volume mounts/PVCs, `module_args` from `get_module_args()`. `set_list` is conditionally set: if `fl_ctx.get_prop(FLContextKey.ARGS)` is non-None and `getattr(args, "set", None)` is non-None, `set_list = args.set` is added (see note below). Using `getattr` rather than direct attribute access guards against non-standard `ARGS` objects that lack a `set` attribute. If `num_of_gpus` is truthy (non-None **and** non-zero), adds `job_config["resources"] = {"limits": {"nvidia.com/gpu": num_of_gpus}}`; a value of `0` is intentionally excluded to avoid injecting `nvidia.com/gpu: 0` into the pod spec, which would explicitly request zero GPUs and can affect scheduling on GPU-enabled clusters differently than omitting the limit entirely. |
+| 0a | **Lazy PVC loading** (first call only): open `study_data_pvc_file_path`, parse YAML. Raises `ValueError` if the result is falsy, not a `dict`, or lacks a `"default"` key. Stores `self.default_data_pvc` and `self.study_data_pvc_dict` for subsequent calls. |
+| 0b | **Lazy k8s client init** (first call only): `config.load_kube_config(config_file_path)` (falls back to a bare `Configuration()` on `AttributeError`), then `Configuration.set_default(c)`, then `self.core_v1 = CoreV1Api()`. |
+| 1 | Validate and sanitize job ID: `raw_job_id = job_meta.get(JobConstants.JOB_ID)`; raises `RuntimeError` if missing or falsy. Then `job_id = uuid4_to_rfc1123(raw_job_id)`. All subsequent operations use this RFC 1123-compliant name. Extract `site_name`, `job_image`, and optional `num_of_gpus` from `job_meta` and `fl_ctx`. Raise `RuntimeError` if `WORKSPACE_OBJECT` is absent from `fl_ctx`; obtain `app_custom_folder` from it. |
+| 2 | Read `JOB_PROCESS_ARGS` from `fl_ctx`; raises `RuntimeError` if the dict is absent. Raises `RuntimeError` if `EXE_MODULE` is missing or falsy. Extract the module name via `_, job_cmd = exe_module_entry`. Resolve the data PVC: `data_pvc = study_data_pvc_dict.get(study, default_data_pvc)` where `study = job_meta.get(JobMetaKey.STUDY)`. Falls back to `default_data_pvc` for unknown or absent study names. |
+| 3 | Build `job_config` dict: name (`job_id`), image, container name (`container-{job_id}`), command (`job_cmd`), volume mounts/PVCs (workspace PVC + resolved data PVC), `module_args` from `get_module_args()`. If `app_custom_folder` is non-empty, add `env: {PYTHONPATH: app_custom_folder}`. `set_list` is conditionally set: if `fl_ctx.get_prop(FLContextKey.ARGS)` is non-None and `getattr(args, "set", None)` is non-None, `set_list = args.set` is added (see note below). Using `getattr` rather than direct attribute access guards against non-standard `ARGS` objects that lack a `set` attribute. If `num_of_gpus` is truthy (non-None **and** non-zero), adds `job_config["resources"] = {"limits": {"nvidia.com/gpu": num_of_gpus}}`; a value of `0` is intentionally excluded to avoid injecting `nvidia.com/gpu: 0` into the pod spec, which would explicitly request zero GPUs and can affect scheduling on GPU-enabled clusters differently than omitting the limit entirely. |
 | 4 | Create `K8sJobHandle(job_id, core_v1, job_config, namespace=self.namespace, timeout=self.timeout, pending_timeout=self.pending_timeout)` which builds the pod manifest. |
-| 5 | `core_v1.create_namespaced_pod(body=pod_manifest, namespace)` in a `try/except Exception` block. On any exception — including `ApiException` (K8s API error) and lower-level errors such as network timeouts or serialization failures — `job_handle.terminate()` is called (always sets `terminal_state = TERMINATED`) and the handle is returned. The scope of this handler is intentionally limited to this single API call; it does not swallow exceptions from the polling loop in step 6. |
+| 5 | `core_v1.create_namespaced_pod(body=pod_manifest, namespace)` in a `try/except Exception` block. On any exception — including `ApiException` (K8s API error) and lower-level errors such as network timeouts or serialization failures — logs the error, sets `job_handle.terminal_state = TERMINATED` directly, and returns the handle. The scope of this handler is intentionally limited to this single API call; it does not swallow exceptions from the polling loop in step 6. |
 | 6 | Call `job_handle.enter_states([RUNNING])` in a separate `try/except BaseException` block. On any exception (including `KeyboardInterrupt`) → `job_handle.terminate()` then re-raise. This ensures a pod already created in step 5 is not orphaned if the blocking poll loop is interrupted. The return value is captured: if `False`, logs a warning `"unable to enter running phase {job_id}"`. Inside `enter_states`: stuck detection and plain timeout both call `terminate()` (always sets `terminal_state = TERMINATED`) then return `False`; if the pod reaches a terminal phase (`Failed`/`Succeeded`), `terminal_state` is set from `POD_STATE_MAPPING` and `enter_states` returns `False` without calling `terminate()`. Setting `terminal_state` in all `False`-return paths prevents `wait()` from looping if the pod is GC'd before `wait()` runs. |
 | 7 | Return `job_handle`. The K8s launcher always returns a handle; callers detect launch failure when `poll()` or `wait()` resolves. |
 
@@ -438,7 +434,7 @@ Server and client subclasses provide the implementation of these hooks, producin
 | **Isolation** | Shared host, inherited env | Pod isolation, PVC-backed volumes |
 | **Command format** | Shell command string (`sys.executable -m ...`) | Structured `command: ["/usr/local/bin/python"]` + `args` list in pod spec |
 | **Workspace access** | Direct filesystem (same host) | PersistentVolumeClaims |
-| **Data access** | Direct filesystem | Via PVC (configured in YAML) |
+| **Data access** | Direct filesystem | Via PVC resolved per-study: `study_data_pvc_dict.get(study, default_data_pvc)` from `study_data_pvc_file_path` YAML; always mounted at `/var/tmp/nvflare/data` |
 | **Start verification** | None (spawn returns immediately) | `enter_states([RUNNING])` called (reads `self.timeout`); return value is checked — `False` logs a debug message but handle is still always returned; on stuck detection or plain timeout, `terminate()` is called (sets `terminal_state = TERMINATED`); callers detect failure via `poll()` |
 | **Wait mechanism** | `subprocess.Popen.wait()` (OS-level block) | Direct while loop via `_query_state()`; no timeout; exits when `terminal_state` set or `SUCCEEDED`/`TERMINATED` reached |
 | **Terminate** | `SIGTERM`/`SIGKILL` via `ProcessAdapter` | `delete_namespaced_pod(grace_period=0)`; `terminal_state` always set to `TERMINATED` — on success, 404, other `ApiException`, or any lower-level `Exception` (network/serialization). Errors are logged but never propagated. |
@@ -548,21 +544,23 @@ Launchers are registered as FL components in the site's `resources.json`. The co
   "args": {
     "config_file_path": "/path/to/kubeconfig",
     "workspace_pvc": "nvflare-workspace-pvc",
-    "etc_pvc": "nvflare-etc-pvc",
-    "data_pvc_file_path": "/path/to/data_pvc.yaml",
+    "study_data_pvc_file_path": "/path/to/study_data_pvc.yaml",
     "timeout": 120,
     "namespace": "nvflare"
   }
 }
 ```
 
-The `data_pvc_file_path` YAML file maps PVC names to mount paths:
+The `study_data_pvc_file_path` YAML file maps study names to data PVC claim names, with a required `"default"` fallback:
 
 ```yaml
-my-data-pvc: /var/tmp/nvflare/data
+default: default-data-pvc
+study-alpha: study-alpha-data-pvc
+study-beta: study-beta-data-pvc
 ```
 
-> Note: Currently only the PVC name (the YAML key) is used. The mount path value is ignored — the data volume is always mounted at the hardcoded path `/var/tmp/nvflare/data`.
+The PVC for a given job is selected by first looking up the study from the job metadata dict, e.g. `study = job_meta.get(JobMetaKey.STUDY.value)`, and then resolving the claim with `study_data_pvc_dict.get(study, default_data_pvc)`. The data volume is always mounted at `/var/tmp/nvflare/data` regardless of the chosen PVC.
+
 
 ---
 
