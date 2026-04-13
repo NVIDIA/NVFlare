@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,22 +14,12 @@
 
 """Model registry for federated VLM training.
 
-Each backend registers itself by calling :func:`register_backend`.
-The unified FL client selects a backend via ``--model_backend <name>``.
-
-Adding a new model:
-  1. Create ``src/<model>_backend.py`` with a class implementing the
-     same interface as :class:`BLIPBackend` / :class:`JanusProBackend`.
-  2. Call ``register_backend(name, instance)`` at module import time.
-  3. Import the module in ``src/__init__.py``.
+Each backend registers itself by calling :func:`register_backend` at import time.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
-
-import torch
-from torch.utils.data import Dataset
+from typing import Any, Dict, List
 
 _REGISTRY: Dict[str, Any] = {}
 
