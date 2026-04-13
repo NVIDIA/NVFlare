@@ -8,7 +8,7 @@ flash_attn==2.7.4.post1
 triton==3.2.0
 accelerate==1.7.0
 torchcodec==0.2
-peft==0.17.1
+peft==0.18.0
 wandb==0.24.2
 datasets>=2.18.0
 Pillow>=10.0.0
