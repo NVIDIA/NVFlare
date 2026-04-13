@@ -16,10 +16,7 @@ from nvflare.fuel.hci.reg import CommandEntry
 from nvflare.fuel.hci.server.authz import AuthzFilter, PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 
-try:
-    from nvflare.security.authz import AuthorizationService, Person
-except ImportError:
-    from nvflare.fuel.sec.authz import AuthorizationService, Person
+from nvflare.fuel.sec.authz import AuthorizationService, Person
 
 
 class TestAuthzFilterSubmitterRole:
