@@ -276,10 +276,8 @@ class CertBuilder(Builder):
             f.write(serialize_cert(tmp_cert))
         key_path_bn = os.path.join(dest_dir, f"{bn}.key")
         fd = os.open(key_path_bn, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        try:
-            os.write(fd, serialize_pri_key(tmp_pri_key))
-        finally:
-            os.close(fd)
+        with os.fdopen(fd, "wb") as f:
+            f.write(serialize_pri_key(tmp_pri_key))
 
     def build(self, project: Project, ctx: ProvisionContext):
         self._build_root(project.name, subject_org=None)
