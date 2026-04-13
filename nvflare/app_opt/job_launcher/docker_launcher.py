@@ -413,9 +413,7 @@ class DockerJobLauncher(JobLauncherSpec):
         resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
         num_gpus = (resource_spec.get(site_name) or {}).get("num_of_gpus", 0)
         if num_gpus:
-            merged_container_kwargs.setdefault(
-                "device_requests", [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
-            )
+            merged_container_kwargs.setdefault("device_requests", [{"Count": num_gpus, "Capabilities": [["gpu"]]}])
 
         # Volumes: always mount workspace; optionally mount study data if local/study_data.json exists
         volumes = {
@@ -427,6 +425,7 @@ class DockerJobLauncher(JobLauncherSpec):
         if os.path.isfile(study_data_file):
             try:
                 import json as _json
+
                 with open(study_data_file) as f:
                     study_data_map = _json.load(f)
                 study = get_job_meta_study(job_meta)
