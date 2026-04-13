@@ -5,6 +5,9 @@ Different from Machine learning experiment tracking, where it focused on the tra
 
 This guide describes how to set up NVFLARE metrics publishing to StatsD Exporter, which then can be scraped by Prometheus and visualized with Grafana.
 
+> Looking for Kubernetes or mixed-environment deployment guidance?
+> Start with [k8s/GETTING_STARTED.md](k8s/GETTING_STARTED.md) for a short path chooser, then use [k8s/README.md](k8s/README.md) for the Kubernetes monitoring stack and [jobs/k8s_hello_numpy/README.md](jobs/k8s_hello_numpy/README.md) for the validated minimal in-cluster job example.
+
 ## Setup Types
 
 ### 1. Shared Monitoring System for All Sites
