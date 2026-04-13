@@ -519,6 +519,26 @@ class RobertaPreTrainedModel(PreTrainedModel):
         self.all_tied_weights_keys = self.get_expanded_tied_weights_keys(all_submodels=False)
         self.init_weights()
 
+    def _convert_head_mask_to_5d(self, head_mask, num_hidden_layers):
+        if head_mask.dim() == 1:
+            head_mask = head_mask.unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+            head_mask = head_mask.expand(num_hidden_layers, -1, -1, -1, -1)
+        elif head_mask.dim() == 2:
+            head_mask = head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)
+        assert head_mask.dim() == 5, f"head_mask.dim != 5, instead {head_mask.dim()}"
+        head_mask = head_mask.to(dtype=self.dtype)
+        return head_mask
+
+    def get_head_mask(self, head_mask, num_hidden_layers, is_attention_chunked=False):
+        if head_mask is not None:
+            head_mask = self._convert_head_mask_to_5d(head_mask, num_hidden_layers)
+            if is_attention_chunked:
+                head_mask = head_mask.unsqueeze(-1)
+        else:
+            head_mask = [None] * num_hidden_layers
+
+        return head_mask
+
     # Copied from transformers.models.bert.modeling_bert.BertPreTrainedModel._init_weights
     def _init_weights(self, module):
         """Initialize the weights"""
@@ -711,7 +731,7 @@ class RobertaModel(RobertaPreTrainedModel):
             attention_mask_padding = torch.ones(input_shape[0], n_prompt_tokens).to(attention_mask.device)
             attention_mask = torch.cat([attention_mask_padding, attention_mask], 1).to(input_ids.device)
             input_shape = attention_mask.shape
-        extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(attention_mask, input_shape, device)
+        extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(attention_mask, input_shape)
         # If a 2D or 3D attention mask is provided for the cross-attention
         # we need to make broadcastable to [batch_size, num_heads, seq_length, seq_length]
         if self.config.is_decoder and encoder_hidden_states is not None:
