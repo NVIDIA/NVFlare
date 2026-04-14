@@ -26,7 +26,7 @@ PYTHON_BIN="${PYTHON:-python}"
 "$PYTHON_BIN" -m pip install -U pip
 
 echo "==> Installing PyTorch first (required for building flash_attn)..."
-"$PYTHON_BIN" -m pip install torch==2.6.0 torchvision==0.21.0
+"$PYTHON_BIN" -m pip install torch==2.8.0 torchvision==0.23.0
 
 echo "==> Installing build-time deps for flash_attn (e.g. psutil)..."
 "$PYTHON_BIN" -m pip install psutil packaging ninja
