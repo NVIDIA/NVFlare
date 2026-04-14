@@ -393,16 +393,16 @@ def _make_fl_ctx(
     return fl_ctx, job_args
 
 
-def _make_job_meta(job_id="job-1", site_name="site-1", container_kwargs=None, resource_spec=None):
+def _make_job_meta(job_id="job-1", site_name="site-1", docker_spec=None, resource_spec=None):
     deploy_entry = {"sites": [site_name], JobConstants.JOB_IMAGE: "nvflare/nvflare:test"}
-    if container_kwargs is not None:
-        deploy_entry["container_kwargs"] = container_kwargs
     meta = {
         JobConstants.JOB_ID: job_id,
         "deploy_map": {"app": [deploy_entry]},
     }
     if resource_spec is not None:
         meta[JobMetaKey.RESOURCE_SPEC.value] = resource_spec
+    elif docker_spec is not None:
+        meta[JobMetaKey.RESOURCE_SPEC.value] = {site_name: {"docker": docker_spec}}
     return meta
 
 
@@ -494,7 +494,46 @@ class TestDockerJobLauncherLaunchJob:
         assert "/var/run/docker.sock" not in volumes
 
     def test_launch_gpu_via_resource_spec_num_of_gpus(self):
-        """num_of_gpus in resource_spec is translated to device_requests for the job container."""
+        """num_of_gpus in resource_spec.docker is translated to device_requests for the job container."""
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1", docker_spec={"num_of_gpus": 2})
+        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
+            launcher.launch_job(job_meta, fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        device_requests = call_kwargs.get("device_requests")
+        assert device_requests == [{"Count": 2, "Capabilities": [["gpu"]]}]
+
+    def test_launch_docker_spec_device_requests_overrides_num_of_gpus(self):
+        """Explicit device_requests in docker_spec takes precedence over num_of_gpus."""
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        explicit_dr = [{"Count": 4, "Capabilities": [["gpu"]]}]
+        job_meta = _make_job_meta(
+            site_name="site-1",
+            docker_spec={"num_of_gpus": 1, "device_requests": explicit_dr},
+        )
+        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
+            launcher.launch_job(job_meta, fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        assert call_kwargs.get("device_requests") == explicit_dr
+
+    def test_launch_legacy_flat_resource_spec_not_used_for_docker(self):
+        """Legacy flat resource_spec (process mode) is not applied to Docker containers."""
         launcher = _make_launcher()
         dc = launcher._docker_client
         container = MagicMock()
@@ -508,30 +547,7 @@ class TestDockerJobLauncherLaunchJob:
             launcher.launch_job(job_meta, fl_ctx)
 
         call_kwargs = dc.containers.run.call_args[1]
-        device_requests = call_kwargs.get("device_requests")
-        assert device_requests == [{"Count": 2, "Capabilities": [["gpu"]]}]
-
-    def test_launch_container_kwargs_device_requests_overrides_resource_spec(self):
-        """Explicit device_requests in container_kwargs takes precedence over resource_spec.num_of_gpus."""
-        launcher = _make_launcher()
-        dc = launcher._docker_client
-        container = MagicMock()
-        container.id = "abc123"
-        dc.containers.run.return_value = container
-        dc.containers.get.return_value = _make_container("running")
-
-        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
-        explicit_dr = [{"Count": 4, "Capabilities": [["gpu"]]}]
-        job_meta = _make_job_meta(
-            site_name="site-1",
-            container_kwargs={"device_requests": explicit_dr},
-            resource_spec={"site-1": {"num_of_gpus": 1}},
-        )
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
-            launcher.launch_job(job_meta, fl_ctx)
-
-        call_kwargs = dc.containers.run.call_args[1]
-        assert call_kwargs.get("device_requests") == explicit_dr
+        assert call_kwargs.get("device_requests") is None
 
     def test_launch_no_container_kwargs_no_extra_keys(self):
         launcher = _make_launcher()
@@ -576,7 +592,7 @@ class TestDockerJobLauncherLaunchJob:
 
 
 # ---------------------------------------------------------------------------
-# DockerJobLauncher — container_kwargs merge (site-level defaults + job-level overrides)
+# DockerJobLauncher — container kwargs merge (site-level defaults + job-level docker_spec)
 # ---------------------------------------------------------------------------
 
 
@@ -597,22 +613,22 @@ class TestContainerKwargsMerge:
         call_kwargs = self._run_launch(launcher, _make_job_meta())
         assert call_kwargs.get("ipc_mode") == "host"
 
-    def test_job_kwargs_from_deploy_map_passed(self):
+    def test_job_kwargs_from_docker_spec_passed(self):
         launcher = _make_launcher()
-        job_meta = _make_job_meta(container_kwargs={"shm_size": "8g"})
+        job_meta = _make_job_meta(docker_spec={"shm_size": "8g"})
         call_kwargs = self._run_launch(launcher, job_meta)
         assert call_kwargs.get("shm_size") == "8g"
 
     def test_job_and_site_kwargs_merged(self):
         launcher = _make_launcher(extra_container_kwargs={"ipc_mode": "host"})
-        job_meta = _make_job_meta(container_kwargs={"shm_size": "8g"})
+        job_meta = _make_job_meta(docker_spec={"shm_size": "8g"})
         call_kwargs = self._run_launch(launcher, job_meta)
         assert call_kwargs.get("ipc_mode") == "host"
         assert call_kwargs.get("shm_size") == "8g"
 
     def test_job_kwargs_override_site_kwargs_on_conflict(self):
         launcher = _make_launcher(extra_container_kwargs={"shm_size": "2g"})
-        job_meta = _make_job_meta(container_kwargs={"shm_size": "8g"})
+        job_meta = _make_job_meta(docker_spec={"shm_size": "8g"})
         call_kwargs = self._run_launch(launcher, job_meta)
         assert call_kwargs.get("shm_size") == "8g"
 
@@ -642,16 +658,15 @@ class TestHandleEvent:
                 launcher.handle_event(EventType.BEFORE_JOB_LAUNCH, fl_ctx)
                 mock_add.assert_called_once()
 
-    def test_handle_event_skips_if_no_image(self):
-        """Jobs without a job image don't trigger the launcher at all."""
+    def test_handle_event_raises_if_no_image(self):
+        """DockerJobLauncher is configured for this site — missing image is an error, not a silent skip."""
         launcher = _make_launcher()
         fl_ctx, _ = _make_fl_ctx()
         fl_ctx.get_prop.side_effect = lambda key, *a, **kw: {FLContextKey.JOB_META: {}}.get(key)
 
         with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value=None):
-            with patch("nvflare.app_opt.job_launcher.docker_launcher.add_launcher") as mock_add:
+            with pytest.raises(RuntimeError, match="no job image was specified"):
                 launcher.handle_event(EventType.BEFORE_JOB_LAUNCH, fl_ctx)
-                mock_add.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

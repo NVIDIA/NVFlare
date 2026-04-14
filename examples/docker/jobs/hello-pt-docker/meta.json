@@ -3,14 +3,21 @@
     "min_clients": 2,
     "deploy_map": {
         "app": [
-	    {"sites": ["site-1"], "image": "nvflare-job:latest", "container_kwargs": {"shm_size": "8g", "ipc_mode": "host"}},
-	    {"sites": ["server"], "image": "nvflare-job:latest"},
-	    {"sites": ["site-2"]}
+            {"sites": ["site-1"], "image": "nvflare-job:latest"},
+            {"sites": ["server"], "image": "nvflare-job:latest"},
+            {"sites": ["site-2"]}
         ]
     },
     "resource_spec": {
-      "site-1": {
-        "num_of_gpus": 1
-      }
+        "site-1": {
+            "process": {
+                "num_of_gpus": 1
+            },
+            "docker": {
+                "num_of_gpus": 1,
+                "shm_size": "8g",
+                "ipc_mode": "host"
+            }
+        }
     }
 }

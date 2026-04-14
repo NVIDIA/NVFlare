@@ -551,6 +551,127 @@ When a second runtime needs support, the right refactor is to extract a `Contain
 
 ---
 
+## Design Considerations
+
+The following decisions were made during the design review of this PR and inform the
+recommended follow-up work.
+
+### Decision 1: Provisioning model — distributed (no builder in project.yml)
+
+**Chosen: Option 2 — distributed, no builder in project.yml.**
+
+Option 1 (centralized): project admin adds `DockerLauncherBuilder` / `K8sLauncherBuilder`
+to `project.yml`. Provisioning injects Docker/K8s scripts and launcher config into every
+site's startup kit automatically.
+
+Option 2 (distributed): provisioning generates the same startup kit as today (no Docker/K8s
+awareness). Each site admin runs a separate nvflare tool as a second step to opt their site
+into Docker or K8s mode. The tool generates:
+- `start_docker.sh` (Docker mode) or Helm charts (K8s mode) for that site
+- Updates `resources.json` with the right launcher and resource manager
+
+**Why Option 2:** the project admin does not need to know each site's runtime environment at
+provision time. Site admins are independent — one site may use Docker, another K8s, another
+plain process. Provisioning is decoupled from launch mode, which is a site-local concern.
+
+### Decision 2: Launchers are mutually exclusive; parent and job always use the same runtime
+
+Each site runs in exactly one launcher mode. The launcher determines how SJ/CJ are started
+relative to SP/CP.
+
+**Process launcher** (existing): SJ/CJ are subprocesses of SP/CP, sharing the same execution
+environment. This works on bare metal, inside a Docker container, or inside a K8s pod —
+the process launcher doesn't care about the host environment.
+
+```
+Process launcher (bare metal):  SP/CP (host process) ↔ SJ/CJ (subprocess, same host)
+Process launcher (in Docker):   SP/CP (container)    ↔ SJ/CJ (subprocess, same container)
+Process launcher (in K8s pod):  SP/CP (pod)          ↔ SJ/CJ (subprocess, same pod)
+```
+
+**Docker launcher** (new): SJ/CJ are started as **separate containers** per job, each with
+their own image. SP/CP must itself be a container to reach SJ/CJ via Docker DNS.
+
+```
+Docker launcher:  SP/CP (container) ↔ SJ/CJ (new container per job, own image)
+```
+
+**K8s launcher** (existing): SJ/CJ are started as **separate pods** per job.
+
+```
+K8s launcher:  SP/CP (pod) ↔ SJ/CJ (new pod per job, own image)
+```
+
+The value of Docker/K8s launchers over process launcher is **per-job isolation**: each job
+runs in its own environment (image), independent of SP/CP and other jobs. Process launcher
+inside Docker/K8s gives container isolation for SP/CP but all jobs still share that same
+container/pod environment.
+
+Mixed launcher mode within a site is not supported. The `mode` flag (see Decision 3) enforces
+this — a site is committed to one launcher.
+
+### Decision 3: `mode` flag in nvflare tool (follow-up PR)
+
+The nvflare tool (Decision 1) accepts a `--mode docker|k8s|process` flag per site. This
+single flag sets everything needed for that mode:
+
+| `mode` | Launcher | Resource manager | Resource consumer | Start script |
+|---|---|---|---|---|
+| `process` | `ProcessJobLauncher` | `GPUResourceManager` | `GPUResourceConsumer` | `start.sh` (unchanged) |
+| `docker` | `DockerJobLauncher` | `BEResourceManager` | none | `start_docker.sh` |
+| `k8s` | `K8sJobLauncher` | `BEResourceManager` | none | Helm charts |
+
+The tool removes **both** `GPUResourceManager` and `GPUResourceConsumer` for Docker/K8s mode
+and replaces them with `BEResourceManager` (to be renamed `PassThroughResourceManager` in a
+follow-up PR). This
+is important: `GPUResourceConsumer` sets `CUDA_VISIBLE_DEVICES` in the SP/CP process
+environment, which is correct for process mode (subprocess inherits it) but wrong for
+Docker/K8s mode (SJ/CJ runs in a separate container/pod with its own environment — GPU
+assignment is handled by `device_requests` / pod resource limits instead). Site admin cannot
+accidentally leave `GPUResourceConsumer` in place when the tool handles both together.
+
+### Decision 4: Parent image is thin; job image is required with no default
+
+**Parent image (SP/CP):** as thin as possible — only needs NVFlare and the Docker/K8s Python
+SDK. No ML frameworks. This minimizes the image the site admin has to maintain and keeps
+SP/CP lightweight. It can also serve as the job image for simple jobs (e.g. hello-numpy) that
+have no ML framework dependencies.
+
+**Job image:** the job author must explicitly specify an image in `meta.json` for Docker/K8s
+mode. There is no default. If no image is specified and the site is in Docker/K8s mode, the
+job fails with a clear error — no silent fallback to process mode or parent image.
+
+Rationale: the site admin does not know which image a job needs (there could be many: different
+CUDA versions, different frameworks). The job author is the right person to declare the
+environment. Requiring an explicit image surfaces misconfiguration early rather than silently
+running a job in the wrong environment.
+
+The thin parent image is a known-good option for jobs that don't need ML frameworks — job
+authors can specify it explicitly if that is sufficient.
+
+### Decision 5: Docker mode vs process mode
+
+Neither is universally better — the right choice depends on the deployment context:
+
+| | Docker mode | Process mode |
+|---|---|---|
+| Job isolation | Per-job container; each job gets its own image | Shared SP/CP environment; all jobs see the same Python packages |
+| Custom environments | Different image (Python version, CUDA, ML framework) per job | Must match SP/CP environment |
+| Startup overhead | Container launch (~seconds, longer with image pull) | Subprocess (~instant) |
+| GPU access | Via Docker `device_requests`; requires `BEResourceManager` | Direct; `GPUResourceManager` + `GPUResourceConsumer` assign `CUDA_VISIBLE_DEVICES` |
+| File permissions | Requires `--user` alignment between SP/CP and SJ/CJ | Native; no extra setup |
+| Operational complexity | Higher (Docker network, socket mount, image management, container lifecycle) | Lower |
+| Security posture | Elevated (socket access is root-equivalent with standard Docker) | Least privilege (normal OS user) |
+
+
+**Use Docker mode when:** jobs need different Python/CUDA environments, or dependency
+isolation between jobs is important.
+
+**Use process mode when:** the environment is homogeneous, startup speed matters, or
+simplicity is preferred.
+
+---
+
 ## Out of Scope
 
 - Docker Swarm / multi-host Docker — use K8s launcher instead

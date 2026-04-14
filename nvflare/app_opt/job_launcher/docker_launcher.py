@@ -33,9 +33,9 @@ from nvflare.apis.job_def import JobMetaKey, get_job_meta_study
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
 from nvflare.utils.job_launcher_utils import (
-    extract_container_kwargs,
     extract_job_image,
     get_client_job_args,
+    get_launcher_resource_spec,
     get_server_job_args,
 )
 
@@ -403,15 +403,18 @@ class DockerJobLauncher(JobLauncherSpec):
             if python_paths:
                 environment["PYTHONPATH"] = os.pathsep.join(python_paths)
 
-        # container_kwargs: per-job from deploy_map, merged with site-level defaults from resources.json.
-        # Job-level takes precedence on conflict.
-        job_container_kwargs = extract_container_kwargs(job_meta, site_name)
+        # Docker resource spec: all per-job Docker resource requirements live in
+        # resource_spec[site][docker] = {num_of_gpus, shm_size, ipc_mode, ...}.
+        # Legacy flat resource_spec[site] = {num_of_gpus} is treated as process mode — docker gets nothing.
+        # Site-level defaults (extra_container_kwargs) are merged in; job-level takes precedence on conflict.
+        docker_spec = get_launcher_resource_spec(job_meta, site_name, "docker")
+        num_gpus = docker_spec.get("num_of_gpus", 0)
+        _NON_CONTAINER_KEYS = {"num_of_gpus"}
+        job_container_kwargs = {k: v for k, v in docker_spec.items() if k not in _NON_CONTAINER_KEYS}
         merged_container_kwargs = {**self.extra_container_kwargs, **job_container_kwargs}
 
-        # GPU: translate resource_spec.num_of_gpus → device_requests (consistent with K8s/process launchers).
-        # Explicit device_requests in container_kwargs takes precedence (fine-grain override).
-        resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
-        num_gpus = (resource_spec.get(site_name) or {}).get("num_of_gpus", 0)
+        # GPU: translate num_of_gpus → device_requests (consistent with K8s/process launchers).
+        # Explicit device_requests in docker_spec takes precedence (fine-grain override).
         if num_gpus:
             merged_container_kwargs.setdefault("device_requests", [{"Count": num_gpus, "Capabilities": [["gpu"]]}])
 
@@ -484,9 +487,15 @@ class DockerJobLauncher(JobLauncherSpec):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
             job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
-            job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
-            if job_image:
-                add_launcher(self, fl_ctx)
+            site_name = fl_ctx.get_identity_name()
+            job_image = extract_job_image(job_meta, site_name)
+            if not job_image:
+                raise RuntimeError(
+                    f"DockerJobLauncher is configured for site '{site_name}' but no job image "
+                    f"was specified in meta.json for this site. "
+                    f"Add an 'image' field to the deploy_map entry for '{site_name}'."
+                )
+            add_launcher(self, fl_ctx)
 
     @abstractmethod
     def get_module_args(self, job_args: dict) -> dict:

@@ -117,20 +117,24 @@ def extract_job_image(job_meta, site_name):
     return None
 
 
-def extract_container_kwargs(job_meta, site_name):
-    """Extract container_kwargs for a site from deploy_map.
+_LAUNCHER_MODE_KEYS = {"process", "docker", "k8s"}
 
-    Returns a dict of extra docker run kwargs (e.g. {"device_requests": [...], "shm_size": "8g"})
-    or an empty dict if none are specified.
+
+def get_launcher_resource_spec(job_meta, site_name, mode):
+    """Extract the resource spec for a site for a specific launcher mode.
+
+    New nested format: resource_spec[site][mode] = {num_of_gpus: ..., shm_size: ..., ...}
+    Legacy flat format: resource_spec[site] = {num_of_gpus: ...} — treated as process mode for
+    backward compatibility; Docker and K8s modes receive an empty spec.
+
+    Returns a dict for the given mode, or an empty dict if not specified.
     """
-    deploy_map = job_meta.get(JobMetaKey.DEPLOY_MAP, {})
-    for _, participants in deploy_map.items():
-        for item in participants:
-            if isinstance(item, dict):
-                sites = item.get(JobConstants.SITES) or []
-                if "@ALL" in sites or site_name in sites:
-                    return item.get("container_kwargs") or {}
-    return {}
+    resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
+    site_spec = resource_spec.get(site_name) or {}
+    if any(k in site_spec for k in _LAUNCHER_MODE_KEYS):
+        return site_spec.get(mode, {})
+    # Legacy flat format — treat as process only
+    return site_spec if mode == "process" else {}
 
 
 def add_custom_dir_to_path(app_custom_folder, new_env):
