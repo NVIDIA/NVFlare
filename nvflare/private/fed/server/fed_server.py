@@ -742,6 +742,17 @@ class FederatedServer(BaseServer):
     def process_job_failure(self, request: Message):
         payload = request.payload
         client = request.get_header(key=MessageHeaderKey.ORIGIN)
+
+        # Validate sender identity using token only.
+        # Note: validate_client() cannot be used here because the
+        # REPORT_JOB_FAILURE message (sent by ClientExecutor via
+        # fire_and_forget) does not carry a PROJECT_NAME header —
+        # only TOKEN is injected by the outgoing auth filter.
+        token = request.get_header(CellMessageHeaderKeys.TOKEN)
+        if not token or not self.client_manager.is_from_authorized_client(token):
+            self.logger.warning(f"Dropped unauthenticated Job Failure report from {client}")
+            return
+
         if not isinstance(payload, dict):
             self.logger.error(
                 f"dropped bad Job Failure report from {client}: expect payload to be dict but got {type(payload)}"

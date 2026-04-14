@@ -24,7 +24,22 @@ import argparse
 import json
 import os
 
-from data_utils import collect_image_records, split_records_for_clients
+from data_utils import (
+    collect_image_records,
+    split_records_for_clients,
+    summarize_label_distribution,
+    write_label_distribution_svg,
+)
+
+
+def _format_site_summary(split_data: dict) -> list[str]:
+    summary_lines = []
+    dominant_labels = split_data.get("dominant_labels")
+    if dominant_labels:
+        summary_lines.append(f"    dominant_labels: {', '.join(dominant_labels)}")
+    summary_lines.append(f"    train_labels: {', '.join(summarize_label_distribution(split_data['train']))}")
+    summary_lines.append(f"    val_labels:   {', '.join(summarize_label_distribution(split_data['validation']))}")
+    return summary_lines
 
 
 def main():
@@ -60,6 +75,34 @@ def main():
         default=333,
         help="Validation samples reserved from each client shard (default: 333).",
     )
+    parser.add_argument(
+        "--split_strategy",
+        type=str,
+        choices=("heterogeneous", "random"),
+        default="heterogeneous",
+        help=(
+            "Site split strategy. 'heterogeneous' creates class-skewed, non-IID client shards by default; "
+            "'random' keeps the older IID-style random sharding."
+        ),
+    )
+    parser.add_argument(
+        "--dominant_fraction",
+        type=float,
+        default=0.8,
+        help=(
+            "For --split_strategy heterogeneous, fraction of each site shard biased toward its dominant label group "
+            "(default: 0.8)."
+        ),
+    )
+    parser.add_argument(
+        "--plot_path",
+        type=str,
+        default=None,
+        help=(
+            "Optional output path for a generated SVG chart of per-client training-label distributions. "
+            "Defaults to <output_dir>/split_label_distribution.svg."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=42, help="Shuffle seed (default: 42).")
     args = parser.parse_args()
 
@@ -72,10 +115,13 @@ def main():
         samples_per_client=samples_per_client,
         validation_size_per_client=args.validation_size_per_client,
         seed=args.seed,
+        split_strategy=args.split_strategy,
+        dominant_fraction=args.dominant_fraction,
     )
 
     os.makedirs(args.output_dir, exist_ok=True)
     print(f"Found {len(records)} labeled images under {os.path.abspath(args.dataset_dir)}")
+    print(f"Using split_strategy={args.split_strategy}, dominant_fraction={args.dominant_fraction}")
     for site_name, split_data in site_splits.items():
         site_dir = os.path.join(args.output_dir, site_name)
         os.makedirs(site_dir, exist_ok=True)
@@ -92,7 +138,12 @@ def main():
             f"  {site_name}: train={len(split_data['train'])} -> {train_path}, "
             f"validation={len(split_data['validation'])} -> {validation_path}"
         )
+        for line in _format_site_summary(split_data):
+            print(line)
 
+    plot_path = args.plot_path or os.path.join(args.output_dir, "split_label_distribution.svg")
+    write_label_distribution_svg(site_splits, plot_path)
+    print(f"Wrote label distribution plot to {os.path.abspath(plot_path)}")
     print(f"Done. Client data written under {os.path.abspath(args.output_dir)}")
 
 
