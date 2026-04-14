@@ -1,4 +1,4 @@
-transformers==4.53.0
+transformers==5.0.0
 fastNLP==0.6.0
 datasets
 cma==3.4.0
@@ -6,4 +6,3 @@ scikit-learn
 tensorboard
 cvxopt
 nvflare~=2.5.1rc
-

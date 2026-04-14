@@ -25,6 +25,7 @@ from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
 from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.fuel.utils.validation_utils import check_positive_int
 
 _load_for_executorch_for_training_from_buffer, _ = optional_import(
     "executorch.extension.training",
@@ -91,6 +92,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
                 - weight_decay (float): Weight decay factor (default: 0.0)
                 - dampening (float): Dampening for momentum (default: 0.0)
                 - nesterov (bool): Enables Nesterov momentum (default: False)
+                - epoch (int): Number of training epochs (default: 1)
         """
         DeviceTaskProcessor.__init__(self)
         self.data_path = data_path
@@ -106,10 +108,13 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
             "weight_decay": 0.0,
             "dampening": 0.0,
             "nesterov": False,
+            "epoch": 1,
         }
         # Update with user-provided config
         if training_config:
             self.training_config.update(training_config)
+
+        check_positive_int("epoch", self.training_config["epoch"])
 
     @abstractmethod
     def create_dataset(self, data_path: str) -> Dataset:
@@ -159,6 +164,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         Returns:
             dict: Training results with parameter differences
         """
+        check_positive_int("total_epochs", total_epochs)
         log.info(f"Starting training for {total_epochs} epochs")
         initial_params = None
         # Dataset and DataLoader setup
@@ -250,7 +256,8 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
             raise RuntimeError("Failed to load model") from e
 
         try:
-            diff_dict = self.run_training(et_model)
+            total_epochs = self.training_config.get("epoch", 1)
+            diff_dict = self.run_training(et_model, total_epochs=total_epochs)
             log.info("Training completed successfully")
             dxo_dict = {
                 "meta": payload.meta,
