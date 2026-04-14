@@ -41,7 +41,6 @@ spec:
               {{- end }}
               protocol: TCP
             {{- if .Values.adminPort }}
-              {{- if ne (include "nvflare-server.hostPortEnabled" .) "false" }}
             - containerPort: {{ .Values.adminPort }}
               {{- if ne (include "nvflare-server.hostPortEnabled" .) "false" }}
               hostPort: {{ .Values.adminPort }}
