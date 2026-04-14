@@ -185,6 +185,10 @@ class HelmChartBuilder(Builder):
             "parentPort": self.parent_port,
             "hostPortEnabled": True,
             "tcpConfigMapEnabled": True,
+            "service": {
+                "type": False,
+                "loadBalancerIP": False,
+            },
             "command": ["/usr/local/bin/python3"],
             "args": args,
         }
