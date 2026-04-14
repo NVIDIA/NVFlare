@@ -14,7 +14,7 @@ The workflow uses the [CrossSiteModelEval](https://nvflare.readthedocs.io/en/mai
 
 ## Installation
 
-Follow the [Installation](../../getting_started/README.md) instructions.
+Follow the [Installation](../../README.md) instructions.
 
 ## Two Modes of Operation
 

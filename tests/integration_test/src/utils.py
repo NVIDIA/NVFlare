@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import json
 import os
 import shlex
@@ -24,12 +26,9 @@ import time
 import yaml
 
 from nvflare.apis.job_def import RunStatus
-from nvflare.apis.workspace import Workspace
-from nvflare.fuel.hci.client.api_status import APIStatus
-from nvflare.fuel.hci.client.config import secure_load_admin_config
-from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
-from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
-from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
+from nvflare.fuel.flare_api.api_spec import SessionClosed
+from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 
 from .constants import DEFAULT_RESOURCE_CONFIG, FILE_STORAGE, PROVISION_SCRIPT, RESOURCE_CONFIG
 from .example import Example
@@ -64,17 +63,23 @@ def run_provision_command(project_yaml: str, workspace: str):
 
 def run_command_in_subprocess(command, stdin_data=None):
     new_env = os.environ.copy()
-    python_path = ":".join(sys.path)[1:]  # strip leading colon
+    python_path = os.pathsep.join(path for path in sys.path if path)
     new_env["PYTHONPATH"] = python_path
+    python_bin_dir = os.path.dirname(sys.executable)
+    new_env["PATH"] = os.pathsep.join([python_bin_dir, new_env.get("PATH", "")])
+    tokens = [os.path.expandvars(os.path.expanduser(t)) for t in shlex.split(command)]
     process = subprocess.Popen(
-        shlex.split(command),
+        tokens,
+        shell=False,
         stdin=subprocess.PIPE if stdin_data else None,
         preexec_fn=os.setsid,
         env=new_env,
     )
     if stdin_data:
-        process.stdin.write(stdin_data)
-        process.stdin.close()
+        # communicate() writes stdin, drains stdout/stderr, and waits for exit.
+        # Return None since the process has already terminated.
+        process.communicate(input=stdin_data)
+        return None
     return process
 
 
@@ -177,72 +182,86 @@ def cleanup_job_and_snapshot(workspace: str, server_name: str):
     cleanup_path(snapshot_path)
 
 
-def get_job_meta(admin_api: FLAdminAPI, job_id: str) -> dict:
-    response = admin_api.do_command(f"get_job_meta {job_id}")
-    return response.get("meta", {}).get("job_meta", {})
+def get_job_meta(admin_api: Session, job_id: str) -> dict:
+    return admin_api.get_job_meta(job_id)
 
 
-def check_client_status_ready(response: dict) -> bool:
-    if response["status"] != APIStatus.SUCCESS:
+def normalize_invalid_job_definition_message(message: str) -> str:
+    prefix = "invalid job definition: "
+    if message.startswith(prefix):
+        return message[len(prefix) :]
+    return message
+
+
+def build_error_response_items(message: str) -> list[dict]:
+    return [{"type": "error", "data": message}]
+
+
+def build_authorization_error_message(admin_api: Session, command_name: str, include_authz_prefix: bool = True) -> str:
+    prefix = "Authorization Error: " if include_authz_prefix else ""
+    return f"Error: PermissionError: {prefix}user '{admin_api.username}' is not authorized for '{command_name}'"
+
+
+def build_authorization_error_details(admin_api: Session, command_name: str) -> dict:
+    return {"message": build_authorization_error_message(admin_api, command_name)}
+
+
+def build_client_status_map(client_statuses: list[dict]) -> dict[str, list[str]]:
+    status_map = {}
+    for entry in client_statuses:
+        client_name = entry.get(MetaKey.CLIENT_NAME)
+        if not client_name:
+            continue
+        status_map.setdefault(client_name, []).append(entry.get(MetaKey.STATUS))
+    return status_map
+
+
+def check_client_status_ready(client_statuses: list[dict] | None) -> bool:
+    if not client_statuses:
         return False
 
-    if "details" not in response:
-        return False
-
-    data = response.get("raw", {}).get("data", [])
-    if data:
-        for d in data:
-            if d.get("type") == "error":
-                return False
-
-    # check fuel/hci/client/fl_admin_api.py for parsing
-    if "client_statuses" not in response["details"]:
-        return False
-
-    for row in response["details"]["client_statuses"][1:]:
-        if row[3] == "No Reply":
+    for entry in client_statuses:
+        status = entry.get(MetaKey.STATUS)
+        if status in (MetaStatusValue.ERROR, MetaStatusValue.NO_REPLY):
             return False
 
     return True
 
 
-def check_job_done(job_id: str, admin_api: FLAdminAPI):
-    response = admin_api.check_status(target_type=TargetType.SERVER)
-    if response and "status" in response:
-        if response["status"] != APIStatus.SUCCESS:
-            print(f"Check server status failed: {response}.")
-            return False
-        else:
-            if "details" not in response:
-                print(f"Check server status missing details: {response}.")
-                return False
-            else:
-                # check if run is stopped
-                if (
-                    FLDetailKey.SERVER_ENGINE_STATUS in response["details"]
-                    and response["details"][FLDetailKey.SERVER_ENGINE_STATUS] == "stopped"
-                ):
-                    response = admin_api.check_status(target_type=TargetType.CLIENT)
-                    if not check_client_status_ready(response):
-                        print(f"Check client status failed: {response}")
-                        return False
-                    else:
-                        job_meta = get_job_meta(admin_api, job_id=job_id)
-                        job_run_status = job_meta.get("status")
+def check_job_done(job_id: str, admin_api: Session):
+    try:
+        system_info = admin_api.get_system_info()
+    except Exception as e:
+        print(f"Check server status failed: {e}.")
+        return False
 
-                        for row in response["details"]["client_statuses"]:
-                            if row[3] != "stopped":
-                                continue
-                        # check if the current job is completed
-                        if job_run_status in (
-                            RunStatus.FINISHED_COMPLETED.value,
-                            RunStatus.FINISHED_ABORTED.value,
-                        ):
-                            return True
+    if system_info.server_info.status != "stopped":
+        return False
+
+    try:
+        client_statuses = admin_api.get_client_job_status()
+    except Exception as e:
+        print(f"Check client status failed: {e}")
+        return False
+
+    if not check_client_status_ready(client_statuses):
+        print(f"Check client status failed: {client_statuses}")
+        return False
+
+    try:
+        job_run_status = admin_api.get_job_status(job_id)
+    except Exception as e:
+        print(f"Get job status failed: {e}")
+        return False
+    if job_run_status in (
+        RunStatus.FINISHED_COMPLETED.value,
+        RunStatus.FINISHED_ABORTED.value,
+    ):
+        return True
     return False
 
 
-def run_admin_api_tests(admin_api: FLAdminAPI):
+def run_admin_api_tests(admin_api: Session):
     print(("\n" + "*" * 120) * 20)
     print("\n" + "=" * 40)
     print("\nRunning through tests of admin commands:")
@@ -250,24 +269,24 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
     print("\nCommand: get_available_apps_to_upload")
     print(admin_api.get_available_apps_to_upload())
     print("\nList Jobs:")
-    list_jobs_return_rows = admin_api.list_jobs().get("details")
+    list_jobs_return_rows = admin_api.list_jobs()
     print(list_jobs_return_rows)
     first_job = str(list_jobs_return_rows[0].get("job_id"))
     print("\nCommand: ls server -a .")
-    ls_return_message = admin_api.ls_target("server", "-a", ".").get("details").get("message")
+    ls_return_message = admin_api.ls_target("server", "-a", ".")
     print(ls_return_message)
     print("\nAssert Job {} is in the server root dir...".format(first_job))
     assert first_job in ls_return_message
 
     print("\nAborting Job {}:".format(first_job))
     print("\n" + "=" * 50)
-    print(admin_api.abort_job(first_job).get("details").get("message"))
+    print(admin_api.abort_job(first_job))
     print("\n" + "=" * 50)
     print("\nCommand: pwd")
-    print(admin_api.get_working_directory("server").get("details").get("message"))
+    print(admin_api.get_working_directory("server"))
 
     print("\n" + "=" * 50)
-    print("Finished with admin commands testing through FLAdminAPI.")
+    print("Finished with admin commands testing through FLARE API.")
 
 
 def _replace_meta_json(meta_json_path: str):
@@ -400,33 +419,19 @@ def _generate_test_config_for_one_job(
     return output_yaml
 
 
-def _read_admin_json_file(workspace: Workspace) -> dict:
-    conf = secure_load_admin_config(workspace)
-    return conf.get_admin_config()
-
-
 def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, admin_user_name):
     admin_dir = os.path.join(workspace_root_dir, admin_user_name)
-    workspace = Workspace(root_dir=admin_dir)
-    admin_config = _read_admin_json_file(workspace)
-    admin_api = FLAdminAPI(
-        upload_dir=upload_root_dir,
-        download_dir=download_root_dir,
-        user_name=admin_user_name,
-        admin_config=admin_config,
-        auto_login_max_tries=20,
-    )
-    admin_api.connect(10.0)
-    admin_api.login()
-    return admin_api
+    del upload_root_dir
+    del download_root_dir
+    return new_secure_session(admin_user_name, admin_dir, timeout=10.0)
 
 
-def ensure_admin_api_logged_in(admin_api: FLAdminAPI, timeout: int = 60):
+def ensure_admin_api_logged_in(admin_api: Session, timeout: int = 60):
     login_success = False
     try:
         start_time = time.time()
         while time.time() - start_time <= timeout:
-            if admin_api.is_ready():
+            if admin_api.api.is_ready():
                 login_success = True
                 break
             time.sleep(0.2)
@@ -435,6 +440,8 @@ def ensure_admin_api_logged_in(admin_api: FLAdminAPI, timeout: int = 60):
             print(f"Admin api failed to log in within {timeout} seconds.")
         else:
             print("Admin successfully logged into server.")
+    except SessionClosed:
+        print("Admin api session is closed.")
     except Exception as e:
         print(f"Exception in logging in to admin: {e.__str__()}")
     return login_success

@@ -217,7 +217,7 @@ class NPTrainer(Executor):
 
         model_load_path = os.path.join(model_path, self._model_name)
         try:
-            np_data = np.load(model_load_path)
+            np_data = np.load(model_load_path, allow_pickle=False)
         except Exception as e:
             self.log_error(fl_ctx, f"Unable to load local model: {secure_format_exception(e)}")
             return None

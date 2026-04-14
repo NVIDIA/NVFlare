@@ -18,6 +18,7 @@ from monai.bundle import ConfigParser
 from monai.transforms import LoadImage
 
 from nvflare.app_common.abstract.statistics_spec import Bin, DataType, Feature, Histogram, HistogramType, Statistics
+from nvflare.app_opt.monai import decomposers
 
 
 class MonaiBundleStatistics(Statistics):
@@ -33,6 +34,7 @@ class MonaiBundleStatistics(Statistics):
         self.req_num_of_bins = None
         self.req_bin_ranges = None
         self.data_list_key = data_list_key
+        decomposers.register_monai_types()
 
     def initialize(self, fl_ctx):
         # Parse MONAI bundle configuration

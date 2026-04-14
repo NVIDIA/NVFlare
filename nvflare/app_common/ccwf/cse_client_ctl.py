@@ -244,6 +244,80 @@ class CrossSiteEvalClientController(ClientSideController):
         return make_reply(ReturnCode.OK)
 
     def _prepare_local_model(self, model_name, fl_ctx: FLContext, abort_signal: Signal):
+        """Prepare the local (client-trained) model for cross-site evaluation.
+
+        Tries the persistor first, then falls back to submit_model_executor.
+
+        Persistor-first is necessary for external-process executors
+        (``launch_external_process=True``): the training subprocess has already
+        exited when CSE runs, so calling submit_model_executor.execute() launches
+        a *fresh* subprocess with no trained model state.  The best model was
+        already saved to disk by PTFileModelPersistor during _process_final_result(),
+        so loading from the persistor is both correct and efficient (RC12 Bug 2).
+
+        Inventory key selection: the server sends model_name="best_model" (a semantic
+        label from ModelName.BEST_MODEL), but PTFileModelPersistor keys are
+        filesystem-derived ("FL_global_model", "best_FL_global_model").
+        persistor.get("best_model") always returns None, so we scan the inventory.
+        When model_name contains "best", we prefer an inventory key containing "best".
+        We take the LAST such key (not the first) because PTFileModelPersistor adds
+        the source/initial checkpoint first — if it happens to contain "best" in its
+        name (e.g. "best_initial_model"), we must not mistake it for the trained best.
+        """
+        # ── Persistor path (preferred for external-process executors) ─────────────
+        if self.persistor:
+            if not isinstance(self.persistor, ModelPersistor):
+                # isinstance guard (not assert) — safe under python -O
+                self.log_warning(
+                    fl_ctx,
+                    f"persistor is not a ModelPersistor ({type(self.persistor).__name__}), "
+                    "skipping persistor path for local model",
+                )
+            else:
+                try:
+                    model_learnable = self.persistor.get(model_name, fl_ctx)
+                    if not model_learnable:
+                        # model_name (e.g. "best_model") may not match inventory keys
+                        # (e.g. "FL_global_model", "best_FL_global_model").
+                        inventory = self.persistor.get_model_inventory(fl_ctx)
+                        if inventory:
+                            want_best = "best" in model_name.lower()
+                            best_key = None
+                            fallback_key = None
+                            for key in inventory:
+                                if want_best and "best" in key.lower():
+                                    best_key = key  # keep iterating — last "best" key wins
+                                if fallback_key is None:
+                                    fallback_key = key
+                            chosen_key = best_key or fallback_key
+                            if chosen_key:
+                                model_learnable = self.persistor.get(chosen_key, fl_ctx)
+                                if model_learnable:
+                                    self.log_info(
+                                        fl_ctx,
+                                        f"loaded local model from inventory key '{chosen_key}' "
+                                        f"(requested name: '{model_name}')",
+                                    )
+                                else:
+                                    self.log_warning(
+                                        fl_ctx,
+                                        f"persistor inventory key '{chosen_key}' found but returned None "
+                                        f"(checkpoint may have been deleted); falling back to executor",
+                                    )
+                    if model_learnable:
+                        dxo = model_learnable_to_dxo(model_learnable)
+                        model = dxo.to_shareable()
+                        self._set_prepared_model(ModelType.LOCAL, model_name, model)
+                        self.log_info(fl_ctx, f"got local model '{model_name}' from persistor")
+                        return make_reply(ReturnCode.OK)
+                except Exception as ex:
+                    self.log_warning(
+                        fl_ctx,
+                        f"could not get local model from persistor, will try executor: "
+                        f"{secure_format_exception(ex)}",
+                    )
+
+        # ── Executor fallback (original path — works for in-process mode) ─────────
         if not self.submit_model_executor:
             self.log_error(fl_ctx, "got request to prepare local model but I don't have local models")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)

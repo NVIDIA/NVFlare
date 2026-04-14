@@ -20,3 +20,12 @@ CLIENT_API_CONFIG = "client_api_config.json"
 # Configuration key for overriding external_pre_init_timeout in ClientAPILauncherExecutor
 # Jobs can set this via add_client_config() to allow more time for heavy library imports
 EXTERNAL_PRE_INIT_TIMEOUT = "EXTERNAL_PRE_INIT_TIMEOUT"
+
+# Configuration key for overriding peer_read_timeout in ClientAPILauncherExecutor.
+# peer_read_timeout controls how long CJ waits for the subprocess to acknowledge
+# receiving the task pipe message.  It must be long enough for the subprocess to call
+# flare.get_task() after startup.  Jobs can increase it via:
+#   recipe.add_client_config({"PEER_READ_TIMEOUT": 1800})
+# Keeping this in the same config file as submit_result_timeout makes it easy
+# to review and tune both timeouts together.
+PEER_READ_TIMEOUT = "PEER_READ_TIMEOUT"

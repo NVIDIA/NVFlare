@@ -26,18 +26,15 @@ without sharing patient data.
 prevent centralized data aggregation. Federated learning allows hospitals to train
 better models together while keeping patient data local.
 
-**FLARE features used:** Client API, Differential Privacy, Homomorphic Encryption,
-Confidential Computing, Cross-Site Evaluation
-
 **Cancer AI Alliance (CAIA):**
 The Cancer AI Alliance -- a consortium of leading cancer centers -- uses NVIDIA FLARE
 with Rhino Federated Computing Platform to train AI models across multiple institutions
 while keeping sensitive patient data behind each center's firewall. Only model weights
 are exchanged; cancer centers retain full control over data selection, access policies,
-and local execution. The platform supports differential privacy, model encryption, and
-confidential computing for projects requiring enhanced protection.
+and local execution. The platform supports differential privacy and model encryption for projects requiring enhanced protection.
 
 - `How CAIA operationalizes secure, multi-site research with federated learning (Dec 2025) <https://www.canceralliance.ai/blog/caia-multi-site-research-federated-learning>`_
+- `Federating cancer research at scale (FLARE Day 2025) <https://www.nvidia.com/en-us/on-demand/session/nvidiaflareday25-nvfd08?playlistId=playList-eacb3be4-9f4b-48d0-98fc-f7a40f93d759>`_
 
 **Eli Lilly TuneLab -- Federated Drug Discovery:**
 In September 2025, Eli Lilly launched TuneLab, an AI/ML platform that gives biotech
@@ -47,6 +44,15 @@ models on their own proprietary molecular data without exposing it. In return, p
 contribute training data that continuously improves the shared models for the entire ecosystem.
 
 - `Lilly launches TuneLab platform (Sep 2025) <https://investor.lilly.com/news-releases/news-release-details/lilly-launches-tunelab-platform-give-biotechnology-companies>`_
+
+**Federated AI for Therapeutic Engineering (FAITE) -- AbbVie, Amgen, AstraZeneca, J&J, UCB:**
+Launched in 2025, FAITE is a cross-industry biopharmaceutical consortium that uses federated
+and active learning to train models for predicting biologics properties. Member companies
+contribute training on local proprietary molecular data without sharing it, enabling collaborative
+model improvement while maintaining competitive and regulatory data boundaries.
+
+- `FAITE: Federated AI for biologics property prediction (FLARE Day 2025) <https://www.nvidia.com/en-us/on-demand/session/nvidiaflareday25-nvfd13?playlistId=playList-eacb3be4-9f4b-48d0-98fc-f7a40f93d759>`_
+- `Training federated AI models to predict protein properties (NVIDIA Blog) <https://developer.nvidia.com/blog/training-federated-ai-models-to-predict-protein-properties/>`_
 
 **Other references:**
 
@@ -69,9 +75,6 @@ and anti-money laundering without exposing sensitive transaction data.
 **Why federated?** Banking regulations (SOX, FINRA, GDPR, PSD2) and competitive
 sensitivity prevent sharing transaction data between institutions.
 
-**FLARE features used:** XGBoost integration, GNN support, Private Set Intersection,
-Secure Aggregation
-
 **Swift Collaborative Fraud Defence:**
 In September 2025, Swift partnered with 13 global banks -- including ANZ, BNY, and Intesa
 Sanpaolo -- to test federated learning for cross-border fraud detection. Using privacy-enhancing
@@ -83,6 +86,14 @@ compared to models trained on a single institution's data alone.
 **Reference:**
 
 - `Swift-led experiments reveal blueprint for collaborative fraud defence using AI (Sep 2025) <https://www.swift.com/news-events/news/swift-led-experiments-reveal-blueprint-collaborative-fraud-defence-using-ai>`_
+- `Federated fraud detection at Swift (FLARE Day 2025) <https://www.nvidia.com/en-us/on-demand/session/nvidiaflareday25-nvfd09?playlistId=playList-eacb3be4-9f4b-48d0-98fc-f7a40f93d759>`_
+
+**JP Morgan, BNY, and RBC -- Federated Financial AI:**
+At GTC 2025, JP Morgan, BNY, and Royal Bank of Canada (RBC) presented their experiences applying
+federated learning to financial AI models, covering cross-institutional model training for risk
+and fraud use cases without sharing sensitive customer transaction data.
+
+- `Federated Learning in Financial Services: JP Morgan, BNY, RBC (GTC 2025) <https://www.nvidia.com/en-us/on-demand/session/gtcdc25-dc51038/?playlistId=playList-fd045586-2409-4d1a-8333-e1d3501d52de>`_
 
 Government & National Security
 ==============================
@@ -107,6 +118,14 @@ and Computing
 **Reference:**
 
 - `Three national security laboratories, one AI model (Sandia Lab News, Dec 2025) <https://www.sandia.gov/labnews/2025/12/18/three-national-security-laboratories-one-ai-model/>`_
+- `Trilab federated LLM training across classified systems (FLARE Day 2025) <https://www.nvidia.com/en-us/on-demand/session/nvidiaflareday25-nvfd18?playlistId=playList-eacb3be4-9f4b-48d0-98fc-f7a40f93d759>`_
+
+**Oak Ridge National Laboratory (ORNL) -- OLCF Scientific Research:**
+The Oak Ridge Leadership Computing Facility (OLCF) uses NVIDIA FLARE for federated learning
+across distributed scientific datasets, enabling multi-site collaboration on large-scale
+scientific computing research without centralizing sensitive experimental data.
+
+- `ORNL OLCF: Federated learning for scientific research (FLARE Day 2024) <https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Part_09_ORNL.mp4>`_
 
 **Taiwan International Federated Learning Center (Ministry of Health and Welfare):**
 In January 2026, Taiwan's Ministry of Health and Welfare announced the establishment of an
@@ -121,6 +140,36 @@ for AI-based medical product verification across ASEAN markets.
 **Reference:**
 
 - `Taiwan launches new era of medical AI with global collaboration (Jan 2026) <https://www.rti.org.tw/en/news?uid=3&pid=188971>`_
+- `Taiwan International Federated Learning Center (FLARE Day 2025) <https://www.nvidia.com/en-us/on-demand/session/nvidiaflareday25-nvfd23?playlistId=playList-4dd15c3d-2422-425c-b9d9-d21694397574>`_
+
+
+Transportation
+==============
+
+**Federated Learning for Autonomous Vehicles:**
+Automotive manufacturers and research teams use federated learning to train perception and
+safety models across distributed vehicle fleets and test facilities, improving model quality
+without centralizing proprietary driving data.
+
+- `Federated Learning for Autonomous Vehicles (FLARE Day 2024) <https://developer.download.nvidia.com/assets/Clara/flare/NVFLARE_DAY_2024_Part_02_AV.mp4>`_
+
+
+Edge AI & Scientific Computing
+==============================
+
+**NVIDIA Holoscan Federated Analytics at the Edge:**
+NVIDIA Holoscan enables federated analytics at the edge for medical devices and industrial
+AI applications, allowing inference data to be used for federated model improvement without
+transmitting raw sensor streams to a central server.
+
+- `Holoscan Federated Analytics at the Edge (FLARE Day 2025) <https://www.nvidia.com/en-us/on-demand/session/nvidiaflareday25-nvfd26?playlistId=playList-4dd15c3d-2422-425c-b9d9-d21694397574>`_
+
+**NVIDIA Data Federation Mesh -- Federated Data Processing in Scientific Computing:**
+The NVIDIA Data Federation Mesh demonstrates federated data processing pipelines for
+large-scale scientific computing, enabling distributed analysis across facilities without
+moving raw scientific datasets.
+
+- `NVIDIA Data Federation Mesh (FLARE Day 2025) <https://www.nvidia.com/en-us/on-demand/session/nvidiaflareday25-nvfd15?playlistId=playList-eacb3be4-9f4b-48d0-98fc-f7a40f93d759>`_
 
 
 FLARE Day -- Real-World Deployments

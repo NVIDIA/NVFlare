@@ -65,7 +65,7 @@ class TestServerMinTimeoutSetting:
 
         # Verify set_prop was called with correct minimum timeout
         mock_fl_context.set_prop.assert_called_once_with(
-            ServerCommandKey.MIN_GET_TASK_TIMEOUT,
+            FLContextKey.MIN_GET_TASK_TIMEOUT,
             expected_min_timeout,
             sticky=True,
         )
@@ -102,7 +102,7 @@ class TestGetTaskCommandPropagation:
 
         def get_prop_side_effect(key, default=None):
             return {
-                ServerCommandKey.MIN_GET_TASK_TIMEOUT: min_timeout,
+                FLContextKey.MIN_GET_TASK_TIMEOUT: min_timeout,
                 FLContextKey.RUNNER: Mock(),
             }.get(key, default)
 
@@ -127,7 +127,7 @@ class TestGetTaskCommandPropagation:
             def get_prop_side_effect(key):
                 if key == FLContextKey.RUNNER:
                     return mock_server_runner
-                elif key == ServerCommandKey.MIN_GET_TASK_TIMEOUT:
+                elif key == FLContextKey.MIN_GET_TASK_TIMEOUT:
                     return min_timeout
                 return None
 
@@ -335,7 +335,7 @@ class TestEndToEndTimeoutFlow:
 
         # Verify server set the timeout in FLContext
         mock_fl_context.set_prop.assert_called_once_with(
-            ServerCommandKey.MIN_GET_TASK_TIMEOUT,
+            FLContextKey.MIN_GET_TASK_TIMEOUT,
             expected_min_timeout,
             sticky=True,
         )
@@ -382,7 +382,7 @@ class TestEndToEndTimeoutFlow:
 
         # Verify correct minimum was set
         mock_fl_context.set_prop.assert_called_once_with(
-            ServerCommandKey.MIN_GET_TASK_TIMEOUT,
+            FLContextKey.MIN_GET_TASK_TIMEOUT,
             expected_min_timeout,
             sticky=True,
         )
@@ -413,7 +413,7 @@ class TestTimeoutErrorScenarios:
         streamer.initialize(mock_fl_context)
 
         mock_fl_context.set_prop.assert_called_once_with(
-            ServerCommandKey.MIN_GET_TASK_TIMEOUT,
+            FLContextKey.MIN_GET_TASK_TIMEOUT,
             60.0,  # 0 + 60 = 60
             sticky=True,
         )

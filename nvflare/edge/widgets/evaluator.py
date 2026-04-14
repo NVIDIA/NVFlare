@@ -19,7 +19,6 @@ import torch
 import torch.nn as nn
 import torchvision
 import torchvision.transforms as transforms
-from torch.utils.tensorboard import SummaryWriter
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
@@ -266,6 +265,8 @@ class GlobalEvaluator(Widget):
         self._create_data_loader()
         # Initialize the tensorboard writer
         app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
+        from torch.utils.tensorboard import SummaryWriter
+
         self.tb_writer = SummaryWriter(log_dir=app_root)
 
     def _is_initialized(self) -> bool:

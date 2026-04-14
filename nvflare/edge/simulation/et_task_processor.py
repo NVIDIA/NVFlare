@@ -17,7 +17,6 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Dict
 
-from executorch.extension.training import _load_for_executorch_for_training_from_buffer, get_sgd_optimizer
 from torch.utils.data import DataLoader, Dataset
 
 from nvflare.apis.dxo import DXO, from_dict
@@ -25,6 +24,23 @@ from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding, ModelNat
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
+from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.fuel.utils.validation_utils import check_positive_int
+
+_load_for_executorch_for_training_from_buffer, _ = optional_import(
+    "executorch.extension.training",
+    name="_load_for_executorch_for_training_from_buffer",
+    descriptor=(
+        "executorch is required for {}. " "See: https://pytorch.org/executorch/stable/getting-started-setup.html"
+    ),
+)
+get_sgd_optimizer, _ = optional_import(
+    "executorch.extension.training",
+    name="get_sgd_optimizer",
+    descriptor=(
+        "executorch is required for {}. " "See: https://pytorch.org/executorch/stable/getting-started-setup.html"
+    ),
+)
 
 log = logging.getLogger(__name__)
 
@@ -76,6 +92,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
                 - weight_decay (float): Weight decay factor (default: 0.0)
                 - dampening (float): Dampening for momentum (default: 0.0)
                 - nesterov (bool): Enables Nesterov momentum (default: False)
+                - epoch (int): Number of training epochs (default: 1)
         """
         DeviceTaskProcessor.__init__(self)
         self.data_path = data_path
@@ -91,10 +108,13 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
             "weight_decay": 0.0,
             "dampening": 0.0,
             "nesterov": False,
+            "epoch": 1,
         }
         # Update with user-provided config
         if training_config:
             self.training_config.update(training_config)
+
+        check_positive_int("epoch", self.training_config["epoch"])
 
     @abstractmethod
     def create_dataset(self, data_path: str) -> Dataset:
@@ -144,6 +164,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         Returns:
             dict: Training results with parameter differences
         """
+        check_positive_int("total_epochs", total_epochs)
         log.info(f"Starting training for {total_epochs} epochs")
         initial_params = None
         # Dataset and DataLoader setup
@@ -155,6 +176,13 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
             drop_last=True,
         )
         total_batches = len(dataloader)
+        if total_batches == 0:
+            raise ValueError(
+                "DataLoader produced no batches (dataset may be empty or all batches were dropped by drop_last=True). "
+                "Check your dataset and batch_size configuration."
+            )
+
+        optimizer = None
 
         for epoch in range(total_epochs):
             log.info(f"Epoch {epoch + 1}/{total_epochs}")
@@ -166,14 +194,15 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
                 if initial_params is None:
                     initial_params = clone_params(et_model.named_parameters())
 
-                optimizer = get_sgd_optimizer(
-                    et_model.named_parameters(),
-                    self.training_config["learning_rate"],
-                    self.training_config["momentum"],
-                    self.training_config["weight_decay"],
-                    self.training_config["dampening"],
-                    self.training_config["nesterov"],
-                )
+                if optimizer is None:
+                    optimizer = get_sgd_optimizer(
+                        et_model.named_parameters(),
+                        self.training_config["learning_rate"],
+                        self.training_config["momentum"],
+                        self.training_config["weight_decay"],
+                        self.training_config["dampening"],
+                        self.training_config["nesterov"],
+                    )
 
                 optimizer.step(et_model.named_gradients())
 
@@ -219,12 +248,16 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         try:
             model_bytes = base64.b64decode(payload.data)
             et_model = _load_for_executorch_for_training_from_buffer(model_bytes)
+        except ImportError:
+            log.error("executorch is not installed; cannot load model")
+            raise
         except Exception as e:
             log.error(f"Failed to load model: {e}")
             raise RuntimeError("Failed to load model") from e
 
         try:
-            diff_dict = self.run_training(et_model)
+            total_epochs = self.training_config.get("epoch", 1)
+            diff_dict = self.run_training(et_model, total_epochs=total_epochs)
             log.info("Training completed successfully")
             dxo_dict = {
                 "meta": payload.meta,
@@ -232,6 +265,9 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
                 "kind": "et_tensor_diff",
             }
             return dxo_dict
+        except ImportError:
+            log.error("executorch is not installed; cannot run training")
+            raise
         except Exception as e:
             log.error(f"Training failed with unexpected error: {e}")
             raise RuntimeError("Training failed unexpectedly") from e

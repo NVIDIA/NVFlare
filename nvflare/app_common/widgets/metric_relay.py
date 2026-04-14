@@ -60,30 +60,41 @@ class MetricRelay(Widget, AttributesExportable):
                 return
             self._fl_ctx = fl_ctx
             self.pipe = pipe
-            self.pipe_handler = PipeHandler(
-                pipe=self.pipe,
-                read_interval=self._read_interval,
-                heartbeat_interval=self._heartbeat_interval,
-                heartbeat_timeout=self._heartbeat_timeout,
-            )
-            self.pipe_handler.set_status_cb(self._pipe_status_cb)
-            self.pipe_handler.set_message_cb(self._pipe_msg_cb)
             self.pipe.open(self.pipe_channel_name)
         elif event_type == EventType.BEFORE_TASK_EXECUTION:
+            if self.pipe_handler:
+                self.pipe_handler.stop(close_pipe=False)
+            self._create_pipe_handler()
             self.pipe_handler.start()
         elif event_type == EventType.ABOUT_TO_END_RUN:
-            self.log_info(fl_ctx, "Stopping pipe handler")
+            self.log_debug(fl_ctx, "Stopping pipe handler")
             if self.pipe_handler:
                 self.pipe_handler.notify_end("end_of_job")
-                self.pipe_handler.stop()
+                self.pipe_handler.stop(close_pipe=False)
 
-    def _pipe_status_cb(self, msg: Message):
-        self.logger.info(f"{self.pipe_channel_name} pipe status changed to {msg.topic}")
-        self.pipe_handler.stop()
+    def _create_pipe_handler(self):
+        handler = PipeHandler(
+            pipe=self.pipe,
+            read_interval=self._read_interval,
+            heartbeat_interval=self._heartbeat_interval,
+            heartbeat_timeout=self._heartbeat_timeout,
+        )
+
+        def _bound_status_cb(msg, _h=handler):
+            if self.pipe_handler is not _h:
+                self.logger.debug(f"Ignoring late {msg.topic} from a previous pipe handler")
+                return
+            self.logger.info(f"{self.pipe_channel_name} pipe status changed to {msg.topic}: {msg.data}")
+            _h.stop(close_pipe=False)
+
+        handler.set_status_cb(_bound_status_cb)
+        handler.set_message_cb(self._pipe_msg_cb)
+        self.pipe_handler = handler
 
     def _pipe_msg_cb(self, msg: Message):
         if not isinstance(msg.data, DXO):
             self.logger.error(f"bad metric data: expect DXO but got {type(msg.data)}")
+            return
         send_analytic_dxo(self, msg.data, self._fl_ctx, self._event_type, fire_fed_event=self._fed_event)
 
     def export(self, export_mode: str) -> Tuple[str, dict]:

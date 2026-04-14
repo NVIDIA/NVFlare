@@ -119,7 +119,7 @@ nvflare/
 - **Formatter**: black (line length: 120)
 - **Linter**: flake8
 - **Import sorter**: isort (black profile)
-- **Python**: 3.9, 3.10, 3.11, 3.12
+- **Python**: 3.9, 3.10, 3.11, 3.12, 3.13, 3.14
 
 All Python files must include Apache 2.0 license header:
 ```python
@@ -149,4 +149,3 @@ Create a `CLAUDE.local.md` file (git-ignored) for personal preferences such as:
 - Preferred coding patterns
 - Local environment specifics
 - Custom shortcuts or workflows
-

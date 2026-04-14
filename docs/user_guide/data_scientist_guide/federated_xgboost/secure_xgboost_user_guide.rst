@@ -172,6 +172,80 @@ The following table summarizes the available mitigations for different collabora
 
 - **The remaining two risks** will be discussed in the `Advanced Topics: Future Security Scenarios`_ section.
 
+TimberStrike Attack Analysis
+-----------------------------
+
+TimberStrike is a model inversion attack that exploits ``sum_hessian`` values and tree structure to estimate training data distributions. Empirical results vary significantly with dataset scale:
+
+.. list-table:: Reconstruction Accuracy Results
+   :widths: 20 15 15 25
+   :header-rows: 1
+
+   * - Dataset
+     - Samples
+     - Features
+     - Reconstruction Accuracy
+   * - Diabetes (toy)
+     - 768
+     - 8
+     - 65.80%
+   * - CreditCard (realistic)
+     - 284,807
+     - 30
+     - 8.72%
+
+.. note::
+
+   The above results were obtained **before** NVFlare's ``sum_hessian`` removal—i.e., with full model statistics available to the attacker. With NVFlare's built-in protection enabled (see below), TimberStrike's primary information source is eliminated, which is expected to substantially degrade attack performance. "Reconstruction accuracy" is a distance-tolerance metric (not exact recovery); see the `TimberStrike paper <https://arxiv.org/abs/2506.07605>`_ for the precise definition.
+
+Risk Assessment
+~~~~~~~~~~~~~~~
+
+On practical datasets (`CreditCard <https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud>`_), TimberStrike achieves <10% accuracy even with ``sum_hessian`` available. To put this in perspective, we use `NeMo SafeSynthesizer <https://docs.nvidia.com/nemo/microservices/latest/studio/safe-synthesizer.html>`_ as a reference. SafeSynthesizer is a privacy-focused synthetic data generation tool purpose-built for compliance (GDPR, HIPAA), with built-in membership inference protection and optional differential privacy guarantees. Even with these privacy safeguards, its synthetic data still achieves 51.98% proximity to real samples, because preserving data utility requires some statistical similarity. TimberStrike's 8.72% falls well below this reference point. Acceptable privacy levels are inherently data-dependent; users are encouraged to run similar comparisons on their own datasets.
+
+Protection
+~~~~~~~~~~
+
+- **Built-in**: NVFlare removes ``sum_hessian`` from model transmissions in horizontal tree-based mode, eliminating the attack's primary information source.
+- **Additional**: Increase ``min_child_weight`` to raise the minimum sum of instance weight (hessian) required per leaf, resulting in coarser tree structure with fewer splits. The `TimberStrike paper <https://arxiv.org/abs/2506.07605>`_ shows that tree depth (and by extension, number of splits) directly impacts reconstruction accuracy, so reducing tree granularity is expected to limit information exposure. Optimal values are task-dependent; refer to the paper for analysis of the privacy-utility trade-off. This parameter can be added to ``xgb_params`` in the recipe:
+
+  .. code-block:: python
+
+     recipe = XGBHorizontalRecipe(
+         name="xgb_higgs_horizontal",
+         min_clients=2,
+         num_rounds=100,
+         xgb_params={
+             "max_depth": 8,
+             "eta": 0.1,
+             "objective": "binary:logistic",
+             "eval_metric": "auc",
+             "min_child_weight": 100,  # increase for coarser trees and reduced privacy exposure
+         },
+         per_site_config=per_site_config,
+     )
+
+Closest Reconstructed Samples (CreditCard)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Each example below shows the closest match (minimum distance) from its respective method. Note that these are different source records, shown to illustrate the reconstruction quality of each method independently.
+
+*TimberStrike (8.72% accuracy)*:
+
+.. code-block::
+
+   Original:      [-27.0, -25.3, -12.1, -1.53, -3.67, -1.82, -3.34, -26.6, 1.08, -0.42, 3.61, -5.42, ...]
+   Reconstructed: [-30.0, -29.2, -10.5, 7.60, 2.20, -0.11, 4.55, -5.84, 5.50, 4.38, 3.07, 1.26, ...]
+
+*SafeSynthesizer (51.98% accuracy)*:
+
+.. code-block::
+
+   Original:      [2.06, -0.03, -1.06, 0.42, -0.13, -1.21, 0.20, -0.35, 0.51, 0.07, -0.70, 0.54, ...]
+   Reconstructed: [2.06, -0.05, -1.07, 0.41, -0.12, -1.20, 0.20, -0.34, 0.50, 0.06, -0.68, 0.53, ...]
+
+TimberStrike shows substantial deviations even on its closest match (e.g., feature 4: -1.53 → 7.60), while SafeSynthesizer's closest match differs by only 0.01–0.02 per feature yet remains privacy-compliant by design. This suggests TimberStrike's reconstructions may not constitute a meaningful privacy risk for a given dataset like CreditCard.
+
 GPU Acceleration
 ================
 

@@ -42,6 +42,8 @@ class _CyclicValidator(BaseModel):
     params_transfer_type: TransferType = TransferType.FULL
     framework: FrameworkType = FrameworkType.NUMPY
     server_memory_gc_rounds: int = 1
+    client_memory_gc_rounds: int = 0
+    cuda_empty_cache: bool = False
 
 
 class CyclicRecipe(Recipe):
@@ -112,6 +114,8 @@ class CyclicRecipe(Recipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         server_memory_gc_rounds: int = 1,
+        client_memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ):
         # Validate inputs internally
         v = _CyclicValidator(
@@ -128,6 +132,8 @@ class CyclicRecipe(Recipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             server_memory_gc_rounds=server_memory_gc_rounds,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            cuda_empty_cache=cuda_empty_cache,
         )
 
         self.name = v.name
@@ -141,6 +147,7 @@ class CyclicRecipe(Recipe):
         if isinstance(self.model, dict):
             self.model = recipe_model_to_job_model(self.model)
 
+        self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
         self.train_script = v.train_script
         self.train_args = v.train_args
@@ -150,6 +157,8 @@ class CyclicRecipe(Recipe):
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
+        self.client_memory_gc_rounds = v.client_memory_gc_rounds
+        self.cuda_empty_cache = v.cuda_empty_cache
 
         # Validate that we have at least one model source
         if self.model is None and self.initial_ckpt is None:
@@ -162,13 +171,16 @@ class CyclicRecipe(Recipe):
         # Setup model persistor first - subclasses override for framework-specific handling
         persistor_id = self._setup_model_and_persistor(job)
 
-        # Use returned persistor_id or default to "persistor"
         if not persistor_id:
-            persistor_id = "persistor"
+            raise ValueError(
+                "Unable to configure a model persistor for CyclicRecipe. "
+                "Provide a supported model/framework combination (PyTorch or TensorFlow), "
+                "or pass a framework-specific model wrapper with add_to_fed_job()."
+            )
 
         # Define the controller workflow and send to server
         controller = CyclicController(
-            num_rounds=num_rounds,
+            num_rounds=self.num_rounds,
             task_assignment_timeout=10,
             persistor_id=persistor_id,
             shareable_generator_id="shareable_generator",
@@ -188,31 +200,47 @@ class CyclicRecipe(Recipe):
             framework=self.framework,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
+            memory_gc_rounds=self.client_memory_gc_rounds,
+            cuda_empty_cache=self.cuda_empty_cache,
         )
         job.to_clients(executor)
 
         super().__init__(job)
 
     def _setup_model_and_persistor(self, job) -> str:
-        """Setup framework-specific model components and persistor.
+        """Setup model wrapper persistor.
 
-        Handles PTModel/TFModel wrappers passed by framework-specific subclasses.
+        Handles the following model inputs:
+        - framework-specific wrappers (objects with ``add_to_fed_job``)
 
         Returns:
             str: The persistor_id to be used by the controller.
         """
-        if self.model is None:
-            return ""
+        from nvflare.recipe.utils import extract_persistor_id, prepare_initial_ckpt
 
-        # Check if model is a model wrapper (PTModel, TFModel)
+        ckpt_path = prepare_initial_ckpt(self.initial_ckpt, job)
+
+        # Model wrapper path (PTModel/TFModel or custom wrapper)
         if hasattr(self.model, "add_to_fed_job"):
-            # It's a model wrapper - use its add_to_fed_job method
-            result = job.to_server(self.model, id="persistor")
-            return result["persistor_id"]
+            if ckpt_path:
+                if not hasattr(self.model, "initial_ckpt"):
+                    raise ValueError(
+                        f"initial_ckpt is provided, but model wrapper {type(self.model).__name__} "
+                        "does not support 'initial_ckpt'."
+                    )
+                existing_ckpt = getattr(self.model, "initial_ckpt", None)
+                if existing_ckpt and existing_ckpt != ckpt_path:
+                    raise ValueError(
+                        f"Conflicting checkpoint values: model wrapper has initial_ckpt={existing_ckpt}, "
+                        f"but recipe initial_ckpt={ckpt_path}."
+                    )
+                setattr(self.model, "initial_ckpt", ckpt_path)
 
-        # Unknown model type
-        raise TypeError(
-            f"Unsupported model type: {type(self.model).__name__}. "
-            f"Use a framework-specific recipe (PTCyclicRecipe, TFCyclicRecipe, etc.) "
-            f"or wrap your model in PTModel/TFModel."
+            result = job.to_server(self.model, id="persistor")
+            return extract_persistor_id(result)
+
+        raise ValueError(
+            f"Unsupported framework '{self.framework}' for base CyclicRecipe model persistence. "
+            "Use a framework-specific CyclicRecipe subclass, or pass a framework-specific "
+            "model wrapper with add_to_fed_job()."
         )

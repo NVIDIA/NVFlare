@@ -131,6 +131,59 @@ Result Submission Timeout
    })
 
 
+Subprocess Large-Model Result Submission Timeout
+-------------------------------------------------
+
+**Applies to**: Subprocess-mode clients (``launch_external_process=True``) with large models
+
+**Symptom**: Training completes in the subprocess but the job hangs or fails immediately
+after, with no result acknowledgment received.
+
+**Cause**: ``submit_result_timeout`` (default 60 s) is the time the training subprocess
+waits for the client training process to acknowledge its result.  For large models (5 GB+),
+the transfer alone exceeds this limit.
+
+**Solution**:
+
+.. code-block:: python
+
+   recipe.add_client_config({
+       "submit_result_timeout": 1800,      # 30 min for LLM-scale results
+       "tensor_min_download_timeout": 600, # PyTorch: increase if inter-chunk gaps exceed 300s default
+       # "np_min_download_timeout": 600,   # NumPy/sklearn: same, use instead of tensor variant
+   })
+
+.. note::
+   ``submit_result_timeout`` is the subprocess-side wait for acknowledgment.
+   It is distinct from ``submit_task_result_timeout``, which is the server-side wait
+   for the client to deliver a result.  For large models, set ``submit_task_result_timeout``
+   (server-side) to be at least as large as ``submit_result_timeout`` (subprocess-side)
+   so the server is still listening when the subprocess finishes sending.
+
+Swarm Learning P2P Transfer Timeout
+------------------------------------
+
+**Applies to**: ``SwarmLearningRecipe`` with large models
+
+**Symptom**: Swarm Learning job fails with P2P ACK timeout during model scatter between peers.
+
+**Cause**: ``round_timeout`` (which sets the P2P model-transfer ACK budget between peers)
+defaults to 3600 s.  For very large models (7B+) on congested networks, peer-to-peer
+tensor streaming can approach this limit.
+
+**Solution**: Set ``round_timeout`` directly on the recipe:
+
+.. code-block:: python
+
+   recipe = SwarmLearningRecipe(
+       name="swarm",
+       model=MyModel(),
+       min_clients=3,
+       num_rounds=5,
+       train_script="client.py",
+       round_timeout=7200,  # 2 hours for 70B+ models
+   )
+
 Cross-Site Evaluation Timeout
 -----------------------------
 
@@ -167,6 +220,18 @@ Most Commonly Adjusted Timeouts
    * - submit_task_result_timeout
      - None
      - Large result payloads
+   * - submit_result_timeout (subprocess mode only)
+     - 60 s
+     - Large model result transfers from subprocess; set 1800 s for LLMs
+   * - tensor_min_download_timeout / np_min_download_timeout (subprocess mode only)
+     - 300 s
+     - 70B+ models on congested networks; increase to 600 s (tensor = PyTorch, np = NumPy/sklearn)
+   * - max_resends (subprocess mode only)
+     - 3
+     - Persistent network failures; increase to 5–10
+   * - round_timeout (Swarm Learning only)
+     - 3600 s
+     - 7B+ model P2P transfers between Swarm peers
    * - external_pre_init_timeout (Client API subprocess only)
      - 60-300s
      - LLMs, heavy imports before ``flare.init()``
@@ -214,6 +279,18 @@ Via Configuration Files
    get_task_timeout = 300.0
    submit_task_result_timeout = 300.0
 
+   # Server startup/dead-job safety flags
+   strict_start_job_reply_check = false
+   sync_client_jobs_require_previous_report = true
+
+Server-side safety flags guidance (see :ref:`server_startup_dead_job_safety_flags` for full details):
+
+- ``strict_start_job_reply_check`` (default ``false``): in non-strict mode, start-job timeouts are silently
+  excluded from the active set with no ``min_sites``/``required_sites`` enforcement; set to ``true`` to make
+  timeouts visible and have ``min_sites``/``required_sites`` constraints enforced at startup.
+- ``sync_client_jobs_require_previous_report`` (default ``true``): keep enabled to avoid false dead-job reports
+  caused by transient startup or sync races.
+
 **comm_config.json** (system-level, in startup kit):
 
 .. code-block:: json
@@ -245,6 +322,8 @@ Large Model Training (100M+ parameters)
    recipe.add_client_config({
        "get_task_timeout": 600,
        "submit_task_result_timeout": 600,
+       "submit_result_timeout": 600,        # subprocess mode only
+       "tensor_min_download_timeout": 300,  # subprocess mode only; use np_min_download_timeout for NumPy
    })
 
 
@@ -255,7 +334,10 @@ LLM/Foundation Model Training
 
    recipe.add_client_config({
        "get_task_timeout": 1200,
-       "submit_task_result_timeout": 1200,
+       "submit_task_result_timeout": 1800,  # server-side; must be >= submit_result_timeout
+       "submit_result_timeout": 1800,       # subprocess mode only
+       "tensor_min_download_timeout": 600,  # PyTorch; use np_min_download_timeout for NumPy
+       "max_resends": 5,                    # subprocess mode only
    })
 
 
@@ -278,6 +360,120 @@ System-level (``comm_config.json`` in startup kit):
      "heartbeat_interval": 15,
      "streaming_read_timeout": 600
    }
+
+
+Streaming Stall Guardrail (``comm_config.json``)
+------------------------------------------------
+
+For large payload/model transfers, configure F3 stream stall detection in
+``comm_config.json`` (server and client startup kits).
+
+**Runtime defaults** (if not set explicitly):
+
+- ``streaming_send_timeout``: ``30.0`` seconds
+- ``streaming_ack_progress_timeout``: ``60.0`` seconds
+- ``streaming_ack_progress_check_interval``: ``5.0`` seconds
+- ``sfm_send_stall_timeout``: ``45.0`` seconds
+- ``sfm_close_stalled_connection``: ``false`` (warn-only)
+- ``sfm_send_stall_consecutive_checks``: ``3``
+
+**Recommended deployment guideline**:
+
+1. Start with **warn-only** to observe behavior safely.
+2. If repeated stall warnings are observed during large-model streaming, enable auto-close.
+3. Keep the guard enabled with consecutive checks to reduce false alarms.
+
+Warn-only baseline:
+
+.. code-block:: json
+
+   {
+     "sfm_close_stalled_connection": false,
+     "sfm_send_stall_timeout": 75,
+     "sfm_send_stall_consecutive_checks": 3
+   }
+
+Auto-recovery mode (when needed):
+
+.. code-block:: json
+
+   {
+     "sfm_close_stalled_connection": true,
+     "sfm_send_stall_timeout": 75,
+     "sfm_send_stall_consecutive_checks": 3
+   }
+
+**Timing relationship (important)**:
+
+- ``sfm_send_stall_timeout`` is compared against the total continuous blocked-send duration.
+- ``sfm_send_stall_consecutive_checks`` counts consecutive heartbeat monitor ticks (every 5 seconds),
+  not multiples of ``sfm_send_stall_timeout``.
+
+Approximate auto-close window (when ``sfm_close_stalled_connection=true``):
+
+.. code-block:: text
+
+   close_lower_bound ~= sfm_send_stall_timeout + (HEARTBEAT_TICK * (sfm_send_stall_consecutive_checks - 1))
+   close_upper_bound ~= sfm_send_stall_timeout + (HEARTBEAT_TICK * sfm_send_stall_consecutive_checks)
+
+With ``sfm_send_stall_timeout=75`` and ``sfm_send_stall_consecutive_checks=3``, close typically occurs
+around ``85``-``90`` seconds of continuous stall (not 225 seconds).
+
+**Outer-timeout guideline**:
+
+Set higher-layer timeouts (for example ``communication_timeout`` or task/request timeouts that include
+message transfer time) greater than ``close_upper_bound`` plus a safety margin.
+
+Example: ``communication_timeout=300`` is safely larger than the ~``90`` second stall auto-close window.
+
+**How to interpret logs**:
+
+- Expected warning on real stalls:
+  ``Detected stalled send on ... (N/3)``
+- In healthy/normal streaming, no stall warning should be emitted.
+- Intermittent stalls should not close the connection unless the threshold is reached in consecutive checks.
+
+
+Large-Scale Hierarchical / HPC Deployments (Slurm, Lustre)
+------------------------------------------------------------
+
+When running 100+ FL clients in a hierarchical topology on HPC systems with shared
+filesystems (Lustre, GPFS), two settings significantly improve startup reliability:
+
+**1. Set a minimum-client tolerance in** ``config_fed_server.json``
+
+Allow a small number of clients to be late or unavailable at startup without aborting
+the job. For a 144-client job, tolerating up to ~4% stragglers is safe:
+
+.. code-block:: json
+
+   {
+     "workflows": [{
+       "id": "controller",
+       "path": "nvflare.app_common.workflows.fedavg.FedAvg",
+       "args": {
+         "num_clients": 144,
+         "min_clients": 138
+       }
+     }]
+   }
+
+**2. Extend the runner sync timeout in** ``config_fed_client.json``
+
+With the default runner sync settings (a 2.0-second per-request timeout with overall
+sync bounded by ``max_runner_sync_timeout``), many clients contending for Lustre I/O
+at job launch can time out before finishing initialization. Increase these values to
+give each client more time to start up:
+
+.. code-block:: json
+
+   {
+     "runner_sync_timeout": 120,
+     "max_runner_sync_timeout": 7200
+   }
+
+These two changes address the most common startup race conditions in large hierarchical
+deployments and are compatible with the startup stability fixes in FLARE 2.7.2.
 
 
 Debugging Timeout Issues

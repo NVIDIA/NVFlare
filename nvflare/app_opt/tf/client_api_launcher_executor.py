@@ -14,10 +14,8 @@
 
 from typing import Optional
 
-from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
-from nvflare.app_opt.tf.params_converter import KerasModelToNumpyParamsConverter, NumpyToKerasModelParamsConverter
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.client.constants import CLIENT_API_CONFIG
 
@@ -47,6 +45,8 @@ class TFClientAPILauncherExecutor(ClientAPILauncherExecutor):
         params_exchange_format: str = ExchangeFormat.KERAS_LAYER_WEIGHTS,
         params_transfer_type: str = TransferType.FULL,
         config_file_name: str = CLIENT_API_CONFIG,
+        memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ) -> None:
         ClientAPILauncherExecutor.__init__(
             self,
@@ -72,19 +72,6 @@ class TFClientAPILauncherExecutor(ClientAPILauncherExecutor):
             params_exchange_format=params_exchange_format,
             params_transfer_type=params_transfer_type,
             config_file_name=config_file_name,
+            memory_gc_rounds=memory_gc_rounds,
+            cuda_empty_cache=cuda_empty_cache,
         )
-
-    def initialize(self, fl_ctx: FLContext) -> None:
-        super().initialize(fl_ctx)
-        if (
-            self._server_expected_format == ExchangeFormat.NUMPY
-            and self._params_exchange_format == ExchangeFormat.KERAS_LAYER_WEIGHTS
-        ):
-            if self._from_nvflare_converter is None:
-                self._from_nvflare_converter = NumpyToKerasModelParamsConverter(
-                    [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
-                )
-            if self._to_nvflare_converter is None:
-                self._to_nvflare_converter = KerasModelToNumpyParamsConverter(
-                    [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
-                )

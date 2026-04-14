@@ -3,4 +3,4 @@ torch
 tensorboard
 scikit-learn
 opacus
-pandas
+pandas~=2.3

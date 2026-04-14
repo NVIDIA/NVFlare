@@ -98,6 +98,13 @@ class BaseFedAvg(ModelController):
 
     @staticmethod
     def aggregate_fn(results: List[FLModel]) -> FLModel:
+        """Aggregate model params and metrics across results with weighted averaging.
+
+        Note:
+            Metric values that do not support weighted arithmetic are skipped during
+            aggregation. If no aggregatable metrics remain after filtering, the
+            aggregated metrics are returned as ``None``.
+        """
         if not results:
             raise ValueError("received empty results for aggregation.")
 
@@ -111,7 +118,7 @@ class BaseFedAvg(ModelController):
                 contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
                 contribution_round=_result.current_round,
             )
-            if not _result.metrics:
+            if _result.metrics is None:
                 all_metrics = False
             if all_metrics:
                 aggregatable = filter_aggregatable_metrics(_result.metrics)
@@ -125,6 +132,7 @@ class BaseFedAvg(ModelController):
 
         aggr_params = aggr_helper.get_result()
         aggr_metrics = aggr_metrics_helper.get_result() if all_metrics else None
+        aggr_metrics = aggr_metrics or None
 
         aggr_result = FLModel(
             params=aggr_params,

@@ -44,6 +44,7 @@ class NPValidator(Executor):
         self._random_epsilon = epsilon
         self._sleep_time = sleep_time
         self._validate_task_name = AppConstants.TASK_VALIDATION
+        self._submit_model_task_name = AppConstants.TASK_SUBMIT_MODEL
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         # if event_type == EventType.START_RUN:
@@ -126,5 +127,9 @@ class NPValidator(Executor):
             except Exception as e:
                 self.log_exception(fl_ctx, f"Exception in NPValidator execute: {secure_format_exception(e)}.")
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        elif task_name == self._submit_model_task_name:
+            # Dummy validator has no local model; signal OK so CSE controller can skip this client's submission.
+            self.log_info(fl_ctx, "submit_model (dummy): no local model, returning OK.")
+            return make_reply(ReturnCode.OK)
         else:
             return make_reply(ReturnCode.TASK_UNKNOWN)

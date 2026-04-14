@@ -19,6 +19,7 @@ from typing import Dict, Optional
 
 from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
 from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class ExchangeFormat(str, Enum):
@@ -35,6 +36,7 @@ class TransferType(str, Enum):
 
 class ConfigKey:
     EXCHANGE_FORMAT = "exchange_format"
+    SERVER_EXPECTED_FORMAT = "server_expected_format"
     TRANSFER_TYPE = "transfer_type"
     TRAIN_WITH_EVAL = "train_with_eval"
     TRAIN_TASK_NAME = "train_task_name"
@@ -48,6 +50,12 @@ class ConfigKey:
     TASK_EXCHANGE = "TASK_EXCHANGE"
     METRICS_EXCHANGE = "METRICS_EXCHANGE"
     HEARTBEAT_TIMEOUT = "HEARTBEAT_TIMEOUT"
+    MEMORY_GC_ROUNDS = "memory_gc_rounds"
+    CUDA_EMPTY_CACHE = "cuda_empty_cache"
+    SUBMIT_RESULT_TIMEOUT = "submit_result_timeout"
+    MAX_RESENDS = "max_resends"
+    DOWNLOAD_COMPLETE_TIMEOUT = "download_complete_timeout"
+    LAUNCH_ONCE = "launch_once"
 
 
 class ClientConfig:
@@ -123,6 +131,7 @@ class ClientConfig:
         if config is None:
             config = {}
         self.config = config
+        self.logger = get_obj_logger(self)
 
     def get_config(self) -> Dict:
         return self.config
@@ -138,6 +147,9 @@ class ClientConfig:
 
     def get_exchange_format(self) -> str:
         return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.EXCHANGE_FORMAT, "")
+
+    def get_server_expected_format(self) -> str:
+        return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.SERVER_EXPECTED_FORMAT, ExchangeFormat.NUMPY)
 
     def get_transfer_type(self) -> str:
         return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.TRANSFER_TYPE, "FULL")
@@ -157,6 +169,53 @@ class ClientConfig:
             ConfigKey.HEARTBEAT_TIMEOUT,
             self.config.get(ConfigKey.METRICS_EXCHANGE, {}).get(ConfigKey.HEARTBEAT_TIMEOUT, 60),
         )
+
+    def get_max_resends(self):
+        """Return the maximum number of pipe send retries for submitting task results.
+
+        None means unlimited; the default of 3 bounds the retry window and prevents
+        unbounded ArrayDownloadable accumulation (Root Cause 6).
+        Set via recipe.add_client_config({"max_resends": N}).
+        """
+        value = self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.MAX_RESENDS, 3)
+        if value is None:
+            return None
+        result = int(value)
+        if result < 0:
+            self.logger.warning(f"max_resends={result} is negative, clamping to 0")
+            return 0
+        return result
+
+    def get_launch_once(self) -> bool:
+        """Return whether the subprocess is launched once for the entire job (True) or per-round (False).
+
+        True  → subprocess handles multiple rounds; must NOT os._exit() after each send.
+        False → subprocess handles one round; must os._exit() after download so the deferred-stop
+                poller on the CJ side unblocks (default, preserves original behaviour).
+        """
+        return bool(self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.LAUNCH_ONCE, False))
+
+    def get_download_complete_timeout(self) -> float:
+        """Return timeout (seconds) for subprocess to wait for the server to finish downloading its result.
+
+        After send_to_peer() ACKs, the server asynchronously downloads tensors from the subprocess
+        DownloadService.  This timeout gates subprocess exit so the process does not disappear before
+        the download completes.  Defaults to 1800 s (30 min) for large-model transfers.
+        """
+        return float(self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT, 1800.0))
+
+    def get_submit_result_timeout(self) -> float:
+        """Return the timeout (seconds) for the subprocess to wait for CJ to ACK a result message.
+
+        The value is read from the TASK_EXCHANGE section of the config, which is written by
+        ClientAPILauncherExecutor.prepare_config_for_launch().  If absent, a safe default of
+        300 s is returned — large enough for a single-chunk ACK with reverse PASS_THROUGH, and
+        a reasonable upper bound for direct (non-PASS_THROUGH) transfers at typical throughputs.
+
+        Changing this value via recipe.add_client_config() sets it for a specific job without
+        touching any process-level defaults.
+        """
+        return float(self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.SUBMIT_RESULT_TIMEOUT, 300.0))
 
     def get_connection_security(self):
         return self.config.get(ConnPropKey.CONNECTION_SECURITY)

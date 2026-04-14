@@ -27,12 +27,13 @@ TEST_PW = "testing1234"
 @pytest.fixture(scope="session")
 def app():
 
-    web_root = tempfile.mkdtemp(prefix="nvflare-")
+    web_root = tempfile.mkdtemp(prefix="nvflare-", dir=os.environ.get("TMPDIR"))
     sqlite_file = os.path.join(web_root, "db.sqlite")
     if os.path.exists(sqlite_file):
         os.remove(sqlite_file)
     os.environ["DATABASE_URL"] = f"sqlite:///{sqlite_file}"
     os.environ["NVFL_CREDENTIAL"] = f"{TEST_USER}:{TEST_PW}:nvidia"
+    os.environ["NVFL_WEB_ROOT"] = web_root
     app = init_app()
     app.config.update(
         {

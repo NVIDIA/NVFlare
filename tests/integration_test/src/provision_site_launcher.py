@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import shlex
 import shutil
 import tempfile
 import time
@@ -22,6 +23,7 @@ import yaml
 from .site_launcher import ServerProperties, SiteLauncher, SiteProperties, kill_process
 from .utils import (
     cleanup_job_and_snapshot,
+    cleanup_path,
     read_yaml,
     run_command_in_subprocess,
     run_provision_command,
@@ -34,14 +36,16 @@ PROD_FOLDER_NAME = "prod_00"
 
 
 def _start_site(site_properties: SiteProperties):
-    process = run_command_in_subprocess(f"bash {os.path.join(site_properties.root_dir, 'startup', 'start.sh')}")
+    process = run_command_in_subprocess(
+        f"bash {shlex.quote(os.path.join(site_properties.root_dir, 'startup', 'start.sh'))}"
+    )
     print(f"Starting {site_properties.name} ...")
     site_properties.process = process
 
 
 def _stop_site(site_properties: SiteProperties):
     run_command_in_subprocess(
-        f"bash {os.path.join(site_properties.root_dir, 'startup', 'stop_fl.sh')}", stdin_data=b"y\n"
+        f"bash {shlex.quote(os.path.join(site_properties.root_dir, 'startup', 'stop_fl.sh'))}", stdin_data=b"y\n"
     )
     print(f"Stopping {site_properties.name} ...")
 
@@ -68,6 +72,7 @@ class ProvisionSiteLauncher(SiteLauncher):
         return os.path.join(WORKSPACE, self.project_yaml["name"], PROD_FOLDER_NAME)
 
     def prepare_workspace(self) -> str:
+        cleanup_path(os.path.join(WORKSPACE, self.project_yaml["name"]))
         _, temp_yaml = tempfile.mkstemp()
         with open(temp_yaml, "w") as f:
             yaml.dump(self.project_yaml, f, default_flow_style=False)

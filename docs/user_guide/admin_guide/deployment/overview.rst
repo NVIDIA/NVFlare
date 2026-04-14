@@ -63,6 +63,9 @@ which you can use to customize configurations to fit your own requirements.
 Edit the :ref:`Project yaml file <project_yml>` in the directory with the provisioning tool to meet your project requirements (make sure the
 server, client sites, admin, orgs, and everything else are right for your project).
 
+For multi-study deployments, set ``api_version: 4`` and add a ``studies:`` section to define per-study
+site enrollment and admin role mappings. See :ref:`multi_study_guide`.
+
 Then run the provision command with (here we assume your
 project.yml is in current working directory):
 
@@ -294,11 +297,7 @@ The workload, which typically includes training and evaluation code, can be depl
 
   This feature is mostly used by data scientists during experiments and POCs. For production loads, where security requires no dynamic code loading, a pre-installed workload is necessary before running experiments.
 
-- **Pre-deployed Code**: In cases where security or other requirements demand no dynamic code loading, pre-installation is required before starting the experiments. You can pre-install the workload via the :ref:`pre_installer` command of the FLARE CLI.
-
-.. code-block::
-
-    nvflare pre-install
+- **Pre-deployed Code**: In cases where security or other requirements demand no dynamic code loading, pre-installation is required before starting the experiments. The application and its dependencies can be pre-installed by building Docker images with the workload included.
 
 .. note::
     Ensure that both the server and clients have the proper dependencies for the workload. For example, if both the server and client need to save a checkpoint of the model using the `torch.save()` method, then PyTorch must be installed on both the server and client. If Docker is used, it must be installed inside the Docker container.
@@ -308,8 +307,8 @@ Running federated learning from the administration console
 ==========================================================
 With all connections between the FL server, FL clients, and administration consoles open and all of the parties
 started successfully as described in the preceding section, `Federated Learning Administration Console`_,
-admin commands can be used to operate a federated learning project. The FLAdminAPI provides a way to programmatically
-issue commands to operate the system so it can be run with a script.
+admin commands can be used to operate a federated learning project. The :ref:`flare_api` provides the supported Python
+interface for issuing these commands from scripts and notebooks.
 
 For a complete list of admin commands, see :ref:`operating_nvflare`.
 
@@ -348,7 +347,6 @@ Administrator side folder and file structure
                 config/
                 models/
                 resources/
-
 
 
 

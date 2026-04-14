@@ -345,6 +345,7 @@ def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):
                 current_dict[key] = os.path.join(dir_path, value)
 
     logging.config.dictConfig(dict_config)
+    logging.captureWarnings(True)  # route Python warnings through logging so they reach file handlers
 
 
 def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str, file_prefix: str = ""):

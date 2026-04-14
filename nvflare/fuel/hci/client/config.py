@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -140,10 +140,16 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
 def secure_load_admin_config(workspace: Workspace):
     mgr = SecurityContentManager(content_folder=workspace.get_startup_kit_dir())
 
-    # make sure admin startup config file is not tampered with
+    # Tamper check: only meaningful when signature.json is present (CC or HE mode).
+    # When valid_config=False (no signature.json — standard non-CC, non-HE, or Manual
+    # Workflow), fed_admin.json returns NOT_SIGNED; that is correct and not an error.
     _, result = mgr.load_json(WorkspaceConstants.ADMIN_STARTUP_CONFIG)
-    if result != LoadResult.OK:
-        raise ConfigError(f"invalid {WorkspaceConstants.ADMIN_STARTUP_CONFIG}: {result}")
+    if mgr.valid_config and result != LoadResult.OK:
+        # signature.json is present (CC or HE mode) — enforce tamper check strictly
+        raise ConfigError(f"invalid {WorkspaceConstants.ADMIN_STARTUP_CONFIG}: tampered ({result})")
+    # if valid_config=False (no signature.json): skip tamper check
+    # mTLS is the trust anchor; no centrally-signed kit exists to verify against
+
     conf = FLAdminClientStarterConfigurator(workspace=workspace)
     conf.configure()
     return conf

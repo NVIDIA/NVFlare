@@ -320,7 +320,15 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
 
         """
         job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+        if not isinstance(job_meta, dict):
+            raise RuntimeError(f"invalid job meta type: expected dict but got {type(job_meta)}")
+
         job_clients = job_meta.get(JobMetaKey.JOB_CLIENTS)
+        if job_clients is None:
+            raise RuntimeError(f"missing {JobMetaKey.JOB_CLIENTS} in job meta")
+        if not isinstance(job_clients, list):
+            raise RuntimeError(f"invalid {JobMetaKey.JOB_CLIENTS} type: expected list but got {type(job_clients)}")
+
         self.all_clients = [from_dict(d) for d in job_clients]
         for c in self.all_clients:
             self.name_to_clients[c.name] = c

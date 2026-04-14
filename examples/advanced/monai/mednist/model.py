@@ -14,6 +14,8 @@
 
 from monai.networks.nets import DenseNet121
 
+from nvflare.app_opt.monai import decomposers
+
 
 class FLDenseNet121(DenseNet121):
     def __init__(self, spatial_dims=2, in_channels=1, out_channels=6):
@@ -24,3 +26,6 @@ class FLDenseNet121(DenseNet121):
         self.out_channels = out_channels
 
         super().__init__(spatial_dims=spatial_dims, in_channels=in_channels, out_channels=out_channels)
+
+        # For security, FOBS only allows explicitly whitelisted types.
+        decomposers.register_monai_types()

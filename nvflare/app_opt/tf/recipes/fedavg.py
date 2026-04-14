@@ -118,6 +118,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
         server_memory_gc_rounds: int = 0,
+        client_memory_gc_rounds: int = 0,
     ):
         # Call the unified FedAvgRecipe with TensorFlow-specific settings
         super().__init__(
@@ -141,20 +142,22 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
             server_memory_gc_rounds=server_memory_gc_rounds,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            cuda_empty_cache=False,
         )
 
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle TensorFlow-specific model setup."""
-        if self.model is not None or self.initial_ckpt is not None:
-            from nvflare.app_opt.tf.job_config.model import TFModel
-            from nvflare.recipe.utils import prepare_initial_ckpt
+        from nvflare.app_opt.tf.job_config.model import TFModel
+        from nvflare.recipe.utils import extract_persistor_id, resolve_initial_ckpt, setup_custom_persistor
 
-            ckpt_path = prepare_initial_ckpt(self.initial_ckpt, job)
-            tf_model = TFModel(
-                model=self.model,
-                initial_ckpt=ckpt_path,
-                persistor=self.model_persistor,
-            )
-            job.comp_ids["persistor_id"] = job.to_server(tf_model)
-            return job.comp_ids.get("persistor_id", "")
-        return ""
+        persistor_id = setup_custom_persistor(job=job, model_persistor=self.model_persistor)
+        if persistor_id:
+            return persistor_id
+
+        ckpt_path = resolve_initial_ckpt(self.initial_ckpt, getattr(self, "_prepared_initial_ckpt", None), job)
+        if self.model is None and not ckpt_path:
+            return ""
+
+        tf_model = TFModel(model=self.model, initial_ckpt=ckpt_path)
+        return extract_persistor_id(job.to_server(tf_model, id="persistor"))

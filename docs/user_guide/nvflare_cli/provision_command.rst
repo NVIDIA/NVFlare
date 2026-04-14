@@ -57,3 +57,8 @@ After running ``nvflare provision`` with ``--add_user`` or ``--add_client`` foll
 look for the yaml file in the current directory), the new user or client will be included in the prod_NN folder.
 
 To permanently include users or clients, please update the project.yml.
+
+.. note::
+
+   To use multi-study features, set ``api_version: 4`` in your ``project.yml`` and add a ``studies:``
+   section. See :ref:`multi_study_guide` for details.

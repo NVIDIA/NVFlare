@@ -42,7 +42,7 @@ class PTFileModelPersistor(ModelPersistor):
         best_global_model_file_name: str = DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
         source_ckpt_file_full_name: Optional[str] = None,
         filter_id: Optional[str] = None,
-        load_weights_only: bool = False,
+        load_weights_only: bool = True,
         allow_numpy_conversion: bool = True,
     ):
         """Persist pytorch-based model to/from file system.
@@ -100,7 +100,8 @@ class PTFileModelPersistor(ModelPersistor):
             filter_id: Optional string that defines a filter component that is applied to prepare the model to be saved,
                 e.g. for serialization of custom Python objects.
             load_weights_only: Indicates whether torch's unpickler should be restricted to loading only tensors, primitive types, dictionaries
-                and any types added via :func:`torch.serialization.add_safe_globals`. Defaults to False (<=PyTorch 2.6 behavior).
+                and any types added via :func:`torch.serialization.add_safe_globals`. Defaults to True (safe mode). Set to False
+                for legacy checkpoints that require full unpickling (pre-PyTorch 2.6 behavior).
             allow_numpy_conversion (bool): If set to True, enables conversion between PyTorch tensors and NumPy arrays.
                 PyTorch tensors will be converted to NumPy arrays during 'load_model',
                 and NumPy arrays will be converted to PyTorch tensors during 'save_model'. Defaults to True.

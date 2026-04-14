@@ -1,0 +1,20 @@
+# Third-Party Notices
+
+This example includes code vendored and adapted from the following project:
+
+## Qwen3-VL
+
+- **Source:** https://github.com/QwenLM/Qwen3-VL
+- **License:** Apache License 2.0
+- **License file:** https://github.com/QwenLM/Qwen3-VL/blob/main/LICENSE
+
+The following directories and files in this example are derived from the Qwen3-VL
+repository (qwen-vl-finetune):
+
+- `qwenvl/data/` — data list (including `fl_site`), data processor, rope2d
+- `qwenvl/train/` — train_qwen, trainer, argument dataclasses
+
+Modifications include: adapter-only model loading for federated LoRA exchange,
+path handling for use as a self-contained NVFlare example, and minor bug fixes.
+Original copyright and license terms are retained in the respective source files
+where present; the upstream project is licensed under the Apache License, Version 2.0.

@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional, Union
 from pydantic import BaseModel
 
 from nvflare.apis.dxo import DataKind
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.workflows.fedavg import FedAvg
@@ -60,6 +61,9 @@ class _FedAvgValidator(BaseModel):
     aggregation_weights: Optional[Dict[str, float]] = None
     # Memory management
     server_memory_gc_rounds: int = 0
+    enable_tensor_disk_offload: bool = False
+    client_memory_gc_rounds: int = 0
+    cuda_empty_cache: bool = False
 
 
 class FedAvgRecipe(Recipe):
@@ -101,6 +105,7 @@ class FedAvgRecipe(Recipe):
         framework: The framework type. One of:
             - FrameworkType.PYTORCH (default)
             - FrameworkType.TENSORFLOW
+            - FrameworkType.NUMPY
             - FrameworkType.RAW (for custom frameworks, e.g., sklearn, XGBoost)
         server_expected_format: What format to exchange the parameters between server and client.
             Defaults to ExchangeFormat.NUMPY.
@@ -136,6 +141,8 @@ class FedAvgRecipe(Recipe):
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
         server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
             Set to 0 to disable. Defaults to 0.
+        enable_tensor_disk_offload: Enable disk-backed tensor offload for incoming streamed payloads.
+            When True, server receives tensor payloads via temp files and materializes lazily.
 
     Note:
         This recipe uses InTime (streaming) aggregation for memory efficiency - each client
@@ -177,6 +184,9 @@ class FedAvgRecipe(Recipe):
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
         server_memory_gc_rounds: int = 0,
+        enable_tensor_disk_offload: bool = False,
+        client_memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -205,6 +215,9 @@ class FedAvgRecipe(Recipe):
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
             server_memory_gc_rounds=server_memory_gc_rounds,
+            enable_tensor_disk_offload=enable_tensor_disk_offload,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            cuda_empty_cache=cuda_empty_cache,
         )
 
         self.name = v.name
@@ -231,6 +244,7 @@ class FedAvgRecipe(Recipe):
         self.params_transfer_type = v.params_transfer_type
         self.model_persistor = v.model_persistor
         self.per_site_config = v.per_site_config
+        self._validate_per_site_config(self.per_site_config)
         self.launch_once = v.launch_once
         self.shutdown_timeout = v.shutdown_timeout
         self.key_metric = v.key_metric
@@ -240,6 +254,9 @@ class FedAvgRecipe(Recipe):
         self.exclude_vars = v.exclude_vars
         self.aggregation_weights = v.aggregation_weights
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
+        self.enable_tensor_disk_offload = v.enable_tensor_disk_offload
+        self.client_memory_gc_rounds = v.client_memory_gc_rounds
+        self.cuda_empty_cache = v.cuda_empty_cache
 
         # Validate that we have at least one model source
         # Note: Subclasses (e.g., sklearn) that manage models differently should pass
@@ -268,6 +285,12 @@ class FedAvgRecipe(Recipe):
         has_persistor = persistor_id != ""
         model_params = None if has_persistor else self._get_model_params()
 
+        if not has_persistor and model_params is None:
+            raise ValueError(
+                "Unable to configure a model source for FedAvgRecipe: no persistor and no model parameters. "
+                "Use a framework-specific recipe for checkpoint-only initialization, or provide model/model_persistor."
+            )
+
         # Prepare aggregator for controller - must be ModelAggregator for FLModel-based aggregation
         model_aggregator = self._get_model_aggregator()
 
@@ -285,6 +308,7 @@ class FedAvgRecipe(Recipe):
             exclude_vars=self.exclude_vars,
             aggregation_weights=self.aggregation_weights,
             memory_gc_rounds=self.server_memory_gc_rounds,
+            enable_tensor_disk_offload=self.enable_tensor_disk_offload,
         )
         job.to_server(controller)
 
@@ -304,10 +328,18 @@ class FedAvgRecipe(Recipe):
                     if site_config.get("launch_external_process") is not None
                     else self.launch_external_process
                 )
-                command = site_config.get("command") or self.command
-                framework = site_config.get("framework") or self.framework
-                expected_format = site_config.get("server_expected_format") or self.server_expected_format
-                transfer_type = site_config.get("params_transfer_type") or self.params_transfer_type
+                command = site_config.get("command") if site_config.get("command") is not None else self.command
+                framework = site_config.get("framework") if site_config.get("framework") is not None else self.framework
+                expected_format = (
+                    site_config.get("server_expected_format")
+                    if site_config.get("server_expected_format") is not None
+                    else self.server_expected_format
+                )
+                transfer_type = (
+                    site_config.get("params_transfer_type")
+                    if site_config.get("params_transfer_type") is not None
+                    else self.params_transfer_type
+                )
                 launch_once = (
                     site_config.get("launch_once") if site_config.get("launch_once") is not None else self.launch_once
                 )
@@ -327,6 +359,8 @@ class FedAvgRecipe(Recipe):
                     params_transfer_type=transfer_type,
                     launch_once=launch_once,
                     shutdown_timeout=shutdown_timeout,
+                    memory_gc_rounds=self.client_memory_gc_rounds,
+                    cuda_empty_cache=self.cuda_empty_cache,
                 )
                 job.to(executor, site_name)
         else:
@@ -340,10 +374,29 @@ class FedAvgRecipe(Recipe):
                 params_transfer_type=self.params_transfer_type,
                 launch_once=self.launch_once,
                 shutdown_timeout=self.shutdown_timeout,
+                memory_gc_rounds=self.client_memory_gc_rounds,
+                cuda_empty_cache=self.cuda_empty_cache,
             )
             job.to_clients(executor)
 
         Recipe.__init__(self, job)
+
+    @staticmethod
+    def _validate_per_site_config(per_site_config: Optional[Dict[str, Dict]]) -> None:
+        if per_site_config is None:
+            return
+
+        reserved_targets = {SERVER_SITE_NAME, ALL_SITES}
+        for site_name, site_config in per_site_config.items():
+            if not isinstance(site_name, str):
+                raise ValueError(f"per_site_config key must be str, got {type(site_name).__name__}")
+            if site_name in reserved_targets:
+                raise ValueError(
+                    f"'{site_name}' is a reserved target name and cannot be used in per_site_config. "
+                    f"Reserved names: {sorted(reserved_targets)}"
+                )
+            if not isinstance(site_config, dict):
+                raise ValueError(f"per_site_config['{site_name}'] must be a dict, got {type(site_config).__name__}")
 
     def _get_model_params(self) -> Optional[Dict]:
         """Convert model to dict of params.
@@ -398,15 +451,52 @@ class FedAvgRecipe(Recipe):
             )
             return None
 
-    def _setup_model_and_persistor(self, job: BaseFedJob) -> str:
-        """Setup framework-specific model components and persistor.
+    def _setup_numpy_model_and_persistor(self, job: BaseFedJob, *, model: Any, initial_ckpt: Optional[str]) -> str:
+        """Configure NPModelPersistor for unified NumPy recipe usage."""
+        import numpy as np
 
-        Base implementation handles custom persistor. Framework-specific subclasses
-        should override this to use PTModel/TFModel for their model types.
+        from nvflare.app_common.np.np_model_persistor import NPModelPersistor
+        from nvflare.recipe.utils import extract_persistor_id, resolve_initial_ckpt
+
+        model_list = None
+        if model is not None:
+            if isinstance(model, np.ndarray):
+                model_list = model.tolist()
+            elif isinstance(model, list):
+                model_list = model
+            else:
+                raise TypeError(
+                    f"FrameworkType.NUMPY requires model to be a numpy array or list, got {type(model).__name__}."
+                )
+
+        ckpt_path = resolve_initial_ckpt(initial_ckpt, getattr(self, "_prepared_initial_ckpt", None), job)
+        persistor = NPModelPersistor(
+            model=model_list,
+            source_ckpt_file_full_name=ckpt_path,
+        )
+        persistor_id = extract_persistor_id(job.to_server(persistor, id="persistor"))
+        if persistor_id and hasattr(job, "comp_ids"):
+            job.comp_ids["persistor_id"] = persistor_id
+        return persistor_id
+
+    def _setup_model_and_persistor(self, job: BaseFedJob) -> str:
+        """Setup generic custom persistor only.
+
+        Framework-specific recipes (PT/TF/NumPy) override this method to build and
+        register their model wrappers and default persistors.
 
         Returns:
             str: The persistor_id to be used by the controller.
         """
-        if self.model_persistor is not None:
-            return job.to_server(self.model_persistor, id="persistor")
+        from nvflare.recipe.utils import setup_custom_persistor
+
+        persistor_id = setup_custom_persistor(job=job, model_persistor=self.model_persistor)
+        if persistor_id:
+            if hasattr(job, "comp_ids"):
+                job.comp_ids.setdefault("persistor_id", persistor_id)
+            return persistor_id
+
+        if self.framework == FrameworkType.NUMPY and (self.model is not None or self.initial_ckpt is not None):
+            return self._setup_numpy_model_and_persistor(job, model=self.model, initial_ckpt=self.initial_ckpt)
+
         return ""

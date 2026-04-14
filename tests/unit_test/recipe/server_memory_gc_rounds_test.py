@@ -178,6 +178,7 @@ class TestFedAvgHERecipeServerMemoryGcRounds:
 
     def test_fedavg_he_default_server_memory_gc_rounds(self, mock_file_system, simple_model):
         """Test FedAvgRecipeWithHE has default server_memory_gc_rounds=1."""
+        pytest.importorskip("tenseal")
         from nvflare.app_opt.pt.recipes.fedavg_he import FedAvgRecipeWithHE
 
         recipe = FedAvgRecipeWithHE(
@@ -192,6 +193,7 @@ class TestFedAvgHERecipeServerMemoryGcRounds:
 
     def test_fedavg_he_custom_server_memory_gc_rounds(self, mock_file_system, simple_model):
         """Test FedAvgRecipeWithHE accepts custom server_memory_gc_rounds."""
+        pytest.importorskip("tenseal")
         from nvflare.app_opt.pt.recipes.fedavg_he import FedAvgRecipeWithHE
 
         recipe = FedAvgRecipeWithHE(

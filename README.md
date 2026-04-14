@@ -2,7 +2,7 @@
 
 # NVIDIA FLARE
 
-[Website](https://nvidia.github.io/NVFlare) | [Paper](https://arxiv.org/abs/2210.13291) | [Blogs](https://developer.nvidia.com/blog/tag/federated-learning) | [Talks & Papers](https://nvflare.readthedocs.io/en/main/publications_and_talks.html) | [Research](./research/README.md) | [Documentation](https://nvflare.readthedocs.io/en/main)
+[Website](https://nvidia.github.io/NVFlare) | [Paper](https://arxiv.org/abs/2210.13291) | [Blogs](https://developer.nvidia.com/blog/tag/federated-learning) | [Talks & Papers](https://nvflare.readthedocs.io/en/main/publications_and_talks.html) | [Webinars](https://nvidia.github.io/NVFlare/webinars) | [Research](./research/README.md) | [Documentation](https://nvflare.readthedocs.io/en/main)
 
 [![Blossom-CI](https://github.com/NVIDIA/nvflare/workflows/Blossom-CI/badge.svg?branch=main)](https://github.com/NVIDIA/nvflare/actions)
 [![documentation](https://readthedocs.org/projects/nvflare/badge/?version=main)](https://nvflare.readthedocs.io/en/main/?badge=main)
@@ -21,7 +21,7 @@ FLARE is built on a componentized architecture that allows you to take federated
 from research and simulation to real-world production deployment.
 
 Application Features
-* Support both deep learning and traditional machine learning algorithms (eg. PyTorch, TensorFlow, Scikit-learn, XGBoost etc.)
+* Support both deep learning and traditional machine learning algorithms (e.g., PyTorch, TensorFlow, scikit-learn, XGBoost, etc.)
 * Support horizontal and vertical federated learning
 * Built-in Federated Learning algorithms (e.g., FedAvg, FedProx, FedOpt, Scaffold, Ditto, etc.)
 * Support multiple server and client-controlled training workflows (e.g., scatter & gather, cyclic) and validation workflows (global model evaluation, cross-site validation)
@@ -37,7 +37,7 @@ From Simulation to Real-World
 * Security enforcement through federated authorization and privacy policy
 * Built-in support for system resiliency and fault tolerance
 
-> _Take a look at [NVIDIA FLARE Overview](https://nvflare.readthedocs.io/en/main/flare_overview.html) for a complete overview, and [What's New](https://nvflare.readthedocs.io/en/main/whats_new.html) for the lastest changes._
+> _Take a look at [NVIDIA FLARE Overview](https://nvflare.readthedocs.io/en/main/flare_overview.html) for a complete overview, and [What's New](https://nvflare.readthedocs.io/en/main/whats_new.html) for the latest changes._
 
 ## Installation
 To install the [current release](https://pypi.org/project/nvflare/):
@@ -49,13 +49,13 @@ For detailed installation please refer to [NVIDIA FLARE installation](https://nv
 
 ## Getting Started
 
-* To get started, refer to [getting started](https://nvflare.readthedocs.io/en/main/getting_started.html) documentation
+* To get started, refer to the [Quick Start](https://nvflare.readthedocs.io/en/main/quickstart.html) documentation
 
 * Structured, self-paced learning is available through curated tutorials and training paths on the website.
   * DLI courses:
     * https://learn.nvidia.com/courses/course-detail?course_id=course-v1:DLI+S-FX-28+V1
     * https://learn.nvidia.com/courses/course-detail?course_id=course-v1:DLI+S-FX-29+V1
-* visit developer portal https://developer.nvidia.com/flare
+* Visit the [developer portal](https://developer.nvidia.com/flare).
 
 ## Community
 

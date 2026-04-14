@@ -24,14 +24,28 @@ Most training recipes accept the following model-related parameters:
 
     .. note::
        Class instances are converted to configuration files before job submission. For large models,
-       use dict config to avoid unnecessary instantiation overhead.
+       use dict config to avoid unnecessary instantiation overhead. For TensorFlow/Keras, class instances
+       should be user-defined subclassed models (for example, ``tf.keras.Model`` or ``tf.keras.Sequential`` subclasses).
 
 ``initial_ckpt``
     Absolute path to a pre-trained checkpoint file. The file may not exist locally but must exist
     on the server when the model is loaded during job execution.
 
     * PyTorch: Requires ``model`` for architecture (checkpoint has weights only)
-    * TensorFlow/Keras: Can use ``initial_ckpt`` alone (Keras saves full model)
+    * TensorFlow/Keras: Can use ``initial_ckpt`` alone (Keras saves full model). If ``model`` is provided, use a
+      subclassed Keras class instance or dict config.
+
+``enable_tensor_disk_offload`` (PyTorch FedAvg recipes)
+    Controls where streamed PyTorch tensors are materialized during server-side aggregation.
+
+    * ``False`` (default): materialize in memory
+    * ``True``: materialize to temporary safetensors files and consume through lazy refs to reduce peak memory
+
+    .. warning::
+
+       Temporary files use the process temp directory (``TMPDIR`` / OS default such as ``/tmp``). In
+       containers, ``/tmp`` may be tmpfs (RAM-backed), which can reduce memory offload impact. Set
+       ``TMPDIR`` to a disk-backed mount for the server process.
 
 See :ref:`job_recipe` for detailed explanations of these options.
 
@@ -670,7 +684,8 @@ Run Flower-based federated learning jobs.
     recipe = FlowerRecipe(
         name="flower-job",
         min_clients=2,
-        flower_app="path/to/flower/app",
+        flower_content="path/to/flower/app",
+        run_config={"num-server-rounds": 5}, # Optional: used to override default values in pyproject.toml
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
@@ -687,22 +702,30 @@ Decentralized federated learning without a central server.
 
 .. code-block:: python
 
-    from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+    from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
     from nvflare.recipe import SimEnv
 
-    recipe = SimpleSwarmLearningRecipe(
+    recipe = SwarmLearningRecipe(
         name="swarm",
         model=MyModel(),
+        min_clients=3,
         num_rounds=5,
         train_script="client.py",
         initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
+        round_timeout=3600,  # P2P model-transfer ACK budget (seconds); increase for large models
     )
     env = SimEnv(num_clients=3)
     run = recipe.execute(env)
 
 .. note::
-   ``SimpleSwarmLearningRecipe`` is also available from the original location for backward compatibility:
-   ``from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe``
+   For large models (>2 GB), tune the following parameters:
+
+   - ``round_timeout`` (default 3600 s): P2P model-transfer ACK budget between peers.
+     Increase for 7B+ models where P2P tensor streaming can take several minutes.
+   - ``pipe_type`` (default ``"cell_pipe"``): set to ``"file_pipe"`` when cell networking
+     is unavailable or for third-party subprocess integrations.
+   - ``submit_result_timeout`` and ``tensor_min_download_timeout``: set via
+     ``recipe.add_client_config({...})`` — see :ref:`timeout_troubleshooting`.
 
 
 Edge Recipes
@@ -804,4 +827,3 @@ Deploy to production NVFlare infrastructure.
 
     env = ProdEnv(startup_kit_location="/path/to/startup_kit")
     run = recipe.execute(env)
-

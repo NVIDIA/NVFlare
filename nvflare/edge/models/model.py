@@ -14,9 +14,18 @@
 
 import torch
 import torch.nn as nn
-from executorch.exir import to_edge
 from torch.export import export
 from torch.export.experimental import _export_forward_backward
+
+from nvflare.fuel.utils.import_utils import optional_import
+
+to_edge, _ = optional_import(
+    "executorch.exir",
+    name="to_edge",
+    descriptor=(
+        "executorch is required for {}. " "See: https://pytorch.org/executorch/stable/getting-started-setup.html"
+    ),
+)
 
 
 def export_model_to_bytes(net: nn.Module, input_shape, output_shape):

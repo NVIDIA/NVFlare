@@ -13,14 +13,15 @@
 # limitations under the License.
 """
 Client script for federated Qwen3-VL fine-tuning. Launched by NVFlare as an external process
-(via torchrun from the job command). Receives global model, saves to a dir, runs Qwen train_qwen
-in-process, then loads the checkpoint and sends updated weights back.
-Requires QWEN3VL_ROOT and (for site data) a "fl_site" dataset entry in the Qwen repo's data_list
-that reads FL_SITE_DATA_DIR (see README).
+(via torchrun from the job command). Receives global model, saves to a dir, runs the vendored
+Qwen-style training (qwenvl.train) in-process, then loads the checkpoint and sends updated
+weights back. Uses FL_SITE_DATA_DIR and PUBMEDVISION_IMAGE_ROOT for site data (see README).
 """
 
 import argparse
+import enum
 import gc
+import json
 import os
 import shutil
 import signal
@@ -29,7 +30,16 @@ from typing import Optional
 
 import torch
 import torch.distributed as dist
-from model import Qwen3VLModel, load_state_dict_from_checkpoint
+from model import (
+    DEFAULT_LORA_ALPHA,
+    DEFAULT_LORA_DROPOUT,
+    DEFAULT_LORA_R,
+    DEFAULT_LORA_TARGET_MODULES,
+    Qwen3VLModel,
+    is_peft_adapter_key,
+    load_state_dict_from_checkpoint,
+    normalize_peft_adapter_key,
+)
 from transformers import AutoProcessor
 
 import nvflare.client as flare
@@ -54,11 +64,104 @@ def _params_size_mb(params) -> float:
     return nbytes / (1024.0 * 1024.0)
 
 
+def _strip_model_prefix(params: dict) -> dict:
+    """Strip 'model.' and optionally 'module.' (DDP) so keys match PeftModel.state_dict() format."""
+    stripped = {}
+    for key, value in params.items():
+        k = key[6:] if key.startswith("model.") else key
+        k = k[7:] if k.startswith("module.") else k
+        stripped[k] = value
+    return stripped
+
+
 def _free_memory_after_send() -> None:
     """Run GC and clear CUDA cache to reduce OOM risk before the next round."""
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+
+
+def _json_safe_config_value(value):
+    if isinstance(value, dict):
+        return {k: _json_safe_config_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_config_value(v) for v in value]
+    if isinstance(value, set):
+        return [_json_safe_config_value(v) for v in sorted(value)]
+    if isinstance(value, enum.Enum):
+        return value.value
+    return value
+
+
+def _serialize_peft_config(config) -> dict:
+    if hasattr(config, "to_dict"):
+        return _json_safe_config_value(config.to_dict())
+    if hasattr(config, "to_json_string"):
+        return json.loads(config.to_json_string())
+    return _json_safe_config_value(dict(vars(config)))
+
+
+def _save_lora_adapter_for_training(
+    lora_state_dict: dict,
+    save_dir: str,
+    base_model_name_or_path: str,
+    lora_r: int,
+    lora_alpha: int,
+    lora_dropout: float,
+) -> None:
+    """Save adapter artifacts directly from FL LoRA params (no base-model load)."""
+    from peft import LoraConfig, TaskType
+    from safetensors.torch import save_file
+
+    stripped = _strip_model_prefix(lora_state_dict)
+
+    # PeftModel.from_pretrained expects keys like base_model.model.model....lora_A.default.weight
+    # (keys from get_peft_model_state_dict / FL exchange may lack the base_model. prefix)
+    def key_for_peft(key: str) -> str:
+        if not key.startswith("base_model."):
+            key = "base_model." + key
+        return normalize_peft_adapter_key(key)
+
+    adapter_tensors = {}
+    seen_target_modules = set()
+    for key, value in stripped.items():
+        normalized_key = key_for_peft(key)
+        if not is_peft_adapter_key(normalized_key):
+            raise RuntimeError(f"Expected only LoRA adapter keys for adapter exchange, got: {normalized_key}")
+        if normalized_key in adapter_tensors:
+            raise RuntimeError(f"Duplicate LoRA adapter key after PEFT normalization: {normalized_key}")
+        for target_module in DEFAULT_LORA_TARGET_MODULES:
+            if f".{target_module}." in normalized_key:
+                seen_target_modules.add(target_module)
+        if isinstance(value, torch.Tensor):
+            adapter_tensors[normalized_key] = value.detach().cpu().contiguous()
+        else:
+            adapter_tensors[normalized_key] = torch.as_tensor(value).detach().cpu().contiguous()
+
+    if not adapter_tensors:
+        raise RuntimeError("No LoRA adapter tensors were provided for checkpoint-based exchange.")
+    missing_target_modules = sorted(set(DEFAULT_LORA_TARGET_MODULES) - seen_target_modules)
+    if missing_target_modules:
+        sample = ", ".join(missing_target_modules[:3])
+        raise RuntimeError(
+            "LoRA adapter exchange is missing expected target modules. " f"Example missing target module: {sample}"
+        )
+
+    os.makedirs(save_dir, exist_ok=True)
+    save_file(adapter_tensors, os.path.join(save_dir, "adapter_model.safetensors"))
+
+    lora_config = LoraConfig(
+        r=lora_r,
+        lora_alpha=lora_alpha,
+        lora_dropout=lora_dropout,
+        target_modules=DEFAULT_LORA_TARGET_MODULES,
+        bias="none",
+        task_type=TaskType.CAUSAL_LM,
+    )
+    adapter_config = _serialize_peft_config(lora_config)
+    adapter_config["base_model_name_or_path"] = base_model_name_or_path
+    with open(os.path.join(save_dir, "adapter_config.json"), "w") as f:
+        json.dump(adapter_config, f, indent=2)
 
 
 def _align_model_config_to_tokenizer(hf_model, tokenizer) -> None:
@@ -131,7 +234,6 @@ def _collect_first_error(local_error: Optional[str], world_size: int) -> Optiona
 
 
 def train(
-    finetune_dir: str,
     input_model_dir: str,
     output_model_dir: str,
     dataset_use: str,
@@ -139,55 +241,70 @@ def train(
     num_train_epochs: int,
     learning_rate: str,
     report_to: str,
+    lora_enable: bool = False,
+    lora_r: int = DEFAULT_LORA_R,
+    lora_alpha: int = DEFAULT_LORA_ALPHA,
+    lora_dropout: float = DEFAULT_LORA_DROPOUT,
     keep_process_group: bool = False,
-) -> None:
-    """Run Qwen3-VL train_qwen.train() in-process; tear down process group on exit."""
-    # train_qwen.train() only reads from sys.argv via HfArgumentParser.parse_args_into_dataclasses()
-    # and does not accept training args as parameters, so we set sys.argv before calling it.
-    # Ensure Qwen finetune package is importable (train_qwen uses "from trainer import ...")
-    finetune_dir = os.path.abspath(finetune_dir)
-    if finetune_dir not in sys.path:
-        sys.path.insert(0, finetune_dir)
-    train_dir = os.path.join(finetune_dir, "qwenvl", "train")
-    if train_dir not in sys.path:
-        sys.path.insert(0, train_dir)
-
+    initial_state_dict: Optional[dict] = None,
+    return_state_dict: bool = False,
+) -> Optional[dict]:
+    """Run vendored qwenvl.train.train_qwen in-process; tear down process group on exit."""
+    # train_qwen.train() reads sys.argv via HfArgumentParser; set it before calling.
     train_limit = (
         ["--max_steps", str(max_steps)] if max_steps is not None else ["--num_train_epochs", str(num_train_epochs)]
     )
+    base_args = [
+        "--data_flatten",
+        "True",
+        "--tune_mm_mlp",
+        "True",
+        "--tune_mm_llm",
+        "True",
+        "--bf16",
+        "--per_device_train_batch_size",
+        "8",
+        "--gradient_accumulation_steps",
+        "2",
+        "--learning_rate",
+        learning_rate,
+        "--save_strategy",
+        "no",
+        "--report_to",
+        report_to,
+        "--ddp_find_unused_parameters",
+        "False",
+    ]
+    if lora_enable:
+        base_args.extend(
+            [
+                "--lora_enable",
+                "True",
+                "--lora_r",
+                str(lora_r),
+                "--lora_alpha",
+                str(lora_alpha),
+                "--lora_dropout",
+                str(lora_dropout),
+            ]
+        )
     argv = (
         ["train_qwen.py", "--model_name_or_path", input_model_dir, "--output_dir", output_model_dir]
         + ["--dataset_use", dataset_use]
         + train_limit
-        + [
-            "--data_flatten",
-            "True",
-            "--tune_mm_mlp",
-            "True",
-            "--tune_mm_llm",
-            "True",
-            "--bf16",
-            "--per_device_train_batch_size",
-            "8",
-            "--gradient_accumulation_steps",
-            "2",
-            "--learning_rate",
-            learning_rate,
-            "--save_strategy",
-            "no",
-            "--report_to",
-            report_to,
-            "--ddp_find_unused_parameters",
-            "False",
-        ]
+        + base_args
     )
     pg_was_initialized = torch.distributed.is_initialized()
     old_argv = sys.argv
     sys.argv = argv
     try:
-        from qwenvl.train import train_qwen
+        from qwenvl.train import train_qwen as train_qwen_fn
 
-        train_qwen.train(attn_implementation="flash_attention_2")
+        return train_qwen_fn(
+            attn_implementation="flash_attention_2",
+            initial_state_dict=initial_state_dict,
+            return_state_dict=return_state_dict,
+        )
     finally:
         sys.argv = old_argv
         if torch.distributed.is_initialized() and not keep_process_group and not pg_was_initialized:
@@ -203,7 +320,6 @@ def main():
         default=None,
         help="Root for image paths (folder containing images/). Sets PUBMEDVISION_IMAGE_ROOT for fl_site. Default: PubMedVision.",
     )
-    parser.add_argument("--qwen_root", type=str, default=None, help="Qwen3-VL repo root (or set QWEN3VL_ROOT)")
     parser.add_argument(
         "--dataset_use",
         type=str,
@@ -240,6 +356,18 @@ def main():
         default="none",
         help='Trainer reporting backend for train_qwen.py (e.g. "none", "wandb", "tensorboard").',
     )
+    parser.add_argument(
+        "--lora_exchange",
+        action="store_true",
+        help="Exchange only LoRA adapter weights (set by job when --lora); smaller payloads.",
+    )
+    parser.add_argument("--lora_r", type=int, default=DEFAULT_LORA_R, help="LoRA rank for adapter-only exchange.")
+    parser.add_argument(
+        "--lora_alpha", type=int, default=DEFAULT_LORA_ALPHA, help="LoRA alpha for adapter-only exchange."
+    )
+    parser.add_argument(
+        "--lora_dropout", type=float, default=DEFAULT_LORA_DROPOUT, help="LoRA dropout for adapter-only exchange."
+    )
     parser.add_argument("--work_dir", type=str, default=None, help="Work dir for input/output models (default: temp)")
     args = parser.parse_args()
 
@@ -249,16 +377,10 @@ def main():
 
     signal.signal(signal.SIGTERM, _sigterm_handler)
 
-    qwen_root = args.qwen_root or os.environ.get("QWEN3VL_ROOT", "")
-    if not qwen_root or not os.path.isdir(qwen_root):
-        print("Set QWEN3VL_ROOT or pass --qwen_root to the Qwen3-VL repo.", file=sys.stderr)
-        sys.exit(1)
-    qwen_root = _abs_path(qwen_root)
-    finetune_dir = os.path.join(qwen_root, "qwen-vl-finetune")
-    train_script = os.path.join(finetune_dir, "qwenvl", "train", "train_qwen.py")
-    if not os.path.isfile(train_script):
-        print(f"Train script not found: {train_script}", file=sys.stderr)
-        sys.exit(1)
+    # Ensure this example dir is on path so vendored qwenvl is importable
+    _example_dir = os.path.dirname(os.path.abspath(__file__))
+    if _example_dir not in sys.path:
+        sys.path.insert(0, _example_dir)
 
     data_path = _abs_path(args.data_path)
     json_path = os.path.join(data_path, "train.json")
@@ -285,18 +407,25 @@ def main():
     input_model_dir = os.path.join(work_dir, "input_model")
     output_model_dir = os.path.join(work_dir, "output")
 
-    # So that Qwen data_list and imports can resolve paths (in-process training reads os.environ)
+    # Vendored qwenvl data_list reads these for fl_site dataset
     os.environ["FL_SITE_DATA_DIR"] = data_path
-    os.environ["QWEN_FINETUNE_DIR"] = finetune_dir
     image_root = _abs_path(args.image_root) if args.image_root else _abs_path("PubMedVision")
     os.environ["PUBMEDVISION_IMAGE_ROOT"] = image_root
 
-    model = Qwen3VLModel(model_name_or_path=args.model_name_or_path) if rank == 0 else None
+    lora_exchange = getattr(args, "lora_exchange", False)
+    use_in_memory_exchange = not _is_multi_rank(world_size)
+    model = (
+        Qwen3VLModel(model_name_or_path=args.model_name_or_path)
+        if (rank == 0 and not lora_exchange and not use_in_memory_exchange)
+        else None
+    )
 
     while _is_running_from_rank0(rank, world_size):
         input_model = None
         current_round = None
         should_continue = True
+        round_initial_state_dict = None
+        prep_error = None
 
         if rank == 0:
             input_model = flare.receive()
@@ -306,59 +435,94 @@ def main():
                 current_round = input_model.current_round
                 received_mb = _params_size_mb(input_model.params)
                 print(f"site={client_name}, round={current_round}, received model size: {received_mb:.2f} MB")
+                try:
+                    # Remove previous round artifacts so stale checkpoint dirs cannot trigger an unintended resume.
+                    if os.path.isdir(output_model_dir):
+                        shutil.rmtree(output_model_dir)
+                    os.makedirs(output_model_dir, exist_ok=True)
 
-                # Save received global model to HF format for train_qwen.py
-                os.makedirs(input_model_dir, exist_ok=True)
-                model.load_state_dict(input_model.params, strict=False)
-
-                processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
-                tokenizer = getattr(processor, "tokenizer", processor)
-                _align_model_config_to_tokenizer(model.model, tokenizer)
-                model.model.save_pretrained(input_model_dir)
-                processor.save_pretrained(input_model_dir)
-
-                # Remove previous round artifacts so a failed round cannot resend stale checkpoints.
-                if os.path.isdir(output_model_dir):
-                    shutil.rmtree(output_model_dir)
-                os.makedirs(output_model_dir, exist_ok=True)
+                    if use_in_memory_exchange:
+                        round_initial_state_dict = _strip_model_prefix(input_model.params)
+                        input_model.params = None
+                    else:
+                        os.makedirs(input_model_dir, exist_ok=True)
+                        if lora_exchange:
+                            # Exchange only LoRA adapter: save adapter + config so train_qwen can load base + adapter.
+                            _save_lora_adapter_for_training(
+                                input_model.params,
+                                input_model_dir,
+                                args.model_name_or_path,
+                                args.lora_r,
+                                args.lora_alpha,
+                                args.lora_dropout,
+                            )
+                            processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
+                            processor.save_pretrained(input_model_dir)
+                        else:
+                            # Full model: save received global model to HF format for train_qwen.py.
+                            if model is None:
+                                raise RuntimeError(
+                                    "Expected Qwen3VLModel to be initialized for checkpoint-based full-model exchange."
+                                )
+                            model.load_state_dict(input_model.params, strict=False)
+                            processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
+                            tokenizer = getattr(processor, "tokenizer", processor)
+                            _align_model_config_to_tokenizer(model.model, tokenizer)
+                            model.model.save_pretrained(input_model_dir)
+                            processor.save_pretrained(input_model_dir)
+                except Exception as e:
+                    prep_error = f"rank {rank}: setup failed before training: {e}"
+                    print(f"Qwen SFT setup failed on rank {rank}: {e}", file=sys.stderr)
 
         should_continue = _broadcast_object_from_rank0(should_continue, world_size)
         current_round = _broadcast_object_from_rank0(current_round, world_size)
+        prep_error = _broadcast_object_from_rank0(prep_error, world_size)
         if not should_continue:
             break
 
-        # Ensure rank 0 has prepared input/output model dirs before training starts.
-        _dist_barrier(world_size)
-
         # Run Qwen3-VL training in-process (we are already the torchrun process from the job command)
-        local_error = None
-        try:
-            train(
-                finetune_dir=finetune_dir,
-                input_model_dir=input_model_dir,
-                output_model_dir=output_model_dir,
-                dataset_use=args.dataset_use,
-                max_steps=args.max_steps,
-                num_train_epochs=args.num_train_epochs,
-                learning_rate=args.learning_rate,
-                report_to=args.report_to,
-                keep_process_group=_is_multi_rank(world_size),
-            )
-        except Exception as e:
-            local_error = f"rank {rank}: {e}"
-            print(f"Qwen SFT script failed on rank {rank}: {e}", file=sys.stderr)
-
+        local_error = prep_error
+        trained_raw = None
+        if prep_error is None:
+            # Ensure rank 0 has prepared input/output model dirs before training starts.
+            _dist_barrier(world_size)
+            try:
+                model_name_or_path = args.model_name_or_path if use_in_memory_exchange else input_model_dir
+                trained_raw = train(
+                    input_model_dir=model_name_or_path,
+                    output_model_dir=output_model_dir,
+                    dataset_use=args.dataset_use,
+                    max_steps=args.max_steps,
+                    num_train_epochs=args.num_train_epochs,
+                    learning_rate=args.learning_rate,
+                    report_to=args.report_to,
+                    lora_enable=lora_exchange,
+                    lora_r=args.lora_r,
+                    lora_alpha=args.lora_alpha,
+                    lora_dropout=args.lora_dropout,
+                    keep_process_group=_is_multi_rank(world_size),
+                    initial_state_dict=round_initial_state_dict if rank == 0 else None,
+                    return_state_dict=use_in_memory_exchange and rank == 0,
+                )
+            except Exception as e:
+                local_error = f"rank {rank}: {e}"
+                print(f"Qwen SFT script failed on rank {rank}: {e}", file=sys.stderr)
         round_error = _collect_first_error(local_error, world_size)
         if round_error:
             if rank == 0:
                 # Keep the received global model by default so failed rounds don't contribute stale updates.
-                params = input_model.params
+                params = input_model.params if input_model is not None else None
+                if use_in_memory_exchange and round_initial_state_dict is not None:
+                    params = {"model." + k: v for k, v in round_initial_state_dict.items()}
                 raw = None
-                try:
-                    raw = load_state_dict_from_checkpoint(output_model_dir)
-                    params = {"model." + k: v for k, v in raw.items()}
-                except Exception:
-                    pass
+                if not use_in_memory_exchange:
+                    try:
+                        raw = load_state_dict_from_checkpoint(output_model_dir, lora_only=lora_exchange)
+                        params = {"model." + k: v for k, v in raw.items()}
+                    except Exception:
+                        pass
+                if params is None:
+                    raise RuntimeError("No params available to send back after round failure.")
                 output_model = flare.FLModel(
                     params=params,
                     metrics={"loss": float("nan")},
@@ -373,15 +537,29 @@ def main():
                 flare.send(output_model)
                 if raw is not None:
                     del raw
+                if trained_raw is not None:
+                    del trained_raw
+                    trained_raw = None
+                if round_initial_state_dict is not None:
+                    del round_initial_state_dict
+                    round_initial_state_dict = None
+                if input_model is not None:
+                    del input_model
+                    input_model = None
                 del params, output_model
             _dist_barrier(world_size)
             _free_memory_after_send()
             continue
 
         # Load state_dict from checkpoint dir (no full model load) so we return to receive() quickly.
-        # Checkpoint has inner model keys; prefix with "model." to match wrapper state_dict format.
+        # When lora_exchange, load only adapter weights to keep payload small.
         if rank == 0:
-            raw = load_state_dict_from_checkpoint(output_model_dir)
+            if use_in_memory_exchange:
+                if trained_raw is None:
+                    raise RuntimeError("Expected trained state_dict from in-memory training path but got None.")
+                raw = trained_raw
+            else:
+                raw = load_state_dict_from_checkpoint(output_model_dir, lora_only=lora_exchange)
             params = {"model." + k: v for k, v in raw.items()}
             meta = (
                 {"NUM_STEPS_CURRENT_ROUND": args.max_steps}
@@ -401,6 +579,15 @@ def main():
 
             # Free memory before next round to reduce OOM risk in long runs (e.g. round 5+)
             del raw, params, output_model
+            if trained_raw is not None:
+                del trained_raw
+                trained_raw = None
+            if round_initial_state_dict is not None:
+                del round_initial_state_dict
+                round_initial_state_dict = None
+            if input_model is not None:
+                del input_model
+                input_model = None
         _dist_barrier(world_size)
         _free_memory_after_send()
 

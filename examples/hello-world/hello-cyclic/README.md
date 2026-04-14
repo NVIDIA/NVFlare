@@ -123,7 +123,7 @@ print()
 
 The `model` parameter accepts two formats:
 
-1. **Class instance**: `model=Net()` - Convenient and Pythonic
+1. **Class instance (subclassed Keras model)**: `model=Net()` - Convenient and Pythonic
 2. **Dict config**: `model={"class_path": "model.Net", "args": {}}` - Better for large models
 
 To resume from pre-trained weights:
@@ -134,6 +134,9 @@ recipe = CyclicRecipe(
     ...
 )
 ```
+
+> **Note:** For TensorFlow/Keras, use a subclassed Keras class instance (like `Net()`) or dict config for `model`.
+> SavedModel or `.h5` files contain both architecture and weights, so `initial_ckpt` can be used without `model`.
 
 ## Run the experiment
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple
+from typing import Tuple, Union
 
 import torch
 from safetensors.torch import load, save
@@ -23,7 +23,8 @@ from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import ViaDownloaderDecomposer
 
 from ...fuel.f3.cellnet.cell import Cell
-from .tensor_downloader import TensorDownloadable, download_tensors
+from .lazy_tensor_dict import LazyTensorDict
+from .tensor_downloader import TensorDownloadable, download_tensors, download_tensors_to_disk
 
 
 class SerializationModule(torch.nn.Module):
@@ -55,7 +56,18 @@ class TensorDecomposer(ViaDownloaderDecomposer):
         secure=False,
         optional=False,
         abort_signal=None,
-    ) -> Tuple[str, dict]:
+    ) -> Tuple[str, Union[dict, LazyTensorDict]]:
+        use_disk = cell.get_fobs_context().get("enable_tensor_disk_offload", False)
+        if use_disk:
+            return download_tensors_to_disk(
+                from_fqcn,
+                ref_id,
+                per_request_timeout,
+                cell,
+                secure,
+                optional,
+                abort_signal,
+            )
         return download_tensors(
             from_fqcn,
             ref_id,

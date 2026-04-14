@@ -20,6 +20,7 @@ from monai.fl.utils.exchange_object import ExchangeObject
 
 # (1) import nvflare client API
 import nvflare.client as flare
+from nvflare.app_opt.monai import decomposers
 from nvflare.client.tracking import SummaryWriter
 
 
@@ -34,6 +35,7 @@ def main():
 
     # (2) initializes NVFlare client API
     flare.init()
+    decomposers.register_monai_types()
 
     # (3) Create MonaiAlgo instance with bundle configuration
     algo = MonaiAlgo(

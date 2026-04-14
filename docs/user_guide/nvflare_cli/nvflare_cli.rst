@@ -15,7 +15,7 @@ Detailed explanations for each can be found in their respective sections, linked
    fl_simulator
    poc_command
    provision_command
+   distributed_provisioning
    job_cli
    preflight_check
    dashboard_command
-   pre_installer

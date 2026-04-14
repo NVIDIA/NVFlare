@@ -145,6 +145,16 @@ class Downloadable(ABC):
         """
         pass
 
+    def release(self):
+        """Drop the infrastructure reference to the source object.
+
+        Called by _Transaction.transaction_done() AFTER the transaction_done_cb
+        fires.  Subclasses should override this to null their base_obj (or any
+        other large reference) so the GC can reclaim the memory immediately.
+        The default implementation is a no-op.
+        """
+        pass
+
 
 class _PropKey:
     REF_ID = "ref_id"
@@ -232,9 +242,12 @@ class _Transaction:
         self.timeout = timeout
         self.num_receivers = num_receivers
         self.last_active_time = time.time()
+        self.start_time = time.time()
+        self.total_bytes = 0
         self.transaction_done_cb = transaction_done_cb
         self.cb_kwargs = cb_kwargs
         self.refs = []
+        self.logger = get_obj_logger(self)
 
     def mark_active(self):
         """Called to update the last active time of the transaction.
@@ -284,13 +297,33 @@ class _Transaction:
 
     def transaction_done(self, status: str):
         """Called when the transaction is finished."""
+        elapsed = time.time() - self.start_time
+        size_mb = self.total_bytes / (1024 * 1024)
+        self.logger.info(
+            f"[server] download tx {self.tid} done: status={status} elapsed={elapsed:.2f}s "
+            f"size={size_mb:.1f}MB ({self.total_bytes:,} bytes)"
+        )
+
+        # Snapshot base_objs BEFORE the loop so the callback receives the
+        # original objects.  obj.transaction_done() may clear the chunk cache
+        # (CacheableObject.clear_cache()); the source object itself is released
+        # via obj.release() AFTER the callback so the callback can still
+        # observe it (e.g. for memory-GC notifications).
+        base_objs = [ref.obj.base_obj for ref in self.refs]
+
         for ref in self.refs:
             obj = ref.obj
             assert isinstance(obj, Downloadable)
             obj.transaction_done(self.tid, status)
 
         if self.transaction_done_cb:
-            self.transaction_done_cb(self.tid, status, [ref.obj.base_obj for ref in self.refs], **self.cb_kwargs)
+            self.transaction_done_cb(self.tid, status, base_objs, **self.cb_kwargs)
+
+        # Release source objects after the callback so the callback can still
+        # reference them.  This drops the last infrastructure reference to
+        # large objects (e.g. numpy dicts) allowing GC to reclaim them.
+        for ref in self.refs:
+            ref.obj.release()
 
 
 class TransactionInfo:
@@ -456,7 +489,11 @@ class DownloadService:
             )
             return make_reply(ReturnCode.OK, body={_PropKey.STATUS: rc})
         else:
-            # continue
+            # continue — accumulate bytes for timing summary in transaction_done()
+            # CacheableObject returns a list of byte-chunks; FileDownloader returns raw bytes.
+            # Sum chunk lengths for lists (len(list) counts items, not bytes).
+            if data is not None:
+                tx.total_bytes += sum(len(c) for c in data) if isinstance(data, list) else len(data)
             return make_reply(
                 ReturnCode.OK,
                 body={
@@ -548,6 +585,7 @@ def download_object(
     secure=False,
     optional=False,
     abort_signal: Signal = None,
+    max_retries: int = 3,
 ):
     """Download a large object from the object owner.
 
@@ -560,18 +598,34 @@ def download_object(
         secure: use P2P private communication with the data owner
         optional: suppress log messages
         abort_signal: for signaling abort
+        max_retries: max number of retries per request on TIMEOUT (default 3).
+            Resending the same state causes the producer to re-generate the
+            same chunk, so retry is data-safe.  Note: CacheableObject's
+            _adjust_cache may run twice for the same state on retry, which
+            can prematurely evict cache entries in multi-receiver scenarios
+            but does not affect data correctness.
 
     Returns: None
 
     """
-    request = new_cell_message(
-        headers={},
-        payload={
-            _PropKey.REF_ID: ref_id,
-        },
-    )
+    logger = get_obj_logger(download_object)
+    if max_retries < 0:
+        raise ValueError(f"max_retries must be non-negative, got {max_retries}")
+    consecutive_timeouts = 0
+    total_bytes = 0
+    download_start = time.time()
+    # Track current download state (None = initial request).
+    # On retry, resend the same state so producer re-generates the same chunk.
+    current_state = None
 
     while True:
+        # Build a fresh request each iteration (including retries)
+        # to avoid re-encoding an already-encoded message.
+        request_payload = {_PropKey.REF_ID: ref_id}
+        if current_state is not None:
+            request_payload[_PropKey.STATE] = current_state
+        request = new_cell_message(headers={}, payload=request_payload)
+
         start_time = time.time()
         reply = cell.send_request(
             channel=OBJ_DOWNLOADER_CHANNEL,
@@ -592,13 +646,53 @@ def download_object(
         assert isinstance(reply, Message)
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
         if rc != ReturnCode.OK:
+            # Retry on TIMEOUT: streaming transport may intermittently lose
+            # responses.  Resending the same state re-generates the same
+            # chunk, making retry data-safe (see docstring for caveats).
+            if rc == ReturnCode.TIMEOUT:
+                if consecutive_timeouts < max_retries:
+                    consecutive_timeouts += 1
+                    backoff = min(2.0 * (2 ** (consecutive_timeouts - 1)), 60.0)
+                    logger.warning(
+                        f"[DOWNLOAD_RETRY] Request to {from_fqcn} timed out after {duration:.1f}s "
+                        f"(ref={ref_id}, retry {consecutive_timeouts}/{max_retries}, "
+                        f"backoff={backoff:.1f}s). Resending same state to re-request the chunk."
+                    )
+                    # Check abort signal before sleeping to minimise delay
+                    if abort_signal and abort_signal.triggered:
+                        consumer.download_failed(ref_id, f"download aborted after {duration} secs")
+                        return
+                    time.sleep(backoff)
+                    if abort_signal and abort_signal.triggered:
+                        consumer.download_failed(ref_id, f"download aborted after {duration} secs")
+                        return
+                    continue
+                else:
+                    logger.warning(
+                        f"[DOWNLOAD_FAILED] Max retries ({max_retries}) exhausted for {from_fqcn}, "
+                        f"ref={ref_id}. Giving up."
+                    )
             consumer.download_failed(ref_id, f"error requesting data from {from_fqcn} after {duration} secs: {rc}")
             return
+
+        # Log recovery if we were retrying
+        if consecutive_timeouts > 0:
+            logger.warning(
+                f"[DOWNLOAD_RECOVERED] Download from {from_fqcn} recovered after "
+                f"{consecutive_timeouts} timeout(s) (ref={ref_id})."
+            )
+        consecutive_timeouts = 0
 
         payload = reply.payload
         assert isinstance(payload, dict)
         status = payload.get(_PropKey.STATUS)
         if status == ProduceRC.EOF:
+            elapsed = time.time() - download_start
+            size_mb = total_bytes / (1024 * 1024)
+            logger.info(
+                f"[client] download ref={ref_id} done: elapsed={elapsed:.2f}s "
+                f"size={size_mb:.1f}MB ({total_bytes:,} bytes)"
+            )
             consumer.download_completed(ref_id)
             return
         elif status == ProduceRC.ERROR:
@@ -606,7 +700,10 @@ def download_object(
             return
 
         # continue
+        # CacheableObject sends a list of byte-chunks; FileDownloader sends raw bytes.
         data = payload.get(_PropKey.DATA)
+        if data is not None:
+            total_bytes += sum(len(c) for c in data) if isinstance(data, list) else len(data)
         state = payload.get(_PropKey.STATE)
         try:
             new_state = consumer.consume(ref_id, state, data)
@@ -622,5 +719,5 @@ def download_object(
             consumer.download_failed(ref_id, "download aborted")
             return
 
-        # ask for more
-        request = new_cell_message(headers={}, payload={_PropKey.REF_ID: ref_id, _PropKey.STATE: new_state})
+        # Update state for next request
+        current_state = new_state

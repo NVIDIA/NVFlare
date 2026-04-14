@@ -74,6 +74,7 @@ class ServerSideController(Controller):
         max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
         private_p2p: bool = True,
+        min_clients: int = 0,
     ):
         """
         Constructor
@@ -112,6 +113,10 @@ class ServerSideController(Controller):
                 In other words, at least one participating client must have made progress during this time.
                 Otherwise, the workflow will be considered to be in trouble and the job will be aborted.
             end_workflow_timeout - timeout for ending workflow message.
+            min_clients - minimum number of clients required for the workflow to proceed.
+                0 means all participating clients are required (default, backward compatible).
+                N > 0 means the workflow proceeds as long as at least N clients are active;
+                the job only aborts when active clients drop below this threshold.
             private_p2p - whether to make peer-to-peer communications private.
                 When set to True, P2P communications will be encrypted.
                 Private P2P communication is an additional level of protection on basic communication security
@@ -153,6 +158,10 @@ class ServerSideController(Controller):
         self.asked_to_stop = False
         self.workflow_id = None
 
+        if min_clients < 0:
+            raise ValueError(f"min_clients must be >= 0, but got {min_clients}")
+        self.min_clients = min_clients
+
         check_positive_int("num_rounds", num_rounds)
         check_number_range("configure_task_timeout", configure_task_timeout, min_value=1)
         check_number_range("end_workflow_timeout", end_workflow_timeout, min_value=1)
@@ -185,6 +194,14 @@ class ServerSideController(Controller):
         )
 
         self.log_info(fl_ctx, f"Using participating clients: {self.participating_clients}")
+
+        num_participating = len(self.participating_clients)
+        if self.min_clients > 0 and self.min_clients > num_participating:
+            raise RuntimeError(
+                f"min_clients ({self.min_clients}) exceeds the number of participating clients "
+                f"({num_participating}): {self.participating_clients}"
+            )
+
         self.starting_client = validate_candidate(
             var_name="starting_client",
             candidate=self.starting_client,
@@ -246,12 +263,14 @@ class ServerSideController(Controller):
             result_received_cb=self._process_configure_reply,
         )
 
+        total_clients = len(self.participating_clients)
+        required = self.min_clients if self.min_clients > 0 else total_clients
         self.log_info(fl_ctx, f"sending task {self.configure_task_name} to clients {self.participating_clients}")
         start_time = time.time()
         self.broadcast_and_wait(
             task=task,
             targets=self.participating_clients,
-            min_responses=len(self.participating_clients),
+            min_responses=required,
             fl_ctx=fl_ctx,
             abort_signal=abort_signal,
         )
@@ -259,18 +278,21 @@ class ServerSideController(Controller):
         time_taken = time.time() - start_time
         self.log_info(fl_ctx, f"client configuration took {time_taken} seconds")
 
-        failed_clients = []
-        for c, cs in self.client_statuses.items():
-            assert isinstance(cs, ClientStatus)
-            if not cs.ready_time:
-                failed_clients.append(c)
-
-        if failed_clients:
+        failed_clients = [c for c, cs in self.client_statuses.items() if not cs.ready_time]
+        configured_count = total_clients - len(failed_clients)
+        if configured_count < required:
             self.system_panic(
-                f"failed to configure clients {failed_clients}",
+                f"failed to configure clients {failed_clients}: only {configured_count}/{total_clients} configured, need {required}",
                 fl_ctx,
             )
             return
+
+        if failed_clients:
+            self.log_warning(
+                fl_ctx,
+                f"clients {failed_clients} did not configure within timeout but min_clients={self.min_clients} "
+                f"allows proceeding; they remain as participants and may rejoin in a later round",
+            )
 
         self.log_info(fl_ctx, f"successfully configured clients {self.participating_clients}")
 
@@ -332,18 +354,31 @@ class ServerSideController(Controller):
         for c in self.participating_clients:
             reply = resp.get(c)
             if not reply:
-                self.log_error(fl_ctx, f"not reply from client {c} for ending workflow {self.workflow_id}")
+                self.log_warning(fl_ctx, f"no reply from client {c} for ending workflow {self.workflow_id}")
                 num_errors += 1
                 continue
 
             assert isinstance(reply, Shareable)
             rc = reply.get_return_code(ReturnCode.OK)
             if rc != ReturnCode.OK:
-                self.log_error(fl_ctx, f"client {c} failed to end workflow {self.workflow_id}: {rc}")
+                self.log_warning(fl_ctx, f"client {c} failed to end workflow {self.workflow_id}: {rc}")
                 num_errors += 1
 
-        if num_errors > 0:
-            self.system_panic(f"failed to end workflow {self.workflow_id} on all clients", fl_ctx)
+        total = len(self.participating_clients)
+        successful = total - num_errors
+        required = self.min_clients if self.min_clients > 0 else total
+        if successful < required:
+            self.system_panic(
+                f"failed to end workflow {self.workflow_id}: only {successful}/{total} clients responded, "
+                f"need {required} (min_clients={self.min_clients})",
+                fl_ctx,
+            )
+        elif num_errors > 0:
+            self.log_warning(
+                fl_ctx,
+                f"workflow {self.workflow_id} ended with {num_errors} non-responding client(s) "
+                f"({successful}/{total} successful, min_clients={required})",
+            )
 
         self.log_info(fl_ctx, f"Workflow {self.workflow_id} done!")
 
@@ -411,7 +446,9 @@ class ServerSideController(Controller):
             return True
 
         now = time.time()
-        overall_last_progress_time = 0.0
+        overall_last_progress_time = 0.0  # will be set to max(cs.last_progress_time) across active clients
+        silent_clients = []
+
         for client_name, cs in self.client_statuses.items():
             assert isinstance(cs, ClientStatus)
             assert isinstance(cs.status, StatusReport)
@@ -421,14 +458,27 @@ class ServerSideController(Controller):
                 return True
 
             if now - cs.last_report_time > self.max_status_report_interval:
+                if self.min_clients == 0:
+                    # all clients required — panic immediately on first silent client
+                    self.system_panic(
+                        f"client {client_name} didn't report status for {self.max_status_report_interval} seconds",
+                        fl_ctx,
+                    )
+                    return True
+                silent_clients.append(client_name)
+            else:
+                if overall_last_progress_time < cs.last_progress_time:
+                    overall_last_progress_time = cs.last_progress_time
+
+        if self.min_clients > 0:
+            active_count = len(self.client_statuses) - len(silent_clients)
+            if active_count < self.min_clients:
                 self.system_panic(
-                    f"client {client_name} didn't report status for {self.max_status_report_interval} seconds",
+                    f"not enough active clients ({active_count}) to meet min_clients={self.min_clients}; "
+                    f"silent clients: {silent_clients}",
                     fl_ctx,
                 )
                 return True
-
-            if overall_last_progress_time < cs.last_progress_time:
-                overall_last_progress_time = cs.last_progress_time
 
         if time.time() - overall_last_progress_time > self.progress_timeout:
             self.system_panic(
@@ -455,7 +505,9 @@ class ServerSideController(Controller):
             return
 
         if client_name not in self.client_statuses:
-            self.log_error(fl_ctx, f"received result from unknown client {client_name}!")
+            self.log_debug(
+                fl_ctx, f"received status from client {client_name} not in active set (pruned or not yet configured)"
+            )
             return
 
         report = status_report_from_dict(my_report)

@@ -22,7 +22,7 @@ from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
 from nvflare.fuel.f3.streaming.byte_streamer import STREAM_CHUNK_SIZE, STREAM_TYPE_BLOB, ByteStreamer
 from nvflare.fuel.f3.streaming.stream_const import EOS
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
-from nvflare.fuel.f3.streaming.stream_utils import FastBuffer, stream_thread_pool, wrap_view
+from nvflare.fuel.f3.streaming.stream_utils import FastBuffer, callback_thread_pool, stream_thread_pool, wrap_view
 from nvflare.fuel.utils.buffer_list import BufferList
 from nvflare.security.logging import secure_format_traceback
 
@@ -96,10 +96,28 @@ class BlobHandler:
         blob_task = BlobTask(future, stream)
 
         stream_thread_pool.submit(self._read_stream, blob_task)
-
-        self.blob_cb(future, *args, **kwargs)
+        callback_thread_pool.submit(self._run_blob_cb, future, stream, args, kwargs)
 
         return 0
+
+    def _run_blob_cb(self, future: StreamFuture, stream: Stream, args: tuple, kwargs: dict):
+        """Run blob_cb on the callback pool; preserve exception handling (log + task.stop) as in ByteReceiver."""
+        try:
+            self.blob_cb(future, *args, **kwargs)
+        except Exception as ex:
+            # Suppress only when blob_cb is surfacing an already-recorded stream
+            # failure (for example by calling future.result()). If blob_cb fails
+            # after the future completed successfully, we still need to stop the
+            # task so the sender receives the callback error.
+            with future.lock:
+                already_failed = future.error is not None
+            if already_failed:
+                kind = "StreamError" if isinstance(ex, StreamError) else "Exception"
+                log.debug(f"{kind} from blob_cb suppressed; future already failed: {ex}")
+            else:
+                log.error(f"blob_cb threw: {ex}\n{secure_format_traceback()}")
+                if hasattr(stream, "task"):
+                    stream.task.stop(StreamError(f"blob_cb threw {type(ex).__name__}: {ex}"))
 
     def _read_stream(self, blob_task: BlobTask):
 
@@ -119,10 +137,12 @@ class BlobHandler:
                         remaining = len(blob_task.buffer) - buf_size
                         if length > remaining:
                             log.error(f"{blob_task} Buffer overrun: {thread_id=} {remaining=} {length=} {buf_size=}")
-                            if remaining > 0:
-                                blob_task.buffer[buf_size : buf_size + remaining] = buf[0:remaining]
-                                buf_size += remaining
-                            break
+                            blob_task.future.set_exception(
+                                StreamError(
+                                    f"Buffer overrun: stream produced more data than declared size {blob_task.size}"
+                                )
+                            )
+                            return
                         else:
                             blob_task.buffer[buf_size : buf_size + length] = buf
                     else:
@@ -137,7 +157,10 @@ class BlobHandler:
                 buf_size += length
 
             if blob_task.size and blob_task.size != buf_size:
-                log.warning(f"Stream {blob_task} Size doesn't match: {blob_task.size} <> {buf_size} {thread_id=}")
+                blob_task.future.set_exception(
+                    StreamError(f"Size mismatch: declared {blob_task.size} but received {buf_size} bytes")
+                )
+                return
 
             if blob_task.pre_allocated:
                 result = blob_task.buffer

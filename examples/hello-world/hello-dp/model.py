@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-    Simple MLP model for tabular data
+Simple MLP model for tabular data
 """
 
 import torch.nn as nn

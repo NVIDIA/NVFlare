@@ -36,6 +36,8 @@ def create_one_user():
 @jwt_required()
 def get_all_users():
     claims = get_jwt()
+    if not claims.get("approved"):
+        return jsonify({"status": "not approved yet"}), 403
     if claims.get("role") == "project_admin":
         result = Store.get_users()
     else:

@@ -19,7 +19,7 @@ Welcome to the NVIDIA FLARE Hello World examples! These examples demonstrate how
 
 3. **Choose an example and install dependencies:**
    ```bash
-   cd hello-pt  # or hello-numpy, hello-lightning, hello-tf, hello-flower
+   cd hello-pt  # or hello-jax, hello-numpy, hello-lightning, hello-tf, hello-flower
    pip install -r requirements.txt
    ```
 
@@ -161,6 +161,23 @@ pip install -r requirements.txt
 TF_FORCE_GPU_ALLOW_GROWTH=true python job.py
 ```
 
+#### [Hello JAX](./hello-jax/)
+Train an MNIST classifier using JAX, Flax, and Optax with FedAvg.
+
+**What you'll learn:**
+- Configuring the base FedAvg Recipe for NumPy parameter exchange
+- Flattening and reconstructing JAX parameter trees for FL exchange
+- Running a Flax training loop with the NVFlare client API
+
+**Run it:**
+```bash
+cd hello-jax
+pip install -r requirements.txt
+python prepare_model.py
+python prepare_data.py
+python job.py
+```
+
 ### Traditional ML
 
 #### [Hello NumPy](./hello-numpy/)
@@ -251,18 +268,18 @@ The job recipe defines the FL workflow:
 
 ### ML-to-FL Conversion
 Learn how to convert existing ML/DL code to federated learning:
-- [PyTorch Conversion](./ml-to-fl/pt/)
-- [TensorFlow Conversion](./ml-to-fl/tf/)
-- [NumPy Conversion](./ml-to-fl/np/)
+- [PyTorch Conversion](../tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/01.2_convert_deep_learning_to_federated_learning/convert_dl_to_fl.ipynb)
+- [PyTorch Lightning Conversion](../tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/02.3_convert_torch_lightning_to_federated_learning/convert_torch_lightning_to_fl.ipynb)
+- [Machine Learning Conversion](../tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/02.4_convert_machine_learning_to_federated_learning/convert_ml_to_fl.ipynb)
 
-[Learn more →](./ml-to-fl/)
+[Learn more →](../tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/)
 
 ### Workflows
 Examples demonstrating different FL workflows:
 - [Scatter and Gather](./hello-numpy/) - Basic FedAvg pattern
 - [Cross-Site Validation](./hello-numpy-cross-val/) - Model evaluation across sites
 - [Cyclic Weight Transfer](./hello-cyclic/) - Sequential client training
-- [Client Controlled Workflows](../advanced/hello-ccwf/) - Swarm learning patterns
+- [Client Controlled Workflows Guide](../../docs/programming_guide/controllers/client_controlled_workflows.rst) - Peer-to-peer workflow patterns
 
 ## Running with Different Environments
 

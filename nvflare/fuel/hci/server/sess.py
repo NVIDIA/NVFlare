@@ -17,6 +17,7 @@ import time
 import uuid
 from typing import List
 
+from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.f3.cellnet.defs import CellChannel
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.base64_utils import b64str_to_str, str_to_b64str
@@ -31,12 +32,13 @@ CHECK_SESSION_CMD_NAME = InternalCommands.CHECK_SESSION
 
 
 class Session(object):
-    def __init__(self, sess_id, user_name, org, role, origin_fqcn):
+    def __init__(self, sess_id, user_name, org, role, origin_fqcn, active_study=DEFAULT_STUDY):
         """Object keeping track of an admin client session with token and time data."""
         self.sess_id = sess_id
         self.user_name = user_name
         self.user_org = org
         self.user_role = role
+        self.active_study = active_study
         self.origin_fqcn = origin_fqcn
         self.start_time = time.time()
         self.last_active_time = time.time()
@@ -50,6 +52,7 @@ class Session(object):
             "r": self.user_role,
             "o": self.user_org,
             "s": self.sess_id,
+            "study": self.active_study,
         }
         ds = json.dumps(user)
         bds = str_to_b64str(ds)
@@ -83,6 +86,7 @@ class Session(object):
             org=user.get("o"),
             sess_id=user.get("s"),
             origin_fqcn="",
+            active_study=user.get("study", user.get("t", DEFAULT_STUDY)),
         )
 
 
@@ -134,7 +138,7 @@ class SessionManager(CommandModule):
     def shutdown(self):
         self.asked_to_stop = True
 
-    def create_session(self, user_name, user_org, user_role, origin_fqcn):
+    def create_session(self, user_name, user_org, user_role, origin_fqcn, active_study=DEFAULT_STUDY):
         """Creates new session with a new session token.
 
         Args:
@@ -154,6 +158,7 @@ class SessionManager(CommandModule):
             org=user_org,
             role=user_role,
             origin_fqcn=origin_fqcn,
+            active_study=active_study,
         )
         with self.sess_update_lock:
             self.sessions[sess_id] = sess
@@ -166,10 +171,12 @@ class SessionManager(CommandModule):
             self.sessions[sess.sess_id] = sess
         return sess
 
-    def get_session(self, token: str):
+    def get_session(self, token: str, id_asserter=None):
         try:
-            sess = Session.decode_token(token)
-        except:
+            sess = Session.decode_token(token, id_asserter)
+            if sess is None:
+                return None
+        except Exception:
             return None
 
         with self.sess_update_lock:

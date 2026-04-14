@@ -75,7 +75,14 @@ def to_abs_path(yaml_path, file_path):
 def run_command(command, cwd=None):
     print(f"Running {command=} in {cwd=}")
     process = subprocess.Popen(
-        command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, universal_newlines=True
+        command,
+        cwd=cwd,
+        shell=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+        universal_newlines=True,
     )
 
     stdout_lines = []
