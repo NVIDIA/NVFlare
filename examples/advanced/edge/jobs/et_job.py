@@ -54,6 +54,7 @@ if args.dataset == "cifar10":
             "batch_size": batch_size,
             "shuffle": True,
             "num_workers": 0,
+            "epoch": 3,
         },
         subset_size=100,
     )
@@ -75,6 +76,7 @@ elif args.dataset == "xor":
             "batch_size": batch_size,
             "shuffle": True,
             "num_workers": 0,
+            "epoch": 3,
         },
     )
     evaluator_config = None

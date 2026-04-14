@@ -45,8 +45,22 @@ import torch
 from fastNLP import DataSet, DataSetIter, SequentialSampler, Tester
 from models.modeling_roberta import RobertaForMaskedLM
 from sklearn.metrics import f1_score
+from torch.utils.data import Sampler as TorchSampler
 from transformers import RobertaConfig, RobertaTokenizer
 from utils import hinge_loss
+
+
+def _ensure_fastnlp_sampler_compat():
+    """Make fastNLP 0.6.0's SamplerAdapter work with newer PyTorch Sampler base classes."""
+    if TorchSampler.__dict__.get("__init__") is None:
+
+        def _sampler_init(self, data_source=None):
+            return None
+
+        TorchSampler.__init__ = _sampler_init
+
+
+_ensure_fastnlp_sampler_compat()
 
 
 class LMForwardAPI:
