@@ -342,36 +342,36 @@ class Connection(private val context: Context) {
     }
 
     suspend fun fetchJob(jobName: String): JobResponse = withContext(Dispatchers.IO) {
-        // Retry on STATUS_RETRY in a loop rather than recursing. The previous version
-        // called fetchJob(jobName) from within the RETRY branch, which added a stack
-        // frame per retry; with short retryWait values (seen in sync FedAvg when the
-        // device is ahead of the server) this blew the stack. See #3827 item #12.
+        if (!isValid) {
+            throw NVFlareError.InvalidRequest("Invalid hostname or port")
+        }
+
+        // Build URL and request once — nothing changes between retries for fetchJob.
+        val url = HttpUrl.Builder()
+            .scheme(scheme)
+            .host(hostname.value ?: "")
+            .port(port.value ?: 0)
+            .addPathSegment(ENDPOINT_JOB)
+            .build()
+
+        val requestBody = JsonObject().apply {
+            add(FIELD_JOB_NAME, JsonPrimitive(jobName))
+            add(FIELD_CAPABILITIES, gson.toJsonTree(capabilities))
+        }
+
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody.toString().toRequestBody(CONTENT_TYPE_JSON.toMediaType()))
+            .header(HEADER_DEVICE_ID, deviceId)
+            .header(HEADER_DEVICE_INFO, infoToQueryString(deviceInfo))
+            .header(HEADER_USER_INFO, infoToQueryString(userInfo))
+            .build()
+
+        // Retry on STATUS_RETRY in a loop rather than recursing. The previous recursive
+        // implementation added a stack frame per retry; with short retryWait values
+        // (seen in sync FedAvg when the device is ahead of the server) this caused a
+        // StackOverflowError. See #3827 item #12.
         while (true) {
-            if (!isValid) {
-                throw NVFlareError.InvalidRequest("Invalid hostname or port")
-            }
-
-            val url = HttpUrl.Builder()
-                .scheme(scheme)
-                .host(hostname.value ?: "")
-                .port(port.value ?: 0)
-                .addPathSegment(ENDPOINT_JOB)
-                .build()
-
-            // Prepare request body with job_name and capabilities
-            val requestBody = JsonObject().apply {
-                add(FIELD_JOB_NAME, JsonPrimitive(jobName))
-                add(FIELD_CAPABILITIES, gson.toJsonTree(capabilities))
-            }
-
-            val request = Request.Builder()
-                .url(url)
-                .post(requestBody.toString().toRequestBody(CONTENT_TYPE_JSON.toMediaType()))
-                .header(HEADER_DEVICE_ID, deviceId)
-                .header(HEADER_DEVICE_INFO, infoToQueryString(deviceInfo))
-                .header(HEADER_USER_INFO, infoToQueryString(userInfo))
-                .build()
-
             Log.d(TAG, "Sending request: ${request.method} ${request.url}")
             Log.d(TAG, "Headers: ${request.headers}")
             Log.d(TAG, "Request body: $requestBody")
@@ -429,26 +429,25 @@ class Connection(private val context: Context) {
     }
 
     suspend fun fetchTask(jobId: String): TaskResponse = withContext(Dispatchers.IO) {
+        if (!isValid) {
+            throw NVFlareError.InvalidRequest("Invalid hostname or port")
+        }
+
+        // Build URL once — the endpoint and job ID don't change between retries.
+        val url = HttpUrl.Builder()
+            .scheme(scheme)
+            .host(hostname.value ?: "")
+            .port(port.value ?: 0)
+            .addPathSegment(ENDPOINT_TASK)
+            .addQueryParameter(PARAM_JOB_ID, jobId)
+            .build()
+
         // Retry on TaskStatus.RETRY in a loop rather than recursing. The previous
-        // version called fetchTask(jobId) from within the RETRY branch, which added
-        // a stack frame per retry; with short retryWait values (seen in sync FedAvg
-        // when this device is ahead of the server) this blew the stack. See #3827
-        // item #12. The request body is rebuilt inside the loop so any cookie that
-        // arrived with a prior RETRY response is carried forward to the next attempt.
+        // recursive implementation added a stack frame per retry; with short retryWait
+        // values this caused a StackOverflowError. See #3827 item #12.
+        // The request body is rebuilt inside the loop because a RETRY response can
+        // carry a new cookie that must be forwarded to the next attempt.
         while (true) {
-            if (!isValid) {
-                throw NVFlareError.InvalidRequest("Invalid hostname or port")
-            }
-
-            val url = HttpUrl.Builder()
-                .scheme(scheme)
-                .host(hostname.value ?: "")
-                .port(port.value ?: 0)
-                .addPathSegment(ENDPOINT_TASK)
-                .addQueryParameter(PARAM_JOB_ID, jobId)
-                .build()
-
-            // Prepare request body with cookie
             val requestBody = if (currentCookie != null) {
                 JsonObject().apply {
                     add(FIELD_COOKIE, gson.toJsonTree(currentCookie?.toAny()))
