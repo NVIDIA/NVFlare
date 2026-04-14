@@ -13,7 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""PyTorch RoBERTa model. """
+"""PyTorch RoBERTa model."""
 import math
 
 import torch
@@ -36,12 +36,24 @@ from transformers.modeling_outputs import (
     SequenceClassifierOutput,
     TokenClassifierOutput,
 )
-from transformers.modeling_utils import (
-    PreTrainedModel,
-    apply_chunking_to_forward,
-    find_pruneable_heads_and_indices,
-    prune_linear_layer,
-)
+from transformers.modeling_utils import PreTrainedModel
+from transformers.pytorch_utils import apply_chunking_to_forward, prune_linear_layer
+
+
+def find_pruneable_heads_and_indices(heads, n_heads, head_size, already_pruned_heads):
+    """Local copy of the pruning helper removed in transformers 5."""
+    mask = torch.ones(n_heads, head_size, dtype=torch.bool)
+    heads = set(heads) - already_pruned_heads
+
+    for head in heads:
+        head = head - sum(1 if pruned_head < head else 0 for pruned_head in already_pruned_heads)
+        mask[head] = False
+
+    mask = mask.view(-1).contiguous()
+    index = torch.arange(len(mask), device=mask.device)[mask].long()
+    return heads, index
+
+
 from transformers.models.roberta.configuration_roberta import RobertaConfig
 from transformers.utils import logging
 
@@ -497,6 +509,30 @@ class RobertaPreTrainedModel(PreTrainedModel):
     config_class = RobertaConfig
     base_model_prefix = "roberta"
 
+    def _init_model_weights(self):
+        self.all_tied_weights_keys = self.get_expanded_tied_weights_keys(all_submodels=False)
+        self.init_weights()
+
+    def _convert_head_mask_to_5d(self, head_mask, num_hidden_layers):
+        if head_mask.dim() == 1:
+            head_mask = head_mask.unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+            head_mask = head_mask.expand(num_hidden_layers, -1, -1, -1, -1)
+        elif head_mask.dim() == 2:
+            head_mask = head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)
+        assert head_mask.dim() == 5, f"head_mask.dim != 5, instead {head_mask.dim()}"
+        head_mask = head_mask.to(dtype=self.dtype)
+        return head_mask
+
+    def get_head_mask(self, head_mask, num_hidden_layers, is_attention_chunked=False):
+        if head_mask is not None:
+            head_mask = self._convert_head_mask_to_5d(head_mask, num_hidden_layers)
+            if is_attention_chunked:
+                head_mask = head_mask.unsqueeze(-1)
+        else:
+            head_mask = [None] * num_hidden_layers
+
+        return head_mask
+
     # Copied from transformers.models.bert.modeling_bert.BertPreTrainedModel._init_weights
     def _init_weights(self, module):
         """Initialize the weights"""
@@ -612,7 +648,7 @@ class RobertaModel(RobertaPreTrainedModel):
 
         self.pooler = RobertaPooler(config) if add_pooling_layer else None
 
-        self.init_weights()
+        self._init_model_weights()
 
     def get_input_embeddings(self):
         return self.embeddings.word_embeddings
@@ -689,7 +725,7 @@ class RobertaModel(RobertaPreTrainedModel):
             attention_mask_padding = torch.ones(input_shape[0], n_prompt_tokens).to(attention_mask.device)
             attention_mask = torch.cat([attention_mask_padding, attention_mask], 1).to(input_ids.device)
             input_shape = attention_mask.shape
-        extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(attention_mask, input_shape, device)
+        extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(attention_mask, input_shape)
         # If a 2D or 3D attention mask is provided for the cross-attention
         # we need to make broadcastable to [batch_size, num_heads, seq_length, seq_length]
         if self.config.is_decoder and encoder_hidden_states is not None:
@@ -749,6 +785,10 @@ class RobertaModel(RobertaPreTrainedModel):
 class RobertaForCausalLM(RobertaPreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"position_ids", r"predictions.decoder.bias"]
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
+    _tied_weights_keys = {
+        "lm_head.decoder.weight": "roberta.embeddings.word_embeddings.weight",
+        "lm_head.decoder.bias": "lm_head.bias",
+    }
 
     def __init__(self, config):
         super().__init__(config)
@@ -759,7 +799,7 @@ class RobertaForCausalLM(RobertaPreTrainedModel):
         self.roberta = RobertaModel(config, add_pooling_layer=False)
         self.lm_head = RobertaLMHead(config)
 
-        self.init_weights()
+        self._init_model_weights()
 
     def get_output_embeddings(self):
         return self.lm_head.decoder
@@ -870,6 +910,10 @@ class RobertaForCausalLM(RobertaPreTrainedModel):
 class RobertaForMaskedLM(RobertaPreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"position_ids", r"predictions.decoder.bias"]
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
+    _tied_weights_keys = {
+        "lm_head.decoder.weight": "roberta.embeddings.word_embeddings.weight",
+        "lm_head.decoder.bias": "lm_head.bias",
+    }
 
     def __init__(self, config, n_prompt_tokens, inference_framework="pt", onnx_model_path=None):
         super().__init__(config)
@@ -882,7 +926,7 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
 
         self.lm_head = RobertaLMHead(config)
         self.roberta = RobertaModel(config, add_pooling_layer=False)
-        self.init_weights()
+        self._init_model_weights()
         # if inference_framework == 'ort':
         #     del self.roberta
 
@@ -1034,6 +1078,10 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
 class RobertaForIntrinsicTuning(RobertaPreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"position_ids", r"predictions.decoder.bias"]
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
+    _tied_weights_keys = {
+        "lm_head.decoder.weight": "roberta.embeddings.word_embeddings.weight",
+        "lm_head.decoder.bias": "lm_head.bias",
+    }
 
     def __init__(self, config, n_prompt_tokens, intrinsic_dim, inference_framework="pt", onnx_model_path=None):
         super().__init__(config)
@@ -1046,7 +1094,7 @@ class RobertaForIntrinsicTuning(RobertaPreTrainedModel):
 
         self.lm_head = RobertaLMHead(config)
         self.roberta = RobertaModel(config, add_pooling_layer=False)
-        self.init_weights()
+        self._init_model_weights()
         # if inference_framework == 'ort':
         #     del self.roberta
 
@@ -1190,6 +1238,10 @@ class RobertaForIntrinsicTuning(RobertaPreTrainedModel):
 class RobertaForPromptTuning(RobertaPreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"position_ids", r"predictions.decoder.bias"]
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
+    _tied_weights_keys = {
+        "lm_head.decoder.weight": "roberta.embeddings.word_embeddings.weight",
+        "lm_head.decoder.bias": "lm_head.bias",
+    }
 
     def __init__(self, config, n_prompt_tokens):
         super().__init__(config)
@@ -1203,7 +1255,7 @@ class RobertaForPromptTuning(RobertaPreTrainedModel):
         self.roberta = RobertaModel(config, add_pooling_layer=False)
         self.lm_head = RobertaLMHead(config)
 
-        self.init_weights()
+        self._init_model_weights()
 
         self.n_prompt_tokens = n_prompt_tokens
         self.prompt_embedding = nn.Embedding(n_prompt_tokens, config.hidden_size)
@@ -1321,7 +1373,7 @@ class RobertaForSequenceClassification(RobertaPreTrainedModel):
         self.roberta = RobertaModel(config, add_pooling_layer=False)
         self.classifier = RobertaClassificationHead(config)
 
-        self.init_weights()
+        self._init_model_weights()
 
     @add_start_docstrings_to_model_forward(ROBERTA_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @add_code_sample_docstrings(
@@ -1403,7 +1455,7 @@ class RobertaForMultipleChoice(RobertaPreTrainedModel):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, 1)
 
-        self.init_weights()
+        self._init_model_weights()
 
     @add_start_docstrings_to_model_forward(ROBERTA_INPUTS_DOCSTRING.format("batch_size, num_choices, sequence_length"))
     @add_code_sample_docstrings(
@@ -1496,7 +1548,7 @@ class RobertaForTokenClassification(RobertaPreTrainedModel):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
-        self.init_weights()
+        self._init_model_weights()
 
     @add_start_docstrings_to_model_forward(ROBERTA_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @add_code_sample_docstrings(
@@ -1604,7 +1656,7 @@ class RobertaForQuestionAnswering(RobertaPreTrainedModel):
         self.roberta = RobertaModel(config, add_pooling_layer=False)
         self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
 
-        self.init_weights()
+        self._init_model_weights()
 
     @add_start_docstrings_to_model_forward(ROBERTA_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @add_code_sample_docstrings(
