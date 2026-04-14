@@ -419,9 +419,12 @@ class DockerJobLauncher(JobLauncherSpec):
         volumes = {
             workspace: {"bind": self.WORKSPACE_MOUNT, "mode": "rw"},
         }
-        # Read study data map from workspace/local/study_data.json (host path).
+        # Read study data map from workspace/local/study_data.json.
+        # Must use WORKSPACE_MOUNT (container-internal path) for the file read because launch_job
+        # runs inside the SP/CP container. The host path (workspace) does not exist in the container
+        # filesystem. The Docker volume source must remain the host path for the daemon API.
         # Maps study name → host data path; study name comes from meta.json "study" field.
-        study_data_file = os.path.join(workspace, self.STUDY_DATA_PATH_FILE)
+        study_data_file = os.path.join(self.WORKSPACE_MOUNT, self.STUDY_DATA_PATH_FILE)
         if os.path.isfile(study_data_file):
             try:
                 import json as _json
