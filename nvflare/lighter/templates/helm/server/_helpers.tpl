@@ -22,3 +22,19 @@ app.kubernetes.io/name: {{ include "nvflare-server.name" . }}
 {{- .Values.image.repository }}
 {{- end }}
 {{- end }}
+
+{{- define "nvflare-server.hostPortEnabled" -}}
+{{- if hasKey .Values "hostPortEnabled" }}
+{{- .Values.hostPortEnabled | toString }}
+{{- else }}
+{{- "true" }}
+{{- end }}
+{{- end }}
+
+{{- define "nvflare-server.tcpConfigMapEnabled" -}}
+{{- if hasKey .Values "tcpConfigMapEnabled" }}
+{{- .Values.tcpConfigMapEnabled | toString }}
+{{- else }}
+{{- "true" }}
+{{- end }}
+{{- end }}

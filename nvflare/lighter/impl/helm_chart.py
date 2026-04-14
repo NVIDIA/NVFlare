@@ -183,6 +183,8 @@ class HelmChartBuilder(Builder):
             "fedLearnPort": fed_learn_port,
             "adminPort": admin_port if admin_port != fed_learn_port else None,
             "parentPort": self.parent_port,
+            "hostPortEnabled": True,
+            "tcpConfigMapEnabled": True,
             "command": ["/usr/local/bin/python3"],
             "args": args,
         }
