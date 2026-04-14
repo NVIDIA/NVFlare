@@ -11,11 +11,8 @@ SP/CP containers are started manually; SJ/CJ containers are launched automatical
 
 ## Step 0: Build Docker images
 
-Run from the `examples/docker/` directory:
-
 ```bash
-cd examples/docker
-bash build_docker.sh
+bash examples/docker/build_docker.sh
 ```
 
 This builds two images:
