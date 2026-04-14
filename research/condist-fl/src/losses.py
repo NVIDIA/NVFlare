@@ -200,7 +200,7 @@ class MarginalDiceCELoss(_Loss):
             smooth_nr=smooth_nr,
             smooth_dr=smooth_dr,
             batch=batch,
-            ce_weight=ce_weight,
+            weight=ce_weight,
             lambda_dice=lambda_dice,
             lambda_ce=lambda_ce,
         )
