@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from unittest.mock import patch
+
 from nvflare.fuel.hci.reg import CommandEntry
 from nvflare.fuel.hci.server.authz import AuthzFilter, PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
-
 from nvflare.fuel.sec.authz import AuthorizationService, Person
 
 
@@ -60,16 +61,12 @@ class TestAuthzFilterSubmitterRole:
             if name == "submitter":
                 captured["role"] = role
 
-        Person.__init__ = patched_init
-        orig_authz = AuthorizationService.authorize
-        AuthorizationService.authorize = staticmethod(lambda ctx: (True, ""))
-
-        try:
+        with (
+            patch.object(Person, "__init__", patched_init),
+            patch.object(AuthorizationService, "authorize", staticmethod(lambda ctx: (True, ""))),
+        ):
             f = AuthzFilter()
             f.pre_command(MockConn(), [])
-        finally:
-            Person.__init__ = orig_init
-            AuthorizationService.authorize = orig_authz
 
         assert captured.get("role") == "test_role", (
             f"Expected role='test_role' but got role='{captured.get('role')}'. "
