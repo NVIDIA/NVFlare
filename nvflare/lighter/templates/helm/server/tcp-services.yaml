@@ -1,3 +1,4 @@
+{{- if ne (include "nvflare-server.tcpConfigMapEnabled" .) "false" }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -5,3 +6,4 @@ metadata:
   namespace: ingress
 data:
   {{ .Values.fedLearnPort | quote }}: {{ printf "%s/nvflare-server:%v" .Release.Namespace .Values.fedLearnPort | quote }}
+{{- end }}

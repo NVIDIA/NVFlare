@@ -36,7 +36,9 @@ spec:
             {{- toYaml .Values.args | nindent 12 }}
           ports:
             - containerPort: {{ .Values.fedLearnPort }}
+              {{- if ne (include "nvflare-server.hostPortEnabled" .) "false" }}
               hostPort: {{ .Values.fedLearnPort }}
+              {{- end }}
               protocol: TCP
             {{- if .Values.adminPort }}
             - containerPort: {{ .Values.adminPort }}
