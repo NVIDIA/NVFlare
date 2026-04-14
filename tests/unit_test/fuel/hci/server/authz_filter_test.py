@@ -61,9 +61,12 @@ class TestAuthzFilterSubmitterRole:
             if name == "submitter":
                 captured["role"] = role
 
-        with patch.object(Person, "__init__", patched_init), patch.object(
-            AuthorizationService, "authorize", staticmethod(lambda ctx: (True, ""))
+        with (
+            patch.object(Person, "__init__", patched_init),
+            patch.object(AuthorizationService, "authorize", staticmethod(lambda ctx: (True, ""))),
         ):
+            f = AuthzFilter()
+            f.pre_command(MockConn(), [])
 
         assert captured.get("role") == "test_role", (
             f"Expected role='test_role' but got role='{captured.get('role')}'. "
