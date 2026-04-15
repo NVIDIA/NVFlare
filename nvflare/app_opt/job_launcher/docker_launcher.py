@@ -29,7 +29,7 @@ except ImportError:
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import JobMetaKey, get_job_meta_study
+from nvflare.apis.job_def import get_job_meta_study
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
 from nvflare.utils.job_launcher_utils import (
@@ -266,7 +266,7 @@ class DockerJobLauncher(JobLauncherSpec):
         python_path: str = "/usr/local/bin/python",
         timeout: int = 30,
         shutdown_timeout: int = 60,
-        extra_container_kwargs: dict = None,
+        default_job_container_kwargs: dict = None,
     ):
         """
         Args:
@@ -280,12 +280,14 @@ class DockerJobLauncher(JobLauncherSpec):
             shutdown_timeout: max seconds in wait() before force-terminating after job completes.
                               Workaround for NVFlare thread shutdown hang (conn_mgr/frame_mgr)
                               that prevents container from exiting cleanly (default 60).
-            extra_container_kwargs: site-level default docker run kwargs passed to all job containers
-                                    on this site. Job-level container_kwargs in deploy_map take precedence
-                                    on conflict. Keys use Docker SDK naming (underscores, not hyphens).
-                                    Example: {"shm_size": "8g", "ipc_mode": "host"}
-                                    Note: "volumes", "network", "environment", "command", "name", "detach", "user", "working_dir"
-                                    are controlled by the launcher and cannot be overridden here.
+            default_job_container_kwargs: site-level default docker run kwargs applied to every job
+                                          container launched by this site. Job-level resource_spec[site][docker]
+                                          takes precedence on conflict. Keys use Docker SDK naming
+                                          (underscores, not hyphens).
+                                          Example: {"shm_size": "8g", "ipc_mode": "host"}
+                                          Note: "volumes", "network", "environment", "command", "name",
+                                          "detach", "user", "working_dir" are controlled by the launcher
+                                          and cannot be overridden here.
         """
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -298,15 +300,15 @@ class DockerJobLauncher(JobLauncherSpec):
         self.python_path = python_path
         self.timeout = timeout
         self.shutdown_timeout = shutdown_timeout
-        extra_container_kwargs = extra_container_kwargs or {}
+        default_job_container_kwargs = default_job_container_kwargs or {}
         _RESERVED_KWARGS = {"volumes", "network", "environment", "command", "name", "detach", "user", "working_dir"}
-        reserved_used = _RESERVED_KWARGS & set(extra_container_kwargs.keys())
+        reserved_used = _RESERVED_KWARGS & set(default_job_container_kwargs.keys())
         if reserved_used:
             raise ValueError(
-                f"extra_container_kwargs must not contain reserved keys: {sorted(reserved_used)}. "
+                f"default_job_container_kwargs must not contain reserved keys: {sorted(reserved_used)}. "
                 f"These are controlled by the launcher."
             )
-        self.extra_container_kwargs = extra_container_kwargs
+        self.default_job_container_kwargs = default_job_container_kwargs
 
         self._docker_client = None
 
@@ -406,12 +408,12 @@ class DockerJobLauncher(JobLauncherSpec):
         # Docker resource spec: all per-job Docker resource requirements live in
         # resource_spec[site][docker] = {num_of_gpus, shm_size, ipc_mode, ...}.
         # Legacy flat resource_spec[site] = {num_of_gpus} is treated as process mode — docker gets nothing.
-        # Site-level defaults (extra_container_kwargs) are merged in; job-level takes precedence on conflict.
+        # Site-level defaults (default_job_container_kwargs) are merged in; job-level takes precedence on conflict.
         docker_spec = get_launcher_resource_spec(job_meta, site_name, "docker")
         num_gpus = docker_spec.get("num_of_gpus", 0)
         _NON_CONTAINER_KEYS = {"num_of_gpus"}
         job_container_kwargs = {k: v for k, v in docker_spec.items() if k not in _NON_CONTAINER_KEYS}
-        merged_container_kwargs = {**self.extra_container_kwargs, **job_container_kwargs}
+        merged_container_kwargs = {**self.default_job_container_kwargs, **job_container_kwargs}
 
         # GPU: translate num_of_gpus → device_requests (consistent with K8s/process launchers).
         # Explicit device_requests in docker_spec takes precedence (fine-grain override).

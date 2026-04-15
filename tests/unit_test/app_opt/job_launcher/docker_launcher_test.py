@@ -330,14 +330,14 @@ class TestDockerJobLauncherInit:
                 DockerJobLauncher.__init__(launcher, workspace=None)
         assert launcher.workspace == "/host/ws"
 
-    def test_raises_if_extra_container_kwargs_contains_reserved_key(self):
+    def test_raises_if_default_job_container_kwargs_contains_reserved_key(self):
         for reserved in ("volumes", "network", "environment", "command", "name", "detach"):
             with pytest.raises(ValueError, match="reserved"):
-                _make_launcher(extra_container_kwargs={reserved: "anything"})
+                _make_launcher(default_job_container_kwargs={reserved: "anything"})
 
-    def test_extra_container_kwargs_non_reserved_accepted(self):
-        launcher = _make_launcher(extra_container_kwargs={"shm_size": "2g", "ipc_mode": "host"})
-        assert launcher.extra_container_kwargs == {"shm_size": "2g", "ipc_mode": "host"}
+    def test_default_job_container_kwargs_non_reserved_accepted(self):
+        launcher = _make_launcher(default_job_container_kwargs={"shm_size": "2g", "ipc_mode": "host"})
+        assert launcher.default_job_container_kwargs == {"shm_size": "2g", "ipc_mode": "host"}
 
     def test_raises_if_docker_not_reachable(self):
         """Docker connectivity is validated lazily in _get_docker_client."""
@@ -609,7 +609,7 @@ class TestContainerKwargsMerge:
         return dc.containers.run.call_args[1]
 
     def test_site_kwargs_passed_when_no_job_kwargs(self):
-        launcher = _make_launcher(extra_container_kwargs={"ipc_mode": "host"})
+        launcher = _make_launcher(default_job_container_kwargs={"ipc_mode": "host"})
         call_kwargs = self._run_launch(launcher, _make_job_meta())
         assert call_kwargs.get("ipc_mode") == "host"
 
@@ -620,14 +620,14 @@ class TestContainerKwargsMerge:
         assert call_kwargs.get("shm_size") == "8g"
 
     def test_job_and_site_kwargs_merged(self):
-        launcher = _make_launcher(extra_container_kwargs={"ipc_mode": "host"})
+        launcher = _make_launcher(default_job_container_kwargs={"ipc_mode": "host"})
         job_meta = _make_job_meta(docker_spec={"shm_size": "8g"})
         call_kwargs = self._run_launch(launcher, job_meta)
         assert call_kwargs.get("ipc_mode") == "host"
         assert call_kwargs.get("shm_size") == "8g"
 
     def test_job_kwargs_override_site_kwargs_on_conflict(self):
-        launcher = _make_launcher(extra_container_kwargs={"shm_size": "2g"})
+        launcher = _make_launcher(default_job_container_kwargs={"shm_size": "2g"})
         job_meta = _make_job_meta(docker_spec={"shm_size": "8g"})
         call_kwargs = self._run_launch(launcher, job_meta)
         assert call_kwargs.get("shm_size") == "8g"

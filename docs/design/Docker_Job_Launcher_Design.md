@@ -198,16 +198,21 @@ A complete example:
     "app": [
       {
         "sites": ["server", "site-1"],
-        "image": "nvflare-pt:latest",
-        "container_kwargs": {
-          "shm_size": "8g",
-          "ipc_mode": "host"
-        }
+        "image": "nvflare-pt:latest"
       }
     ]
   },
   "resource_spec": {
-    "site-1": {"num_of_gpus": 1}
+    "site-1": {
+      "docker": {
+        "num_of_gpus": 1,
+        "shm_size": "8g",
+        "ipc_mode": "host"
+      },
+      "process": {
+        "num_of_gpus": 1
+      }
+    }
   },
   "min_clients": 1
 }
@@ -220,32 +225,27 @@ The `image` field in a `deploy_map` entry specifies the Docker image for SJ/CJ c
 - Per-job, per-app. Different apps in the same job can use different images.
 - All sites in a single entry share the same image. For different images per site, use separate entries.
 - The site admin must pull or build the image before the job runs. The launcher does not pull images.
-- If no `image` is specified, `DockerJobLauncher` does not activate — the job falls through to the default launcher (process mode).
+- If no `image` is specified for a site that has `DockerJobLauncher` configured, the job fails immediately with a clear error. There is no silent fallback to process mode.
 
-### GPU
+### GPU and Additional Container Flags
 
-Use `resource_spec.num_of_gpus` — the same field as K8s and process launchers:
+All Docker-specific resource requirements and runtime flags live under `resource_spec[site][docker]`. Keys use Docker Python SDK naming (underscores, not hyphens):
 
 ```json
 "resource_spec": {
-  "site-1": {"num_of_gpus": 1}
+  "site-1": {
+    "docker": {
+      "num_of_gpus": 1,
+      "shm_size": "8g",
+      "ipc_mode": "host"
+    }
+  }
 }
 ```
 
-`DockerJobLauncher` translates this to `device_requests: [{"Count": N, "Capabilities": [["gpu"]]}]` before calling `docker run`. For fine-grained control (specific GPU UUIDs, driver constraints), set `device_requests` directly in `container_kwargs` — it takes precedence.
+`DockerJobLauncher` translates `num_of_gpus` to `device_requests: [{"Count": N, "Capabilities": [["gpu"]]}]` before calling `docker run`. For fine-grained control (specific GPU UUIDs, driver constraints), set `device_requests` directly in the `docker` spec — it takes precedence over `num_of_gpus`.
 
-### Additional Container Flags (`container_kwargs`)
-
-Docker-specific `docker run` flags for SJ/CJ containers, in the `deploy_map` entry. Keys use Docker Python SDK naming (underscores):
-
-```json
-"container_kwargs": {
-  "shm_size": "8g",
-  "ipc_mode": "host"
-}
-```
-
-Job-level `container_kwargs` are merged with site-level defaults from `extra_container_kwargs` in `local/resources.json`; job-level wins on conflict. Reserved keys controlled by the launcher (`volumes`, `network`, `environment`, `command`, `name`, `detach`) cannot be overridden.
+Job-level `resource_spec[site][docker]` is merged with site-level defaults from `default_job_container_kwargs` in `local/resources.json`; job-level wins on conflict. Reserved keys controlled by the launcher (`volumes`, `network`, `environment`, `command`, `name`, `detach`, `user`, `working_dir`) cannot be overridden.
 
 Site-level defaults (set by site admin in `local/resources.json`):
 
@@ -254,10 +254,12 @@ Site-level defaults (set by site admin in `local/resources.json`):
   "id": "docker_launcher",
   "path": "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher",
   "args": {
-    "extra_container_kwargs": {"ipc_mode": "host"}
+    "default_job_container_kwargs": {"ipc_mode": "host"}
   }
 }
 ```
+
+**Legacy flat format:** `resource_spec[site] = {"num_of_gpus": N}` (no `docker`/`process` nesting) is treated as process mode for backward compatibility — Docker mode gets no resource spec from it. New jobs should use the nested format.
 
 ### Dataset / Study Data
 
