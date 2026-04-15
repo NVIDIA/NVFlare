@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
 CLUSTER_NAME="${CLUSTER_NAME:-gke-auto-test}"
 LOCATION="${LOCATION:-us-central1}"
