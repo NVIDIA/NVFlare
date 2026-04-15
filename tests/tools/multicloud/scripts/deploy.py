@@ -344,8 +344,7 @@ def deploy_participant(p: Participant, prod_dir: Path, server_ip: str | None = N
         }
 
         if pod_exists(p.kubeconfig, p.namespace, pod_name):
-            kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name, "--wait=false")
-            time.sleep(5)
+            kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name)
 
         kubectl(
             p.kubeconfig,
