@@ -226,7 +226,7 @@ def create_job(cmd_args):
 
         if cmd_args.debug:
             print_human(traceback.format_exc())
-        output_usage_error(job_sub_cmd_parser[CMD_SUBMIT_JOB], detail=str(e), exit_code=4)
+        output_usage_error(job_sub_cmd_parser[CMD_CREATE_JOB], detail=str(e), exit_code=4)
 
 
 def get_src_template_by_name(cmd_args):
@@ -296,7 +296,7 @@ def show_variables(cmd_args):
 
         if cmd_args.debug:
             print_human(traceback.format_exc())
-        output_usage_error(job_sub_cmd_parser[CMD_SUBMIT_JOB], detail=str(e), exit_code=4)
+        output_usage_error(job_sub_cmd_parser[CMD_SHOW_VARIABLES], detail=str(e), exit_code=4)
 
 
 def check_template_exists(target_template_name, template_index_conf):
@@ -384,7 +384,7 @@ def list_templates(cmd_args):
 
         if cmd_args.debug:
             print_human(traceback.format_exc())
-        output_usage_error(job_sub_cmd_parser[CMD_SUBMIT_JOB], detail=str(e), exit_code=4)
+        output_usage_error(job_sub_cmd_parser[CMD_LIST_TEMPLATES], detail=str(e), exit_code=4)
 
 
 def update_job_templates_dir(job_templates_dir: str):

@@ -128,3 +128,56 @@ class TestJobCreateDeprecated:
         captured = capsys.readouterr()
         schema = json.loads(captured.out)
         assert schema["command"] == "nvflare job create"
+
+    @pytest.mark.parametrize(
+        ("handler_name", "parser_key", "expected_detail"),
+        [
+            ("create_job", "create", "bad create"),
+            ("show_variables", "show_variables", "required job folder is not specified."),
+            ("list_templates", "list_templates", "bad list"),
+        ],
+    )
+    def test_deprecated_handlers_use_their_own_parser_for_usage_errors(
+        self, handler_name, parser_key, expected_detail, monkeypatch
+    ):
+        import argparse
+
+        from nvflare.tool.job import job_cli
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        job_cli.def_job_cli_parser(subs)
+
+        args = MagicMock()
+        args.debug = False
+        args.job_folder = "/tmp/myjob"
+        args.job_templates_dir = None
+
+        output_usage_error = MagicMock(side_effect=SystemExit(4))
+        monkeypatch.setattr("nvflare.tool.cli_output.output_usage_error", output_usage_error)
+        monkeypatch.setattr("sys.argv", ["nvflare", "job", parser_key])
+
+        if handler_name == "create_job":
+            args.template = "missing"
+            monkeypatch.setattr(job_cli, "get_src_template", lambda _args: None)
+            monkeypatch.setattr(
+                job_cli, "get_src_template_by_name", lambda _args: (_ for _ in ()).throw(ValueError(expected_detail))
+            )
+        elif handler_name == "show_variables":
+            args.job_folder = "/not/a/dir"
+        else:
+            monkeypatch.setattr(
+                job_cli,
+                "find_job_templates_location",
+                lambda _path=None: (_ for _ in ()).throw(ValueError(expected_detail)),
+            )
+
+        handler = getattr(job_cli, handler_name)
+        with pytest.raises(SystemExit) as exc_info:
+            handler(args)
+
+        assert exc_info.value.code == 4
+        output_usage_error.assert_called_once()
+        assert output_usage_error.call_args.args[0] is job_cli.job_sub_cmd_parser[parser_key]
+        assert output_usage_error.call_args.kwargs["detail"] == expected_detail
+        assert output_usage_error.call_args.kwargs["exit_code"] == 4
