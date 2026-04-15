@@ -32,12 +32,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import get_job_meta_study
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
-from nvflare.utils.job_launcher_utils import (
-    extract_job_image,
-    get_client_job_args,
-    get_launcher_resource_spec,
-    get_server_job_args,
-)
+from nvflare.utils.job_launcher_utils import get_client_job_args, get_launcher_resource_spec, get_server_job_args
 
 
 # Docker container status strings
@@ -347,9 +342,15 @@ class DockerJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"missing {JobProcessArgs.EXE_MODULE} in JOB_PROCESS_ARGS")
         _, exe_module = exe_module_entry
 
-        job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
         site_name = fl_ctx.get_identity_name()
+        job_image = get_launcher_resource_spec(job_meta, site_name, "docker").get("image")
         container_name = _sanitize_container_name(f"{site_name}-{job_id}")
+        if not job_image:
+            raise RuntimeError(
+                f"DockerJobLauncher is configured for site '{site_name}' but no job image "
+                f"was specified in meta.json for this site. "
+                f"Add an 'image' field to resource_spec['{site_name}']['docker']."
+            )
 
         workspace = self.workspace
         if not workspace:
@@ -411,7 +412,7 @@ class DockerJobLauncher(JobLauncherSpec):
         # Site-level defaults (default_job_container_kwargs) are merged in; job-level takes precedence on conflict.
         docker_spec = get_launcher_resource_spec(job_meta, site_name, "docker")
         num_gpus = docker_spec.get("num_of_gpus", 0)
-        _NON_CONTAINER_KEYS = {"num_of_gpus"}
+        _NON_CONTAINER_KEYS = {"num_of_gpus", "image"}
         job_container_kwargs = {k: v for k, v in docker_spec.items() if k not in _NON_CONTAINER_KEYS}
         merged_container_kwargs = {**self.default_job_container_kwargs, **job_container_kwargs}
 
@@ -488,15 +489,6 @@ class DockerJobLauncher(JobLauncherSpec):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
-            job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
-            site_name = fl_ctx.get_identity_name()
-            job_image = extract_job_image(job_meta, site_name)
-            if not job_image:
-                raise RuntimeError(
-                    f"DockerJobLauncher is configured for site '{site_name}' but no job image "
-                    f"was specified in meta.json for this site. "
-                    f"Add an 'image' field to the deploy_map entry for '{site_name}'."
-                )
             add_launcher(self, fl_ctx)
 
     @abstractmethod

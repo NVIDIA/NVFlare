@@ -2,11 +2,14 @@
     "name": "hello-numpy",
     "min_clients": 2,
     "deploy_map": {
-        "app": [
-	    {"sites": ["site-1"], "image": "nvflare-job:latest", "container_kwargs": {"shm_size": "8g", "ipc_mode": "host"}},
-	    {"sites": ["server"], "image": "nvflare-job:latest"},
-	    {"sites": ["site-2"]}
-        ]
+        "app": ["site-1", "server", "site-2"]
     },
-    "resource_spec": {}
+    "resource_spec": {
+        "server": {
+            "docker": {"image": "nvflare-job:latest"}
+        },
+        "site-1": {
+            "docker": {"image": "nvflare-job:latest"}
+        }
+    }
 }

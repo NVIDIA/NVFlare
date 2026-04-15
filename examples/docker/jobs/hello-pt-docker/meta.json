@@ -2,21 +2,21 @@
     "name": "hello-pt",
     "min_clients": 2,
     "deploy_map": {
-        "app": [
-            {"sites": ["site-1"], "image": "nvflare-job:latest"},
-            {"sites": ["server"], "image": "nvflare-job:latest"},
-            {"sites": ["site-2"]}
-        ]
+        "app": ["site-1", "server", "site-2"]
     },
     "resource_spec": {
+        "server": {
+            "docker": {"image": "nvflare-job:latest"}
+        },
         "site-1": {
-            "process": {
-                "num_of_gpus": 1
-            },
             "docker": {
+                "image": "nvflare-job:latest",
                 "num_of_gpus": 1,
                 "shm_size": "8g",
                 "ipc_mode": "host"
+            },
+            "process": {
+                "num_of_gpus": 1
             }
         }
     }

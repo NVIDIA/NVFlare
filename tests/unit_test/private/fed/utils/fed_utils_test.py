@@ -19,7 +19,6 @@ from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.fobs import register_custom_folder
 from nvflare.private.fed.utils.fed_utils import extract_participants
-from nvflare.utils.job_launcher_utils import extract_job_image
 
 
 class ExampleTestClass:
@@ -74,18 +73,3 @@ class TestFedUtils:
         results = extract_participants(participants)
         expected = ["site-1", "site-2", "site-3", "site-4", "site-5"]
         assert results == expected
-
-    def test_extract_job_image(self):
-        job_meta = {"deploy_map": {"app": ["site-1", "site-2", {"sites": ["site-3", "site-4"], "image": "image1"}]}}
-        result = extract_job_image(job_meta, "site-3")
-        expected = "image1"
-        assert result == expected
-
-        result = extract_job_image(job_meta, "site-1")
-        expected = None
-        assert result == expected
-
-        job_meta = {"deploy_map": {"app": ["site-1", "site-2"]}}
-        result = extract_job_image(job_meta, "site-1")
-        expected = None
-        assert result == expected

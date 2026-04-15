@@ -15,7 +15,7 @@ import copy
 import os
 import sys
 
-from nvflare.apis.fl_constant import FLContextKey, JobConstants, SystemVarName
+from nvflare.apis.fl_constant import FLContextKey, SystemVarName
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs
 
@@ -104,17 +104,6 @@ def generate_server_command(fl_ctx) -> str:
 
     args_str = _job_args_str(job_args, get_server_job_args())
     return f"{sys.executable} {args_str}"
-
-
-def extract_job_image(job_meta, site_name):
-    deploy_map = job_meta.get(JobMetaKey.DEPLOY_MAP, {})
-    for _, participants in deploy_map.items():
-        for item in participants:
-            if isinstance(item, dict):
-                sites = item.get(JobConstants.SITES) or []
-                if "@ALL" in sites or site_name in sites:
-                    return item.get(JobConstants.JOB_IMAGE)
-    return None
 
 
 _LAUNCHER_MODE_KEYS = {"process", "docker", "k8s"}

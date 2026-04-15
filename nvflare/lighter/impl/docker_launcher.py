@@ -49,10 +49,14 @@ class DockerLauncherBuilder(Builder):
         self.docker_image = docker_image
 
     def _inject_launcher(self, dest_dir: str, path: str, args: dict):
-        """Inject DockerJobLauncher component into resources.json."""
+        """Replace any existing job launcher component with DockerJobLauncher."""
         resources_file = os.path.join(dest_dir, ProvFileName.RESOURCES_JSON_DEFAULT)
         with open(resources_file, "rt") as f:
             resources = json.load(f)
+
+        launcher_ids = {"process_launcher", "docker_launcher", "k8s_launcher"}
+        components = resources.get("components", [])
+        resources["components"] = [c for c in components if c.get("id") not in launcher_ids]
         resources["components"].append({"id": "docker_launcher", "path": path, "args": args})
         utils.write(resources_file, json.dumps(resources, indent=4), "t")
 

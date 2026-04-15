@@ -318,9 +318,8 @@ class TestDockerJobLauncherInit:
             DockerJobLauncher.__init__(launcher, workspace=None)
             launcher._docker_client = _make_docker_client()
             fl_ctx, _ = _make_fl_ctx()
-            with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
-                with pytest.raises(ValueError, match="workspace"):
-                    launcher.launch_job(_make_job_meta(), fl_ctx)
+            with pytest.raises(ValueError, match="workspace"):
+                launcher.launch_job(_make_job_meta(), fl_ctx)
 
     def test_workspace_read_from_env_if_not_provided(self):
         dc = _make_docker_client()
@@ -394,19 +393,29 @@ def _make_fl_ctx(
 
 
 def _make_job_meta(job_id="job-1", site_name="site-1", docker_spec=None, resource_spec=None):
-    deploy_entry = {"sites": [site_name], JobConstants.JOB_IMAGE: "nvflare/nvflare:test"}
     meta = {
         JobConstants.JOB_ID: job_id,
-        "deploy_map": {"app": [deploy_entry]},
+        "deploy_map": {"app": [site_name]},
     }
     if resource_spec is not None:
         meta[JobMetaKey.RESOURCE_SPEC.value] = resource_spec
-    elif docker_spec is not None:
-        meta[JobMetaKey.RESOURCE_SPEC.value] = {site_name: {"docker": docker_spec}}
+    else:
+        spec = {"image": "nvflare/nvflare:test"}
+        if docker_spec is not None:
+            spec.update(docker_spec)
+        meta[JobMetaKey.RESOURCE_SPEC.value] = {site_name: {"docker": spec}}
     return meta
 
 
 class TestDockerJobLauncherLaunchJob:
+    def test_launch_raises_if_image_missing_for_configured_site(self):
+        launcher = _make_launcher()
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1", resource_spec={"site-1": {"docker": {}}})
+
+        with pytest.raises(RuntimeError, match="no job image was specified"):
+            launcher.launch_job(job_meta, fl_ctx)
+
     def test_launch_returns_handle(self):
         launcher = _make_launcher()
         dc = launcher._docker_client
@@ -417,8 +426,7 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.get.return_value = _make_container("running")
 
         fl_ctx, _ = _make_fl_ctx()
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
-            handle = launcher.launch_job(_make_job_meta(), fl_ctx)
+        handle = launcher.launch_job(_make_job_meta(), fl_ctx)
 
         assert handle is not None
         assert isinstance(handle, DockerJobHandle)
@@ -434,8 +442,7 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.get.return_value = _make_container("running")
 
         fl_ctx, job_args = _make_fl_ctx(identity_name="site-1", parent_url="tcp://localhost:8004")
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
-            launcher.launch_job(_make_job_meta(), fl_ctx)
+        launcher.launch_job(_make_job_meta(), fl_ctx)
 
         call_kwargs = dc.containers.run.call_args
         command = call_kwargs[1]["command"] if call_kwargs[1] else call_kwargs[0][1]
@@ -455,9 +462,8 @@ class TestDockerJobLauncherLaunchJob:
         fl_ctx = MagicMock(spec=FLContext)
         fl_ctx.get_prop.return_value = None
         fl_ctx.get_identity_name.return_value = "site-1"
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
-            with pytest.raises(RuntimeError):
-                launcher.launch_job(_make_job_meta(), fl_ctx)
+        with pytest.raises(RuntimeError):
+            launcher.launch_job(_make_job_meta(), fl_ctx)
 
     def test_launch_workspace_bind_mounted(self):
         launcher = _make_launcher(workspace="/host/workspace")
@@ -468,8 +474,7 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.get.return_value = _make_container("running")
 
         fl_ctx, _ = _make_fl_ctx()
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
-            launcher.launch_job(_make_job_meta(), fl_ctx)
+        launcher.launch_job(_make_job_meta(), fl_ctx)
 
         call_kwargs = dc.containers.run.call_args[1]
         volumes = call_kwargs["volumes"]
@@ -486,8 +491,7 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.get.return_value = _make_container("running")
 
         fl_ctx, _ = _make_fl_ctx()
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
-            launcher.launch_job(_make_job_meta(), fl_ctx)
+        launcher.launch_job(_make_job_meta(), fl_ctx)
 
         call_kwargs = dc.containers.run.call_args[1]
         volumes = call_kwargs.get("volumes", {})
@@ -504,8 +508,7 @@ class TestDockerJobLauncherLaunchJob:
 
         fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
         job_meta = _make_job_meta(site_name="site-1", docker_spec={"num_of_gpus": 2})
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
-            launcher.launch_job(job_meta, fl_ctx)
+        launcher.launch_job(job_meta, fl_ctx)
 
         call_kwargs = dc.containers.run.call_args[1]
         device_requests = call_kwargs.get("device_requests")
@@ -526,8 +529,7 @@ class TestDockerJobLauncherLaunchJob:
             site_name="site-1",
             docker_spec={"num_of_gpus": 1, "device_requests": explicit_dr},
         )
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
-            launcher.launch_job(job_meta, fl_ctx)
+        launcher.launch_job(job_meta, fl_ctx)
 
         call_kwargs = dc.containers.run.call_args[1]
         assert call_kwargs.get("device_requests") == explicit_dr
@@ -542,9 +544,12 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.get.return_value = _make_container("running")
 
         fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
-        job_meta = _make_job_meta(site_name="site-1", resource_spec={"site-1": {"num_of_gpus": 2}})
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
-            launcher.launch_job(job_meta, fl_ctx)
+        # Top-level num_of_gpus (outside any mode section) must NOT be used by Docker launcher
+        job_meta = _make_job_meta(
+            site_name="site-1",
+            resource_spec={"site-1": {"docker": {"image": "nvflare:test"}, "num_of_gpus": 2}},
+        )
+        launcher.launch_job(job_meta, fl_ctx)
 
         call_kwargs = dc.containers.run.call_args[1]
         assert call_kwargs.get("device_requests") is None
@@ -558,8 +563,7 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.get.return_value = _make_container("running")
 
         fl_ctx, _ = _make_fl_ctx()
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
-            launcher.launch_job(_make_job_meta(), fl_ctx)
+        launcher.launch_job(_make_job_meta(), fl_ctx)
 
         call_kwargs = dc.containers.run.call_args[1]
         assert call_kwargs.get("device_requests") is None
@@ -575,8 +579,7 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.get.return_value = _make_container("exited", exit_code=1)
 
         fl_ctx, _ = _make_fl_ctx()
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
-            handle = launcher.launch_job(_make_job_meta(), fl_ctx)
+        handle = launcher.launch_job(_make_job_meta(), fl_ctx)
 
         assert handle is not None
 
@@ -586,9 +589,8 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.run.side_effect = _ImageNotFound("no such image")
 
         fl_ctx, _ = _make_fl_ctx()
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
-            with pytest.raises(RuntimeError, match="not found"):
-                launcher.launch_job(_make_job_meta(), fl_ctx)
+        with pytest.raises(RuntimeError, match="not found"):
+            launcher.launch_job(_make_job_meta(), fl_ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -604,8 +606,7 @@ class TestContainerKwargsMerge:
         dc.containers.run.return_value = container
         dc.containers.get.return_value = _make_container("running")
         fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value="nvflare:test"):
-            launcher.launch_job(job_meta, fl_ctx)
+        launcher.launch_job(job_meta, fl_ctx)
         return dc.containers.run.call_args[1]
 
     def test_site_kwargs_passed_when_no_job_kwargs(self):
@@ -645,28 +646,13 @@ class TestContainerKwargsMerge:
 
 
 class TestHandleEvent:
-    def test_handle_event_adds_launcher_if_image_present(self):
+    def test_handle_event_always_adds_launcher(self):
         launcher = _make_launcher()
         fl_ctx, _ = _make_fl_ctx()
-        fl_ctx.get_prop.side_effect = lambda key, *a, **kw: {FLContextKey.JOB_META: _make_job_meta()}.get(key)
 
-        with patch(
-            "nvflare.app_opt.job_launcher.docker_launcher.extract_job_image",
-            return_value="nvflare:test",
-        ):
-            with patch("nvflare.app_opt.job_launcher.docker_launcher.add_launcher") as mock_add:
-                launcher.handle_event(EventType.BEFORE_JOB_LAUNCH, fl_ctx)
-                mock_add.assert_called_once()
-
-    def test_handle_event_raises_if_no_image(self):
-        """DockerJobLauncher is configured for this site — missing image is an error, not a silent skip."""
-        launcher = _make_launcher()
-        fl_ctx, _ = _make_fl_ctx()
-        fl_ctx.get_prop.side_effect = lambda key, *a, **kw: {FLContextKey.JOB_META: {}}.get(key)
-
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.extract_job_image", return_value=None):
-            with pytest.raises(RuntimeError, match="no job image was specified"):
-                launcher.handle_event(EventType.BEFORE_JOB_LAUNCH, fl_ctx)
+        with patch("nvflare.app_opt.job_launcher.docker_launcher.add_launcher") as mock_add:
+            launcher.handle_event(EventType.BEFORE_JOB_LAUNCH, fl_ctx)
+            mock_add.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

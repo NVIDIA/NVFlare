@@ -23,7 +23,7 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
-from nvflare.utils.job_launcher_utils import add_custom_dir_to_path, extract_job_image
+from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
 from nvflare.utils.process_utils import ProcessAdapter, spawn_process
 
 JOB_RETURN_CODE_MAPPING = {0: JobReturnCode.SUCCESS, 1: JobReturnCode.EXECUTION_ERROR, 9: JobReturnCode.ABORTED}
@@ -82,10 +82,7 @@ class ProcessJobLauncher(JobLauncherSpec):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
-            job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
-            job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
-            if not job_image:
-                add_launcher(self, fl_ctx)
+            add_launcher(self, fl_ctx)
 
     @abstractmethod
     def get_command(self, job_meta, fl_ctx) -> str:
