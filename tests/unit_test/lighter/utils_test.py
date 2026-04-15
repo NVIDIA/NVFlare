@@ -28,7 +28,9 @@ from cryptography.x509.oid import NameOID
 
 from nvflare.lighter.impl.cert import serialize_cert
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
-from nvflare.lighter.utils import Identity, generate_cert as lighter_generate_cert, load_yaml, sign_folders, verify_folder_signature
+from nvflare.lighter.utils import Identity
+from nvflare.lighter.utils import generate_cert as lighter_generate_cert
+from nvflare.lighter.utils import load_yaml, sign_folders, verify_folder_signature
 
 folders = ["folder1", "folder2"]
 files = ["file1", "file2"]

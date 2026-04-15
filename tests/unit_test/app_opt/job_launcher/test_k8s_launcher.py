@@ -12,12 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.app_opt.job_launcher.k8s_launcher import (
-    K8sJobHandle,
-    PvName,
-    _volume_mount_list,
-    uuid4_to_rfc1123,
-)
+from nvflare.app_opt.job_launcher.k8s_launcher import K8sJobHandle, PvName, _volume_mount_list, uuid4_to_rfc1123
 
 
 class TestVolumeMountList:

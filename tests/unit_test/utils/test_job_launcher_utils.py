@@ -17,27 +17,15 @@ from nvflare.utils.job_launcher_utils import extract_job_image
 
 class TestExtractJobImage:
     def test_explicit_site_match(self):
-        meta = {
-            "deploy_map": {
-                "app": [{"sites": ["client-1"], "image": "repo/img:v1"}]
-            }
-        }
+        meta = {"deploy_map": {"app": [{"sites": ["client-1"], "image": "repo/img:v1"}]}}
         assert extract_job_image(meta, "client-1") == "repo/img:v1"
 
     def test_explicit_site_no_match(self):
-        meta = {
-            "deploy_map": {
-                "app": [{"sites": ["client-1"], "image": "repo/img:v1"}]
-            }
-        }
+        meta = {"deploy_map": {"app": [{"sites": ["client-1"], "image": "repo/img:v1"}]}}
         assert extract_job_image(meta, "client-2") is None
 
     def test_at_all_matches_any_site(self):
-        meta = {
-            "deploy_map": {
-                "app": [{"sites": ["@ALL"], "image": "repo/img:v1"}]
-            }
-        }
+        meta = {"deploy_map": {"app": [{"sites": ["@ALL"], "image": "repo/img:v1"}]}}
         assert extract_job_image(meta, "client-1") == "repo/img:v1"
         assert extract_job_image(meta, "server") == "repo/img:v1"
 
