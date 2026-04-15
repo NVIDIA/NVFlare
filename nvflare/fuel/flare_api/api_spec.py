@@ -510,6 +510,19 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
+    def report_version(self, target_type: str, targets: Optional[List[str]] = None) -> dict:
+        """Report NVFlare version for specified system target(s).
+
+        Args:
+            target_type: type of target (server, client, or all)
+            targets: list of client names if target type is "client". All clients if not specified.
+
+        Returns: a dict with version information per site
+
+        """
+        pass
+
+    @abstractmethod
     def monitor_job_and_return_job_meta(
         self, job_id: str, timeout: int = 0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs
     ) -> (MonitorReturnCode, Optional[dict]):

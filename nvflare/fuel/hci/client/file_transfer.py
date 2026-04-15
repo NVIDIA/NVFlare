@@ -123,7 +123,12 @@ class FileTransferModule(CommandModule):
 
         handler = self.cmd_handlers.get(server_cmd_spec.client_cmd)
         if handler is None:
-            print("no cmd handler found for {}".format(server_cmd_spec.client_cmd))
+            try:
+                from nvflare.tool.cli_output import print_human
+
+                print_human("no cmd handler found for {}".format(server_cmd_spec.client_cmd))
+            except Exception:
+                print("no cmd handler found for {}".format(server_cmd_spec.client_cmd))
             return None
 
         return CommandModuleSpec(

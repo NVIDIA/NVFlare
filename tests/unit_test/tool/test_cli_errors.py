@@ -12,33 +12,82 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.tool.cli_errors import CLI_ERRORS, get_error
+import pytest
+
+from nvflare.tool.cli_errors import CLI_ERRORS, ERROR_REGISTRY, get_error
+
+# --- ERROR_REGISTRY presence and format checks ---
+
+EXPECTED_CODES = [
+    "JOB_NOT_FOUND",
+    "JOB_NOT_RUNNING",
+    "JOB_INVALID",
+    "CONNECTION_FAILED",
+    "AUTH_FAILED",
+    "TIMEOUT",
+    "INVALID_ARGS",
+    "STARTUP_KIT_MISSING",
+    "SITE_NOT_FOUND",
+    "LOG_CONFIG_INVALID",
+    "SERVER_UNREACHABLE",
+    "INTERNAL_ERROR",
+]
+
+
+@pytest.mark.parametrize("code", EXPECTED_CODES)
+def test_all_error_codes_present(code):
+    assert code in ERROR_REGISTRY
+
+
+@pytest.mark.parametrize("code", EXPECTED_CODES)
+def test_each_entry_has_message_and_hint(code):
+    entry = ERROR_REGISTRY[code]
+    assert "message" in entry
+    assert "hint" in entry
+    assert isinstance(entry["message"], str)
+    assert isinstance(entry["hint"], str)
+
+
+def test_job_not_found_format_substitution():
+    entry = ERROR_REGISTRY["JOB_NOT_FOUND"]
+    result = entry["message"].format_map({"job_id": "abc123"})
+    assert "abc123" in result
+
+
+def test_site_not_found_format_substitution():
+    entry = ERROR_REGISTRY["SITE_NOT_FOUND"]
+    result = entry["message"].format_map({"site": "site-1"})
+    assert "site-1" in result
+
+
+def test_internal_error_hint_does_not_reference_verbose():
+    assert "--verbose" not in ERROR_REGISTRY["INTERNAL_ERROR"]["hint"]
+
+
+def test_missing_substitution_key_falls_back_to_template():
+    entry = ERROR_REGISTRY["JOB_NOT_FOUND"]
+    try:
+        entry["message"].format_map({})
+        pytest.fail("Expected KeyError")
+    except KeyError:
+        # The spec says callers should catch KeyError and use template as-is;
+        # cli_output.py handles this — just verify the template itself is untouched
+        assert "{job_id}" in entry["message"]
+
+
+# --- get_error() behavior checks ---
 
 
 class TestGetError:
     def test_known_code_returns_tuple(self):
-        message, hint = get_error("CONNECTION_FAILED", host="localhost", port=8002)
+        message, hint = get_error("CONNECTION_FAILED")
         assert isinstance(message, str)
         assert isinstance(hint, str)
 
-    def test_placeholder_substitution(self):
-        message, hint = get_error("CONNECTION_FAILED", host="myhost", port=9000)
-        assert "myhost" in message
-        assert "9000" in message
-
-    def test_auth_failed(self):
-        message, hint = get_error("AUTH_FAILED", username="bob")
-        assert "bob" in message
-
-    def test_timeout(self):
-        message, hint = get_error("TIMEOUT", timeout=30)
-        assert "30" in message
-        assert "--timeout" in hint
-
-    def test_invalid_args(self):
-        message, hint = get_error("INVALID_ARGS", detail="missing --name")
-        assert "missing --name" in message
-        assert "--help" in hint
+    def test_unknown_code_returns_fallback(self):
+        message, hint = get_error("TOTALLY_UNKNOWN_CODE_XYZ")
+        assert message == "Unknown error."
+        assert hint == "Check logs for details."
 
     def test_ca_already_exists(self):
         message, hint = get_error("CA_ALREADY_EXISTS", path="/tmp/ca")
@@ -107,17 +156,6 @@ class TestGetError:
         message, hint = get_error("UNSIGNED_JOB_REJECTED")
         assert isinstance(message, str)
         assert len(message) > 0
-
-    def test_unknown_code_returns_fallback(self):
-        message, hint = get_error("TOTALLY_UNKNOWN_CODE_XYZ")
-        assert message == "Unknown error."
-        assert hint == "Check logs for details."
-
-    def test_missing_kwargs_returns_template(self):
-        # If kwargs are missing for a known code, the raw template is returned gracefully
-        message, hint = get_error("CONNECTION_FAILED")
-        # Should contain the raw template text rather than raising
-        assert "{host}" in message or "Cannot connect" in message
 
     def test_all_registered_codes_are_tuples(self):
         for code, value in CLI_ERRORS.items():

@@ -16,9 +16,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import InvalidJobDefinition
+from nvflare.fuel.flare_api.api_spec import InternalError, InvalidJobDefinition
 from nvflare.fuel.flare_api.flare_api import Session
-from nvflare.fuel.hci.client.api import ResultKey
+from nvflare.fuel.hci.client.api import APIStatus, ResultKey
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 
 
@@ -52,3 +52,16 @@ def test_submit_job_accepts_valid_job_folder_name(tmp_path):
 
     assert session.submit_job(str(job_dir)) == "job-1"
     session._do_command.assert_called_once()
+
+
+def test_do_command_includes_syntax_error_details():
+    session = Session.__new__(Session)
+    session.api = MagicMock()
+    session.api.closed = False
+    session.api.do_command.return_value = {
+        ResultKey.STATUS: APIStatus.ERROR_SYNTAX,
+        ResultKey.DETAILS: "usage: submit_job job_folder",
+    }
+
+    with pytest.raises(InternalError, match=r"protocol error: ERROR_SYNTAX: usage: submit_job job_folder"):
+        session._do_command("submit_job /tmp/job", enforce_meta=False)

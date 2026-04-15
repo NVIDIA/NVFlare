@@ -18,8 +18,9 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.apis.job_def import DEFAULT_STUDY
+from nvflare.fuel.flare_api.api_spec import AuthenticationError
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
-from nvflare.fuel.hci.client.api import ResultKey
+from nvflare.fuel.hci.client.api import APIStatus, ResultKey
 from nvflare.fuel.hci.proto import MetaKey
 
 
@@ -123,6 +124,27 @@ def test_session_passes_study_to_admin_api():
     assert captured["study"] == "cancer-research"
 
 
+def test_session_accepts_study_with_underscore():
+    fake_conf = SimpleNamespace(
+        get_admin_config=lambda: {"upload_dir": "/tmp", "download_dir": "/tmp"},
+        handlers=[],
+    )
+    captured = {}
+
+    class _FakeAdminAPI:
+        def __init__(self, **kwargs):
+            captured["study"] = kwargs["study"]
+
+    with (
+        patch("os.path.isdir", return_value=True),
+        patch("nvflare.fuel.flare_api.flare_api.secure_load_admin_config", return_value=fake_conf),
+        patch("nvflare.fuel.flare_api.flare_api.AdminAPI", _FakeAdminAPI),
+    ):
+        Session("admin@nvidia.com", "/tmp/kit", study="cancer_research")
+
+    assert captured["study"] == "cancer_research"
+
+
 def test_new_secure_session_forwards_study():
     with patch("nvflare.fuel.flare_api.flare_api.new_session") as mock_new_session:
         new_secure_session("admin@nvidia.com", "/tmp/kit", study="cancer-research")
@@ -135,3 +157,18 @@ def test_new_secure_session_defaults_study():
         new_secure_session("admin@nvidia.com", "/tmp/kit")
         _, kwargs = mock_new_session.call_args
         assert kwargs["study"] == DEFAULT_STUDY
+
+
+def test_try_connect_raises_on_login_failure():
+    session = _make_session_for_study(DEFAULT_STUDY)
+    session.api = SimpleNamespace(
+        closed=False,
+        connect=lambda timeout: None,
+        login=lambda: {
+            ResultKey.STATUS: APIStatus.ERROR_AUTHENTICATION,
+            ResultKey.DETAILS: "Incorrect user name or password",
+        },
+    )
+
+    with pytest.raises(AuthenticationError, match="Incorrect user name or password"):
+        session.try_connect(5.0)

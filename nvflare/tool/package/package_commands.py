@@ -15,10 +15,10 @@
 """nvflare package command handler."""
 
 import datetime
-import json
 import os
 import re
 import shutil
+import sys
 from urllib.parse import urlparse
 
 from nvflare.apis.utils.format_check import name_check
@@ -31,8 +31,8 @@ from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import load_crt, load_yaml, verify_cert
-from nvflare.tool.cli_errors import get_error
-from nvflare.tool.cli_output import output, output_error
+from nvflare.tool.cli_output import _is_json_mode, output_error, output_ok, output_usage_error
+from nvflare.tool.cli_schema import handle_schema_flag
 
 _VALID_SCHEMES = {"grpc", "tcp", "http"}
 _ADMIN_ROLES = {AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER}
@@ -130,7 +130,7 @@ def _parse_endpoint(endpoint: str) -> tuple:
     return parsed.scheme, parsed.hostname, parsed.port
 
 
-def _discover_name_from_dir(work_dir: str, fmt) -> str:
+def _discover_name_from_dir(work_dir: str, _args=None) -> str:
     """Find the single *.key file in work_dir and return its stem as the participant name."""
     keys = [f for f in os.listdir(work_dir) if f.endswith(".key")]
     if len(keys) == 0:
@@ -138,7 +138,7 @@ def _discover_name_from_dir(work_dir: str, fmt) -> str:
             "KEY_NOT_FOUND",
             f"No *.key file found in {work_dir}",
             "Run 'nvflare cert csr' to generate a key, or use --key explicitly.",
-            fmt,
+            None,
             exit_code=1,
         )
     if len(keys) > 1:
@@ -146,7 +146,7 @@ def _discover_name_from_dir(work_dir: str, fmt) -> str:
             "AMBIGUOUS_KEY",
             f"Multiple *.key files found in {work_dir}: {keys}",
             "Specify the participant name with -n, or use --key explicitly.",
-            fmt,
+            None,
             exit_code=1,
         )
     return keys[0][:-4]  # strip ".key"
@@ -170,20 +170,19 @@ def _latest_prod_dir(workspace: str, project_name: str):
     return os.path.join(project_dir, max(dirs))
 
 
-def _load_project_from_file(path: str, fmt) -> tuple:
-    """Load and validate a site-scoped project yaml. Returns (project, custom_builders).
+def _load_project_from_file(path: str) -> tuple:
+    """Load and validate a project yaml or single-site yaml. Returns (project, custom_builders).
 
-    Validates:
-    - File exists and is valid yaml
-    - api_version == 3 or 4
-    - No relay participants (hierarchical FL not supported)
+    Accepts:
+    - Full project YAML (api_version 3/4) with participants
+    - Single-site YAML with name/org/type (converted to a minimal project)
     """
     if not os.path.isfile(path):
         output_error(
             "PROJECT_FILE_NOT_FOUND",
             f"Project file not found: {path}.",
             "Provide the path to a site-scoped project yaml file.",
-            fmt,
+            None,
             exit_code=1,
         )
     try:
@@ -193,9 +192,38 @@ def _load_project_from_file(path: str, fmt) -> tuple:
             "INVALID_PROJECT_FILE",
             f"Failed to parse project file: {ex}",
             "Ensure the file is valid YAML.",
-            fmt,
+            None,
             exit_code=1,
         )
+
+    # Single-site yaml support: name/org/type only
+    if (
+        isinstance(project_dict, dict)
+        and "name" in project_dict
+        and "org" in project_dict
+        and "type" in project_dict
+        and "participants" not in project_dict
+        and PropKey.API_VERSION not in project_dict
+    ):
+        p_type = project_dict.get("type")
+        if p_type not in _VALID_CERT_TYPES:
+            output_error(
+                "INVALID_PROJECT_FILE",
+                f"Invalid site type: {p_type}",
+                "Use one of: client, server, org_admin, lead, member.",
+                None,
+                exit_code=1,
+            )
+        participant = {"name": project_dict.get("name"), "org": project_dict.get("org")}
+        if p_type in _ADMIN_ROLES:
+            participant.update({"type": "admin", "role": _KIT_TYPE_TO_ROLE[p_type]})
+        else:
+            participant.update({"type": p_type})
+        project_dict = {
+            PropKey.API_VERSION: 3,
+            PropKey.NAME: project_dict.get("project_name", "project"),
+            "participants": [participant],
+        }
 
     try:
         project = prepare_project(project_dict)
@@ -203,8 +231,9 @@ def _load_project_from_file(path: str, fmt) -> tuple:
         output_error(
             "INVALID_PROJECT_FILE",
             f"Invalid project file: {ex}",
-            "Ensure the file is schema-compatible with 'nvflare provision' project.yaml (api_version: 3 or 4).",
-            fmt,
+            "Ensure the file is schema-compatible with 'nvflare provision' project.yaml (api_version: 3 or 4), "
+            "or provide a single-site yaml with name/org/type.",
+            None,
             exit_code=1,
         )
 
@@ -213,7 +242,7 @@ def _load_project_from_file(path: str, fmt) -> tuple:
             "UNSUPPORTED_TOPOLOGY",
             "Relay participants found in project file — hierarchical FL is not supported by 'nvflare package'.",
             "Use 'nvflare provision' for relay topologies.",
-            fmt,
+            None,
             exit_code=4,
         )
 
@@ -221,13 +250,13 @@ def _load_project_from_file(path: str, fmt) -> tuple:
     return project, custom_builders
 
 
-def _handle_package_yaml_mode(args, fmt, scheme, host, port):
+def _handle_package_yaml_mode(args, scheme, host, port):
     """Build kits for all participants defined in a project yaml file.
 
     Called by handle_package when --project-file is given.  The cert/key for each participant
     is resolved from --dir/<name>.crt and --dir/<name>.key; rootCA is --dir/rootCA.pem.
     """
-    project_from_yaml, custom_builders = _load_project_from_file(args.project_file, fmt)
+    project_from_yaml, custom_builders = _load_project_from_file(args.project_file)
 
     # --dir is required in yaml mode (no single key auto-discovery)
     if not getattr(args, "dir", None):
@@ -235,7 +264,7 @@ def _handle_package_yaml_mode(args, fmt, scheme, host, port):
             "INVALID_ARGS",
             "--dir is required when using --project-file.",
             "Provide the directory containing cert files named by participant CN.",
-            fmt,
+            None,
             exit_code=4,
         )
 
@@ -245,7 +274,7 @@ def _handle_package_yaml_mode(args, fmt, scheme, host, port):
             "ROOTCA_NOT_FOUND",
             f"Root CA file not found: {rootca_path}.",
             f"Place the rootCA.pem from the Project Admin into {args.dir}.",
-            fmt,
+            None,
             exit_code=1,
         )
 
@@ -267,6 +296,10 @@ def _handle_package_yaml_mode(args, fmt, scheme, host, port):
         kit_type = role if role in _ADMIN_ROLES else AdminRole.LEAD
         all_participants.append((kit_type, p))
 
+    # Include server if this is a server-only project and no -t filter was given.
+    if not all_participants and server and not getattr(args, "kit_type", None):
+        all_participants.append(("server", server))
+
     # Apply -t filter when given
     kit_type_filter = getattr(args, "kit_type", None)
     if kit_type_filter:
@@ -283,7 +316,7 @@ def _handle_package_yaml_mode(args, fmt, scheme, host, port):
             "NO_PARTICIPANTS",
             "No participants to build after applying type filter.",
             "Check the project file and -t filter.",
-            fmt,
+            None,
             exit_code=1,
         )
 
@@ -301,7 +334,7 @@ def _handle_package_yaml_mode(args, fmt, scheme, host, port):
             "ROOTCA_INVALID",
             f"Failed to load root CA certificate '{rootca_path}': {e}.",
             "Ensure the file is a valid PEM-encoded certificate.",
-            fmt,
+            None,
             exit_code=1,
         )
     for kit_type, participant in all_participants:
@@ -314,7 +347,7 @@ def _handle_package_yaml_mode(args, fmt, scheme, host, port):
                 "CERT_NOT_FOUND",
                 f"Certificate not found: {cert_path}.",
                 f"Drop {p_name}.crt from the Project Admin into {args.dir}.",
-                fmt,
+                None,
                 exit_code=1,
             )
         if not os.path.isfile(key_path):
@@ -322,7 +355,7 @@ def _handle_package_yaml_mode(args, fmt, scheme, host, port):
                 "KEY_NOT_FOUND",
                 f"Private key not found: {key_path}.",
                 f"Run 'nvflare cert csr -n {p_name}' to generate a key.",
-                fmt,
+                None,
                 exit_code=1,
             )
 
@@ -330,8 +363,7 @@ def _handle_package_yaml_mode(args, fmt, scheme, host, port):
             cert = load_crt(cert_path)
             verify_cert(cert, ca_cert.public_key())
         except Exception:
-            msg, hint = get_error("CERT_CHAIN_INVALID", cert=cert_path, rootca=rootca_path)
-            output_error("CERT_CHAIN_INVALID", msg, hint, fmt, exit_code=1)
+            output_error("CERT_CHAIN_INVALID", exit_code=1, cert=cert_path, rootca=rootca_path)
 
         try:
             expiry = cert.not_valid_after_utc
@@ -340,8 +372,7 @@ def _handle_package_yaml_mode(args, fmt, scheme, host, port):
             expiry = cert.not_valid_after
             now = datetime.datetime.utcnow()
         if expiry < now:
-            msg, hint = get_error("CERT_EXPIRED", cert=cert_path, expiry=expiry.isoformat())
-            output_error("CERT_EXPIRED", msg, hint, fmt, exit_code=1)
+            output_error("CERT_EXPIRED", exit_code=1, cert=cert_path, expiry=expiry.isoformat())
 
         cert_map[p_name] = (cert_path, key_path)
 
@@ -351,8 +382,7 @@ def _handle_package_yaml_mode(args, fmt, scheme, host, port):
         for _, participant in all_participants:
             existing_path = os.path.join(latest_prod, participant.name)
             if os.path.exists(existing_path) and not args.force:
-                msg, hint = get_error("OUTPUT_DIR_EXISTS", path=existing_path)
-                output_error("OUTPUT_DIR_EXISTS", msg, hint, fmt, exit_code=1)
+                output_error("OUTPUT_DIR_EXISTS", exit_code=1, path=existing_path)
 
     # Build all participants in a single provisioner call so they land in the same prod_NN.
     has_server = any(kt == "server" for kt, _ in all_participants)
@@ -399,7 +429,7 @@ def _handle_package_yaml_mode(args, fmt, scheme, host, port):
     ctx = provisioner.provision(project)
 
     if ctx.get(CtxKey.BUILD_ERROR):
-        output_error("BUILD_FAILED", "Kit assembly failed.", "See error output above for details.", fmt, exit_code=1)
+        output_error("BUILD_FAILED", "Kit assembly failed.", "See error output above for details.", None, exit_code=1)
 
     prod_dir = ctx[CtxKey.CURRENT_PROD_DIR]
 
@@ -431,9 +461,9 @@ def _handle_package_yaml_mode(args, fmt, scheme, host, port):
         )
 
     if len(results) == 1:
-        output(results[0], fmt)
+        output_ok(results[0])
     else:
-        output(results, fmt)
+        output_ok(results)
     return 0
 
 
@@ -441,15 +471,9 @@ def handle_package(args):
     """Assemble a startup kit from locally generated key + Project Admin cert + rootCA.pem."""
 
     # Step 1: --schema check (before any other work)
-    if getattr(args, "schema", False):
-        from nvflare.tool.cli_schema import parser_to_schema
-        from nvflare.tool.package.package_cli import _package_parser
+    from nvflare.tool.package.package_cli import _package_parser
 
-        schema = parser_to_schema(_package_parser, "nvflare package", examples=_PACKAGE_EXAMPLES)
-        print(json.dumps(schema, indent=2))
-        return 0
-
-    fmt = getattr(args, "output_fmt", None)
+    handle_schema_flag(_package_parser, "nvflare package", _PACKAGE_EXAMPLES, sys.argv[1:])
 
     # Step 2: Validate required args and endpoint up front (before any file I/O)
     has_project_file = bool(getattr(args, "project_file", None))
@@ -459,7 +483,7 @@ def handle_package(args):
             "INVALID_ARGS",
             "--project-file and -n/--name are mutually exclusive.",
             "Use --project-file to define participants via yaml, or -n to name a single participant.",
-            fmt,
+            None,
             exit_code=4,
         )
 
@@ -468,35 +492,29 @@ def handle_package(args):
             "INVALID_ARGS",
             "--project-file and --cert/--key/--rootca are mutually exclusive.",
             "In yaml mode, cert files are discovered from --dir by participant name. Do not pass --cert/--key/--rootca.",
-            fmt,
+            None,
             exit_code=4,
         )
 
     if not getattr(args, "endpoint", None):
         detail = f"for -t {args.kit_type}" if getattr(args, "kit_type", None) else "for this command"
-        output_error(
-            "INVALID_ARGS",
+        output_usage_error(
+            _package_parser if not _is_json_mode() else None,
             f"--endpoint is required {detail}.",
-            "Provide the server endpoint URI, e.g. grpc://server.example.com:8002",
-            fmt,
             exit_code=4,
+            hint="Provide the server endpoint URI, e.g. grpc://server.example.com:8002",
         )
     try:
         scheme, host, port = _parse_endpoint(args.endpoint)
     except ValueError:
-        msg, hint = get_error("INVALID_ENDPOINT", endpoint=args.endpoint)
-        output_error("INVALID_ENDPOINT", msg, hint, fmt, exit_code=4)
-
-    # Step 3: --output json implies --force
-    if fmt == "json":
-        args.force = True
+        output_error("INVALID_ENDPOINT", exit_code=4, endpoint=args.endpoint)
 
     # -----------------------------------------------------------------------
     # YAML mode: --project-file given — build kits for all participants defined
     # in the yaml file.  --dir is required (per-participant certs named by CN).
     # -----------------------------------------------------------------------
     if has_project_file:
-        return _handle_package_yaml_mode(args, fmt, scheme, host, port)
+        return _handle_package_yaml_mode(args, scheme, host, port)
 
     # Step 4: Resolve --dir vs explicit --cert/--key/--rootca
     has_dir = bool(getattr(args, "dir", None))
@@ -507,7 +525,7 @@ def handle_package(args):
             "INVALID_ARGS",
             "--dir and --cert/--key/--rootca are mutually exclusive.",
             "Use --dir for convention-based discovery, or --cert/--key/--rootca for explicit paths.",
-            fmt,
+            None,
             exit_code=4,
         )
     if not has_dir and not has_explicit:
@@ -515,14 +533,14 @@ def handle_package(args):
             "INVALID_ARGS",
             "Provide either --dir or all of --cert, --key, --rootca.",
             "Use --dir <work-dir> if all files are in one directory.",
-            fmt,
+            None,
             exit_code=4,
         )
 
     if has_dir:
         # Auto-detect name from *.key if -n not given
         if not args.name:
-            args.name = _discover_name_from_dir(args.dir, fmt)
+            args.name = _discover_name_from_dir(args.dir)
         # Resolve paths by convention — all files are named after the participant
         args.cert = os.path.join(args.dir, f"{args.name}.crt")
         args.key = os.path.join(args.dir, f"{args.name}.key")
@@ -535,7 +553,7 @@ def handle_package(args):
                 "INVALID_ARGS",
                 f"Missing required argument(s): {', '.join(missing)}.",
                 "When using explicit mode, --cert, --key, and --rootca must all be provided.",
-                fmt,
+                None,
                 exit_code=4,
             )
         if not args.name:
@@ -543,7 +561,7 @@ def handle_package(args):
                 "INVALID_ARGS",
                 "-n/--name is required when using --cert/--key/--rootca.",
                 "Provide the participant name, e.g. -n hospital-1",
-                fmt,
+                None,
                 exit_code=4,
             )
 
@@ -553,7 +571,7 @@ def handle_package(args):
             "INVALID_ARGS",
             f"Participant name {_DUMMY_SERVER_NAME!r} is reserved and cannot be used.",
             "Choose a different name for this participant.",
-            fmt,
+            None,
             exit_code=4,
         )
 
@@ -568,7 +586,7 @@ def handle_package(args):
             )
         else:
             hint = "Provide the signed certificate received from the Project Admin."
-        output_error("CERT_NOT_FOUND", f"Certificate file not found: {args.cert}.", hint, fmt, exit_code=1)
+        output_error("CERT_NOT_FOUND", f"Certificate file not found: {args.cert}.", hint, None, exit_code=1)
 
     if not os.path.isfile(args.key):
         hint = (
@@ -576,7 +594,7 @@ def handle_package(args):
             if has_dir
             else "Provide the private key generated by 'nvflare cert csr'."
         )
-        output_error("KEY_NOT_FOUND", f"Private key file not found: {args.key}.", hint, fmt, exit_code=1)
+        output_error("KEY_NOT_FOUND", f"Private key file not found: {args.key}.", hint, None, exit_code=1)
 
     if not os.path.isfile(args.rootca):
         hint = (
@@ -584,7 +602,7 @@ def handle_package(args):
             if has_dir
             else "Provide the rootCA.pem received from the Project Admin."
         )
-        output_error("ROOTCA_NOT_FOUND", f"Root CA file not found: {args.rootca}.", hint, fmt, exit_code=1)
+        output_error("ROOTCA_NOT_FOUND", f"Root CA file not found: {args.rootca}.", hint, None, exit_code=1)
 
     # Step 7: Load and validate cert chain
     try:
@@ -592,8 +610,7 @@ def handle_package(args):
         ca_cert = load_crt(args.rootca)
         verify_cert(cert, ca_cert.public_key())
     except Exception:
-        msg, hint = get_error("CERT_CHAIN_INVALID", cert=args.cert, rootca=args.rootca)
-        output_error("CERT_CHAIN_INVALID", msg, hint, fmt, exit_code=1)
+        output_error("CERT_CHAIN_INVALID", exit_code=1, cert=args.cert, rootca=args.rootca)
 
     # Step 8: Validate cert expiry
     try:
@@ -604,15 +621,13 @@ def handle_package(args):
         expiry = cert.not_valid_after
         now = datetime.datetime.utcnow()
     if expiry < now:
-        msg, hint = get_error("CERT_EXPIRED", cert=args.cert, expiry=expiry.isoformat())
-        output_error("CERT_EXPIRED", msg, hint, fmt, exit_code=1)
+        output_error("CERT_EXPIRED", exit_code=1, cert=args.cert, expiry=expiry.isoformat())
 
     # Step 8b: Derive kit_type from cert's UNSTRUCTURED_NAME.
     # The signed cert's embedded type is the sole authoritative source.
     kit_type = _read_cert_type_from_cert(cert)
     if not kit_type or kit_type not in _VALID_CERT_TYPES:
-        msg, hint = get_error("CERT_TYPE_UNKNOWN", cert=args.cert)
-        output_error("CERT_TYPE_UNKNOWN", msg, hint, fmt, exit_code=1)
+        output_error("CERT_TYPE_UNKNOWN", exit_code=1, cert=args.cert)
     args.kit_type = kit_type
 
     # Step 8c: Type-dependent pre-flight checks (require kit_type to be resolved first).
@@ -621,7 +636,7 @@ def handle_package(args):
             "INVALID_ARGS",
             f"Admin name must be an email address (got {args.name!r}).",
             "Use an email-format name, e.g. alice@myorg.com",
-            fmt,
+            None,
             exit_code=4,
         )
 
@@ -632,7 +647,7 @@ def handle_package(args):
             "INVALID_ARGS",
             f"Participant name {args.name!r} collides with the server endpoint hostname.",
             "Use a different -n/--name that is distinct from the server hostname in --endpoint.",
-            fmt,
+            None,
             exit_code=4,
         )
 
@@ -647,8 +662,7 @@ def handle_package(args):
     if latest_prod:
         existing_path = os.path.join(latest_prod, args.name)
         if os.path.exists(existing_path) and not args.force:
-            msg, hint = get_error("OUTPUT_DIR_EXISTS", path=existing_path)
-            output_error("OUTPUT_DIR_EXISTS", msg, hint, fmt, exit_code=1)
+            output_error("OUTPUT_DIR_EXISTS", exit_code=1, path=existing_path)
 
     # Step 11: Construct project and provision via the provisioner infrastructure.
     is_server = args.kit_type == "server"
@@ -694,7 +708,7 @@ def handle_package(args):
             "BUILD_FAILED",
             "Kit assembly failed during provisioning.",
             "See error output above for details.",
-            fmt,
+            None,
             exit_code=1,
         )
 
@@ -724,5 +738,5 @@ def handle_package(args):
         "transfer_dir": os.path.join(output_dir, "transfer"),
         "next_step": next_step,
     }
-    output(result, fmt)
+    output_ok(result)
     return 0

@@ -88,6 +88,14 @@ class SystemCommandModule(CommandModule, CommandUtil):
                     visible=True,
                 ),
                 CommandSpec(
+                    name="report_version",
+                    description="get NVFlare version info",
+                    usage="report_version server|client|all <client-name> ...",
+                    handler_func=self.report_version,
+                    authz_func=self.authorize_server_operation,
+                    visible=True,
+                ),
+                CommandSpec(
                     name="dead",
                     description="send dead client msg to SJ",
                     usage="dead <client-name>",
@@ -238,6 +246,53 @@ class SystemCommandModule(CommandModule, CommandUtil):
         table = conn.append_table(["Sites", "Env"], name=MetaKey.CLIENTS)
         for k, v in site_resources.items():
             table.add_row([str(k), str(v)], meta=v)
+
+    def report_version(self, conn: Connection, args: List[str]):
+        if len(args) < 2:
+            conn.append_error("syntax error: missing site names")
+            return
+
+        target_type = args[1]
+        if target_type not in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
+            conn.append_string(
+                "invalid target type {}. Usage: report_version server|client|all <client-name>".format(target_type)
+            )
+            return
+
+        versions = {}
+
+        if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
+            try:
+                import nvflare
+
+                versions["server"] = {"version": nvflare.__version__}
+            except Exception:
+                versions["server"] = {"version": "unknown"}
+
+        if target_type in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
+            message = new_message(conn, topic=SysCommandTopic.REPORT_VERSION, body="", require_authz=True)
+            replies = self.send_request_to_clients(conn, message)
+            if not replies and target_type == self.TARGET_TYPE_CLIENT:
+                conn.append_error("no responses from clients")
+                return
+            for r in replies or []:
+                client_name = r.client_name
+                if r.reply:
+                    if r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
+                        versions[client_name] = {"error": r.reply.body}
+                    else:
+                        try:
+                            payload = json.loads(r.reply.body)
+                            if isinstance(payload, dict):
+                                versions[client_name] = payload
+                            else:
+                                versions[client_name] = {"error": "invalid reply"}
+                        except Exception as e:
+                            versions[client_name] = {"error": f"Bad replies: {secure_format_exception(e)}"}
+                else:
+                    versions[client_name] = {"error": "No replies"}
+
+        conn.append_dict(versions, meta=make_meta(MetaStatusValue.OK))
 
     def dead_client(self, conn: Connection, args: List[str]):
         if len(args) != 3:

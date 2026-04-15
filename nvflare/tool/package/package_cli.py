@@ -19,6 +19,20 @@ from typing import Optional
 
 _package_parser: Optional[argparse.ArgumentParser] = None
 
+_PACKAGE_HELP_EXAMPLES = """Examples:
+  Build kits from a project YAML:
+    nvflare package -e grpc://fl-server:8002 -p ./site.yaml --dir ./certs
+
+  Build one kit from a working directory:
+    nvflare package -e grpc://fl-server:8002 --dir ./hospital-1-kit
+
+  Build one kit from explicit file paths:
+    nvflare package -n hospital-1 -e grpc://fl-server:8002 \\
+      --cert ./signed/hospital-1/hospital-1.crt \\
+      --key ./csr/hospital-1.key \\
+      --rootca ./signed/hospital-1/rootCA.pem
+"""
+
 
 def def_package_cli_parser(sub_cmd) -> dict:
     """Register 'nvflare package' with the top-level sub_cmd parser."""
@@ -30,6 +44,8 @@ def def_package_cli_parser(sub_cmd) -> dict:
             "No signature.json is generated — mTLS is the trust anchor."
         ),
         help="Assemble a startup kit from a locally generated key and Project Admin cert.",
+        epilog=_PACKAGE_HELP_EXAMPLES,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
         "-t",
@@ -111,8 +127,9 @@ def def_package_cli_parser(sub_cmd) -> dict:
         default=None,
         dest="project_file",
         help=(
-            "Site-scoped project YAML defining participants and optional custom builders "
-            "(schema-compatible with 'nvflare provision' project.yaml). "
+            "Project YAML defining participants and optional custom builders "
+            "(schema-compatible with 'nvflare provision' project.yaml), "
+            "or a single-site YAML with name/org/type. "
             "When given, -t becomes an optional type filter. "
             "WorkspaceBuilder and StaticFileBuilder are always managed by nvflare package "
             "(scheme is derived from --endpoint); any YAML entries for these builders, "
@@ -133,13 +150,6 @@ def def_package_cli_parser(sub_cmd) -> dict:
         action="store_true",
         default=False,
         help="Allow re-packaging when this participant name already appears in the most recent prod_NN directory (a new prod_NN is created alongside).",
-    )
-    p.add_argument(
-        "--output",
-        choices=["json", "quiet"],
-        default=None,
-        dest="output_fmt",
-        help="Output format. Default: human-readable text.",
     )
     p.add_argument(
         "--schema",

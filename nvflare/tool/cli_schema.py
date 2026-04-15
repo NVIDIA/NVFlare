@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import json
 from typing import List, Optional
 
 SCHEMA_VERSION = "1"
@@ -42,19 +43,22 @@ def parser_to_schema(
     parser: argparse.ArgumentParser,
     command: str,
     examples: Optional[List[str]] = None,
+    deprecated: bool = False,
+    deprecated_message: str = "",
 ) -> dict:
     """Serialize an argparse parser to a JSON-compatible schema dict."""
     args = []
     for action in parser._actions:
-        if isinstance(action, (argparse._HelpAction, argparse._VersionAction)):
+        if isinstance(action, (argparse._HelpAction, argparse._SubParsersAction)):
             continue
 
-        if action.option_strings:
+        is_positional = not action.option_strings
+        if is_positional:
+            name = action.dest
+            required = action.nargs not in ("?", "*", argparse.OPTIONAL, argparse.ZERO_OR_MORE)
+        else:
             name = max(action.option_strings, key=len)
             required = bool(getattr(action, "required", False))
-        else:
-            name = action.dest
-            required = True
 
         entry = {
             "name": name,
@@ -74,12 +78,45 @@ def parser_to_schema(
         if action.option_strings and len(action.option_strings) > 1:
             entry["aliases"] = action.option_strings[:-1]
 
+        if action.nargs in ("*", "+", "?"):
+            entry["nargs"] = action.nargs
+
         args.append(entry)
 
-    return {
+    result = {
         "schema_version": SCHEMA_VERSION,
         "command": command,
         "description": parser.description or "",
         "args": args,
         "examples": examples or [],
     }
+    if deprecated:
+        result["deprecated"] = True
+        result["deprecated_message"] = deprecated_message
+    return result
+
+
+def handle_schema_flag(
+    parser: argparse.ArgumentParser,
+    command: str,
+    examples: List[str],
+    args_list: List[str],
+    deprecated: bool = False,
+    deprecated_message: str = "",
+) -> None:
+    """Call before parse_args(). If --schema in args_list, print schema and exit."""
+    if "--schema" in args_list:
+        if parser is None:
+            schema = {
+                "schema_version": SCHEMA_VERSION,
+                "command": command,
+                "args": [],
+                "examples": examples or [],
+            }
+            if deprecated:
+                schema["deprecated"] = True
+                schema["deprecated_message"] = deprecated_message
+        else:
+            schema = parser_to_schema(parser, command, examples, deprecated, deprecated_message)
+        print(json.dumps(schema, indent=2))
+        raise SystemExit(0)

@@ -143,7 +143,7 @@ def test_handle_cert_login_rejects_unknown_study_when_registry_exists(monkeypatc
     try:
         login.handle_cert_login(conn, ["CERT_LOGIN", "admin@nvidia.com"])
 
-        assert conn.strings == [("REJECT", None)]
+        assert conn.strings == [("REJECT: unknown study 'trial-study'", None)]
         assert conn.tokens == []
         assert session_mgr.sessions == {}
     finally:
@@ -173,7 +173,7 @@ def test_handle_cert_login_rejects_unmapped_user_when_registry_exists(monkeypatc
     try:
         login.handle_cert_login(conn, ["CERT_LOGIN", "admin@nvidia.com"])
 
-        assert conn.strings == [("REJECT", None)]
+        assert conn.strings == [("REJECT: user 'admin@nvidia.com' is not mapped to study 'cancer-research'", None)]
         assert conn.tokens == []
         assert session_mgr.sessions == {}
     finally:
@@ -260,7 +260,7 @@ def test_handle_cert_login_rejects_non_default_study_without_registry(monkeypatc
     try:
         login.handle_cert_login(conn, ["CERT_LOGIN", "admin@nvidia.com"])
 
-        assert conn.strings == [("REJECT", None)]
+        assert conn.strings == [("REJECT: study 'study-a' is not configured on the server", None)]
         assert conn.tokens == []
         assert session_mgr.sessions == {}
     finally:
