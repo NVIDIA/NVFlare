@@ -44,7 +44,7 @@ class _ProdEnvValidator(BaseModel):
             raise ValueError(f"startup_kit_location path does not exist: {self.startup_kit_location}")
         if name_check(self.study, "study")[0]:
             raise ValueError(
-                f"study name '{self.study}' contains unsupported characters. Use only lowercase letters, numbers, and hyphens."
+                f"study name '{self.study}' contains unsupported characters. Use only lowercase letters, numbers, underscores, and hyphens."
             )
         return self
 

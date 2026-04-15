@@ -12,9 +12,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import sys
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from typing import Dict, List, Optional, Union
+
+
+def _pop_recipe_args() -> tuple:
+    """Remove --export / --export-dir from sys.argv at import time.
+
+    This runs once when nvflare.recipe is first imported — before any user
+    argparse parser calls parse_args() — so the user's parser never sees these
+    flags and doesn't need to declare them.
+    """
+    export = False
+    export_dir = "./fl_job"
+    new_argv = []
+    i = 1
+    while i < len(sys.argv):
+        if sys.argv[i] == "--export":
+            export = True
+            i += 1
+        elif sys.argv[i] == "--export-dir" and i + 1 < len(sys.argv):
+            export_dir = sys.argv[i + 1]
+            i += 2
+        elif sys.argv[i].startswith("--export-dir="):
+            export_dir = sys.argv[i].split("=", 1)[1]
+            i += 1
+        else:
+            new_argv.append(sys.argv[i])
+            i += 1
+    sys.argv[1:] = new_argv
+    return export, export_dir
+
+
+_RECIPE_EXPORT, _RECIPE_EXPORT_DIR = _pop_recipe_args()
 
 from nvflare.apis.filter import Filter
 from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
@@ -388,10 +420,10 @@ class Recipe(ABC):
                 self.process_env(env)
             self.job.export_job(job_dir)
 
-    def execute(
+    def run(
         self, env: ExecEnv, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None
     ) -> "Run":
-        """Execute the recipe in a specified execution environment.
+        """Run the recipe in a specified execution environment.
 
         Args:
             env: the execution environment
@@ -406,5 +438,39 @@ class Recipe(ABC):
             job_id = env.deploy(self.job)
             from nvflare.recipe.run import Run
 
-            run = Run(env, job_id)
-            return run
+            return Run(env, job_id)
+
+    def execute(
+        self,
+        env: ExecEnv,
+        server_exec_params: Optional[dict] = None,
+        client_exec_params: Optional[dict] = None,
+    ) -> Optional["Run"]:
+        """Execute or export the recipe based on command-line flags.
+
+        Transparently checks sys.argv for ``--export`` / ``--export-dir`` without
+        interfering with the caller's own argument parser.
+
+        * ``python job.py``                         → run the job
+        * ``python job.py --export``                → export to ``./fl_job``
+        * ``python job.py --export --export-dir X`` → export to ``X``
+
+        Args:
+            env: the execution environment
+            server_exec_params: execution params for the server
+            client_exec_params: execution params for clients
+
+        Returns:
+            Run when executing, None when exporting.
+        """
+        if _RECIPE_EXPORT:
+            self.export(
+                job_dir=_RECIPE_EXPORT_DIR,
+                server_exec_params=server_exec_params,
+                client_exec_params=client_exec_params,
+                env=env,
+            )
+            print(f"Job exported to: {_RECIPE_EXPORT_DIR}")
+            return None
+
+        return self.run(env, server_exec_params=server_exec_params, client_exec_params=client_exec_params)
