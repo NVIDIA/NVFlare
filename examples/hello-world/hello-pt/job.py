@@ -80,10 +80,11 @@ def main():
         # Run FL simulation
         env = SimEnv(num_clients=n_clients)
         run = recipe.execute(env)
-        print()
-        print("Job Status is:", run.get_status())
-        print("Result can be found in :", run.get_result())
-        print()
+        if run:
+            print()
+            print("Job Status is:", run.get_status())
+            print("Result can be found in :", run.get_result())
+            print()
 
 
 if __name__ == "__main__":

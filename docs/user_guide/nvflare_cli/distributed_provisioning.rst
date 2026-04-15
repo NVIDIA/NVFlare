@@ -28,6 +28,13 @@ The resulting startup kits are structurally identical to those produced by
    Distributed provisioning uses mTLS as the sole trust anchor. No ``signature.json``
    is generated. The ``require_signed_jobs`` policy is always enabled on the server.
 
+.. note::
+
+   Study definitions are not represented in per-site ``site.yaml`` inputs for
+   distributed provisioning. In the current design, studies are defined in a
+   centralized ``project.yml`` and materialized into the server-side
+   ``study_registry.json`` during centralized provisioning.
+
 ****************************************
 Centralized vs. Distributed at a Glance
 ****************************************
