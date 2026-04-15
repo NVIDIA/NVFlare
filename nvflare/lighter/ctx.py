@@ -181,7 +181,9 @@ class ProvisionContext(dict):
         if logger:
             logger.info(msg)
         else:
-            stream = sys.stderr if os.getenv("NVFLARE_CLI_MODE", "").strip().lower() in {"agent", "json", "machine", "1", "true", "yes"} else sys.stdout
+            from nvflare.tool.cli_output import _is_json_mode
+
+            stream = sys.stderr if _is_json_mode() else sys.stdout
             print(f"INFO: {msg}", file=stream)
 
     def error(self, msg: str):
@@ -189,7 +191,9 @@ class ProvisionContext(dict):
         if logger:
             logger.error(msg)
         else:
-            stream = sys.stderr if os.getenv("NVFLARE_CLI_MODE", "").strip().lower() in {"agent", "json", "machine", "1", "true", "yes"} else sys.stdout
+            from nvflare.tool.cli_output import _is_json_mode
+
+            stream = sys.stderr if _is_json_mode() else sys.stdout
             print(f"ERROR: {msg}", file=stream)
 
     def debug(self, msg: str):
@@ -197,7 +201,9 @@ class ProvisionContext(dict):
         if logger:
             logger.debug(msg)
         else:
-            stream = sys.stderr if os.getenv("NVFLARE_CLI_MODE", "").strip().lower() in {"agent", "json", "machine", "1", "true", "yes"} else sys.stdout
+            from nvflare.tool.cli_output import _is_json_mode
+
+            stream = sys.stderr if _is_json_mode() else sys.stdout
             print(f"DEBUG: {msg}", file=stream)
 
     def warning(self, msg: str):
@@ -205,7 +211,9 @@ class ProvisionContext(dict):
         if logger:
             logger.warning(msg)
         else:
-            stream = sys.stderr if os.getenv("NVFLARE_CLI_MODE", "").strip().lower() in {"agent", "json", "machine", "1", "true", "yes"} else sys.stdout
+            from nvflare.tool.cli_output import _is_json_mode
+
+            stream = sys.stderr if _is_json_mode() else sys.stdout
             print(f"WARNING: {msg}", file=stream)
 
     def get_result_location(self) -> Optional[str]:

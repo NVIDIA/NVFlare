@@ -70,8 +70,11 @@ class LoginModule(CommandModule, CommandFilter):
         )
 
     def handle_cert_login(self, conn: Connection, args: List[str]):
+        def _reject(reason: str = ""):
+            conn.append_string(f"REJECT: {reason}" if reason else "REJECT")
+
         if len(args) != 2:
-            conn.append_string("REJECT")
+            _reject()
             return
 
         user_name = args[1]
@@ -100,31 +103,31 @@ class LoginModule(CommandModule, CommandFilter):
             ok = False
 
         if not ok:
-            conn.append_string("REJECT")
+            _reject()
             return
 
         if not isinstance(study, str):
-            conn.append_string("REJECT")
+            _reject("study must be a string")
             return
 
         invalid, _ = name_check(study, "study")
         if invalid:
-            conn.append_string("REJECT")
+            _reject(f"invalid study name '{study}'")
             return
 
         registry = StudyRegistryService.get_registry()
         if study != DEFAULT_STUDY:
             if not registry:
                 self.logger.warning(f"rejecting login for user '{user_name}': no study registry for study '{study}'")
-                conn.append_string("REJECT")
+                _reject(f"study '{study}' is not configured on the server")
                 return
             if not registry.has_study(study):
                 self.logger.warning(f"rejecting login for user '{user_name}': unknown study '{study}'")
-                conn.append_string("REJECT")
+                _reject(f"unknown study '{study}'")
                 return
             if not registry.get_role(user_name, study):
                 self.logger.warning(f"rejecting login for user '{user_name}': no mapping for study '{study}'")
-                conn.append_string("REJECT")
+                _reject(f"user '{user_name}' is not mapped to study '{study}'")
                 return
 
         cert_dict = cert_to_dict(cert)

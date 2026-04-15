@@ -67,6 +67,14 @@ CLONED_META_KEYS = {
 }
 
 
+def _create_get_job_log_parser():
+    parser = SafeArgumentParser(prog=AdminCommandNames.GET_JOB_LOG)
+    parser.add_argument("job_id", help="Job ID")
+    parser.add_argument("-n", dest="tail_lines", type=int, default=None, help="Number of tail lines to return")
+    parser.add_argument("-g", dest="grep_pattern", default=None, help="Grep pattern to filter lines")
+    return parser
+
+
 def _create_list_job_cmd_parser():
     parser = SafeArgumentParser(prog=AdminCommandNames.LIST_JOBS)
     parser.add_argument("job_id", nargs="?", help="Job ID prefix")
@@ -101,6 +109,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     authz_func=self.authorize_job,
                     enabled=False,
                     confirm=ConfirmMethod.AUTH,
+                ),
+                CommandSpec(
+                    name=AdminCommandNames.GET_JOB_LOG,
+                    description="retrieve log file for a job from server workspace",
+                    usage=f"{AdminCommandNames.GET_JOB_LOG} job_id [-n tail_lines] [-g grep_pattern]",
+                    handler_func=self.get_job_log,
+                    authz_func=self.authorize_job_id,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.CONFIGURE_JOB_LOG,
@@ -283,6 +298,84 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             self.process_replies_to_table(conn, replies)
 
         conn.append_success("")
+
+    def get_job_log(self, conn: Connection, args: List[str]):
+        import io
+        import os
+        import zipfile
+
+        from nvflare.apis.fl_constant import WorkspaceConstants
+        from nvflare.apis.storage import WORKSPACE
+
+        try:
+            parsed = _create_get_job_log_parser().parse_args(args[1:])
+        except SystemExit:
+            conn.append_error(
+                f"Usage: {AdminCommandNames.GET_JOB_LOG} job_id [-n tail_lines] [-g grep_pattern]",
+                meta=make_meta(MetaStatusValue.SYNTAX_ERROR),
+            )
+            return
+
+        job_id = parsed.job_id
+        engine = conn.app_ctx
+        workspace = engine.get_workspace()
+        log_path = os.path.join(workspace.get_log_root(job_id), WorkspaceConstants.LOG_FILE_NAME)
+
+        if os.path.isfile(log_path):
+            # Job is running or workspace dir still present on disk
+            try:
+                with open(log_path, "r") as f:
+                    lines = f.readlines()
+            except Exception as e:
+                conn.append_error(
+                    f"Failed to read log file: {secure_format_exception(e)}",
+                    meta=make_meta(MetaStatusValue.INTERNAL_ERROR),
+                )
+                return
+        else:
+            # Job completed — read log.txt from the workspace zip in the job store
+            try:
+                job_def_manager = engine.job_def_manager
+                with engine.new_context() as fl_ctx:
+                    workspace_data = job_def_manager.get_storage_component(job_id, WORKSPACE, fl_ctx)
+                if not workspace_data:
+                    conn.append_error(
+                        f"No workspace data found in job store for job {job_id}",
+                        meta=make_meta(MetaStatusValue.INTERNAL_ERROR),
+                    )
+                    return
+                with zipfile.ZipFile(io.BytesIO(workspace_data)) as zf:
+                    if WorkspaceConstants.LOG_FILE_NAME not in zf.namelist():
+                        conn.append_error(
+                            f"Log file not found in workspace for job {job_id}",
+                            meta=make_meta(MetaStatusValue.INTERNAL_ERROR),
+                        )
+                        return
+                    lines = zf.read(WorkspaceConstants.LOG_FILE_NAME).decode("utf-8", errors="replace").splitlines(True)
+            except Exception as e:
+                conn.append_error(
+                    f"Failed to read log from job store: {secure_format_exception(e)}",
+                    meta=make_meta(MetaStatusValue.INTERNAL_ERROR),
+                )
+                return
+
+        if parsed.grep_pattern:
+            import re
+
+            try:
+                lines = [ln for ln in lines if re.search(parsed.grep_pattern, ln)]
+            except re.error as e:
+                conn.append_error(
+                    f"Invalid grep pattern: {secure_format_exception(e)}",
+                    meta=make_meta(MetaStatusValue.SYNTAX_ERROR),
+                )
+                return
+
+        if parsed.tail_lines is not None:
+            lines = lines[-parsed.tail_lines :]
+
+        log_content = "".join(lines)
+        conn.append_dict({"logs": {"server": log_content}}, meta=make_meta(MetaStatusValue.OK))
 
     def configure_job_log(self, conn: Connection, args: List[str]):
         if len(args) < 4:

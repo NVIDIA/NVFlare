@@ -35,7 +35,7 @@ from nvflare.lighter.utils import (
     serialize_pri_key,
     x509_name,
 )
-from nvflare.tool.cli_output import _agent_mode, output_error, output_ok
+from nvflare.tool.cli_output import output_error, output_ok, output_usage_error
 from nvflare.tool.cli_schema import handle_schema_flag
 
 # ---------------------------------------------------------------------------
@@ -72,12 +72,15 @@ def handle_cert_init(args):
     )
 
     # 2. Validate required args
-    for flag, attr in (("--project", "project"), ("-o/--output-dir", "output_dir")):
-        if not getattr(args, attr, None):
-            if not _agent_mode():
-                _cert_cli._cert_init_parser.print_help(sys.stderr)
-                sys.exit(2)
-            output_error("INVALID_ARGS", exit_code=2, detail=f"{flag} is required")
+    missing_flags = [
+        flag
+        for flag, attr in (("--project", "project"), ("-o/--output-dir", "output_dir"))
+        if not getattr(args, attr, None)
+    ]
+    if missing_flags:
+        output_usage_error(
+            _cert_cli._cert_init_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=2
+        )
 
     # 3. Resolve force
     force = args.force
@@ -256,16 +259,15 @@ def handle_cert_csr(args):
         site = _load_single_site_yaml(args.project_file)
 
     # 3. Validate required args (-o is required in all modes; -n only without --project-file)
+    missing_flags = []
     if not getattr(args, "output_dir", None):
-        if not _agent_mode():
-            _cert_cli._cert_csr_parser.print_help(sys.stderr)
-            sys.exit(2)
-        output_error("INVALID_ARGS", exit_code=2, detail="-o/--output-dir is required")
+        missing_flags.append("-o/--output-dir")
     if site is None and not getattr(args, "name", None):
-        if not _agent_mode():
-            _cert_cli._cert_csr_parser.print_help(sys.stderr)
-            sys.exit(2)
-        output_error("INVALID_ARGS", exit_code=2, detail="-n/--name is required")
+        missing_flags.append("-n/--name")
+    if missing_flags:
+        output_usage_error(
+            _cert_cli._cert_csr_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=2
+        )
 
     # 3. Normalize and validate name
     name = (site["name"] if site else args.name).strip()
@@ -473,21 +475,26 @@ def handle_cert_sign(args):
     )
 
     # 2. Validate required args (-t/--type is optional; read from CSR if omitted)
-    for flag, attr in (
-        ("-r/--csr", "csr_path"),
-        ("-c/--ca-dir", "ca_dir"),
-        ("-o/--output-dir", "output_dir"),
-    ):
-        if not getattr(args, attr, None):
-            if not _agent_mode():
-                _cert_cli._cert_sign_parser.print_help(sys.stderr)
-                sys.exit(2)
-            output_error("INVALID_ARGS", exit_code=2, detail=f"{flag} is required")
+    missing_flags = [
+        flag
+        for flag, attr in (
+            ("-r/--csr", "csr_path"),
+            ("-c/--ca-dir", "ca_dir"),
+            ("-o/--output-dir", "output_dir"),
+        )
+        if not getattr(args, attr, None)
+    ]
+    if missing_flags:
+        output_usage_error(
+            _cert_cli._cert_sign_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=2
+        )
 
     # 3. Validate CSR file exists
     csr_path = args.csr_path
     if not os.path.exists(csr_path):
         output_error("CSR_NOT_FOUND", path=csr_path)
+    if not os.path.isfile(csr_path):
+        output_error("INVALID_ARGS", exit_code=2, detail=f"-r/--csr must be a file path, not a directory: {csr_path}")
 
     # 4. Validate CA dir
     ca_dir = args.ca_dir

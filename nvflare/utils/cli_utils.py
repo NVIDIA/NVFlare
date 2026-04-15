@@ -13,6 +13,7 @@
 # limitations under the License.
 import os
 import pathlib
+from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -22,6 +23,11 @@ from pyhocon import ConfigTree, HOCONConverter
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
 from nvflare.tool.job.job_client_const import CONFIG_CONF, JOB_TEMPLATES
+
+CONFIG_VERSION = "version"
+CURRENT_CONFIG_VERSION = 2
+TARGET_POC = "poc"
+TARGET_PROD = "prod"
 
 
 def get_home_dir() -> Path:
@@ -72,19 +78,78 @@ def load_config(config_file_path) -> Optional[ConfigTree]:
         return None
 
 
-def find_startup_kit_location() -> str:
+def _get_optional_config_value(nvflare_config: Optional[ConfigTree], *keys: str):
+    if not nvflare_config:
+        return None
+
+    for key in keys:
+        try:
+            value = nvflare_config.get(key)
+        except Exception:
+            value = None
+        if value is not None:
+            return value
+
+    return None
+
+
+def _config_to_plain_dict(nvflare_config: Optional[ConfigTree]) -> dict:
+    if not nvflare_config:
+        return {}
+    return PyhoconConfig(nvflare_config).to_dict()
+
+
+def migrate_config_to_v2(nvflare_config: Optional[ConfigTree]) -> ConfigTree:
+    if not nvflare_config:
+        return CF.parse_string("{}")
+
+    old_startup_kit = _get_optional_config_value(nvflare_config, "startup_kit.path", "startup_kit")
+    old_poc_workspace = _get_optional_config_value(nvflare_config, "poc_workspace.path", "poc_workspace")
+    config_dict = _config_to_plain_dict(nvflare_config)
+    config_dict.pop("config_version", None)
+    config_dict.pop("version", None)
+    config_dict.pop("startup_kit", None)
+    config_dict.pop("poc_workspace", None)
+
+    if old_startup_kit:
+        poc_cfg = config_dict.setdefault(TARGET_POC, {})
+        poc_cfg.setdefault("startup_kit", old_startup_kit)
+    if old_poc_workspace:
+        poc_cfg = config_dict.setdefault(TARGET_POC, {})
+        poc_cfg.setdefault("workspace", old_poc_workspace)
+
+    if not config_dict:
+        return CF.parse_string("{}")
+
+    ordered = OrderedDict()
+    ordered[CONFIG_VERSION] = CURRENT_CONFIG_VERSION
+    for key, value in config_dict.items():
+        if key != CONFIG_VERSION:
+            ordered[key] = value
+
+    return CF.from_dict(ordered)
+
+
+def find_startup_kit_location(target: Optional[str] = None) -> str:
     nvflare_config = load_hidden_config()
-    return nvflare_config.get_string("startup_kit.path", None) if nvflare_config else None
+    target = target or TARGET_POC
+    if target == TARGET_PROD:
+        return _get_optional_config_value(nvflare_config, "prod.startup_kit", "startup_kit.path", "startup_kit")
+    return _get_optional_config_value(nvflare_config, "poc.startup_kit", "startup_kit.path", "startup_kit")
 
 
 def load_hidden_config() -> ConfigTree:
     hidden_dir = get_or_create_hidden_nvflare_dir()
     hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(hidden_dir))
     nvflare_config = load_config(hidden_nvflare_config_file)
-    return nvflare_config
+    return migrate_config_to_v2(nvflare_config)
 
 
-def create_startup_kit_config(nvflare_config: ConfigTree, startup_kit_dir: Optional[str] = None) -> ConfigTree:
+def create_startup_kit_config(
+    nvflare_config: ConfigTree,
+    startup_kit_dir: Optional[str] = None,
+    target: str = TARGET_PROD,
+) -> ConfigTree:
     """
     Args:
         startup_kit_dir: specified startup kit location
@@ -93,16 +158,29 @@ def create_startup_kit_config(nvflare_config: ConfigTree, startup_kit_dir: Optio
     Returns:
         ConfigTree: The merged configuration tree.
     """
-    old_startup_kit_dir = nvflare_config.get_string("startup_kit", None)
+    nvflare_config = migrate_config_to_v2(nvflare_config)
+    old_startup_kit_dir = _get_optional_config_value(nvflare_config, "startup_kit", "startup_kit.path")
     if old_startup_kit_dir is None and (startup_kit_dir is not None and not os.path.isdir(startup_kit_dir)):
         raise ValueError(f"invalid startup kit location '{startup_kit_dir}'")
     if startup_kit_dir:
         startup_kit_dir = get_startup_kit_dir(startup_kit_dir)
-        conf_str = f"""
-            startup_kit {{
-                path = "{startup_kit_dir}"
-            }}
-        """
+        if target == "both":
+            conf_str = f"""
+                {CONFIG_VERSION} = {CURRENT_CONFIG_VERSION}
+                poc {{
+                    startup_kit = "{startup_kit_dir}"
+                }}
+                prod {{
+                    startup_kit = "{startup_kit_dir}"
+                }}
+            """
+        else:
+            conf_str = f"""
+                {CONFIG_VERSION} = {CURRENT_CONFIG_VERSION}
+                {target} {{
+                    startup_kit = "{startup_kit_dir}"
+                }}
+            """
         conf: ConfigTree = CF.parse_string(conf_str)
 
         return conf.with_fallback(nvflare_config)
@@ -119,14 +197,16 @@ def create_poc_workspace_config(nvflare_config: ConfigTree, poc_workspace_dir: O
     Returns:
         ConfigTree: The merged configuration tree.
     """
+    nvflare_config = migrate_config_to_v2(nvflare_config)
     if poc_workspace_dir is None:
         return nvflare_config
 
     poc_workspace_dir = os.path.abspath(poc_workspace_dir)
 
     conf_str = f"""
-        poc_workspace {{
-            path = {poc_workspace_dir}
+        {CONFIG_VERSION} = {CURRENT_CONFIG_VERSION}
+        poc {{
+            workspace = "{poc_workspace_dir}"
         }}
     """
     conf: ConfigTree = CF.parse_string(conf_str)
@@ -164,11 +244,14 @@ def check_dir(dir_path: str):
 
 
 def get_startup_kit_dir(startup_kit_dir: Optional[str] = None) -> str:
+    return get_startup_kit_dir_for_target(startup_kit_dir=startup_kit_dir)
+
+
+def get_startup_kit_dir_for_target(startup_kit_dir: Optional[str] = None, target: Optional[str] = None) -> str:
     if not startup_kit_dir:
-        # load from config file:
-        startup_kit_dir = find_startup_kit_location()
+        startup_kit_dir = os.getenv("NVFLARE_STARTUP_KIT_DIR")
         if startup_kit_dir is None:
-            startup_kit_dir = os.getenv("NVFLARE_STARTUP_KIT_DIR")
+            startup_kit_dir = find_startup_kit_location(target=target)
 
         if startup_kit_dir is None or len(startup_kit_dir.strip()) == 0:
             raise ValueError("startup kit directory is not specified")

@@ -123,11 +123,25 @@ class TestReportResources:
         cmd = mock_cmd.call_args[0][0]
         assert AdminCommandNames.REPORT_RESOURCES in cmd
 
-    def test_returns_meta(self):
+    def test_returns_resources_by_site(self):
+        from nvflare.fuel.hci.client.api import APIStatus
+        from nvflare.fuel.hci.proto import ProtoKey
+
         session = _make_session()
-        with patch.object(session, "_do_command", return_value=_ok_meta_result({"cpu": "50%"})):
+        reply = {
+            ResultKey.STATUS: APIStatus.SUCCESS,
+            ResultKey.META: {MetaKey.STATUS: MetaStatusValue.OK},
+            ProtoKey.DATA: [
+                {
+                    ProtoKey.TYPE: ProtoKey.TABLE,
+                    ProtoKey.ROWS: [["Sites", "Resources"], ["server", "unlimited"]],
+                }
+            ],
+        }
+        with patch.object(session, "_do_command", return_value=reply):
             result = session.report_resources(TargetType.SERVER)
-        assert "cpu" in result
+        assert "server" in result
+        assert result["server"] == "unlimited"
 
 
 class TestShutdown:
@@ -238,8 +252,6 @@ class TestGetJobLogs:
         reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
         with patch.object(session, "_do_command", return_value=reply):
             result = session.get_job_logs("job1")
-        assert "log_source" in result
-        assert result["log_source"] == "workspace"
         assert "logs" in result
 
 
@@ -270,7 +282,13 @@ class TestConfigureJobLog:
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
             session.configure_job_log("job1", "DEBUG", target="site-1")
         cmd = mock_cmd.call_args[0][0]
-        assert "site-1" in cmd
+        assert f"{AdminCommandNames.CONFIGURE_JOB_LOG} job1 client site-1 DEBUG" == cmd
+
+    def test_disables_meta_enforcement(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.configure_job_log("job1", "INFO")
+        assert mock_cmd.call_args.kwargs["enforce_meta"] is False
 
 
 class TestConfigureSiteLog:
@@ -299,6 +317,12 @@ class TestConfigureSiteLog:
             session.configure_site_log("INFO", target="site-2")
         cmd = mock_cmd.call_args[0][0]
         assert "site-2" in cmd
+
+    def test_disables_meta_enforcement(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.configure_site_log("WARNING")
+        assert mock_cmd.call_args.kwargs["enforce_meta"] is False
 
 
 class TestWaitForJob:

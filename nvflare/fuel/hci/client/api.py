@@ -371,7 +371,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             # use value configured in admin config
             timeout = self.default_login_timeout
 
-        print("Connecting to FLARE ...")
+        self._print_hci("Connecting to FLARE ...")
         if self.cell:
             return
 
@@ -482,7 +482,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             per_request_timeout=self.file_download_progress_timeout,
         )
         if err:
-            print(f"failed to receive file {file_name}: {err}")
+            self._print_hci(f"failed to receive file {file_name}: {err}")
             return None
 
         file_stats = os.stat(file_path)
@@ -501,7 +501,16 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
     def debug(self, msg):
         if self._debug:
-            print(f"DEBUG: {msg}")
+            self._print_hci(f"DEBUG: {msg}")
+
+    def _print_hci(self, msg: str):
+        try:
+            from nvflare.tool.cli_output import is_json_mode, print_human
+
+            if not is_json_mode():
+                print_human(msg)
+        except Exception:
+            print(msg)
 
     def fire_event(self, event_type: str, ctx: EventContext):
         self.debug(f"firing event {event_type}")
@@ -539,7 +548,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             try:
                 self.fire_session_event(EventType.TRYING_LOGIN, "Trying to login, please wait ...")
             except Exception as ex:
-                print(f"exception handling event {EventType.TRYING_LOGIN}: {secure_format_exception(ex)}")
+                self._print_hci(f"exception handling event {EventType.TRYING_LOGIN}: {secure_format_exception(ex)}")
                 return {
                     ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
                     ResultKey.DETAILS: f"exception handling event {EventType.TRYING_LOGIN}",
@@ -675,10 +684,13 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
                 ResultKey.DETAILS: "Communication Error - please try later",
             }
-        elif self.login_result == "REJECT":
+        elif self.login_result == "REJECT" or str(self.login_result).startswith("REJECT:"):
+            detail = "Incorrect user name or password"
+            if str(self.login_result).startswith("REJECT:"):
+                detail = str(self.login_result).split(":", 1)[1].strip() or detail
             return {
                 ResultKey.STATUS: APIStatus.ERROR_AUTHENTICATION,
-                ResultKey.DETAILS: "Incorrect user name or password",
+                ResultKey.DETAILS: detail,
             }
         return self._after_login()
 

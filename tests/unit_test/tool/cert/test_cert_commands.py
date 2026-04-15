@@ -30,6 +30,7 @@ from cryptography.x509.oid import NameOID
 # Ensure parsers are initialized by importing cert_cli (registers module-level parser refs)
 import nvflare.tool.cert.cert_cli  # noqa: F401
 from nvflare.lighter.utils import load_crt
+from nvflare.tool import cli_output
 from nvflare.tool.cert.cert_commands import handle_cert_csr, handle_cert_init, handle_cert_sign
 
 # ---------------------------------------------------------------------------
@@ -172,13 +173,24 @@ class TestCertInit:
         assert data["command"] == "nvflare cert init"
         assert len(data["args"]) > 0
 
+    def test_missing_required_args_show_help_and_missing_flags(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_init(_init_args(project=None, output_dir=None))
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "INVALID_ARGS" in captured.err
+        assert "missing required argument(s): --project, -o/--output-dir" in captured.err
+        assert "usage:" in captured.err
+
     def test_agent_mode_json_envelope(self, tmp_path, capsys, monkeypatch):
-        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+        monkeypatch.setattr(cli_output, "_output_format", "json")
         rc = handle_cert_init(_init_args(output_dir=str(tmp_path)))
         assert rc == 0
         data = json.loads(capsys.readouterr().out)
         assert data["schema_version"] == "1"
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
         assert "ca_cert" in data["data"]
         assert "ca_key" in data["data"]
         assert "project" in data["data"]
@@ -311,16 +323,17 @@ class TestCertCsr:
         assert os.path.exists(new_dir)
 
     def test_agent_mode_json_envelope(self, tmp_path, capsys, monkeypatch):
-        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+        monkeypatch.setattr(cli_output, "_output_format", "json")
         handle_cert_csr(_csr_args(name="h1", output_dir=str(tmp_path)))
         data = json.loads(capsys.readouterr().out)
         assert data["schema_version"] == "1"
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
         assert "key" in data["data"]
         assert "csr" in data["data"]
 
     def test_agent_mode_no_key_material_in_output(self, tmp_path, capsys, monkeypatch):
-        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+        monkeypatch.setattr(cli_output, "_output_format", "json")
         handle_cert_csr(_csr_args(name="h1", output_dir=str(tmp_path)))
         out = capsys.readouterr().out
         assert "BEGIN RSA PRIVATE KEY" not in out
@@ -334,6 +347,16 @@ class TestCertCsr:
         data = json.loads(capsys.readouterr().out)
         assert data["schema_version"] == "1"
         assert data["command"] == "nvflare cert csr"
+
+    def test_missing_required_args_show_help_and_missing_flags(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_csr(_csr_args(name=None, output_dir=None))
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "INVALID_ARGS" in captured.err
+        assert "missing required argument(s): -o/--output-dir, -n/--name" in captured.err
+        assert "usage:" in captured.err
 
 
 # ---------------------------------------------------------------------------
@@ -465,6 +488,20 @@ class TestCertSign:
             handle_cert_sign(args)
         assert exc_info.value.code == 1
 
+    def test_sign_csr_path_must_be_file(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = _setup_ca(tmp_path)
+        csr_dir = str(tmp_path / "csr_dir")
+        os.makedirs(csr_dir, exist_ok=True)
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=csr_dir, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "must be a file path, not a directory" in captured.err
+        assert "INTERNAL_ERROR" not in captured.err
+
     def test_sign_ca_dir_invalid(self, tmp_path):
         csr_path = _setup_csr(tmp_path)
         out_dir = str(tmp_path / "signed")
@@ -479,7 +516,7 @@ class TestCertSign:
         assert exc_info.value.code == 1
 
     def test_sign_agent_mode_json_envelope(self, tmp_path, capsys, monkeypatch):
-        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+        monkeypatch.setattr(cli_output, "_output_format", "json")
         ca_dir = _setup_ca(tmp_path)
         csr_path = _setup_csr(tmp_path)
         capsys.readouterr()  # discard setup output
@@ -490,6 +527,7 @@ class TestCertSign:
         data = json.loads(capsys.readouterr().out)
         assert data["schema_version"] == "1"
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
         assert "signed_cert" in data["data"]
         assert "rootca" in data["data"]
         assert "serial" in data["data"]
@@ -511,6 +549,16 @@ class TestCertSign:
         data = json.loads(capsys.readouterr().out)
         assert data["schema_version"] == "1"
         assert data["command"] == "nvflare cert sign"
+
+    def test_missing_required_args_show_help_and_missing_flags(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(_sign_args(csr_path=None, ca_dir=None, output_dir=None))
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "INVALID_ARGS" in captured.err
+        assert "missing required argument(s): -r/--csr, -c/--ca-dir, -o/--output-dir" in captured.err
+        assert "usage:" in captured.err
 
     def test_sign_rootca_copied(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
@@ -827,7 +875,7 @@ class TestCertCsrProjectFile:
         assert org_attrs[0].value == "NVIDIA"
 
     def test_missing_output_dir_exits_2(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+        monkeypatch.setattr(cli_output, "_output_format", "json")
         site_file = self._write_site_yaml(tmp_path)
         args = _csr_args(name=None, project_file=site_file, output_dir=None)
         with pytest.raises(SystemExit) as exc_info:
@@ -835,7 +883,7 @@ class TestCertCsrProjectFile:
         assert exc_info.value.code == 2
 
     def test_mutual_exclusivity_with_name_exits_2(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+        monkeypatch.setattr(cli_output, "_output_format", "json")
         site_file = self._write_site_yaml(tmp_path)
         out_dir = tmp_path / "out"
         args = _csr_args(name="conflicting", project_file=site_file, output_dir=str(out_dir))
@@ -844,7 +892,7 @@ class TestCertCsrProjectFile:
         assert exc_info.value.code == 2
 
     def test_mutual_exclusivity_with_org_exits_2(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+        monkeypatch.setattr(cli_output, "_output_format", "json")
         site_file = self._write_site_yaml(tmp_path)
         out_dir = tmp_path / "out"
         args = _csr_args(name=None, org="ConflictingOrg", project_file=site_file, output_dir=str(out_dir))
@@ -853,7 +901,7 @@ class TestCertCsrProjectFile:
         assert exc_info.value.code == 2
 
     def test_mutual_exclusivity_with_type_exits_2(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+        monkeypatch.setattr(cli_output, "_output_format", "json")
         site_file = self._write_site_yaml(tmp_path)
         out_dir = tmp_path / "out"
         args = _csr_args(name=None, cert_type="server", project_file=site_file, output_dir=str(out_dir))
@@ -862,7 +910,7 @@ class TestCertCsrProjectFile:
         assert exc_info.value.code == 2
 
     def test_nonexistent_project_file_exits_1(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+        monkeypatch.setattr(cli_output, "_output_format", "json")
         out_dir = tmp_path / "out"
         args = _csr_args(name=None, project_file=str(tmp_path / "no-such.yml"), output_dir=str(out_dir))
         with pytest.raises(SystemExit) as exc_info:
@@ -881,7 +929,7 @@ class TestCertCsrProjectFile:
 
     def test_mutual_exclusivity_checked_before_yaml_load(self, tmp_path, monkeypatch):
         """Conflict with --name must error even when the YAML file doesn't exist."""
-        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+        monkeypatch.setattr(cli_output, "_output_format", "json")
         out_dir = tmp_path / "out"
         args = _csr_args(
             name="conflict",
@@ -892,3 +940,49 @@ class TestCertCsrProjectFile:
             handle_cert_csr(args)
         # Must be INVALID_ARGS exit 2 (mutual exclusivity), not file-not-found exit 1
         assert exc_info.value.code == 2
+
+
+class TestHandleCertCmdRouting:
+    """Tests for handle_cert_cmd top-level dispatch."""
+
+    def test_no_subcommand_exits_4(self, capsys):
+        """nvflare cert with no subcommand prints help and exits with INVALID_ARGS."""
+        from argparse import ArgumentParser
+        from unittest.mock import MagicMock
+
+        from nvflare.tool.cert.cert_cli import def_cert_cli_parser, handle_cert_cmd
+
+        parser = ArgumentParser(prog="nvflare")
+        subparsers = parser.add_subparsers(dest="sub_command")
+        def_cert_cli_parser(subparsers)
+        args = MagicMock()
+        args.cert_sub_command = None
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_cmd(args)
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        assert "usage:" in captured.err
+        assert "cert subcommand required" in captured.err
+        assert "Code: INVALID_ARGS (exit 4)" in captured.err
+
+    def test_unknown_subcommand_exits_4(self, capsys):
+        """nvflare cert <unknown> prints help and exits with INVALID_ARGS."""
+        from argparse import ArgumentParser
+        from unittest.mock import MagicMock
+
+        from nvflare.tool.cert.cert_cli import def_cert_cli_parser, handle_cert_cmd
+
+        parser = ArgumentParser(prog="nvflare")
+        subparsers = parser.add_subparsers(dest="sub_command")
+        def_cert_cli_parser(subparsers)
+        args = MagicMock()
+        args.cert_sub_command = "nonexistent"
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_cmd(args)
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        assert "usage:" in captured.err
+        assert "invalid cert subcommand" in captured.err
+        assert "Code: INVALID_ARGS (exit 4)" in captured.err

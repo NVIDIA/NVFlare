@@ -17,9 +17,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.tool import cli_output
+
 
 class TestPocOutput:
     """Tests for poc subcommand JSON envelopes, exit codes, and stream routing."""
+
+    @pytest.fixture(autouse=True)
+    def json_mode(self, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
 
     # ------------------------------------------------------------------ helpers
 
@@ -50,6 +56,7 @@ class TestPocOutput:
         data = json.loads(captured.out)
         assert data["schema_version"] == "1"
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
         assert "workspace" in data["data"]
         assert "clients" in data["data"]
 
@@ -85,6 +92,7 @@ class TestPocOutput:
         data = json.loads(stdout_lines[0])
         assert data["schema_version"] == "1"
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
 
     def test_prepare_poc_workspace_exists_non_interactive_exits_4(self, tmp_path):
         """prepare_poc exits 4 when workspace exists and stdin is not a tty (no --force)."""
@@ -153,6 +161,7 @@ class TestPocOutput:
         data = json.loads(stdout_lines[0])
         assert data["schema_version"] == "1"
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
         assert data["data"]["status"] == "stopped"
 
     def test_stop_poc_no_human_text_on_stdout(self, capsys, tmp_path):
@@ -173,6 +182,7 @@ class TestPocOutput:
         # stdout must parse as JSON and contain no prose
         data = json.loads(captured.out.strip())
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
 
     # ------------------------------------------------------------------ poc prepare parsers
 
@@ -227,3 +237,34 @@ class TestPocOutput:
 
         args = root.parse_args(["poc", "prepare", "--schema"])
         assert args.schema is True
+
+    def test_poc_start_parser_accepts_study(self):
+        import argparse
+
+        from nvflare.tool.poc.poc_commands import def_poc_parser
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        def_poc_parser(subs)
+
+        args = root.parse_args(["poc", "start", "-p", "admin@nvidia.com", "--study", "cancer_research"])
+        assert args.study == "cancer_research"
+
+    def test_get_service_command_adds_study_only_for_admin_start(self):
+        from nvflare.tool.poc.poc_commands import get_service_command
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        service_config = {
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_OTHER_ADMINS: [],
+            SC.IS_DOCKER_RUN: False,
+        }
+
+        admin_cmd = get_service_command(
+            SC.CMD_START, "/tmp/prod", "admin@nvidia.com", service_config, study="cancer_research"
+        )
+        server_cmd = get_service_command(SC.CMD_START, "/tmp/prod", "server", service_config, study="cancer_research")
+
+        assert admin_cmd.endswith("fl_admin.sh --study cancer_research")
+        assert server_cmd.endswith("start.sh")
+        assert "--study" not in server_cmd

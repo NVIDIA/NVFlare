@@ -285,13 +285,14 @@ def get_cli_config(cmd_args: Any, app_names: List[str]) -> Dict[str, Dict[str, D
         A dictionary containing the configurations extracted from the command-line arguments.
     """
     app_cli_config_dict = {}
-    if cmd_args.config_file:
-        cli_configs = cmd_args.config_file
+    cli_configs = getattr(cmd_args, "config_file", None)
+    if cli_configs:
         app_cli_config_dict = _parse_cli_config(cmd_args.job_folder, cli_configs, app_names)
 
     # replace "script"
-    if "script" in cmd_args and cmd_args.script:
-        script = os.path.basename(cmd_args.script)
+    script = getattr(cmd_args, "script", None)
+    if script:
+        script = os.path.basename(script)
 
         if app_cli_config_dict:
             key = CONFIG_FED_CLIENT_CONF

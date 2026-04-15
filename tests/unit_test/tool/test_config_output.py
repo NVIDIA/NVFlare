@@ -15,14 +15,25 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from nvflare.tool import cli_output
+
 
 class TestConfigOutput:
     """Tests for nvflare config output format."""
 
+    @pytest.fixture(autouse=True)
+    def json_mode(self, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+
     def _make_args(self, **kwargs):
         args = MagicMock()
         args.startup_kit_dir = kwargs.get("startup_kit_dir", None)
+        args.poc_startup_kit_dir = kwargs.get("poc_startup_kit_dir", None)
+        args.prod_startup_kit_dir = kwargs.get("prod_startup_kit_dir", None)
         args.poc_workspace_dir = kwargs.get("poc_workspace_dir", None)
+        args.poc_workspace_dir_v2 = kwargs.get("poc_workspace_dir_v2", None)
         args.job_templates_dir = kwargs.get("job_templates_dir", None)
         args.debug = False
         return args
@@ -44,8 +55,11 @@ class TestConfigOutput:
         data = json.loads(captured.out)
         assert data["schema_version"] == "1"
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
         assert "config_file" in data["data"]
         assert "startup_kit_dir" in data["data"]
+        assert "poc_startup_kit_dir" in data["data"]
+        assert "prod_startup_kit_dir" in data["data"]
         assert "poc_workspace_dir" in data["data"]
         assert "job_templates_dir" in data["data"]
 
@@ -81,4 +95,35 @@ class TestConfigOutput:
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
         assert data["data"]["config_file"] == "/fake/config.conf"
+
+    def test_legacy_startup_kit_alias_only_updates_poc(self, capsys):
+        from nvflare.cli import handle_config_cmd
+
+        args = self._make_args(startup_kit_dir="/path/to/poc-startup")
+        mock_config = MagicMock()
+        mock_config.get.side_effect = lambda key, default=None: {
+            "poc.startup_kit": "/path/to/poc-startup",
+            "prod.startup_kit": None,
+            "poc.workspace": None,
+            "job_template.path": None,
+        }.get(key, default)
+
+        with patch("nvflare.cli.get_hidden_config", return_value=("/fake/config.conf", mock_config)):
+            with patch("nvflare.cli.create_startup_kit_config", return_value=mock_config) as mock_create_startup:
+                with patch("nvflare.cli.create_poc_workspace_config", return_value=mock_config):
+                    with patch("nvflare.cli.create_job_template_config", return_value=mock_config):
+                        with patch("nvflare.cli.save_config"):
+                            with patch("nvflare.tool.cli_schema.handle_schema_flag"):
+                                handle_config_cmd(args)
+
+        assert mock_create_startup.call_args_list[0].kwargs["target"] == "poc"
+        assert mock_create_startup.call_args_list[0].args[1] == "/path/to/poc-startup"
+        assert mock_create_startup.call_args_list[1].kwargs["target"] == "prod"
+        assert mock_create_startup.call_args_list[1].args[1] is None
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["data"]["poc_startup_kit_dir"] == "/path/to/poc-startup"
+        assert data["data"]["prod_startup_kit_dir"] is None

@@ -17,13 +17,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.tool import cli_output
+
 
 class TestJobAbort:
     """Tests for nvflare job abort command."""
 
     @pytest.fixture(autouse=True)
     def agent_mode(self, monkeypatch):
-        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+        monkeypatch.setattr(cli_output, "_output_format", "json")
 
     def _make_args(self, job_id="abc123", output="json", force=False):
         args = MagicMock()
@@ -52,6 +54,7 @@ class TestJobAbort:
         assert len(stdout_lines) == 1
         data = json.loads(stdout_lines[0])
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
         assert data["data"]["status"] == "ABORTED"
         # no JSON on stderr
         assert not captured.err.strip().startswith("{")
@@ -88,6 +91,7 @@ class TestJobAbort:
         assert len(stdout_lines) == 1
         data = json.loads(stdout_lines[0])
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
 
     def test_abort_interactive_user_cancels(self, capsys):
         """Interactive mode: user says N → abort cancelled; nothing on stdout; prompt on stderr."""

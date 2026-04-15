@@ -1,4 +1,4 @@
-# Distributed Provisioning — Human Walkthrough (Bash)
+# Distributed Provisioning — Interactive Mode (Bash)
 
 Single recommended flow. Use a **single-site** `site.yml` (one participant per file).
 
@@ -33,4 +33,4 @@ Then run:
 
 Notes:
 - Root CA does **not** require org.
-- Org **is required** for each participant to align with project.yml.
+- Org **is required** for each participant to align with project.yml and must match `^[A-Za-z0-9_]+$` (no hyphens or spaces).

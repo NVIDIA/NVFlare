@@ -163,3 +163,18 @@ class ReportResourcesProcessor(RequestProcessor):
         resources = resource_manager.report_resources(engine.new_context())
         message = Message(topic="reply_" + req.topic, body=json.dumps(resources))
         return message
+
+
+class ReportVersionProcessor(RequestProcessor):
+    def get_topics(self) -> [str]:
+        return [SysCommandTopic.REPORT_VERSION]
+
+    def process(self, req: Message, app_ctx) -> Message:
+        try:
+            import nvflare
+
+            version = nvflare.__version__
+        except Exception:
+            version = "unknown"
+        message = Message(topic="reply_" + req.topic, body=json.dumps({"version": version}))
+        return message

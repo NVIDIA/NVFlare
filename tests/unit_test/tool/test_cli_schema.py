@@ -298,3 +298,109 @@ class TestSchemaWithMissingRequiredArgs:
         assert schema["schema_version"] == "1"
         # stderr must not contain an argparse "required" error
         assert "error" not in captured.err.lower()
+
+    def test_cert_csr_schema_with_missing_optional_args(self, capsys, monkeypatch):
+        """nvflare cert csr --schema must route to the csr handler and print schema JSON."""
+        import sys
+
+        from nvflare.cli import parse_args
+
+        monkeypatch.setattr(sys, "argv", ["nvflare", "cert", "csr", "--schema"])
+        _parser, args, _ = parse_args("nvflare")
+        from nvflare.tool.cert.cert_commands import handle_cert_csr
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_csr(args)
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        schema = json.loads(captured.out)
+        assert schema["command"] == "nvflare cert csr"
+        assert schema["schema_version"] == "1"
+        assert "error" not in captured.err.lower()
+
+
+class TestHandleSchemaNoneParser:
+    """handle_schema_flag with parser=None emits a valid minimal schema."""
+
+    def test_none_parser_exits_0(self, capsys):
+        with pytest.raises(SystemExit) as exc_info:
+            handle_schema_flag(None, "nvflare test cmd", [], ["--schema"])
+        assert exc_info.value.code == 0
+
+    def test_none_parser_schema_version_present(self, capsys):
+        with pytest.raises(SystemExit):
+            handle_schema_flag(None, "nvflare test cmd", [], ["--schema"])
+        schema = json.loads(capsys.readouterr().out)
+        assert schema["schema_version"] == SCHEMA_VERSION
+
+    def test_none_parser_command_field(self, capsys):
+        with pytest.raises(SystemExit):
+            handle_schema_flag(None, "nvflare simulator", [], ["--schema"])
+        schema = json.loads(capsys.readouterr().out)
+        assert schema["command"] == "nvflare simulator"
+
+    def test_none_parser_args_is_empty_list(self, capsys):
+        with pytest.raises(SystemExit):
+            handle_schema_flag(None, "nvflare test cmd", [], ["--schema"])
+        schema = json.loads(capsys.readouterr().out)
+        assert schema["args"] == []
+
+    def test_none_parser_examples_passed_through(self, capsys):
+        with pytest.raises(SystemExit):
+            handle_schema_flag(None, "nvflare test cmd", ["nvflare test cmd foo"], ["--schema"])
+        schema = json.loads(capsys.readouterr().out)
+        assert schema["examples"] == ["nvflare test cmd foo"]
+
+    def test_none_parser_deprecated_fields(self, capsys):
+        with pytest.raises(SystemExit):
+            handle_schema_flag(
+                None,
+                "nvflare simulator",
+                [],
+                ["--schema"],
+                deprecated=True,
+                deprecated_message="Use SimEnv instead.",
+            )
+        schema = json.loads(capsys.readouterr().out)
+        assert schema["deprecated"] is True
+        assert schema["deprecated_message"] == "Use SimEnv instead."
+
+    def test_none_parser_no_deprecated_key_when_not_deprecated(self, capsys):
+        with pytest.raises(SystemExit):
+            handle_schema_flag(None, "nvflare test cmd", [], ["--schema"])
+        schema = json.loads(capsys.readouterr().out)
+        assert "deprecated" not in schema
+
+
+class TestSimulatorAndAuthzSchema:
+    """--schema on simulator and authz_preview exits 0 with a valid schema."""
+
+    def test_simulator_schema_exits_0(self, capsys, monkeypatch):
+        """nvflare simulator --schema exits 0 and emits valid JSON with deprecated=True."""
+        import sys
+
+        from nvflare.cli import handle_simulator_cmd, parse_args
+
+        monkeypatch.setattr(sys, "argv", ["nvflare", "simulator", "--schema"])
+        _parser, args, _ = parse_args("nvflare")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_simulator_cmd(args)
+        assert exc_info.value.code == 0
+        schema = json.loads(capsys.readouterr().out)
+        assert schema["command"] == "nvflare simulator"
+        assert schema.get("deprecated") is True
+
+    def test_authz_preview_schema_exits_0(self, capsys, monkeypatch):
+        """nvflare authz_preview --schema exits 0 and emits valid JSON with deprecated=True."""
+        import sys
+
+        from nvflare.cli import handle_authz_preview, parse_args
+
+        monkeypatch.setattr(sys, "argv", ["nvflare", "authz_preview", "--schema"])
+        _parser, args, _ = parse_args("nvflare")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_authz_preview(args)
+        assert exc_info.value.code == 0
+        schema = json.loads(capsys.readouterr().out)
+        assert schema["command"] == "nvflare authz_preview"
+        assert schema.get("deprecated") is True

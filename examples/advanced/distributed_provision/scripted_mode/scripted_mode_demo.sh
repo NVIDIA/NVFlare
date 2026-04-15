@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Agent-only demo: minimal, JSON stdout.
+# Scripted-mode demo: minimal, JSON stdout via --out-format json.
 # Usage:
-#   ./agent_demo.sh <project_name> <server_endpoint> <work_dir> <site_yaml...>
+#   ./scripted_mode_demo.sh <project_name> <server_endpoint> <work_dir> <site_yaml...>
 # Each site YAML is a single-site file with: name, org, type.
 
 PROJECT_NAME="${1:-}"
@@ -20,8 +20,6 @@ fi
 command -v nvflare >/dev/null 2>&1 || { echo "Missing nvflare" >&2; exit 2; }
 command -v jq >/dev/null 2>&1 || { echo "Missing jq" >&2; exit 2; }
 
-export NVFLARE_CLI_MODE=agent
-
 CA_DIR="${WORK_DIR}/ca"
 CSR_DIR="${WORK_DIR}/csr"
 SIGNED_DIR="${WORK_DIR}/signed"
@@ -30,7 +28,7 @@ SITE_DIR="${WORK_DIR}/site"
 mkdir -p "${CA_DIR}" "${CSR_DIR}" "${SIGNED_DIR}" "${SITE_DIR}"
 
 # 1) Root CA (idempotent)
-nvflare cert init --project "${PROJECT_NAME}" -o "${CA_DIR}" --force >"${WORK_DIR}/ca.json"
+nvflare --out-format json cert init --project "${PROJECT_NAME}" -o "${CA_DIR}" --force >"${WORK_DIR}/ca.json"
 
 SITE_NAMES=()
 CSR_PATHS=()
@@ -39,7 +37,7 @@ KEY_PATHS=()
 # 2) CSR for each site (uses --project-file)
 for site_yaml in "${SITE_YAMLS[@]}"; do
   TMP_CSR_JSON="${WORK_DIR}/csr_tmp.json"
-  nvflare cert csr --project-file "${site_yaml}" -o "${CSR_DIR}" --force >"${TMP_CSR_JSON}"
+  nvflare --out-format json cert csr --project-file "${site_yaml}" -o "${CSR_DIR}" --force >"${TMP_CSR_JSON}"
 
   SITE_NAME="$(jq -r '.data.name' <"${TMP_CSR_JSON}")"
   CSR_PATH="$(jq -r '.data.csr' <"${TMP_CSR_JSON}")"
@@ -58,7 +56,7 @@ for i in "${!SITE_NAMES[@]}"; do
   CSR_PATH="${CSR_PATHS[$i]}"
   SITE_SIGNED_DIR="${SIGNED_DIR}/${SITE_NAME}"
   mkdir -p "${SITE_SIGNED_DIR}"
-  nvflare cert sign -r "${CSR_PATH}" -c "${CA_DIR}" -o "${SITE_SIGNED_DIR}" --force >"${WORK_DIR}/sign_${SITE_NAME}.json"
+  nvflare --out-format json cert sign -r "${CSR_PATH}" -c "${CA_DIR}" -o "${SITE_SIGNED_DIR}" --force >"${WORK_DIR}/sign_${SITE_NAME}.json"
 
 done
 
@@ -75,7 +73,7 @@ for i in "${!SITE_NAMES[@]}"; do
   cp -f "${SITE_SIGNED_DIR}/${SITE_NAME}.pem" "${SITE_BUNDLE_DIR}/" 2>/dev/null || true
   cp -f "${CA_DIR}/rootCA.pem" "${SITE_BUNDLE_DIR}/"
 
-  nvflare package -e "${SERVER_ENDPOINT}" -p "${SITE_YAMLS[$i]}" --dir "${SITE_BUNDLE_DIR}" -w "${WORK_DIR}/workspace" >"${WORK_DIR}/package_${SITE_NAME}.json"
+  nvflare --out-format json package -e "${SERVER_ENDPOINT}" -p "${SITE_YAMLS[$i]}" --dir "${SITE_BUNDLE_DIR}" -w "${WORK_DIR}/workspace" >"${WORK_DIR}/package_${SITE_NAME}.json"
 
 done
 

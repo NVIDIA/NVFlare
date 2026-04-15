@@ -17,13 +17,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.tool import cli_output
+
 
 class TestJobDownload:
     """Tests for nvflare job download command."""
 
     @pytest.fixture(autouse=True)
     def agent_mode(self, monkeypatch):
-        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+        monkeypatch.setattr(cli_output, "_output_format", "json")
 
     def _make_args(self, job_id="abc123", output="json", output_dir="./"):
         args = MagicMock()
@@ -46,6 +48,7 @@ class TestJobDownload:
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
         assert data["data"]["job_id"] == "abc123"
         assert "path" in data["data"]
 

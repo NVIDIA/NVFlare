@@ -60,6 +60,10 @@ def test_site_not_found_format_substitution():
     assert "site-1" in result
 
 
+def test_internal_error_hint_does_not_reference_verbose():
+    assert "--verbose" not in ERROR_REGISTRY["INTERNAL_ERROR"]["hint"]
+
+
 def test_missing_substitution_key_falls_back_to_template():
     entry = ERROR_REGISTRY["JOB_NOT_FOUND"]
     try:

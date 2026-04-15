@@ -114,7 +114,7 @@ class Session(SessionSpec):
         self._study = study
         if name_check(self._study, "study")[0]:
             raise ValueError(
-                f"study name '{self._study}' contains unsupported characters. Use only lowercase letters, numbers, and hyphens."
+                f"study name '{self._study}' contains unsupported characters. Use only lowercase letters, numbers, underscores, and hyphens."
             )
 
     def close(self):
@@ -126,7 +126,18 @@ class Session(SessionSpec):
             raise SessionClosed("session closed")
 
         self.api.connect(timeout)
-        self.api.login()
+        result = self.api.login()
+        status = result.get(ResultKey.STATUS) if isinstance(result, dict) else None
+        details = result.get(ResultKey.DETAILS, "") if isinstance(result, dict) else ""
+        if status == APIStatus.SUCCESS:
+            return
+        if status in [APIStatus.ERROR_AUTHENTICATION, APIStatus.ERROR_CERT]:
+            raise AuthenticationError(details or "authentication failed")
+        if status == APIStatus.ERROR_AUTHORIZATION:
+            raise AuthorizationError(details or "authorization failed")
+        if status == APIStatus.ERROR_SERVER_CONNECTION:
+            raise ConnectionError(details or "cannot connect to server")
+        raise InternalError(details or f"login failed: {status}")
 
     def _do_command(self, command: str, enforce_meta=True, props=None):
         if self.api.closed:
@@ -189,6 +200,9 @@ class Session(SessionSpec):
         elif status == APIStatus.ERROR_INACTIVE_SESSION:
             raise SessionClosed("the session is closed on server")
         elif status in [APIStatus.ERROR_PROTOCOL, APIStatus.ERROR_SYNTAX]:
+            details = result.get(ResultKey.DETAILS, "")
+            if details:
+                raise InternalError(f"protocol error: {status}: {details}")
             raise InternalError(f"protocol error: {status}")
         elif status in [APIStatus.ERROR_SERVER_CONNECTION]:
             raise ConnectionError(f"cannot connect to server: {status}")
@@ -337,23 +351,31 @@ class Session(SessionSpec):
         jobs_list = meta.get(MetaKey.JOBS, [])
         return jobs_list
 
-    def download_job_result(self, job_id: str) -> str:
+    def download_job_result(self, job_id: str, destination: str = None) -> str:
         """Download result of the job.
 
         Args:
             job_id (str): ID of the job
+            destination (str): optional directory to move the downloaded result into.
+                If not specified, result is left in the download_dir from the admin config.
 
         Returns: folder path to the location of the job result
 
-        If the job size is smaller than the maximum size set on the server, the job will download to the download_dir
-        set in Session through the admin config, and the path to the downloaded result will be returned. If the size
-        of the job is larger than the maximum size, the location to download the job will be returned.
-
         """
+        import shutil
+
         self._validate_job_id(job_id)
         result = self._do_command(AdminCommandNames.DOWNLOAD_JOB + " " + job_id)
         meta = result[ResultKey.META]
         location = meta.get(MetaKey.LOCATION)
+
+        if destination and location and os.path.exists(location):
+            destination = os.path.abspath(destination)
+            os.makedirs(destination, exist_ok=True)
+            final_path = os.path.join(destination, os.path.basename(location))
+            shutil.move(location, final_path)
+            return final_path
+
         return location
 
     def list_job_components(self, job_id: str) -> List[str]:
@@ -476,12 +498,12 @@ class Session(SessionSpec):
         meta = result[ResultKey.META]
         return meta.get(MetaKey.CLIENT_STATUS, None)
 
-    def restart(self, target_type: str, targets: Optional[List[str]] = None) -> dict:
+    def restart(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
         """Restart specified system target(s).
 
         Args:
             target_type (str): what system target (server, client, or all) to restart
-            targets (List[str]): clients to be restarted if target_type is client. If not specified, all clients.
+            client_names (List[str]): clients to be restarted if target_type is client. If not specified, all clients.
 
         Returns: a dict that contains detailed info about the restart request:
             status - the overall status of the result.
@@ -494,20 +516,20 @@ class Session(SessionSpec):
             raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
 
         parts = [AdminCommandNames.RESTART, target_type]
-        if target_type == TargetType.CLIENT and targets:
-            processed_targets_str = process_targets_into_str(targets)
+        if target_type == TargetType.CLIENT and client_names:
+            processed_targets_str = process_targets_into_str(client_names)
             parts.append(processed_targets_str)
 
         command = " ".join(parts)
         result = self._do_command(command)
         return result[ResultKey.META]
 
-    def shutdown(self, target_type: TargetType, targets: Optional[List[str]] = None):
+    def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None):
         """Shut down specified system target(s).
 
         Args:
             target_type: what system target (server, client, or all) to shut down
-            targets: clients to be shut down if target_type is client. If not specified, all clients.
+            client_names: clients to be shut down if target_type is client. If not specified, all clients.
 
         Returns: None
         """
@@ -515,8 +537,8 @@ class Session(SessionSpec):
             raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
 
         parts = [AdminCommandNames.SHUTDOWN, target_type]
-        if target_type == TargetType.CLIENT and targets:
-            processed_targets_str = process_targets_into_str(targets)
+        if target_type == TargetType.CLIENT and client_names:
+            processed_targets_str = process_targets_into_str(client_names)
             parts.append(processed_targets_str)
 
         command = " ".join(parts)
@@ -835,8 +857,40 @@ class Session(SessionSpec):
             parts.append(processed_targets_str)
 
         command = " ".join(parts)
-        result = self._do_command(command)
-        return result[ResultKey.META]
+        result = self._do_command(command, enforce_meta=False)
+        data_items = result.get(ProtoKey.DATA, [])
+        resources = {}
+        for item in data_items:
+            if isinstance(item, dict) and item.get(ProtoKey.TYPE) == ProtoKey.TABLE:
+                rows = item.get(ProtoKey.ROWS, [])
+                if not rows or len(rows) < 2:
+                    continue
+                for row in rows[1:]:
+                    if isinstance(row, list) and len(row) >= 2:
+                        resources[str(row[0])] = row[1]
+        return resources
+
+    def report_version(self, target_type: str, targets=None) -> dict:
+        """Report NVFlare version for specified system target(s).
+
+        Args:
+            target_type (str): type of target (server, client, or all)
+            targets: list of client names if target type is "client". All clients if not specified.
+
+        Returns: a dict with version information per site
+
+        """
+        if target_type not in _VALID_TARGET_TYPES:
+            raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
+
+        parts = [AdminCommandNames.REPORT_VERSION, target_type]
+        if target_type == TargetType.CLIENT and targets:
+            processed_targets_str = process_targets_into_str(targets)
+            parts.append(processed_targets_str)
+
+        command = " ".join(parts)
+        reply = self._do_command(command, enforce_meta=False)
+        return self._get_dict_data(reply)
 
     def remove_client(self, client_name: str) -> None:
         """Remove a client from the system.
@@ -861,11 +915,11 @@ class Session(SessionSpec):
             tail_lines (int): optional number of tail lines to retrieve
             grep_pattern (str): optional grep pattern to filter log lines
 
-        Returns: dict with "log_source" and "logs" keys
+        Returns: dict with "logs" keys mapping site name to log text.
 
         """
         self._validate_job_id(job_id)
-        parts = ["get_job_log", job_id, target]
+        parts = [AdminCommandNames.GET_JOB_LOG, job_id]
         if tail_lines is not None:
             parts.extend(["-n", str(tail_lines)])
         if grep_pattern is not None:
@@ -873,8 +927,10 @@ class Session(SessionSpec):
 
         command = " ".join(parts)
         reply = self._do_command(command, enforce_meta=False)
-        logs = self._get_dict_data(reply)
-        return {"log_source": "workspace", "logs": logs}
+        payload = self._get_dict_data(reply)
+        if isinstance(payload, dict) and "logs" in payload:
+            return {"logs": payload.get("logs", {})}
+        return {"logs": payload}
 
     def configure_job_log(self, job_id: str, config, target: str = "all") -> None:
         """Configure logging for a running job.
@@ -882,7 +938,7 @@ class Session(SessionSpec):
         Args:
             job_id (str): ID of the job (must be RUNNING)
             config: str (level or LogMode), dict (dictConfig), or file path
-            target (str): target site name or "all"
+            target (str): "all", "server", or a client site name
 
         Returns: None
 
@@ -895,7 +951,10 @@ class Session(SessionSpec):
         else:
             config_str = str(config)
 
-        self._do_command(f"{AdminCommandNames.CONFIGURE_JOB_LOG} {job_id} {target} {config_str}")
+        target_spec = target if target in ("all", "server", "client") else f"client {target}"
+        self._do_command(
+            f"{AdminCommandNames.CONFIGURE_JOB_LOG} {job_id} {target_spec} {config_str}", enforce_meta=False
+        )
 
     def configure_site_log(self, config, target: str = "all") -> None:
         """Configure site-level logging.
@@ -914,7 +973,7 @@ class Session(SessionSpec):
         else:
             config_str = str(config)
 
-        self._do_command(f"{AdminCommandNames.CONFIGURE_SITE_LOG} {target} {config_str}")
+        self._do_command(f"{AdminCommandNames.CONFIGURE_SITE_LOG} {target} {config_str}", enforce_meta=False)
 
     def wait_for_job(self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0) -> dict:
         """Block until job reaches a terminal state.
@@ -1074,13 +1133,24 @@ def basic_cb_with_print(session: Session, job_id: str, job_meta, *cb_args, **cb_
     This demonstrates how a custom callback can be used.
 
     """
+    try:
+        from nvflare.tool.cli_output import print_human
+
+        def _emit(msg, end="\n"):
+            print_human(msg, end=end)
+
+    except Exception:
+
+        def _emit(msg, end="\n"):
+            print(msg, end=end)
+
     if job_meta["status"] == "RUNNING":
         if cb_kwargs["cb_run_counter"]["count"] < 3:
-            print(job_meta)
+            _emit(job_meta)
         else:
-            print(".", end="")
+            _emit(".", end="")
     else:
-        print("\n" + str(job_meta))
+        _emit("\n" + str(job_meta))
 
     cb_kwargs["cb_run_counter"]["count"] += 1
     return True

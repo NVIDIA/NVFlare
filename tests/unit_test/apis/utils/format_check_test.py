@@ -61,11 +61,11 @@ class TestNameCheck:
         [
             ["default", False],
             ["cancer-research", False],
+            ["cancer_research", False],
             ["a", False],
             ["a" * 63, False],
             ["", True],
             ["A", True],
-            ["abc_", True],
             ["-abc", True],
             ["abc-", True],
             ["a" * 64, True],

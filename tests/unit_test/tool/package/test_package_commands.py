@@ -31,6 +31,7 @@ from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
+from nvflare.tool import cli_output
 from nvflare.tool.package.package_commands import _discover_name_from_dir, _parse_endpoint, handle_package
 
 # ---------------------------------------------------------------------------
@@ -149,6 +150,49 @@ class TestParseEndpoint:
     def test_port_min_valid(self):
         _, _, port = _parse_endpoint("grpc://server:1")
         assert port == 1
+
+
+def test_missing_endpoint_human_mode_no_help_dump(capsys, monkeypatch, tmp_path):
+    import argparse
+
+    from nvflare.tool.package.package_cli import def_package_cli_parser
+
+    monkeypatch.setattr(cli_output, "_output_format", "txt")
+    root = argparse.ArgumentParser(prog="nvflare")
+    subs = root.add_subparsers()
+    def_package_cli_parser(subs)
+    args = _make_args(
+        endpoint=None,
+        dir=str(tmp_path),
+        workspace=str(tmp_path / "ws"),
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        handle_package(args)
+    assert exc_info.value.code == 4
+    captured = capsys.readouterr()
+    assert "--endpoint is required" in captured.err
+    assert "Code: INVALID_ARGS (exit 4)" in captured.err
+    assert "usage:" in captured.err
+
+
+def test_package_help_includes_working_examples():
+    import argparse
+
+    from nvflare.tool.package.package_cli import def_package_cli_parser
+
+    root = argparse.ArgumentParser(prog="nvflare")
+    subs = root.add_subparsers()
+    parser = def_package_cli_parser(subs)["package"]
+
+    help_text = parser.format_help()
+
+    assert "Examples:" in help_text
+    assert "nvflare package -e grpc://fl-server:8002 -p ./site.yaml --dir ./certs" in help_text
+    assert "nvflare package -e grpc://fl-server:8002 --dir ./hospital-1-kit" in help_text
+    assert "--cert ./signed/hospital-1/hospital-1.crt" in help_text
+    assert "--key ./csr/hospital-1.key" in help_text
+    assert "--rootca ./signed/hospital-1/rootCA.pem" in help_text
 
 
 # ---------------------------------------------------------------------------
@@ -1452,12 +1496,11 @@ class TestNextStepOutputPath:
         import unittest.mock
 
         captured = {}
-        original_output = __import__("nvflare.tool.cli_output", fromlist=["output"]).output
 
-        def _capture(result, fmt):
+        def _capture(result):
             captured.update(result)
 
-        with unittest.mock.patch("nvflare.tool.package.package_commands.output", side_effect=_capture):
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_ok", side_effect=_capture):
             handle_package(args)
 
         expected_dir = _kit_dir(ws, "testproject", "fl-server")
@@ -1488,10 +1531,10 @@ class TestNextStepOutputPath:
 
         captured = {}
 
-        def _capture(result, fmt):
+        def _capture(result):
             captured.update(result)
 
-        with unittest.mock.patch("nvflare.tool.package.package_commands.output", side_effect=_capture):
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_ok", side_effect=_capture):
             handle_package(args)
 
         expected_dir = _kit_dir(ws, "testproject", "hospital-1")
@@ -1520,10 +1563,10 @@ class TestNextStepOutputPath:
 
         captured = {}
 
-        def _capture(result, fmt):
+        def _capture(result):
             captured.update(result)
 
-        with unittest.mock.patch("nvflare.tool.package.package_commands.output", side_effect=_capture):
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_ok", side_effect=_capture):
             handle_package(args)
 
         expected_dir = _kit_dir(ws, "testproject", "alice@myorg.com")

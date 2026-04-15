@@ -17,9 +17,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.tool import cli_output
+
 
 class TestPreflightOutput:
     """Tests for nvflare preflight_check output format."""
+
+    @pytest.fixture(autouse=True)
+    def json_mode(self, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
 
     def test_invalid_package_path_exits_4(self, tmp_path):
         """Non-existent package_path should exit 4."""
@@ -85,6 +91,7 @@ class TestPreflightOutput:
         data = json.loads(stdout_lines[0])
         assert data["schema_version"] == "1"
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
         assert data["data"]["overall"] == "pass"
         assert "checks" in data["data"]
         assert "package" in data["data"]

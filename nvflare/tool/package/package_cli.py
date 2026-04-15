@@ -19,6 +19,20 @@ from typing import Optional
 
 _package_parser: Optional[argparse.ArgumentParser] = None
 
+_PACKAGE_HELP_EXAMPLES = """Examples:
+  Build kits from a project YAML:
+    nvflare package -e grpc://fl-server:8002 -p ./site.yaml --dir ./certs
+
+  Build one kit from a working directory:
+    nvflare package -e grpc://fl-server:8002 --dir ./hospital-1-kit
+
+  Build one kit from explicit file paths:
+    nvflare package -n hospital-1 -e grpc://fl-server:8002 \\
+      --cert ./signed/hospital-1/hospital-1.crt \\
+      --key ./csr/hospital-1.key \\
+      --rootca ./signed/hospital-1/rootCA.pem
+"""
+
 
 def def_package_cli_parser(sub_cmd) -> dict:
     """Register 'nvflare package' with the top-level sub_cmd parser."""
@@ -30,6 +44,8 @@ def def_package_cli_parser(sub_cmd) -> dict:
             "No signature.json is generated — mTLS is the trust anchor."
         ),
         help="Assemble a startup kit from a locally generated key and Project Admin cert.",
+        epilog=_PACKAGE_HELP_EXAMPLES,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
         "-t",

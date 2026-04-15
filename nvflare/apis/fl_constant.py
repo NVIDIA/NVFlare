@@ -252,6 +252,7 @@ class AdminCommandNames(object):
     SYS_INFO = "sys_info"
     REPORT_RESOURCES = "report_resources"
     REPORT_ENV = "report_env"
+    REPORT_VERSION = "report_version"
     SHOW_SCOPES = "show_scopes"
     CALL = "call"
     SHELL_PWD = "pwd"
@@ -261,6 +262,7 @@ class AdminCommandNames(object):
     SHELL_TAIL = "tail"
     SHELL_GREP = "grep"
     APP_COMMAND = "app_command"
+    GET_JOB_LOG = "get_job_log"
     CONFIGURE_JOB_LOG = "configure_job_log"
     CONFIGURE_SITE_LOG = "configure_site_log"
 

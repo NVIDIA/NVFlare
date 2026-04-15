@@ -15,6 +15,8 @@
 import importlib
 import sys
 
+from nvflare.tool.cli_output import output_usage_error
+
 # Static catalog of all known recipes.
 # Each entry: name (CLI id), description, framework tag, module path, class name.
 # _load_catalog() filters this to entries whose dependencies are actually installed.
@@ -179,7 +181,7 @@ def _load_catalog(framework: str = None) -> list:
 
 
 def cmd_recipe_list(cmd_args):
-    from nvflare.tool.cli_output import output_ok
+    from nvflare.tool.cli_output import output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -192,28 +194,30 @@ def cmd_recipe_list(cmd_args):
     framework = getattr(cmd_args, "framework", None)
     catalog = _load_catalog(framework=framework)
 
-    # Human-readable table to stderr (agents read stdout JSON; humans read stderr)
+    # Human-readable table to human stream (stdout by default; stderr in agent mode)
     name_w = max(len(e["name"]) for e in catalog) + 2 if catalog else 20
     fw_w = max(len(e["framework"]) for e in catalog) + 2 if catalog else 12
-    print(f"\n  {'RECIPE':<{name_w}} {'FRAMEWORK':<{fw_w}} DESCRIPTION", file=sys.stderr)
-    print(f"  {'-' * (name_w + fw_w + 40)}", file=sys.stderr)
+    print_human(f"\n  {'RECIPE':<{name_w}} {'FRAMEWORK':<{fw_w}} DESCRIPTION")
+    print_human(f"  {'-' * (name_w + fw_w + 40)}")
     for entry in catalog:
-        print(f"  {entry['name']:<{name_w}} {entry['framework']:<{fw_w}} {entry['description']}", file=sys.stderr)
-    print(file=sys.stderr)
+        print_human(f"  {entry['name']:<{name_w}} {entry['framework']:<{fw_w}} {entry['description']}")
+    print_human()
 
     output_ok(catalog)
 
 
 _recipe_parser = None
+_recipe_root_parser = None
 
 
 def def_recipe_parser(sub_cmd):
-    global _recipe_parser
+    global _recipe_parser, _recipe_root_parser
     cmd = "recipe"
     parser = sub_cmd.add_parser(cmd, help="list available FL job recipes")
+    _recipe_root_parser = parser
     recipe_subparser = parser.add_subparsers(title="recipe subcommands", metavar="", dest="recipe_sub_cmd")
 
-    list_parser = recipe_subparser.add_parser("list", help="list available recipes")
+    list_parser = recipe_subparser.add_parser("list", help="list available recipes (default)")
     list_parser.add_argument(
         "--framework",
         type=str,
@@ -223,6 +227,7 @@ def def_recipe_parser(sub_cmd):
     )
     list_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _recipe_parser = list_parser
+    parser.set_defaults(recipe_sub_cmd="list")
 
     return {cmd: parser}
 
@@ -232,4 +237,4 @@ def handle_recipe_cmd(args):
     if sub_cmd == "list":
         cmd_recipe_list(args)
     else:
-        _recipe_parser.print_help() if _recipe_parser else None
+        output_usage_error(_recipe_root_parser, "recipe subcommand required", exit_code=4)

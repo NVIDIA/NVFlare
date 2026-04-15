@@ -51,7 +51,7 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "INTERNAL_ERROR": {
         "message": "An unexpected error occurred.",
-        "hint": "This is likely a bug. Run with --verbose for a traceback.",
+        "hint": "This is likely a bug. Re-run in a development environment for a traceback, or report the issue.",
     },
     # --- Job commands ---
     "JOB_NOT_FOUND": {
@@ -180,7 +180,7 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     # --- Job lifecycle ---
     "JOB_FAILED": {
         "message": "Job '{job_id}' reached terminal state FAILED.",
-        "hint": "Use 'nvflare job errors <job_id>' to see per-site error details.",
+        "hint": "Use 'nvflare job logs <job_id>' and 'nvflare job meta <job_id>' to inspect the failure.",
     },
     "JOB_ABORTED": {
         "message": "Job '{job_id}' was aborted.",

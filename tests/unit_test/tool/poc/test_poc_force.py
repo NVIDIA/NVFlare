@@ -16,6 +16,7 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pyhocon import ConfigFactory as CF
 
 
 class TestPocForce:
@@ -95,3 +96,29 @@ class TestPocForce:
             mock_stdin.readline.return_value = "N\n"
             result = _prepare_poc([], 2, workspace, force=False)
         assert result is False
+
+    def test_save_startup_kit_dir_config_uses_poc_admin_dir(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import save_startup_kit_dir_config
+
+        workspace = str(tmp_path / "poc_ws")
+        os.makedirs(workspace, exist_ok=True)
+        with open(os.path.join(workspace, "project.yml"), "w") as f:
+            f.write(
+                """
+name: example_project
+participants:
+  - name: server
+    type: server
+  - name: admin@nvidia.com
+    type: admin
+    role: project_admin
+"""
+            )
+
+        dst = str(tmp_path / "config.conf")
+        with patch("nvflare.tool.poc.poc_commands.get_or_create_hidden_nvflare_config_path", return_value=dst):
+            save_startup_kit_dir_config(workspace, "example_project")
+
+        config = CF.parse_file(dst)
+        assert config.get("poc.startup_kit").endswith("/example_project/prod_00/admin@nvidia.com")
+        assert config.get("poc.workspace") == workspace

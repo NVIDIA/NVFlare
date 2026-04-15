@@ -106,5 +106,17 @@ def handle_schema_flag(
 ) -> None:
     """Call before parse_args(). If --schema in args_list, print schema and exit."""
     if "--schema" in args_list:
-        print(json.dumps(parser_to_schema(parser, command, examples, deprecated, deprecated_message), indent=2))
+        if parser is None:
+            schema = {
+                "schema_version": SCHEMA_VERSION,
+                "command": command,
+                "args": [],
+                "examples": examples or [],
+            }
+            if deprecated:
+                schema["deprecated"] = True
+                schema["deprecated_message"] = deprecated_message
+        else:
+            schema = parser_to_schema(parser, command, examples, deprecated, deprecated_message)
+        print(json.dumps(schema, indent=2))
         raise SystemExit(0)

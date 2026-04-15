@@ -1,11 +1,11 @@
 # Distributed Provisioning Examples
 
-Agent-first flow with single-site `site.yml` files.
+Two example modes are provided for the current CLI design:
 
-Key idea: CSR creation now supports `--project-file <site.yml>` so humans and agents
-can use the same input file without extra arguments.
-
-See:
-- `agent/` for the agent demo and runbook
-- `human/` for the minimal human walkthrough
+- `interactive_mode/` for the step-by-step Bash walkthrough
+- `scripted_mode/` for the scripted JSON-output flow
 - `site.template.yml` for the single-site template
+
+Key idea: CSR creation supports `--project-file <site.yml>` so both interactive and
+scripted flows can use the same single-site input file without extra arguments.
+For scripted flows, pass `--out-format json` so stdout remains machine-readable.

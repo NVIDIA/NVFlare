@@ -20,7 +20,7 @@ Default (human-first):
     stdout — human-readable output (tables, summaries, prompts).
     stderr — errors and diagnostics.
 
-Agent mode (set NVFLARE_CLI_MODE=agent):
+JSON output mode (--out-format json):
     stdout — exactly one JSON envelope per command invocation:
         {"schema_version": "1", "status": "ok"|"error", "data": {...}}
     stderr — all human-readable output: progress, warnings, prompts, diagnostics.
@@ -32,21 +32,56 @@ Exceptions (plain text, outside the JSON contract):
 """
 
 import json
-import os
 import sys
 from typing import Any, Optional
 
 SCHEMA_VERSION = "1"
-_CLI_MODE_ENV = "NVFLARE_CLI_MODE"
+
+# Module-level output format. Set once by cli.py after parsing --out-format.
+# Possible values: "txt" (default, human-readable) or "json".
+_output_format: str = "txt"
+_connect_timeout: float = 5.0
 
 
-def _agent_mode() -> bool:
-    value = os.getenv(_CLI_MODE_ENV, "")
-    return value.strip().lower() in {"agent", "json", "machine", "1", "true", "yes"}
+def set_output_format(fmt: str) -> None:
+    """Set the output format for all cli_output functions.
+
+    Called once by cli.py after --out-format is parsed.
+
+    Args:
+        fmt: "txt" (default) for human-readable output to stdout/stderr;
+             "json" for a single machine-readable JSON envelope on stdout.
+             "human" is accepted as a backward-compatible alias for "txt".
+    """
+    global _output_format
+    normalized = fmt.lower() if fmt else "txt"
+    _output_format = "txt" if normalized == "human" else normalized
+
+
+def set_connect_timeout(value: float) -> None:
+    """Set CLI connection timeout (seconds)."""
+    global _connect_timeout
+    try:
+        _connect_timeout = float(value)
+    except (TypeError, ValueError):
+        _connect_timeout = 5.0
+
+
+def get_connect_timeout() -> float:
+    return _connect_timeout
+
+
+def _is_json_mode() -> bool:
+    return _output_format == "json"
+
+
+def is_json_mode() -> bool:
+    """Public helper for checking JSON mode without exposing internals."""
+    return _is_json_mode()
 
 
 def _human_stream():
-    return sys.stderr if _agent_mode() else sys.stdout
+    return sys.stderr if _is_json_mode() else sys.stdout
 
 
 def _render_table(data: Any) -> None:
@@ -73,10 +108,10 @@ def _render_table(data: Any) -> None:
 
 def output(data: Any, fmt: Optional[str]) -> None:
     """Print command result in requested format. Used by cert/package commands."""
-    if fmt is None and _agent_mode():
+    if fmt is None and _is_json_mode():
         fmt = "json"
     if fmt == "json":
-        print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "data": data}))
+        print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "exit_code": 0, "data": data}))
     elif fmt == "quiet":
         if isinstance(data, dict):
             print(next(iter(data.values()), ""))
@@ -88,12 +123,18 @@ def output(data: Any, fmt: Optional[str]) -> None:
         _render_table(data)
 
 
-def output_ok(data: Any) -> None:
-    """Print command success output."""
-    if _agent_mode():
-        print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "data": data}))
+def output_ok(data: Any, exit_code: int = 0, status: str = "ok") -> None:
+    """Print command success output.
+
+    exit_code/status may be overridden (e.g. exit_code=1, status="terminal_failure") when the
+    command completed but the job itself ended in a non-success terminal state.
+    """
+    if _is_json_mode():
+        print(json.dumps({"schema_version": SCHEMA_VERSION, "status": status, "exit_code": exit_code, "data": data}))
     else:
         _render_table(data)
+    if exit_code != 0:
+        sys.exit(exit_code)
 
 
 def output_error(
@@ -112,7 +153,7 @@ def output_error(
     - Phase 0+1:    output_error(code, exit_code=N, job_id="abc", detail="...")
     """
     if message is None:
-        # Phase 0+1: look up from ERROR_REGISTRY, emit JSON in agent mode
+        # Phase 0+1: look up from ERROR_REGISTRY, emit JSON in json mode
         from nvflare.tool.cli_errors import ERROR_REGISTRY
 
         entry = ERROR_REGISTRY.get(error_code, {"message": error_code, "hint": ""})
@@ -122,12 +163,13 @@ def output_error(
             message = entry["message"]
         if detail:
             message = f"{message} \u2014 {detail}"
-        if _agent_mode():
+        if _is_json_mode():
             print(
                 json.dumps(
                     {
                         "schema_version": SCHEMA_VERSION,
                         "status": "error",
+                        "exit_code": exit_code,
                         "error_code": error_code,
                         "message": message,
                         "hint": entry["hint"],
@@ -135,21 +177,22 @@ def output_error(
                 )
             )
         else:
-            print(f"ERROR_CODE: {error_code}", file=sys.stderr)
             print(message, file=sys.stderr)
             if entry["hint"]:
                 print(f"Hint: {entry['hint']}", file=sys.stderr)
+            print(f"Code: {error_code} (exit {exit_code})", file=sys.stderr)
     else:
         # Cert/package: explicit message/hint provided; fmt determines output format
         resolved_hint = hint or ""
         if detail:
             message = f"{message} \u2014 {detail}"
-        if fmt == "json" or (fmt is None and _agent_mode()):
+        if fmt == "json" or (fmt is None and _is_json_mode()):
             print(
                 json.dumps(
                     {
                         "schema_version": SCHEMA_VERSION,
                         "status": "error",
+                        "exit_code": exit_code,
                         "error_code": error_code,
                         "message": message,
                         "hint": resolved_hint,
@@ -157,18 +200,33 @@ def output_error(
                 )
             )
         else:
-            print(f"ERROR_CODE: {error_code}", file=sys.stderr)
             print(message, file=sys.stderr)
             if resolved_hint:
                 print(f"Hint: {resolved_hint}", file=sys.stderr)
+            print(f"Code: {error_code} (exit {exit_code})", file=sys.stderr)
     sys.exit(exit_code)
+
+
+def output_usage_error(
+    parser,
+    detail: str,
+    exit_code: int = 4,
+    error_code: str = "INVALID_ARGS",
+    message: str = "Invalid arguments.",
+    hint: str = "Run with -h for usage.",
+) -> None:
+    """Print usage/help followed by a structured usage error and exit."""
+    if not _is_json_mode() and parser is not None:
+        parser.print_help(sys.stderr)
+        print(file=sys.stderr)
+    output_error(error_code, message, hint, None, exit_code=exit_code, detail=detail)
 
 
 def print_human(*args, **kwargs):
     """Print any human-readable text (progress, warnings, tables, diagnostics).
 
     Drop-in replacement for print() in CLI command handlers.
-    Keeps stdout clean for the JSON envelope in agent mode.
+    Keeps stdout clean for the JSON envelope in JSON output mode.
     Usage: print_human("Starting shutdown of NVFLARE")
     """
     kwargs.setdefault("file", _human_stream())
@@ -176,10 +234,10 @@ def print_human(*args, **kwargs):
 
 
 def prompt_yn(question: str, default_no: bool = True) -> bool:
-    """Write a Y/N prompt to stderr (agent mode) or stdout (human mode) and read the answer from stdin.
+    """Write a Y/N prompt to stderr (json mode) or stdout (human mode) and read the answer from stdin.
 
     Returns True if the user answered Y/y, False otherwise.
-    Writes the prompt to stderr in agent mode so that stdout contains only JSON.
+    Writes the prompt to stderr in json mode so that stdout contains only JSON.
     Callers must check sys.stdin.isatty() and handle --force before calling.
 
     Usage:

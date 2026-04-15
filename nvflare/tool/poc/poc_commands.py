@@ -79,7 +79,9 @@ def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, 
     return gpu_assignments
 
 
-def get_service_command(cmd_type: str, prod_dir: str, service_dir, service_config: Dict) -> str:
+def get_service_command(
+    cmd_type: str, prod_dir: str, service_dir, service_config: Dict, study: Optional[str] = None
+) -> str:
     cmd = ""
     proj_admin_dir_name = service_config.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
     admin_dirs = list(service_config.get(SC.FLARE_OTHER_ADMINS, []))
@@ -108,6 +110,9 @@ def get_service_command(cmd_type: str, prod_dir: str, service_dir, service_confi
 
     else:
         raise CLIException("unknown cmd_type :", cmd_type)
+
+    if cmd_type == SC.CMD_START and study and service_dir in admin_dirs and cmd.endswith("fl_admin.sh"):
+        cmd = f"{cmd} --study {study}"
     return cmd
 
 
@@ -431,13 +436,16 @@ def save_startup_kit_dir_config(workspace, project_name):
         except Exception:
             config = None
 
+    project_file = os.path.join(workspace, "project.yml")
+    project_config = load_yaml(project_file) if os.path.isfile(project_file) else None
+    project_admin = get_proj_admin(project_config) if project_config else SC.FLARE_PROJ_ADMIN
     prod_dir = get_prod_dir(workspace, project_name)
+    poc_admin_dir = os.path.join(prod_dir, project_admin)
     conf = f"""
-        startup_kit {{
-            path = {prod_dir}
-        }}
-        poc_workspace {{
-            path = {workspace}
+        version = 2
+        poc {{
+            startup_kit = "{poc_admin_dir}"
+            workspace = "{workspace}"
         }}
     """
     if config:
@@ -517,6 +525,7 @@ def prepare_poc(cmd_args):
     print_human(f"\nPOC workspace ready at: {poc_workspace}")
     print_human(f"  Clients: {', '.join(clients) if clients else '(none)'}")
     print_human("  Next: place your jobs under the admin transfer folder, then run 'nvflare poc start'")
+    print_human("  That starts the server and clients only; admin consoles must be started explicitly.")
     try:
         install_skills()
     except Exception:
@@ -693,9 +702,10 @@ def start_poc(cmd_args):
     services_list = get_service_list(cmd_args)
     excluded = get_excluded(cmd_args)
     gpu_ids = get_gpis(cmd_args)
+    study = getattr(cmd_args, "study", None)
 
     try:
-        _start_poc(poc_workspace, gpu_ids, excluded, services_list)
+        _start_poc(poc_workspace, gpu_ids, excluded, services_list, study=study)
     except CLIException as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         return
@@ -706,6 +716,7 @@ def start_poc(cmd_args):
     # Get client names from project config
     clients = []
     server_url = "grpc://localhost:8002"
+    service_config = None
     try:
         project_config, service_config = setup_service_config(poc_workspace)
         if project_config:
@@ -719,6 +730,9 @@ def start_poc(cmd_args):
     print_human(f"\nPOC system started. Server: {server_url}")
     if clients:
         print_human(f"  Clients: {', '.join(clients)}")
+    if service_config:
+        proj_admin = service_config.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
+        print_human(f"  Admin console not started by default. Start with: nvflare poc start -p {proj_admin}")
     print_human("  Submit jobs with: nvflare job submit -j <job_folder>")
 
 
@@ -745,16 +759,25 @@ def get_service_list(cmd_args):
     return services_list
 
 
-def _start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_list=None):
+def _start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_list=None, study: Optional[str] = None):
     project_config, service_config = setup_service_config(poc_workspace)
     if services_list is None:
         services_list = []
     if excluded is None:
         excluded = []
-    other_admins = service_config.get(SC.FLARE_OTHER_ADMINS, [])
-    for admin_dir in other_admins:
-        if admin_dir not in services_list:
-            excluded.append(admin_dir)
+    proj_admin_dir_name = service_config.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
+    admin_dirs = list(service_config.get(SC.FLARE_OTHER_ADMINS, []))
+    admin_dirs.append(proj_admin_dir_name)
+
+    # By default, do not start admin console services unless explicitly requested.
+    if not services_list:
+        for admin_dir in admin_dirs:
+            if admin_dir not in excluded:
+                excluded.append(admin_dir)
+    else:
+        for admin_dir in admin_dirs:
+            if admin_dir not in services_list and admin_dir not in excluded:
+                excluded.append(admin_dir)
 
     validate_services(project_config, services_list, excluded)
     validate_poc_workspace(poc_workspace, service_config, project_config)
@@ -766,6 +789,7 @@ def _start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_l
         project_config,
         excluded=excluded,
         services_list=services_list,
+        study=study,
     )
 
 
@@ -868,7 +892,13 @@ def _get_clients(service_commands: list, service_config) -> List[str]:
 
 
 def _build_commands(
-    cmd_type: str, poc_workspace: str, service_config, project_config, excluded: list, services_list=None
+    cmd_type: str,
+    poc_workspace: str,
+    service_config,
+    project_config,
+    excluded: list,
+    services_list=None,
+    study: Optional[str] = None,
 ) -> list:
     """Builds commands.
 
@@ -904,7 +934,7 @@ def _build_commands(
             for service_dir_name in fl_dirs:
                 if service_dir_name not in excluded:
                     if len(services_list) == 0 or service_dir_name in services_list:
-                        cmd = get_service_command(cmd_type, prod_dir, service_dir_name, service_config)
+                        cmd = get_service_command(cmd_type, prod_dir, service_dir_name, service_config, study=study)
                         if cmd:
                             service_commands.append((service_dir_name, cmd))
     return _sort_service_cmds(cmd_type, service_commands, service_config)
@@ -951,10 +981,13 @@ def _run_poc(
     project_config: Dict,
     excluded: list,
     services_list=None,
+    study: Optional[str] = None,
 ):
     if services_list is None:
         services_list = []
-    service_commands = _build_commands(cmd_type, poc_workspace, service_config, project_config, excluded, services_list)
+    service_commands = _build_commands(
+        cmd_type, poc_workspace, service_config, project_config, excluded, services_list, study=study
+    )
     clients = _get_clients(service_commands, service_config)
     gpu_assignments: Dict[str, List[int]] = client_gpu_assignments(clients, gpu_ids)
     for service_name, cmd_path in service_commands:
@@ -1182,7 +1215,7 @@ def define_start_parser(poc_parser):
         type=str,
         nargs="?",
         default="all",
-        help="participant, Default to all participants",
+        help="participant to start. Default starts server and client services only; admin consoles are excluded unless explicitly selected",
     )
 
     start_parser.add_argument(
@@ -1201,6 +1234,12 @@ def define_start_parser(poc_parser):
         default=None,
         help="gpu device ids will be used as CUDA_VISIBLE_DEVICES. used for poc start command",
     )
+    start_parser.add_argument(
+        "--study",
+        type=str,
+        default=None,
+        help="study for admin console launches only; ignored for server and client services",
+    )
     start_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     start_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
@@ -1215,7 +1254,7 @@ def define_stop_parser(poc_parser):
         type=str,
         nargs="?",
         default="all",
-        help="participant, Default to all participants",
+        help="participant to stop. Default stops the running POC system; project admin console is not a default managed service",
     )
     stop_parser.add_argument(
         "-ex",

@@ -12,10 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
+
+from nvflare.tool import cli_output
+from nvflare.tool.job.job_cli import def_job_cli_parser
 
 
 class TestJobSubmitOutput:
@@ -23,16 +27,16 @@ class TestJobSubmitOutput:
 
     @pytest.fixture(autouse=True)
     def agent_mode(self, monkeypatch):
-        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+        monkeypatch.setattr(cli_output, "_output_format", "json")
 
     def _make_args(self, **kwargs):
         args = MagicMock()
-        args.wait = kwargs.get("wait", False)
-        args.timeout = kwargs.get("timeout", 0)
         args.study = kwargs.get("study", "default")
         args.debug = False
         args.job_folder = kwargs.get("job_folder", "/fake/job")
         args.config_file = None
+        args.target = kwargs.get("target", None)
+        args.startup_kit = kwargs.get("startup_kit", None)
         return args
 
     def test_json_envelope_on_success(self, capsys):
@@ -44,6 +48,7 @@ class TestJobSubmitOutput:
         data = json.loads(captured.out)
         assert data["schema_version"] == "1"
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
         assert data["data"]["job_id"] == "abc123"
 
     def test_output_error_exits_with_code(self):
@@ -70,33 +75,72 @@ class TestJobSubmitOutput:
             output_error("TIMEOUT", exit_code=3)
         assert exc_info.value.code == 3
 
-    def test_wait_flag_in_submit_parser(self):
-        """Submit parser should include --wait, --timeout, --study, --output flags."""
-        import argparse
+    def test_internal_submit_job_json_mode_keeps_stdout_clean(self, capsys):
+        from nvflare.tool.job.job_cli import internal_submit_job
 
-        from nvflare.tool.job.job_cli import def_job_cli_parser
+        fake_session = MagicMock()
+        fake_session.submit_job.return_value = "abc123"
 
-        root = argparse.ArgumentParser()
-        subs = root.add_subparsers()
-        def_job_cli_parser(subs)
+        with patch("nvflare.tool.job.job_cli.new_cli_session", return_value=fake_session):
+            internal_submit_job("/tmp/startup", "admin@nvidia.com", "/tmp/job")
 
-        from nvflare.tool.job.job_cli import job_sub_cmd_parser
-
-        parser = job_sub_cmd_parser["submit"]
-        assert parser is not None
-        # Check that the parser has these arguments by parsing with them
-        args = parser.parse_args(["-j", "/some/job", "--wait", "--timeout", "60", "--study", "test"])
-        assert args.wait is True
-        assert args.timeout == 60
-        assert args.study == "test"
-
-    def test_wait_flag_triggers_monitor(self, capsys):
-        """When --wait is set, internal_submit_job calls monitor_job."""
-        from nvflare.tool.cli_output import output_ok
-
-        # Simulate the wait path: monitor returns a dict
-        meta = {"job_id": "abc123", "status": "FINISHED_OK"}
-        output_ok(meta)
         captured = capsys.readouterr()
         data = json.loads(captured.out)
-        assert data["data"]["status"] == "FINISHED_OK"
+        assert data["status"] == "ok"
+        assert data["data"]["job_id"] == "abc123"
+        assert "trying to connect to the server" not in captured.out
+        assert "trying to connect to the server" not in captured.err
+
+    def test_internal_submit_job_protocol_error_is_not_misreported_as_job_invalid(self, capsys):
+        from nvflare.fuel.flare_api.api_spec import InternalError
+        from nvflare.tool.job.job_cli import internal_submit_job
+
+        fake_session = MagicMock()
+        fake_session.submit_job.side_effect = InternalError("protocol error: ERROR_SYNTAX")
+
+        with patch("nvflare.tool.job.job_cli.new_cli_session", return_value=fake_session):
+            with pytest.raises(SystemExit) as exc_info:
+                internal_submit_job("/tmp/startup", "admin@nvidia.com", "/tmp/job")
+
+        assert exc_info.value.code == 5
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INTERNAL_ERROR"
+        assert "ERROR_SYNTAX" in data["message"]
+
+    def test_submit_parser_no_longer_accepts_wait_or_timeout(self):
+        root = argparse.ArgumentParser()
+        parser = def_job_cli_parser(root.add_subparsers(dest="sub_command"))["job"]
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["submit", "-j", "./my_job", "--wait"])
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["submit", "-j", "./my_job", "--timeout", "30"])
+
+    def test_submit_parser_no_longer_accepts_config_file(self):
+        root = argparse.ArgumentParser()
+        parser = def_job_cli_parser(root.add_subparsers(dest="sub_command"))["job"]
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["submit", "-j", "./my_job", "-f", "config_fed_server.conf", "num_rounds=1"])
+
+    def test_submit_parser_accepts_target_or_startup_kit(self):
+        root = argparse.ArgumentParser()
+        parser = def_job_cli_parser(root.add_subparsers(dest="sub_command"))["job"]
+
+        args = parser.parse_args(["submit", "-j", "./my_job", "--target", "prod"])
+        assert args.target == "prod"
+        assert args.startup_kit is None
+
+        args = parser.parse_args(["submit", "-j", "./my_job", "--startup_kit", "/tmp/startup"])
+        assert args.startup_kit == "/tmp/startup"
+        assert args.target is None
+
+    def test_submit_parser_rejects_target_with_startup_kit(self):
+        root = argparse.ArgumentParser()
+        parser = def_job_cli_parser(root.add_subparsers(dest="sub_command"))["job"]
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["submit", "-j", "./my_job", "--target", "prod", "--startup_kit", "/tmp/startup"])

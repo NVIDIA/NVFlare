@@ -17,13 +17,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.tool import cli_output
+
 
 class TestJobDelete:
     """Tests for nvflare job delete command."""
 
     @pytest.fixture(autouse=True)
     def agent_mode(self, monkeypatch):
-        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+        monkeypatch.setattr(cli_output, "_output_format", "json")
 
     def _make_args(self, job_id="abc123", output="json", force=False):
         args = MagicMock()
@@ -52,6 +54,7 @@ class TestJobDelete:
         assert len(stdout_lines) == 1
         data = json.loads(stdout_lines[0])
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
         assert data["data"]["job_id"] == "abc123"
         # no JSON on stderr
         assert not captured.err.strip().startswith("{")
@@ -88,6 +91,7 @@ class TestJobDelete:
         assert len(stdout_lines) == 1
         data = json.loads(stdout_lines[0])
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
 
     def test_delete_interactive_user_cancels(self, capsys):
         """Interactive mode: user says N → delete cancelled; nothing on stdout; prompt on stderr."""

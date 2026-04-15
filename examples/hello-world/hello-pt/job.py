@@ -71,13 +71,14 @@ def main():
     if args.cross_site_eval:
         add_cross_site_evaluation(recipe)
 
-    # Run FL simulation
+    # Run FL simulation (or export with --export [--export-dir <dir>])
     env = SimEnv(num_clients=n_clients)
     run = recipe.execute(env)
-    print()
-    print("Job Status is:", run.get_status())
-    print("Result can be found in :", run.get_result())
-    print()
+    if run:
+        print()
+        print("Job Status is:", run.get_status())
+        print("Result can be found in :", run.get_result())
+        print()
 
 
 if __name__ == "__main__":

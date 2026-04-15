@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import json
 import os
 import sys
 import traceback
@@ -33,6 +34,8 @@ from nvflare.tool.preflight_check import check_packages, define_preflight_check_
 from nvflare.tool.recipe.recipe_cli import def_recipe_parser, handle_recipe_cmd
 from nvflare.tool.system.system_cli import def_system_cli_parser, handle_system_cmd
 from nvflare.utils.cli_utils import (
+    TARGET_POC,
+    TARGET_PROD,
     create_job_template_config,
     create_poc_workspace_config,
     create_startup_kit_config,
@@ -83,11 +86,23 @@ def def_simulator_parser(sub_cmd):
     cmd = CMD_SIMULATOR
     simulator_parser = sub_cmd.add_parser(cmd, help="[deprecated] run a job in local simulator")
     define_simulator_parser(simulator_parser)
+    simulator_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     return {cmd: simulator_parser}
 
 
 def handle_simulator_cmd(simulator_args):
-    print("WARNING: 'nvflare simulator' is deprecated. Use 'python job.py' with SimEnv instead.", file=sys.stderr)
+    from nvflare.tool.cli_output import print_human
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        None,
+        "nvflare simulator",
+        ["nvflare simulator -n 2 -t 2 /path/to/job"],
+        sys.argv[1:],
+        deprecated=True,
+        deprecated_message="Use 'python job.py' with SimEnv instead.",
+    )
+    print_human("WARNING: 'nvflare simulator' is deprecated. Use 'python job.py' with SimEnv instead.")
     status = run_simulator(simulator_args)
     # make sure the script terminate after run
     if status:
@@ -98,11 +113,23 @@ def def_authz_preview_parser(sub_cmd):
     cmd = CMD_AUTHZ_PREVIEW
     authz_preview_parser = sub_cmd.add_parser(cmd, help="[deprecated] preview authorization policy")
     define_authz_preview_parser(authz_preview_parser)
+    authz_preview_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     return {cmd: authz_preview_parser}
 
 
 def handle_authz_preview(args):
-    print("WARNING: 'nvflare authz_preview' is deprecated and will be removed in a future release.", file=sys.stderr)
+    from nvflare.tool.cli_output import print_human
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        None,
+        "nvflare authz_preview",
+        ["nvflare authz_preview -p /path/to/policy.json"],
+        sys.argv[1:],
+        deprecated=True,
+        deprecated_message="This command is deprecated and will be removed in a future release.",
+    )
+    print_human("WARNING: 'nvflare authz_preview' is deprecated and will be removed in a future release.")
     run_command(args)
 
 
@@ -118,7 +145,31 @@ def def_config_parser(sub_cmd):
         "-d", "--startup_kit_dir", type=str, nargs="?", default=None, help="startup kit location"
     )
     config_parser.add_argument(
+        "--poc.startup_kit",
+        dest="poc_startup_kit_dir",
+        type=str,
+        nargs="?",
+        default=None,
+        help="POC startup kit location",
+    )
+    config_parser.add_argument(
+        "--prod.startup_kit",
+        dest="prod_startup_kit_dir",
+        type=str,
+        nargs="?",
+        default=None,
+        help="production startup kit location",
+    )
+    config_parser.add_argument(
         "-pw", "--poc_workspace_dir", type=str, nargs="?", default=None, help="POC workspace location"
+    )
+    config_parser.add_argument(
+        "--poc.workspace",
+        dest="poc_workspace_dir_v2",
+        type=str,
+        nargs="?",
+        default=None,
+        help="POC workspace location",
     )
     config_parser.add_argument(
         "-jt", "--job_templates_dir", type=str, nargs="?", default=None, help="job templates location"
@@ -143,43 +194,94 @@ def handle_config_cmd(args):
     )
 
     config_file_path, nvflare_config = get_hidden_config()
+    requested_poc_startup = args.poc_startup_kit_dir if args.poc_startup_kit_dir is not None else args.startup_kit_dir
+    requested_prod_startup = args.prod_startup_kit_dir
+    requested_poc_workspace = (
+        args.poc_workspace_dir_v2 if args.poc_workspace_dir_v2 is not None else args.poc_workspace_dir
+    )
 
-    if args.startup_kit_dir is None and args.poc_workspace_dir is None and args.job_templates_dir is None:
+    if (
+        requested_poc_startup is None
+        and requested_prod_startup is None
+        and requested_poc_workspace is None
+        and args.job_templates_dir is None
+    ):
         # Read-only: print existing config
-        startup_kit_dir = nvflare_config.get("startup_kit.path", None) if nvflare_config else None
-        poc_workspace_dir = nvflare_config.get("poc_workspace.path", None) if nvflare_config else None
+        poc_startup_kit_dir = nvflare_config.get("poc.startup_kit", None) if nvflare_config else None
+        prod_startup_kit_dir = nvflare_config.get("prod.startup_kit", None) if nvflare_config else None
+        startup_kit_dir = poc_startup_kit_dir or prod_startup_kit_dir
+        poc_workspace_dir = nvflare_config.get("poc.workspace", None) if nvflare_config else None
         job_templates_dir = nvflare_config.get("job_template.path", None) if nvflare_config else None
         output_ok(
             {
                 "config_file": config_file_path,
                 "startup_kit_dir": startup_kit_dir,
+                "poc_startup_kit_dir": poc_startup_kit_dir,
+                "prod_startup_kit_dir": prod_startup_kit_dir,
                 "poc_workspace_dir": poc_workspace_dir,
                 "job_templates_dir": job_templates_dir,
             }
         )
         return
 
-    nvflare_config = create_startup_kit_config(nvflare_config, args.startup_kit_dir)
-    nvflare_config = create_poc_workspace_config(nvflare_config, args.poc_workspace_dir)
+    nvflare_config = create_startup_kit_config(nvflare_config, requested_poc_startup, target=TARGET_POC)
+    nvflare_config = create_startup_kit_config(nvflare_config, requested_prod_startup, target=TARGET_PROD)
+    nvflare_config = create_poc_workspace_config(nvflare_config, requested_poc_workspace)
     nvflare_config = create_job_template_config(nvflare_config, args.job_templates_dir)
 
     save_config(nvflare_config, config_file_path)
 
-    startup_kit_dir = nvflare_config.get("startup_kit.path", None) if nvflare_config else args.startup_kit_dir
-    poc_workspace_dir = nvflare_config.get("poc_workspace.path", None) if nvflare_config else args.poc_workspace_dir
+    poc_startup_kit_dir = nvflare_config.get("poc.startup_kit", None) if nvflare_config else requested_poc_startup
+    prod_startup_kit_dir = nvflare_config.get("prod.startup_kit", None) if nvflare_config else requested_prod_startup
+    startup_kit_dir = poc_startup_kit_dir or prod_startup_kit_dir
+    poc_workspace_dir = nvflare_config.get("poc.workspace", None) if nvflare_config else requested_poc_workspace
     job_templates_dir = nvflare_config.get("job_template.path", None) if nvflare_config else args.job_templates_dir
 
     output_ok(
         {
             "config_file": config_file_path,
             "startup_kit_dir": startup_kit_dir,
+            "poc_startup_kit_dir": poc_startup_kit_dir,
+            "prod_startup_kit_dir": prod_startup_kit_dir,
             "poc_workspace_dir": poc_workspace_dir,
             "job_templates_dir": job_templates_dir,
         }
     )
 
 
-def _patch_help_on_error(parser):
+def _get_subcommand_choices(parser):
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            return sorted(action.choices.keys())
+    return []
+
+
+def _emit_argparse_error_json(parser, message):
+    from nvflare.tool.cli_output import SCHEMA_VERSION
+
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "status": "error",
+        "exit_code": 4,
+        "error_code": "INVALID_ARGS",
+        "message": message,
+        "hint": "Run with --help to see usage.",
+        "data": {
+            "usage": parser.format_usage().strip(),
+            "choices": _get_subcommand_choices(parser),
+        },
+    }
+    print(json.dumps(payload))
+    parser.exit(4)
+
+
+def _emit_argparse_error_human(parser, message, exit_code: int = 2):
+    from nvflare.tool.cli_output import output_usage_error
+
+    output_usage_error(parser, message, exit_code=exit_code)
+
+
+def _patch_help_on_error(parser, json_mode: bool = False):
     """Recursively patch every parser in the tree to print help before error-exit.
 
     When argparse detects a missing required argument it calls parser.error(),
@@ -188,20 +290,45 @@ def _patch_help_on_error(parser):
     """
 
     def _error_with_help(message):
-        parser.print_help(sys.stderr)
-        print(f"\nerror: {parser.prog}: {message}", file=sys.stderr)
-        parser.exit(2)
+        if json_mode:
+            _emit_argparse_error_json(parser, message)
+        else:
+            _emit_argparse_error_human(parser, message, exit_code=2)
 
     parser.error = _error_with_help
     for action in parser._actions:
         if isinstance(action, argparse._SubParsersAction):
             for sub in action.choices.values():
-                _patch_help_on_error(sub)
+                _patch_help_on_error(sub, json_mode=json_mode)
+
+
+def _extract_global_args(argv):
+    """Parse global flags anywhere on the command line."""
+    global_parser = argparse.ArgumentParser(add_help=False)
+    global_parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
+    global_parser.add_argument("--out-format", dest="out_format", choices=["txt", "json"])
+    global_parser.add_argument("--connect-timeout", dest="connect_timeout", type=float)
+    return global_parser.parse_known_args(argv)
 
 
 def parse_args(prog_name: str):
+    global_args, filtered_argv = _extract_global_args(sys.argv[1:])
     _parser = argparse.ArgumentParser(description=prog_name)
     _parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
+    _parser.add_argument(
+        "--out-format",
+        dest="out_format",
+        choices=["txt", "json"],
+        default="txt",
+        help="output format: 'txt' (default, human-readable to stdout/stderr) or 'json' for machine-readable JSON envelope on stdout",
+    )
+    _parser.add_argument(
+        "--connect-timeout",
+        dest="connect_timeout",
+        type=float,
+        default=5.0,
+        help="seconds to wait for server connection (default: 5.0)",
+    )
     sub_cmd = _parser.add_subparsers(title="commands", metavar="", dest="sub_command")
     sub_cmd_parsers = {}
     sub_cmd_parsers.update(def_poc_parser(sub_cmd))
@@ -227,7 +354,7 @@ def parse_args(prog_name: str):
         # validation failures. Build just enough namespace to route to the handler;
         # the handler calls handle_schema_flag() as its first line and exits before
         # accessing any command-specific args.
-        positionals = [a for a in sys.argv[1:] if not a.startswith("-")]
+        positionals = [a for a in filtered_argv if not a.startswith("-")]
         ns = argparse.Namespace()
         raw_cmd = positionals[0] if positionals else None
         ns.sub_command = _CMD_ALIASES.get(raw_cmd, raw_cmd)
@@ -236,21 +363,33 @@ def parse_args(prog_name: str):
         ns.job_sub_cmd = sub_sub
         ns.poc_sub_cmd = sub_sub
         ns.system_sub_cmd = sub_sub
+        ns.cert_sub_command = sub_sub
+        ns.out_format = global_args.out_format or "txt"
+        ns.connect_timeout = global_args.connect_timeout or 5.0
+        ns.version = global_args.version
         return _parser, ns, sub_cmd_parsers
 
     # Patch every parser so it prints full help before exiting on error.
-    _patch_help_on_error(_parser)
+    _patch_help_on_error(_parser, json_mode=global_args.out_format == "json")
 
-    args, argv = _parser.parse_known_args(None, None)
-    cmd = args.__dict__.get("sub_command")
+    args, unknown = _parser.parse_known_args(filtered_argv)
+    cmd = _CMD_ALIASES.get(args.__dict__.get("sub_command"), args.__dict__.get("sub_command"))
+    args.sub_command = cmd
     sub_cmd_parser = sub_cmd_parsers.get(cmd)
-    if argv:
-        msg = f"{prog_name} {cmd}: unrecognized arguments: {' '.join(argv)}\n"
-        print(f"\nerror: {msg}", file=sys.stderr)
-        if sub_cmd_parser:
-            sub_cmd_parser.print_help(sys.stderr)
-        _parser.exit(2, "\n")
-    return _parser, _parser.parse_args(), sub_cmd_parsers
+    if unknown:
+        msg = f"unrecognized arguments: {' '.join(unknown)}"
+        if global_args.out_format == "json":
+            _emit_argparse_error_json(sub_cmd_parser or _parser, f"{prog_name} {cmd}: {msg}")
+        _emit_argparse_error_human(sub_cmd_parser or _parser, msg, exit_code=2)
+    final_args = _parser.parse_args(filtered_argv)
+    final_args.sub_command = _CMD_ALIASES.get(final_args.sub_command, final_args.sub_command)
+    if global_args.out_format is not None:
+        final_args.out_format = global_args.out_format
+    if global_args.connect_timeout is not None:
+        final_args.connect_timeout = global_args.connect_timeout
+    if global_args.version:
+        final_args.version = True
+    return _parser, final_args, sub_cmd_parsers
 
 
 handlers = {
@@ -269,10 +408,28 @@ handlers = {
 }
 
 
+def _auth_hint_from_detail(detail: str) -> str:
+    detail = (detail or "").lower()
+    if "unknown study" in detail or "not configured on the server" in detail:
+        return "Add the study under 'studies:' in project.yml with api_version: 4, reprovision, redeploy or restart the server, then try again."
+    if "not mapped to study" in detail:
+        return "Add this user under the study's admins mapping in project.yml, reprovision, redeploy or restart the server, then try again."
+    if "invalid study name" in detail:
+        return "Use a valid study name in project.yml, reprovision, redeploy or restart the server, then try again."
+    return "Check startup kit credentials."
+
+
 def run(prog_name):
     cwd = os.getcwd()
     sys.path.append(cwd)
     prog_parser, prog_args, sub_cmd_parsers = parse_args(prog_name)
+
+    from nvflare.tool.cli_output import set_connect_timeout, set_output_format
+
+    set_output_format(getattr(prog_args, "out_format", "txt"))
+    set_connect_timeout(getattr(prog_args, "connect_timeout", 5.0))
+    _suppress_cli_connector_noise()
+
     sub_cmd = None
     try:
         sub_cmd = prog_args.sub_command
@@ -283,9 +440,10 @@ def run(prog_name):
         else:
             prog_parser.print_help()
     except CLIUnknownCmdException as e:
-        print(e, file=sys.stderr)
-        print_help(prog_parser, sub_cmd, sub_cmd_parsers)
-        sys.exit(1)
+        from nvflare.tool.cli_output import output_usage_error
+
+        parser = sub_cmd_parsers.get(sub_cmd) if sub_cmd else prog_parser
+        output_usage_error(parser, str(e).strip(), exit_code=4)
     except CLIException as e:
         print(e, file=sys.stderr)
         sys.exit(1)
@@ -293,10 +451,16 @@ def run(prog_name):
         from nvflare.tool.cli_output import output_error
 
         output_error("CONNECTION_FAILED", exit_code=2)
-    except AuthenticationError:
+    except AuthenticationError as e:
         from nvflare.tool.cli_output import output_error
 
-        output_error("AUTH_FAILED", exit_code=2)
+        output_error(
+            "AUTH_FAILED",
+            message="Authentication failed.",
+            hint=_auth_hint_from_detail(str(e)),
+            exit_code=2,
+            detail=str(e),
+        )
     except TimeoutError:
         from nvflare.tool.cli_output import output_error
 
@@ -311,11 +475,22 @@ def run(prog_name):
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
 
 
+def _suppress_cli_connector_noise():
+    """Reduce noisy connector retry logs for CLI invocations only."""
+    import logging
+
+    noisy_loggers = [
+        "nvflare.fuel.f3.sfm.conn_manager",
+        "nvflare.fuel.f3.cellnet",
+    ]
+    for name in noisy_loggers:
+        logging.getLogger(name).setLevel(logging.CRITICAL)
+
+
 def print_help(prog_parser, sub_cmd, sub_cmd_parsers):
     if sub_cmd:
         sub_parser = sub_cmd_parsers[sub_cmd]
         if sub_parser:
-            print(f"Usage for subcommand '{sub_cmd}':\n", file=sys.stderr)
             sub_parser.print_help(sys.stderr)
         else:
             prog_parser.print_help(sys.stderr)

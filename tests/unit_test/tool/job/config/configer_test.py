@@ -118,6 +118,14 @@ class TestConfiger:
 
         assert result == updated_expected
 
+    def test_get_cli_config_without_optional_attrs(self):
+        args = argparse.Namespace()
+        args.job_folder = "/tmp/nvflare/job_folder"
+
+        result = get_cli_config(args, [DEFAULT_APP_NAME])
+
+        assert result == {}
+
     @pytest.mark.parametrize("origin_job, origin_config, expect_job, expect_config", MERGE_CONFIG_TEST_CASES)
     def test_merge_configs(self, origin_job, origin_config, expect_job, expect_config):
         args = _create_test_args(

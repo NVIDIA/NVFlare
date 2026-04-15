@@ -13,150 +13,316 @@
 # limitations under the License.
 
 import json
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
+from nvflare.tool import cli_output
 
-class TestJobMonitor:
-    """Tests for nvflare job monitor command."""
+
+def _make_args(job_id="abc123", timeout=0, interval=2, stats_target="server", metrics=None):
+    args = MagicMock()
+    args.job_id = job_id
+    args.timeout = timeout
+    args.interval = interval
+    args.stats_target = stats_target
+    args.metrics = metrics or []
+    return args
+
+
+def _make_meta(status="FINISHED_OK", job_name="test-job", duration="0:01:30"):
+    from nvflare.apis.job_def import JobMetaKey
+
+    return {
+        JobMetaKey.STATUS.value: status,
+        JobMetaKey.JOB_NAME.value: job_name,
+        JobMetaKey.DURATION.value: duration,
+    }
+
+
+def _mock_session(rc, meta):
+    """Return a patch context for _session() that yields a mock session."""
+    mock_sess = MagicMock()
+    mock_sess.monitor_job_and_return_job_meta.return_value = (rc, meta)
+    mock_sess.show_stats.return_value = {}
+
+    @contextmanager
+    def _fake_session():
+        yield mock_sess
+
+    return patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session), mock_sess
+
+
+class TestJobMonitorOutput:
+    """Tests for nvflare job monitor output format and exit codes."""
 
     @pytest.fixture(autouse=True)
-    def agent_mode(self, monkeypatch):
-        monkeypatch.setenv("NVFLARE_CLI_MODE", "agent")
+    def json_mode(self, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
 
-    def _make_args(self, job_id="abc123", timeout=0, interval=2):
-        args = MagicMock()
-        args.job_id = job_id
-        args.timeout = timeout
-        args.interval = interval
-        return args
+    # ------------------------------------------------------------------
+    # Terminal states — exit codes and envelope shape
+    # ------------------------------------------------------------------
 
-    def test_monitor_finished_ok_exits_0(self, capsys):
-        """FINISHED_OK: stdout is one JSON envelope, exit 0."""
-        from nvflare.tool.job.job_cli import cmd_job_monitor
+    def test_finished_ok_exits_0(self, capsys):
+        meta = _make_meta("FINISHED_OK")
+        ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, meta)
+        with ctx:
+            from nvflare.tool.job.job_cli import cmd_job_monitor
 
-        args = self._make_args()
-        mock_sess = MagicMock()
-        mock_sess.wait_for_job.return_value = {"status": "FINISHED_OK", "job_id": "abc123"}
-
-        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
-            cmd_job_monitor(args)
+            cmd_job_monitor(_make_args())
 
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
         assert data["data"]["job_id"] == "abc123"
         assert data["data"]["status"] == "FINISHED_OK"
 
-    def test_monitor_failed_exits_1(self, capsys):
-        """FAILED: stdout is ok envelope, exit 1."""
-        from nvflare.tool.job.job_cli import cmd_job_monitor
+    def test_failed_outputs_terminal_failure_envelope_exits_1(self, capsys):
+        meta = _make_meta("FAILED")
+        ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, meta)
+        with ctx:
+            from nvflare.tool.job.job_cli import cmd_job_monitor
 
-        args = self._make_args()
-        mock_sess = MagicMock()
-        mock_sess.wait_for_job.return_value = {"status": "FAILED", "job_id": "abc123"}
-
-        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             with pytest.raises(SystemExit) as exc_info:
-                cmd_job_monitor(args)
+                cmd_job_monitor(_make_args())
         assert exc_info.value.code == 1
 
         captured = capsys.readouterr()
         data = json.loads(captured.out)
-        assert data["status"] == "ok"
+        assert data["status"] == "terminal_failure"
+        assert data["exit_code"] == 1
         assert data["data"]["status"] == "FAILED"
 
-    def test_monitor_aborted_exits_1(self, capsys):
-        """ABORTED: stdout is ok envelope, exit 1."""
-        from nvflare.tool.job.job_cli import cmd_job_monitor
+    def test_aborted_outputs_terminal_failure_envelope_exits_1(self, capsys):
+        meta = _make_meta("ABORTED")
+        ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, meta)
+        with ctx:
+            from nvflare.tool.job.job_cli import cmd_job_monitor
 
-        args = self._make_args()
-        mock_sess = MagicMock()
-        mock_sess.wait_for_job.return_value = {"status": "ABORTED", "job_id": "abc123"}
-
-        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             with pytest.raises(SystemExit) as exc_info:
-                cmd_job_monitor(args)
+                cmd_job_monitor(_make_args())
         assert exc_info.value.code == 1
 
-    def test_monitor_timeout_exits_3(self):
-        """Timeout: exits 3 with TIMEOUT error code."""
-        from nvflare.tool.job.job_cli import cmd_job_monitor
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["status"] == "terminal_failure"
+        assert data["data"]["status"] == "ABORTED"
 
-        args = self._make_args(timeout=1)
-        mock_sess = MagicMock()
-        mock_sess.wait_for_job.side_effect = TimeoutError("timed out")
+    def test_abandoned_exits_1(self, capsys):
+        meta = _make_meta("ABANDONED")
+        ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, meta)
+        with ctx:
+            from nvflare.tool.job.job_cli import cmd_job_monitor
 
-        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             with pytest.raises(SystemExit) as exc_info:
-                cmd_job_monitor(args)
+                cmd_job_monitor(_make_args())
+        assert exc_info.value.code == 1
+
+    def test_finished_exception_exits_1(self, capsys):
+        meta = _make_meta("FINISHED_EXCEPTION")
+        ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, meta)
+        with ctx:
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_monitor(_make_args())
+        assert exc_info.value.code == 1
+
+    # ------------------------------------------------------------------
+    # Error cases
+    # ------------------------------------------------------------------
+
+    def test_timeout_exits_3_with_error_code(self, capsys):
+        ctx, _ = _mock_session(MonitorReturnCode.TIMEOUT, None)
+        with ctx:
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_monitor(_make_args(timeout=10))
         assert exc_info.value.code == 3
-
-    def test_monitor_timeout_error_code_in_json(self, capsys):
-        """Timeout: JSON envelope has TIMEOUT error_code."""
-        from nvflare.tool.job.job_cli import cmd_job_monitor
-
-        args = self._make_args()
-        mock_sess = MagicMock()
-        mock_sess.wait_for_job.side_effect = TimeoutError("timed out")
-
-        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
-            with pytest.raises(SystemExit):
-                cmd_job_monitor(args)
 
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["status"] == "error"
         assert data["error_code"] == "TIMEOUT"
+        assert data["exit_code"] == 3
 
-    def test_monitor_connection_failed_exits_2(self, capsys):
-        """Connection failure: exits 2 with CONNECTION_FAILED error code."""
-        from nvflare.tool.job.job_cli import cmd_job_monitor
+    def test_job_not_found_exits_1(self, capsys):
+        @contextmanager
+        def _fake_session():
+            sess = MagicMock()
+            sess.monitor_job_and_return_job_meta.side_effect = Exception("job does not exist")
+            yield sess
 
-        args = self._make_args()
-        mock_sess = MagicMock()
-        mock_sess.wait_for_job.side_effect = Exception("connection refused")
+        with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
+            from nvflare.tool.job.job_cli import cmd_job_monitor
 
-        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             with pytest.raises(SystemExit) as exc_info:
-                cmd_job_monitor(args)
+                cmd_job_monitor(_make_args())
+        assert exc_info.value.code == 1
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["error_code"] == "JOB_NOT_FOUND"
+
+    def test_connection_error_exits_2(self, capsys):
+        @contextmanager
+        def _fake_session():
+            sess = MagicMock()
+            sess.monitor_job_and_return_job_meta.side_effect = Exception("connection refused")
+            yield sess
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_monitor(_make_args())
         assert exc_info.value.code == 2
 
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["error_code"] == "CONNECTION_FAILED"
+        assert data["exit_code"] == 2
 
-    def test_monitor_no_human_text_on_stdout(self, capsys):
-        """No human-readable text leaks to stdout."""
-        from nvflare.tool.job.job_cli import cmd_job_monitor
+    # ------------------------------------------------------------------
+    # Envelope contents
+    # ------------------------------------------------------------------
 
-        args = self._make_args()
+    def test_envelope_contains_duration_s(self, capsys):
+        meta = _make_meta("FINISHED_OK", duration="0:01:30")
+        ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, meta)
+        with ctx:
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            cmd_job_monitor(_make_args())
+
+        data = json.loads(capsys.readouterr().out)
+        assert "duration_s" in data["data"]
+        assert data["data"]["duration_s"] == 90.0
+
+    def test_envelope_contains_job_meta_summary(self, capsys):
+        meta = _make_meta("FINISHED_OK", job_name="hello-pt")
+        ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, meta)
+        with ctx:
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            cmd_job_monitor(_make_args())
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["data"]["job_meta"]["job_name"] == "hello-pt"
+        assert data["data"]["job_meta"]["status"] == "FINISHED_OK"
+
+    def test_stats_raw_included_in_json_mode(self, capsys):
+        """In json mode, stats_raw is included in the envelope data."""
+        meta = _make_meta("FINISHED_OK")
         mock_sess = MagicMock()
-        mock_sess.wait_for_job.return_value = {"status": "FINISHED_OK", "job_id": "abc123"}
+        mock_sess.monitor_job_and_return_job_meta.return_value = (MonitorReturnCode.JOB_FINISHED, meta)
+        mock_sess.show_stats.return_value = {"server": {"round": 10, "loss": 0.05}}
 
-        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
-            cmd_job_monitor(args)
+        @contextmanager
+        def _fake_session():
+            yield mock_sess
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            cmd_job_monitor(_make_args())
+
+        data = json.loads(capsys.readouterr().out)
+        assert "stats_raw" in data["data"]
+
+    def test_no_human_text_on_stdout(self, capsys):
+        """In json mode, stdout contains only one JSON line."""
+        meta = _make_meta("FINISHED_OK")
+        ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, meta)
+        with ctx:
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            cmd_job_monitor(_make_args())
 
         captured = capsys.readouterr()
-        # stdout must parse as JSON
-        json.loads(captured.out)
-        # no prose on stdout
-        assert "status" not in captured.out or json.loads(captured.out)["status"] in ("ok", "error")
+        stdout_lines = [ln for ln in captured.out.splitlines() if ln.strip()]
+        assert len(stdout_lines) == 1
+        json.loads(stdout_lines[0])  # must be valid JSON
 
-    def test_monitor_parser_args(self):
-        """monitor parser: positional job_id, --timeout, --interval."""
+    # ------------------------------------------------------------------
+    # ENDED_BY_CB path (callback stopped monitoring)
+    # ------------------------------------------------------------------
+
+    def test_ended_by_cb_uses_last_meta(self, capsys):
+        """When rc is ENDED_BY_CB, result comes from cb_state last_meta."""
+        terminal_meta = _make_meta("FINISHED_OK")
+
+        def _side_effect(job_id, timeout, poll_interval, cb, state):
+            # Simulate callback receiving terminal status and stopping
+            state["last_meta"] = terminal_meta
+            cb(MagicMock(), job_id, terminal_meta, state)
+            return MonitorReturnCode.ENDED_BY_CB, None
+
+        mock_sess = MagicMock()
+        mock_sess.monitor_job_and_return_job_meta.side_effect = _side_effect
+        mock_sess.show_stats.return_value = {}
+
+        @contextmanager
+        def _fake_session():
+            yield mock_sess
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            cmd_job_monitor(_make_args())
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "ok"
+        assert data["data"]["status"] == "FINISHED_OK"
+
+    # ------------------------------------------------------------------
+    # Parser
+    # ------------------------------------------------------------------
+
+    def test_parser_args(self):
         import argparse
 
         from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser
 
         root = argparse.ArgumentParser()
-        subs = root.add_subparsers()
-        def_job_cli_parser(subs)
+        def_job_cli_parser(root.add_subparsers())
 
         parser = job_sub_cmd_parser["monitor"]
-        assert parser is not None
         args = parser.parse_args(["abc123", "--timeout", "300", "--interval", "5"])
         assert args.job_id == "abc123"
         assert args.timeout == 300
         assert args.interval == 5
+
+    def test_parser_defaults(self):
+        import argparse
+
+        from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser
+
+        root = argparse.ArgumentParser()
+        def_job_cli_parser(root.add_subparsers())
+
+        parser = job_sub_cmd_parser["monitor"]
+        args = parser.parse_args(["abc123"])
+        assert args.timeout == 0
+        assert args.interval == 2
+        assert args.stats_target == "server"
+        assert args.metrics is None
+
+    def test_parser_stats_target_and_metric(self):
+        """--stats-target and --metric are parsed correctly."""
+        import argparse
+
+        from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser
+
+        root = argparse.ArgumentParser()
+        def_job_cli_parser(root.add_subparsers())
+
+        parser = job_sub_cmd_parser["monitor"]
+        args = parser.parse_args(["abc123", "--stats-target", "client", "--metric", "loss", "--metric", "accuracy"])
+        assert args.stats_target == "client"
+        assert args.metrics == ["loss", "accuracy"]

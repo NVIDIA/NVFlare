@@ -21,7 +21,8 @@ import shutil
 import sys
 from typing import Optional
 
-from nvflare.lighter.constants import PropKey
+from nvflare.apis.utils.format_check import name_check
+from nvflare.lighter.constants import AdminRole, ParticipantType, PropKey
 from nvflare.lighter.entity import participant_from_dict
 from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
 from nvflare.lighter.provisioner import Provisioner
@@ -53,6 +54,76 @@ role: $ROLE
 _provision_parser = None
 
 
+def _normalize_and_validate_studies(project_dict: dict, participant_defs: list, api_version: int) -> dict:
+    studies = project_dict.get("studies")
+    if studies is None:
+        return {}
+
+    if api_version != 4:
+        raise ValueError("studies: requires api_version: 4")
+
+    if not isinstance(studies, dict):
+        raise ValueError(f"studies must be a mapping but got {type(studies)}")
+
+    client_names = {p.get("name") for p in participant_defs if p.get("type") == ParticipantType.CLIENT}
+    admin_names = {p.get("name") for p in participant_defs if p.get("type") == ParticipantType.ADMIN}
+
+    normalized = {}
+    valid_roles = {AdminRole.PROJECT_ADMIN, AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER}
+    for study_name, study_def in studies.items():
+        if study_name == "default":
+            raise ValueError("study name 'default' is reserved")
+
+        err, _reason = name_check(study_name, "study")
+        if err:
+            raise ValueError(f"invalid study name '{study_name}'")
+
+        if study_def is None:
+            normalized[study_name] = {}
+            continue
+
+        if not isinstance(study_def, dict):
+            raise ValueError(f"study '{study_name}' must be a mapping")
+
+        sites = study_def.get("sites", [])
+        admins = study_def.get("admins", {})
+        if sites is None:
+            sites = []
+        if admins is None:
+            admins = {}
+
+        if not isinstance(sites, list):
+            raise ValueError(f"study '{study_name}' sites must be a list")
+        if not isinstance(admins, dict):
+            raise ValueError(f"study '{study_name}' admins must be a mapping")
+
+        for site in sites:
+            if site not in client_names:
+                raise ValueError(f"study '{study_name}' references unknown client '{site}'")
+
+        for admin_name, role in admins.items():
+            if admin_name not in admin_names:
+                raise ValueError(f"study '{study_name}' references unknown admin '{admin_name}'")
+            if role not in valid_roles:
+                raise ValueError(f"study '{study_name}' assigns unknown role '{role}' to '{admin_name}'")
+
+        normalized[study_name] = dict(study_def)
+
+    return normalized
+
+
+def _project_generation_result(workspace: str, project_yml: str):
+    rel_path = os.path.relpath(project_yml)
+    return {
+        "workspace": workspace,
+        "packages": [],
+        "project_yml": project_yml,
+        "message": "Sample project file generated.",
+        "next_step": "Edit the project file, then run provisioning.",
+        "suggested_command": f"nvflare provision -p {rel_path}",
+    }
+
+
 def define_provision_parser(parser):
     global _provision_parser
     _provision_parser = parser
@@ -81,12 +152,13 @@ def copy_project(project: str, dest: str):
     dummy_project = os.path.join(file_path, project)
     shutil.copyfile(dummy_project, dest)
     rel_path = os.path.relpath(dest)
-    from nvflare.tool.cli_output import print_human
+    from nvflare.tool.cli_output import is_json_mode, print_human
 
-    print_human(
-        f"{dest} was generated.  Please edit it to fit your NVFlare configuration. "
-        + f"Once done please run 'nvflare provision -p {rel_path}' to perform the provisioning"
-    )
+    if not is_json_mode():
+        print_human(
+            f"{dest} was generated.  Please edit it to fit your NVFlare configuration. "
+            + f"Once done please run 'nvflare provision -p {rel_path}' to perform the provisioning"
+        )
 
 
 def handle_provision(args):
@@ -109,7 +181,7 @@ def handle_provision(args):
     # Default when no project_file and no -g: generate sample project.yml (pre-2.7.0 behavior)
     if args.gen_edge:
         copy_project("edge_project.yml", current_project_yml)
-        output_ok({"workspace": current_path, "packages": [], "project_yml": current_project_yml})
+        output_ok(_project_generation_result(current_path, current_project_yml))
         try:
             install_skills()
         except Exception:
@@ -118,7 +190,7 @@ def handle_provision(args):
 
     if not args.project_file or args.generate:
         copy_project("dummy_project.yml", current_project_yml)
-        output_ok({"workspace": current_path, "packages": [], "project_yml": current_project_yml})
+        output_ok(_project_generation_result(current_path, current_project_yml))
         try:
             install_skills()
         except Exception:
@@ -132,9 +204,10 @@ def handle_provision(args):
     workspace_full_path = os.path.join(current_path, workspace)
 
     project_full_path = os.path.join(current_path, project_file)
-    from nvflare.tool.cli_output import print_human
+    from nvflare.tool.cli_output import is_json_mode, print_human
 
-    print_human(f"Project yaml file: {project_full_path}.")
+    if not is_json_mode():
+        print_human(f"Project yaml file: {project_full_path}.")
 
     add_user_full_path = os.path.join(current_path, args.add_user) if args.add_user else None
     add_client_full_path = os.path.join(current_path, args.add_client) if args.add_client else None
@@ -150,13 +223,14 @@ def handle_provision(args):
                 packages.append(item)
 
     output_ok({"workspace": workspace_full_path, "packages": packages})
-    from nvflare.tool.cli_output import print_human
+    from nvflare.tool.cli_output import is_json_mode, print_human
 
-    print_human(f"\nProvisioning complete. Packages written to: {workspace_full_path}")
-    if packages:
-        print_human(f"  Packages: {', '.join(packages)}")
-        print_human("  Verify each package with: nvflare preflight -p <package_path>")
-    print_human("  Distribute packages to each participant and run their start.sh")
+    if not is_json_mode():
+        print_human(f"\nProvisioning complete. Packages written to: {workspace_full_path}")
+        if packages:
+            print_human(f"  Packages: {', '.join(packages)}")
+            print_human("  Verify each package with: nvflare preflight -p <package_path>")
+        print_human("  Distribute packages to each participant and run their start.sh")
     try:
         install_skills()
     except Exception:
@@ -205,8 +279,8 @@ def provision(
 
 def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=None):
     api_version = project_dict.get(PropKey.API_VERSION)
-    if api_version not in [3]:
-        raise ValueError(f"API version expected 3 but found {api_version}")
+    if api_version not in [3, 4]:
+        raise ValueError(f"API version expected 3 or 4 but found {api_version}")
     project_name = project_dict.get(PropKey.NAME)
     if len(project_name) > 63:
         from nvflare.tool.cli_output import print_human
@@ -223,6 +297,8 @@ def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=
 
     if add_client_file_path:
         add_extra_clients(add_client_file_path, participant_defs)
+
+    project_dict["studies"] = _normalize_and_validate_studies(project_dict, participant_defs, api_version)
 
     for p in participant_defs:
         project.add_participant(participant_from_dict(p))

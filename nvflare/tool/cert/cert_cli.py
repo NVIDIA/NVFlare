@@ -257,6 +257,7 @@ def def_cert_cli_parser(sub_cmd) -> dict:
 def handle_cert_cmd(args):
     """Dispatch to the appropriate cert subcommand handler."""
     from nvflare.tool.cert.cert_commands import handle_cert_csr, handle_cert_init, handle_cert_sign
+    from nvflare.tool.cli_output import output_usage_error
 
     dispatch = {
         "init": handle_cert_init,
@@ -265,9 +266,8 @@ def handle_cert_cmd(args):
     }
     handler = dispatch.get(getattr(args, "cert_sub_command", None))
     if not handler:
-        if _cert_parser is not None:
-            _cert_parser.print_help()
-        import sys
-
-        sys.exit(0)
+        detail = (
+            "cert subcommand required" if getattr(args, "cert_sub_command", None) is None else "invalid cert subcommand"
+        )
+        output_usage_error(_cert_parser, detail, exit_code=4)
     handler(args)
