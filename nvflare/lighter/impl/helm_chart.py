@@ -168,6 +168,14 @@ class HelmChartBuilder(Builder):
                 "tag": tag,
                 "pullPolicy": "IfNotPresent",
             },
+            "serviceAccount": {
+                "create": True,
+                "annotations": {},
+                "automountServiceAccountToken": True,
+            },
+            "rbac": {
+                "create": True,
+            },
             "persistence": {
                 "etc": {
                     "claimName": self.etc_pvc,
@@ -183,11 +191,18 @@ class HelmChartBuilder(Builder):
             "fedLearnPort": fed_learn_port,
             "adminPort": admin_port if admin_port != fed_learn_port else None,
             "parentPort": self.parent_port,
+            "resources": {
+                "requests": {
+                    "cpu": "2",
+                    "memory": "8Gi",
+                },
+            },
+            "securityContext": {},
             "hostPortEnabled": True,
             "tcpConfigMapEnabled": True,
             "service": {
-                "type": False,
-                "loadBalancerIP": False,
+                "type": "ClusterIP",
+                "loadBalancerIP": None,
             },
             "command": ["/usr/local/bin/python3"],
             "args": args,
@@ -201,6 +216,8 @@ class HelmChartBuilder(Builder):
             (_helm_src("server", "deployment.yaml"), "server-deployment.yaml"),
             (_helm_src("server", "service.yaml"), "server-service.yaml"),
             (_helm_src("server", "tcp-services.yaml"), "server-tcp-services.yaml"),
+            (_helm_src("server", "serviceaccount.yaml"), "serviceaccount.yaml"),
+            (_helm_src("server", "role.yaml"), "role.yaml"),
         ]:
             shutil.copy(src, os.path.join(templates_dir, dst))
 
@@ -275,6 +292,14 @@ class HelmChartBuilder(Builder):
                 "tag": tag,
                 "pullPolicy": "Always",
             },
+            "serviceAccount": {
+                "create": True,
+                "annotations": {},
+                "automountServiceAccountToken": True,
+            },
+            "rbac": {
+                "create": True,
+            },
             "persistence": {
                 "etc": {
                     "claimName": self.etc_pvc,
@@ -288,6 +313,13 @@ class HelmChartBuilder(Builder):
                 },
             },
             "port": self.parent_port,
+            "securityContext": {},
+            "resources": {
+                "requests": {
+                    "cpu": "2",
+                    "memory": "8Gi",
+                },
+            },
             "command": ["/usr/local/bin/python3"],
             "args": args,
             "restartPolicy": "Never",
@@ -300,5 +332,7 @@ class HelmChartBuilder(Builder):
             (_helm_src("client", "_helpers.tpl"), "_helpers.tpl"),
             (_helm_src("client", "pod.yaml"), "client-pod.yaml"),
             (_helm_src("client", "service.yaml"), "service.yaml"),
+            (_helm_src("client", "serviceaccount.yaml"), "serviceaccount.yaml"),
+            (_helm_src("client", "role.yaml"), "role.yaml"),
         ]:
             shutil.copy(src, os.path.join(templates_dir, dst))

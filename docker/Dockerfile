@@ -11,5 +11,4 @@ COPY README.md /opt/NVFlare/README.md
 COPY setup.cfg /opt/NVFlare/setup.cfg
 WORKDIR /opt/NVFlare
 RUN pip install -U pip
-RUN pip install -e .
-
+RUN pip install -e . && pip install kubernetes

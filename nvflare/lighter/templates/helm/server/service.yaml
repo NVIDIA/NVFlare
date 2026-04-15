@@ -5,11 +5,13 @@ metadata:
   labels:
     {{- include "nvflare-server.labels" . | nindent 4 }}
 spec:
+  {{- if .Values.service }}
   {{- if .Values.service.type }}
   type: {{ .Values.service.type }}
   {{- end }}
   {{- if .Values.service.loadBalancerIP }}
   loadBalancerIP: {{ .Values.service.loadBalancerIP }}
+  {{- end }}
   {{- end }}
   selector:
     {{- include "nvflare-server.selectorLabels" . | nindent 4 }}

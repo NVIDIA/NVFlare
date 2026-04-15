@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import datetime
+import ipaddress
 import json
 import os
 import secrets
@@ -36,6 +37,13 @@ class Identity:
         self.name = name
         self.org = org
         self.role = role
+
+
+def _host_to_subject_alt_name(host: str):
+    try:
+        return x509.IPAddress(ipaddress.ip_address(host))
+    except ValueError:
+        return x509.DNSName(host)
 
 
 def generate_cert(
@@ -90,12 +98,12 @@ def generate_cert(
 
     if server_default_host:
         # This is to generate a server cert.
-        # Use SubjectAlternativeName for all host names
-        sans = [x509.DNSName(server_default_host)]
+        # Use SubjectAlternativeName for all host names or IP addresses.
+        sans = [_host_to_subject_alt_name(server_default_host)]
         if server_additional_hosts:
             for h in server_additional_hosts:
                 if h != server_default_host:
-                    sans.append(x509.DNSName(h))
+                    sans.append(_host_to_subject_alt_name(h))
         builder = builder.add_extension(x509.SubjectAlternativeName(sans), critical=False)
     else:
         builder = builder.add_extension(x509.SubjectAlternativeName([x509.DNSName(subject.name)]), critical=False)

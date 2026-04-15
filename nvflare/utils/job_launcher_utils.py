@@ -16,7 +16,7 @@ import os
 import sys
 
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, SystemVarName
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs
 
 
@@ -112,7 +112,7 @@ def extract_job_image(job_meta, site_name):
         for item in participants:
             if isinstance(item, dict):
                 sites = item.get(JobConstants.SITES)
-                if site_name in sites:
+                if sites and (site_name in sites or ALL_SITES in sites):
                     return item.get(JobConstants.JOB_IMAGE)
     return None
 

@@ -60,7 +60,7 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT,
     JOB_RETURN_CODE_MAPPING,
     POD_STATE_MAPPING,
-    VOLUME_MOUNT_LIST,
+    _volume_mount_list,
     JobState,
     K8sJobHandle,
     PodPhase,
@@ -76,7 +76,7 @@ def _make_job_config(**overrides):
         "image": "nvflare/nvflare:test",
         "container_name": "container-test-job-123",
         "command": "nvflare.private.fed.app.client.worker_process",
-        "volume_mount_list": VOLUME_MOUNT_LIST,
+        "volume_mount_list": _volume_mount_list(),
         "volume_list": [
             {"name": PvName.WORKSPACE.value, "persistentVolumeClaim": {"claimName": "ws-pvc"}},
             {"name": PvName.DATA.value, "persistentVolumeClaim": {"claimName": "data-pvc"}},
@@ -209,7 +209,7 @@ class TestK8sJobHandle:
     def test_max_stuck_count_uses_pending_timeout_when_no_timeout(self):
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg, timeout=None)
-        assert handle._max_stuck_count == 30
+        assert handle._max_stuck_count == 120
 
     def test_max_stuck_count_uses_custom_pending_timeout(self):
         cfg = _make_job_config()
@@ -270,7 +270,7 @@ class TestK8sJobHandle:
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
         container = handle.get_manifest()["spec"]["containers"][0]
-        assert container["volumeMounts"] == VOLUME_MOUNT_LIST
+        assert container["volumeMounts"] == _volume_mount_list()
 
     def test_manifest_args_contain_command(self):
         cfg = _make_job_config()

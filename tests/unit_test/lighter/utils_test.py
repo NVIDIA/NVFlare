@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import datetime
+import ipaddress
 import json
 import os
 import shutil
@@ -27,7 +28,7 @@ from cryptography.x509.oid import NameOID
 
 from nvflare.lighter.impl.cert import serialize_cert
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
-from nvflare.lighter.utils import load_yaml, sign_folders, verify_folder_signature
+from nvflare.lighter.utils import Identity, generate_cert as lighter_generate_cert, load_yaml, sign_folders, verify_folder_signature
 
 folders = ["folder1", "folder2"]
 files = ["file1", "file2"]
@@ -277,3 +278,43 @@ class TestVerifyFolderSignature:
         assert (
             verify_folder_signature(folder, root_ca_path, single_signer=False, signature_file=custom_sig_file) is True
         )
+
+
+@pytest.mark.xdist_group(name="lighter_utils_group")
+class TestGenerateCert:
+    def test_generate_cert_uses_ip_address_san_for_raw_ip(self):
+        root_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+        server_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+        server_pub_key = server_pri_key.public_key()
+
+        cert = lighter_generate_cert(
+            subject=Identity("server", "nvidia"),
+            issuer=Identity("root", "nvidia"),
+            signing_pri_key=root_pri_key,
+            subject_pub_key=server_pub_key,
+            server_default_host="34.118.10.20",
+        )
+
+        sans = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+
+        assert sans.get_values_for_type(x509.IPAddress) == [ipaddress.ip_address("34.118.10.20")]
+        assert sans.get_values_for_type(x509.DNSName) == []
+
+    def test_generate_cert_supports_mixed_dns_and_ip_subject_alt_names(self):
+        root_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+        server_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+        server_pub_key = server_pri_key.public_key()
+
+        cert = lighter_generate_cert(
+            subject=Identity("server", "nvidia"),
+            issuer=Identity("root", "nvidia"),
+            signing_pri_key=root_pri_key,
+            subject_pub_key=server_pub_key,
+            server_default_host="34.118.10.20",
+            server_additional_hosts=["server.example.com"],
+        )
+
+        sans = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+
+        assert sans.get_values_for_type(x509.IPAddress) == [ipaddress.ip_address("34.118.10.20")]
+        assert sans.get_values_for_type(x509.DNSName) == ["server.example.com"]

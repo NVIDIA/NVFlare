@@ -79,10 +79,11 @@ class PvName(Enum):
     DATA = "nvfldata"
 
 
-VOLUME_MOUNT_LIST = [
-    {"name": PvName.WORKSPACE.value, "mountPath": "/var/tmp/nvflare/workspace"},
-    {"name": PvName.DATA.value, "mountPath": "/var/tmp/nvflare/data"},
-]
+def _volume_mount_list(data_read_only: bool = True) -> list:
+    return [
+        {"name": PvName.WORKSPACE.value, "mountPath": "/var/tmp/nvflare/workspace"},
+        {"name": PvName.DATA.value, "mountPath": "/var/tmp/nvflare/data", "readOnly": data_read_only},
+    ]
 
 
 def uuid4_to_rfc1123(uuid_str: str) -> str:
@@ -105,7 +106,7 @@ class K8sJobHandle(JobHandleSpec):
         job_config: dict,
         namespace="default",
         timeout=None,
-        pending_timeout=30,
+        pending_timeout=120,
         python_path="/usr/local/bin/python",
     ):
         super().__init__()
@@ -167,6 +168,9 @@ class K8sJobHandle(JobHandleSpec):
         self.pod_manifest["metadata"]["name"] = job_config.get("name")
         self.pod_manifest["spec"]["containers"] = self.container_list
         self.pod_manifest["spec"]["volumes"] = self.volume_list
+        security_context = job_config.get("security_context")
+        if security_context:
+            self.pod_manifest["spec"]["securityContext"] = security_context
 
         image = job_config.get("image")
         if not image:
@@ -282,8 +286,10 @@ class K8sJobLauncher(JobLauncherSpec):
         study_data_pvc_file_path: str,
         timeout=None,
         namespace="default",
-        pending_timeout=30,
+        pending_timeout=120,
         python_path="/usr/local/bin/python",
+        data_read_only: bool = True,
+        security_context: dict = None,
     ):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -294,6 +300,8 @@ class K8sJobLauncher(JobLauncherSpec):
         self.namespace = namespace
         self.pending_timeout = pending_timeout
         self.python_path = python_path
+        self.data_read_only = data_read_only
+        self.security_context = security_context
         self.study_data_pvc_dict = None
         self.default_data_pvc = None
         self.core_v1 = None
@@ -329,7 +337,10 @@ class K8sJobLauncher(JobLauncherSpec):
             from kubernetes.client.api import core_v1_api
 
             try:
-                config.load_kube_config(self.config_file_path)
+                if self.config_file_path:
+                    config.load_kube_config(self.config_file_path)
+                else:
+                    config.load_incluster_config()
                 c = Configuration().get_default_copy()
             except AttributeError:
                 c = Configuration()
@@ -364,7 +375,7 @@ class K8sJobLauncher(JobLauncherSpec):
             "image": job_image,
             "container_name": f"container-{job_id}",
             "command": job_cmd,
-            "volume_mount_list": VOLUME_MOUNT_LIST,
+            "volume_mount_list": _volume_mount_list(self.data_read_only),
             "volume_list": [
                 {"name": PvName.WORKSPACE.value, "persistentVolumeClaim": {"claimName": self.workspace_pvc}},
                 {"name": PvName.DATA.value, "persistentVolumeClaim": {"claimName": data_pvc}},
@@ -377,6 +388,8 @@ class K8sJobLauncher(JobLauncherSpec):
             job_config.update({"set_list": args.set})
         if job_resource:
             job_config.update({"resources": {"limits": {"nvidia.com/gpu": job_resource}}})
+        if self.security_context:
+            job_config["security_context"] = self.security_context
         job_handle = K8sJobHandle(
             job_id,
             self.core_v1,

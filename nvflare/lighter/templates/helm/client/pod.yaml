@@ -5,6 +5,13 @@ metadata:
   labels:
     {{- include "nvflare-client.labels" . | nindent 4 }}
 spec:
+  {{- if .Values.serviceAccount.create }}
+  serviceAccountName: {{ include "nvflare-client.name" . }}
+  {{- end }}
+  {{- with .Values.securityContext }}
+  securityContext:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   restartPolicy: {{ .Values.restartPolicy }}
   volumes:
     - name: {{ .Values.persistence.etc.friendlyName }}
@@ -19,6 +26,10 @@ spec:
       image: {{ include "nvflare-client.image" . }}
       ports:
         - containerPort: {{ .Values.port }}
+      {{- with .Values.resources }}
+      resources:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       command:
         {{- toYaml .Values.command | nindent 8 }}
       args:
