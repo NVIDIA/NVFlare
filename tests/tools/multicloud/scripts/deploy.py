@@ -276,9 +276,9 @@ def deploy_participant(p: Participant, prod_dir: Path, server_ip: str | None = N
     kit_dir = prod_dir / p.name
     chart_dir = kit_dir / "helm_chart"
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Deploying {p.name} → {p.namespace}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     check_auth_for(p.kubeconfig)
 
@@ -358,7 +358,7 @@ def deploy_participant(p: Participant, prod_dir: Path, server_ip: str | None = N
         )
 
         print("  Waiting for PVCs to bind ...")
-        kubectl(p.kubeconfig, "-n", p.namespace, "wait", f"--for=condition=Ready", f"pod/{pod_name}", "--timeout=600s")
+        kubectl(p.kubeconfig, "-n", p.namespace, "wait", "--for=condition=Ready", f"pod/{pod_name}", "--timeout=600s")
 
         kubectl(p.kubeconfig, "-n", p.namespace, "cp", str(kit_dir / "startup"), f"{pod_name}:/ws/startup")
         kubectl(p.kubeconfig, "-n", p.namespace, "cp", str(kit_dir / "local"), f"{pod_name}:/ws/local")
@@ -378,7 +378,7 @@ def deploy_participant(p: Participant, prod_dir: Path, server_ip: str | None = N
         helm_args += p.helm_overrides
 
         if p.role == "server" and server_ip:
-            helm_args += ["--set", f"service.type=LoadBalancer", "--set", f"service.loadBalancerIP={server_ip}"]
+            helm_args += ["--set", "service.type=LoadBalancer", "--set", f"service.loadBalancerIP={server_ip}"]
 
         if p.security_context:
             for k, v in _flatten_set("securityContext", p.security_context):
@@ -386,8 +386,8 @@ def deploy_participant(p: Participant, prod_dir: Path, server_ip: str | None = N
 
         if "aws" in p.kubeconfig.lower():
             if not aws_image:
-                print(f"  WARNING: No --aws-image set. AWS client will use GCP image from values.yaml.")
-                print(f"           EKS cannot pull from GCP Artifact Registry without mirroring.")
+                print("  WARNING: No --aws-image set. AWS client will use GCP image from values.yaml.")
+                print("           EKS cannot pull from GCP Artifact Registry without mirroring.")
             else:
                 repo, tag = aws_image.rsplit(":", 1)
                 helm_args += ["--set", f"image.repository={repo}", "--set", f"image.tag={tag}"]
@@ -469,11 +469,11 @@ def cmd_up(args):
     for p in participants:
         deploy_participant(p, prod_dir, server_ip=server_ip, aws_image=args.aws_image)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Deployment complete.")
     print(f"  Server IP:   {server_ip}")
     print(f"  Admin kit:   {prod_dir / 'admin@nvidia.com'}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 def cmd_down(args):
