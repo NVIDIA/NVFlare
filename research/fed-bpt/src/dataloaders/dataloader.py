@@ -45,8 +45,8 @@ from transformers import RobertaTokenizer
 
 
 def convert_to_features(example_batch, tokenizer):
-    input_encodings = tokenizer.batch_encode_plus(example_batch["input_text"])
-    target_encodings = tokenizer.batch_encode_plus(example_batch["target_text"], add_special_tokens=False)
+    input_encodings = tokenizer(example_batch["input_text"])
+    target_encodings = tokenizer(example_batch["target_text"], add_special_tokens=False)
     mask_pos = []
     for input_ids in input_encodings["input_ids"]:
         mask_pos.append(input_ids.index(tokenizer.mask_token_id))

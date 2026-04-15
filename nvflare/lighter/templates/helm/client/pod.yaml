@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "nvflare-client.name" . }}
+  labels:
+    {{- include "nvflare-client.labels" . | nindent 4 }}
+spec:
+  restartPolicy: {{ .Values.restartPolicy }}
+  volumes:
+    - name: {{ .Values.persistence.etc.friendlyName }}
+      persistentVolumeClaim:
+        claimName: {{ .Values.persistence.etc.claimName }}
+    - name: {{ .Values.persistence.workspace.friendlyName }}
+      persistentVolumeClaim:
+        claimName: {{ .Values.persistence.workspace.claimName }}
+  containers:
+    - name: {{ include "nvflare-client.name" . }}
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      image: {{ include "nvflare-client.image" . }}
+      ports:
+        - containerPort: {{ .Values.port }}
+      command:
+        {{- toYaml .Values.command | nindent 8 }}
+      args:
+        {{- toYaml .Values.args | nindent 8 }}
+        - uid={{ .Values.name }}
+      volumeMounts:
+        - name: {{ .Values.persistence.etc.friendlyName }}
+          mountPath: {{ .Values.persistence.etc.mountPath }}
+        - name: {{ .Values.persistence.workspace.friendlyName }}
+          mountPath: {{ .Values.persistence.workspace.mountPath }}
