@@ -52,12 +52,12 @@ class TestExtractJobImage:
         meta = {
             "deploy_map": {
                 "app": [
-                    {"sites": ["client-1"], "image": "ecr/img:v1"},
                     {"sites": ["@ALL"], "image": "default/img:v1"},
+                    {"sites": ["client-1"], "image": "ecr/img:v1"},
                 ]
             }
         }
-        # explicit match takes precedence (appears first)
+        # explicit match takes precedence regardless of ordering
         assert extract_job_image(meta, "client-1") == "ecr/img:v1"
         # @ALL catches the rest
         assert extract_job_image(meta, "client-2") == "default/img:v1"

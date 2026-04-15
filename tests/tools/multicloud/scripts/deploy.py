@@ -110,7 +110,7 @@ def run(cmd: list[str], check=True, capture=False, **kwargs) -> subprocess.Compl
     return subprocess.run(cmd, check=check, capture_output=capture, text=True, **kwargs)
 
 
-def run_quiet(cmd: list[str]) -> subprocess.CompletedResult:
+def run_quiet(cmd: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
@@ -183,10 +183,20 @@ def reserve_ip(project: str, region: str, provided_ip: str | None) -> tuple[str,
         return provided_ip, ""
     ip_name = f"nvflare-{os.environ.get('USER', 'dev')}-{int(time.time())}"
     print(f"Reserving static IP {ip_name} ...")
-    run(["gcloud", "compute", "addresses", "create", ip_name,
-         f"--region={region}", f"--project={project}", "--quiet"])
-    r = run(["gcloud", "compute", "addresses", "describe", ip_name,
-             f"--region={region}", f"--project={project}", "--format=value(address)"], capture=True)
+    run(["gcloud", "compute", "addresses", "create", ip_name, f"--region={region}", f"--project={project}", "--quiet"])
+    r = run(
+        [
+            "gcloud",
+            "compute",
+            "addresses",
+            "describe",
+            ip_name,
+            f"--region={region}",
+            f"--project={project}",
+            "--format=value(address)",
+        ],
+        capture=True,
+    )
     ip = r.stdout.strip()
     print(f"  Reserved: {ip} ({ip_name})")
     return ip, ip_name
@@ -196,8 +206,10 @@ def release_ip(ip_name: str, project: str, region: str):
     if not ip_name:
         return
     print(f"Releasing IP {ip_name} ...")
-    run(["gcloud", "compute", "addresses", "delete", ip_name,
-         f"--region={region}", f"--project={project}", "--quiet"], check=False)
+    run(
+        ["gcloud", "compute", "addresses", "delete", ip_name, f"--region={region}", f"--project={project}", "--quiet"],
+        check=False,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -230,11 +242,11 @@ def provision(server_ip: str, image: str) -> Path:
 # ---------------------------------------------------------------------------
 # Post-process resources.json for K8sJobLauncher
 # ---------------------------------------------------------------------------
-def patch_resources_json(kit_dir: Path, namespace: str, launcher_class: str,
-                         security_context: dict | None = None):
+def patch_resources_json(kit_dir: Path, namespace: str, launcher_class: str, security_context: dict | None = None):
     src = kit_dir / "local" / "resources.json.default"
     dst = kit_dir / "local" / "resources.json"
     r = json.loads(src.read_text())
+    replaced = False
     for i, c in enumerate(r["components"]):
         if "process_launcher" in c.get("id", "") or "ProcessJobLauncher" in c.get("path", ""):
             args = {
@@ -247,6 +259,9 @@ def patch_resources_json(kit_dir: Path, namespace: str, launcher_class: str,
             if security_context:
                 args["security_context"] = security_context
             r["components"][i] = {"id": "k8s_launcher", "path": launcher_class, "args": args}
+            replaced = True
+    if not replaced:
+        raise RuntimeError(f"No ProcessJobLauncher component found in {src}; cannot inject K8sJobLauncher.")
     dst.write_text(json.dumps(r, indent=4))
 
     etc_dir = kit_dir / "etc"
@@ -257,8 +272,7 @@ def patch_resources_json(kit_dir: Path, namespace: str, launcher_class: str,
 # ---------------------------------------------------------------------------
 # Deploy one participant
 # ---------------------------------------------------------------------------
-def deploy_participant(p: Participant, prod_dir: Path, server_ip: str | None = None,
-                       aws_image: str | None = None):
+def deploy_participant(p: Participant, prod_dir: Path, server_ip: str | None = None, aws_image: str | None = None):
     kit_dir = prod_dir / p.name
     chart_dir = kit_dir / "helm_chart"
 
@@ -278,20 +292,21 @@ def deploy_participant(p: Participant, prod_dir: Path, server_ip: str | None = N
     # 2. PVCs (idempotent via apply)
     print("  Creating PVCs ...")
     for pvc_name, cfg in p.pvc_config.items():
-        pvc_yaml = json.dumps({
-            "apiVersion": "v1", "kind": "PersistentVolumeClaim",
-            "metadata": {"name": pvc_name, "namespace": p.namespace},
-            "spec": {
-                "storageClassName": cfg["sc"],
-                "accessModes": [cfg["access"]],
-                "resources": {"requests": {"storage": cfg["size"]}},
-            },
-        })
-        r = run_quiet(["kubectl", "--kubeconfig", p.kubeconfig, "-n", p.namespace,
-                        "get", "pvc", pvc_name])
+        pvc_yaml = json.dumps(
+            {
+                "apiVersion": "v1",
+                "kind": "PersistentVolumeClaim",
+                "metadata": {"name": pvc_name, "namespace": p.namespace},
+                "spec": {
+                    "storageClassName": cfg["sc"],
+                    "accessModes": [cfg["access"]],
+                    "resources": {"requests": {"storage": cfg["size"]}},
+                },
+            }
+        )
+        r = run_quiet(["kubectl", "--kubeconfig", p.kubeconfig, "-n", p.namespace, "get", "pvc", pvc_name])
         if r.returncode != 0:
-            run(["kubectl", "--kubeconfig", p.kubeconfig, "-n", p.namespace,
-                 "apply", "-f", "-"], input=pvc_yaml)
+            run(["kubectl", "--kubeconfig", p.kubeconfig, "-n", p.namespace, "apply", "-f", "-"], input=pvc_yaml)
         else:
             print(f"    PVC {pvc_name} exists")
 
@@ -314,14 +329,17 @@ def deploy_participant(p: Participant, prod_dir: Path, server_ip: str | None = N
                     {"name": "ws", "persistentVolumeClaim": {"claimName": "nvflws"}},
                     {"name": "etc", "persistentVolumeClaim": {"claimName": "nvfletc"}},
                 ],
-                "containers": [{
-                    "name": "copy", "image": "busybox",
-                    "command": ["sleep", "600"],
-                    "volumeMounts": [
-                        {"name": "ws", "mountPath": "/ws"},
-                        {"name": "etc", "mountPath": "/etc-vol"},
-                    ],
-                }],
+                "containers": [
+                    {
+                        "name": "copy",
+                        "image": "busybox",
+                        "command": ["sleep", "600"],
+                        "volumeMounts": [
+                            {"name": "ws", "mountPath": "/ws"},
+                            {"name": "etc", "mountPath": "/etc-vol"},
+                        ],
+                    }
+                ],
             }
         }
 
@@ -329,20 +347,30 @@ def deploy_participant(p: Participant, prod_dir: Path, server_ip: str | None = N
             kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name, "--wait=false")
             time.sleep(5)
 
-        kubectl(p.kubeconfig, "-n", p.namespace, "run", pod_name,
-                "--image=busybox", "--restart=Never",
-                f"--overrides={json.dumps(pod_spec)}")
+        kubectl(
+            p.kubeconfig,
+            "-n",
+            p.namespace,
+            "run",
+            pod_name,
+            "--image=busybox",
+            "--restart=Never",
+            f"--overrides={json.dumps(pod_spec)}",
+        )
 
         print("  Waiting for PVCs to bind ...")
-        kubectl(p.kubeconfig, "-n", p.namespace, "wait",
-                f"--for=condition=Ready", f"pod/{pod_name}", "--timeout=600s")
+        kubectl(p.kubeconfig, "-n", p.namespace, "wait", f"--for=condition=Ready", f"pod/{pod_name}", "--timeout=600s")
 
-        kubectl(p.kubeconfig, "-n", p.namespace, "cp",
-                str(kit_dir / "startup"), f"{pod_name}:/ws/startup")
-        kubectl(p.kubeconfig, "-n", p.namespace, "cp",
-                str(kit_dir / "local"), f"{pod_name}:/ws/local")
-        kubectl(p.kubeconfig, "-n", p.namespace, "cp",
-                str(kit_dir / "etc" / "study_data_pvc.yaml"), f"{pod_name}:/etc-vol/study_data_pvc.yaml")
+        kubectl(p.kubeconfig, "-n", p.namespace, "cp", str(kit_dir / "startup"), f"{pod_name}:/ws/startup")
+        kubectl(p.kubeconfig, "-n", p.namespace, "cp", str(kit_dir / "local"), f"{pod_name}:/ws/local")
+        kubectl(
+            p.kubeconfig,
+            "-n",
+            p.namespace,
+            "cp",
+            str(kit_dir / "etc" / "study_data_pvc.yaml"),
+            f"{pod_name}:/etc-vol/study_data_pvc.yaml",
+        )
         kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name, "--wait=false")
 
         # 4. Helm install
@@ -351,8 +379,7 @@ def deploy_participant(p: Participant, prod_dir: Path, server_ip: str | None = N
         helm_args += p.helm_overrides
 
         if p.role == "server" and server_ip:
-            helm_args += ["--set", f"service.type=LoadBalancer",
-                          "--set", f"service.loadBalancerIP={server_ip}"]
+            helm_args += ["--set", f"service.type=LoadBalancer", "--set", f"service.loadBalancerIP={server_ip}"]
 
         if p.security_context:
             for k, v in _flatten_set("securityContext", p.security_context):
@@ -371,8 +398,15 @@ def deploy_participant(p: Participant, prod_dir: Path, server_ip: str | None = N
     # 5. Wait for server deployment
     if p.role == "server":
         print("  Waiting for server to be ready ...")
-        kubectl(p.kubeconfig, "-n", p.namespace, "wait",
-                "--for=condition=available", f"deployment/{p.name}", "--timeout=600s")
+        kubectl(
+            p.kubeconfig,
+            "-n",
+            p.namespace,
+            "wait",
+            "--for=condition=available",
+            f"deployment/{p.name}",
+            "--timeout=600s",
+        )
 
 
 def _flatten_set(prefix: str, d: dict) -> list[tuple[str, str]]:
@@ -392,8 +426,7 @@ def _flatten_set(prefix: str, d: dict) -> list[tuple[str, str]]:
 def cmd_up(args):
     check_auth()
 
-    gcp_project = args.gcp_project or run(
-        ["gcloud", "config", "get-value", "project"], capture=True).stdout.strip()
+    gcp_project = args.gcp_project or run(["gcloud", "config", "get-value", "project"], capture=True).stdout.strip()
     gcp_region = args.gcp_region
 
     state = load_state()
@@ -408,11 +441,15 @@ def cmd_up(args):
         server_ip, ip_name = reserve_ip(gcp_project, gcp_region, args.server_ip)
 
     # Save state
-    state.update({
-        "server_ip": server_ip, "ip_name": ip_name,
-        "gcp_project": gcp_project, "gcp_region": gcp_region,
-        "participants": {p.name: {"kubeconfig": p.kubeconfig, "namespace": p.namespace} for p in participants},
-    })
+    state.update(
+        {
+            "server_ip": server_ip,
+            "ip_name": ip_name,
+            "gcp_project": gcp_project,
+            "gcp_region": gcp_region,
+            "participants": {p.name: {"kubeconfig": p.kubeconfig, "namespace": p.namespace} for p in participants},
+        }
+    )
     save_state(state)
 
     # Provision (skip if already done)
@@ -427,8 +464,7 @@ def cmd_up(args):
     # Post-process resources.json
     print("Post-processing resources.json for K8sJobLauncher ...")
     for p in participants:
-        patch_resources_json(
-            prod_dir / p.name, p.namespace, p.launcher_class, p.security_context)
+        patch_resources_json(prod_dir / p.name, p.namespace, p.launcher_class, p.security_context)
 
     # Deploy each participant
     for p in participants:
@@ -460,8 +496,9 @@ def cmd_down(args):
             continue
 
         run(["helm", "--kubeconfig", kc, "uninstall", name, "-n", ns], check=False)
-        r = run(["kubectl", "--kubeconfig", kc, "delete", "ns", ns,
-                 "--ignore-not-found", "--timeout=120s"], check=False)
+        r = run(
+            ["kubectl", "--kubeconfig", kc, "delete", "ns", ns, "--ignore-not-found", "--timeout=120s"], check=False
+        )
         if r.returncode != 0:
             fail = True
 
@@ -504,16 +541,12 @@ def main():
     sub = parser.add_subparsers(dest="command")
 
     up = sub.add_parser("up", help="Deploy server + clients")
-    up.add_argument("--gcp-image", default=os.environ.get("GCP_IMAGE", ""),
-                    help="GCP container image")
-    up.add_argument("--aws-image", default=os.environ.get("AWS_IMAGE", ""),
-                    help="AWS container image (ECR)")
-    up.add_argument("--server-ip", default=os.environ.get("GCP_SERVER_IP"),
-                    help="Static IP (omit to auto-reserve)")
+    up.add_argument("--gcp-image", default=os.environ.get("GCP_IMAGE", ""), help="GCP container image")
+    up.add_argument("--aws-image", default=os.environ.get("AWS_IMAGE", ""), help="AWS container image (ECR)")
+    up.add_argument("--server-ip", default=os.environ.get("GCP_SERVER_IP"), help="Static IP (omit to auto-reserve)")
     up.add_argument("--gcp-project", default=os.environ.get("GCP_PROJECT"))
     up.add_argument("--gcp-region", default=os.environ.get("GCP_REGION", "us-central1"))
-    up.add_argument("--force-provision", action="store_true",
-                    help="Re-provision even if output exists")
+    up.add_argument("--force-provision", action="store_true", help="Re-provision even if output exists")
 
     sub.add_parser("down", help="Tear down everything")
     sub.add_parser("status", help="Show deployment status")
