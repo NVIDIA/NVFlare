@@ -1358,7 +1358,7 @@ def cmd_job_monitor(cmd_args):
 
     from nvflare.apis.job_def import JobMetaKey
     from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
-    from nvflare.tool.cli_output import _is_json_mode, output_error, output_ok, print_human
+    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
     def _summarize_meta(meta: dict) -> dict:
@@ -1572,7 +1572,7 @@ def cmd_job_monitor(cmd_args):
         "job_meta": _summarize_meta(meta),
         "last_stats": cb_state.get("last_stats"),
     }
-    if _is_json_mode():
+    if is_json_mode():
         data["stats_raw"] = cb_state.get("last_stats_raw")
 
     if status in ("FAILED", "FINISHED_EXCEPTION", "ABORTED", "ABANDONED"):
@@ -1635,7 +1635,6 @@ def cmd_job_log(cmd_args):
                     exit_code=1,
                     detail=f"job is in terminal state: {job_status}",
                 )
-                return
             sess.configure_job_log(cmd_args.job_id, log_config, target=site)
     except Exception as e:
         from nvflare.fuel.flare_api.api_spec import NoConnection

@@ -200,10 +200,11 @@ class Session(SessionSpec):
         elif status == APIStatus.ERROR_INACTIVE_SESSION:
             raise SessionClosed("the session is closed on server")
         elif status in [APIStatus.ERROR_PROTOCOL, APIStatus.ERROR_SYNTAX]:
+            status_text = status.value if hasattr(status, "value") else str(status)
             details = result.get(ResultKey.DETAILS, "")
             if details:
-                raise InternalError(f"protocol error: {status}: {details}")
-            raise InternalError(f"protocol error: {status}")
+                raise InternalError(f"protocol error: {status_text}: {details}")
+            raise InternalError(f"protocol error: {status_text}")
         elif status in [APIStatus.ERROR_SERVER_CONNECTION]:
             raise ConnectionError(f"cannot connect to server: {status}")
         elif status != APIStatus.SUCCESS:

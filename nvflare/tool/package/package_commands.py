@@ -31,7 +31,7 @@ from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import load_crt, load_yaml, verify_cert
-from nvflare.tool.cli_output import _is_json_mode, output_error, output_ok, output_usage_error
+from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, output_usage_error
 from nvflare.tool.cli_schema import handle_schema_flag
 
 _VALID_SCHEMES = {"grpc", "tcp", "http"}
@@ -499,7 +499,7 @@ def handle_package(args):
     if not getattr(args, "endpoint", None):
         detail = f"for -t {args.kit_type}" if getattr(args, "kit_type", None) else "for this command"
         output_usage_error(
-            _package_parser if not _is_json_mode() else None,
+            _package_parser if not is_json_mode() else None,
             f"--endpoint is required {detail}.",
             exit_code=4,
             hint="Provide the server endpoint URI, e.g. grpc://server.example.com:8002",

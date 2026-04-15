@@ -193,7 +193,7 @@ def _render_status_human(result, target_type):
         else:
             client_count = len(clients) if clients else len(client_status_by_name)
 
-        if target_type == "all" or target_type == "server":
+        if target_type == "all":
             print_human(f"Registered clients: {client_count}")
         else:
             print_human(f"Clients: {client_count}")
@@ -287,7 +287,6 @@ def cmd_system_status(args):
             exit_code=2,
             detail=str(e),
         )
-        return
 
     _output_system_status(result, target_type)
 
@@ -310,7 +309,6 @@ def cmd_system_resources(args):
             result = sess.report_resources(target_type, client_names if client_names else None)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        return
 
     if not result:
         from nvflare.tool.cli_output import is_json_mode, print_human
@@ -341,7 +339,6 @@ def cmd_system_shutdown(args):
             sess.shutdown(target, client_names if client_names else None)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        return
 
     output_ok({"target": target, "status": "shutdown initiated"})
 
@@ -366,7 +363,6 @@ def cmd_system_restart(args):
             result = sess.restart(target, client_names if client_names else None)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        return
 
     output_ok({"target": target, "status": "restart initiated", "result": result})
 
@@ -400,13 +396,11 @@ def cmd_system_version(args):
             if site != "all":
                 if site not in known_sites:
                     output_error("SITE_NOT_FOUND", detail=f"site '{site}' not found")
-                    return
 
             targets = [site] if target_type == "client" else None
             raw_versions = sess.report_version(target_type, targets)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        return
 
     sites = [site] if site != "all" else known_sites
     versions = []
@@ -448,14 +442,12 @@ def cmd_system_log(args):
 
     if level and config_str:
         output_error("INVALID_ARGS", exit_code=4, detail="level and --config are mutually exclusive")
-        return
 
     if not level and not config_str:
         parser = _system_sub_cmd_parsers.get(CMD_SYSTEM_LOG)
         output_usage_error(
             None if getattr(args, "schema", False) else parser, "specify a log level or --config JSON/file", exit_code=4
         )
-        return
 
     log_config = resolve_log_config(level, config_str)
     if log_config is None:
@@ -468,14 +460,12 @@ def cmd_system_log(args):
             message="Log config is not valid JSON or a recognised log mode.",
             hint="Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, full, verbose, reload.",
         )
-        return
 
     try:
         with _system_session() as sess:
             sess.configure_site_log(log_config, target=site)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        return
 
     output_ok({"site": site, "log_config": log_config, "status": "applied"})
 
