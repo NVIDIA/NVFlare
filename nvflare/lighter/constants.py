@@ -196,7 +196,7 @@ class ProvFileName:
     REQUIREMENTS_TXT = "requirements.txt"
     SERVER_CONTEXT_TENSEAL = "server_context.tenseal"
     CLIENT_CONTEXT_TENSEAL = "client_context.tenseal"
-    HELM_CHART_DIR = "nvflare_hc"
+    HELM_CHART = "helm_chart"
     DEPLOYMENT_OVERSEER_YAML = "deployment_overseer.yaml"
     SERVICE_OVERSEER_YAML = "service_overseer.yaml"
     CHART_YAML = "Chart.yaml"
