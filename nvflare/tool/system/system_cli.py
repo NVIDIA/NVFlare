@@ -134,6 +134,12 @@ def _get_system_session():
 
     if not startup:
         startup = get_startup_kit_dir_for_target(target="poc")
+    if username is None:
+        output_error(
+            "STARTUP_KIT_MISSING",
+            exit_code=2,
+            detail="admin username could not be resolved from the startup kit",
+        )
 
     from nvflare.tool.cli_output import get_connect_timeout
 
