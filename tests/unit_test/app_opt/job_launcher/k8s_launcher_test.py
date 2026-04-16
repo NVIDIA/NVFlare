@@ -749,7 +749,7 @@ class TestK8sJobLauncherHandleEvent:
         try:
             launcher = _setup_launcher(ClientK8sJobLauncher)
             fl_ctx = FLContext()
-            job_meta = {JobMetaKey.DEPLOY_MAP.value: {"app": [{"sites": ["site-1"], "image": "nvflare/custom:latest"}]}}
+            job_meta = {JobMetaKey.RESOURCE_SPEC.value: {"site-1": {"k8s": {"image": "nvflare/custom:latest"}}}}
             fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
             fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, "site-1", private=False, sticky=True)
 
@@ -769,7 +769,7 @@ class TestK8sJobLauncherHandleEvent:
         try:
             launcher = _setup_launcher(ClientK8sJobLauncher)
             fl_ctx = FLContext()
-            job_meta = {JobMetaKey.DEPLOY_MAP.value: {}}
+            job_meta = {JobMetaKey.RESOURCE_SPEC.value: {}}
             fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
             fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, "site-1", private=False, sticky=True)
 
@@ -892,13 +892,14 @@ _EXPECTED_JOB_ID = uuid4_to_rfc1123(_JOB_UUID)
 
 
 def _make_launch_job_meta(site_name="site-1", image="nvflare/nvflare:latest", gpu=None):
-    meta = {
-        JobConstants.JOB_ID: _JOB_UUID,
-        JobMetaKey.DEPLOY_MAP.value: {"app": [{"sites": [site_name], "image": image}]},
-    }
+    k8s_spec = {"image": image}
     if gpu is not None:
-        meta[JobMetaKey.RESOURCE_SPEC.value] = {site_name: {"num_of_gpus": gpu}}
-    return meta
+        k8s_spec["num_of_gpus"] = gpu
+    return {
+        JobConstants.JOB_ID: _JOB_UUID,
+        JobMetaKey.DEPLOY_MAP.value: {"app": [site_name]},
+        JobMetaKey.RESOURCE_SPEC.value: {site_name: {"k8s": k8s_spec}},
+    }
 
 
 def _make_launch_fl_ctx(site_name="site-1", set_items=None, app_custom_folder=""):

@@ -246,6 +246,7 @@ class DockerJobLauncher(JobLauncherSpec):
         python_path: str = "/usr/local/bin/python",
         timeout: int = 30,
         default_job_container_kwargs: dict = None,
+        default_job_env: dict = None,
     ):
         """
         Args:
@@ -264,6 +265,10 @@ class DockerJobLauncher(JobLauncherSpec):
                                           Note: "volumes", "network", "environment", "command", "name",
                                           "detach", "user", "working_dir" are controlled by the launcher
                                           and cannot be overridden here.
+            default_job_env: site-level default environment variables injected into every job
+                             container launched by this site. Useful for site/runtime-specific
+                             settings such as NCCL workarounds. Launcher-controlled variables
+                             like USER, HOME, and PYTHONPATH still take precedence.
         """
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -284,6 +289,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 f"These are controlled by the launcher."
             )
         self.default_job_container_kwargs = default_job_container_kwargs
+        self.default_job_env = default_job_env or {}
 
         self._docker_client = None
 
@@ -371,6 +377,7 @@ class DockerJobLauncher(JobLauncherSpec):
         # Pass USER and HOME so libraries that call getpass.getuser() or os.path.expanduser("~")
         # don't fall back to pwd.getpwuid() — which fails when the host UID has no /etc/passwd entry.
         environment = {
+            **self.default_job_env,
             "USER": os.environ.get("USER", "nvflare"),
             "HOME": os.environ.get("HOME", "/tmp"),
         }

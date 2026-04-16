@@ -338,6 +338,10 @@ class TestDockerJobLauncherInit:
         launcher = _make_launcher(default_job_container_kwargs={"shm_size": "2g", "ipc_mode": "host"})
         assert launcher.default_job_container_kwargs == {"shm_size": "2g", "ipc_mode": "host"}
 
+    def test_default_job_env_accepted(self):
+        launcher = _make_launcher(default_job_env={"NCCL_P2P_DISABLE": "1"})
+        assert launcher.default_job_env == {"NCCL_P2P_DISABLE": "1"}
+
     def test_raises_if_docker_not_reachable(self):
         """Docker connectivity is validated lazily in _get_docker_client."""
         dc = _make_docker_client()
@@ -496,6 +500,40 @@ class TestDockerJobLauncherLaunchJob:
         call_kwargs = dc.containers.run.call_args[1]
         volumes = call_kwargs.get("volumes", {})
         assert "/var/run/docker.sock" not in volumes
+
+    def test_launch_merges_default_job_env(self):
+        launcher = _make_launcher(default_job_env={"NCCL_P2P_DISABLE": "1"})
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(), fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        environment = call_kwargs["environment"]
+        assert environment["NCCL_P2P_DISABLE"] == "1"
+        assert "USER" in environment
+        assert "HOME" in environment
+
+    def test_launcher_env_overrides_default_job_env(self):
+        launcher = _make_launcher(default_job_env={"USER": "wrong", "HOME": "/bad/home"})
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        with patch.dict("os.environ", {"USER": "actual-user", "HOME": "/real/home"}, clear=False):
+            fl_ctx, _ = _make_fl_ctx()
+            launcher.launch_job(_make_job_meta(), fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        environment = call_kwargs["environment"]
+        assert environment["USER"] == "actual-user"
+        assert environment["HOME"] == "/real/home"
 
     def test_launch_gpu_via_resource_spec_num_of_gpus(self):
         """num_of_gpus in resource_spec.docker is translated to device_requests for the job container."""

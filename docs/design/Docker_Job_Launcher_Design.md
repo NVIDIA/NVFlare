@@ -254,6 +254,8 @@ All Docker-specific resource requirements and runtime flags live under `resource
 
 Job-level `resource_spec[site][docker]` is merged with site-level defaults from `default_job_container_kwargs` in `local/resources.json`; job-level wins on conflict. Reserved keys controlled by the launcher (`volumes`, `network`, `environment`, `command`, `name`, `detach`, `user`, `working_dir`) cannot be overridden.
 
+Site-level default environment variables can be set with `default_job_env` in `local/resources.json`. This is intended for site/runtime-specific settings such as NCCL workarounds; launcher-controlled variables like `USER`, `HOME`, and `PYTHONPATH` still take precedence.
+
 Site-level defaults (set by site admin in `local/resources.json`):
 
 ```json
@@ -261,7 +263,8 @@ Site-level defaults (set by site admin in `local/resources.json`):
   "id": "docker_launcher",
   "path": "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher",
   "args": {
-    "default_job_container_kwargs": {"ipc_mode": "host"}
+    "default_job_container_kwargs": {"ipc_mode": "host"},
+    "default_job_env": {"NCCL_P2P_DISABLE": "1"}
   }
 }
 ```

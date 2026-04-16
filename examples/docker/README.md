@@ -114,6 +114,11 @@ Available jobs:
 - Site-level Docker defaults (e.g. `shm_size`, `ipc_mode`) can be set via
   `default_job_container_kwargs` in `resources.json` — job-level `resource_spec` takes
   precedence on conflict.
+- Some multi-GPU Docker environments may need `NCCL_P2P_DISABLE=1` to avoid NCCL hangs.
+  Set this site-wide with `default_job_env` in `resources.json`, for example:
+  ```json
+  "default_job_env": {"NCCL_P2P_DISABLE": "1"}
+  ```
 - Workspace files are bind-mounted at `/var/tmp/nvflare/workspace` inside all containers.
 - Job containers run as the same UID/GID as the SP/CP so all workspace files remain
   readable and writable by the parent process.
