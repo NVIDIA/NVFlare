@@ -1140,15 +1140,9 @@ def basic_cb_with_print(session: Session, job_id: str, job_meta, *cb_args, **cb_
 
     """
     try:
-        from nvflare.tool.cli_output import print_human
-
-        def _emit(msg, end="\n"):
-            print_human(msg, end=end)
-
-    except Exception:
-
-        def _emit(msg, end="\n"):
-            print(msg, end=end)
+        from nvflare.tool.cli_output import print_human as _emit
+    except ImportError:
+        _emit = print
 
     if job_meta["status"] == "RUNNING":
         if cb_kwargs["cb_run_counter"]["count"] < 3:
