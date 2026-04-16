@@ -162,6 +162,25 @@ _KNOWN_RECIPES = [
 ]
 
 
+def _framework_install_hint(framework: str = None) -> list[str]:
+    if framework == "pytorch":
+        return ['pip install nvflare[PT]', "pip install torch"]
+    if framework == "sklearn":
+        return ['pip install nvflare[SKLEARN]', "pip install scikit-learn"]
+    if framework == "tensorflow":
+        return ["pip install tensorflow"]
+    if framework == "xgboost":
+        return ["pip install xgboost"]
+    return [
+        'pip install nvflare[PT,SKLEARN]',
+        "pip install tensorflow xgboost",
+    ]
+
+
+def _framework_install_hint_text(framework: str = None) -> str:
+    return "Try: " + " ; ".join(_framework_install_hint(framework))
+
+
 def _load_catalog(framework: str = None) -> list:
     """Return available recipes, filtered by framework if given.
 
@@ -195,7 +214,14 @@ def cmd_recipe_list(cmd_args):
     catalog = _load_catalog(framework=framework)
 
     if framework and not catalog:
-        output_error("INVALID_ARGS", exit_code=4, detail=f"no installed recipes found for framework '{framework}'")
+        output_error(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _framework_install_hint_text(framework),
+            None,
+            exit_code=4,
+            detail=f"no installed recipes found for framework '{framework}'",
+        )
 
     if is_json_mode():
         output_ok(catalog)
@@ -203,7 +229,13 @@ def cmd_recipe_list(cmd_args):
 
     if not catalog:
         print_human("No recipes are currently available.")
-        print_human("Install optional framework dependencies to make recipe entries available.")
+        install_hints = _framework_install_hint(framework)
+        if framework:
+            print_human(f"Install the optional dependencies for '{framework}' recipes, then try again.")
+        else:
+            print_human("Install optional framework dependencies to make recipe entries available.")
+        for hint in install_hints:
+            print_human(f"  e.g. {hint}")
         print_human()
         return
 

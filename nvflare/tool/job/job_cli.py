@@ -498,9 +498,7 @@ def submit_job(cmd_args):
             else:
                 shutil.rmtree(temp_job_dir)
 
-
-def find_admin_user_and_dir(startup_kit_dir: Optional[str] = None, target: Optional[str] = None) -> Tuple[str, str]:
-    startup_kit_dir = get_startup_kit_dir_for_target(startup_kit_dir=startup_kit_dir, target=target)
+def _resolve_admin_user_and_dir_from_startup_kit(startup_kit_dir: str) -> Tuple[str, str]:
     if os.path.basename(startup_kit_dir) == "startup":
         admin_user_dir = os.path.dirname(startup_kit_dir)
         startup_dir = startup_kit_dir
@@ -523,6 +521,11 @@ def find_admin_user_and_dir(startup_kit_dir: Optional[str] = None, target: Optio
         raise ValueError(f"Unable to locate fed_admin configuration from startup kit location {startup_kit_dir}")
 
     return admin_username, admin_user_dir
+
+
+def find_admin_user_and_dir(startup_kit_dir: Optional[str] = None, target: Optional[str] = None) -> Tuple[str, str]:
+    startup_kit_dir = get_startup_kit_dir_for_target(startup_kit_dir=startup_kit_dir, target=target)
+    return _resolve_admin_user_and_dir_from_startup_kit(startup_kit_dir)
 
 
 def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
@@ -1354,7 +1357,7 @@ def cmd_job_monitor(cmd_args):
     import time
 
     from nvflare.apis.job_def import JobMetaKey
-    from nvflare.fuel.flare_api.api_spec import JobNotFound, MonitorReturnCode, NoConnection
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, MonitorReturnCode, NoConnection
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1542,9 +1545,8 @@ def cmd_job_monitor(cmd_args):
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         return
-    except NoConnection as e:
-        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        return
+    except (AuthenticationError, NoConnection):
+        raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
@@ -1588,7 +1590,7 @@ def cmd_job_monitor(cmd_args):
 
 
 def cmd_job_log(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import InvalidTarget, JobNotFound, NoConnection, NoReply
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, JobNotFound, NoConnection, NoReply
     from nvflare.tool.cli_output import output_error, output_ok, output_usage_error
     from nvflare.tool.cli_schema import handle_schema_flag
     from nvflare.tool.system.system_cli import resolve_log_config
@@ -1644,9 +1646,8 @@ def cmd_job_log(cmd_args):
                 )
                 return
             sess.configure_job_log(cmd_args.job_id, log_config, target=site)
-    except NoConnection as e:
-        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        return
+    except (AuthenticationError, NoConnection):
+        raise
     except InvalidTarget:
         output_error("SITE_NOT_FOUND", site=site)
         return

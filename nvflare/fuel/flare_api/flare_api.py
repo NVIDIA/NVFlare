@@ -949,7 +949,9 @@ class Session(SessionSpec):
         Args:
             job_id (str): ID of the job (must be RUNNING)
             config: str (level or LogMode), dict (dictConfig), or file path
-            target (str): "all", "server", or a client site name
+            target (str): "all", "server", or a client site name.
+                Note: "client" is reserved as the broadcast sentinel used by the
+                admin command protocol and is not a valid literal site name here.
 
         Returns: None
 

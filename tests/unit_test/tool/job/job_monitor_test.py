@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import JobNotFound, MonitorReturnCode, NoConnection
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, MonitorReturnCode, NoConnection
 from nvflare.tool import cli_output
 
 
@@ -169,7 +169,7 @@ class TestJobMonitorOutput:
         data = json.loads(captured.out)
         assert data["error_code"] == "JOB_NOT_FOUND"
 
-    def test_connection_error_exits_2(self, capsys):
+    def test_connection_error_propagates_to_top_level_handler(self):
         @contextmanager
         def _fake_session():
             sess = MagicMock()
@@ -179,14 +179,21 @@ class TestJobMonitorOutput:
         with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
             from nvflare.tool.job.job_cli import cmd_job_monitor
 
-            with pytest.raises(SystemExit) as exc_info:
+            with pytest.raises(NoConnection):
                 cmd_job_monitor(_make_args())
-        assert exc_info.value.code == 2
 
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert data["error_code"] == "CONNECTION_FAILED"
-        assert data["exit_code"] == 2
+    def test_authentication_error_propagates_to_top_level_handler(self):
+        @contextmanager
+        def _fake_session():
+            sess = MagicMock()
+            sess.monitor_job_and_return_job_meta.side_effect = AuthenticationError("bad cert")
+            yield sess
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            with pytest.raises(AuthenticationError):
+                cmd_job_monitor(_make_args())
 
     def test_missing_meta_exits_internal_error(self, capsys):
         ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, None)
