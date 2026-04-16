@@ -491,7 +491,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     def _collect_job_log_lines(self, log_file: str, tail_lines=None, grep_pattern=None):
         if tail_lines is not None:
-            lines = deque(maxlen=tail_lines)
+            lines = deque()
         else:
             lines = []
         collected_bytes = 0
@@ -502,17 +502,35 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 if grep_pattern and grep_pattern not in line:
                     continue
 
+                line_len = len(line.encode("utf-8", errors="replace"))
                 if tail_lines is None:
-                    line_len = len(line.encode("utf-8", errors="replace"))
                     if collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
                         truncated = True
                         break
                     collected_bytes += line_len
                     lines.append(line)
                 else:
-                    lines.append(line)
+                    if line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
+                        truncated = True
+                        continue
 
-        result = list(lines)
+                    while lines and len(lines) >= tail_lines:
+                        _removed_line, removed_len = lines.popleft()
+                        collected_bytes -= removed_len
+
+                    while lines and collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
+                        _removed_line, removed_len = lines.popleft()
+                        collected_bytes -= removed_len
+                        truncated = True
+
+                    if collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
+                        truncated = True
+                        continue
+
+                    lines.append((line, line_len))
+                    collected_bytes += line_len
+
+        result = [line for line, _ in lines] if tail_lines is not None else list(lines)
         if truncated:
             result.append(
                 f"... output truncated after {self.MAX_RETURNED_JOB_LOG_BYTES} bytes; use --tail/--grep to narrow results ...\n"

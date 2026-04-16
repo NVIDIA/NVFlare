@@ -19,6 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.fuel.flare_api.api_spec import AuthenticationError
 from nvflare.tool import cli_output
 
 
@@ -97,6 +98,17 @@ class TestSystemLog:
             assert data["data"]["log_config"] == config_dict
         finally:
             os.unlink(tmp_path)
+
+    def test_log_authentication_error_propagates_to_top_level_handler(self):
+        from nvflare.tool.system.system_cli import cmd_system_log
+
+        args = self._make_args(level="DEBUG")
+        mock_sess = self._make_session()
+        mock_sess.configure_site_log.side_effect = AuthenticationError("bad cert")
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=mock_sess):
+            with pytest.raises(AuthenticationError):
+                cmd_system_log(args)
 
     def test_log_level_missing_args_exits_4(self):
         """Neither level nor --config → INVALID_ARGS, exits 4."""

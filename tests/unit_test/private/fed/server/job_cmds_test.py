@@ -401,6 +401,23 @@ def test_get_job_log_truncates_large_output(tmp_path, monkeypatch):
     assert "truncated after 16 bytes" in payload["logs"]["server"]
 
 
+def test_get_job_log_tail_still_respects_byte_cap(tmp_path, monkeypatch):
+    job_cmds_module.ServerEngine = _FakeServerEngine
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+    log_file = Path(workspace.get_log_root("job-1")) / WorkspaceConstants.LOG_FILE_NAME
+    log_file.write_text("a" * 12 + "\n" + "b" * 12 + "\n" + "c" * 12 + "\n", encoding="utf-8")
+
+    monkeypatch.setattr(JobCommandModule, "MAX_RETURNED_JOB_LOG_BYTES", 16)
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "-n", "10"])
+
+    payload, _meta = conn.dicts[0]
+    assert "truncated after 16 bytes" in payload["logs"]["server"]
+    assert "aaaaaaaaaaaa" not in payload["logs"]["server"]
+
+
 def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch):
     workspace = _FakeWorkspace(tmp_path)
     engine = _FakeServerEngine(workspace)

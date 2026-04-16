@@ -18,7 +18,7 @@ import sys
 import time
 from contextlib import contextmanager
 
-from nvflare.tool.cli_output import output_error, output_ok, output_usage_error
+from nvflare.tool.cli_output import output_error, output_error_message, output_ok, output_usage_error
 
 CMD_SYSTEM_STATUS = "status"
 CMD_SYSTEM_RESOURCES = "resources"
@@ -30,23 +30,29 @@ CMD_SYSTEM_LOG = "log"
 _system_sub_cmd_parsers = {}
 
 
-def def_system_cli_parser(system_parser):
-    """system_parser is already created in cli.py — add subcommands here."""
-    system_parser.add_argument(
+def _add_system_connection_args(parser):
+    parser.add_argument(
         "--startup_kit",
         default=None,
         help="path to the admin startup kit directory (overrides target-based config lookup)",
     )
-    system_parser.add_argument(
+    parser.add_argument(
         "--target",
         choices=["poc", "prod"],
         default=None,
+        dest="startup_target",
         help="startup kit target to use from config.conf when --startup_kit is not supplied",
     )
+
+
+def def_system_cli_parser(system_parser):
+    """system_parser is already created in cli.py — add subcommands here."""
+    _add_system_connection_args(system_parser)
     sub = system_parser.add_subparsers(title="system subcommands", metavar="", dest="system_sub_cmd")
 
     # status
     p = sub.add_parser(CMD_SYSTEM_STATUS, help="show server and client status")
+    _add_system_connection_args(p)
     p.add_argument("target", nargs="?", choices=["server", "client"], default=None)
     p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--schema", action="store_true")
@@ -54,6 +60,7 @@ def def_system_cli_parser(system_parser):
 
     # resources
     p = sub.add_parser(CMD_SYSTEM_RESOURCES, help="show server and client resource usage")
+    _add_system_connection_args(p)
     p.add_argument("target", nargs="?", choices=["server", "client"], default=None)
     p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--schema", action="store_true")
@@ -61,6 +68,7 @@ def def_system_cli_parser(system_parser):
 
     # shutdown
     p = sub.add_parser(CMD_SYSTEM_SHUTDOWN, help="shut down server, client(s), or all")
+    _add_system_connection_args(p)
     p.add_argument("target", choices=["server", "client", "all"])
     p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--force", action="store_true")
@@ -69,6 +77,7 @@ def def_system_cli_parser(system_parser):
 
     # restart
     p = sub.add_parser(CMD_SYSTEM_RESTART, help="restart server, client(s), or all")
+    _add_system_connection_args(p)
     p.add_argument("target", choices=["server", "client", "all"])
     p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--force", action="store_true")
@@ -77,12 +86,14 @@ def def_system_cli_parser(system_parser):
 
     # version
     p = sub.add_parser(CMD_SYSTEM_VERSION, help="show NVFlare version on each remote site")
+    _add_system_connection_args(p)
     p.add_argument("--site", default="all", help="server, a client name, or all")
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_VERSION] = p
 
     # log
     p = sub.add_parser(CMD_SYSTEM_LOG, help="change logging level on server or client sites")
+    _add_system_connection_args(p)
     p.add_argument(
         "level",
         nargs="?",
@@ -134,16 +145,19 @@ def resolve_log_config(level_str, config_str):
 
 def _get_system_session(args=None):
     """Create a secure session using the startup kit."""
+    from nvflare.tool.cli_output import get_connect_timeout, print_human
     from nvflare.tool.cli_session import new_cli_session
     from nvflare.utils.cli_utils import get_startup_kit_dir_for_target
 
     try:
-        from nvflare.tool.job.job_cli import find_admin_user_and_dir
+        from nvflare.tool.job.job_cli import _resolve_admin_user_and_dir_from_startup_kit
 
-        startup_target = getattr(args, "target", None) or "poc"
+        startup_target = getattr(args, "startup_target", None) or "poc"
         startup_override = getattr(args, "startup_kit", None)
+        if args is not None and getattr(args, "startup_target", None) is None and startup_override is None:
+            print_human("No --target specified; defaulting to the POC startup kit.")
         startup = get_startup_kit_dir_for_target(startup_kit_dir=startup_override, target=startup_target)
-        username, startup = find_admin_user_and_dir(startup_kit_dir=startup, target=startup_target)
+        username, startup = _resolve_admin_user_and_dir_from_startup_kit(startup)
     except ValueError as e:
         output_error("STARTUP_KIT_MISSING", exit_code=2, detail=str(e))
         return
@@ -155,8 +169,6 @@ def _get_system_session(args=None):
         )
         return
 
-    from nvflare.tool.cli_output import get_connect_timeout
-
     timeout = get_connect_timeout()
     return new_cli_session(username=username, startup_kit_location=startup, timeout=timeout)
 
@@ -167,7 +179,8 @@ def _system_session(args=None):
     try:
         yield sess
     finally:
-        sess.close()
+        if sess is not None:
+            sess.close()
 
 
 def _fmt_ts(ts):
@@ -301,7 +314,7 @@ def cmd_system_status(args):
         with _system_session(args) as sess:
             result = sess.check_status(target_type, client_names if client_names else None)
     except Exception as e:
-        output_error(
+        output_error_message(
             "CONNECTION_FAILED",
             message="Could not connect to the FLARE server.",
             hint="Start the server or verify the admin startup kit endpoint.",
@@ -314,6 +327,7 @@ def cmd_system_status(args):
 
 
 def cmd_system_resources(args):
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -329,6 +343,8 @@ def cmd_system_resources(args):
     try:
         with _system_session(args) as sess:
             result = sess.report_resources(target_type, client_names if client_names else None)
+    except (AuthenticationError, NoConnection):
+        raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
@@ -343,6 +359,7 @@ def cmd_system_resources(args):
 
 
 def cmd_system_shutdown(args):
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -360,6 +377,8 @@ def cmd_system_shutdown(args):
     try:
         with _system_session(args) as sess:
             result = sess.shutdown(target, client_names if client_names else None)
+    except (AuthenticationError, NoConnection):
+        raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
@@ -368,6 +387,7 @@ def cmd_system_shutdown(args):
 
 
 def cmd_system_restart(args):
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -385,6 +405,8 @@ def cmd_system_restart(args):
     try:
         with _system_session(args) as sess:
             result = sess.restart(target, client_names if client_names else None)
+    except (AuthenticationError, NoConnection):
+        raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
@@ -393,6 +415,7 @@ def cmd_system_restart(args):
 
 
 def cmd_system_version(args):
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -425,6 +448,8 @@ def cmd_system_version(args):
 
             targets = [site] if target_type == "client" else None
             raw_versions = sess.report_version(target_type, targets)
+    except (AuthenticationError, NoConnection):
+        raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
@@ -446,6 +471,7 @@ def cmd_system_version(args):
 
 
 def cmd_system_log(args):
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -487,6 +513,8 @@ def cmd_system_log(args):
     try:
         with _system_session(args) as sess:
             sess.configure_site_log(log_config, target=site)
+    except (AuthenticationError, NoConnection):
+        raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return

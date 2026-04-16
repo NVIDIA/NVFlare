@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import json
 from unittest.mock import MagicMock, patch
 
@@ -30,6 +31,7 @@ class TestSystemStatus:
     def _make_args(self, target=None, client_names=None, output="json"):
         args = MagicMock()
         args.target = target
+        args.startup_target = None
         args.client_names = client_names or []
         args.output = output
         args.startup_kit = None
@@ -119,6 +121,7 @@ class TestSystemStatus:
 
         args = MagicMock()
         args.target = None
+        args.startup_target = None
         args.startup_kit = None
 
         with patch(
@@ -142,6 +145,7 @@ class TestSystemStatus:
 
         args = MagicMock()
         args.target = None
+        args.startup_target = None
         args.startup_kit = None
 
         with patch(
@@ -161,6 +165,7 @@ class TestSystemStatus:
 
         args = MagicMock()
         args.target = "prod"
+        args.startup_target = "prod"
         args.startup_kit = None
 
         with patch(
@@ -182,6 +187,7 @@ class TestSystemStatus:
 
         args = MagicMock()
         args.target = "prod"
+        args.startup_target = "prod"
         args.startup_kit = "/tmp/custom-startup"
 
         with patch(
@@ -198,11 +204,36 @@ class TestSystemStatus:
 
         get_startup.assert_called_once_with(startup_kit_dir="/tmp/custom-startup", target="prod")
 
+    def test_get_system_session_warns_when_defaulting_to_poc_target(self, capsys, monkeypatch):
+        from nvflare.tool.system.system_cli import _get_system_session
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        args = MagicMock()
+        args.target = None
+        args.startup_target = None
+        args.startup_kit = None
+
+        with patch(
+            "nvflare.utils.cli_utils.get_startup_kit_dir_for_target",
+            return_value="/tmp/poc-startup",
+        ):
+            with patch(
+                "nvflare.tool.job.job_cli._resolve_admin_user_and_dir_from_startup_kit",
+                return_value=("admin@nvidia.com", "/tmp/poc-startup"),
+            ):
+                with patch("nvflare.tool.cli_session.new_cli_session", return_value=MagicMock()):
+                    with patch("nvflare.tool.cli_output.get_connect_timeout", return_value=10.0):
+                        _get_system_session(args)
+
+        captured = capsys.readouterr()
+        assert "defaulting to the POC startup kit" in captured.out
+
     def test_get_system_session_resolves_startup_kit_once_before_username_lookup(self):
         from nvflare.tool.system.system_cli import _get_system_session
 
         args = MagicMock()
         args.target = "prod"
+        args.startup_target = "prod"
         args.startup_kit = None
 
         with patch(
@@ -226,6 +257,18 @@ class TestSystemStatus:
         with patch("nvflare.tool.system.system_cli._get_system_session", return_value=None):
             with _system_session():
                 pass
+
+    def test_system_parser_accepts_startup_kit_after_subcommand(self):
+        from nvflare.tool.system.system_cli import def_system_cli_parser
+
+        parser = argparse.ArgumentParser(prog="nvflare system")
+        def_system_cli_parser(parser)
+
+        args = parser.parse_args(["status", "--startup_kit", "/tmp/startup", "--target", "prod"])
+
+        assert args.system_sub_cmd == "status"
+        assert args.startup_kit == "/tmp/startup"
+        assert args.startup_target == "prod"
 
 
 class TestSystemResources:

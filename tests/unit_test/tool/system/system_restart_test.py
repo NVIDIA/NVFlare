@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.fuel.flare_api.api_spec import NoConnection
 from nvflare.tool import cli_output
 
 
@@ -105,3 +106,14 @@ class TestSystemRestart:
             with pytest.raises(SystemExit) as exc_info:
                 cmd_system_restart(args)
         assert exc_info.value.code == 2
+
+    def test_restart_no_connection_propagates_to_top_level_handler(self):
+        from nvflare.tool.system.system_cli import cmd_system_restart
+
+        args = self._make_args(force=True)
+        mock_sess = MagicMock()
+        mock_sess.restart.side_effect = NoConnection("conn error")
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=mock_sess):
+            with pytest.raises(NoConnection):
+                cmd_system_restart(args)
