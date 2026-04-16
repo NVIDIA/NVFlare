@@ -268,6 +268,7 @@ class TestConfigureJobLog:
     def test_sends_dict_config_as_json(self):
         session = _make_session()
         import json
+        import shlex
 
         config = {"version": 1, "disable_existing_loggers": False}
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
@@ -275,7 +276,7 @@ class TestConfigureJobLog:
         cmd = mock_cmd.call_args[0][0]
         assert AdminCommandNames.CONFIGURE_JOB_LOG in cmd
         assert "job1" in cmd
-        assert json.dumps(config) in cmd
+        assert shlex.quote(json.dumps(config)) in cmd
 
     def test_uses_target_parameter(self):
         session = _make_session()
@@ -303,13 +304,14 @@ class TestConfigureSiteLog:
     def test_sends_dict_config_as_json(self):
         session = _make_session()
         import json
+        import shlex
 
         config = {"version": 1, "disable_existing_loggers": False}
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
             session.configure_site_log(config)
         cmd = mock_cmd.call_args[0][0]
         assert AdminCommandNames.CONFIGURE_SITE_LOG in cmd
-        assert json.dumps(config) in cmd
+        assert shlex.quote(json.dumps(config)) in cmd
 
     def test_uses_target_parameter(self):
         session = _make_session()

@@ -945,10 +945,11 @@ class Session(SessionSpec):
 
         """
         import json as _json
+        import shlex as _shlex
 
         self._validate_job_id(job_id)
         if isinstance(config, dict):
-            config_str = _json.dumps(config)
+            config_str = _shlex.quote(_json.dumps(config))
         else:
             config_str = str(config)
 
@@ -968,9 +969,10 @@ class Session(SessionSpec):
 
         """
         import json as _json
+        import shlex as _shlex
 
         if isinstance(config, dict):
-            config_str = _json.dumps(config)
+            config_str = _shlex.quote(_json.dumps(config))
         else:
             config_str = str(config)
 

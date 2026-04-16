@@ -354,6 +354,18 @@ def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str
     if isinstance(config, dict):
         apply_log_config(config, dir_path, file_prefix=file_prefix)
     elif isinstance(config, str):
+        config = config.strip()
+
+        # Accept inline JSON strings forwarded through admin commands as dictConfig payloads.
+        if config.startswith("{") and config.endswith("}"):
+            try:
+                dict_config = json.loads(config)
+            except json.JSONDecodeError:
+                dict_config = None
+            if isinstance(dict_config, dict):
+                apply_log_config(dict_config, dir_path, file_prefix=file_prefix)
+                return
+
         # Handle pre-defined LogModes
         if config == LogMode.RELOAD:
             config = reload_path
