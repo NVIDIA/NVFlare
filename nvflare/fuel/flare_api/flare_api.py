@@ -132,7 +132,7 @@ class Session(SessionSpec):
         if status == APIStatus.SUCCESS:
             return
         if status in [APIStatus.ERROR_AUTHENTICATION, APIStatus.ERROR_CERT]:
-            raise AuthenticationError(details or "authentication failed")
+            raise AuthenticationError(details or "authentication failed", auth_code=result.get("auth_code"))
         if status == APIStatus.ERROR_AUTHORIZATION:
             raise AuthorizationError(details or "authorization failed")
         if status == APIStatus.ERROR_SERVER_CONNECTION:

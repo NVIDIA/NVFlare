@@ -686,12 +686,23 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             }
         elif self.login_result == "REJECT" or str(self.login_result).startswith("REJECT:"):
             detail = "Incorrect user name or password"
+            auth_code = None
             if str(self.login_result).startswith("REJECT:"):
-                detail = str(self.login_result).split(":", 1)[1].strip() or detail
-            return {
+                reject_detail = str(self.login_result).split(":", 1)[1].strip()
+                if reject_detail:
+                    parts = reject_detail.split(":", 1)
+                    if len(parts) == 2 and parts[0].strip().startswith("AUTH_"):
+                        auth_code = parts[0].strip()
+                        detail = parts[1].strip() or detail
+                    else:
+                        detail = reject_detail or detail
+            result = {
                 ResultKey.STATUS: APIStatus.ERROR_AUTHENTICATION,
                 ResultKey.DETAILS: detail,
             }
+            if auth_code:
+                result["auth_code"] = auth_code
+            return result
         return self._after_login()
 
     def _send_to_cell(self, ctx: CommandContext):

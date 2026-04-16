@@ -404,7 +404,14 @@ handlers = {
 }
 
 
-def _auth_hint_from_detail(detail: str) -> str:
+def _auth_hint_from_detail(detail: str, auth_code: str = None) -> str:
+    if auth_code == "AUTH_UNKNOWN_STUDY" or auth_code == "AUTH_STUDY_NOT_CONFIGURED":
+        return "Add the study under 'studies:' in project.yml with api_version: 4, reprovision, redeploy or restart the server, then try again."
+    if auth_code == "AUTH_STUDY_USER_NOT_MAPPED":
+        return "Add this user under the study's admins mapping in project.yml, reprovision, redeploy or restart the server, then try again."
+    if auth_code in {"AUTH_INVALID_STUDY_NAME", "AUTH_INVALID_STUDY"}:
+        return "Use a valid study name in project.yml, reprovision, redeploy or restart the server, then try again."
+
     detail = (detail or "").lower()
     if "unknown study" in detail or "not configured on the server" in detail:
         return "Add the study under 'studies:' in project.yml with api_version: 4, reprovision, redeploy or restart the server, then try again."
@@ -453,7 +460,7 @@ def run(prog_name):
         output_error(
             "AUTH_FAILED",
             message="Authentication failed.",
-            hint=_auth_hint_from_detail(str(e)),
+            hint=_auth_hint_from_detail(str(e), getattr(e, "auth_code", None)),
             exit_code=2,
             detail=str(e),
         )

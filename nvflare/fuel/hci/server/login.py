@@ -70,8 +70,11 @@ class LoginModule(CommandModule, CommandFilter):
         )
 
     def handle_cert_login(self, conn: Connection, args: List[str]):
-        def _reject(reason: str = ""):
-            conn.append_string(f"REJECT: {reason}" if reason else "REJECT")
+        def _reject(reason: str = "", code: str = ""):
+            if code:
+                conn.append_string(f"REJECT: {code}: {reason}" if reason else f"REJECT: {code}")
+            else:
+                conn.append_string(f"REJECT: {reason}" if reason else "REJECT")
 
         if len(args) != 2:
             _reject()
@@ -107,27 +110,30 @@ class LoginModule(CommandModule, CommandFilter):
             return
 
         if not isinstance(study, str):
-            _reject("study must be a string")
+            _reject("study must be a string", code="AUTH_INVALID_STUDY")
             return
 
         invalid, _ = name_check(study, "study")
         if invalid:
-            _reject(f"invalid study name '{study}'")
+            _reject(f"invalid study name '{study}'", code="AUTH_INVALID_STUDY_NAME")
             return
 
         registry = StudyRegistryService.get_registry()
         if study != DEFAULT_STUDY:
             if not registry:
                 self.logger.warning(f"rejecting login for user '{user_name}': no study registry for study '{study}'")
-                _reject(f"study '{study}' is not configured on the server")
+                _reject(f"study '{study}' is not configured on the server", code="AUTH_STUDY_NOT_CONFIGURED")
                 return
             if not registry.has_study(study):
                 self.logger.warning(f"rejecting login for user '{user_name}': unknown study '{study}'")
-                _reject(f"unknown study '{study}'")
+                _reject(f"unknown study '{study}'", code="AUTH_UNKNOWN_STUDY")
                 return
             if not registry.get_role(user_name, study):
                 self.logger.warning(f"rejecting login for user '{user_name}': no mapping for study '{study}'")
-                _reject(f"user '{user_name}' is not mapped to study '{study}'")
+                _reject(
+                    f"user '{user_name}' is not mapped to study '{study}'",
+                    code="AUTH_STUDY_USER_NOT_MAPPED",
+                )
                 return
 
         cert_dict = cert_to_dict(cert)

@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.hci.client.api import AdminAPI
 from nvflare.fuel.hci.client.api_spec import CommandContext
+from nvflare.fuel.hci.client.api_status import APIStatus
 
 
 def test_do_client_command_preserves_command_props():
@@ -111,3 +112,35 @@ def test_user_login_defaults_study_header(monkeypatch):
     api._user_login()
 
     assert captured["headers"]["study"] == DEFAULT_STUDY
+
+
+def test_user_login_parses_structured_reject_code(monkeypatch):
+    api = AdminAPI.__new__(AdminAPI)
+    api.client_key = "client.key"
+    api.client_cert = "client.crt"
+    api.user_name = "admin@nvidia.com"
+    api.study = "cancer-research"
+    api.login_result = None
+
+    class _FakeIdentityAsserter:
+        cert_data = "cert-data"
+
+        def __init__(self, private_key_file, cert_file):
+            pass
+
+        @staticmethod
+        def sign_common_name(nonce=""):
+            return "signature"
+
+    monkeypatch.setattr("nvflare.fuel.hci.client.api.IdentityAsserter", _FakeIdentityAsserter)
+
+    def _fake_server_execute(command, reply_processor, headers=None):
+        api.login_result = "REJECT: AUTH_STUDY_USER_NOT_MAPPED: user 'admin@nvidia.com' is not mapped to study 'cancer-research'"
+
+    api.server_execute = _fake_server_execute
+
+    result = api._user_login()
+
+    assert result["status"] == APIStatus.ERROR_AUTHENTICATION
+    assert result["details"] == "user 'admin@nvidia.com' is not mapped to study 'cancer-research'"
+    assert result["auth_code"] == "AUTH_STUDY_USER_NOT_MAPPED"

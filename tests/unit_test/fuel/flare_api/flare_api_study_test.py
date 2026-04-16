@@ -174,6 +174,24 @@ def test_try_connect_raises_on_login_failure():
         session.try_connect(5.0)
 
 
+def test_try_connect_preserves_auth_code():
+    session = _make_session_for_study(DEFAULT_STUDY)
+    session.api = SimpleNamespace(
+        closed=False,
+        connect=lambda timeout: None,
+        login=lambda: {
+            ResultKey.STATUS: APIStatus.ERROR_AUTHENTICATION,
+            ResultKey.DETAILS: "unknown study 'study-a'",
+            "auth_code": "AUTH_UNKNOWN_STUDY",
+        },
+    )
+
+    with pytest.raises(AuthenticationError, match="unknown study 'study-a'") as exc:
+        session.try_connect(5.0)
+
+    assert exc.value.auth_code == "AUTH_UNKNOWN_STUDY"
+
+
 def test_try_connect_raises_no_connection_on_server_connection_error():
     session = _make_session_for_study(DEFAULT_STUDY)
     session.api = SimpleNamespace(

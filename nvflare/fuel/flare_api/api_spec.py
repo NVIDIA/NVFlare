@@ -58,7 +58,9 @@ class InternalError(Exception):
 
 
 class AuthenticationError(Exception):
-    pass
+    def __init__(self, message="", auth_code=None):
+        super().__init__(message)
+        self.auth_code = auth_code
 
 
 class AuthorizationError(Exception):
