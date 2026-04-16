@@ -14,6 +14,7 @@
 
 """Tests for submit_job's _resolve_job_folder auto-discovery logic."""
 
+import json
 import os
 from unittest.mock import MagicMock, patch
 
@@ -225,3 +226,22 @@ class TestResolveJobFolder:
 
         assert username == "admin@nvidia.com"
         assert resolved == str(admin_dir)
+
+
+def test_get_session_missing_startup_kit_emits_startup_kit_missing(capsys, monkeypatch):
+    from nvflare.tool.job.job_cli import _get_session
+    from nvflare.tool import cli_output
+
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+
+    with patch(
+        "nvflare.tool.job.job_cli.find_admin_user_and_dir",
+        side_effect=ValueError("no startup kit configured"),
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            _get_session()
+
+    assert exc_info.value.code == 2
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["error_code"] == "STARTUP_KIT_MISSING"
+    assert "no startup kit configured" in envelope["message"]

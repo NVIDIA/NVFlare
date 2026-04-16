@@ -85,6 +85,19 @@ def test_report_resources_all_includes_server_and_clients(monkeypatch):
     assert ["site-1", "{'gpu': '1'}"] in rows
 
 
+def test_report_resources_all_keeps_server_when_no_clients_reply(monkeypatch):
+    module = SystemCommandModule()
+    conn = _MockConnection()
+    monkeypatch.setattr(module, "send_request_to_clients", lambda conn, message: [])
+
+    module.report_resources(conn, ["report_resources", "all"])
+
+    assert conn.errors == []
+    assert len(conn.tables) == 1
+    rows = [row for row, _meta in conn.tables[0].rows]
+    assert rows == [["server", "unlimited"]]
+
+
 def test_report_version_all_includes_server_and_clients(monkeypatch):
     module = SystemCommandModule()
     conn = _MockConnection()

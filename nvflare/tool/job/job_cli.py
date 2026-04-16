@@ -944,13 +944,18 @@ def create_app_dir(job_folder, app_name: str = "app"):
 
 def _get_session(admin_user_dir=None, username=None, study="default"):
     """Create a secure session using the startup kit."""
+    from nvflare.tool.cli_output import get_connect_timeout, output_error
+
     if admin_user_dir is None or username is None:
-        u, d = find_admin_user_and_dir()
+        try:
+            u, d = find_admin_user_and_dir()
+        except ValueError as e:
+            output_error("STARTUP_KIT_MISSING", exit_code=2, detail=str(e))
+            return
         if username is None:
             username = u
         if admin_user_dir is None:
             admin_user_dir = d
-    from nvflare.tool.cli_output import get_connect_timeout
 
     timeout = get_connect_timeout()
     return new_cli_session(
@@ -967,7 +972,8 @@ def _session(admin_user_dir=None, username=None, study="default"):
     try:
         yield sess
     finally:
-        sess.close()
+        if sess is not None:
+            sess.close()
 
 
 def cmd_job_list(cmd_args):
