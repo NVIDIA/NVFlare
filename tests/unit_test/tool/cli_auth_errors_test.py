@@ -96,7 +96,9 @@ def test_run_routes_cli_exception_through_error_envelope(capsys):
             side_effect=lambda fmt: setattr(cli_output, "_output_format", fmt),
         ):
             with patch("nvflare.tool.cli_output.set_connect_timeout"):
-                with patch.object(cli_mod, "handlers", {"job": lambda _args: (_ for _ in ()).throw(CLIException("boom"))}):
+                with patch.object(
+                    cli_mod, "handlers", {"job": lambda _args: (_ for _ in ()).throw(CLIException("boom"))}
+                ):
                     with pytest.raises(SystemExit) as exc_info:
                         cli_mod.run("nvflare")
 
