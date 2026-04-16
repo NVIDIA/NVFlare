@@ -410,10 +410,15 @@ class DockerJobLauncher(JobLauncherSpec):
         job_container_kwargs = {k: v for k, v in docker_spec.items() if k not in _NON_CONTAINER_KEYS}
         merged_container_kwargs = {**self.default_job_container_kwargs, **job_container_kwargs}
 
-        # GPU: translate num_of_gpus → device_requests (consistent with K8s/process launchers).
-        # Explicit device_requests in docker_spec takes precedence (fine-grain override).
-        if num_gpus:
-            merged_container_kwargs.setdefault("device_requests", [{"Count": num_gpus, "Capabilities": [["gpu"]]}])
+        # GPU precedence:
+        # 1. explicit job-level device_requests in docker_spec
+        # 2. job-level num_of_gpus translated to device_requests
+        # 3. site-level default device_requests from default_job_container_kwargs
+        #
+        # This preserves the documented rule that job-level resource_spec takes precedence
+        # over site-level defaults, while still allowing fine-grained device_requests overrides.
+        if num_gpus and "device_requests" not in job_container_kwargs:
+            merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
 
         # Volumes: always mount workspace; optionally mount study data if local/study_data.json exists
         volumes = {

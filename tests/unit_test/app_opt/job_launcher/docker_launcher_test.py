@@ -572,6 +572,24 @@ class TestDockerJobLauncherLaunchJob:
         call_kwargs = dc.containers.run.call_args[1]
         assert call_kwargs.get("device_requests") == explicit_dr
 
+    def test_launch_num_of_gpus_overrides_default_device_requests(self):
+        """Job-level num_of_gpus must override site-level default device_requests."""
+        launcher = _make_launcher(
+            default_job_container_kwargs={"device_requests": [{"Count": 1, "Capabilities": [["gpu"]]}]}
+        )
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1", docker_spec={"num_of_gpus": 2})
+        launcher.launch_job(job_meta, fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        assert call_kwargs.get("device_requests") == [{"Count": 2, "Capabilities": [["gpu"]]}]
+
     def test_launch_legacy_flat_resource_spec_not_used_for_docker(self):
         """Legacy flat resource_spec (process mode) is not applied to Docker containers."""
         launcher = _make_launcher()
