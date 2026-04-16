@@ -14,7 +14,7 @@
 
 import pytest
 
-from nvflare.tool.cli_errors import CLI_ERRORS, ERROR_REGISTRY, get_error
+from nvflare.tool.cli_errors import ERROR_REGISTRY, get_error
 
 # --- ERROR_REGISTRY presence and format checks ---
 
@@ -157,10 +157,7 @@ class TestGetError:
         assert isinstance(message, str)
         assert len(message) > 0
 
-    def test_all_registered_codes_are_tuples(self):
-        for code, value in CLI_ERRORS.items():
-            assert isinstance(value, tuple), f"CLI_ERRORS[{code!r}] is not a tuple"
-            assert len(value) == 2, f"CLI_ERRORS[{code!r}] does not have exactly 2 elements"
-            template, hint = value
-            assert isinstance(template, str), f"CLI_ERRORS[{code!r}] template is not a string"
-            assert isinstance(hint, str), f"CLI_ERRORS[{code!r}] hint is not a string"
+    def test_all_registered_codes_have_string_message_and_hint(self):
+        for code, entry in ERROR_REGISTRY.items():
+            assert isinstance(entry["message"], str), f"ERROR_REGISTRY[{code!r}] message is not a string"
+            assert isinstance(entry["hint"], str), f"ERROR_REGISTRY[{code!r}] hint is not a string"

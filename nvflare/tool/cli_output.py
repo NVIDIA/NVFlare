@@ -143,72 +143,72 @@ def output_ok(data: Any, exit_code: int = 0, status: str = "ok") -> None:
 
 def output_error(
     error_code: str,
-    message: str = None,
-    hint: str = None,
-    fmt: Optional[str] = None,
     exit_code: int = 1,
     detail: str = None,
     **kwargs,
 ) -> None:
-    """Print error envelope and exit. Never returns.
+    """Print an error from ERROR_REGISTRY and exit. Never returns."""
+    from nvflare.tool.cli_errors import ERROR_REGISTRY
 
-    Two calling patterns:
-    - Cert/package: output_error(code, message, hint, fmt, exit_code=N)
-    - Phase 0+1:    output_error(code, exit_code=N, job_id="abc", detail="...")
-    """
-    if message is None:
-        # Phase 0+1: look up from ERROR_REGISTRY, emit JSON in json mode
-        from nvflare.tool.cli_errors import ERROR_REGISTRY
-
-        entry = ERROR_REGISTRY.get(error_code, {"message": error_code, "hint": ""})
-        try:
-            message = entry["message"].format_map(kwargs) if kwargs else entry["message"]
-        except KeyError:
-            logger.warning("Missing format key for error %s: %s", error_code, entry["message"])
-            message = entry["message"]
-        if detail:
-            message = f"{message} \u2014 {detail}"
-        if _is_json_mode():
-            print(
-                json.dumps(
-                    {
-                        "schema_version": SCHEMA_VERSION,
-                        "status": "error",
-                        "exit_code": exit_code,
-                        "error_code": error_code,
-                        "message": message,
-                        "hint": entry["hint"],
-                    }
-                )
+    entry = ERROR_REGISTRY.get(error_code, {"message": error_code, "hint": ""})
+    try:
+        message = entry["message"].format_map(kwargs) if kwargs else entry["message"]
+    except KeyError:
+        logger.warning("Missing format key for error %s: %s", error_code, entry["message"])
+        message = entry["message"]
+    if detail:
+        message = f"{message} \u2014 {detail}"
+    if _is_json_mode():
+        print(
+            json.dumps(
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "status": "error",
+                    "exit_code": exit_code,
+                    "error_code": error_code,
+                    "message": message,
+                    "hint": entry["hint"],
+                }
             )
-        else:
-            print(message, file=sys.stderr)
-            if entry["hint"]:
-                print(f"Hint: {entry['hint']}", file=sys.stderr)
-            print(f"Code: {error_code} (exit {exit_code})", file=sys.stderr)
+        )
     else:
-        # Cert/package: explicit message/hint provided; fmt determines output format
-        resolved_hint = hint or ""
-        if detail:
-            message = f"{message} \u2014 {detail}"
-        if fmt == "json" or (fmt is None and _is_json_mode()):
-            print(
-                json.dumps(
-                    {
-                        "schema_version": SCHEMA_VERSION,
-                        "status": "error",
-                        "exit_code": exit_code,
-                        "error_code": error_code,
-                        "message": message,
-                        "hint": resolved_hint,
-                    }
-                )
+        print(message, file=sys.stderr)
+        if entry["hint"]:
+            print(f"Hint: {entry['hint']}", file=sys.stderr)
+        print(f"Code: {error_code} (exit {exit_code})", file=sys.stderr)
+    sys.exit(exit_code)
+
+
+def output_error_message(
+    error_code: str,
+    message: str,
+    hint: str = None,
+    fmt: Optional[str] = None,
+    exit_code: int = 1,
+    detail: str = None,
+) -> None:
+    """Print an explicit error message/hint pair and exit. Never returns."""
+    resolved_hint = hint or ""
+    if detail:
+        message = f"{message} \u2014 {detail}"
+    if fmt == "json" or (fmt is None and _is_json_mode()):
+        print(
+            json.dumps(
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "status": "error",
+                    "exit_code": exit_code,
+                    "error_code": error_code,
+                    "message": message,
+                    "hint": resolved_hint,
+                }
             )
-        else:
-            print(message, file=sys.stderr)
-            if resolved_hint:
-                print(f"Hint: {resolved_hint}", file=sys.stderr)
-            print(f"Code: {error_code} (exit {exit_code})", file=sys.stderr)
+        )
+    else:
+        print(message, file=sys.stderr)
+        if resolved_hint:
+            print(f"Hint: {resolved_hint}", file=sys.stderr)
+        print(f"Code: {error_code} (exit {exit_code})", file=sys.stderr)
     sys.exit(exit_code)
 
 
@@ -224,7 +224,7 @@ def output_usage_error(
     if not _is_json_mode() and parser is not None:
         parser.print_help(sys.stderr)
         print(file=sys.stderr)
-    output_error(error_code, message, hint, None, exit_code=exit_code, detail=detail)
+    output_error_message(error_code, message, hint, None, exit_code=exit_code, detail=detail)
 
 
 def print_human(*args, **kwargs):

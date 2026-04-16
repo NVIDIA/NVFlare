@@ -17,7 +17,7 @@ import json
 import pytest
 
 from nvflare.tool import cli_output
-from nvflare.tool.cli_output import SCHEMA_VERSION, output, output_error, output_ok, print_human
+from nvflare.tool.cli_output import SCHEMA_VERSION, output, output_error, output_error_message, output_ok, print_human
 
 # --- output() tests (cert/package commands) ---
 
@@ -177,23 +177,23 @@ class TestOutputOk:
             pass
 
 
-# --- output_error() tests: cert/package pattern (explicit message/hint/fmt) ---
+# --- output_error_message() tests: explicit message/hint/fmt) ---
 
 
 class TestOutputErrorCertPackage:
     def test_exits_with_code_1_by_default(self):
         with pytest.raises(SystemExit) as exc_info:
-            output_error("SOME_ERROR", "Something went wrong.", "Try again.", None)
+            output_error_message("SOME_ERROR", "Something went wrong.", "Try again.", None)
         assert exc_info.value.code == 1
 
     def test_exits_with_custom_code(self):
         with pytest.raises(SystemExit) as exc_info:
-            output_error("SOME_ERROR", "Something went wrong.", "Try again.", None, exit_code=4)
+            output_error_message("SOME_ERROR", "Something went wrong.", "Try again.", None, exit_code=4)
         assert exc_info.value.code == 4
 
     def test_stderr_text_format(self, capsys):
         with pytest.raises(SystemExit):
-            output_error("MY_CODE", "Error message here.", "Fix hint.", None)
+            output_error_message("MY_CODE", "Error message here.", "Fix hint.", None)
         captured = capsys.readouterr()
         assert "Error message here." in captured.err
         assert "Hint: Fix hint." in captured.err
@@ -202,7 +202,7 @@ class TestOutputErrorCertPackage:
 
     def test_json_format_goes_to_stdout(self, capsys):
         with pytest.raises(SystemExit):
-            output_error("MY_CODE", "Error message here.", "Fix hint.", "json")
+            output_error_message("MY_CODE", "Error message here.", "Fix hint.", "json")
         captured = capsys.readouterr()
         result = json.loads(captured.out)
         assert result["schema_version"] == SCHEMA_VERSION
@@ -215,7 +215,7 @@ class TestOutputErrorCertPackage:
 
     def test_json_format_exits(self):
         with pytest.raises(SystemExit) as exc_info:
-            output_error("MY_CODE", "msg", "hint", "json")
+            output_error_message("MY_CODE", "msg", "hint", "json")
         assert exc_info.value.code == 1
 
 

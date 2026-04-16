@@ -31,7 +31,7 @@ from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import load_crt, load_yaml, verify_cert
-from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, output_usage_error
+from nvflare.tool.cli_output import is_json_mode, output_error, output_error_message, output_ok, output_usage_error
 from nvflare.tool.cli_schema import handle_schema_flag
 
 _VALID_SCHEMES = {"grpc", "tcp", "http"}
@@ -127,7 +127,7 @@ def _discover_name_from_dir(work_dir: str, _args=None) -> str:
     """Find the single *.key file in work_dir and return its stem as the participant name."""
     keys = [f for f in os.listdir(work_dir) if f.endswith(".key")]
     if len(keys) == 0:
-        output_error(
+        output_error_message(
             "KEY_NOT_FOUND",
             f"No *.key file found in {work_dir}",
             "Run 'nvflare cert csr' to generate a key, or use --key explicitly.",
@@ -135,7 +135,7 @@ def _discover_name_from_dir(work_dir: str, _args=None) -> str:
             exit_code=1,
         )
     if len(keys) > 1:
-        output_error(
+        output_error_message(
             "AMBIGUOUS_KEY",
             f"Multiple *.key files found in {work_dir}: {keys}",
             "Specify the participant name with -n, or use --key explicitly.",
@@ -171,7 +171,7 @@ def _load_project_from_file(path: str) -> tuple:
     - Single-site YAML with name/org/type (converted to a minimal project)
     """
     if not os.path.isfile(path):
-        output_error(
+        output_error_message(
             "PROJECT_FILE_NOT_FOUND",
             f"Project file not found: {path}.",
             "Provide the path to a site-scoped project yaml file.",
@@ -181,7 +181,7 @@ def _load_project_from_file(path: str) -> tuple:
     try:
         project_dict = load_yaml(path)
     except Exception as ex:
-        output_error(
+        output_error_message(
             "INVALID_PROJECT_FILE",
             f"Failed to parse project file: {ex}",
             "Ensure the file is valid YAML.",
@@ -200,7 +200,7 @@ def _load_project_from_file(path: str) -> tuple:
     ):
         p_type = project_dict.get("type")
         if p_type not in _VALID_CERT_TYPES:
-            output_error(
+            output_error_message(
                 "INVALID_PROJECT_FILE",
                 f"Invalid site type: {p_type}",
                 "Use one of: client, server, org_admin, lead, member.",
@@ -221,7 +221,7 @@ def _load_project_from_file(path: str) -> tuple:
     try:
         project = prepare_project(project_dict)
     except Exception as ex:
-        output_error(
+        output_error_message(
             "INVALID_PROJECT_FILE",
             f"Invalid project file: {ex}",
             "Ensure the file is schema-compatible with 'nvflare provision' project.yaml (api_version: 3 or 4), "
@@ -231,7 +231,7 @@ def _load_project_from_file(path: str) -> tuple:
         )
 
     if project.get_relays():
-        output_error(
+        output_error_message(
             "UNSUPPORTED_TOPOLOGY",
             "Relay participants found in project file — hierarchical FL is not supported by 'nvflare package'.",
             "Use 'nvflare provision' for relay topologies.",
@@ -253,7 +253,7 @@ def _handle_package_yaml_mode(args, scheme, host, port):
 
     # --dir is required in yaml mode (no single key auto-discovery)
     if not getattr(args, "dir", None):
-        output_error(
+        output_error_message(
             "INVALID_ARGS",
             "--dir is required when using --project-file.",
             "Provide the directory containing cert files named by participant CN.",
@@ -263,7 +263,7 @@ def _handle_package_yaml_mode(args, scheme, host, port):
 
     rootca_path = os.path.join(args.dir, "rootCA.pem")
     if not os.path.isfile(rootca_path):
-        output_error(
+        output_error_message(
             "ROOTCA_NOT_FOUND",
             f"Root CA file not found: {rootca_path}.",
             f"Place the rootCA.pem from the Project Admin into {args.dir}.",
@@ -305,7 +305,7 @@ def _handle_package_yaml_mode(args, scheme, host, port):
             all_participants = [(t, p) for t, p in all_participants if t == kit_type_filter]
 
     if not all_participants:
-        output_error(
+        output_error_message(
             "NO_PARTICIPANTS",
             "No participants to build after applying type filter.",
             "Check the project file and -t filter.",
@@ -323,7 +323,7 @@ def _handle_package_yaml_mode(args, scheme, host, port):
     try:
         ca_cert = load_crt(rootca_path)
     except Exception as e:
-        output_error(
+        output_error_message(
             "ROOTCA_INVALID",
             f"Failed to load root CA certificate '{rootca_path}': {e}.",
             "Ensure the file is a valid PEM-encoded certificate.",
@@ -336,7 +336,7 @@ def _handle_package_yaml_mode(args, scheme, host, port):
         key_path = os.path.join(args.dir, f"{p_name}.key")
 
         if not os.path.isfile(cert_path):
-            output_error(
+            output_error_message(
                 "CERT_NOT_FOUND",
                 f"Certificate not found: {cert_path}.",
                 f"Drop {p_name}.crt from the Project Admin into {args.dir}.",
@@ -344,7 +344,7 @@ def _handle_package_yaml_mode(args, scheme, host, port):
                 exit_code=1,
             )
         if not os.path.isfile(key_path):
-            output_error(
+            output_error_message(
                 "KEY_NOT_FOUND",
                 f"Private key not found: {key_path}.",
                 f"Run 'nvflare cert csr -n {p_name}' to generate a key.",
@@ -422,7 +422,13 @@ def _handle_package_yaml_mode(args, scheme, host, port):
     ctx = provisioner.provision(project)
 
     if ctx.get(CtxKey.BUILD_ERROR):
-        output_error("BUILD_FAILED", "Kit assembly failed.", "See error output above for details.", None, exit_code=1)
+        output_error_message(
+            "BUILD_FAILED",
+            "Kit assembly failed.",
+            "See error output above for details.",
+            None,
+            exit_code=1,
+        )
 
     prod_dir = ctx[CtxKey.CURRENT_PROD_DIR]
 
@@ -472,7 +478,7 @@ def handle_package(args):
     has_project_file = bool(getattr(args, "project_file", None))
 
     if has_project_file and getattr(args, "name", None):
-        output_error(
+        output_error_message(
             "INVALID_ARGS",
             "--project-file and -n/--name are mutually exclusive.",
             "Use --project-file to define participants via yaml, or -n to name a single participant.",
@@ -481,7 +487,7 @@ def handle_package(args):
         )
 
     if has_project_file and any(getattr(args, attr, None) for attr in ("cert", "key", "rootca")):
-        output_error(
+        output_error_message(
             "INVALID_ARGS",
             "--project-file and --cert/--key/--rootca are mutually exclusive.",
             "In yaml mode, cert files are discovered from --dir by participant name. Do not pass --cert/--key/--rootca.",
@@ -514,7 +520,7 @@ def handle_package(args):
     has_explicit = any(getattr(args, attr, None) for attr in ("cert", "key", "rootca"))
 
     if has_dir and has_explicit:
-        output_error(
+        output_error_message(
             "INVALID_ARGS",
             "--dir and --cert/--key/--rootca are mutually exclusive.",
             "Use --dir for convention-based discovery, or --cert/--key/--rootca for explicit paths.",
@@ -522,7 +528,7 @@ def handle_package(args):
             exit_code=4,
         )
     if not has_dir and not has_explicit:
-        output_error(
+        output_error_message(
             "INVALID_ARGS",
             "Provide either --dir or all of --cert, --key, --rootca.",
             "Use --dir <work-dir> if all files are in one directory.",
@@ -542,7 +548,7 @@ def handle_package(args):
         # Explicit mode: all three paths and -n/--name are required.
         missing = [f"--{f}" for f in ("cert", "key", "rootca") if not getattr(args, f, None)]
         if missing:
-            output_error(
+            output_error_message(
                 "INVALID_ARGS",
                 f"Missing required argument(s): {', '.join(missing)}.",
                 "When using explicit mode, --cert, --key, and --rootca must all be provided.",
@@ -550,7 +556,7 @@ def handle_package(args):
                 exit_code=4,
             )
         if not args.name:
-            output_error(
+            output_error_message(
                 "INVALID_ARGS",
                 "-n/--name is required when using --cert/--key/--rootca.",
                 "Provide the participant name, e.g. -n hospital-1",
@@ -560,7 +566,7 @@ def handle_package(args):
 
     # Step 5: Guard sentinel name collision (host collision check happens after kit_type is known).
     if args.name == _DUMMY_SERVER_NAME:
-        output_error(
+        output_error_message(
             "INVALID_ARGS",
             f"Participant name {_DUMMY_SERVER_NAME!r} is reserved and cannot be used.",
             "Choose a different name for this participant.",
@@ -579,7 +585,7 @@ def handle_package(args):
             )
         else:
             hint = "Provide the signed certificate received from the Project Admin."
-        output_error("CERT_NOT_FOUND", f"Certificate file not found: {args.cert}.", hint, None, exit_code=1)
+        output_error_message("CERT_NOT_FOUND", f"Certificate file not found: {args.cert}.", hint, None, exit_code=1)
 
     if not os.path.isfile(args.key):
         hint = (
@@ -587,7 +593,7 @@ def handle_package(args):
             if has_dir
             else "Provide the private key generated by 'nvflare cert csr'."
         )
-        output_error("KEY_NOT_FOUND", f"Private key file not found: {args.key}.", hint, None, exit_code=1)
+        output_error_message("KEY_NOT_FOUND", f"Private key file not found: {args.key}.", hint, None, exit_code=1)
 
     if not os.path.isfile(args.rootca):
         hint = (
@@ -595,7 +601,7 @@ def handle_package(args):
             if has_dir
             else "Provide the rootCA.pem received from the Project Admin."
         )
-        output_error("ROOTCA_NOT_FOUND", f"Root CA file not found: {args.rootca}.", hint, None, exit_code=1)
+        output_error_message("ROOTCA_NOT_FOUND", f"Root CA file not found: {args.rootca}.", hint, None, exit_code=1)
 
     # Step 7: Load and validate cert chain
     try:
@@ -625,7 +631,7 @@ def handle_package(args):
 
     # Step 8c: Type-dependent pre-flight checks (require kit_type to be resolved first).
     if args.kit_type in _ADMIN_ROLES and name_check(args.name, "admin")[0]:
-        output_error(
+        output_error_message(
             "INVALID_ARGS",
             f"Admin name must be an email address (got {args.name!r}).",
             "Use an email-format name, e.g. alice@myorg.com",
@@ -636,7 +642,7 @@ def handle_package(args):
     # For non-server kits the endpoint hostname is used as the server placeholder name.
     # The participant name must not collide with it.
     if args.kit_type != "server" and args.name == host:
-        output_error(
+        output_error_message(
             "INVALID_ARGS",
             f"Participant name {args.name!r} collides with the server endpoint hostname.",
             "Use a different -n/--name that is distinct from the server hostname in --endpoint.",
@@ -697,7 +703,7 @@ def handle_package(args):
     ctx = provisioner.provision(project)
 
     if ctx.get(CtxKey.BUILD_ERROR):
-        output_error(
+        output_error_message(
             "BUILD_FAILED",
             "Kit assembly failed during provisioning.",
             "See error output above for details.",

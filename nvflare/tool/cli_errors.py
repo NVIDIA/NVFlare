@@ -205,13 +205,6 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
 }
 
-# Backward-compatible tuple dict — cert/package commands call get_error() which returns (message, hint).
-# Keep this derived from ERROR_REGISTRY so the two views cannot silently diverge.
-CLI_ERRORS: Dict[str, Tuple[str, str]] = {
-    code: (entry["message"], entry["hint"]) for code, entry in ERROR_REGISTRY.items()
-}
-
-
 def get_error(code: str, **kwargs) -> Tuple[str, str]:
     """Return (message, hint) for the given error code with placeholders filled.
 
