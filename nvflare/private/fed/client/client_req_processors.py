@@ -13,7 +13,13 @@
 # limitations under the License.
 
 from .info_coll_cmd import ClientInfoProcessor
-from .scheduler_cmds import CancelResourceProcessor, CheckResourceProcessor, ReportResourcesProcessor, StartJobProcessor
+from .scheduler_cmds import (
+    CancelResourceProcessor,
+    CheckResourceProcessor,
+    ReportResourcesProcessor,
+    ReportVersionProcessor,
+    StartJobProcessor,
+)
 from .shell_cmd import ShellCommandProcessor
 from .sys_cmd import ConfigureSiteLogProcessor, ReportEnvProcessor, SysInfoProcessor
 from .training_cmds import (  # StartClientMGpuProcessor,; SetRunNumberProcessor,
@@ -49,6 +55,7 @@ class ClientRequestProcessors:
         CheckResourceProcessor(),
         CancelResourceProcessor(),
         ReportResourcesProcessor(),
+        ReportVersionProcessor(),
         ReportEnvProcessor(),
         NotifyJobStatusProcessor(),
         ConfigureJobLogProcessor(),

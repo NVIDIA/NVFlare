@@ -100,6 +100,7 @@ class SysCommandTopic(object):
     REPORT_RESOURCES = "resource_manager.report_resources"
     REPORT_ENV = "sys.report_env"
     CONFIGURE_SITE_LOG = "sys.configure_site_log"
+    REPORT_VERSION = "sys.report_version"
 
 
 class ControlCommandTopic(object):
