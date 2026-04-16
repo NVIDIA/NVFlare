@@ -4,6 +4,10 @@ metadata:
   name: nvflare-server
   labels:
     {{- include "nvflare-server.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   {{- if .Values.service }}
   {{- if .Values.service.type }}

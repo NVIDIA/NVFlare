@@ -203,6 +203,7 @@ class HelmChartBuilder(Builder):
             "service": {
                 "type": "ClusterIP",
                 "loadBalancerIP": None,
+                "annotations": {},
             },
             "command": ["/usr/local/bin/python3"],
             "args": args,
@@ -313,6 +314,9 @@ class HelmChartBuilder(Builder):
                 },
             },
             "port": self.parent_port,
+            "service": {
+                "annotations": {},
+            },
             "securityContext": {},
             "resources": {
                 "requests": {
