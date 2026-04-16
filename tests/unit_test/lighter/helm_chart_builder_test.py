@@ -190,8 +190,12 @@ class TestClientChart:
 
             assert chart["appVersion"] == "2.7.0"
 
-    def test_comm_config_args_set_when_seeded(self):
-        """COMM_CONFIG_ARGS host/port must match the Helm Service name and containerPort."""
+    def test_comm_config_args_not_mutated_when_seeded(self):
+        """COMM_CONFIG_ARGS on the participant must NOT be mutated by HelmChartBuilder.
+
+        The builder must deep-copy the dict before updating it with Helm-specific values,
+        so the shared dict used by other builders (e.g. StaticFileBuilder) stays clean.
+        """
         project = _make_project(num_clients=1)
         _seed_comm_config_args(project)
         with tempfile.TemporaryDirectory() as root:
@@ -200,8 +204,7 @@ class TestClientChart:
 
         client = project.get_clients()[0]
         args = client.get_prop(PropKey.COMM_CONFIG_ARGS)
-        assert args[CommConfigArg.HOST] == "site-1", "host must equal client.name (= Kubernetes service name)"
-        assert args[CommConfigArg.PORT] == 18002, "port must equal parent_port (= containerPort / targetPort)"
+        assert args == {}, "shared COMM_CONFIG_ARGS must remain empty after HelmChartBuilder.build()"
 
     def test_comm_config_args_not_set_when_not_seeded(self):
         """When StaticFileBuilder has not run, COMM_CONFIG_ARGS is None; build() must not raise."""
@@ -405,8 +408,12 @@ class TestServerChart:
 
             assert values["parentPort"] == 9000
 
-    def test_server_comm_config_args_set_when_seeded(self):
-        """COMM_CONFIG_ARGS host must be 'server' and port must equal parent_port."""
+    def test_server_comm_config_args_not_mutated_when_seeded(self):
+        """COMM_CONFIG_ARGS on the server must NOT be mutated by HelmChartBuilder.
+
+        The builder must deep-copy the dict before updating it with Helm-specific values,
+        so the shared dict used by other builders (e.g. StaticFileBuilder) stays clean.
+        """
         project = _make_project()
         _seed_comm_config_args(project)
         with tempfile.TemporaryDirectory() as root:
@@ -415,8 +422,7 @@ class TestServerChart:
 
         server = project.get_server()
         args = server.get_prop(PropKey.COMM_CONFIG_ARGS)
-        assert args[CommConfigArg.HOST] == "nvflare-server"
-        assert args[CommConfigArg.PORT] == 18102, "port must equal parent_port"
+        assert args == {}, "shared COMM_CONFIG_ARGS must remain empty after HelmChartBuilder.build()"
 
     def test_server_comm_config_args_not_set_when_not_seeded(self):
         """When StaticFileBuilder has not run, COMM_CONFIG_ARGS is None; build() must not raise."""
