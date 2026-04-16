@@ -180,7 +180,7 @@ def def_config_parser(sub_cmd):
 
 
 def handle_config_cmd(args):
-    from nvflare.tool.cli_output import output_ok
+    from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -224,10 +224,13 @@ def handle_config_cmd(args):
         )
         return
 
-    nvflare_config = create_startup_kit_config(nvflare_config, requested_poc_startup, target=TARGET_POC)
-    nvflare_config = create_startup_kit_config(nvflare_config, requested_prod_startup, target=TARGET_PROD)
-    nvflare_config = create_poc_workspace_config(nvflare_config, requested_poc_workspace)
-    nvflare_config = create_job_template_config(nvflare_config, args.job_templates_dir)
+    try:
+        nvflare_config = create_startup_kit_config(nvflare_config, requested_poc_startup, target=TARGET_POC)
+        nvflare_config = create_startup_kit_config(nvflare_config, requested_prod_startup, target=TARGET_PROD)
+        nvflare_config = create_poc_workspace_config(nvflare_config, requested_poc_workspace)
+        nvflare_config = create_job_template_config(nvflare_config, args.job_templates_dir)
+    except ValueError as e:
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
 
     save_config(nvflare_config, config_file_path)
 

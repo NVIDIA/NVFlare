@@ -127,3 +127,26 @@ class TestConfigOutput:
         data = json.loads(captured.out)
         assert data["data"]["poc_startup_kit_dir"] == "/path/to/poc-startup"
         assert data["data"]["prod_startup_kit_dir"] is None
+
+    def test_invalid_startup_kit_path_returns_invalid_args(self, capsys):
+        from nvflare.cli import handle_config_cmd
+
+        args = self._make_args(startup_kit_dir="/bad/startup")
+        mock_config = MagicMock()
+        mock_config.get.return_value = None
+
+        with patch("nvflare.cli.get_hidden_config", return_value=("/fake/config.conf", mock_config)):
+            with patch(
+                "nvflare.cli.create_startup_kit_config",
+                side_effect=ValueError("invalid startup kit location '/bad/startup'"),
+            ):
+                with patch("nvflare.tool.cli_schema.handle_schema_flag"):
+                    with pytest.raises(SystemExit) as exc_info:
+                        handle_config_cmd(args)
+
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INVALID_ARGS"
+        assert "invalid startup kit location" in data["message"]

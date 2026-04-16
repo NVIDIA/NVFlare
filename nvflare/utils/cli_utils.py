@@ -249,6 +249,7 @@ def get_startup_kit_dir(startup_kit_dir: Optional[str] = None) -> str:
 
 def get_startup_kit_dir_for_target(startup_kit_dir: Optional[str] = None, target: Optional[str] = None) -> str:
     if not startup_kit_dir:
+        # Explicit env var takes priority over persisted config so CI/CD can override without editing files.
         startup_kit_dir = os.getenv("NVFLARE_STARTUP_KIT_DIR")
         if startup_kit_dir is None:
             startup_kit_dir = find_startup_kit_location(target=target)
