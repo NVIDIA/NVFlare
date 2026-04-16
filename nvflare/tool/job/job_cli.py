@@ -1174,7 +1174,7 @@ def define_list_jobs_parser(job_subparser):
     p.add_argument("-i", "--id", type=str, default=None, help="filter by job ID prefix")
     p.add_argument("-r", "--reverse", action="store_true", default=False, help="reverse sort order")
     p.add_argument("-m", "--max", type=int, default=None, help="max results to return")
-    p.add_argument("--study", type=str, default="default", help="study to list jobs from; use 'all' for all studies")
+    p.add_argument("--study", type=str, default="default", help="study to list jobs from")
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_LIST] = p
     job_sub_cmd_handlers[CMD_JOB_LIST] = cmd_job_list
