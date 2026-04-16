@@ -126,6 +126,8 @@ def _get_system_session():
     from nvflare.tool.cli_session import new_cli_session
     from nvflare.utils.cli_utils import get_hidden_config, get_startup_kit_dir_for_target
 
+    startup = None
+    username = None
     try:
         from nvflare.tool.job.job_cli import find_admin_user_and_dir
 
@@ -133,10 +135,12 @@ def _get_system_session():
     except Exception:
         _, nvflare_config = get_hidden_config()
         startup = nvflare_config.get("poc.startup_kit", None) if nvflare_config else None
-        username = None
 
     if not startup:
-        startup = get_startup_kit_dir_for_target(target="poc")
+        try:
+            startup = get_startup_kit_dir_for_target(target="poc")
+        except ValueError as e:
+            output_error("STARTUP_KIT_MISSING", exit_code=2, detail=str(e))
     if username is None:
         output_error(
             "STARTUP_KIT_MISSING",
@@ -296,6 +300,7 @@ def cmd_system_status(args):
             exit_code=2,
             detail=str(e),
         )
+        return
 
     _output_system_status(result, target_type)
 
@@ -318,6 +323,7 @@ def cmd_system_resources(args):
             result = sess.report_resources(target_type, client_names if client_names else None)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
 
     if not result:
         from nvflare.tool.cli_output import is_json_mode, print_human
@@ -348,6 +354,7 @@ def cmd_system_shutdown(args):
             sess.shutdown(target, client_names if client_names else None)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
 
     output_ok({"target": target, "status": "shutdown initiated"})
 
@@ -372,6 +379,7 @@ def cmd_system_restart(args):
             result = sess.restart(target, client_names if client_names else None)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
 
     output_ok({"target": target, "status": "restart initiated", "result": result})
 
@@ -405,11 +413,13 @@ def cmd_system_version(args):
             if site != "all":
                 if site not in known_sites:
                     output_error("SITE_NOT_FOUND", site=site)
+                    return
 
             targets = [site] if target_type == "client" else None
             raw_versions = sess.report_version(target_type, targets)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
 
     sites = [site] if site != "all" else known_sites
     versions = []
@@ -451,6 +461,7 @@ def cmd_system_log(args):
 
     if level and config_str:
         output_error("INVALID_ARGS", exit_code=4, detail="level and --config are mutually exclusive")
+        return
 
     if not level and not config_str:
         parser = _system_sub_cmd_parsers.get(CMD_SYSTEM_LOG)
@@ -475,6 +486,7 @@ def cmd_system_log(args):
             sess.configure_site_log(log_config, target=site)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
 
     output_ok({"site": site, "log_config": log_config, "status": "applied"})
 

@@ -164,23 +164,12 @@ def create_startup_kit_config(
         raise ValueError(f"invalid startup kit location '{startup_kit_dir}'")
     if startup_kit_dir:
         startup_kit_dir = get_startup_kit_dir(startup_kit_dir)
-        if target == "both":
-            conf_str = f"""
-                {CONFIG_VERSION} = {CURRENT_CONFIG_VERSION}
-                poc {{
-                    startup_kit = "{startup_kit_dir}"
-                }}
-                prod {{
-                    startup_kit = "{startup_kit_dir}"
-                }}
-            """
-        else:
-            conf_str = f"""
-                {CONFIG_VERSION} = {CURRENT_CONFIG_VERSION}
-                {target} {{
-                    startup_kit = "{startup_kit_dir}"
-                }}
-            """
+        conf_str = f"""
+            {CONFIG_VERSION} = {CURRENT_CONFIG_VERSION}
+            {target} {{
+                startup_kit = "{startup_kit_dir}"
+            }}
+        """
         conf: ConfigTree = CF.parse_string(conf_str)
 
         return conf.with_fallback(nvflare_config)

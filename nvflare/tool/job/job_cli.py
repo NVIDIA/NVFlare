@@ -545,7 +545,7 @@ def find_admin_user_and_dir(startup_kit_dir: Optional[str] = None, target: Optio
 
 
 def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
-    from nvflare.fuel.flare_api.api_spec import InternalError, InvalidJobDefinition
+    from nvflare.fuel.flare_api.api_spec import InternalError, InvalidJobDefinition, NoConnection
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
 
     if not is_json_mode():
@@ -565,8 +565,13 @@ def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
             job_id = sess.submit_job(temp_job_dir)
         except InvalidJobDefinition as e:
             output_error("JOB_INVALID", detail=str(e))
+            return
         except InternalError as e:
             output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
+            return
+        except NoConnection as e:
+            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+            return
         output_ok({"job_id": job_id})
     finally:
         sess.close()
@@ -982,6 +987,7 @@ def _session(admin_user_dir=None, username=None, study="default"):
 
 
 def cmd_job_list(cmd_args):
+    from nvflare.fuel.flare_api.api_spec import NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1006,8 +1012,9 @@ def cmd_job_list(cmd_args):
                 reverse=getattr(cmd_args, "reverse", False),
                 limit=getattr(cmd_args, "max", None),
             )
-    except Exception as e:
+    except NoConnection as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
 
     for j in jobs:
         if "study" not in j:
@@ -1017,6 +1024,7 @@ def cmd_job_list(cmd_args):
 
 
 def cmd_job_meta(cmd_args):
+    from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1030,20 +1038,22 @@ def cmd_job_meta(cmd_args):
     try:
         with _session() as sess:
             meta = sess.get_job_meta(cmd_args.job_id)
-    except Exception as e:
-        err = str(e).lower()
-        if "not found" in err or "does not exist" in err:
-            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
-        else:
-            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+    except JobNotFound:
+        output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        return
+    except NoConnection as e:
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
 
     if meta is None:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        return
     else:
         output_ok(meta)
 
 
 def cmd_job_abort(cmd_args):
+    from nvflare.fuel.flare_api.api_spec import JobNotFound, JobNotRunning, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1066,19 +1076,21 @@ def cmd_job_abort(cmd_args):
     try:
         with _session() as sess:
             sess.abort_job(cmd_args.job_id)
-    except Exception as e:
-        err = str(e).lower()
-        if "not found" in err or "does not exist" in err:
-            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
-        elif "not running" in err or "not active" in err:
-            output_error("JOB_NOT_RUNNING", job_id=cmd_args.job_id)
-        else:
-            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+    except JobNotFound:
+        output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        return
+    except JobNotRunning:
+        output_error("JOB_NOT_RUNNING", job_id=cmd_args.job_id)
+        return
+    except NoConnection as e:
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
 
     output_ok({"job_id": cmd_args.job_id, "status": "ABORTED"})
 
 
 def cmd_job_clone(cmd_args):
+    from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1092,17 +1104,18 @@ def cmd_job_clone(cmd_args):
     try:
         with _session() as sess:
             new_job_id = sess.clone_job(cmd_args.job_id)
-    except Exception as e:
-        err = str(e).lower()
-        if "not found" in err or "does not exist" in err:
-            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
-        else:
-            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+    except JobNotFound:
+        output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        return
+    except NoConnection as e:
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
 
     output_ok({"source_job_id": cmd_args.job_id, "new_job_id": new_job_id})
 
 
 def cmd_job_download(cmd_args):
+    from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1118,12 +1131,12 @@ def cmd_job_download(cmd_args):
     try:
         with _session() as sess:
             path = sess.download_job_result(cmd_args.job_id, destination)
-    except Exception as e:
-        err = str(e).lower()
-        if "not found" in err or "does not exist" in err:
-            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
-        else:
-            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+    except JobNotFound:
+        output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        return
+    except NoConnection as e:
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
 
     final_path = path or destination
     print_human(f"Job result downloaded to: {final_path}")
@@ -1131,6 +1144,7 @@ def cmd_job_download(cmd_args):
 
 
 def cmd_job_delete(cmd_args):
+    from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1153,12 +1167,12 @@ def cmd_job_delete(cmd_args):
     try:
         with _session() as sess:
             sess.delete_job(cmd_args.job_id)
-    except Exception as e:
-        err = str(e).lower()
-        if "not found" in err or "does not exist" in err:
-            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
-        else:
-            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+    except JobNotFound:
+        output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        return
+    except NoConnection as e:
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
 
     output_ok({"job_id": cmd_args.job_id})
 
@@ -1247,6 +1261,7 @@ _TERMINAL_JOB_STATES = {"FINISHED_OK", "FINISHED_EXCEPTION", "ABORTED", "ABANDON
 
 
 def cmd_job_stats(cmd_args):
+    from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1271,17 +1286,18 @@ def cmd_job_stats(cmd_args):
     try:
         with _session() as sess:
             result = sess.show_stats(cmd_args.job_id, target_type, targets)
-    except Exception as e:
-        err = str(e).lower()
-        if "not found" in err or "does not exist" in err:
-            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
-        else:
-            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+    except JobNotFound:
+        output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        return
+    except NoConnection as e:
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
 
     output_ok({"job_id": cmd_args.job_id, "stats": result})
 
 
 def cmd_job_logs(cmd_args):
+    from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1309,14 +1325,15 @@ def cmd_job_logs(cmd_args):
                 tail_lines=cmd_args.tail,
                 grep_pattern=cmd_args.grep,
             )
+    except JobNotFound:
+        output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        return
+    except NoConnection as e:
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
     except Exception as e:
-        err = str(e).lower()
-        if "not found" in err or "does not exist" in err or "invalid_job_id" in err or "no such job" in err:
-            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
-        elif "no connection" in err or "cannot connect" in err:
-            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        else:
-            output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
+        return
 
     output_ok({"job_id": cmd_args.job_id, "logs": result.get("logs", {})})
 
@@ -1355,7 +1372,7 @@ def cmd_job_monitor(cmd_args):
     import time
 
     from nvflare.apis.job_def import JobMetaKey
-    from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
+    from nvflare.fuel.flare_api.api_spec import JobNotFound, MonitorReturnCode, NoConnection
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1540,20 +1557,29 @@ def cmd_job_monitor(cmd_args):
                 cb=_status_cb,
                 state=cb_state,
             )
+    except JobNotFound:
+        output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        return
+    except NoConnection as e:
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
     except Exception as e:
-        err = str(e).lower()
-        if "not found" in err or "does not exist" in err:
-            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
-        else:
-            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
 
     if rc == MonitorReturnCode.TIMEOUT:
         output_error("TIMEOUT", exit_code=3, detail="job did not reach terminal state within timeout")
+        return
 
     if rc == MonitorReturnCode.ENDED_BY_CB:
         meta = cb_state.get("last_meta")
         if meta is None:
             output_error("INTERNAL_ERROR", exit_code=2, detail="monitoring stopped before job metadata was available")
+            return
+
+    if not meta:
+        output_error("INTERNAL_ERROR", exit_code=5, detail="monitoring returned no job metadata")
+        return
 
     status = meta.get("status", "UNKNOWN")
     meta_duration_s = _parse_duration_seconds(meta.get("duration") if meta else None)
@@ -1580,6 +1606,7 @@ def cmd_job_monitor(cmd_args):
 
 
 def cmd_job_log(cmd_args):
+    from nvflare.fuel.flare_api.api_spec import InvalidTarget, JobNotFound, NoConnection, NoReply
     from nvflare.tool.cli_output import output_error, output_ok, output_usage_error
     from nvflare.tool.cli_schema import handle_schema_flag
     from nvflare.tool.system.system_cli import resolve_log_config
@@ -1633,22 +1660,23 @@ def cmd_job_log(cmd_args):
                     exit_code=1,
                     detail=f"job is in terminal state: {job_status}",
                 )
+                return
             sess.configure_job_log(cmd_args.job_id, log_config, target=site)
+    except NoConnection as e:
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
+    except InvalidTarget:
+        output_error("SITE_NOT_FOUND", site=site)
+        return
+    except NoReply:
+        output_error("SITE_NOT_FOUND", site=site)
+        return
+    except JobNotFound:
+        output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        return
     except Exception as e:
-        from nvflare.fuel.flare_api.api_spec import NoConnection
-
-        if isinstance(e, NoConnection):
-            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        elif site not in ("all", "server") and (
-            "invalid_client" in str(e).lower()
-            or "no_clients" in str(e).lower()
-            or "unknown target type" in str(e).lower()
-        ):
-            output_error("SITE_NOT_FOUND", site=site)
-        elif "not found" in str(e).lower() or "does not exist" in str(e).lower():
-            output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
-        else:
-            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
 
     sites = [site] if site != "all" else ["all"]
     output_ok({"job_id": cmd_args.job_id, "config": log_config, "sites": sites, "status": "applied"})

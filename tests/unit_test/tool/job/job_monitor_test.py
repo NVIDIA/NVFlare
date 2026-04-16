@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
+from nvflare.fuel.flare_api.api_spec import JobNotFound, MonitorReturnCode, NoConnection
 from nvflare.tool import cli_output
 
 
@@ -155,7 +155,7 @@ class TestJobMonitorOutput:
         @contextmanager
         def _fake_session():
             sess = MagicMock()
-            sess.monitor_job_and_return_job_meta.side_effect = Exception("job does not exist")
+            sess.monitor_job_and_return_job_meta.side_effect = JobNotFound("job does not exist")
             yield sess
 
         with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
@@ -173,7 +173,7 @@ class TestJobMonitorOutput:
         @contextmanager
         def _fake_session():
             sess = MagicMock()
-            sess.monitor_job_and_return_job_meta.side_effect = Exception("connection refused")
+            sess.monitor_job_and_return_job_meta.side_effect = NoConnection("connection refused")
             yield sess
 
         with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
@@ -187,6 +187,19 @@ class TestJobMonitorOutput:
         data = json.loads(captured.out)
         assert data["error_code"] == "CONNECTION_FAILED"
         assert data["exit_code"] == 2
+
+    def test_missing_meta_exits_internal_error(self, capsys):
+        ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, None)
+        with ctx:
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_monitor(_make_args())
+        assert exc_info.value.code == 5
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["error_code"] == "INTERNAL_ERROR"
 
     # ------------------------------------------------------------------
     # Envelope contents

@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
 from nvflare.tool import cli_output
 
 
@@ -89,11 +90,11 @@ class TestJobLogs:
         assert "server" in data["logs"]
 
     def test_logs_job_not_found_exits_1(self, capsys):
-        """'no such job' in exception message maps to JOB_NOT_FOUND, exit 1."""
+        """JobNotFound maps to JOB_NOT_FOUND, exit 1."""
         from nvflare.tool.job.job_cli import cmd_job_logs
 
         mock_sess = MagicMock()
-        mock_sess.get_job_logs.side_effect = Exception("no such job: abc123")
+        mock_sess.get_job_logs.side_effect = JobNotFound("no such job: abc123")
 
         with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
             with pytest.raises(SystemExit) as exc_info:
@@ -104,11 +105,11 @@ class TestJobLogs:
         assert envelope["error_code"] == "JOB_NOT_FOUND"
 
     def test_logs_connection_failed_exits_2(self, capsys):
-        """'no connection' in exception maps to CONNECTION_FAILED, exit 2."""
+        """NoConnection maps to CONNECTION_FAILED, exit 2."""
         from nvflare.tool.job.job_cli import cmd_job_logs
 
         mock_sess = MagicMock()
-        mock_sess.get_job_logs.side_effect = Exception("no connection to server")
+        mock_sess.get_job_logs.side_effect = NoConnection("no connection to server")
 
         with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
             with pytest.raises(SystemExit) as exc_info:

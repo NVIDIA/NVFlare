@@ -956,7 +956,7 @@ class Session(SessionSpec):
         else:
             config_str = str(config)
 
-        target_spec = target if target in ("all", "server", "client") else f"client {target}"
+        target_spec = target if target in ("all", "server") else f"client {target}"
         self._do_command(
             f"{AdminCommandNames.CONFIGURE_JOB_LOG} {job_id} {target_spec} {config_str}", enforce_meta=False
         )

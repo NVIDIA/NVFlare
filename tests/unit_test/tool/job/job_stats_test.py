@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
 from nvflare.tool import cli_output
 
 
@@ -62,11 +63,11 @@ class TestJobStats:
         assert data["stats"] == stats_payload
 
     def test_stats_job_not_found_exits_1(self, capsys):
-        """Exception containing 'does not exist' maps to JOB_NOT_FOUND, exit 1."""
+        """JobNotFound maps to JOB_NOT_FOUND, exit 1."""
         from nvflare.tool.job.job_cli import cmd_job_stats
 
         mock_sess = MagicMock()
-        mock_sess.show_stats.side_effect = Exception("job does not exist")
+        mock_sess.show_stats.side_effect = JobNotFound("job does not exist")
 
         with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
             with pytest.raises(SystemExit) as exc_info:
@@ -80,11 +81,11 @@ class TestJobStats:
         assert envelope["exit_code"] == 1
 
     def test_stats_job_not_found_via_not_found_phrase(self, capsys):
-        """Exception containing 'not found' also maps to JOB_NOT_FOUND."""
+        """JobNotFound also maps to JOB_NOT_FOUND."""
         from nvflare.tool.job.job_cli import cmd_job_stats
 
         mock_sess = MagicMock()
-        mock_sess.show_stats.side_effect = Exception("job not found")
+        mock_sess.show_stats.side_effect = JobNotFound("job not found")
 
         with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
             with pytest.raises(SystemExit) as exc_info:
@@ -96,11 +97,11 @@ class TestJobStats:
         assert envelope["error_code"] == "JOB_NOT_FOUND"
 
     def test_stats_connection_failed_exits_2(self, capsys):
-        """Unrecognised exception maps to CONNECTION_FAILED, exit 2."""
+        """NoConnection maps to CONNECTION_FAILED, exit 2."""
         from nvflare.tool.job.job_cli import cmd_job_stats
 
         mock_sess = MagicMock()
-        mock_sess.show_stats.side_effect = Exception("connection refused")
+        mock_sess.show_stats.side_effect = NoConnection("connection refused")
 
         with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
             with pytest.raises(SystemExit) as exc_info:

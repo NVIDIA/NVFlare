@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.fuel.flare_api.api_spec import InvalidTarget, JobNotFound, NoConnection
 from nvflare.tool import cli_output
 
 
@@ -206,12 +207,12 @@ class TestJobLogHuman:
         assert envelope["error_code"] == "JOB_NOT_RUNNING"
 
     def test_log_job_not_found_exits_1(self, capsys):
-        """Exception containing 'job does not exist' → JOB_NOT_FOUND, exit 1."""
+        """JobNotFound → JOB_NOT_FOUND, exit 1."""
         from nvflare.tool.job.job_cli import cmd_job_log
 
         args = _make_args(level="INFO")
         mock_sess = MagicMock()
-        mock_sess.get_job_meta.side_effect = Exception("job does not exist")
+        mock_sess.get_job_meta.side_effect = JobNotFound("job does not exist")
 
         with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
             with pytest.raises(SystemExit) as exc_info:
@@ -223,12 +224,12 @@ class TestJobLogHuman:
         assert envelope["error_code"] == "JOB_NOT_FOUND"
 
     def test_log_connection_failed_exits_2(self, capsys):
-        """Generic exception → CONNECTION_FAILED, exit 2."""
+        """NoConnection → CONNECTION_FAILED, exit 2."""
         from nvflare.tool.job.job_cli import cmd_job_log
 
         args = _make_args(level="INFO")
         mock_sess = MagicMock()
-        mock_sess.get_job_meta.side_effect = Exception("connection refused")
+        mock_sess.get_job_meta.side_effect = NoConnection("connection refused")
 
         with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
             with pytest.raises(SystemExit) as exc_info:
@@ -270,7 +271,7 @@ class TestJobLogHuman:
         args = _make_args(level="WARNING", site="site-1")
         mock_sess = MagicMock()
         mock_sess.get_job_meta.return_value = {"status": "RUNNING"}
-        mock_sess.configure_job_log.side_effect = Exception("INVALID_CLIENT(s): site-1")
+        mock_sess.configure_job_log.side_effect = InvalidTarget("INVALID_CLIENT(s): site-1")
 
         with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
             with pytest.raises(SystemExit) as exc_info:

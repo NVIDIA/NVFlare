@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.fuel.flare_api.api_spec import JobNotFound
 from nvflare.tool import cli_output
 
 
@@ -132,7 +133,7 @@ class TestJobDelete:
 
         args = self._make_args(force=True)
         mock_sess = MagicMock()
-        mock_sess.delete_job.side_effect = Exception("job not found")
+        mock_sess.delete_job.side_effect = JobNotFound("job not found")
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             with pytest.raises(SystemExit) as exc_info:

@@ -296,6 +296,13 @@ class TestConfigureJobLog:
         cmd = mock_cmd.call_args[0][0]
         assert f"{AdminCommandNames.CONFIGURE_JOB_LOG} job1 client site-1 DEBUG" == cmd
 
+    def test_site_named_client_is_treated_as_explicit_client(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.configure_job_log("job1", "DEBUG", target="client")
+        cmd = mock_cmd.call_args[0][0]
+        assert f"{AdminCommandNames.CONFIGURE_JOB_LOG} job1 client client DEBUG" == cmd
+
     def test_disables_meta_enforcement(self):
         session = _make_session()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
