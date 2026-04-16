@@ -82,14 +82,12 @@ class DockerJobHandle(JobHandleSpec):
         container_name: str,
         docker_client,
         timeout: int = 30,
-        shutdown_timeout: int = 60,
     ):
         super().__init__()
         self.container_id = container_id
         self.container_name = container_name
         self.docker_client = docker_client
         self.timeout = timeout
-        self.shutdown_timeout = shutdown_timeout
         self.terminal_state: JobReturnCode = None  # set once, never cleared
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -146,13 +144,7 @@ class DockerJobHandle(JobHandleSpec):
         return JobReturnCode.UNKNOWN
 
     def wait(self):
-        """Block until the container reaches a terminal state.
-
-        Uses shutdown_timeout as a workaround for containers that hang during NVFlare
-        shutdown due to non-daemon threads (conn_mgr/frame_mgr) that never fully exit.
-        After shutdown_timeout seconds the container is force-terminated.
-        """
-        start = time.time()
+        """Block until the container reaches a terminal state."""
         while True:
             if self.terminal_state is not None:
                 return
@@ -162,13 +154,6 @@ class DockerJobHandle(JobHandleSpec):
             if container.status in TERMINAL_STATUSES:
                 self.terminal_state = self._resolve_terminal_return_code(container)
                 self._remove_container()
-                return
-            if time.time() - start > self.shutdown_timeout:
-                self.logger.warning(
-                    f"container {self.container_name} did not exit within {self.shutdown_timeout}s; "
-                    f"force-terminating (workaround for NVFlare thread shutdown hang)"
-                )
-                self.terminate()
                 return
             time.sleep(1)
 
@@ -260,7 +245,6 @@ class DockerJobLauncher(JobLauncherSpec):
         network: str = "nvflare-network",
         python_path: str = "/usr/local/bin/python",
         timeout: int = 30,
-        shutdown_timeout: int = 60,
         default_job_container_kwargs: dict = None,
     ):
         """
@@ -272,9 +256,6 @@ class DockerJobLauncher(JobLauncherSpec):
             network: Docker network name. Must already exist.
             python_path: Python executable path inside the job container.
             timeout: max seconds to wait for container to reach RUNNING state (default 30).
-            shutdown_timeout: max seconds in wait() before force-terminating after job completes.
-                              Workaround for NVFlare thread shutdown hang (conn_mgr/frame_mgr)
-                              that prevents container from exiting cleanly (default 60).
             default_job_container_kwargs: site-level default docker run kwargs applied to every job
                                           container launched by this site. Job-level resource_spec[site][docker]
                                           takes precedence on conflict. Keys use Docker SDK naming
@@ -294,7 +275,6 @@ class DockerJobLauncher(JobLauncherSpec):
         self.network = network
         self.python_path = python_path
         self.timeout = timeout
-        self.shutdown_timeout = shutdown_timeout
         default_job_container_kwargs = default_job_container_kwargs or {}
         _RESERVED_KWARGS = {"volumes", "network", "environment", "command", "name", "detach", "user", "working_dir"}
         reserved_used = _RESERVED_KWARGS & set(default_job_container_kwargs.keys())
@@ -474,7 +454,6 @@ class DockerJobLauncher(JobLauncherSpec):
             container_name=container_name,
             docker_client=docker_client,
             timeout=self.timeout,
-            shutdown_timeout=self.shutdown_timeout,
         )
 
         try:

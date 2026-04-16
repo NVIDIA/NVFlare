@@ -512,6 +512,14 @@ Note: Docker exposes the actual exit code (same as subprocess), so `EXECUTION_ER
 
 Mirrors `K8sJobHandle`. Once a container exits or is removed, `terminal_state` is set and all subsequent `poll()` / `wait()` calls return immediately without querying Docker.
 
+### Known Issue: Job Container May Linger After Job Completion
+
+There is a pre-existing NVFlare shutdown issue where non-daemon threads can keep the SJ/CJ process alive after the job has logically finished. In Docker mode this is especially visible because the job process is PID 1 in the container: if PID 1 does not exit, the container stays running.
+
+This PR does **not** add a `shutdown_timeout` workaround because force-terminating the container on a timer is not a reliable fix and can mask the real upstream shutdown problem. If the issue occurs, the job container may remain present after job completion until it is removed manually.
+
+Operationally, the site admin can recover with `docker rm -f <container_name>`. See `docs/design/docker_container_shutdown_analysis.md` for the root-cause analysis and suggested upstream fixes.
+
 ### PARENT_URL
 
 In process mode `PARENT_URL = tcp://localhost:port`. In Docker mode it must be the SP/CP **container name** on the Docker network (e.g. `tcp://server:8004`) so SJ/CJ can connect back via Docker DNS.
