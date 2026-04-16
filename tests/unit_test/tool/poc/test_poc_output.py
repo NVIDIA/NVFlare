@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.cli_exception import CLIException
 from nvflare.tool import cli_output
 
 
@@ -183,6 +184,48 @@ class TestPocOutput:
         data = json.loads(captured.out.strip())
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
+
+    def test_prepare_jobs_dir_user_decline_emits_no_success(self, capsys, tmp_path):
+        """prepare_jobs_dir should not emit output_ok when the user declines replacement."""
+        from nvflare.tool.poc.poc_commands import prepare_jobs_dir
+
+        args = MagicMock()
+        args.jobs_dir = str(tmp_path / "jobs")
+        args.force = False
+        os_jobs = tmp_path / "jobs"
+        os_jobs.mkdir()
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands._prepare_jobs_dir", return_value=False),
+            patch("nvflare.tool.install_skills.install_skills", return_value=None),
+        ):
+            prepare_jobs_dir(args)
+
+        captured = capsys.readouterr()
+        assert captured.out.strip() == ""
+
+    def test_clean_poc_running_system_exits_4(self, capsys, tmp_path):
+        """clean_poc should exit 4 instead of reporting cleaned when the system is still running."""
+        from nvflare.tool.poc.poc_commands import clean_poc
+
+        args = MagicMock()
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch(
+                "nvflare.tool.poc.poc_commands._clean_poc",
+                side_effect=CLIException("system is still running, please stop the system first."),
+            ),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                clean_poc(args)
+
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INVALID_ARGS"
 
     def test_start_poc_reports_configured_server_port(self, capsys, tmp_path):
         """start_poc should use the configured fed-learn port, not a hard-coded default."""

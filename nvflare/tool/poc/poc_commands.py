@@ -165,12 +165,14 @@ def prepare_jobs_dir(cmd_args):
     poc_workspace = get_poc_workspace()
 
     try:
-        _prepare_jobs_dir(cmd_args.jobs_dir, poc_workspace, force=force)
+        result = _prepare_jobs_dir(cmd_args.jobs_dir, poc_workspace, force=force)
     except CLIException as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         return
     except Exception as e:
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
+        return
+    if result is False:
         return
 
     output_ok({"workspace": poc_workspace, "jobs_dir": cmd_args.jobs_dir})
@@ -184,7 +186,9 @@ def prepare_jobs_dir(cmd_args):
         pass
 
 
-def _prepare_jobs_dir(jobs_dir: str, workspace: str, config_packages: Optional[Tuple] = None, force: bool = False):
+def _prepare_jobs_dir(
+    jobs_dir: str, workspace: str, config_packages: Optional[Tuple] = None, force: bool = False
+) -> bool:
     project_config, service_config = config_packages if config_packages else setup_service_config(workspace)
     project_name = project_config.get("name")
     if jobs_dir is None or jobs_dir == "":
@@ -210,7 +214,7 @@ def _prepare_jobs_dir(jobs_dir: str, workspace: str, config_packages: Optional[T
                     f"jobs directory {dst} already exists; use --force to overwrite in non-interactive mode"
                 )
             if not prompt_yn(f"Jobs directory already exists: {dst}. Replace it?"):
-                return
+                return False
         if os.path.islink(dst):
             os.unlink(dst)
         if os.path.isdir(dst):
@@ -222,6 +226,7 @@ def _prepare_jobs_dir(jobs_dir: str, workspace: str, config_packages: Optional[T
             shutil.rmtree(dst, ignore_errors=True)
         print_human(f"link job directory from {src} to {dst}")
         os.symlink(src, dst)
+    return True
 
 
 def get_prod_dir(workspace, project_name: str = DEFAULT_PROJECT_NAME):
@@ -1028,12 +1033,14 @@ def clean_poc(cmd_args):
     poc_workspace = get_poc_workspace()
 
     try:
-        _clean_poc(poc_workspace)
+        result = _clean_poc(poc_workspace)
     except CLIException as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         return
     except Exception as e:
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
+        return
+    if result is False:
         return
 
     output_ok({"status": "cleaned"})
@@ -1047,7 +1054,7 @@ def is_poc_running(poc_workspace, service_config, project_config):
     return os.path.exists(pid_file)
 
 
-def _clean_poc(poc_workspace: str):
+def _clean_poc(poc_workspace: str) -> bool:
     import shutil
 
     if os.path.isdir(poc_workspace):
@@ -1059,10 +1066,9 @@ def _clean_poc(poc_workspace: str):
                     from nvflare.tool.cli_output import print_human
 
                     print_human(f"{poc_workspace} is removed")
+                    return True
                 else:
-                    from nvflare.tool.cli_output import print_human
-
-                    print_human("system is still running, please stop the system first.")
+                    raise CLIException("system is still running, please stop the system first.")
             else:
                 raise CLIException(f"{poc_workspace} is not valid poc directory")
     else:
