@@ -158,7 +158,6 @@ def create_startup_kit_config(
     Returns:
         ConfigTree: The merged configuration tree.
     """
-    nvflare_config = migrate_config_to_v2(nvflare_config)
     old_startup_kit_dir = _get_optional_config_value(nvflare_config, "startup_kit", "startup_kit.path")
     if old_startup_kit_dir is None and (startup_kit_dir is not None and not os.path.isdir(startup_kit_dir)):
         raise ValueError(f"invalid startup kit location '{startup_kit_dir}'")
@@ -186,7 +185,6 @@ def create_poc_workspace_config(nvflare_config: ConfigTree, poc_workspace_dir: O
     Returns:
         ConfigTree: The merged configuration tree.
     """
-    nvflare_config = migrate_config_to_v2(nvflare_config)
     if poc_workspace_dir is None:
         return nvflare_config
 

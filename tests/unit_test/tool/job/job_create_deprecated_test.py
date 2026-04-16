@@ -129,6 +129,20 @@ class TestJobCreateDeprecated:
         schema = json.loads(captured.out)
         assert schema["command"] == "nvflare job create"
 
+    def test_job_help_lists_deprecated_subcommands(self):
+        import argparse
+
+        from nvflare.tool.job.job_cli import def_job_cli_parser
+
+        root = argparse.ArgumentParser(prog="nvflare")
+        subs = root.add_subparsers()
+        parser = def_job_cli_parser(subs)["job"]
+
+        help_text = parser.format_help()
+        assert "list_templates" in help_text
+        assert "show_variables" in help_text
+        assert "[DEPRECATED]" in help_text
+
     @pytest.mark.parametrize(
         ("handler_name", "parser_key", "expected_detail"),
         [

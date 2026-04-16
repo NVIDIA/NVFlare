@@ -18,30 +18,11 @@ import shutil
 import sys
 import traceback
 from contextlib import contextmanager
+from functools import partial
 from tempfile import mkdtemp
 from typing import List, Optional, Tuple
 
-
-class _WiderSubcmdFormatter(argparse.HelpFormatter):
-    """Formatter that prevents long subcommand names from wrapping to the next line.
-
-    argparse computes _action_max_length at section-indent level (2) but renders at
-    subsection-indent level (4), causing a 2-char gap that makes names like
-    'list_templates' (14 chars) wrap.  Adding indent_increment to the computation
-    closes the gap.
-    """
-
-    def add_arguments(self, actions):
-        for action in actions:
-            invocations = [self._format_action_invocation(action)]
-            for subaction in self._iter_indented_subactions(action):
-                invocations.append(self._format_action_invocation(subaction))
-            invocation_length = max(map(len, invocations))
-            self._action_max_length = max(
-                self._action_max_length,
-                invocation_length + self._current_indent + self._indent_increment,
-            )
-        super().add_arguments(actions)
+_JOB_HELP_FORMATTER = partial(argparse.HelpFormatter, max_help_position=24, width=120)
 
 
 from pyhocon import ConfigFactory as CF
@@ -624,7 +605,7 @@ def handle_job_cli_cmd(cmd_args):
 
 def def_job_cli_parser(sub_cmd):
     cmd = "job"
-    parser = sub_cmd.add_parser(cmd, help="submit, manage, and monitor FL jobs", formatter_class=_WiderSubcmdFormatter)
+    parser = sub_cmd.add_parser(cmd, help="submit, manage, and monitor FL jobs", formatter_class=_JOB_HELP_FORMATTER)
     job_subparser = parser.add_subparsers(title="job subcommands", metavar="", dest="job_sub_cmd")
     define_submit_job_parser(job_subparser)
     define_job_monitor_parser(job_subparser)

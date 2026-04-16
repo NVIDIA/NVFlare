@@ -44,8 +44,9 @@ class TestCLIUtils:
                 mock1.return_value = True
                 prev_conf = CF.parse_string(
                     """
-                        poc_workspace {
-                            path = "/tmp/nvflare/poc"
+                        version = 2
+                        poc {
+                            workspace = "/tmp/nvflare/poc"
                         }
                     """
                 )
