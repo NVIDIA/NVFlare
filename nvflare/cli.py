@@ -384,16 +384,15 @@ def parse_args(prog_name: str):
         msg = f"unrecognized arguments: {' '.join(unknown)}"
         if global_args.out_format == "json":
             _emit_argparse_error_json(sub_cmd_parser or _parser, f"{prog_name} {cmd}: {msg}")
-        _emit_argparse_error_human(sub_cmd_parser or _parser, msg, exit_code=2)
-    final_args = _parser.parse_args(filtered_argv)
-    final_args.sub_command = _CMD_ALIASES.get(final_args.sub_command, final_args.sub_command)
+        else:
+            _emit_argparse_error_human(sub_cmd_parser or _parser, msg, exit_code=2)
     if global_args.out_format is not None:
-        final_args.out_format = global_args.out_format
+        args.out_format = global_args.out_format
     if global_args.connect_timeout is not None:
-        final_args.connect_timeout = global_args.connect_timeout
+        args.connect_timeout = global_args.connect_timeout
     if global_args.version:
-        final_args.version = True
-    return _parser, final_args, sub_cmd_parsers
+        args.version = True
+    return _parser, args, sub_cmd_parsers
 
 
 handlers = {
