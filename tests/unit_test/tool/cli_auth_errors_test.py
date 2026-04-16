@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare import cli as cli_mod
+from nvflare.cli_exception import CLIException
 from nvflare.fuel.flare_api.api_spec import AuthenticationError
 from nvflare.tool import cli_output
 
@@ -80,3 +81,26 @@ def test_run_uses_study_specific_auth_hint_in_json_mode(capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["error_code"] == "AUTH_FAILED"
     assert payload["hint"].startswith("Add the study under 'studies:'")
+
+
+def test_run_routes_cli_exception_through_error_envelope(capsys):
+    args = MagicMock()
+    args.out_format = "json"
+    args.connect_timeout = 5.0
+    args.sub_command = "job"
+    args.version = False
+
+    with patch.object(cli_mod, "parse_args", return_value=(MagicMock(), args, {})):
+        with patch(
+            "nvflare.tool.cli_output.set_output_format",
+            side_effect=lambda fmt: setattr(cli_output, "_output_format", fmt),
+        ):
+            with patch("nvflare.tool.cli_output.set_connect_timeout"):
+                with patch.object(cli_mod, "handlers", {"job": lambda _args: (_ for _ in ()).throw(CLIException("boom"))}):
+                    with pytest.raises(SystemExit) as exc_info:
+                        cli_mod.run("nvflare")
+
+    assert exc_info.value.code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error_code"] == "CLI_ERROR"
+    assert payload["message"].endswith("boom")

@@ -488,8 +488,9 @@ def run(prog_name):
         parser = sub_cmd_parsers.get(sub_cmd) if sub_cmd else prog_parser
         output_usage_error(parser, str(e).strip(), exit_code=4)
     except CLIException as e:
-        print(e, file=sys.stderr)
-        sys.exit(1)
+        from nvflare.tool.cli_output import output_error
+
+        output_error("CLI_ERROR", exit_code=1, detail=str(e))
     except NoConnection:
         from nvflare.tool.cli_output import output_error
 

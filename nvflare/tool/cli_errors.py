@@ -53,6 +53,10 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "An unexpected error occurred.",
         "hint": "This is likely a bug. Re-run in a development environment for a traceback, or report the issue.",
     },
+    "CLI_ERROR": {
+        "message": "Command failed.",
+        "hint": "",
+    },
     # --- Job commands ---
     "JOB_NOT_FOUND": {
         "message": "Job '{job_id}' does not exist.",
