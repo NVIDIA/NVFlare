@@ -392,7 +392,14 @@ class DockerJobLauncher(JobLauncherSpec):
         # Site-level defaults (default_job_container_kwargs) are merged in; job-level takes precedence on conflict.
         docker_spec = get_launcher_resource_spec(job_meta, site_name, "docker")
         num_gpus = docker_spec.get("num_of_gpus", 0)
-        _NON_CONTAINER_KEYS = {"num_of_gpus", "image"}
+        _RESERVED_KWARGS = {"volumes", "network", "environment", "command", "name", "detach", "user", "working_dir"}
+        _NON_CONTAINER_KEYS = {"num_of_gpus", "image"} | _RESERVED_KWARGS
+        reserved_in_spec = _RESERVED_KWARGS & set(docker_spec.keys())
+        if reserved_in_spec:
+            self.logger.warning(
+                f"job {job_id}: resource_spec['{site_name}']['docker'] contains reserved keys "
+                f"{sorted(reserved_in_spec)} — ignored (controlled by the launcher)"
+            )
         job_container_kwargs = {k: v for k, v in docker_spec.items() if k not in _NON_CONTAINER_KEYS}
         merged_container_kwargs = {**self.default_job_container_kwargs, **job_container_kwargs}
 

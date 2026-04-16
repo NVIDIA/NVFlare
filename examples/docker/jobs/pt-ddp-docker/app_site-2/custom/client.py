@@ -93,18 +93,20 @@ def main():
             print(f"\n[Round={input_model.current_round}, Site={flare.get_site_name()}]")
             # (4) loads model from NVFlare
             net.load_state_dict(input_model.params)
-        optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+            torch.save(net.state_dict(), CHECKPOINT_PATH)
 
-        # Wrap model with DDP
+        # Sync model from rank 0 to all ranks BEFORE DDP init.
+        # DDP.__init__ calls _verify_param_shape_across_processes which requires
+        # identical parameters on every rank — if rank 1 still has random weights
+        # while rank 0 has the FL model, this collective check deadlocks/times out.
+        dist.barrier()
+        net.load_state_dict(torch.load(CHECKPOINT_PATH, map_location=device))
+        dist.barrier()
+
+        # Wrap model with DDP — all ranks now have identical parameters
         net.to(device)
         ddp_model = DDP(net, device_ids=[rank])
-
-        # Sync model across ranks
-        if rank == 0:
-            torch.save(ddp_model.state_dict(), CHECKPOINT_PATH)
-
-        dist.barrier()
-        ddp_model.load_state_dict(torch.load(CHECKPOINT_PATH, map_location=device))
+        optimizer = optim.SGD(ddp_model.parameters(), lr=0.001, momentum=0.9)
 
         # Training loop
         steps = epochs * len(trainloader)

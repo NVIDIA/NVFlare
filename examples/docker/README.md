@@ -102,12 +102,18 @@ Available jobs:
 
 ## Notes
 
-- Job images are specified per-site in `meta.json` under `deploy_map`. Sites with an `image`
-  entry run the job in a Docker container; sites without one (e.g. `site-2` in these examples)
-  run in process mode alongside the CP. Both modes can coexist in the same job — the examples
-  intentionally use site-1 in Docker and site-2 in process mode to test this.
-- `container_kwargs` in `meta.json` (e.g. `shm_size`, `ipc_mode`) are passed directly
-  to the Docker SDK and merged with site-level `extra_container_kwargs` in `resources.json`.
+- Job images and Docker resource requirements are specified per-site in `meta.json` under
+  `resource_spec[site][docker]`. Example:
+  ```json
+  "resource_spec": {
+    "site-1": {"docker": {"image": "nvflare-job:latest", "num_of_gpus": 1, "shm_size": "8g"}}
+  }
+  ```
+  Sites without a `docker` entry (e.g. `site-2` in these examples) run in process mode. Both
+  modes can coexist in the same job.
+- Site-level Docker defaults (e.g. `shm_size`, `ipc_mode`) can be set via
+  `default_job_container_kwargs` in `resources.json` — job-level `resource_spec` takes
+  precedence on conflict.
 - Workspace files are bind-mounted at `/var/tmp/nvflare/workspace` inside all containers.
 - Job containers run as the same UID/GID as the SP/CP so all workspace files remain
   readable and writable by the parent process.
