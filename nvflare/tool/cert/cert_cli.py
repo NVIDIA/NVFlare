@@ -17,6 +17,8 @@
 import argparse
 from typing import Optional
 
+_VALID_CERT_TYPES = ["client", "server", "org_admin", "lead", "member"]
+
 # Module-level parser references — used by --schema in handlers and for help fallback
 _cert_init_parser: Optional[argparse.ArgumentParser] = None
 _cert_csr_parser: Optional[argparse.ArgumentParser] = None
@@ -29,6 +31,16 @@ def _name_type(value: str) -> str:
     if len(value) > 64:
         raise argparse.ArgumentTypeError(f"name must be 64 characters or fewer (got {len(value)})")
     return value
+
+
+def _add_compat_output_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--output",
+        dest="compat_output_format",
+        choices=["json", "txt", "human"],
+        default=None,
+        help=argparse.SUPPRESS,
+    )
 
 
 def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
@@ -76,6 +88,7 @@ def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         default=False,
         help="Print JSON schema for this command and exit.",
     )
+    _add_compat_output_arg(p)
     _cert_init_parser = p
     return p
 
@@ -128,7 +141,7 @@ def _def_cert_csr_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argum
         required=False,
         default=None,
         dest="cert_type",
-        choices=["client", "server", "org_admin", "lead", "member"],
+        choices=_VALID_CERT_TYPES,
         help=(
             "Proposed certificate type. Embedded in the CSR as a hint for the Project Admin. "
             "The Project Admin may override this when running 'nvflare cert sign'. "
@@ -147,6 +160,7 @@ def _def_cert_csr_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argum
         default=False,
         help="Print JSON schema for this command and exit.",
     )
+    _add_compat_output_arg(p)
     _cert_csr_parser = p
     return p
 
@@ -191,7 +205,7 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         required=False,
         default=None,
         dest="cert_type",
-        choices=["client", "server", "org_admin", "lead", "member"],
+        choices=_VALID_CERT_TYPES,
         help="Cert type to issue. Authoritative — embedded in signed cert UNSTRUCTURED_NAME.",
     )
     p.add_argument(
@@ -214,6 +228,7 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         default=False,
         help="Print JSON schema for this command and exit.",
     )
+    _add_compat_output_arg(p)
     _cert_sign_parser = p
     return p
 
@@ -257,7 +272,11 @@ def def_cert_cli_parser(sub_cmd) -> dict:
 def handle_cert_cmd(args):
     """Dispatch to the appropriate cert subcommand handler."""
     from nvflare.tool.cert.cert_commands import handle_cert_csr, handle_cert_init, handle_cert_sign
-    from nvflare.tool.cli_output import output_usage_error
+    from nvflare.tool.cli_output import output_usage_error, set_output_format
+
+    compat_output_format = getattr(args, "compat_output_format", None)
+    if compat_output_format:
+        set_output_format(compat_output_format)
 
     dispatch = {
         "init": handle_cert_init,

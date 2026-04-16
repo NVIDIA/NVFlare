@@ -498,6 +498,7 @@ def submit_job(cmd_args):
             else:
                 shutil.rmtree(temp_job_dir)
 
+
 def _resolve_admin_user_and_dir_from_startup_kit(startup_kit_dir: str) -> Tuple[str, str]:
     if os.path.basename(startup_kit_dir) == "startup":
         admin_user_dir = os.path.dirname(startup_kit_dir)
@@ -1626,7 +1627,7 @@ def cmd_job_log(cmd_args):
             exit_code=1,
             error_code="LOG_CONFIG_INVALID",
             message="Log config is not valid JSON or a recognised log mode.",
-            hint="Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, full, verbose, reload.",
+            hint="Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
         )
 
     log_config = resolve_log_config(level, config_str)
@@ -1637,7 +1638,7 @@ def cmd_job_log(cmd_args):
             exit_code=1,
             error_code="LOG_CONFIG_INVALID",
             message="Log config is not valid JSON or a recognised log mode.",
-            hint="Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, full, verbose, reload.",
+            hint="Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
         )
 
     try:
@@ -1702,7 +1703,7 @@ def define_job_log_parser(job_subparser):
         "level",
         nargs="?",
         default=None,
-        help="log level or mode: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, full, verbose, reload",
+        help="log level or mode: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload",
     )
     p.add_argument("--config", default=None, help="path to dictConfig JSON file or inline JSON")
     p.add_argument("--site", default="all", help="target site name or all")

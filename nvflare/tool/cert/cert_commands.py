@@ -35,8 +35,11 @@ from nvflare.lighter.utils import (
     serialize_pri_key,
     x509_name,
 )
-from nvflare.tool.cli_output import output_error, output_ok, output_usage_error
+from nvflare.tool.cert.cert_cli import _VALID_CERT_TYPES
+from nvflare.tool.cli_output import output_error, output_error_message, output_ok, output_usage_error
 from nvflare.tool.cli_schema import handle_schema_flag
+
+_USAGE_HINT = "Run the command with -h for usage."
 
 # ---------------------------------------------------------------------------
 # cert init
@@ -79,7 +82,7 @@ def handle_cert_init(args):
     ]
     if missing_flags:
         output_usage_error(
-            _cert_cli._cert_init_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=2
+            _cert_cli._cert_init_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
         )
 
     # 3. Resolve force
@@ -223,14 +226,32 @@ def _load_single_site_yaml(path: str) -> dict:
     try:
         data = load_yaml(path)
     except Exception as e:
-        output_error("INVALID_ARGS", exit_code=2, detail=f"failed to parse site yaml {path}: {e}")
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"failed to parse site yaml {path}: {e}",
+        )
     if not isinstance(data, dict):
-        output_error("INVALID_ARGS", exit_code=2, detail=f"site yaml must be a mapping: {path}")
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"site yaml must be a mapping: {path}",
+        )
     name = data.get("name")
     org = data.get("org")
     cert_type = data.get("type")
     if not name or not org or not cert_type:
-        output_error("INVALID_ARGS", exit_code=2, detail="site yaml must contain: name, org, type")
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="site yaml must contain: name, org, type",
+        )
     return {"name": name, "org": org, "cert_type": cert_type}
 
 
@@ -255,7 +276,13 @@ def handle_cert_csr(args):
     if getattr(args, "project_file", None):
         # Mutual exclusivity check before touching the filesystem
         if getattr(args, "name", None) or getattr(args, "org", None) or getattr(args, "cert_type", None):
-            output_error("INVALID_ARGS", exit_code=2, detail="use either --project-file or --name/--org/--type")
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail="use either --project-file or --name/--org/--type",
+            )
         site = _load_single_site_yaml(args.project_file)
 
     # 3. Validate required args (-o is required in all modes; -n only without --project-file)
@@ -266,7 +293,7 @@ def handle_cert_csr(args):
         missing_flags.append("-n/--name")
     if missing_flags:
         output_usage_error(
-            _cert_cli._cert_csr_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=2
+            _cert_cli._cert_csr_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
         )
 
     # 3. Normalize and validate name
@@ -486,7 +513,7 @@ def handle_cert_sign(args):
     ]
     if missing_flags:
         output_usage_error(
-            _cert_cli._cert_sign_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=2
+            _cert_cli._cert_sign_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
         )
 
     # 3. Validate CSR file exists
@@ -494,7 +521,13 @@ def handle_cert_sign(args):
     if not os.path.exists(csr_path):
         output_error("CSR_NOT_FOUND", path=csr_path)
     if not os.path.isfile(csr_path):
-        output_error("INVALID_ARGS", exit_code=2, detail=f"-r/--csr must be a file path, not a directory: {csr_path}")
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"-r/--csr must be a file path, not a directory: {csr_path}",
+        )
 
     # 4. Validate CA dir
     ca_dir = args.ca_dir
@@ -517,7 +550,6 @@ def handle_cert_sign(args):
         output_error("INVALID_CSR", path=csr_path)
 
     # 6. Resolve cert type: -t is authoritative when given; otherwise read from CSR UNSTRUCTURED_NAME.
-    _VALID_CERT_TYPES = {"client", "server", "org_admin", "lead", "member"}
     cert_type = getattr(args, "cert_type", None)
     if not cert_type:
         # Read proposed role from CSR subject UNSTRUCTURED_NAME (set by 'cert csr -t')
@@ -525,8 +557,12 @@ def handle_cert_sign(args):
         if _csr_role_attrs:
             cert_type = _csr_role_attrs[0].value
     if not cert_type or cert_type not in _VALID_CERT_TYPES:
-        output_error(
-            "INVALID_ARGS", exit_code=2, detail="-t/--type is required (or embed role in CSR with 'cert csr -t')"
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="-t/--type is required (or embed role in CSR with 'cert csr -t')",
         )
     subject_cn = _get_cn(csr.subject)
     if os.sep in subject_cn or (os.altsep and os.altsep in subject_cn) or subject_cn.startswith("."):

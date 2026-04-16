@@ -222,18 +222,36 @@ def test_package_schema_uses_shared_examples(capsys):
 class TestDiscoverNameFromDir:
     def test_single_key_detected(self, tmp_path):
         (tmp_path / "alice.key").write_text("dummy")
-        name = _discover_name_from_dir(str(tmp_path), None)
+        name = _discover_name_from_dir(str(tmp_path))
         assert name == "alice"
 
     def test_no_key_exits(self, tmp_path):
         with pytest.raises(SystemExit):
-            _discover_name_from_dir(str(tmp_path), None)
+            _discover_name_from_dir(str(tmp_path))
 
     def test_multiple_keys_exits(self, tmp_path):
         (tmp_path / "alice.key").write_text("dummy")
         (tmp_path / "bob.key").write_text("dummy")
         with pytest.raises(SystemExit):
-            _discover_name_from_dir(str(tmp_path), None)
+            _discover_name_from_dir(str(tmp_path))
+
+
+def test_package_compat_output_alias_sets_output_format(tmp_path):
+    import argparse
+
+    from nvflare.tool.package.package_cli import def_package_cli_parser, handle_package_cmd
+
+    root = argparse.ArgumentParser(prog="nvflare")
+    subs = root.add_subparsers(dest="sub_command")
+    def_package_cli_parser(subs)
+    args = root.parse_args(["package", "-e", "grpc://fl-server:8002", "--dir", str(tmp_path), "--output", "json"])
+
+    with unittest.mock.patch("nvflare.tool.cli_output.set_output_format") as set_output_format:
+        with unittest.mock.patch("nvflare.tool.package.package_commands.handle_package") as handle_package:
+            handle_package_cmd(args)
+
+    set_output_format.assert_called_once_with("json")
+    handle_package.assert_called_once_with(args)
 
 
 # ---------------------------------------------------------------------------

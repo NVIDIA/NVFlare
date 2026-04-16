@@ -32,6 +32,7 @@ class LogMode:
     RELOAD = "reload"
     FULL = "full"
     CONCISE = "concise"
+    MSG_ONLY = "msg_only"
     VERBOSE = "verbose"
 
 
@@ -40,9 +41,12 @@ with open(os.path.join(os.path.dirname(__file__), DEFAULT_LOG_JSON), "r") as f:
     default_log_dict = json.load(f)
 
 concise_log_dict = copy.deepcopy(default_log_dict)
-# concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(message)s"
+concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(asctime)s - %(levelname)s - %(message)s"
 concise_log_dict["handlers"]["consoleHandler"]["filters"] = ["FLFilter"]
+
+msg_only_log_dict = copy.deepcopy(default_log_dict)
+msg_only_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(message)s"
+msg_only_log_dict["handlers"]["consoleHandler"]["filters"] = ["FLFilter"]
 
 verbose_log_dict = copy.deepcopy(default_log_dict)
 verbose_log_dict["formatters"]["consoleFormatter"][
@@ -53,6 +57,7 @@ verbose_log_dict["loggers"]["root"]["level"] = "DEBUG"
 logmode_config_dict = {
     LogMode.FULL: default_log_dict,
     LogMode.CONCISE: concise_log_dict,
+    LogMode.MSG_ONLY: msg_only_log_dict,
     LogMode.VERBOSE: verbose_log_dict,
 }
 
@@ -357,11 +362,11 @@ def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str
         config = config.strip()
 
         # Accept inline JSON strings forwarded through admin commands as dictConfig payloads.
-        if config.startswith("{") and config.endswith("}"):
+        if config.startswith("{"):
             try:
                 dict_config = json.loads(config)
-            except json.JSONDecodeError:
-                dict_config = None
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid dictConfig JSON: {e.msg}") from e
             if isinstance(dict_config, dict):
                 apply_log_config(dict_config, dir_path, file_prefix=file_prefix)
                 return

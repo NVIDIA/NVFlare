@@ -20,6 +20,7 @@ import os
 import platform
 import stat
 import sys
+from unittest.mock import patch
 
 import pytest
 from cryptography import x509
@@ -177,7 +178,7 @@ class TestCertInit:
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_init(_init_args(project=None, output_dir=None))
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
         captured = capsys.readouterr()
         assert "INVALID_ARGS" in captured.err
         assert "missing required argument(s): --project, -o/--output-dir" in captured.err
@@ -352,7 +353,7 @@ class TestCertCsr:
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_csr(_csr_args(name=None, output_dir=None))
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
         captured = capsys.readouterr()
         assert "INVALID_ARGS" in captured.err
         assert "missing required argument(s): -o/--output-dir, -n/--name" in captured.err
@@ -497,7 +498,7 @@ class TestCertSign:
         args = _sign_args(csr_path=csr_dir, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_sign(args)
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
         captured = capsys.readouterr()
         assert "must be a file path, not a directory" in captured.err
         assert "INTERNAL_ERROR" not in captured.err
@@ -554,7 +555,7 @@ class TestCertSign:
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_sign(_sign_args(csr_path=None, ca_dir=None, output_dir=None))
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
         captured = capsys.readouterr()
         assert "INVALID_ARGS" in captured.err
         assert "missing required argument(s): -r/--csr, -c/--ca-dir, -o/--output-dir" in captured.err
@@ -756,7 +757,7 @@ class TestCertSignReadsTypeFromCsr:
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir)  # cert_type=None
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_sign(args)
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
 
 
 # ---------------------------------------------------------------------------
@@ -793,45 +794,45 @@ class TestLoadSingleSiteYaml:
             _load_single_site_yaml(str(tmp_path / "no-such.yml"))
         assert exc_info.value.code == 1
 
-    def test_not_a_mapping_exits_2(self, tmp_path):
+    def test_not_a_mapping_exits_4(self, tmp_path):
         from nvflare.tool.cert.cert_commands import _load_single_site_yaml
 
         path = self._write_yaml(tmp_path, "- a\n- b\n")
         with pytest.raises(SystemExit) as exc_info:
             _load_single_site_yaml(path)
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
 
-    def test_missing_name_exits_2(self, tmp_path):
+    def test_missing_name_exits_4(self, tmp_path):
         from nvflare.tool.cert.cert_commands import _load_single_site_yaml
 
         path = self._write_yaml(tmp_path, "org: ACME\ntype: client\n")
         with pytest.raises(SystemExit) as exc_info:
             _load_single_site_yaml(path)
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
 
-    def test_missing_org_exits_2(self, tmp_path):
+    def test_missing_org_exits_4(self, tmp_path):
         from nvflare.tool.cert.cert_commands import _load_single_site_yaml
 
         path = self._write_yaml(tmp_path, "name: h1\ntype: client\n")
         with pytest.raises(SystemExit) as exc_info:
             _load_single_site_yaml(path)
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
 
-    def test_missing_type_exits_2(self, tmp_path):
+    def test_missing_type_exits_4(self, tmp_path):
         from nvflare.tool.cert.cert_commands import _load_single_site_yaml
 
         path = self._write_yaml(tmp_path, "name: h1\norg: ACME\n")
         with pytest.raises(SystemExit) as exc_info:
             _load_single_site_yaml(path)
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
 
-    def test_empty_name_exits_2(self, tmp_path):
+    def test_empty_name_exits_4(self, tmp_path):
         from nvflare.tool.cert.cert_commands import _load_single_site_yaml
 
         path = self._write_yaml(tmp_path, "name: ''\norg: ACME\ntype: client\n")
         with pytest.raises(SystemExit) as exc_info:
             _load_single_site_yaml(path)
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
 
 
 # ---------------------------------------------------------------------------
@@ -874,40 +875,40 @@ class TestCertCsrProjectFile:
         assert len(org_attrs) == 1
         assert org_attrs[0].value == "NVIDIA"
 
-    def test_missing_output_dir_exits_2(self, tmp_path, monkeypatch):
+    def test_missing_output_dir_exits_4(self, tmp_path, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
         site_file = self._write_site_yaml(tmp_path)
         args = _csr_args(name=None, project_file=site_file, output_dir=None)
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_csr(args)
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
 
-    def test_mutual_exclusivity_with_name_exits_2(self, tmp_path, monkeypatch):
+    def test_mutual_exclusivity_with_name_exits_4(self, tmp_path, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
         site_file = self._write_site_yaml(tmp_path)
         out_dir = tmp_path / "out"
         args = _csr_args(name="conflicting", project_file=site_file, output_dir=str(out_dir))
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_csr(args)
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
 
-    def test_mutual_exclusivity_with_org_exits_2(self, tmp_path, monkeypatch):
+    def test_mutual_exclusivity_with_org_exits_4(self, tmp_path, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
         site_file = self._write_site_yaml(tmp_path)
         out_dir = tmp_path / "out"
         args = _csr_args(name=None, org="ConflictingOrg", project_file=site_file, output_dir=str(out_dir))
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_csr(args)
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
 
-    def test_mutual_exclusivity_with_type_exits_2(self, tmp_path, monkeypatch):
+    def test_mutual_exclusivity_with_type_exits_4(self, tmp_path, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
         site_file = self._write_site_yaml(tmp_path)
         out_dir = tmp_path / "out"
         args = _csr_args(name=None, cert_type="server", project_file=site_file, output_dir=str(out_dir))
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_csr(args)
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
 
     def test_nonexistent_project_file_exits_1(self, tmp_path, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
@@ -938,8 +939,8 @@ class TestCertCsrProjectFile:
         )
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_csr(args)
-        # Must be INVALID_ARGS exit 2 (mutual exclusivity), not file-not-found exit 1
-        assert exc_info.value.code == 2
+        # Must be INVALID_ARGS exit 4 (mutual exclusivity), not file-not-found exit 1
+        assert exc_info.value.code == 4
 
 
 class TestHandleCertCmdRouting:
@@ -986,3 +987,20 @@ class TestHandleCertCmdRouting:
         assert "usage:" in captured.err
         assert "invalid cert subcommand" in captured.err
         assert "Code: INVALID_ARGS (exit 4)" in captured.err
+
+    def test_compat_output_alias_sets_output_format(self, tmp_path):
+        from argparse import ArgumentParser
+
+        from nvflare.tool.cert.cert_cli import def_cert_cli_parser, handle_cert_cmd
+
+        parser = ArgumentParser(prog="nvflare")
+        subparsers = parser.add_subparsers(dest="sub_command")
+        def_cert_cli_parser(subparsers)
+        args = parser.parse_args(["cert", "init", "--project", "Demo", "-o", str(tmp_path), "--output", "json"])
+
+        with patch("nvflare.tool.cli_output.set_output_format") as set_output_format:
+            with patch("nvflare.tool.cert.cert_commands.handle_cert_init", return_value=0) as handle_init:
+                handle_cert_cmd(args)
+
+        set_output_format.assert_called_once_with("json")
+        handle_init.assert_called_once_with(args)

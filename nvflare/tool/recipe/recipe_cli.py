@@ -13,166 +13,32 @@
 # limitations under the License.
 
 import importlib
+import inspect
+import pkgutil
 import sys
 
 from nvflare.tool.cli_output import output_usage_error
 
-# Static catalog of all known recipes.
-# Each entry: name (CLI id), description, framework tag, module path, class name.
-# _load_catalog() filters this to entries whose dependencies are actually installed.
-_KNOWN_RECIPES = [
-    # ── Unified (framework-agnostic) ─────────────────────────────────────────
-    {
-        "name": "fedavg",
-        "description": "Federated Averaging — parallel aggregation across clients (any framework)",
-        "framework": "any",
-        "module": "nvflare.recipe.fedavg",
-        "class": "FedAvgRecipe",
-    },
-    {
-        "name": "cyclic",
-        "description": "Cyclic federated learning — sequential round-robin training across clients",
-        "framework": "any",
-        "module": "nvflare.recipe.cyclic",
-        "class": "CyclicRecipe",
-    },
-    {
-        "name": "fedstats",
-        "description": "Federated statistics — compute dataset statistics across sites without sharing data",
-        "framework": "any",
-        "module": "nvflare.recipe.fedstats",
-        "class": "FedStatsRecipe",
-    },
-    # ── PyTorch ──────────────────────────────────────────────────────────────
-    {
-        "name": "fedavg-pt",
-        "description": "FedAvg for PyTorch nn.Module models",
-        "framework": "pytorch",
-        "module": "nvflare.app_opt.pt.recipes.fedavg",
-        "class": "FedAvgRecipe",
-    },
-    {
-        "name": "fedopt-pt",
-        "description": "FedOpt for PyTorch — server-side optimizer (FedAdam, FedYogi, FedAdagrad)",
-        "framework": "pytorch",
-        "module": "nvflare.app_opt.pt.recipes.fedopt",
-        "class": "FedOptRecipe",
-    },
-    {
-        "name": "scaffold-pt",
-        "description": "SCAFFOLD for PyTorch — reduces client drift with control variates",
-        "framework": "pytorch",
-        "module": "nvflare.app_opt.pt.recipes.scaffold",
-        "class": "ScaffoldRecipe",
-    },
-    {
-        "name": "cyclic-pt",
-        "description": "Cyclic federated learning for PyTorch nn.Module models",
-        "framework": "pytorch",
-        "module": "nvflare.app_opt.pt.recipes.cyclic",
-        "class": "CyclicRecipe",
-    },
-    {
-        "name": "swarm-pt",
-        "description": "Swarm learning for PyTorch — peer-to-peer federated learning without central server",
-        "framework": "pytorch",
-        "module": "nvflare.app_opt.pt.recipes.swarm",
-        "class": "SwarmLearningRecipe",
-    },
-    {
-        "name": "fedeval-pt",
-        "description": "Federated evaluation for PyTorch — evaluate a pre-trained model across sites",
-        "framework": "pytorch",
-        "module": "nvflare.app_opt.pt.recipes.fedeval",
-        "class": "FedEvalRecipe",
-    },
-    # ── TensorFlow ───────────────────────────────────────────────────────────
-    {
-        "name": "fedavg-tf",
-        "description": "FedAvg for TensorFlow / Keras models",
-        "framework": "tensorflow",
-        "module": "nvflare.app_opt.tf.recipes.fedavg",
-        "class": "FedAvgRecipe",
-    },
-    {
-        "name": "fedopt-tf",
-        "description": "FedOpt for TensorFlow — server-side optimizer",
-        "framework": "tensorflow",
-        "module": "nvflare.app_opt.tf.recipes.fedopt",
-        "class": "FedOptRecipe",
-    },
-    {
-        "name": "scaffold-tf",
-        "description": "SCAFFOLD for TensorFlow — reduces client drift with control variates",
-        "framework": "tensorflow",
-        "module": "nvflare.app_opt.tf.recipes.scaffold",
-        "class": "ScaffoldRecipe",
-    },
-    {
-        "name": "cyclic-tf",
-        "description": "Cyclic federated learning for TensorFlow / Keras models",
-        "framework": "tensorflow",
-        "module": "nvflare.app_opt.tf.recipes.cyclic",
-        "class": "CyclicRecipe",
-    },
-    # ── Scikit-learn ─────────────────────────────────────────────────────────
-    {
-        "name": "fedavg-sklearn",
-        "description": "FedAvg for scikit-learn models (linear, SVM, etc.)",
-        "framework": "sklearn",
-        "module": "nvflare.app_opt.sklearn.recipes.fedavg",
-        "class": "SklearnFedAvgRecipe",
-    },
-    {
-        "name": "kmeans-sklearn",
-        "description": "Federated K-Means clustering with scikit-learn",
-        "framework": "sklearn",
-        "module": "nvflare.app_opt.sklearn.recipes.kmeans",
-        "class": "KMeansFedAvgRecipe",
-    },
-    {
-        "name": "svm-sklearn",
-        "description": "Federated SVM with support vector aggregation",
-        "framework": "sklearn",
-        "module": "nvflare.app_opt.sklearn.recipes.svm",
-        "class": "SVMFedAvgRecipe",
-    },
-    # ── XGBoost ──────────────────────────────────────────────────────────────
-    {
-        "name": "xgb-bagging",
-        "description": "XGBoost with bagging — tree-based horizontal federated learning",
-        "framework": "xgboost",
-        "module": "nvflare.app_opt.xgboost.recipes.bagging",
-        "class": "XGBBaggingRecipe",
-    },
-    {
-        "name": "xgb-histogram",
-        "description": "XGBoost histogram-based horizontal federated learning",
-        "framework": "xgboost",
-        "module": "nvflare.app_opt.xgboost.recipes.histogram",
-        "class": "XGBHorizontalRecipe",
-    },
-    {
-        "name": "xgb-vertical",
-        "description": "XGBoost vertical federated learning (label on one site)",
-        "framework": "xgboost",
-        "module": "nvflare.app_opt.xgboost.recipes.vertical",
-        "class": "XGBVerticalRecipe",
-    },
+_RECIPE_PACKAGE_ROOTS = [
+    {"package": "nvflare.recipe", "framework": "any"},
+    {"package": "nvflare.app_opt.pt.recipes", "framework": "pytorch"},
+    {"package": "nvflare.app_opt.tf.recipes", "framework": "tensorflow"},
+    {"package": "nvflare.app_opt.sklearn.recipes", "framework": "sklearn"},
+    {"package": "nvflare.app_opt.xgboost.recipes", "framework": "xgboost"},
 ]
 
 
 def _framework_install_hint(framework: str = None) -> list[str]:
     if framework == "pytorch":
-        return ['pip install nvflare[PT]', "pip install torch"]
+        return ["pip install nvflare[PT]", "pip install torch"]
     if framework == "sklearn":
-        return ['pip install nvflare[SKLEARN]', "pip install scikit-learn"]
+        return ["pip install nvflare[SKLEARN]", "pip install scikit-learn"]
     if framework == "tensorflow":
         return ["pip install tensorflow"]
     if framework == "xgboost":
         return ["pip install xgboost"]
     return [
-        'pip install nvflare[PT,SKLEARN]',
+        "pip install nvflare[PT,SKLEARN]",
         "pip install tensorflow xgboost",
     ]
 
@@ -181,26 +47,85 @@ def _framework_install_hint_text(framework: str = None) -> str:
     return "Try: " + " ; ".join(_framework_install_hint(framework))
 
 
+def _recipe_cli_name(module_name: str, framework: str) -> str:
+    stem = module_name.rsplit(".", 1)[-1].replace("_", "-")
+    if framework == "any":
+        return stem
+    if framework == "pytorch":
+        return f"{stem}-pt"
+    if framework == "tensorflow":
+        return f"{stem}-tf"
+    if framework == "sklearn":
+        return f"{stem}-sklearn"
+    if framework == "xgboost":
+        return f"xgb-{stem}"
+    return stem
+
+
+def _recipe_description(recipe_cls) -> str:
+    doc = inspect.getdoc(recipe_cls) or ""
+    if not doc:
+        return f"{recipe_cls.__name__} recipe"
+    return next((line.strip() for line in doc.splitlines() if line.strip()), f"{recipe_cls.__name__} recipe")
+
+
+def _iter_recipe_classes(module):
+    from nvflare.recipe.spec import Recipe
+
+    for _name, obj in inspect.getmembers(module, inspect.isclass):
+        if obj.__module__ != module.__name__:
+            continue
+        if obj is Recipe:
+            continue
+        if issubclass(obj, Recipe):
+            yield obj
+
+
 def _load_catalog(framework: str = None) -> list:
     """Return available recipes, filtered by framework if given.
 
     Recipes whose optional dependencies are not installed are silently skipped.
     """
     results = []
-    for entry in _KNOWN_RECIPES:
-        if framework and entry["framework"] not in (framework, "any"):
+    seen = set()
+    for root in _RECIPE_PACKAGE_ROOTS:
+        if framework and root["framework"] not in (framework, "any"):
             continue
         try:
-            mod = importlib.import_module(entry["module"])
-            getattr(mod, entry["class"])  # confirm class exists
-            results.append(entry)
-        except (ImportError, AttributeError):
+            package = importlib.import_module(root["package"])
+        except ImportError:
             pass
+
+        else:
+            for _finder, module_name, _is_pkg in pkgutil.iter_modules(package.__path__, package.__name__ + "."):
+                if module_name.endswith(".__init__"):
+                    continue
+                try:
+                    mod = importlib.import_module(module_name)
+                except ImportError:
+                    continue
+
+                for recipe_cls in _iter_recipe_classes(mod):
+                    cli_name = _recipe_cli_name(module_name, root["framework"])
+                    if cli_name in seen:
+                        continue
+                    seen.add(cli_name)
+                    results.append(
+                        {
+                            "name": cli_name,
+                            "description": _recipe_description(recipe_cls),
+                            "framework": root["framework"],
+                            "module": module_name,
+                            "class": recipe_cls.__name__,
+                        }
+                    )
+
+    results.sort(key=lambda entry: entry["name"])
     return results
 
 
 def cmd_recipe_list(cmd_args):
-    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
+    from nvflare.tool.cli_output import is_json_mode, output_error_message, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -214,7 +139,7 @@ def cmd_recipe_list(cmd_args):
     catalog = _load_catalog(framework=framework)
 
     if framework and not catalog:
-        output_error(
+        output_error_message(
             "INVALID_ARGS",
             "Invalid arguments.",
             _framework_install_hint_text(framework),

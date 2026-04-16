@@ -14,6 +14,8 @@
 
 import json
 
+from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.private.admin_defs import ReturnCode
 from nvflare.private.fed.server.sys_cmd import SystemCommandModule
 
 
@@ -116,12 +118,41 @@ def test_report_version_all_includes_server_and_clients(monkeypatch):
     assert payload["site-1"] == {"version": "2.8.0"}
 
 
-def test_report_version_invalid_target_emits_error_string():
+def test_report_version_preserves_client_error_payload(monkeypatch):
     module = SystemCommandModule()
     conn = _MockConnection()
 
-    module.report_version(conn, ["report_version", "bogus"])
+    class _ErrorReplyMessage:
+        def __init__(self, body):
+            self.body = body
+
+        def get_header(self, name):
+            return ReturnCode.ERROR
+
+    class _ErrorClientReply:
+        def __init__(self, client_name, body):
+            self.client_name = client_name
+            self.reply = _ErrorReplyMessage(body)
+
+    monkeypatch.setattr(
+        module,
+        "send_request_to_clients",
+        lambda conn, message: [_ErrorClientReply("site-1", "client unavailable")],
+    )
+
+    module.report_version(conn, [AdminCommandNames.REPORT_VERSION, "all"])
+
+    payload, _meta = conn.dicts[0]
+    assert payload["server"]["version"]
+    assert payload["site-1"] == {"error": "client unavailable"}
+
+
+def test_report_version_invalid_target_emits_error():
+    module = SystemCommandModule()
+    conn = _MockConnection()
+
+    module.report_version(conn, [AdminCommandNames.REPORT_VERSION, "bogus"])
 
     assert conn.dicts == []
-    assert conn.strings
-    assert "invalid target type" in conn.strings[0][0]
+    assert conn.errors
+    assert "invalid target type" in conn.errors[0][0]

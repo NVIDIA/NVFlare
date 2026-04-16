@@ -43,7 +43,7 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "LOG_CONFIG_INVALID": {
         "message": "Log config is not valid JSON or a recognised log mode.",
-        "hint": "Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, full, verbose, reload.",
+        "hint": "Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
     },
     "SERVER_UNREACHABLE": {
         "message": "Server stopped or job ended before command was delivered.",
@@ -68,7 +68,7 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     # --- Cert commands ---
     "OUTPUT_DIR_NOT_WRITABLE": {
-        "message": "Cannot write to output directory {path}: {detail}",
+        "message": "Cannot write to output directory {path}.",
         "hint": "Check directory permissions or choose a different output directory.",
     },
     "CERT_GENERATION_FAILED": {
@@ -204,6 +204,7 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "hint": "Check the recipe class run() method for errors.",
     },
 }
+
 
 def get_error(code: str, **kwargs) -> Tuple[str, str]:
     """Return (message, hint) for the given error code with placeholders filled.

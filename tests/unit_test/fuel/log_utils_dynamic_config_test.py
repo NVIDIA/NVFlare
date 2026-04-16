@@ -15,6 +15,8 @@
 import json
 from unittest.mock import patch
 
+import pytest
+
 
 def test_dynamic_log_config_accepts_inline_json_string(tmp_path):
     from nvflare.fuel.utils.log_utils import dynamic_log_config
@@ -31,3 +33,19 @@ def test_dynamic_log_config_accepts_inline_json_string(tmp_path):
 
     mock_apply.assert_called_once()
     assert mock_apply.call_args.args[0] == config
+
+
+def test_dynamic_log_config_invalid_inline_json_raises_value_error(tmp_path):
+    from nvflare.fuel.utils.log_utils import dynamic_log_config
+
+    with pytest.raises(ValueError, match="Invalid dictConfig JSON"):
+        dynamic_log_config('{"version": 1,', str(tmp_path), str(tmp_path / "reload.json"))
+
+
+def test_log_modes_preserve_concise_and_add_msg_only():
+    from nvflare.fuel.utils.log_utils import LogMode, logmode_config_dict
+
+    assert logmode_config_dict[LogMode.CONCISE]["formatters"]["consoleFormatter"]["fmt"] == (
+        "%(asctime)s - %(levelname)s - %(message)s"
+    )
+    assert logmode_config_dict[LogMode.MSG_ONLY]["formatters"]["consoleFormatter"]["fmt"] == "%(message)s"

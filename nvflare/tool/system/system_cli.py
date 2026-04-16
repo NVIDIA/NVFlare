@@ -98,7 +98,7 @@ def def_system_cli_parser(system_parser):
         "level",
         nargs="?",
         default=None,
-        help="DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, full, verbose, reload",
+        help="DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload",
     )
     p.add_argument("--config", default=None, help="path to dictConfig JSON file or inline JSON")
     p.add_argument("--site", default="all", help="server, a client name, or all")
@@ -507,7 +507,7 @@ def cmd_system_log(args):
             exit_code=1,
             error_code="LOG_CONFIG_INVALID",
             message="Log config is not valid JSON or a recognised log mode.",
-            hint="Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, full, verbose, reload.",
+            hint="Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
         )
 
     try:

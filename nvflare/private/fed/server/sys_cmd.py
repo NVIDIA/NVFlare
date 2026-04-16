@@ -17,6 +17,7 @@ from typing import List
 
 import psutil
 
+from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -88,9 +89,9 @@ class SystemCommandModule(CommandModule, CommandUtil):
                     visible=True,
                 ),
                 CommandSpec(
-                    name="report_version",
+                    name=AdminCommandNames.REPORT_VERSION,
                     description="get NVFlare version info",
-                    usage="report_version server|client|all <client-name> ...",
+                    usage=f"{AdminCommandNames.REPORT_VERSION} server|client|all <client-name> ...",
                     handler_func=self.report_version,
                     authz_func=self.authorize_server_operation,
                     visible=True,
@@ -251,14 +252,21 @@ class SystemCommandModule(CommandModule, CommandUtil):
             table.add_row([str(k), str(v)], meta=v)
 
     def report_version(self, conn: Connection, args: List[str]):
+        """Return per-site version info.
+
+        Successful site replies have shape {"version": "<nvflare-version>"}.
+        Failed or malformed site replies have shape {"error": "<reason>"}.
+        """
         if len(args) < 2:
             conn.append_error("syntax error: missing site names")
             return
 
         target_type = args[1]
         if target_type not in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
-            conn.append_string(
-                "invalid target type {}. Usage: report_version server|client|all <client-name>".format(target_type)
+            conn.append_error(
+                "invalid target type {}. Usage: {} server|client|all <client-name>".format(
+                    target_type, AdminCommandNames.REPORT_VERSION
+                )
             )
             return
 

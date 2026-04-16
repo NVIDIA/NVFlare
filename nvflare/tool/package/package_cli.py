@@ -27,21 +27,27 @@ _PACKAGE_EXAMPLES = [
 
 _PACKAGE_HELP_EXAMPLES = """Examples:
   Build kits from a project YAML:
-    {}
+    nvflare package -e grpc://fl-server:8002 -p ./site.yaml --dir ./certs
 
   Build one kit from a working directory:
-    {}
+    nvflare package -e grpc://fl-server:8002 --dir ./hospital-1-kit
 
   Build one kit from explicit file paths:
-    {}
-""".format(
-    _PACKAGE_EXAMPLES[0],
-    _PACKAGE_EXAMPLES[1],
-    _PACKAGE_EXAMPLES[2]
-    .replace(" --cert ", " \\\n      --cert ")
-    .replace(" --key ", " \\\n      --key ")
-    .replace(" --rootca ", " \\\n      --rootca "),
-)
+    nvflare package -n hospital-1 -e grpc://fl-server:8002 \\
+      --cert ./signed/hospital-1/hospital-1.crt \\
+      --key ./csr/hospital-1.key \\
+      --rootca ./signed/hospital-1/rootCA.pem
+"""
+
+
+def _add_compat_output_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--output",
+        dest="compat_output_format",
+        choices=["json", "quiet"],
+        default=None,
+        help=argparse.SUPPRESS,
+    )
 
 
 def def_package_cli_parser(sub_cmd) -> dict:
@@ -167,12 +173,18 @@ def def_package_cli_parser(sub_cmd) -> dict:
         default=False,
         help="Print JSON schema for this command's arguments and exit.",
     )
+    _add_compat_output_arg(p)
     _package_parser = p
     return {"package": p}
 
 
 def handle_package_cmd(args):
     """Dispatch to package handler."""
+    from nvflare.tool.cli_output import set_output_format
     from nvflare.tool.package.package_commands import handle_package
+
+    compat_output_format = getattr(args, "compat_output_format", None)
+    if compat_output_format:
+        set_output_format("json" if compat_output_format == "json" else "txt")
 
     handle_package(args)
