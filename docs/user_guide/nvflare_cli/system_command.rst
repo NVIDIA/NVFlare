@@ -82,9 +82,9 @@ Change runtime logging:
 
 .. code-block:: shell
 
-   nvflare system log concise
-   nvflare system log --site server DEBUG
-   nvflare system log --site site-1 --config ./logging.json
+   nvflare system log-level concise
+   nvflare system log-level --site server DEBUG
+   nvflare system log-level --site site-1 --config ./logging.json
 
 ****************
 Status and Resources
@@ -179,14 +179,14 @@ version, and which sites are mismatched.
 Runtime Logging
 ****************
 
-Use ``nvflare system log`` to change logging on the server or client sites.
+Use ``nvflare system log-level`` to change logging on the server or client sites.
 
 .. code-block:: shell
 
-   nvflare system log DEBUG
-   nvflare system log --site server verbose
-   nvflare system log --config ./logging.json
-   nvflare system log --site site-1 --config ./logging.json
+   nvflare system log-level DEBUG
+   nvflare system log-level --site server verbose
+   nvflare system log-level --config ./logging.json
+   nvflare system log-level --site site-1 --config ./logging.json
 
 Logging arguments:
 

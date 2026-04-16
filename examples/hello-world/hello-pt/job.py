@@ -80,7 +80,7 @@ def main():
         # Run FL simulation
         env = SimEnv(num_clients=n_clients)
         run = recipe.execute(env)
-        if run:
+        if run is not None:
             print()
             print("Job Status is:", run.get_status())
             print("Result can be found in :", run.get_result())
