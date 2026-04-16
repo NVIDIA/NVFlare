@@ -13,6 +13,8 @@ clouds:
   aws:
     kubeconfig: ../../../.tmp/kubeconfigs/aws.yaml
     region: us-west-2
+    eks_cluster_name: nvflare-auto-test
+    helm_overrides: [--set, hostPortEnabled=false, --set, tcpConfigMapEnabled=false]
     security_context: { seLinuxOptions: { type: spc_t } }
     pvc_config:
       nvfletc:  { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }

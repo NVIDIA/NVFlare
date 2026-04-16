@@ -74,6 +74,8 @@ class DeployConfig:
     server_cloud: str
     gcp_project: str | None
     gcp_region: str | None
+    aws_region: str | None
+    aws_eks_cluster_name: str | None
 
 
 def load_config(config_path: Path) -> DeployConfig:
@@ -127,11 +129,14 @@ def load_config(config_path: Path) -> DeployConfig:
     server_cloud = next(p.cloud for p in participants if p.role == "server")
 
     gcp = clouds.get("gcp", {})
+    aws = clouds.get("aws", {})
     return DeployConfig(
         participants=participants,
         server_cloud=server_cloud,
         gcp_project=gcp.get("project"),
         gcp_region=gcp.get("region"),
+        aws_region=aws.get("region"),
+        aws_eks_cluster_name=aws.get("eks_cluster_name"),
     )
 
 
@@ -150,6 +155,12 @@ def _dry_run_stdout(cmd: list[str]) -> str:
         return "<gcp-project>\n"
     if cmd[:4] == ["gcloud", "compute", "addresses", "describe"]:
         return "<server-ip>\n"
+    if cmd[:3] == ["aws", "ec2", "allocate-address"]:
+        return json.dumps({"PublicIp": "<server-ip>", "AllocationId": "<alloc-id>"}) + "\n"
+    if cmd[:3] == ["aws", "eks", "describe-cluster"]:
+        return "<vpc-id>\n"
+    if cmd[:3] == ["aws", "ec2", "describe-subnets"]:
+        return "<subnet-id>\n"
     return ""
 
 
@@ -230,14 +241,20 @@ def load_state() -> dict:
 
 
 def _synthetic_state(config: DeployConfig) -> dict:
-    return {
+    ip_name = "<alloc-id>" if config.server_cloud == "aws" else "nvflare-DRYRUN-0"
+    state = {
         "server_ip": "<server-ip>",
-        "ip_name": "nvflare-DRYRUN-0",
+        "ip_name": ip_name,
         "gcp_project": "<gcp-project>",
         "gcp_region": config.gcp_region or "us-central1",
+        "aws_region": config.aws_region,
         "server_cloud": config.server_cloud,
         "participants": {p.name: {"kubeconfig": p.kubeconfig, "namespace": p.namespace} for p in config.participants},
     }
+    if config.server_cloud == "aws":
+        state["aws_eip_allocation_id"] = "<alloc-id>"
+        state["aws_nlb_subnet_id"] = "<subnet-id>"
+    return state
 
 
 def save_state(state: dict):
@@ -263,24 +280,34 @@ def pod_exists(kubeconfig: str, ns: str, name: str) -> bool:
 # ---------------------------------------------------------------------------
 # Reserve / release static IP
 # ---------------------------------------------------------------------------
-def reserve_ip(server_cloud: str, project: str, region: str, provided_ip: str | None) -> tuple[str, str]:
+def _ip_tag() -> str:
+    if DRY_RUN:
+        return "nvflare-DRYRUN-0"
+    return f"nvflare-{os.environ.get('USER', 'dev')}-{int(time.time())}"
+
+
+def reserve_ip(
+    server_cloud: str,
+    provided_ip: str | None,
+    *,
+    gcp_project: str | None = None,
+    gcp_region: str | None = None,
+    aws_region: str | None = None,
+) -> tuple[str, str]:
     if provided_ip:
         print(f"Using provided IP: {provided_ip}")
         return provided_ip, ""
     if server_cloud == "gcp":
-        return _reserve_ip_gcp(project, region)
+        return _reserve_ip_gcp(gcp_project, gcp_region)
     if server_cloud == "aws":
-        raise NotImplementedError("AWS server IP reservation not yet supported")
+        return _reserve_ip_aws(aws_region)
     if server_cloud == "azure":
         raise NotImplementedError("Azure server IP reservation not yet supported")
     raise ValueError(f"unknown server cloud: {server_cloud}")
 
 
 def _reserve_ip_gcp(project: str, region: str) -> tuple[str, str]:
-    if DRY_RUN:
-        ip_name = "nvflare-DRYRUN-0"
-    else:
-        ip_name = f"nvflare-{os.environ.get('USER', 'dev')}-{int(time.time())}"
+    ip_name = _ip_tag()
     print(f"Reserving static IP {ip_name} ...")
     run(["gcloud", "compute", "addresses", "create", ip_name, f"--region={region}", f"--project={project}", "--quiet"])
     r = run(
@@ -301,7 +328,87 @@ def _reserve_ip_gcp(project: str, region: str) -> tuple[str, str]:
     return ip, ip_name
 
 
-def release_ip(server_cloud: str, ip_name: str, project: str, region: str):
+def _reserve_ip_aws(region: str) -> tuple[str, str]:
+    tag = _ip_tag()
+    print(f"Allocating Elastic IP {tag} ...")
+    r = run(
+        [
+            "aws",
+            "ec2",
+            "allocate-address",
+            "--domain",
+            "vpc",
+            "--region",
+            region,
+            "--tag-specifications",
+            f"ResourceType=elastic-ip,Tags=[{{Key=Name,Value={tag}}}]",
+            "--output",
+            "json",
+        ],
+        capture=True,
+    )
+    resp = json.loads(r.stdout) if r.stdout.strip() else {}
+    ip = resp.get("PublicIp", "")
+    alloc_id = resp.get("AllocationId", "")
+    if not ip or not alloc_id:
+        raise RuntimeError(f"allocate-address returned unexpected response: {r.stdout!r}")
+    print(f"  Reserved: {ip} ({alloc_id})")
+    return ip, alloc_id
+
+
+def _discover_aws_public_subnet(cluster_name: str, region: str) -> str:
+    print(f"Discovering public subnet for EKS cluster {cluster_name} ...")
+    r = run(
+        [
+            "aws",
+            "eks",
+            "describe-cluster",
+            "--name",
+            cluster_name,
+            "--region",
+            region,
+            "--query",
+            "cluster.resourcesVpcConfig.vpcId",
+            "--output",
+            "text",
+        ],
+        capture=True,
+    )
+    vpc_id = r.stdout.strip()
+    if not vpc_id:
+        raise RuntimeError(f"could not resolve VPC id for EKS cluster {cluster_name}")
+    r = run(
+        [
+            "aws",
+            "ec2",
+            "describe-subnets",
+            "--filters",
+            f"Name=vpc-id,Values={vpc_id}",
+            "Name=tag:kubernetes.io/role/elb,Values=1",
+            "--region",
+            region,
+            "--query",
+            "Subnets[0].SubnetId",
+            "--output",
+            "text",
+        ],
+        capture=True,
+    )
+    subnet_id = r.stdout.strip()
+    if not subnet_id or subnet_id == "None":
+        raise RuntimeError(f"no public subnet (tag kubernetes.io/role/elb=1) in VPC {vpc_id}")
+    print(f"  Using subnet: {subnet_id}")
+    return subnet_id
+
+
+def release_ip(
+    server_cloud: str,
+    ip_name: str,
+    *,
+    gcp_project: str | None = None,
+    gcp_region: str | None = None,
+    aws_region: str | None = None,
+):
     if not ip_name:
         return
     if server_cloud == "gcp":
@@ -313,15 +420,20 @@ def release_ip(server_cloud: str, ip_name: str, project: str, region: str):
                 "addresses",
                 "delete",
                 ip_name,
-                f"--region={region}",
-                f"--project={project}",
+                f"--region={gcp_region}",
+                f"--project={gcp_project}",
                 "--quiet",
             ],
             check=False,
         )
         return
     if server_cloud == "aws":
-        raise NotImplementedError("AWS server IP release not yet supported")
+        print(f"Releasing Elastic IP {ip_name} ...")
+        run(
+            ["aws", "ec2", "release-address", "--allocation-id", ip_name, "--region", aws_region],
+            check=False,
+        )
+        return
     if server_cloud == "azure":
         raise NotImplementedError("Azure server IP release not yet supported")
     raise ValueError(f"unknown server cloud: {server_cloud}")
@@ -330,7 +442,7 @@ def release_ip(server_cloud: str, ip_name: str, project: str, region: str):
 # ---------------------------------------------------------------------------
 # Provision
 # ---------------------------------------------------------------------------
-def provision(server_ip: str, image: str) -> Path:
+def provision(server_ip: str, image: str, config: DeployConfig) -> Path:
     print("Provisioning ...")
     if DRY_RUN:
         project_file = WORK_DIR / "project.yml"
@@ -342,8 +454,22 @@ def provision(server_ip: str, image: str) -> Path:
     project_text = PROJECT_TEMPLATE.read_text()
     project_text = project_text.replace("__SERVER_IP__", server_ip)
     project_text = project_text.replace("__DOCKER_IMAGE__", image)
+    project = yaml.safe_load(project_text)
+
+    template_server = next(e for e in project["participants"] if e.get("type") == "server")
+    template_admin = next(e for e in project["participants"] if e.get("type") == "admin")
+
+    new_participants = []
+    for p in config.participants:
+        if p.role == "server":
+            new_participants.append({**template_server, "name": p.name})
+        else:
+            new_participants.append({"name": p.name, "type": "client", "org": "nvidia"})
+    new_participants.append(template_admin)
+    project["participants"] = new_participants
+
     project_file = WORK_DIR / "project.yml"
-    project_file.write_text(project_text)
+    project_file.write_text(yaml.dump(project, default_flow_style=False, sort_keys=False))
 
     nvflare = REPO_ROOT / ".venv" / "bin" / "nvflare"
     nvflare_cmd = str(nvflare) if nvflare.exists() else "nvflare"
@@ -410,7 +536,14 @@ def patch_resources_json(
 # ---------------------------------------------------------------------------
 # Deploy one participant
 # ---------------------------------------------------------------------------
-def deploy_participant(p: Participant, prod_dir: Path, server_ip: str | None = None, aws_image: str | None = None):
+def deploy_participant(
+    p: Participant,
+    prod_dir: Path,
+    server_ip: str | None = None,
+    aws_image: str | None = None,
+    aws_server_alloc_id: str | None = None,
+    aws_server_subnet: str | None = None,
+):
     kit_dir = prod_dir / p.name
     chart_dir = kit_dir / "helm_chart"
 
@@ -508,7 +641,7 @@ def deploy_participant(p: Participant, prod_dir: Path, server_ip: str | None = N
             str(kit_dir / "etc" / "study_data_pvc.yaml"),
             f"{pod_name}:/etc-vol/study_data_pvc.yaml",
         )
-        kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name, "--wait=false")
+        kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name, "--timeout=60s")
 
         # 4. Helm install
         print(f"  Helm installing {p.name} ...")
@@ -516,7 +649,22 @@ def deploy_participant(p: Participant, prod_dir: Path, server_ip: str | None = N
         helm_args += p.helm_overrides
 
         if p.role == "server" and server_ip:
-            helm_args += ["--set", "service.type=LoadBalancer", "--set", f"service.loadBalancerIP={server_ip}"]
+            helm_args += ["--set", "service.type=LoadBalancer"]
+            if p.cloud == "aws":
+                if not aws_server_alloc_id or not aws_server_subnet:
+                    raise RuntimeError("AWS server requires EIP allocation id and NLB subnet id")
+                annotations = {
+                    "service.beta.kubernetes.io/aws-load-balancer-type": "external",
+                    "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type": "ip",
+                    "service.beta.kubernetes.io/aws-load-balancer-scheme": "internet-facing",
+                    "service.beta.kubernetes.io/aws-load-balancer-eip-allocations": aws_server_alloc_id,
+                    "service.beta.kubernetes.io/aws-load-balancer-subnets": aws_server_subnet,
+                }
+                for k, v in annotations.items():
+                    escaped = k.replace(".", r"\.")
+                    helm_args += ["--set-string", f"service.annotations.{escaped}={v}"]
+            else:
+                helm_args += ["--set", f"service.loadBalancerIP={server_ip}"]
 
         if p.security_context:
             for k, v in _flatten_set("securityContext", p.security_context):
@@ -568,6 +716,7 @@ def cmd_up(args):
 
     gcp_project = config.gcp_project or run(["gcloud", "config", "get-value", "project"], capture=True).stdout.strip()
     gcp_region = config.gcp_region or "us-central1"
+    aws_region = config.aws_region
 
     state = load_state()
 
@@ -577,7 +726,23 @@ def cmd_up(args):
         ip_name = state.get("ip_name", "")
         print(f"Reusing IP from state: {server_ip}")
     else:
-        server_ip, ip_name = reserve_ip(config.server_cloud, gcp_project, gcp_region, args.server_ip)
+        server_ip, ip_name = reserve_ip(
+            config.server_cloud,
+            args.server_ip,
+            gcp_project=gcp_project,
+            gcp_region=gcp_region,
+            aws_region=aws_region,
+        )
+
+    # Discover AWS NLB subnet when server is in AWS
+    if config.server_cloud == "aws":
+        if not config.aws_eks_cluster_name:
+            sys.exit("clouds.aws.eks_cluster_name is required when the server is in AWS")
+        nlb_subnet = state.get("aws_nlb_subnet_id") or _discover_aws_public_subnet(
+            config.aws_eks_cluster_name, aws_region
+        )
+        state["aws_nlb_subnet_id"] = nlb_subnet
+        state["aws_eip_allocation_id"] = ip_name
 
     # Save state
     state.update(
@@ -586,6 +751,7 @@ def cmd_up(args):
             "ip_name": ip_name,
             "gcp_project": gcp_project,
             "gcp_region": gcp_region,
+            "aws_region": aws_region,
             "server_cloud": config.server_cloud,
             "participants": {p.name: {"kubeconfig": p.kubeconfig, "namespace": p.namespace} for p in participants},
         }
@@ -599,7 +765,7 @@ def cmd_up(args):
         prod_dir = sorted(existing)[-1]
         print(f"Reusing existing provision: {prod_dir}")
     else:
-        prod_dir = provision(server_ip, args.gcp_image)
+        prod_dir = provision(server_ip, args.gcp_image, config)
 
     # Post-process resources.json
     print("Post-processing resources.json for K8sJobLauncher ...")
@@ -613,8 +779,17 @@ def cmd_up(args):
         )
 
     # Deploy each participant
+    aws_alloc_id = state.get("aws_eip_allocation_id")
+    aws_subnet = state.get("aws_nlb_subnet_id")
     for p in participants:
-        deploy_participant(p, prod_dir, server_ip=server_ip, aws_image=args.aws_image)
+        deploy_participant(
+            p,
+            prod_dir,
+            server_ip=server_ip,
+            aws_image=args.aws_image,
+            aws_server_alloc_id=aws_alloc_id,
+            aws_server_subnet=aws_subnet,
+        )
 
     print(f"\n{'=' * 60}")
     print("Deployment complete.")
@@ -659,8 +834,9 @@ def cmd_down(args):
         release_ip(
             state.get("server_cloud", "gcp"),
             ip_name,
-            state.get("gcp_project", ""),
-            state.get("gcp_region", "us-central1"),
+            gcp_project=state.get("gcp_project", ""),
+            gcp_region=state.get("gcp_region", "us-central1"),
+            aws_region=state.get("aws_region"),
         )
 
     STATE_FILE.unlink(missing_ok=True)

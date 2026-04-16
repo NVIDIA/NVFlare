@@ -8,3 +8,9 @@ metadata:
 
 autoModeConfig:
   enabled: true
+
+availabilityZones: [us-west-2a, us-west-2b, us-west-2c]
+
+vpc:
+  nat:
+    gateway: Single
