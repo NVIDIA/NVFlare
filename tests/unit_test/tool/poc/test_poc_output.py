@@ -227,6 +227,26 @@ class TestPocOutput:
         assert data["status"] == "error"
         assert data["error_code"] == "INVALID_ARGS"
 
+    def test_clean_poc_invalid_loaded_project_exits_4(self, capsys, tmp_path):
+        """clean_poc should not emit cleaned when setup_service_config yields no project config."""
+        from nvflare.tool.poc.poc_commands import clean_poc
+
+        args = MagicMock()
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("os.path.isdir", return_value=True),
+            patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(None, None)),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                clean_poc(args)
+
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INVALID_ARGS"
+
     def test_start_poc_reports_configured_server_port(self, capsys, tmp_path):
         """start_poc should use the configured fed-learn port, not a hard-coded default."""
         from nvflare.lighter.constants import PropKey
