@@ -104,6 +104,19 @@ class TestJobList:
         args = parser.parse_args(["--study", "all"])
         assert args.study == "all"
 
+    def test_list_forwards_all_study_literal_to_session(self):
+        """The literal study name 'all' is forwarded unchanged to session creation."""
+        from nvflare.tool.job.job_cli import cmd_job_list
+
+        args = self._make_args(study="all")
+        mock_sess = MagicMock()
+        mock_sess.list_jobs.return_value = []
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess) as get_session:
+            cmd_job_list(args)
+
+        assert get_session.call_args.kwargs["study"] == "all"
+
     def test_study_field_injected_in_each_job(self, capsys):
         """cmd_job_list injects study field into each job entry when missing."""
         import json

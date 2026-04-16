@@ -109,6 +109,19 @@ class TestJobSubmitOutput:
         assert data["error_code"] == "INTERNAL_ERROR"
         assert "ERROR_SYNTAX" in data["message"]
 
+    def test_internal_submit_job_forwards_all_study_literal(self):
+        from nvflare.tool.job.job_cli import internal_submit_job
+
+        fake_session = MagicMock()
+        fake_session.submit_job.return_value = "abc123"
+        cmd_args = MagicMock()
+        cmd_args.study = "all"
+
+        with patch("nvflare.tool.job.job_cli.new_cli_session", return_value=fake_session) as new_session:
+            internal_submit_job("/tmp/startup", "admin@nvidia.com", "/tmp/job", cmd_args=cmd_args)
+
+        assert new_session.call_args.kwargs["study"] == "all"
+
     def test_submit_parser_no_longer_accepts_wait_or_timeout(self):
         root = argparse.ArgumentParser()
         parser = def_job_cli_parser(root.add_subparsers(dest="sub_command"))["job"]
