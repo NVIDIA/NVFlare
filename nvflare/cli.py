@@ -255,6 +255,8 @@ def _get_subcommand_choices(parser):
 def _emit_argparse_error_json(parser, message):
     from nvflare.tool.cli_output import SCHEMA_VERSION
 
+    # Parser errors intentionally expose usage/choices inline because they are generated before any
+    # command handler runs and therefore sit outside the normal command data envelope.
     payload = {
         "schema_version": SCHEMA_VERSION,
         "status": "error",
@@ -271,7 +273,7 @@ def _emit_argparse_error_json(parser, message):
     parser.exit(4)
 
 
-def _emit_argparse_error_human(parser, message, exit_code: int = 2):
+def _emit_argparse_error_human(parser, message, exit_code: int = 4):
     from nvflare.tool.cli_output import output_usage_error
 
     output_usage_error(parser, message, exit_code=exit_code)
@@ -289,7 +291,7 @@ def _patch_help_on_error(parser, json_mode: bool = False):
         if json_mode:
             _emit_argparse_error_json(parser, message)
         else:
-            _emit_argparse_error_human(parser, message, exit_code=2)
+            _emit_argparse_error_human(parser, message, exit_code=4)
 
     parser.error = _error_with_help
     for action in parser._actions:
@@ -526,17 +528,6 @@ def _suppress_cli_connector_noise():
     ]
     for name in noisy_loggers:
         logging.getLogger(name).setLevel(logging.CRITICAL)
-
-
-def print_help(prog_parser, sub_cmd, sub_cmd_parsers):
-    if sub_cmd:
-        sub_parser = sub_cmd_parsers[sub_cmd]
-        if sub_parser:
-            sub_parser.print_help(sys.stderr)
-        else:
-            prog_parser.print_help(sys.stderr)
-    else:
-        prog_parser.print_help(sys.stderr)
 
 
 def print_nvflare_version():
