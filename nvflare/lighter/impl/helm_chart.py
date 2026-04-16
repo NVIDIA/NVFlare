@@ -198,8 +198,8 @@ class HelmChartBuilder(Builder):
                 },
             },
             "securityContext": {},
-            "hostPortEnabled": True,
-            "tcpConfigMapEnabled": True,
+            "hostPortEnabled": False,
+            "tcpConfigMapEnabled": False,
             "service": {
                 "type": "ClusterIP",
                 "loadBalancerIP": None,
