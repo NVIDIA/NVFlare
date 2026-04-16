@@ -78,6 +78,39 @@ class DeployConfig:
     aws_eks_cluster_name: str | None
 
 
+def _parse_kubeconfig(kc_path: Path, cloud: str) -> dict:
+    """Extract cluster-identifying fields (region, project, cluster name) from a kubeconfig.
+
+    Relies on the default context-name formats produced by:
+      * GCP: ``gcloud container clusters get-credentials`` → ``gke_<project>_<region>_<cluster>``
+      * AWS: ``aws eks update-kubeconfig`` → ``arn:aws:eks:<region>:<account>:cluster/<name>``
+    """
+    data = yaml.safe_load(kc_path.read_text())
+    current_ctx = data.get("current-context")
+    if not current_ctx:
+        raise ValueError(f"{kc_path}: no current-context")
+    ctx = next((c for c in data.get("contexts", []) if c.get("name") == current_ctx), None)
+    if not ctx:
+        raise ValueError(f"{kc_path}: current-context {current_ctx!r} not found in contexts")
+    cluster_name = ctx["context"]["cluster"]
+
+    if cloud == "gcp":
+        parts = cluster_name.split("_")
+        if len(parts) < 4 or parts[0] != "gke":
+            raise ValueError(
+                f"{kc_path}: GKE context cluster {cluster_name!r} not in 'gke_<project>_<region>_<cluster>' form"
+            )
+        return {"project": parts[1], "region": parts[2]}
+    if cloud == "aws":
+        if not cluster_name.startswith("arn:aws:eks:"):
+            raise ValueError(f"{kc_path}: EKS context cluster {cluster_name!r} is not an ARN")
+        parts = cluster_name.split(":")
+        if len(parts) < 6:
+            raise ValueError(f"{kc_path}: malformed EKS ARN {cluster_name!r}")
+        return {"region": parts[3], "eks_cluster_name": parts[5].split("/", 1)[1]}
+    raise ValueError(f"{kc_path}: cannot parse kubeconfig for unknown cloud {cloud!r}")
+
+
 def load_config(config_path: Path) -> DeployConfig:
     config_path = config_path.resolve()
     raw = yaml.safe_load(config_path.read_text())
@@ -87,6 +120,15 @@ def load_config(config_path: Path) -> DeployConfig:
     raw_participants = raw.get("participants") or []
     if not raw_participants:
         raise ValueError(f"{config_path}: missing 'participants' section")
+
+    cloud_derived: dict[str, dict] = {}
+    for cloud_name, cloud_cfg in clouds.items():
+        kc_rel = (cloud_cfg or {}).get("kubeconfig")
+        if not kc_rel:
+            continue
+        kc_path = (config_path.parent / kc_rel).resolve()
+        if kc_path.exists():
+            cloud_derived[cloud_name] = _parse_kubeconfig(kc_path, cloud_name)
 
     participants: list[Participant] = []
     servers: list[str] = []
@@ -128,8 +170,8 @@ def load_config(config_path: Path) -> DeployConfig:
         raise ValueError(f"{config_path}: expected exactly one server participant, found {len(servers)}: {servers}")
     server_cloud = next(p.cloud for p in participants if p.role == "server")
 
-    gcp = clouds.get("gcp", {})
-    aws = clouds.get("aws", {})
+    gcp = cloud_derived.get("gcp", {})
+    aws = cloud_derived.get("aws", {})
     return DeployConfig(
         participants=participants,
         server_cloud=server_cloud,

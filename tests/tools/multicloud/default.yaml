@@ -3,16 +3,14 @@ name: default
 clouds:
   gcp:
     kubeconfig: ../../../.tmp/kubeconfigs/gcp.yaml
-    region: us-central1
-    project: null
-    helm_overrides: [--set, hostPortEnabled=false, --set, tcpConfigMapEnabled=false]
+    helm_overrides: []
     pvc_config:
       nvfletc:  { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
       nvflws:   { sc: filestore-rwx, access: ReadWriteMany,  size: 1Ti }
       nvfldata: { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
   aws:
     kubeconfig: ../../../.tmp/kubeconfigs/aws.yaml
-    region: us-west-2
+    helm_overrides: []
     security_context: { seLinuxOptions: { type: spc_t } }
     pvc_config:
       nvfletc:  { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }
