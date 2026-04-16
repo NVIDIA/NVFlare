@@ -135,7 +135,9 @@ def test_user_login_parses_structured_reject_code(monkeypatch):
     monkeypatch.setattr("nvflare.fuel.hci.client.api.IdentityAsserter", _FakeIdentityAsserter)
 
     def _fake_server_execute(command, reply_processor, headers=None):
-        api.login_result = "REJECT: AUTH_STUDY_USER_NOT_MAPPED: user 'admin@nvidia.com' is not mapped to study 'cancer-research'"
+        api.login_result = (
+            "REJECT: AUTH_STUDY_USER_NOT_MAPPED: user 'admin@nvidia.com' is not mapped to study 'cancer-research'"
+        )
 
     api.server_execute = _fake_server_execute
 

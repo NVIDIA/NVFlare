@@ -174,7 +174,10 @@ def test_handle_cert_login_rejects_unmapped_user_when_registry_exists(monkeypatc
         login.handle_cert_login(conn, ["CERT_LOGIN", "admin@nvidia.com"])
 
         assert conn.strings == [
-            ("REJECT: AUTH_STUDY_USER_NOT_MAPPED: user 'admin@nvidia.com' is not mapped to study 'cancer-research'", None)
+            (
+                "REJECT: AUTH_STUDY_USER_NOT_MAPPED: user 'admin@nvidia.com' is not mapped to study 'cancer-research'",
+                None,
+            )
         ]
         assert conn.tokens == []
         assert session_mgr.sessions == {}
