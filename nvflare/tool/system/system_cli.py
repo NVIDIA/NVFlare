@@ -395,7 +395,7 @@ def cmd_system_version(args):
 
             if site != "all":
                 if site not in known_sites:
-                    output_error("SITE_NOT_FOUND", detail=f"site '{site}' not found")
+                    output_error("SITE_NOT_FOUND", site=site)
 
             targets = [site] if target_type == "client" else None
             raw_versions = sess.report_version(target_type, targets)

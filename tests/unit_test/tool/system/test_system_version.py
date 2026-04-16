@@ -191,6 +191,8 @@ class TestSystemVersion:
 
         envelope = json.loads(capsys.readouterr().out)
         assert envelope["error_code"] == "SITE_NOT_FOUND"
+        assert "{site}" not in envelope["message"]
+        assert "nonexistent" in envelope["message"]
 
     def test_version_connection_failed_exits_2(self):
         """Session failure → CONNECTION_FAILED, exits 2."""
