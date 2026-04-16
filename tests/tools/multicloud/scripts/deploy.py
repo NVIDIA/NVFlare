@@ -910,7 +910,7 @@ def cmd_status(args):
 # Main
 # ---------------------------------------------------------------------------
 def main():
-    default_config = str(TOOL_DIR / "default.yaml")
+    default_config = str(TOOL_DIR / "gcp-server.yaml")
     parser = argparse.ArgumentParser(description="Multicloud NVFlare deploy tool")
     parser.add_argument("--dry-run", action="store_true", help="Print commands without executing")
     parser.add_argument("--config", default=default_config, help="Path to deploy config YAML")

@@ -53,7 +53,7 @@ except ImportError:
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 TOOL_DIR = SCRIPT_DIR.parent
-DEFAULT_CONFIG = TOOL_DIR / "default.yaml"
+DEFAULT_CONFIG = TOOL_DIR / "gcp-server.yaml"
 
 STATUS_COLORS = {
     "Running": "green",
