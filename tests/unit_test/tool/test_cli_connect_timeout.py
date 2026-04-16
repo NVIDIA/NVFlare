@@ -49,11 +49,10 @@ def test_job_get_session_uses_connect_timeout_env(monkeypatch):
 def test_system_get_session_uses_connect_timeout_env(monkeypatch):
     from nvflare.tool.system import system_cli
 
-    with patch("nvflare.utils.cli_utils.get_hidden_config", return_value=(None, {})):
-        with patch("nvflare.utils.cli_utils.get_startup_kit_dir_for_target", return_value="/tmp/startup"):
-            with patch("nvflare.tool.cli_output.get_connect_timeout", return_value=4.0):
-                with patch("nvflare.tool.cli_session.new_cli_session") as mock_session:
-                    system_cli._get_system_session()
+    with patch("nvflare.tool.job.job_cli.find_admin_user_and_dir", return_value=("admin", "/tmp/startup")):
+        with patch("nvflare.tool.cli_output.get_connect_timeout", return_value=4.0):
+            with patch("nvflare.tool.cli_session.new_cli_session") as mock_session:
+                system_cli._get_system_session()
 
     _, kwargs = mock_session.call_args
     assert kwargs["timeout"] == 4.0
