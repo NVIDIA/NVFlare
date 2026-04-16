@@ -26,12 +26,22 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import yaml
+
+DRY_RUN = False
+
+LAUNCHER_FOR_ROLE = {
+    "server": "nvflare.app_opt.job_launcher.k8s_launcher.ServerK8sJobLauncher",
+    "client": "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
+}
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 TOOL_DIR = SCRIPT_DIR.parent
@@ -50,6 +60,7 @@ class Participant:
     namespace: str
     kubeconfig: str
     role: str  # "server" or "client"
+    cloud: str
     launcher_class: str
     helm_overrides: list = field(default_factory=list)
     security_context: dict | None = None
@@ -57,61 +68,120 @@ class Participant:
     pvc_config: dict = field(default_factory=dict)
 
 
-def default_participants() -> list[Participant]:
-    gcp_kc = str(REPO_ROOT / ".tmp" / "kubeconfigs" / "gcp.yaml")
-    aws_kc = str(REPO_ROOT / ".tmp" / "kubeconfigs" / "aws.yaml")
-    return [
-        Participant(
-            name="gcp-server",
-            namespace="nvflare-server",
-            kubeconfig=gcp_kc,
-            role="server",
-            launcher_class="nvflare.app_opt.job_launcher.k8s_launcher.ServerK8sJobLauncher",
-            helm_overrides=["--set", "hostPortEnabled=false", "--set", "tcpConfigMapEnabled=false"],
-            pvc_config={
-                "nvfletc": {"sc": "standard-rwo", "access": "ReadWriteOnce", "size": "1Gi"},
-                "nvflws": {"sc": "filestore-rwx", "access": "ReadWriteMany", "size": "1Ti"},
-                "nvfldata": {"sc": "standard-rwo", "access": "ReadWriteOnce", "size": "1Gi"},
-            },
-        ),
-        Participant(
-            name="gcp-client-1",
-            namespace="nvflare-client-1",
-            kubeconfig=gcp_kc,
-            role="client",
-            launcher_class="nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
-            helm_overrides=["--set", "hostPortEnabled=false", "--set", "tcpConfigMapEnabled=false"],
-            pvc_config={
-                "nvfletc": {"sc": "standard-rwo", "access": "ReadWriteOnce", "size": "1Gi"},
-                "nvflws": {"sc": "filestore-rwx", "access": "ReadWriteMany", "size": "1Ti"},
-                "nvfldata": {"sc": "standard-rwo", "access": "ReadWriteOnce", "size": "1Gi"},
-            },
-        ),
-        Participant(
-            name="aws-client-2",
-            namespace="nvflare-client-2",
-            kubeconfig=aws_kc,
-            role="client",
-            launcher_class="nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
-            security_context={"seLinuxOptions": {"type": "spc_t"}},
-            pvc_config={
-                "nvfletc": {"sc": "auto-ebs-sc", "access": "ReadWriteOnce", "size": "1Gi"},
-                "nvflws": {"sc": "efs-sc", "access": "ReadWriteMany", "size": "10Gi"},
-                "nvfldata": {"sc": "auto-ebs-sc", "access": "ReadWriteOnce", "size": "1Gi"},
-            },
-        ),
-    ]
+@dataclass
+class DeployConfig:
+    participants: list[Participant]
+    server_cloud: str
+    gcp_project: str | None
+    gcp_region: str | None
+
+
+def load_config(config_path: Path) -> DeployConfig:
+    config_path = config_path.resolve()
+    raw = yaml.safe_load(config_path.read_text())
+    clouds = raw.get("clouds") or {}
+    if not clouds:
+        raise ValueError(f"{config_path}: missing 'clouds' section")
+    raw_participants = raw.get("participants") or []
+    if not raw_participants:
+        raise ValueError(f"{config_path}: missing 'participants' section")
+
+    participants: list[Participant] = []
+    servers: list[str] = []
+    for entry in raw_participants:
+        for key in ("name", "cloud", "namespace", "role"):
+            if key not in entry:
+                raise ValueError(f"{config_path}: participant missing '{key}': {entry}")
+        cloud = entry["cloud"]
+        if cloud not in clouds:
+            raise ValueError(f"{config_path}: participant {entry['name']} references unknown cloud '{cloud}'")
+        role = entry["role"]
+        if role not in LAUNCHER_FOR_ROLE:
+            raise ValueError(f"{config_path}: participant {entry['name']} has invalid role '{role}'")
+        if role == "server":
+            servers.append(entry["name"])
+
+        merged = {**clouds[cloud], **entry}
+        kubeconfig = merged.get("kubeconfig")
+        if not kubeconfig:
+            raise ValueError(f"{config_path}: participant {entry['name']} has no kubeconfig (set on cloud or entry)")
+        kc_path = (config_path.parent / kubeconfig).resolve()
+
+        participants.append(
+            Participant(
+                name=merged["name"],
+                namespace=merged["namespace"],
+                kubeconfig=str(kc_path),
+                role=role,
+                cloud=cloud,
+                launcher_class=LAUNCHER_FOR_ROLE[role],
+                helm_overrides=list(merged.get("helm_overrides") or []),
+                security_context=merged.get("security_context"),
+                pending_timeout=merged.get("pending_timeout"),
+                pvc_config=merged.get("pvc_config") or {},
+            )
+        )
+
+    if len(servers) != 1:
+        raise ValueError(f"{config_path}: expected exactly one server participant, found {len(servers)}: {servers}")
+    server_cloud = next(p.cloud for p in participants if p.role == "server")
+
+    gcp = clouds.get("gcp", {})
+    return DeployConfig(
+        participants=participants,
+        server_cloud=server_cloud,
+        gcp_project=gcp.get("project"),
+        gcp_region=gcp.get("region"),
+    )
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+@dataclass
+class FakeProc:
+    returncode: int
+    stdout: str = ""
+    stderr: str = ""
+
+
+def _dry_run_stdout(cmd: list[str]) -> str:
+    if cmd[:4] == ["gcloud", "config", "get-value", "project"]:
+        return "<gcp-project>\n"
+    if cmd[:4] == ["gcloud", "compute", "addresses", "describe"]:
+        return "<server-ip>\n"
+    return ""
+
+
+def _mask(text: str) -> str:
+    return text.replace(str(REPO_ROOT), "<repo>")
+
+
+def _print_cmd(cmd: list[str], tag: str = "$"):
+    if DRY_RUN:
+        print(f"  {tag} {_mask(shlex.join(cmd))}")
+    else:
+        print(f"  {tag} {' '.join(cmd[:6])}{'...' if len(cmd) > 6 else ''}")
+
+
 def run(cmd: list[str], check=True, capture=False, **kwargs) -> subprocess.CompletedProcess:
-    print(f"  $ {' '.join(cmd[:6])}{'...' if len(cmd) > 6 else ''}")
+    _print_cmd(cmd)
+    if DRY_RUN:
+        stdin = kwargs.get("input")
+        if stdin:
+            for line in stdin.splitlines():
+                print(f"    | {_mask(line)}")
+        return FakeProc(0, stdout=_dry_run_stdout(cmd))
     return subprocess.run(cmd, check=check, capture_output=capture, text=True, **kwargs)
 
 
 def run_quiet(cmd: list[str]) -> subprocess.CompletedProcess:
+    if DRY_RUN:
+        _print_cmd(cmd, tag="?")
+        # Auth checks pass; existence checks miss so the "create from scratch" path runs.
+        if (cmd[0] == "gcloud" and "auth" in cmd) or (cmd[0] == "aws" and "sts" in cmd):
+            return FakeProc(0)
+        return FakeProc(1)
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
@@ -152,12 +222,27 @@ def check_auth_for(kubeconfig: str):
 
 
 def load_state() -> dict:
+    if DRY_RUN:
+        return {}
     if STATE_FILE.exists():
         return json.loads(STATE_FILE.read_text())
     return {}
 
 
+def _synthetic_state(config: DeployConfig) -> dict:
+    return {
+        "server_ip": "<server-ip>",
+        "ip_name": "nvflare-DRYRUN-0",
+        "gcp_project": "<gcp-project>",
+        "gcp_region": config.gcp_region or "us-central1",
+        "server_cloud": config.server_cloud,
+        "participants": {p.name: {"kubeconfig": p.kubeconfig, "namespace": p.namespace} for p in config.participants},
+    }
+
+
 def save_state(state: dict):
+    if DRY_RUN:
+        return
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
@@ -178,11 +263,24 @@ def pod_exists(kubeconfig: str, ns: str, name: str) -> bool:
 # ---------------------------------------------------------------------------
 # Reserve / release static IP
 # ---------------------------------------------------------------------------
-def reserve_ip(project: str, region: str, provided_ip: str | None) -> tuple[str, str]:
+def reserve_ip(server_cloud: str, project: str, region: str, provided_ip: str | None) -> tuple[str, str]:
     if provided_ip:
         print(f"Using provided IP: {provided_ip}")
         return provided_ip, ""
-    ip_name = f"nvflare-{os.environ.get('USER', 'dev')}-{int(time.time())}"
+    if server_cloud == "gcp":
+        return _reserve_ip_gcp(project, region)
+    if server_cloud == "aws":
+        raise NotImplementedError("AWS server IP reservation not yet supported")
+    if server_cloud == "azure":
+        raise NotImplementedError("Azure server IP reservation not yet supported")
+    raise ValueError(f"unknown server cloud: {server_cloud}")
+
+
+def _reserve_ip_gcp(project: str, region: str) -> tuple[str, str]:
+    if DRY_RUN:
+        ip_name = "nvflare-DRYRUN-0"
+    else:
+        ip_name = f"nvflare-{os.environ.get('USER', 'dev')}-{int(time.time())}"
     print(f"Reserving static IP {ip_name} ...")
     run(["gcloud", "compute", "addresses", "create", ip_name, f"--region={region}", f"--project={project}", "--quiet"])
     r = run(
@@ -203,14 +301,30 @@ def reserve_ip(project: str, region: str, provided_ip: str | None) -> tuple[str,
     return ip, ip_name
 
 
-def release_ip(ip_name: str, project: str, region: str):
+def release_ip(server_cloud: str, ip_name: str, project: str, region: str):
     if not ip_name:
         return
-    print(f"Releasing IP {ip_name} ...")
-    run(
-        ["gcloud", "compute", "addresses", "delete", ip_name, f"--region={region}", f"--project={project}", "--quiet"],
-        check=False,
-    )
+    if server_cloud == "gcp":
+        print(f"Releasing IP {ip_name} ...")
+        run(
+            [
+                "gcloud",
+                "compute",
+                "addresses",
+                "delete",
+                ip_name,
+                f"--region={region}",
+                f"--project={project}",
+                "--quiet",
+            ],
+            check=False,
+        )
+        return
+    if server_cloud == "aws":
+        raise NotImplementedError("AWS server IP release not yet supported")
+    if server_cloud == "azure":
+        raise NotImplementedError("Azure server IP release not yet supported")
+    raise ValueError(f"unknown server cloud: {server_cloud}")
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +332,12 @@ def release_ip(ip_name: str, project: str, region: str):
 # ---------------------------------------------------------------------------
 def provision(server_ip: str, image: str) -> Path:
     print("Provisioning ...")
+    if DRY_RUN:
+        project_file = WORK_DIR / "project.yml"
+        provision_dir = WORK_DIR / "provision"
+        run(["nvflare", "provision", "-p", str(project_file), "-w", str(provision_dir)])
+        return Path("<prod_dir>")
+
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     project_text = PROJECT_TEMPLATE.read_text()
     project_text = project_text.replace("__SERVER_IP__", server_ip)
@@ -252,6 +372,15 @@ def patch_resources_json(
 ):
     src = kit_dir / "local" / "resources.json.default"
     dst = kit_dir / "local" / "resources.json"
+    if DRY_RUN:
+        preview = {"namespace": namespace, "launcher_class": launcher_class}
+        if security_context:
+            preview["security_context"] = security_context
+        if pending_timeout is not None:
+            preview["pending_timeout"] = pending_timeout
+        print(f"  Would patch {dst}: {json.dumps(preview)}")
+        print(f"  Would write {kit_dir / 'etc' / 'study_data_pvc.yaml'}: default: nvfldata")
+        return
     r = json.loads(src.read_text())
     replaced = False
     for i, c in enumerate(r["components"]):
@@ -434,11 +563,13 @@ def _flatten_set(prefix: str, d: dict) -> list[tuple[str, str]]:
 def cmd_up(args):
     check_auth()
 
-    gcp_project = args.gcp_project or run(["gcloud", "config", "get-value", "project"], capture=True).stdout.strip()
-    gcp_region = args.gcp_region
+    config = load_config(Path(args.config))
+    participants = config.participants
+
+    gcp_project = config.gcp_project or run(["gcloud", "config", "get-value", "project"], capture=True).stdout.strip()
+    gcp_region = config.gcp_region or "us-central1"
 
     state = load_state()
-    participants = default_participants()
 
     # Reserve IP (skip if already in state)
     if "server_ip" in state and state["server_ip"]:
@@ -446,7 +577,7 @@ def cmd_up(args):
         ip_name = state.get("ip_name", "")
         print(f"Reusing IP from state: {server_ip}")
     else:
-        server_ip, ip_name = reserve_ip(gcp_project, gcp_region, args.server_ip)
+        server_ip, ip_name = reserve_ip(config.server_cloud, gcp_project, gcp_region, args.server_ip)
 
     # Save state
     state.update(
@@ -455,6 +586,7 @@ def cmd_up(args):
             "ip_name": ip_name,
             "gcp_project": gcp_project,
             "gcp_region": gcp_region,
+            "server_cloud": config.server_cloud,
             "participants": {p.name: {"kubeconfig": p.kubeconfig, "namespace": p.namespace} for p in participants},
         }
     )
@@ -463,7 +595,7 @@ def cmd_up(args):
     # Provision (skip if already done)
     prod_dir = None
     existing = list(WORK_DIR.glob("provision/*/prod_*"))
-    if existing and not args.force_provision:
+    if existing and not args.force_provision and not DRY_RUN:
         prod_dir = sorted(existing)[-1]
         print(f"Reusing existing provision: {prod_dir}")
     else:
@@ -493,6 +625,8 @@ def cmd_up(args):
 
 def cmd_down(args):
     state = load_state()
+    if not state and DRY_RUN:
+        state = _synthetic_state(load_config(Path(args.config)))
     if not state:
         sys.exit("No state file found. Nothing to destroy.")
 
@@ -522,7 +656,12 @@ def cmd_down(args):
 
     ip_name = state.get("ip_name")
     if ip_name:
-        release_ip(ip_name, state.get("gcp_project", ""), state.get("gcp_region", "us-central1"))
+        release_ip(
+            state.get("server_cloud", "gcp"),
+            ip_name,
+            state.get("gcp_project", ""),
+            state.get("gcp_region", "us-central1"),
+        )
 
     STATE_FILE.unlink(missing_ok=True)
     print("Destroyed.")
@@ -530,6 +669,8 @@ def cmd_down(args):
 
 def cmd_status(args):
     state = load_state()
+    if not state and DRY_RUN:
+        state = _synthetic_state(load_config(Path(args.config)))
     if not state:
         print("No deployment state found.")
         return
@@ -551,15 +692,16 @@ def cmd_status(args):
 # Main
 # ---------------------------------------------------------------------------
 def main():
+    default_config = str(TOOL_DIR / "default.yaml")
     parser = argparse.ArgumentParser(description="Multicloud NVFlare deploy tool")
+    parser.add_argument("--dry-run", action="store_true", help="Print commands without executing")
+    parser.add_argument("--config", default=default_config, help="Path to deploy config YAML")
     sub = parser.add_subparsers(dest="command")
 
     up = sub.add_parser("up", help="Deploy server + clients")
     up.add_argument("--gcp-image", default=os.environ.get("GCP_IMAGE", ""), help="GCP container image")
     up.add_argument("--aws-image", default=os.environ.get("AWS_IMAGE", ""), help="AWS container image (ECR)")
     up.add_argument("--server-ip", default=os.environ.get("GCP_SERVER_IP"), help="Static IP (omit to auto-reserve)")
-    up.add_argument("--gcp-project", default=os.environ.get("GCP_PROJECT"))
-    up.add_argument("--gcp-region", default=os.environ.get("GCP_REGION", "us-central1"))
     up.add_argument("--force-provision", action="store_true", help="Re-provision even if output exists")
 
     sub.add_parser("down", help="Tear down everything")
@@ -569,6 +711,9 @@ def main():
     if not args.command:
         parser.print_help()
         sys.exit(1)
+
+    global DRY_RUN
+    DRY_RUN = args.dry_run
 
     {"up": cmd_up, "down": cmd_down, "status": cmd_status}[args.command](args)
 
