@@ -32,6 +32,17 @@ _system_sub_cmd_parsers = {}
 
 def def_system_cli_parser(system_parser):
     """system_parser is already created in cli.py — add subcommands here."""
+    system_parser.add_argument(
+        "--startup_kit",
+        default=None,
+        help="path to the admin startup kit directory (overrides target-based config lookup)",
+    )
+    system_parser.add_argument(
+        "--target",
+        choices=["poc", "prod"],
+        default=None,
+        help="startup kit target to use from config.conf when --startup_kit is not supplied",
+    )
     sub = system_parser.add_subparsers(title="system subcommands", metavar="", dest="system_sub_cmd")
 
     # status
@@ -121,32 +132,28 @@ def resolve_log_config(level_str, config_str):
     return level_str
 
 
-def _get_system_session():
+def _get_system_session(args=None):
     """Create a secure session using the startup kit."""
     from nvflare.tool.cli_session import new_cli_session
-    from nvflare.utils.cli_utils import get_hidden_config, get_startup_kit_dir_for_target
+    from nvflare.utils.cli_utils import get_startup_kit_dir_for_target
 
-    startup = None
-    username = None
     try:
         from nvflare.tool.job.job_cli import find_admin_user_and_dir
 
-        username, startup = find_admin_user_and_dir()
+        startup_target = getattr(args, "target", None) or "poc"
+        startup_override = getattr(args, "startup_kit", None)
+        startup = get_startup_kit_dir_for_target(startup_kit_dir=startup_override, target=startup_target)
+        username, startup = find_admin_user_and_dir(startup_kit_dir=startup, target=startup_target)
+    except ValueError as e:
+        output_error("STARTUP_KIT_MISSING", exit_code=2, detail=str(e))
+        return
     except Exception:
-        _, nvflare_config = get_hidden_config()
-        startup = nvflare_config.get("poc.startup_kit", None) if nvflare_config else None
-
-    if not startup:
-        try:
-            startup = get_startup_kit_dir_for_target(target="poc")
-        except ValueError as e:
-            output_error("STARTUP_KIT_MISSING", exit_code=2, detail=str(e))
-    if username is None:
         output_error(
             "STARTUP_KIT_MISSING",
             exit_code=2,
             detail="admin username could not be resolved from the startup kit",
         )
+        return
 
     from nvflare.tool.cli_output import get_connect_timeout
 
@@ -155,8 +162,8 @@ def _get_system_session():
 
 
 @contextmanager
-def _system_session():
-    sess = _get_system_session()
+def _system_session(args=None):
+    sess = _get_system_session(args)
     try:
         yield sess
     finally:
@@ -290,7 +297,7 @@ def cmd_system_status(args):
     client_names = getattr(args, "client_names", [])
 
     try:
-        with _system_session() as sess:
+        with _system_session(args) as sess:
             result = sess.check_status(target_type, client_names if client_names else None)
     except Exception as e:
         output_error(
@@ -319,7 +326,7 @@ def cmd_system_resources(args):
     client_names = getattr(args, "client_names", [])
 
     try:
-        with _system_session() as sess:
+        with _system_session(args) as sess:
             result = sess.report_resources(target_type, client_names if client_names else None)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
@@ -350,7 +357,7 @@ def cmd_system_shutdown(args):
     _confirm_or_force(f"Really shutdown {target}?", args)
 
     try:
-        with _system_session() as sess:
+        with _system_session(args) as sess:
             sess.shutdown(target, client_names if client_names else None)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
@@ -375,7 +382,7 @@ def cmd_system_restart(args):
     _confirm_or_force(f"Really restart {target}?", args)
 
     try:
-        with _system_session() as sess:
+        with _system_session(args) as sess:
             result = sess.restart(target, client_names if client_names else None)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
@@ -406,7 +413,7 @@ def cmd_system_version(args):
     target_type = "all" if site == "all" else "server" if site == "server" else "client"
 
     try:
-        with _system_session() as sess:
+        with _system_session(args) as sess:
             sys_info = sess.get_system_info()
             known_sites = ["server"] + [client.name for client in sys_info.client_info]
 
@@ -482,7 +489,7 @@ def cmd_system_log(args):
         )
 
     try:
-        with _system_session() as sess:
+        with _system_session(args) as sess:
             sess.configure_site_log(log_config, target=site)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))

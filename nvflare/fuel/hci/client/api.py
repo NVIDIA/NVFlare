@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import threading
 import time
 import traceback
@@ -504,13 +505,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             self._print_hci(f"DEBUG: {msg}")
 
     def _print_hci(self, msg: str):
-        try:
-            from nvflare.tool.cli_output import is_json_mode, print_human
-
-            if not is_json_mode():
-                print_human(msg)
-        except Exception:
-            print(msg)
+        print(msg, file=sys.stderr)
 
     def fire_event(self, event_type: str, ctx: EventContext):
         self.debug(f"firing event {event_type}")

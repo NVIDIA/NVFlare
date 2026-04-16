@@ -265,6 +265,12 @@ class TestGetJobLogs:
             result = session.get_job_logs("job1")
         assert "logs" in result
 
+    def test_rejects_non_server_target(self):
+        session = _make_session()
+
+        with pytest.raises(ValueError, match="only supports target='server'"):
+            session.get_job_logs("job1", target="all")
+
 
 class TestConfigureJobLog:
     def test_sends_configure_job_log_command(self):

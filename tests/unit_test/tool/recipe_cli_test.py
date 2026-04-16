@@ -67,3 +67,17 @@ def test_recipe_list_framework_with_no_matches_errors_in_json(monkeypatch, capsy
     captured = capsys.readouterr()
     assert '"error_code": "INVALID_ARGS"' in captured.out
     assert "no installed recipes found for framework 'pytorch'" in captured.out
+
+
+def test_recipe_list_human_empty_catalog_explains_why(monkeypatch, capsys):
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_list
+
+    monkeypatch.setattr(cli_output, "_output_format", "txt")
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._load_catalog", lambda framework=None: [])
+
+    cmd_recipe_list(Namespace(framework=None))
+
+    captured = capsys.readouterr()
+    assert "No recipes are currently available." in captured.out
+    assert "Install optional framework dependencies" in captured.out

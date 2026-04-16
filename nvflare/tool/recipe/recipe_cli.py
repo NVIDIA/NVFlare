@@ -201,6 +201,12 @@ def cmd_recipe_list(cmd_args):
         output_ok(catalog)
         return
 
+    if not catalog:
+        print_human("No recipes are currently available.")
+        print_human("Install optional framework dependencies to make recipe entries available.")
+        print_human()
+        return
+
     # Human-readable table to human stream (stdout by default; stderr in agent mode)
     name_w = max(len(e["name"]) for e in catalog) + 2 if catalog else 20
     fw_w = max(len(e["framework"]) for e in catalog) + 2 if catalog else 12

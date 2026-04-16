@@ -14,6 +14,7 @@
 
 import os
 import shutil
+import sys
 import tempfile
 import time
 import uuid
@@ -123,12 +124,7 @@ class FileTransferModule(CommandModule):
 
         handler = self.cmd_handlers.get(server_cmd_spec.client_cmd)
         if handler is None:
-            try:
-                from nvflare.tool.cli_output import print_human
-
-                print_human("no cmd handler found for {}".format(server_cmd_spec.client_cmd))
-            except Exception:
-                print("no cmd handler found for {}".format(server_cmd_spec.client_cmd))
+            print("no cmd handler found for {}".format(server_cmd_spec.client_cmd), file=sys.stderr)
             return None
 
         return CommandModuleSpec(

@@ -908,12 +908,14 @@ class Session(SessionSpec):
 
         self._do_command(f"{AdminCommandNames.REMOVE_CLIENT} {client_name}")
 
-    def get_job_logs(self, job_id: str, target: str = "all", tail_lines: int = None, grep_pattern: str = None) -> dict:
+    def get_job_logs(
+        self, job_id: str, target: str = "server", tail_lines: int = None, grep_pattern: str = None
+    ) -> dict:
         """Retrieve job logs from server workspace.
 
         Args:
             job_id (str): ID of the job
-            target (str): target site name or "all"
+            target (str): target site name. Only "server" is currently supported.
             tail_lines (int): optional number of tail lines to retrieve
             grep_pattern (str): optional grep pattern to filter log lines
 
@@ -922,6 +924,9 @@ class Session(SessionSpec):
         """
         self._validate_job_id(job_id)
         import shlex as _shlex
+
+        if target != "server":
+            raise ValueError("get_job_logs currently only supports target='server'")
 
         parts = [AdminCommandNames.GET_JOB_LOG, job_id]
         if tail_lines is not None:
