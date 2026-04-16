@@ -298,17 +298,57 @@ def _patch_help_on_error(parser, json_mode: bool = False):
                 _patch_help_on_error(sub, json_mode=json_mode)
 
 
-def _extract_global_args(argv):
-    """Parse global flags anywhere on the command line."""
-    global_parser = argparse.ArgumentParser(add_help=False)
-    global_parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
-    global_parser.add_argument("--out-format", dest="out_format", choices=["txt", "json"])
-    global_parser.add_argument("--connect-timeout", dest="connect_timeout", type=float)
-    return global_parser.parse_known_args(argv)
+def _normalize_global_args(argv):
+    """Move supported global options ahead of the subcommand without parsing them.
+
+    This keeps argparse as the single source of truth while preserving the CLI's
+    existing behavior of accepting global flags after the subcommand.
+    """
+
+    global_args = []
+    remaining_args = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg in ("--version", "-V"):
+            global_args.append(arg)
+            i += 1
+        elif arg in ("--out-format", "--connect-timeout"):
+            global_args.append(arg)
+            if i + 1 < len(argv):
+                global_args.append(argv[i + 1])
+                i += 2
+            else:
+                i += 1
+        elif arg.startswith("--out-format=") or arg.startswith("--connect-timeout="):
+            global_args.append(arg)
+            i += 1
+        else:
+            remaining_args.append(arg)
+            i += 1
+    return global_args + remaining_args
+
+
+def _is_json_mode_requested(argv):
+    for i, arg in enumerate(argv):
+        if arg == "--out-format" and i + 1 < len(argv):
+            return argv[i + 1] == "json"
+        if arg.startswith("--out-format="):
+            return arg.split("=", 1)[1] == "json"
+    return False
+
+
+def _get_global_option_value(argv, option_name, default=None):
+    for i, arg in enumerate(argv):
+        if arg == option_name and i + 1 < len(argv):
+            return argv[i + 1]
+        if arg.startswith(f"{option_name}="):
+            return arg.split("=", 1)[1]
+    return default
 
 
 def parse_args(prog_name: str):
-    global_args, filtered_argv = _extract_global_args(sys.argv[1:])
+    normalized_argv = _normalize_global_args(sys.argv[1:])
     _parser = argparse.ArgumentParser(description=prog_name)
     _parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
     _parser.add_argument(
@@ -350,7 +390,7 @@ def parse_args(prog_name: str):
         # validation failures. Build just enough namespace to route to the handler;
         # the handler calls handle_schema_flag() as its first line and exits before
         # accessing any command-specific args.
-        positionals = [a for a in filtered_argv if not a.startswith("-")]
+        positionals = [a for a in normalized_argv if not a.startswith("-")]
         ns = argparse.Namespace()
         raw_cmd = positionals[0] if positionals else None
         ns.sub_command = _CMD_ALIASES.get(raw_cmd, raw_cmd)
@@ -361,30 +401,24 @@ def parse_args(prog_name: str):
         ns.system_sub_cmd = sub_sub
         ns.cert_sub_command = sub_sub
         ns.recipe_sub_cmd = sub_sub
-        ns.out_format = global_args.out_format or "txt"
-        ns.connect_timeout = global_args.connect_timeout or 5.0
-        ns.version = global_args.version
+        ns.out_format = _get_global_option_value(normalized_argv, "--out-format", "txt")
+        ns.connect_timeout = float(_get_global_option_value(normalized_argv, "--connect-timeout", 5.0))
+        ns.version = "--version" in normalized_argv or "-V" in normalized_argv
         return _parser, ns, sub_cmd_parsers
 
     # Patch every parser so it prints full help before exiting on error.
-    _patch_help_on_error(_parser, json_mode=global_args.out_format == "json")
+    _patch_help_on_error(_parser, json_mode=_is_json_mode_requested(normalized_argv))
 
-    args, unknown = _parser.parse_known_args(filtered_argv)
+    args, unknown = _parser.parse_known_args(normalized_argv)
     cmd = _CMD_ALIASES.get(args.__dict__.get("sub_command"), args.__dict__.get("sub_command"))
     args.sub_command = cmd
     sub_cmd_parser = sub_cmd_parsers.get(cmd)
     if unknown:
         msg = f"unrecognized arguments: {' '.join(unknown)}"
-        if global_args.out_format == "json":
+        if args.out_format == "json":
             _emit_argparse_error_json(sub_cmd_parser or _parser, f"{prog_name} {cmd}: {msg}")
         else:
             _emit_argparse_error_human(sub_cmd_parser or _parser, msg, exit_code=2)
-    if global_args.out_format is not None:
-        args.out_format = global_args.out_format
-    if global_args.connect_timeout is not None:
-        args.connect_timeout = global_args.connect_timeout
-    if global_args.version:
-        args.version = True
     return _parser, args, sub_cmd_parsers
 
 
