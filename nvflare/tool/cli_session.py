@@ -40,6 +40,8 @@ def new_cli_session(
             if hasattr(sess.api, "set_command_timeout"):
                 sess.api.set_command_timeout(timeout)
     except Exception:
+        # Session setup should stay best-effort here: later connect/auth handling reports the real
+        # failure, and logging secondary setup exceptions risks leaking connection details.
         pass
     try:
         sess.try_connect(timeout)
@@ -47,6 +49,7 @@ def new_cli_session(
         try:
             sess.close()
         except Exception:
+            # Cleanup should never mask the original connect/auth failure.
             pass
         raise
     return sess

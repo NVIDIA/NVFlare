@@ -104,7 +104,11 @@ def handle_schema_flag(
     deprecated: bool = False,
     deprecated_message: str = "",
 ) -> None:
-    """Call before parse_args(). If --schema in args_list, print schema and exit."""
+    """Handle the pre-parse --schema fast path.
+
+    This must run before parser.parse_args() because many commands want schema discovery even when
+    the rest of the required arguments are absent.
+    """
     if "--schema" in args_list:
         if parser is None:
             schema = {

@@ -41,3 +41,13 @@ def test_new_cli_session_closes_on_connect_failure():
             new_cli_session("user", "/tmp/startup", timeout=1.0)
 
     fake_sess.close.assert_called_once()
+
+
+def test_new_cli_session_tolerates_missing_api_helpers():
+    fake_sess = MagicMock()
+    fake_sess.api = None
+    with patch("nvflare.tool.cli_session.Session", return_value=fake_sess):
+        returned = new_cli_session("user", "/tmp/startup", timeout=3.0)
+
+    fake_sess.try_connect.assert_called_once_with(3.0)
+    assert returned is fake_sess

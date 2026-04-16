@@ -270,6 +270,13 @@ class TestOutputError:
         envelope = json.loads(captured.out)
         assert "{job_id}" in envelope["message"]
 
+    def test_missing_substitution_key_logs_warning(self, caplog, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        with caplog.at_level("WARNING", logger="nvflare.tool.cli_output"):
+            with pytest.raises(SystemExit):
+                output_error("JOB_NOT_FOUND", wrong_key="abc")
+        assert "Missing format key for error JOB_NOT_FOUND" in caplog.text
+
     def test_detail_appended_to_message(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
         with pytest.raises(SystemExit):

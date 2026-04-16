@@ -32,12 +32,16 @@ Exceptions (plain text, outside the JSON contract):
 """
 
 import json
+import logging
 import sys
 from typing import Any, Optional
 
 SCHEMA_VERSION = "1"
 
-# Module-level output format. Set once by cli.py after parsing --out-format.
+logger = logging.getLogger(__name__)
+
+# Module-level CLI state. This process is single-command/single-process, so a pair of globals is
+# sufficient here, but they are intentionally process-global and not thread-safe.
 # Possible values: "txt" (default, human-readable) or "json".
 _output_format: str = "txt"
 _connect_timeout: float = 5.0
@@ -160,6 +164,7 @@ def output_error(
         try:
             message = entry["message"].format_map(kwargs) if kwargs else entry["message"]
         except KeyError:
+            logger.warning("Missing format key for error %s: %s", error_code, entry["message"])
             message = entry["message"]
         if detail:
             message = f"{message} \u2014 {detail}"
