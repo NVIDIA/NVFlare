@@ -104,4 +104,21 @@ BUILTIN_TYPES: set[str] = {
     # Found in integration test
     "nvflare.apis.job_def.JobMetaKey",
     "xgboost.core.DataSplitMode",
+    # --- Edge web model types (dict-based models for edge device communication) ---
+    # These types are serialized via FOBS when edge requests/responses flow through
+    # F3/cell message passing (e.g., SelectionRequest containing DeviceInfo).
+    # Without these entries, edge external-device tests fail with
+    # "Type 'nvflare.edge.web.models.device_info.DeviceInfo' is not allowed."
+    "nvflare.edge.web.models.device_info.DeviceInfo",
+    "nvflare.edge.web.models.user_info.UserInfo",
+    "nvflare.edge.web.models.capabilities.Capabilities",
+    "nvflare.edge.web.models.job_request.JobRequest",
+    "nvflare.edge.web.models.job_response.JobResponse",
+    "nvflare.edge.web.models.task_request.TaskRequest",
+    "nvflare.edge.web.models.task_response.TaskResponse",
+    "nvflare.edge.web.models.selection_request.SelectionRequest",
+    "nvflare.edge.web.models.selection_response.SelectionResponse",
+    "nvflare.edge.web.models.result_report.ResultReport",
+    "nvflare.edge.web.models.result_response.ResultResponse",
+    "nvflare.edge.web.models.error_response.ErrorResponse",
 }
