@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import os
 import shutil
 
@@ -114,10 +115,12 @@ class HelmChartBuilder(Builder):
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT, 8002)
         admin_port = ctx.get(CtxKey.ADMIN_PORT, 8003)
 
-        # Align comm_config.json with the chart so that internal jobs can reach the
-        # parent at <nvflare-server>:<parent_port> within the cluster namespace.
+        # Build Helm-specific comm_config on a COPY so the shared dict is not mutated.
+        # Without deep-copy, the in-place update would corrupt comm_config for non-Helm
+        # deployments (Docker, subprocess) that share the same provisioned workspace.
         comm_config_args = server.get_prop(PropKey.COMM_CONFIG_ARGS)
         if comm_config_args is not None:
+            comm_config_args = copy.deepcopy(comm_config_args)
             comm_config_args.update(
                 {
                     CommConfigArg.HOST: "nvflare-server",
@@ -221,10 +224,10 @@ class HelmChartBuilder(Builder):
         templates_dir = os.path.join(chart_dir, "templates")
         os.makedirs(templates_dir, exist_ok=True)
 
-        # Align comm_config.json with the chart so that job pods can reach
-        # the client at <client.name>:<parent_port> within the cluster namespace.
+        # Build Helm-specific comm_config on a COPY so the shared dict is not mutated.
         comm_config_args = client.get_prop(PropKey.COMM_CONFIG_ARGS)
         if comm_config_args is not None:
+            comm_config_args = copy.deepcopy(comm_config_args)
             comm_config_args.update(
                 {
                     CommConfigArg.HOST: client.name,
