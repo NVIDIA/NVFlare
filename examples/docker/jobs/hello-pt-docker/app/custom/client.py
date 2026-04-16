@@ -29,7 +29,7 @@ from torchvision.transforms import Compose, Normalize, ToTensor
 import nvflare.client as flare
 from nvflare.client.tracking import SummaryWriter
 
-DATASET_PATH = "/tmp/nvflare/data"
+DATASET_PATH = "/var/tmp/nvflare/data"
 
 
 def evaluate(net, data_loader, device):

@@ -31,7 +31,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 # (1) import nvflare client API
 import nvflare.client as flare
 
-DATASET_PATH = "/tmp/nvflare/data"
+DATASET_PATH = "/var/tmp/nvflare/data"
 CHECKPOINT_PATH = "./cifar_net.pth"
 
 
