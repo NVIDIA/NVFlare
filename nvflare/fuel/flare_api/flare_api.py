@@ -206,7 +206,8 @@ class Session(SessionSpec):
                 raise InternalError(f"protocol error: {status_text}: {details}")
             raise InternalError(f"protocol error: {status_text}")
         elif status in [APIStatus.ERROR_SERVER_CONNECTION]:
-            raise NoConnection(f"cannot connect to server: {status}")
+            status_text = status.value if hasattr(status, "value") else str(status)
+            raise NoConnection(f"cannot connect to server: {status_text}")
         elif status != APIStatus.SUCCESS:
             details = result.get(ResultKey.DETAILS, "")
             raise RuntimeError(f"runtime error encountered: {status}: {details}")
