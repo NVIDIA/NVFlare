@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import json
+import os
+import tempfile
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
@@ -109,6 +111,26 @@ class TestJobLog:
         assert exc_info.value.code == 4
         envelope = json.loads(capsys.readouterr().out)
         assert envelope["error_code"] == "INVALID_ARGS"
+
+    def test_log_bad_json_file_exits_1(self, capsys):
+        """Malformed JSON file should map to LOG_CONFIG_INVALID instead of INTERNAL_ERROR."""
+        from nvflare.tool.job.job_cli import cmd_job_log
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write("{not valid json")
+            tmp_path = f.name
+
+        try:
+            args = _make_args(config=tmp_path)
+
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_log(args)
+
+            assert exc_info.value.code == 1
+            envelope = json.loads(capsys.readouterr().out)
+            assert envelope["error_code"] == "LOG_CONFIG_INVALID"
+        finally:
+            os.unlink(tmp_path)
 
 
 class TestJobLogHuman:

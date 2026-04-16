@@ -109,8 +109,11 @@ def resolve_log_config(level_str, config_str):
     """
     if config_str:
         if os.path.isfile(config_str):
-            with open(config_str) as f:
-                return json.load(f)
+            try:
+                with open(config_str) as f:
+                    return json.load(f)
+            except (OSError, json.JSONDecodeError):
+                return None
         try:
             return json.loads(config_str)
         except json.JSONDecodeError:

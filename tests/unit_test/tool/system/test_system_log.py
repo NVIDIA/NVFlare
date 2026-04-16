@@ -162,6 +162,27 @@ class TestSystemLog:
         envelope = json.loads(captured.out)
         assert envelope["error_code"] == "LOG_CONFIG_INVALID"
 
+    def test_log_level_bad_json_file_error_code(self, capsys):
+        """Malformed JSON file should also map to LOG_CONFIG_INVALID instead of INTERNAL_ERROR."""
+        from nvflare.tool.system.system_cli import cmd_system_log
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write("{not valid json")
+            tmp_path = f.name
+
+        try:
+            args = self._make_args(config=tmp_path)
+
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_system_log(args)
+            assert exc_info.value.code == 1
+
+            captured = capsys.readouterr()
+            envelope = json.loads(captured.out)
+            assert envelope["error_code"] == "LOG_CONFIG_INVALID"
+        finally:
+            os.unlink(tmp_path)
+
     def test_log_level_bad_json_human_mode_prints_help_and_error(self, capsys, monkeypatch):
         import argparse
 

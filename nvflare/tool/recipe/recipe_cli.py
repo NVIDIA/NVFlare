@@ -181,7 +181,7 @@ def _load_catalog(framework: str = None) -> list:
 
 
 def cmd_recipe_list(cmd_args):
-    from nvflare.tool.cli_output import output_ok, print_human
+    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -194,6 +194,13 @@ def cmd_recipe_list(cmd_args):
     framework = getattr(cmd_args, "framework", None)
     catalog = _load_catalog(framework=framework)
 
+    if framework and not catalog:
+        output_error("INVALID_ARGS", exit_code=4, detail=f"no installed recipes found for framework '{framework}'")
+
+    if is_json_mode():
+        output_ok(catalog)
+        return
+
     # Human-readable table to human stream (stdout by default; stderr in agent mode)
     name_w = max(len(e["name"]) for e in catalog) + 2 if catalog else 20
     fw_w = max(len(e["framework"]) for e in catalog) + 2 if catalog else 12
@@ -202,8 +209,6 @@ def cmd_recipe_list(cmd_args):
     for entry in catalog:
         print_human(f"  {entry['name']:<{name_w}} {entry['framework']:<{fw_w}} {entry['description']}")
     print_human()
-
-    output_ok(catalog)
 
 
 _recipe_parser = None
