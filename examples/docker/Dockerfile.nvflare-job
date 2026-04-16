@@ -8,7 +8,7 @@ WORKDIR /opt/NVFlare
 # re-download on every source edit.
 COPY setup.py setup.cfg versioneer.py README.md ./
 RUN mkdir -p nvflare && touch nvflare/__init__.py
-RUN pip install -U pip && pip install -e ".[dev,MONITORING,PT]" --no-build-isolation
+RUN pip install -U pip && pip install -e ".[dev,MONITORING,PT]"
 
 # Copy real source — only this layer reruns on source changes.
 COPY nvflare ./nvflare
