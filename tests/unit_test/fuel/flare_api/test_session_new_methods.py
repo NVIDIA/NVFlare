@@ -245,6 +245,17 @@ class TestGetJobLogs:
         assert "-g" in cmd
         assert "ERROR" in cmd
 
+    def test_quotes_multi_word_grep_pattern(self):
+        session = _make_session()
+        from nvflare.fuel.hci.client.api import APIStatus
+
+        reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            session.get_job_logs("job1", grep_pattern="CUDA out of memory")
+        cmd = mock_cmd.call_args[0][0]
+        assert "-g" in cmd
+        assert "'CUDA out of memory'" in cmd
+
     def test_returns_logs_dict(self):
         session = _make_session()
         from nvflare.fuel.hci.client.api import APIStatus

@@ -215,21 +215,24 @@ class SystemCommandModule(CommandModule, CommandUtil):
             return
 
         target_type = args[1]
-        if target_type != self.TARGET_TYPE_CLIENT and target_type != self.TARGET_TYPE_SERVER:
+        if target_type not in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             conn.append_string(
                 "invalid target type {}. Usage: sys_info server|client <client-name>".format(target_type)
             )
             return
 
-        site_resources = {"server": "unlimited"}
+        site_resources = {}
 
-        if target_type == self.TARGET_TYPE_CLIENT:
+        if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
+            site_resources["server"] = "unlimited"
+
+        if target_type in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
             message = new_message(conn, topic=SysCommandTopic.REPORT_RESOURCES, body="", require_authz=True)
             replies = self.send_request_to_clients(conn, message)
             if not replies:
                 conn.append_error("no responses from clients")
                 return
-            site_resources = _parse_replies(conn, replies)
+            site_resources.update(_parse_replies(conn, replies))
 
         table = conn.append_table(["Sites", "Resources"])
         for k, v in site_resources.items():

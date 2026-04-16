@@ -921,11 +921,13 @@ class Session(SessionSpec):
 
         """
         self._validate_job_id(job_id)
+        import shlex as _shlex
+
         parts = [AdminCommandNames.GET_JOB_LOG, job_id]
         if tail_lines is not None:
             parts.extend(["-n", str(tail_lines)])
         if grep_pattern is not None:
-            parts.extend(["-g", grep_pattern])
+            parts.extend(["-g", _shlex.quote(grep_pattern)])
 
         command = " ".join(parts)
         reply = self._do_command(command, enforce_meta=False)
