@@ -73,6 +73,10 @@ DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT = {
     "-s": None,
 }
 
+DEFAULT_NAMESPACE = "default"
+DEFAULT_PENDING_TIMEOUT = 120
+DEFAULT_PYTHON_PATH = "/usr/local/bin/python"
+
 
 class PvName(Enum):
     WORKSPACE = "nvflws"
@@ -104,10 +108,10 @@ class K8sJobHandle(JobHandleSpec):
         job_id: str,
         api_instance,
         job_config: dict,
-        namespace="default",
+        namespace=DEFAULT_NAMESPACE,
         timeout=None,
-        pending_timeout=120,
-        python_path="/usr/local/bin/python",
+        pending_timeout=DEFAULT_PENDING_TIMEOUT,
+        python_path=DEFAULT_PYTHON_PATH,
     ):
         super().__init__()
         self.job_id = job_id
@@ -285,9 +289,9 @@ class K8sJobLauncher(JobLauncherSpec):
         workspace_pvc: str,
         study_data_pvc_file_path: str,
         timeout=None,
-        namespace="default",
-        pending_timeout=120,
-        python_path="/usr/local/bin/python",
+        namespace=DEFAULT_NAMESPACE,
+        pending_timeout=DEFAULT_PENDING_TIMEOUT,
+        python_path=DEFAULT_PYTHON_PATH,
         data_read_only: bool = True,
         security_context: dict = None,
     ):

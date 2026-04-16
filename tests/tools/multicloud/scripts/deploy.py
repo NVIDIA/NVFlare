@@ -53,6 +53,7 @@ class Participant:
     launcher_class: str
     helm_overrides: list = field(default_factory=list)
     security_context: dict | None = None
+    pending_timeout: int | None = None
     pvc_config: dict = field(default_factory=dict)
 
 
@@ -242,7 +243,13 @@ def provision(server_ip: str, image: str) -> Path:
 # ---------------------------------------------------------------------------
 # Post-process resources.json for K8sJobLauncher
 # ---------------------------------------------------------------------------
-def patch_resources_json(kit_dir: Path, namespace: str, launcher_class: str, security_context: dict | None = None):
+def patch_resources_json(
+    kit_dir: Path,
+    namespace: str,
+    launcher_class: str,
+    security_context: dict | None = None,
+    pending_timeout: int | None = None,
+):
     src = kit_dir / "local" / "resources.json.default"
     dst = kit_dir / "local" / "resources.json"
     r = json.loads(src.read_text())
@@ -258,6 +265,8 @@ def patch_resources_json(kit_dir: Path, namespace: str, launcher_class: str, sec
             }
             if security_context:
                 args["security_context"] = security_context
+            if pending_timeout is not None:
+                args["pending_timeout"] = pending_timeout
             r["components"][i] = {"id": "k8s_launcher", "path": launcher_class, "args": args}
             replaced = True
     if not replaced:
@@ -463,7 +472,13 @@ def cmd_up(args):
     # Post-process resources.json
     print("Post-processing resources.json for K8sJobLauncher ...")
     for p in participants:
-        patch_resources_json(prod_dir / p.name, p.namespace, p.launcher_class, p.security_context)
+        patch_resources_json(
+            prod_dir / p.name,
+            p.namespace,
+            p.launcher_class,
+            p.security_context,
+            p.pending_timeout,
+        )
 
     # Deploy each participant
     for p in participants:
