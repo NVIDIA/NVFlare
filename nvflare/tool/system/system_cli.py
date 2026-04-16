@@ -18,6 +18,8 @@ import sys
 import time
 from contextlib import contextmanager
 
+import nvflare
+
 from nvflare.tool.cli_output import output_error, output_error_message, output_ok, output_usage_error
 
 CMD_SYSTEM_STATUS = "status"
@@ -33,6 +35,7 @@ _system_sub_cmd_parsers = {}
 def _add_system_connection_args(parser):
     parser.add_argument(
         "--startup_kit",
+        "--startup-kit",
         default=None,
         help="path to the admin startup kit directory (overrides target-based config lookup)",
     )
@@ -426,12 +429,7 @@ def cmd_system_version(args):
 
     site = getattr(args, "site", "all")
 
-    try:
-        import nvflare
-
-        admin_version = nvflare.__version__
-    except Exception:
-        admin_version = "unknown"
+    admin_version = getattr(nvflare, "__version__", "unknown")
 
     target_type = "all" if site == "all" else "server" if site == "server" else "client"
 
