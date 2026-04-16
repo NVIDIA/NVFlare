@@ -187,7 +187,7 @@ class TestSystemLog:
 
             with pytest.raises(SystemExit) as exc_info:
                 cmd_system_log(args)
-            assert exc_info.value.code == 1
+            assert exc_info.value.code == 4
 
             captured = capsys.readouterr()
             envelope = json.loads(captured.out)
@@ -207,12 +207,12 @@ class TestSystemLog:
 
         with pytest.raises(SystemExit) as exc_info:
             cmd_system_log(args)
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 4
         captured = capsys.readouterr()
         assert "usage:" in captured.err
         assert "Log config is not valid JSON or a recognised log mode." in captured.err
         assert "Hint: Supply a valid dictConfig JSON file or one of:" in captured.err
-        assert "Code: LOG_CONFIG_INVALID (exit 1)" in captured.err
+        assert "Code: LOG_CONFIG_INVALID (exit 4)" in captured.err
 
     def test_log_level_connection_failed_exits_2(self):
         """Session failure → CONNECTION_FAILED, exits 2."""

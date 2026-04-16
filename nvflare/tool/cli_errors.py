@@ -72,7 +72,7 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "hint": "Check directory permissions or choose a different output directory.",
     },
     "CERT_GENERATION_FAILED": {
-        "message": "Failed to generate certificate: {detail}",
+        "message": "Failed to generate certificate.",
         "hint": "Check that the cryptography package is installed and up-to-date.",
     },
     "CA_ALREADY_EXISTS": {
@@ -108,7 +108,7 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "hint": "The name must be 64 characters or fewer and must not contain leading/trailing whitespace.",
     },
     "CSR_GENERATION_FAILED": {
-        "message": "CSR generation failed: {detail}",
+        "message": "CSR generation failed.",
         "hint": "Check that the cryptography package is installed and up-to-date.",
     },
     "CERT_TYPE_UNKNOWN": {
@@ -161,7 +161,7 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "hint": "Provide the path to a site-scoped project yaml file.",
     },
     "INVALID_PROJECT_FILE": {
-        "message": "Invalid project file: {detail}",
+        "message": "Invalid project file.",
         "hint": "Ensure the file is schema-compatible with 'nvflare provision' project.yaml (api_version: 3).",
     },
     "UNSUPPORTED_TOPOLOGY": {
@@ -209,8 +209,8 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
 def get_error(code: str, **kwargs) -> Tuple[str, str]:
     """Return (message, hint) for the given error code with placeholders filled.
 
-    Used by cert/package commands: message, hint = get_error("CODE", key=value)
-    Falls back to a generic tuple for unknown codes.
+    Transitional helper for legacy cert/package call sites. New CLI code should prefer
+    output_error()/output_error_message(). Falls back to a generic tuple for unknown codes.
     """
     entry = ERROR_REGISTRY.get(code)
     if entry is None:
@@ -218,7 +218,7 @@ def get_error(code: str, **kwargs) -> Tuple[str, str]:
     template = entry["message"]
     hint = entry["hint"]
     try:
-        message = template.format(**kwargs)
+        message = template.format_map(kwargs)
     except KeyError:
         message = template
     return message, hint

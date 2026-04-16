@@ -1172,6 +1172,8 @@ def new_session(
     debug: bool = False,
     timeout: float = 10.0,
     study: str = DEFAULT_STUDY,
+    command_timeout: float = None,
+    auto_login_max_tries: int = None,
 ) -> Session:
     session = Session(
         username=username,
@@ -1180,6 +1182,10 @@ def new_session(
         secure_mode=secure_mode,
         study=study,
     )
+    if auto_login_max_tries is not None and getattr(session, "api", None):
+        session.api.auto_login_max_tries = auto_login_max_tries
+    if command_timeout is not None:
+        session.set_timeout(command_timeout)
     try:
         session.try_connect(timeout)
         return session
@@ -1194,6 +1200,8 @@ def new_secure_session(
     debug: bool = False,
     timeout: float = 10.0,
     study: str = DEFAULT_STUDY,
+    command_timeout: float = None,
+    auto_login_max_tries: int = None,
 ) -> Session:
     """Create a new secure FLARE API session with the NVFLARE system.
 
@@ -1203,11 +1211,22 @@ def new_secure_session(
         debug (bool): enable debug mode
         timeout (float): how long to try to establish the session, in seconds
         study (str): active study context for submitted jobs and session-scoped job listing; defaults to "default"
+        command_timeout (float): optional per-session command timeout sent to the admin server
+        auto_login_max_tries (int): optional cap on API auto-login retries before connect
 
     Returns: a Session object
 
     """
-    return new_session(username, startup_kit_location, True, debug, timeout, study=study)
+    return new_session(
+        username,
+        startup_kit_location,
+        True,
+        debug,
+        timeout,
+        study=study,
+        command_timeout=command_timeout,
+        auto_login_max_tries=auto_login_max_tries,
+    )
 
 
 def new_insecure_session(

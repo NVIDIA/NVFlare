@@ -1604,11 +1604,22 @@ def cmd_job_log(cmd_args):
             job_sub_cmd_parser[CMD_JOB_LOG_CONFIG], "--level and --config are mutually exclusive", exit_code=4
         )
 
-    log_config = resolve_log_config(level, config_str)
-    if log_config is None:
+    if not level and not config_str:
         output_usage_error(
             job_sub_cmd_parser[CMD_JOB_LOG_CONFIG],
             "provide a valid level name or --config JSON/file",
+            exit_code=4,
+            error_code="LOG_CONFIG_INVALID",
+            message="Log config is not valid JSON or a recognised log mode.",
+            hint="Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
+        )
+
+    try:
+        log_config = resolve_log_config(level, config_str)
+    except ValueError as e:
+        output_usage_error(
+            job_sub_cmd_parser[CMD_JOB_LOG_CONFIG],
+            str(e),
             exit_code=4,
             error_code="LOG_CONFIG_INVALID",
             message="Log config is not valid JSON or a recognised log mode.",
@@ -1625,22 +1636,17 @@ def cmd_job_log(cmd_args):
                     exit_code=1,
                     detail=f"job is in terminal state: {job_status}",
                 )
-                return
             sess.configure_job_log(cmd_args.job_id, log_config, target=site)
     except (AuthenticationError, NoConnection):
         raise
     except InvalidTarget:
         output_error("SITE_NOT_FOUND", site=site)
-        return
     except NoReply:
         output_error("SITE_NOT_FOUND", site=site)
-        return
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
-        return
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        return
 
     sites = [site] if site != "all" else ["all"]
     output_ok({"job_id": cmd_args.job_id, "config": log_config, "sites": sites, "status": "applied"})

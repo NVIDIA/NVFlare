@@ -16,10 +16,13 @@ import json
 
 import pytest
 
+from nvflare.tool import cli_output
+
 
 def test_unrecognized_argument_human_mode_prints_help_then_error(capsys, monkeypatch):
     from nvflare import cli as cli_mod
 
+    monkeypatch.setattr(cli_output, "_output_format", "txt")
     monkeypatch.setattr(
         cli_mod.sys,
         "argv",
@@ -28,13 +31,13 @@ def test_unrecognized_argument_human_mode_prints_help_then_error(capsys, monkeyp
 
     with pytest.raises(SystemExit) as exc_info:
         cli_mod.parse_args("nvflare")
-    assert exc_info.value.code == 2
+    assert exc_info.value.code == 4
 
     captured = capsys.readouterr()
     assert "usage: nvflare package" in captured.err
     assert "Invalid arguments. — unrecognized arguments: --project_name example_project" in captured.err
     assert "Hint: Run with -h for usage." in captured.err
-    assert "Code: INVALID_ARGS (exit 2)" in captured.err
+    assert "Code: INVALID_ARGS (exit 4)" in captured.err
     assert captured.err.index("usage: nvflare package") < captured.err.index("Invalid arguments.")
 
 

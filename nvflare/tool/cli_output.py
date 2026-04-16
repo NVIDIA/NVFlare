@@ -16,7 +16,7 @@
 Stream contract for all nvflare CLI command handlers
 =====================================================
 
-Default (human-first):
+Current default (human-first):
     stdout — human-readable output (tables, summaries, prompts).
     stderr — errors and diagnostics.
 
@@ -45,6 +45,8 @@ logger = logging.getLogger(__name__)
 # Possible values: "txt" (default, human-readable) or "json".
 _output_format: str = "txt"
 _connect_timeout: float = 5.0
+
+_VALID_OUTPUT_STATUS = {"ok", "error"}
 
 
 def set_output_format(fmt: str) -> None:
@@ -111,7 +113,7 @@ def _render_table(data: Any) -> None:
 
 
 def output(data: Any, fmt: Optional[str]) -> None:
-    """Print command result in requested format. Used by cert/package commands."""
+    """Legacy output helper used by older cert/package command paths."""
     if fmt is None and _is_json_mode():
         fmt = "json"
     if fmt == "json":
@@ -130,9 +132,10 @@ def output(data: Any, fmt: Optional[str]) -> None:
 def output_ok(data: Any, exit_code: int = 0, status: str = "ok") -> None:
     """Print command success output.
 
-    exit_code/status may be overridden (e.g. exit_code=1, status="terminal_failure") when the
-    command completed but the job itself ended in a non-success terminal state.
+    The stable envelope contract only defines status values "ok" and "error".
     """
+    if status not in _VALID_OUTPUT_STATUS:
+        raise ValueError(f"invalid output status '{status}'")
     if _is_json_mode():
         print(json.dumps({"schema_version": SCHEMA_VERSION, "status": status, "exit_code": exit_code, "data": data}))
     else:

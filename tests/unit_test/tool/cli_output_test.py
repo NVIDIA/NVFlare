@@ -19,6 +19,13 @@ import pytest
 from nvflare.tool import cli_output
 from nvflare.tool.cli_output import SCHEMA_VERSION, output, output_error, output_error_message, output_ok, print_human
 
+
+@pytest.fixture(autouse=True)
+def reset_cli_output_state(monkeypatch):
+    monkeypatch.setattr(cli_output, "_output_format", "txt")
+    monkeypatch.setattr(cli_output, "_connect_timeout", 5.0)
+
+
 # --- output() tests (cert/package commands) ---
 
 

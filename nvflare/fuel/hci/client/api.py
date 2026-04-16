@@ -103,6 +103,16 @@ class ResultKey(object):
     STATUS = ProtoKey.STATUS
     DETAILS = ProtoKey.DETAILS
     META = ProtoKey.META
+    AUTH_CODE = "auth_code"
+
+
+def _print_hci_message(msg: str):
+    try:
+        from nvflare.tool.cli_output import print_human
+
+        print_human(msg)
+    except ImportError:
+        print(msg, file=sys.stderr)
 
 
 class _ServerReplyJsonProcessor(object):
@@ -505,7 +515,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             self._print_hci(f"DEBUG: {msg}")
 
     def _print_hci(self, msg: str):
-        print(msg, file=sys.stderr)
+        _print_hci_message(msg)
 
     def fire_event(self, event_type: str, ctx: EventContext):
         self.debug(f"firing event {event_type}")
@@ -696,7 +706,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 ResultKey.DETAILS: detail,
             }
             if auth_code:
-                result["auth_code"] = auth_code
+                result[ResultKey.AUTH_CODE] = auth_code
             return result
         return self._after_login()
 

@@ -102,3 +102,22 @@ def test_new_session_closes_session_on_connect_failure():
             new_session("admin@nvidia.com", "/tmp/startup", timeout=5.0)
 
     fake_session.close.assert_called_once()
+
+
+def test_new_session_applies_cli_relevant_session_options():
+    fake_session = MagicMock()
+    fake_session.api = MagicMock()
+
+    with patch("nvflare.fuel.flare_api.flare_api.Session", return_value=fake_session):
+        returned = new_session(
+            "admin@nvidia.com",
+            "/tmp/startup",
+            timeout=5.0,
+            command_timeout=2.5,
+            auto_login_max_tries=1,
+        )
+
+    fake_session.set_timeout.assert_called_once_with(2.5)
+    assert fake_session.api.auto_login_max_tries == 1
+    fake_session.try_connect.assert_called_once_with(5.0)
+    assert returned is fake_session

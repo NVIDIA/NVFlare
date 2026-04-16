@@ -14,7 +14,6 @@
 
 import argparse
 import os
-import sys
 
 from nvflare.tool.package_checker import ClientPackageChecker, NVFlareConsolePackageChecker, ServerPackageChecker
 
@@ -36,10 +35,10 @@ def check_packages(args):
         _preflight_parser,
         "nvflare preflight",
         ["nvflare preflight -p /path/to/package"],
-        sys.argv[1:],
+        getattr(args, "_argv", []),
     )
 
-    if len(sys.argv) > 1 and sys.argv[1] == "preflight_check":
+    if getattr(args, "_raw_sub_command", None) == "preflight_check":
         print_human("Note: 'preflight_check' is deprecated; use 'nvflare preflight' instead.")
     package_path = args.package_path
 
@@ -71,7 +70,11 @@ def check_packages(args):
         status = "pass" if ret_code == 0 else "fail"
         if status == "fail":
             overall_pass = False
-        checks.append({"component": component_name, "status": status, "details": ""})
+        check_result = {"component": component_name, "status": status}
+        details = getattr(p, "last_error", None)
+        if isinstance(details, str) and details:
+            check_result["details"] = details
+        checks.append(check_result)
 
         if ret_code == 1:
             p.stop_dry_run(force=False)
@@ -86,11 +89,8 @@ def check_packages(args):
             "overall": overall,
         },
         exit_code=0 if overall_pass else 1,
-        status="ok" if overall_pass else "check_failed",
+        status="ok",
     )
-
-    if not overall_pass:
-        sys.exit(1)
 
 
 def main():

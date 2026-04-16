@@ -13,7 +13,7 @@
 # limitations under the License.
 """CLI-scoped session helpers."""
 
-from nvflare.fuel.flare_api.flare_api import Session
+from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 
 
 def new_cli_session(
@@ -24,32 +24,13 @@ def new_cli_session(
     secure_mode: bool = True,
     debug: bool = False,
 ) -> Session:
-    """Create a session for CLI commands and ensure cleanup on failed connect."""
-    sess = Session(
+    """Compatibility wrapper for CLI callers around the shared secure session factory."""
+    return new_secure_session(
         username=username,
-        startup_path=startup_kit_location,
-        secure_mode=secure_mode,
+        startup_kit_location=startup_kit_location,
         debug=debug,
         study=study,
+        timeout=timeout,
+        command_timeout=timeout,
+        auto_login_max_tries=1,
     )
-    # CLI should fail fast: avoid long auto-login loops and time-box commands.
-    try:
-        if hasattr(sess, "api") and sess.api:
-            if hasattr(sess.api, "auto_login_max_tries"):
-                sess.api.auto_login_max_tries = 1
-            if hasattr(sess.api, "set_command_timeout"):
-                sess.api.set_command_timeout(timeout)
-    except Exception:
-        # Session setup should stay best-effort here: later connect/auth handling reports the real
-        # failure, and logging secondary setup exceptions risks leaking connection details.
-        pass
-    try:
-        sess.try_connect(timeout)
-    except Exception:
-        try:
-            sess.close()
-        except Exception:
-            # Cleanup should never mask the original connect/auth failure.
-            pass
-        raise
-    return sess

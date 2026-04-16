@@ -128,7 +128,7 @@ class TestPreflightOutput:
 
         captured = capsys.readouterr()
         data = json.loads(captured.out)
-        assert data["status"] == "check_failed"
+        assert data["status"] == "ok"
         assert data["exit_code"] == 1
         assert data["data"]["overall"] == "fail"
 
@@ -185,3 +185,32 @@ class TestPreflightOutput:
         define_preflight_check_parser(parser)
         args = parser.parse_args(["-p", "/some/path", "--schema"])
         assert args.schema is True
+
+    def test_failed_checks_omit_empty_details(self, capsys, tmp_path):
+        from nvflare.tool.preflight_check import check_packages
+
+        pkg_path = tmp_path / "package4"
+        pkg_path.mkdir()
+        (pkg_path / "startup").mkdir()
+
+        mock_checker = MagicMock()
+        mock_checker.should_be_checked.return_value = True
+        mock_checker.check.return_value = 1
+        mock_checker.__class__.__name__ = "ServerPackageChecker"
+
+        args = MagicMock()
+        args.package_path = str(pkg_path)
+        args.output = "json"
+        args._argv = ["preflight", "-p", str(pkg_path)]
+        args._raw_sub_command = "preflight"
+
+        with (
+            patch("nvflare.tool.preflight_check.ServerPackageChecker", return_value=mock_checker),
+            patch("nvflare.tool.preflight_check.ClientPackageChecker", return_value=mock_checker),
+            patch("nvflare.tool.preflight_check.NVFlareConsolePackageChecker", return_value=mock_checker),
+        ):
+            with pytest.raises(SystemExit):
+                check_packages(args)
+
+        data = json.loads(capsys.readouterr().out)
+        assert all("details" not in check for check in data["data"]["checks"])

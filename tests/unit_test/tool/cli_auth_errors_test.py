@@ -12,7 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 from nvflare import cli as cli_mod
+from nvflare.fuel.flare_api.api_spec import AuthenticationError
+from nvflare.tool import cli_output
 
 
 def test_auth_hint_for_unknown_study():
@@ -47,3 +54,29 @@ def test_auth_hint_uses_structured_auth_code():
     ) == (
         "Add this user under the study's admins mapping in project.yml, reprovision, redeploy or restart the server, then try again."
     )
+
+
+def test_run_uses_study_specific_auth_hint_in_json_mode(capsys):
+    auth_error = AuthenticationError("unknown study 'cancer_research'")
+    auth_error.auth_code = "AUTH_UNKNOWN_STUDY"
+
+    args = MagicMock()
+    args.out_format = "json"
+    args.connect_timeout = 5.0
+    args.sub_command = "job"
+    args.version = False
+
+    with patch.object(cli_mod, "parse_args", return_value=(MagicMock(), args, {})):
+        with patch(
+            "nvflare.tool.cli_output.set_output_format",
+            side_effect=lambda fmt: setattr(cli_output, "_output_format", fmt),
+        ):
+            with patch("nvflare.tool.cli_output.set_connect_timeout"):
+                with patch.object(cli_mod, "handlers", {"job": lambda _args: (_ for _ in ()).throw(auth_error)}):
+                    with pytest.raises(SystemExit) as exc_info:
+                        cli_mod.run("nvflare")
+
+    assert exc_info.value.code == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error_code"] == "AUTH_FAILED"
+    assert payload["hint"].startswith("Add the study under 'studies:'")

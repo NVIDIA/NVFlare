@@ -88,7 +88,7 @@ def _create_get_job_log_cmd_parser():
     parser = SafeArgumentParser(prog=AdminCommandNames.GET_JOB_LOG)
     parser.add_argument("job_id", help="Job ID")
     parser.add_argument("-n", dest="tail_lines", type=int, help="Tail line count")
-    parser.add_argument("-g", dest="grep_pattern", help="Filter log lines containing the pattern")
+    parser.add_argument("-g", dest="grep_pattern", help="Filter log lines containing the substring pattern")
     return parser
 
 
@@ -481,11 +481,15 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         log_lines = []
         if os.path.exists(log_file):
             if parsed_args.tail_lines is not None and parsed_args.tail_lines <= 0:
-                log_lines = []
-            else:
-                log_lines = self._collect_job_log_lines(
-                    log_file, tail_lines=parsed_args.tail_lines, grep_pattern=parsed_args.grep_pattern
+                conn.append_error(
+                    "tail_lines must be greater than 0",
+                    meta=make_meta(MetaStatusValue.SYNTAX_ERROR, "tail_lines must be greater than 0"),
                 )
+                return
+
+            log_lines = self._collect_job_log_lines(
+                log_file, tail_lines=parsed_args.tail_lines, grep_pattern=parsed_args.grep_pattern
+            )
 
         conn.append_dict({"logs": {SERVER_SITE_NAME: "".join(log_lines)}}, meta=make_meta(MetaStatusValue.OK))
 
@@ -533,7 +537,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         result = [line for line, _ in lines] if tail_lines is not None else list(lines)
         if truncated:
             result.append(
-                f"... output truncated after {self.MAX_RETURNED_JOB_LOG_BYTES} bytes; use --tail/--grep to narrow results ...\n"
+                f"... output truncated after {self.MAX_RETURNED_JOB_LOG_BYTES} bytes; use -n/-g to narrow results ...\n"
             )
         return result
 

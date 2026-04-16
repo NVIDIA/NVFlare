@@ -15,7 +15,7 @@
 from types import SimpleNamespace
 
 from nvflare.apis.job_def import DEFAULT_STUDY
-from nvflare.fuel.hci.client.api import AdminAPI
+from nvflare.fuel.hci.client.api import AdminAPI, ResultKey
 from nvflare.fuel.hci.client.api_spec import CommandContext
 from nvflare.fuel.hci.client.api_status import APIStatus
 
@@ -145,4 +145,4 @@ def test_user_login_parses_structured_reject_code(monkeypatch):
 
     assert result["status"] == APIStatus.ERROR_AUTHENTICATION
     assert result["details"] == "user 'admin@nvidia.com' is not mapped to study 'cancer-research'"
-    assert result["auth_code"] == "AUTH_STUDY_USER_NOT_MAPPED"
+    assert result[ResultKey.AUTH_CODE] == "AUTH_STUDY_USER_NOT_MAPPED"

@@ -393,6 +393,8 @@ def parse_args(prog_name: str):
         positionals = [a for a in normalized_argv if not a.startswith("-")]
         ns = argparse.Namespace()
         raw_cmd = positionals[0] if positionals else None
+        ns._raw_sub_command = raw_cmd
+        ns._argv = list(sys.argv[1:])
         ns.sub_command = _CMD_ALIASES.get(raw_cmd, raw_cmd)
         # Two-level dispatch: each multi-level handler reads a different dest attribute.
         sub_sub = positionals[1] if len(positionals) > 1 else None
@@ -410,6 +412,8 @@ def parse_args(prog_name: str):
     _patch_help_on_error(_parser, json_mode=_is_json_mode_requested(normalized_argv))
 
     args, unknown = _parser.parse_known_args(normalized_argv)
+    args._raw_sub_command = args.__dict__.get("sub_command")
+    args._argv = list(sys.argv[1:])
     cmd = _CMD_ALIASES.get(args.__dict__.get("sub_command"), args.__dict__.get("sub_command"))
     args.sub_command = cmd
     sub_cmd_parser = sub_cmd_parsers.get(cmd)
@@ -418,7 +422,7 @@ def parse_args(prog_name: str):
         if args.out_format == "json":
             _emit_argparse_error_json(sub_cmd_parser or _parser, f"{prog_name} {cmd}: {msg}")
         else:
-            _emit_argparse_error_human(sub_cmd_parser or _parser, msg, exit_code=2)
+            _emit_argparse_error_human(sub_cmd_parser or _parser, msg, exit_code=4)
     return _parser, args, sub_cmd_parsers
 
 
@@ -489,9 +493,9 @@ def run(prog_name):
 
         output_error("CONNECTION_FAILED", exit_code=2)
     except AuthenticationError as e:
-        from nvflare.tool.cli_output import output_error
+        from nvflare.tool.cli_output import output_error_message
 
-        output_error(
+        output_error_message(
             "AUTH_FAILED",
             message="Authentication failed.",
             hint=_auth_hint_from_detail(str(e), getattr(e, "auth_code", None)),

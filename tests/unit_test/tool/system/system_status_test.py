@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.fuel.flare_api.api_spec import NoConnection
 from nvflare.tool import cli_output
 
 
@@ -86,7 +87,7 @@ class TestSystemStatus:
         from nvflare.tool.system.system_cli import cmd_system_status
 
         args = self._make_args()
-        with patch("nvflare.tool.system.system_cli._get_system_session", side_effect=Exception("connection error")):
+        with patch("nvflare.tool.system.system_cli._get_system_session", side_effect=NoConnection("connection error")):
             with pytest.raises(SystemExit) as exc_info:
                 cmd_system_status(args)
         assert exc_info.value.code == 2
@@ -96,7 +97,7 @@ class TestSystemStatus:
         from nvflare.tool.system.system_cli import cmd_system_status
 
         args = self._make_args()
-        with patch("nvflare.tool.system.system_cli._get_system_session", side_effect=Exception("connection error")):
+        with patch("nvflare.tool.system.system_cli._get_system_session", side_effect=NoConnection("connection error")):
             with pytest.raises(SystemExit):
                 cmd_system_status(args)
         captured = capsys.readouterr()
@@ -135,7 +136,7 @@ class TestSystemStatus:
                 with pytest.raises(SystemExit) as exc_info:
                     _get_system_session(args)
 
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
         envelope = json.loads(capsys.readouterr().out)
         assert envelope["error_code"] == "STARTUP_KIT_MISSING"
         assert "admin username could not be resolved" in envelope["message"]
@@ -155,7 +156,7 @@ class TestSystemStatus:
             with pytest.raises(SystemExit) as exc_info:
                 _get_system_session(args)
 
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
         envelope = json.loads(capsys.readouterr().out)
         assert envelope["error_code"] == "STARTUP_KIT_MISSING"
         assert "no startup kit configured" in envelope["message"]

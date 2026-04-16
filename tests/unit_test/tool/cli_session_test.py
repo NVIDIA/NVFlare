@@ -12,42 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import MagicMock, patch
-
-import pytest
-
 from nvflare.tool.cli_session import new_cli_session
 
 
-def test_new_cli_session_returns_session_on_success():
+def test_new_cli_session_delegates_to_secure_session_factory():
+    from unittest.mock import MagicMock, patch
+
     fake_sess = MagicMock()
-    fake_sess.api = MagicMock()
-    fake_sess.api.auto_login_max_tries = 15
-    with patch("nvflare.tool.cli_session.Session", return_value=fake_sess) as mock_session:
+    with patch("nvflare.tool.cli_session.new_secure_session", return_value=fake_sess) as new_secure:
         returned = new_cli_session("user", "/tmp/startup", timeout=2.5, study="default")
 
-    mock_session.assert_called_once()
-    assert fake_sess.api.auto_login_max_tries == 1
-    fake_sess.api.set_command_timeout.assert_called_once_with(2.5)
-    fake_sess.try_connect.assert_called_once_with(2.5)
-    assert returned is fake_sess
-
-
-def test_new_cli_session_closes_on_connect_failure():
-    fake_sess = MagicMock()
-    fake_sess.try_connect.side_effect = RuntimeError("boom")
-    with patch("nvflare.tool.cli_session.Session", return_value=fake_sess):
-        with pytest.raises(RuntimeError):
-            new_cli_session("user", "/tmp/startup", timeout=1.0)
-
-    fake_sess.close.assert_called_once()
-
-
-def test_new_cli_session_tolerates_missing_api_helpers():
-    fake_sess = MagicMock()
-    fake_sess.api = None
-    with patch("nvflare.tool.cli_session.Session", return_value=fake_sess):
-        returned = new_cli_session("user", "/tmp/startup", timeout=3.0)
-
-    fake_sess.try_connect.assert_called_once_with(3.0)
+    new_secure.assert_called_once_with(
+        username="user",
+        startup_kit_location="/tmp/startup",
+        debug=False,
+        study="default",
+        timeout=2.5,
+        command_timeout=2.5,
+        auto_login_max_tries=1,
+    )
     assert returned is fake_sess

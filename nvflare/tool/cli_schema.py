@@ -22,6 +22,8 @@ _PATH_KEYWORDS = ("dir", "path", "file", "output")
 
 
 def _infer_type(action: argparse.Action) -> str:
+    # Stage-1 schema is inferred from argparse only; richer explicit typing can be added later if
+    # commands need stronger MCP/tool contracts than these naming heuristics provide.
     if action.option_strings:
         name = max(action.option_strings, key=len)
     else:
@@ -47,6 +49,8 @@ def parser_to_schema(
     deprecated_message: str = "",
 ) -> dict:
     """Serialize an argparse parser to a JSON-compatible schema dict."""
+    # argparse exposes parser structure via the private _actions list; this is the standard
+    # introspection hook available for building a schema from parser definitions.
     args = []
     for action in parser._actions:
         if isinstance(action, (argparse._HelpAction, argparse._SubParsersAction)):
@@ -122,5 +126,7 @@ def handle_schema_flag(
                 schema["deprecated_message"] = deprecated_message
         else:
             schema = parser_to_schema(parser, command, examples, deprecated, deprecated_message)
+        # --schema intentionally bypasses the normal command-output envelope so agent/tool callers
+        # always get the raw schema document.
         print(json.dumps(schema, indent=2))
         raise SystemExit(0)

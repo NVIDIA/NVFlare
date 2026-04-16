@@ -23,6 +23,7 @@ from nvflare.utils.cli_utils import (
     get_hidden_nvflare_config_path,
     get_hidden_nvflare_dir,
     get_startup_kit_dir_for_target,
+    load_hidden_config,
     migrate_config_to_v2,
 )
 
@@ -106,6 +107,31 @@ class TestCLIUtils:
             with patch("nvflare.utils.cli_utils.check_startup_dir"):
                 assert "/tmp/nvflare/poc/prod_00" == get_startup_kit_dir_for_target(target="poc")
                 assert "/tmp/nvflare/prod/admin@nvidia.com" == get_startup_kit_dir_for_target(target="prod")
+
+    def test_load_hidden_config_persists_legacy_migration(self, tmp_path, monkeypatch):
+        hidden_dir = tmp_path / ".nvflare"
+        hidden_dir.mkdir()
+        config_path = hidden_dir / "config.conf"
+        config_path.write_text(
+            """
+startup_kit {
+  path = "/tmp/nvflare/legacy/prod_00"
+}
+poc_workspace {
+  path = "/tmp/nvflare/poc"
+}
+""".strip()
+        )
+
+        monkeypatch.setattr("nvflare.utils.cli_utils.get_or_create_hidden_nvflare_dir", lambda: hidden_dir)
+
+        migrated = load_hidden_config()
+
+        assert migrated.get_int("version") == 2
+        persisted = config_path.read_text()
+        assert "version = 2" in persisted
+        assert "config_version" not in persisted
+        assert "startup_kit {" not in persisted
 
     @pytest.mark.parametrize(
         "inputs, result", [(([], "a"), ["a"]), ((["a"], "a"), ["a"]), ((["a", "b"], "b"), ["a", "b"])]

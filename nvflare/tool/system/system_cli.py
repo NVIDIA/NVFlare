@@ -127,19 +127,21 @@ def _confirm_or_force(prompt, args):
 def resolve_log_config(level_str, config_str):
     """Resolve log configuration from level string or config string/file.
 
-    Returns a str level or dict dictConfig, or None on parse failure.
+    Returns a str level or dict dictConfig.
     """
     if config_str:
         if os.path.isfile(config_str):
             try:
                 with open(config_str) as f:
                     return json.load(f)
-            except (OSError, json.JSONDecodeError):
-                return None
+            except OSError as e:
+                raise ValueError(str(e)) from e
+            except json.JSONDecodeError as e:
+                raise ValueError(f"invalid JSON in config file: {e}") from e
         try:
             return json.loads(config_str)
-        except json.JSONDecodeError:
-            return None
+        except json.JSONDecodeError as e:
+            raise ValueError(f"invalid inline JSON: {e}") from e
     return level_str
 
 
@@ -159,15 +161,13 @@ def _get_system_session(args=None):
         startup = get_startup_kit_dir_for_target(startup_kit_dir=startup_override, target=startup_target)
         username, startup = _resolve_admin_user_and_dir_from_startup_kit(startup)
     except ValueError as e:
-        output_error("STARTUP_KIT_MISSING", exit_code=2, detail=str(e))
-        return
+        output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e))
     except Exception:
         output_error(
             "STARTUP_KIT_MISSING",
-            exit_code=2,
+            exit_code=4,
             detail="admin username could not be resolved from the startup kit",
         )
-        return
 
     timeout = get_connect_timeout()
     return new_cli_session(username=username, startup_kit_location=startup, timeout=timeout)
@@ -298,6 +298,7 @@ def _output_system_version(result):
 
 
 def cmd_system_status(args):
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -313,7 +314,9 @@ def cmd_system_status(args):
     try:
         with _system_session(args) as sess:
             result = sess.check_status(target_type, client_names if client_names else None)
-    except Exception as e:
+    except AuthenticationError:
+        raise
+    except NoConnection as e:
         output_error_message(
             "CONNECTION_FAILED",
             message="Could not connect to the FLARE server.",
@@ -321,7 +324,6 @@ def cmd_system_status(args):
             exit_code=2,
             detail=str(e),
         )
-        return
 
     _output_system_status(result, target_type)
 
@@ -347,7 +349,6 @@ def cmd_system_resources(args):
         raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        return
 
     if not result:
         from nvflare.tool.cli_output import is_json_mode, print_human
@@ -381,7 +382,6 @@ def cmd_system_shutdown(args):
         raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        return
 
     output_ok({"target": target, "status": "shutdown initiated", "result": result})
 
@@ -409,7 +409,6 @@ def cmd_system_restart(args):
         raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        return
 
     output_ok({"target": target, "status": "restart initiated", "result": result})
 
@@ -444,7 +443,6 @@ def cmd_system_version(args):
             if site != "all":
                 if site not in known_sites:
                     output_error("SITE_NOT_FOUND", site=site)
-                    return
 
             targets = [site] if target_type == "client" else None
             raw_versions = sess.report_version(target_type, targets)
@@ -452,7 +450,6 @@ def cmd_system_version(args):
         raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        return
 
     sites = [site] if site != "all" else known_sites
     versions = []
@@ -490,7 +487,6 @@ def cmd_system_log(args):
 
     if level and config_str:
         output_error("INVALID_ARGS", exit_code=4, detail="level and --config are mutually exclusive")
-        return
 
     if not level and not config_str:
         parser = _system_sub_cmd_parsers.get(CMD_SYSTEM_LOG)
@@ -498,13 +494,14 @@ def cmd_system_log(args):
             None if getattr(args, "schema", False) else parser, "specify a log level or --config JSON/file", exit_code=4
         )
 
-    log_config = resolve_log_config(level, config_str)
-    if log_config is None:
+    try:
+        log_config = resolve_log_config(level, config_str)
+    except ValueError as e:
         parser = _system_sub_cmd_parsers.get(CMD_SYSTEM_LOG)
         output_usage_error(
             None if getattr(args, "schema", False) else parser,
-            "provide a valid level name or --config JSON/file",
-            exit_code=1,
+            str(e),
+            exit_code=4,
             error_code="LOG_CONFIG_INVALID",
             message="Log config is not valid JSON or a recognised log mode.",
             hint="Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
@@ -517,7 +514,6 @@ def cmd_system_log(args):
         raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        return
 
     output_ok({"site": site, "log_config": log_config, "status": "applied"})
 

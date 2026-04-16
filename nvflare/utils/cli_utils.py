@@ -13,6 +13,7 @@
 # limitations under the License.
 import os
 import pathlib
+import sys
 from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -167,14 +168,24 @@ def load_hidden_config() -> ConfigTree:
     hidden_dir = get_or_create_hidden_nvflare_dir()
     hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(hidden_dir))
     nvflare_config = load_config(hidden_nvflare_config_file)
-    if nvflare_config is not None:
-        try:
-            current_version = nvflare_config.get_int(CONFIG_VERSION)
-        except Exception:
-            current_version = None
-        if current_version == CURRENT_CONFIG_VERSION and not _has_legacy_config_keys(nvflare_config):
-            return nvflare_config
-    return migrate_config_to_v2(nvflare_config)
+    if nvflare_config is None:
+        return None
+
+    try:
+        current_version = nvflare_config.get_int(CONFIG_VERSION)
+    except Exception:
+        current_version = None
+
+    if current_version == CURRENT_CONFIG_VERSION and not _has_legacy_config_keys(nvflare_config):
+        return nvflare_config
+
+    migrated = migrate_config_to_v2(nvflare_config)
+    save_config(migrated, hidden_nvflare_config_file)
+    print(
+        f"Migrated {hidden_nvflare_config_file} to config version {CURRENT_CONFIG_VERSION}.",
+        file=sys.stderr,
+    )
+    return migrated
 
 
 def create_startup_kit_config(
@@ -263,6 +274,7 @@ def check_dir(dir_path: str):
 
 
 def get_startup_kit_dir(startup_kit_dir: Optional[str] = None) -> str:
+    # Compatibility wrapper for legacy callers: no explicit target means "use the POC kit".
     return get_startup_kit_dir_for_target(startup_kit_dir=startup_kit_dir)
 
 
