@@ -166,6 +166,22 @@ class TestSystemVersion:
         assert payload["sites"][0]["site"] == "server"
         assert payload["sites"][0]["version"] == "2.8.0"
 
+    def test_version_client_only_omits_compatibility_without_server(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_version
+
+        mock_sess = _make_session(
+            client_names=["site-1"],
+            raw_versions={"site-1": {"version": "2.8.0"}},
+        )
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=mock_sess):
+            with patch.object(_nvflare_mod, "__version__", "9.9.9"):
+                cmd_system_version(_make_args(site="site-1"))
+
+        payload = json.loads(capsys.readouterr().out)["data"]
+        assert "compatible" not in payload
+        assert "mismatched_sites" not in payload
+
     def test_version_site_not_found_exits_1(self):
         """--site for an unknown name → SITE_NOT_FOUND, exits 1."""
         from nvflare.tool.system.system_cli import cmd_system_version
@@ -271,3 +287,19 @@ class TestSystemVersionHuman:
         assert "Compatible: no" in captured.out
         assert "Mismatched sites: site-2" in captured.out
         assert "sites: [{'site':" not in captured.out
+
+    def test_version_human_output_omits_compatibility_without_server(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_version
+
+        mock_sess = _make_session(
+            client_names=["site-1"],
+            raw_versions={"site-1": {"version": "2.8.0"}},
+        )
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=mock_sess):
+            with patch.object(_nvflare_mod, "__version__", "9.9.9"):
+                cmd_system_version(_make_args(site="site-1"))
+
+        captured = capsys.readouterr()
+        assert "Compatible:" not in captured.out
+        assert "Mismatched sites:" not in captured.out

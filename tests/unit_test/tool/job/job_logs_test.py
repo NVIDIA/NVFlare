@@ -177,7 +177,7 @@ class TestJobLogs:
         assert envelope["error_code"] == "INVALID_ARGS"
 
     def test_logs_parser(self):
-        """'logs' subparser parses job_id, --tail, and --grep correctly."""
+        """'logs' subparser parses job_id, server-only --site, --tail, and --grep correctly."""
         import argparse
 
         from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser
@@ -188,7 +188,11 @@ class TestJobLogs:
 
         parser = job_sub_cmd_parser["logs"]
         assert parser is not None
-        args = parser.parse_args(["abc123", "--tail", "100", "--grep", "OOM"])
+        args = parser.parse_args(["abc123", "--site", "server", "--tail", "100", "--grep", "OOM"])
         assert args.job_id == "abc123"
+        assert args.site == "server"
         assert args.tail == 100
         assert args.grep == "OOM"
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["abc123", "--site", "all"])

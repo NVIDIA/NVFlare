@@ -53,6 +53,20 @@ class TestSystemShutdown:
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
         assert "shutdown initiated" in data["data"]["status"]
+        assert data["data"]["result"] is None
+
+    def test_shutdown_preserves_server_reply(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_shutdown
+
+        args = self._make_args(force=True)
+        mock_sess = MagicMock()
+        mock_sess.shutdown.return_value = {"status": "partial", "client_status": {"site-1": "offline"}}
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=mock_sess):
+            cmd_system_shutdown(args)
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["data"]["result"] == {"status": "partial", "client_status": {"site-1": "offline"}}
 
     def test_shutdown_non_interactive_without_force_exits_4(self):
         """Non-interactive mode without --force exits 4."""

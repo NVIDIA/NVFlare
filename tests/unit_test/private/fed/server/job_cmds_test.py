@@ -363,6 +363,36 @@ def test_get_job_meta_normalizes_legacy_job_study(monkeypatch):
     assert conn.dicts[0][0][JobMetaKey.STUDY.value] == "default"
 
 
+def test_get_job_log_tail_uses_bounded_lines(tmp_path):
+    job_cmds_module.ServerEngine = _FakeServerEngine
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+    log_file = Path(workspace.get_log_root("job-1")) / WorkspaceConstants.LOG_FILE_NAME
+    log_file.write_text("line1\nline2\nline3\n", encoding="utf-8")
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "-n", "2"])
+
+    payload, _meta = conn.dicts[0]
+    assert payload["logs"]["server"] == "line2\nline3\n"
+
+
+def test_get_job_log_truncates_large_output(tmp_path, monkeypatch):
+    job_cmds_module.ServerEngine = _FakeServerEngine
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+    log_file = Path(workspace.get_log_root("job-1")) / WorkspaceConstants.LOG_FILE_NAME
+    log_file.write_text("a" * 12 + "\n" + "b" * 12 + "\n", encoding="utf-8")
+
+    monkeypatch.setattr(JobCommandModule, "MAX_RETURNED_JOB_LOG_BYTES", 16)
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1"])
+
+    payload, _meta = conn.dicts[0]
+    assert "truncated after 16 bytes" in payload["logs"]["server"]
+
+
 def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     monkeypatch.setattr(job_cmds_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)

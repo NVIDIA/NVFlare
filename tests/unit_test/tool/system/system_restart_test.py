@@ -51,6 +51,7 @@ class TestSystemRestart:
         data = json.loads(captured.out)
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
+        assert data["data"]["result"] == "restart initiated"
         assert data["data"]["target"] == "all"
 
     def test_restart_non_interactive_without_force_exits_4(self):

@@ -23,6 +23,7 @@ class _MockConnection:
         self.errors = []
         self.strings = []
         self.tables = []
+        self.dicts = []
 
     def get_prop(self, key, default=None):
         return self._props.get(key, default)
@@ -37,6 +38,9 @@ class _MockConnection:
         table = _MockTable(headers=headers, name=name)
         self.tables.append(table)
         return table
+
+    def append_dict(self, data, meta=None):
+        self.dicts.append((data, meta))
 
 
 class _MockTable:
@@ -79,3 +83,32 @@ def test_report_resources_all_includes_server_and_clients(monkeypatch):
     rows = [row for row, _meta in conn.tables[0].rows]
     assert ["server", "unlimited"] in rows
     assert ["site-1", "{'gpu': '1'}"] in rows
+
+
+def test_report_version_all_includes_server_and_clients(monkeypatch):
+    module = SystemCommandModule()
+    conn = _MockConnection()
+    monkeypatch.setattr(
+        module,
+        "send_request_to_clients",
+        lambda conn, message: [_MockClientReply("site-1", json.dumps({"version": "2.8.0"}))],
+    )
+
+    module.report_version(conn, ["report_version", "all"])
+
+    assert conn.errors == []
+    assert len(conn.dicts) == 1
+    payload, _meta = conn.dicts[0]
+    assert payload["server"]["version"]
+    assert payload["site-1"] == {"version": "2.8.0"}
+
+
+def test_report_version_invalid_target_emits_error_string():
+    module = SystemCommandModule()
+    conn = _MockConnection()
+
+    module.report_version(conn, ["report_version", "bogus"])
+
+    assert conn.dicts == []
+    assert conn.strings
+    assert "invalid target type" in conn.strings[0][0]

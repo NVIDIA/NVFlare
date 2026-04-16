@@ -1334,6 +1334,7 @@ def define_job_logs_parser(job_subparser):
     p.add_argument(
         "--site",
         default="server",
+        choices=["server"],
         help="target site: only 'server' is currently supported (client log streaming not yet available)",
     )
     p.add_argument("--tail", type=int, default=None, help="number of tail lines to retrieve")

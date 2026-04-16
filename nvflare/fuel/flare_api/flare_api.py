@@ -527,14 +527,14 @@ class Session(SessionSpec):
         result = self._do_command(command)
         return result[ResultKey.META]
 
-    def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None):
+    def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None) -> dict:
         """Shut down specified system target(s).
 
         Args:
             target_type: what system target (server, client, or all) to shut down
             client_names: clients to be shut down if target_type is client. If not specified, all clients.
 
-        Returns: None
+        Returns: a dict that contains detailed info about the shutdown request.
         """
         if target_type not in _VALID_TARGET_TYPES:
             raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
@@ -545,9 +545,10 @@ class Session(SessionSpec):
             parts.append(processed_targets_str)
 
         command = " ".join(parts)
-        self._do_command(command)
+        result = self._do_command(command)
         if target_type in [TargetType.ALL, TargetType.SERVER]:
             self.close()
+        return result[ResultKey.META]
 
     def set_timeout(self, value: float):
         """Set a session-specific command timeout.

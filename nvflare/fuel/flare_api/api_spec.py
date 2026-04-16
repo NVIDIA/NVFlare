@@ -25,7 +25,7 @@ class MonitorReturnCode(int, enum.Enum):
     ENDED_BY_CB = 2
 
 
-class NoConnection(Exception):
+class NoConnection(ConnectionError):
     pass
 
 
@@ -292,14 +292,14 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None):
+    def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None) -> dict:
         """Shut down specified system target(s)
 
         Args:
             target_type: what system target (server, client, or all) to shut down
             client_names: clients to be shut down if target_type is client. If not specified, all clients.
 
-        Returns: None
+        Returns: a dict that contains detailed info about the shutdown request.
         """
         pass
 

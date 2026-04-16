@@ -256,7 +256,7 @@ def _render_version_human(result):
 
     sites = result.get("sites") or []
     compatible = result.get("compatible")
-    mismatched_sites = result.get("mismatched_sites") or []
+    mismatched_sites = result.get("mismatched_sites")
     admin_version = result.get("admin_version", "unknown")
 
     print_human("Versions")
@@ -267,11 +267,12 @@ def _render_version_human(result):
 
     print_human("")
     print_human(f"Admin version: {admin_version}")
-    print_human(f"Compatible: {'yes' if compatible else 'no'}")
-    if mismatched_sites:
-        print_human(f"Mismatched sites: {', '.join(mismatched_sites)}")
-    else:
-        print_human("Mismatched sites: none")
+    if compatible is not None:
+        print_human(f"Compatible: {'yes' if compatible else 'no'}")
+        if mismatched_sites:
+            print_human(f"Mismatched sites: {', '.join(mismatched_sites)}")
+        else:
+            print_human("Mismatched sites: none")
 
 
 def _output_system_version(result):
@@ -358,12 +359,12 @@ def cmd_system_shutdown(args):
 
     try:
         with _system_session(args) as sess:
-            sess.shutdown(target, client_names if client_names else None)
+            result = sess.shutdown(target, client_names if client_names else None)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
 
-    output_ok({"target": target, "status": "shutdown initiated"})
+    output_ok({"target": target, "status": "shutdown initiated", "result": result})
 
 
 def cmd_system_restart(args):
@@ -435,18 +436,13 @@ def cmd_system_version(args):
         version = payload.get("version") if isinstance(payload, dict) else None
         versions.append({"site": s, "version": version or "unknown"})
 
-    server_ver = next((v["version"] for v in versions if v["site"] == "server"), admin_version)
-    compatible = all(v["version"] == server_ver for v in versions)
-    mismatched_sites = [v["site"] for v in versions if v["version"] != server_ver]
+    result = {"sites": versions, "admin_version": admin_version}
+    server_version = next((v["version"] for v in versions if v["site"] == "server"), None)
+    if server_version is not None:
+        result["compatible"] = all(v["version"] == server_version for v in versions)
+        result["mismatched_sites"] = [v["site"] for v in versions if v["version"] != server_version]
 
-    _output_system_version(
-        {
-            "sites": versions,
-            "compatible": compatible,
-            "mismatched_sites": mismatched_sites,
-            "admin_version": admin_version,
-        }
-    )
+    _output_system_version(result)
 
 
 def cmd_system_log(args):

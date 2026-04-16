@@ -17,6 +17,7 @@ import json
 import os
 import shutil
 import uuid
+from collections import deque
 from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
@@ -93,6 +94,8 @@ def _create_get_job_log_cmd_parser():
 
 class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     """Command module with commands for job management."""
+
+    MAX_RETURNED_JOB_LOG_BYTES = 5 * 1024 * 1024
 
     def __init__(self):
         super().__init__()
@@ -477,19 +480,44 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         log_file = os.path.join(workspace.get_log_root(job_id), WorkspaceConstants.LOG_FILE_NAME)
         log_lines = []
         if os.path.exists(log_file):
-            with open(log_file, "r", encoding="utf-8", errors="replace") as f:
-                log_lines = f.readlines()
-
-        if parsed_args.grep_pattern:
-            log_lines = [line for line in log_lines if parsed_args.grep_pattern in line]
-
-        if parsed_args.tail_lines is not None:
-            if parsed_args.tail_lines <= 0:
+            if parsed_args.tail_lines is not None and parsed_args.tail_lines <= 0:
                 log_lines = []
             else:
-                log_lines = log_lines[-parsed_args.tail_lines :]
+                log_lines = self._collect_job_log_lines(
+                    log_file, tail_lines=parsed_args.tail_lines, grep_pattern=parsed_args.grep_pattern
+                )
 
         conn.append_dict({"logs": {SERVER_SITE_NAME: "".join(log_lines)}}, meta=make_meta(MetaStatusValue.OK))
+
+    def _collect_job_log_lines(self, log_file: str, tail_lines=None, grep_pattern=None):
+        if tail_lines is not None:
+            lines = deque(maxlen=tail_lines)
+        else:
+            lines = []
+        collected_bytes = 0
+        truncated = False
+
+        with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if grep_pattern and grep_pattern not in line:
+                    continue
+
+                if tail_lines is None:
+                    line_len = len(line.encode("utf-8", errors="replace"))
+                    if collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
+                        truncated = True
+                        break
+                    collected_bytes += line_len
+                    lines.append(line)
+                else:
+                    lines.append(line)
+
+        result = list(lines)
+        if truncated:
+            result.append(
+                f"... output truncated after {self.MAX_RETURNED_JOB_LOG_BYTES} bytes; use --tail/--grep to narrow results ...\n"
+            )
+        return result
 
     def list_job_components(self, conn: Connection, args: List[str]):
         if len(args) < 2:
