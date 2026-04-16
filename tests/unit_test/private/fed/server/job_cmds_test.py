@@ -14,12 +14,13 @@
 
 from argparse import Namespace
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.fuel.hci.proto import MetaKey
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
@@ -190,9 +191,16 @@ class _FakeWorkspace:
 class _FakeServerEngine:
     def __init__(self, workspace):
         self.workspace = workspace
+        self.job_def_manager = MagicMock()
+        self.configure_job_log = MagicMock(return_value=None)
 
     def get_workspace(self):
         return self.workspace
+
+    def new_context(self):
+        from nvflare.apis.fl_context import FLContext
+
+        return FLContext()
 
 
 class _FakeStudyRegistry:
@@ -391,6 +399,24 @@ def test_get_job_log_truncates_large_output(tmp_path, monkeypatch):
 
     payload, _meta = conn.dicts[0]
     assert "truncated after 16 bytes" in payload["logs"]["server"]
+
+
+def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch):
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING})
+    conn = _MockConnection(app_ctx=engine)
+    module = JobCommandModule()
+    client_replies = [object()]
+    monkeypatch.setattr(module, "send_request_to_clients", lambda conn, message: client_replies)
+    processed = []
+    monkeypatch.setattr(module, "process_replies_to_table", lambda conn, replies: processed.append(replies))
+
+    module.configure_job_log(conn, ["configure_job_log", "job-1", "all", "DEBUG"])
+
+    engine.configure_job_log.assert_called_once_with("job-1", "DEBUG")
+    assert processed == [client_replies]
+    assert any("successfully configured server job job-1 log" in msg for msg, _meta in conn.strings)
 
 
 def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):

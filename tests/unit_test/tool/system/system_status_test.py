@@ -122,12 +122,12 @@ class TestSystemStatus:
         args.startup_kit = None
 
         with patch(
-            "nvflare.tool.job.job_cli.find_admin_user_and_dir",
-            side_effect=Exception("bad startup"),
+            "nvflare.utils.cli_utils.get_startup_kit_dir_for_target",
+            return_value="/tmp/poc-startup",
         ):
             with patch(
-                "nvflare.utils.cli_utils.get_startup_kit_dir_for_target",
-                return_value="/tmp/poc-startup",
+                "nvflare.tool.job.job_cli._resolve_admin_user_and_dir_from_startup_kit",
+                side_effect=Exception("bad startup"),
             ):
                 with pytest.raises(SystemExit) as exc_info:
                     _get_system_session(args)
@@ -168,7 +168,7 @@ class TestSystemStatus:
             return_value="/tmp/prod-startup",
         ) as get_startup:
             with patch(
-                "nvflare.tool.job.job_cli.find_admin_user_and_dir",
+                "nvflare.tool.job.job_cli._resolve_admin_user_and_dir_from_startup_kit",
                 return_value=("admin@nvidia.com", "/tmp/prod-startup"),
             ):
                 with patch("nvflare.tool.cli_session.new_cli_session", return_value=MagicMock()):
@@ -189,7 +189,7 @@ class TestSystemStatus:
             return_value="/tmp/custom-startup",
         ) as get_startup:
             with patch(
-                "nvflare.tool.job.job_cli.find_admin_user_and_dir",
+                "nvflare.tool.job.job_cli._resolve_admin_user_and_dir_from_startup_kit",
                 return_value=("admin@nvidia.com", "/tmp/custom-startup"),
             ):
                 with patch("nvflare.tool.cli_session.new_cli_session", return_value=MagicMock()):
@@ -197,6 +197,35 @@ class TestSystemStatus:
                         _get_system_session(args)
 
         get_startup.assert_called_once_with(startup_kit_dir="/tmp/custom-startup", target="prod")
+
+    def test_get_system_session_resolves_startup_kit_once_before_username_lookup(self):
+        from nvflare.tool.system.system_cli import _get_system_session
+
+        args = MagicMock()
+        args.target = "prod"
+        args.startup_kit = None
+
+        with patch(
+            "nvflare.utils.cli_utils.get_startup_kit_dir_for_target",
+            return_value="/tmp/prod-startup",
+        ) as get_startup:
+            with patch(
+                "nvflare.tool.job.job_cli._resolve_admin_user_and_dir_from_startup_kit",
+                return_value=("admin@nvidia.com", "/tmp/prod-startup"),
+            ) as resolve_admin:
+                with patch("nvflare.tool.cli_session.new_cli_session", return_value=MagicMock()):
+                    with patch("nvflare.tool.cli_output.get_connect_timeout", return_value=10.0):
+                        _get_system_session(args)
+
+        get_startup.assert_called_once_with(startup_kit_dir=None, target="prod")
+        resolve_admin.assert_called_once_with("/tmp/prod-startup")
+
+    def test_system_session_none_guard_when_get_system_session_returns_none(self):
+        from nvflare.tool.system.system_cli import _system_session
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=None):
+            with _system_session():
+                pass
 
 
 class TestSystemResources:
