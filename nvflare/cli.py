@@ -142,9 +142,6 @@ def def_config_parser(sub_cmd):
     config_parser = sub_cmd.add_parser(cmd, help="configure local NVFlare settings (startup kit path, POC workspace)")
     _config_parser = config_parser
     config_parser.add_argument(
-        "-d", "--startup_kit_dir", type=str, nargs="?", default=None, help="startup kit location"
-    )
-    config_parser.add_argument(
         "--poc.startup_kit",
         dest="poc_startup_kit_dir",
         type=str,
@@ -161,11 +158,8 @@ def def_config_parser(sub_cmd):
         help="production startup kit location",
     )
     config_parser.add_argument(
-        "-pw", "--poc_workspace_dir", type=str, nargs="?", default=None, help="POC workspace location"
-    )
-    config_parser.add_argument(
         "--poc.workspace",
-        dest="poc_workspace_dir_v2",
+        dest="poc_workspace_dir",
         type=str,
         nargs="?",
         default=None,
@@ -187,18 +181,17 @@ def handle_config_cmd(args):
         _config_parser,
         "nvflare config",
         [
-            "nvflare config -d /path/to/startup",
-            "nvflare config -pw /path/to/poc",
+            "nvflare config --poc.startup_kit /path/to/poc_startup",
+            "nvflare config --prod.startup_kit /path/to/prod_startup",
+            "nvflare config --poc.workspace /path/to/poc_workspace",
         ],
         sys.argv[1:],
     )
 
     config_file_path, nvflare_config = get_hidden_config()
-    requested_poc_startup = args.poc_startup_kit_dir if args.poc_startup_kit_dir is not None else args.startup_kit_dir
+    requested_poc_startup = args.poc_startup_kit_dir
     requested_prod_startup = args.prod_startup_kit_dir
-    requested_poc_workspace = (
-        args.poc_workspace_dir_v2 if args.poc_workspace_dir_v2 is not None else args.poc_workspace_dir
-    )
+    requested_poc_workspace = args.poc_workspace_dir
 
     if (
         requested_poc_startup is None
