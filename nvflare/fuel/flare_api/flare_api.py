@@ -136,7 +136,7 @@ class Session(SessionSpec):
         if status == APIStatus.ERROR_AUTHORIZATION:
             raise AuthorizationError(details or "authorization failed")
         if status == APIStatus.ERROR_SERVER_CONNECTION:
-            raise ConnectionError(details or "cannot connect to server")
+            raise NoConnection(details or "cannot connect to server")
         raise InternalError(details or f"login failed: {status}")
 
     def _do_command(self, command: str, enforce_meta=True, props=None):
@@ -206,7 +206,7 @@ class Session(SessionSpec):
                 raise InternalError(f"protocol error: {status_text}: {details}")
             raise InternalError(f"protocol error: {status_text}")
         elif status in [APIStatus.ERROR_SERVER_CONNECTION]:
-            raise ConnectionError(f"cannot connect to server: {status}")
+            raise NoConnection(f"cannot connect to server: {status}")
         elif status != APIStatus.SUCCESS:
             details = result.get(ResultKey.DETAILS, "")
             raise RuntimeError(f"runtime error encountered: {status}: {details}")

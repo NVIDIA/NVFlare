@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import InternalError, InvalidJobDefinition
+from nvflare.fuel.flare_api.api_spec import InternalError, InvalidJobDefinition, NoConnection
 from nvflare.fuel.flare_api.flare_api import Session
 from nvflare.fuel.hci.client.api import APIStatus, ResultKey
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
@@ -65,3 +65,16 @@ def test_do_command_includes_syntax_error_details():
 
     with pytest.raises(InternalError, match=r"protocol error: ERROR_SYNTAX: usage: submit_job job_folder"):
         session._do_command("submit_job /tmp/job", enforce_meta=False)
+
+
+def test_do_command_raises_no_connection_for_server_connection_error():
+    session = Session.__new__(Session)
+    session.api = MagicMock()
+    session.api.closed = False
+    session.api.do_command.return_value = {
+        ResultKey.STATUS: APIStatus.ERROR_SERVER_CONNECTION,
+        ResultKey.DETAILS: "connection refused",
+    }
+
+    with pytest.raises(NoConnection, match=r"cannot connect to server: ERROR_SERVER_CONNECTION"):
+        session._do_command("list_jobs", enforce_meta=False)

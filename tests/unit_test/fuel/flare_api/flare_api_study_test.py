@@ -18,7 +18,7 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.apis.job_def import DEFAULT_STUDY
-from nvflare.fuel.flare_api.api_spec import AuthenticationError
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 from nvflare.fuel.hci.client.api import APIStatus, ResultKey
 from nvflare.fuel.hci.proto import MetaKey
@@ -171,4 +171,19 @@ def test_try_connect_raises_on_login_failure():
     )
 
     with pytest.raises(AuthenticationError, match="Incorrect user name or password"):
+        session.try_connect(5.0)
+
+
+def test_try_connect_raises_no_connection_on_server_connection_error():
+    session = _make_session_for_study(DEFAULT_STUDY)
+    session.api = SimpleNamespace(
+        closed=False,
+        connect=lambda timeout: None,
+        login=lambda: {
+            ResultKey.STATUS: APIStatus.ERROR_SERVER_CONNECTION,
+            ResultKey.DETAILS: "server unavailable",
+        },
+    )
+
+    with pytest.raises(NoConnection, match="server unavailable"):
         session.try_connect(5.0)
