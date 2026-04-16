@@ -14,13 +14,14 @@
 
 import datetime
 import json
+import os
 import shutil
 import uuid
 from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ReturnCode, ServerCommandKey
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ReturnCode, ServerCommandKey, WorkspaceConstants
 from nvflare.apis.job_def import (
     ALL_SITES,
     DEFAULT_STUDY,
@@ -82,6 +83,14 @@ def _create_list_job_cmd_parser():
     return parser
 
 
+def _create_get_job_log_cmd_parser():
+    parser = SafeArgumentParser(prog=AdminCommandNames.GET_JOB_LOG)
+    parser.add_argument("job_id", help="Job ID")
+    parser.add_argument("-n", dest="tail_lines", type=int, help="Tail line count")
+    parser.add_argument("-g", dest="grep_pattern", help="Filter log lines containing the pattern")
+    return parser
+
+
 class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     """Command module with commands for job management."""
 
@@ -115,6 +124,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     usage=f"{AdminCommandNames.LIST_JOBS} [-n name_prefix] [-d] [-u] [-r] [-m num_of_jobs] [job_id_prefix]",
                     handler_func=self.list_jobs,
                     authz_func=self.command_authz_required,
+                ),
+                CommandSpec(
+                    name=AdminCommandNames.GET_JOB_LOG,
+                    description="get server log text for a job",
+                    usage=f"{AdminCommandNames.GET_JOB_LOG} job_id [-n tail_lines] [-g grep_pattern]",
+                    handler_func=self.get_job_log,
+                    authz_func=self.authorize_job_id,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.GET_JOB_META,
@@ -440,6 +456,40 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 conn.append_error(
                     f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
                 )
+
+    def get_job_log(self, conn: Connection, args: List[str]):
+        try:
+            parser = _create_get_job_log_cmd_parser()
+            parsed_args = parser.parse_args(args[1:])
+        except Exception as e:
+            conn.append_error(
+                secure_format_exception(e),
+                meta=make_meta(MetaStatusValue.SYNTAX_ERROR, secure_format_exception(e)),
+            )
+            return
+
+        job_id = conn.get_prop(self.JOB_ID, parsed_args.job_id)
+        engine = conn.app_ctx
+        if not isinstance(engine, ServerEngine):
+            raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
+
+        workspace = engine.get_workspace()
+        log_file = os.path.join(workspace.get_log_root(job_id), WorkspaceConstants.LOG_FILE_NAME)
+        log_lines = []
+        if os.path.exists(log_file):
+            with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+                log_lines = f.readlines()
+
+        if parsed_args.grep_pattern:
+            log_lines = [line for line in log_lines if parsed_args.grep_pattern in line]
+
+        if parsed_args.tail_lines is not None:
+            if parsed_args.tail_lines <= 0:
+                log_lines = []
+            else:
+                log_lines = log_lines[-parsed_args.tail_lines :]
+
+        conn.append_dict({"logs": {SERVER_SITE_NAME: "".join(log_lines)}}, meta=make_meta(MetaStatusValue.OK))
 
     def list_job_components(self, conn: Connection, args: List[str]):
         if len(args) < 2:
