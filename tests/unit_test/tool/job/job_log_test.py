@@ -34,7 +34,7 @@ def _make_args(job_id="abc123", level=None, config=None, site="all"):
 
 
 class TestJobLog:
-    """Tests for nvflare job log command."""
+    """Tests for nvflare job log-config command."""
 
     @pytest.fixture(autouse=True)
     def json_mode(self, monkeypatch):
@@ -86,8 +86,8 @@ class TestJobLog:
         assert envelope["status"] == "ok"
         assert envelope["data"]["config"] == {"version": 1}
 
-    def test_log_invalid_config_exits_1(self, capsys):
-        """Neither level nor --config → LOG_CONFIG_INVALID error, SystemExit with code 1."""
+    def test_log_invalid_config_exits_4(self, capsys):
+        """Neither level nor --config → LOG_CONFIG_INVALID error, SystemExit with code 4."""
         from nvflare.tool.job.job_cli import cmd_job_log
 
         args = _make_args(level=None, config=None)
@@ -95,7 +95,7 @@ class TestJobLog:
         with pytest.raises(SystemExit) as exc_info:
             cmd_job_log(args)
 
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 4
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert envelope["error_code"] == "LOG_CONFIG_INVALID"
@@ -113,7 +113,7 @@ class TestJobLog:
         envelope = json.loads(capsys.readouterr().out)
         assert envelope["error_code"] == "INVALID_ARGS"
 
-    def test_log_bad_json_file_exits_1(self, capsys):
+    def test_log_bad_json_file_exits_4(self, capsys):
         """Malformed JSON file should map to LOG_CONFIG_INVALID instead of INTERNAL_ERROR."""
         from nvflare.tool.job.job_cli import cmd_job_log
 
@@ -127,7 +127,7 @@ class TestJobLog:
             with pytest.raises(SystemExit) as exc_info:
                 cmd_job_log(args)
 
-            assert exc_info.value.code == 1
+            assert exc_info.value.code == 4
             envelope = json.loads(capsys.readouterr().out)
             assert envelope["error_code"] == "LOG_CONFIG_INVALID"
         finally:
@@ -167,12 +167,12 @@ class TestJobLogHuman:
         with pytest.raises(SystemExit) as exc_info:
             cmd_job_log(args)
 
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 4
         captured = capsys.readouterr()
         assert "usage:" in captured.err
         assert "\n\nLog config is not valid JSON or a recognised log mode." in captured.err
         assert "Hint: Supply a valid dictConfig JSON file or one of:" in captured.err
-        assert "Code: LOG_CONFIG_INVALID (exit 1)" in captured.err
+        assert "Code: LOG_CONFIG_INVALID (exit 4)" in captured.err
 
     def test_log_job_not_running_finished_ok_exits_1(self, capsys):
         """meta status 'FINISHED_OK' → JOB_NOT_RUNNING error, exit 1."""
@@ -288,17 +288,23 @@ class TestJobLogHuman:
         assert envelope["error_code"] == "SITE_NOT_FOUND"
 
     def test_log_parser(self):
-        """'log' subparser parses positional job_id and level correctly."""
+        """Primary 'log-config' parser and deprecated 'log' alias both parse correctly."""
         import argparse
 
         from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser
 
         root = argparse.ArgumentParser()
-        subs = root.add_subparsers()
+        subs = root.add_subparsers(dest="sub_command")
         def_job_cli_parser(subs)
 
-        parser = job_sub_cmd_parser["log"]
+        parser = job_sub_cmd_parser["log-config"]
         assert parser is not None
         args = parser.parse_args(["abc123", "DEBUG"])
         assert args.job_id == "abc123"
         assert args.level == "DEBUG"
+
+        alias_args = root.parse_args(["job", "log", "abc123", "DEBUG"])
+        assert alias_args.sub_command == "job"
+        assert alias_args.job_sub_cmd == "log"
+        assert alias_args.job_id == "abc123"
+        assert alias_args.level == "DEBUG"

@@ -81,12 +81,13 @@ CMD_JOB_CLONE = "clone"
 CMD_JOB_DOWNLOAD = "download"
 CMD_JOB_DELETE = "delete"
 
-# Section 5: Job observability commands
+# Job observability commands
 CMD_JOB_STATS = "stats"
 CMD_JOB_LOGS = "logs"
 
-# Section 3 additions: new lifecycle commands
+# Job lifecycle helpers
 CMD_JOB_MONITOR = "monitor"
+CMD_JOB_LOG_CONFIG = "log-config"
 CMD_JOB_LOG = "log"
 
 
@@ -576,6 +577,7 @@ job_sub_cmd_handlers = {
     CMD_JOB_STATS: None,
     CMD_JOB_LOGS: None,
     CMD_JOB_MONITOR: None,
+    CMD_JOB_LOG_CONFIG: None,
     CMD_JOB_LOG: None,
 }
 
@@ -593,6 +595,7 @@ job_sub_cmd_parser = {
     CMD_JOB_STATS: None,
     CMD_JOB_LOGS: None,
     CMD_JOB_MONITOR: None,
+    CMD_JOB_LOG_CONFIG: None,
     CMD_JOB_LOG: None,
 }
 
@@ -1228,26 +1231,6 @@ def define_delete_job_parser(job_subparser):
     job_sub_cmd_handlers[CMD_JOB_DELETE] = cmd_job_delete
 
 
-# ---------------------------------------------------------------------------
-# Section 5: Job observability commands
-# ---------------------------------------------------------------------------
-
-_DIAGNOSE_PATTERNS = [
-    (r"CUDA out of memory|OOM", "GPU memory exhaustion", "Reduce batch_size or enable gradient checkpointing"),
-    (r"Connection refused|SERVER_UNREACHABLE", "Network / firewall issue", "Check server status and network policy"),
-    (r"signature verification failed", "Certificate mismatch", "Re-provision or verify rootCA"),
-    (r"Job validation failed", "Bad job configuration", "Check meta.json and config_fed_server.json"),
-    (r"timed out", "Client too slow", "Increase task_timeout in job config"),
-    (r"ModuleNotFoundError", "Missing dependency", "Install required package on the client"),
-    (
-        r"No rounds completed|current_round\s*[=:]\s*0",
-        "Executor crash at startup",
-        "Inspect client error log for import or init errors",
-    ),
-    (r"ResourceExhaustedError", "Server memory pressure", "Reduce concurrent jobs or client batch size"),
-    (r"SSLError|certificate verify failed", "TLS misconfiguration", "Check cert expiry and rootCA chain"),
-]
-
 _TERMINAL_JOB_STATES = {"FINISHED_OK", "FINISHED_EXCEPTION", "ABORTED", "ABANDONED", "FAILED"}
 
 
@@ -1354,81 +1337,120 @@ def define_job_logs_parser(job_subparser):
     job_sub_cmd_handlers[CMD_JOB_LOGS] = cmd_job_logs
 
 
-# ---------------------------------------------------------------------------
-# Section 3 additions: monitor, log, export, run
-# ---------------------------------------------------------------------------
+def _summarize_monitor_meta(meta: dict, job_meta_key_cls) -> dict:
+    if not meta:
+        return {}
+    fields = {
+        "job_name": job_meta_key_cls.JOB_NAME.value,
+        "status": job_meta_key_cls.STATUS.value,
+        "submit_time": job_meta_key_cls.SUBMIT_TIME_ISO.value,
+        "start_time": job_meta_key_cls.START_TIME.value,
+        "duration": job_meta_key_cls.DURATION.value,
+        "study": job_meta_key_cls.STUDY.value,
+        "submitter_name": job_meta_key_cls.SUBMITTER_NAME.value,
+        "submitter_org": job_meta_key_cls.SUBMITTER_ORG.value,
+        "submitter_role": job_meta_key_cls.SUBMITTER_ROLE.value,
+    }
+    summary = {}
+    for out_key, meta_key in fields.items():
+        value = meta.get(meta_key)
+        if value not in (None, ""):
+            summary[out_key] = value
+    return summary
+
+
+def _parse_monitor_start_ts(meta: dict, start_time_key: str, submit_time_iso_key: str) -> float:
+    if not meta:
+        return None
+    start_time = meta.get(start_time_key)
+    if start_time:
+        try:
+            return datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S.%f").timestamp()
+        except Exception:
+            pass
+    submit_time_iso = meta.get(submit_time_iso_key)
+    if submit_time_iso:
+        try:
+            return datetime.datetime.fromisoformat(submit_time_iso).timestamp()
+        except Exception:
+            pass
+    return None
+
+
+def _parse_monitor_duration_seconds(value) -> float:
+    if not value or value == "N/A":
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str):
+        return None
+    parts = value.split(":")
+    try:
+        if len(parts) == 3:
+            hours = int(parts[0])
+            minutes = int(parts[1])
+            seconds = float(parts[2])
+            return hours * 3600 + minutes * 60 + seconds
+        if len(parts) == 2:
+            minutes = int(parts[0])
+            seconds = float(parts[1])
+            return minutes * 60 + seconds
+        if len(parts) == 1:
+            return float(parts[0])
+    except Exception:
+        return None
+    return None
+
+
+def _build_monitor_key_aliases(extra_metrics: list) -> dict:
+    aliases = {
+        "round": ["round", "global_round", "current_round", "iteration", "iter", "epoch"],
+        "accuracy": ["accuracy", "acc", "val_acc", "test_acc"],
+        "loss": ["loss", "train_loss", "val_loss", "test_loss"],
+    }
+    for metric in extra_metrics:
+        aliases[metric] = [metric]
+    return aliases
+
+
+def _extract_monitor_metrics(stats: dict, key_aliases: dict) -> dict:
+    if not isinstance(stats, dict):
+        return {}
+
+    def _find_key(d: dict, keys: list):
+        for k in keys:
+            if k in d and isinstance(d[k], (int, float, str)):
+                return d[k]
+        return None
+
+    def _search(d: dict, keys: list):
+        if not isinstance(d, dict):
+            return None
+        value = _find_key(d, keys)
+        if value is not None:
+            return value
+        for v in d.values():
+            if isinstance(v, dict):
+                found = _search(v, keys)
+                if found is not None:
+                    return found
+        return None
+
+    metrics = {}
+    for out_key, aliases in key_aliases.items():
+        value = _search(stats, aliases)
+        if value is not None:
+            metrics[out_key] = value
+    return metrics
 
 
 def cmd_job_monitor(cmd_args):
-    import datetime
     import time
 
     from nvflare.apis.job_def import JobMetaKey
     from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, MonitorReturnCode, NoConnection
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
-
-    def _summarize_meta(meta: dict) -> dict:
-        if not meta:
-            return {}
-        fields = {
-            "job_name": JobMetaKey.JOB_NAME.value,
-            "status": JobMetaKey.STATUS.value,
-            "submit_time": JobMetaKey.SUBMIT_TIME_ISO.value,
-            "start_time": JobMetaKey.START_TIME.value,
-            "duration": JobMetaKey.DURATION.value,
-            "study": JobMetaKey.STUDY.value,
-            "submitter_name": JobMetaKey.SUBMITTER_NAME.value,
-            "submitter_org": JobMetaKey.SUBMITTER_ORG.value,
-            "submitter_role": JobMetaKey.SUBMITTER_ROLE.value,
-        }
-        summary = {}
-        for out_key, meta_key in fields.items():
-            value = meta.get(meta_key)
-            if value not in (None, ""):
-                summary[out_key] = value
-        return summary
-
-    def _parse_start_ts(meta: dict) -> float:
-        if not meta:
-            return None
-        start_time = meta.get(JobMetaKey.START_TIME.value)
-        if start_time:
-            try:
-                return datetime.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S.%f").timestamp()
-            except Exception:
-                pass
-        submit_time_iso = meta.get(JobMetaKey.SUBMIT_TIME_ISO.value)
-        if submit_time_iso:
-            try:
-                return datetime.datetime.fromisoformat(submit_time_iso).timestamp()
-            except Exception:
-                pass
-        return None
-
-    def _parse_duration_seconds(value) -> float:
-        if not value or value == "N/A":
-            return None
-        if isinstance(value, (int, float)):
-            return float(value)
-        if not isinstance(value, str):
-            return None
-        parts = value.split(":")
-        try:
-            if len(parts) == 3:
-                hours = int(parts[0])
-                minutes = int(parts[1])
-                seconds = float(parts[2])
-                return hours * 3600 + minutes * 60 + seconds
-            if len(parts) == 2:
-                minutes = int(parts[0])
-                seconds = float(parts[1])
-                return minutes * 60 + seconds
-            if len(parts) == 1:
-                return float(parts[0])
-        except Exception:
-            return None
-        return None
 
     handle_schema_flag(
         job_sub_cmd_parser[CMD_JOB_MONITOR],
@@ -1454,47 +1476,7 @@ def cmd_job_monitor(cmd_args):
     stats_target = getattr(cmd_args, "stats_target", "server")
     extra_metrics = [m for m in (getattr(cmd_args, "metrics", None) or []) if m]
 
-    def _build_key_aliases() -> dict:
-        aliases = {
-            "round": ["round", "global_round", "current_round", "iteration", "iter", "epoch"],
-            "accuracy": ["accuracy", "acc", "val_acc", "test_acc"],
-            "loss": ["loss", "train_loss", "val_loss", "test_loss"],
-        }
-        for metric in extra_metrics:
-            aliases[metric] = [metric]
-        return aliases
-
-    def _extract_metrics(stats: dict, key_aliases: dict) -> dict:
-        if not isinstance(stats, dict):
-            return {}
-
-        def _find_key(d: dict, keys: list):
-            for k in keys:
-                if k in d and isinstance(d[k], (int, float, str)):
-                    return d[k]
-            return None
-
-        def _search(d: dict, keys: list):
-            if not isinstance(d, dict):
-                return None
-            value = _find_key(d, keys)
-            if value is not None:
-                return value
-            for v in d.values():
-                if isinstance(v, dict):
-                    found = _search(v, keys)
-                    if found is not None:
-                        return found
-            return None
-
-        metrics = {}
-        for out_key, aliases in key_aliases.items():
-            value = _search(stats, aliases)
-            if value is not None:
-                metrics[out_key] = value
-        return metrics
-
-    key_aliases = _build_key_aliases()
+    key_aliases = _build_monitor_key_aliases(extra_metrics)
 
     def _status_cb(_sess, _job_id, job_meta, state):
         state["last_meta"] = job_meta
@@ -1502,20 +1484,20 @@ def cmd_job_monitor(cmd_args):
         now = time.time()
         nonlocal start_ts
         if start_ts is None:
-            start_ts = _parse_start_ts(job_meta)
+            start_ts = _parse_monitor_start_ts(job_meta, JobMetaKey.START_TIME.value, JobMetaKey.SUBMIT_TIME_ISO.value)
         if status in ("RUNNING", "DISPATCHED") and start_ts is None:
-            start_ts = _parse_start_ts(job_meta)
+            start_ts = _parse_monitor_start_ts(job_meta, JobMetaKey.START_TIME.value, JobMetaKey.SUBMIT_TIME_ISO.value)
         if status in ("RUNNING", "DISPATCHED") and now - state["last_stats_ts"] >= stats_interval:
             try:
                 stats = _sess.show_stats(_job_id, stats_target, None)
                 state["last_stats_raw"] = stats
-                state["last_stats"] = _extract_metrics(stats, key_aliases)
+                state["last_stats"] = _extract_monitor_metrics(stats, key_aliases)
             except Exception:
                 state["last_stats"] = None
                 state["last_stats_raw"] = None
             state["last_stats_ts"] = now
         if status != state["last_status"] or now - state["last_emit_ts"] >= emit_interval:
-            summary = _summarize_meta(job_meta)
+            summary = _summarize_monitor_meta(job_meta, JobMetaKey)
             name = summary.get("job_name")
             elapsed_base = start_ts if start_ts is not None else start
             elapsed = round(now - elapsed_base, 1)
@@ -1565,7 +1547,7 @@ def cmd_job_monitor(cmd_args):
     if rc == MonitorReturnCode.ENDED_BY_CB:
         meta = cb_state.get("last_meta")
         if meta is None:
-            output_error("INTERNAL_ERROR", exit_code=2, detail="monitoring stopped before job metadata was available")
+            output_error("INTERNAL_ERROR", exit_code=5, detail="monitoring stopped before job metadata was available")
             return
 
     if not meta:
@@ -1573,7 +1555,7 @@ def cmd_job_monitor(cmd_args):
         return
 
     status = meta.get("status", "UNKNOWN")
-    meta_duration_s = _parse_duration_seconds(meta.get("duration") if meta else None)
+    meta_duration_s = _parse_monitor_duration_seconds(meta.get("duration") if meta else None)
     if meta_duration_s is not None:
         duration = round(meta_duration_s, 1)
     elif start_ts is not None:
@@ -1584,14 +1566,14 @@ def cmd_job_monitor(cmd_args):
         "job_id": cmd_args.job_id,
         "status": status,
         "duration_s": duration,
-        "job_meta": _summarize_meta(meta),
+        "job_meta": _summarize_monitor_meta(meta, JobMetaKey),
         "last_stats": cb_state.get("last_stats"),
     }
     if is_json_mode():
         data["stats_raw"] = cb_state.get("last_stats_raw")
 
     if status in ("FAILED", "FINISHED_EXCEPTION", "ABORTED", "ABANDONED"):
-        output_ok(data, exit_code=1, status="terminal_failure")
+        output_ok(data, exit_code=1)
     else:
         output_ok(data)
 
@@ -1603,12 +1585,12 @@ def cmd_job_log(cmd_args):
     from nvflare.tool.system.system_cli import resolve_log_config
 
     handle_schema_flag(
-        job_sub_cmd_parser[CMD_JOB_LOG],
-        "nvflare job log",
+        job_sub_cmd_parser[CMD_JOB_LOG_CONFIG],
+        "nvflare job log-config",
         [
-            "nvflare job log abc123 DEBUG",
-            "nvflare job log abc123 concise",
-            "nvflare job log abc123 --config /path/to/logging.json",
+            "nvflare job log-config abc123 DEBUG",
+            "nvflare job log-config abc123 concise",
+            "nvflare job log-config abc123 --config /path/to/logging.json",
         ],
         sys.argv[1:],
     )
@@ -1618,24 +1600,16 @@ def cmd_job_log(cmd_args):
     site = getattr(cmd_args, "site", "all")
 
     if level and config_str:
-        output_usage_error(job_sub_cmd_parser[CMD_JOB_LOG], "--level and --config are mutually exclusive", exit_code=4)
-
-    if not level and not config_str:
         output_usage_error(
-            job_sub_cmd_parser[CMD_JOB_LOG],
-            "provide a valid level name or --config JSON/file",
-            exit_code=1,
-            error_code="LOG_CONFIG_INVALID",
-            message="Log config is not valid JSON or a recognised log mode.",
-            hint="Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
+            job_sub_cmd_parser[CMD_JOB_LOG_CONFIG], "--level and --config are mutually exclusive", exit_code=4
         )
 
     log_config = resolve_log_config(level, config_str)
     if log_config is None:
         output_usage_error(
-            job_sub_cmd_parser[CMD_JOB_LOG],
+            job_sub_cmd_parser[CMD_JOB_LOG_CONFIG],
             "provide a valid level name or --config JSON/file",
-            exit_code=1,
+            exit_code=4,
             error_code="LOG_CONFIG_INVALID",
             message="Log config is not valid JSON or a recognised log mode.",
             hint="Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
@@ -1697,7 +1671,11 @@ def define_job_monitor_parser(job_subparser):
 
 
 def define_job_log_parser(job_subparser):
-    p = job_subparser.add_parser(CMD_JOB_LOG, help="change logging configuration for a running job")
+    p = job_subparser.add_parser(
+        CMD_JOB_LOG_CONFIG,
+        aliases=[CMD_JOB_LOG],
+        help="change logging configuration for a running job",
+    )
     p.add_argument("job_id", type=str, help="job ID")
     p.add_argument(
         "level",
@@ -1708,5 +1686,7 @@ def define_job_log_parser(job_subparser):
     p.add_argument("--config", default=None, help="path to dictConfig JSON file or inline JSON")
     p.add_argument("--site", default="all", help="target site name or all")
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_LOG_CONFIG] = p
     job_sub_cmd_parser[CMD_JOB_LOG] = p
+    job_sub_cmd_handlers[CMD_JOB_LOG_CONFIG] = cmd_job_log
     job_sub_cmd_handlers[CMD_JOB_LOG] = cmd_job_log

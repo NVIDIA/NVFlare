@@ -183,12 +183,13 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def download_job_result(self, job_id: str) -> str:
+    def download_job_result(self, job_id: str, destination: str = None) -> str:
         """
         Download result of the job
 
         Args:
             job_id: ID of the job
+            destination: optional directory to move the downloaded result into.
 
         Returns: folder path to the location of the job result
 

@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from nvflare.fuel.flare_api.api_spec import AuthenticationError, InternalError, InvalidJobDefinition, NoConnection
-from nvflare.fuel.flare_api.flare_api import Session
+from nvflare.fuel.flare_api.flare_api import Session, new_session
 from nvflare.fuel.hci.client.api import APIStatus, ResultKey
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 
@@ -91,3 +91,14 @@ def test_do_command_raises_authentication_error_for_error_cert():
 
     with pytest.raises(AuthenticationError, match="certificate validation failed"):
         session._do_command("list_jobs", enforce_meta=False)
+
+
+def test_new_session_closes_session_on_connect_failure():
+    fake_session = MagicMock()
+    fake_session.try_connect.side_effect = NoConnection("cannot connect")
+
+    with patch("nvflare.fuel.flare_api.flare_api.Session", return_value=fake_session):
+        with pytest.raises(NoConnection):
+            new_session("admin@nvidia.com", "/tmp/startup", timeout=5.0)
+
+    fake_session.close.assert_called_once()

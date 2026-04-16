@@ -1180,8 +1180,12 @@ def new_session(
         secure_mode=secure_mode,
         study=study,
     )
-    session.try_connect(timeout)
-    return session
+    try:
+        session.try_connect(timeout)
+        return session
+    except Exception:
+        session.close()
+        raise
 
 
 def new_secure_session(
