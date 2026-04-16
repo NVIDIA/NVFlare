@@ -849,7 +849,13 @@ class Session(SessionSpec):
             target_type (str): type of target (server, client, or all)
             targets: list of client names if target type is "client". All clients if not specified.
 
-        Returns: a dict with resource information
+        Returns: a dict with resource information.
+
+        Notes:
+            The underlying admin protocol currently returns this data as a table-shaped payload.
+            Session normalizes the current table layout into a simpler site->value dict for CLI
+            consumers. If the server-side table shape changes in the future, this adapter needs to
+            be updated alongside that protocol change.
 
         """
         if target_type not in _VALID_TARGET_TYPES:
@@ -1146,6 +1152,9 @@ def basic_cb_with_print(session: Session, job_id: str, job_meta, *cb_args, **cb_
     """This is a sample callback to use with monitor_job.
 
     This demonstrates how a custom callback can be used.
+
+    When the CLI output helper is available, use it so human progress updates follow the CLI
+    stdout/stderr routing policy. Non-CLI callers still get a plain print() fallback.
 
     """
     try:
