@@ -194,7 +194,8 @@ class Session(SessionSpec):
             raise InternalError("missing status in result")
 
         if status in [APIStatus.ERROR_CERT, APIStatus.ERROR_AUTHENTICATION]:
-            raise AuthenticationError(f"user not authenticated: {status}")
+            details = result.get(ResultKey.DETAILS, "")
+            raise AuthenticationError(details or f"user not authenticated: {status}", auth_code=result.get("auth_code"))
         elif status == APIStatus.ERROR_AUTHORIZATION:
             raise AuthorizationError(f"user not authorized for the action '{command}'")
         elif status == APIStatus.ERROR_INACTIVE_SESSION:

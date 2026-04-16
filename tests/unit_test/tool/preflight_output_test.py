@@ -126,6 +126,12 @@ class TestPreflightOutput:
                 check_packages(args)
         assert exc_info.value.code == 1
 
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["status"] == "check_failed"
+        assert data["exit_code"] == 1
+        assert data["data"]["overall"] == "fail"
+
     def test_per_component_checks(self, capsys, tmp_path):
         """Each checker appears as a separate entry; stdout has only one JSON line."""
         from nvflare.tool.preflight_check import check_packages

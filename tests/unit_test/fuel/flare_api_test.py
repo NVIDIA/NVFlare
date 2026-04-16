@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import InternalError, InvalidJobDefinition, NoConnection
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, InternalError, InvalidJobDefinition, NoConnection
 from nvflare.fuel.flare_api.flare_api import Session
 from nvflare.fuel.hci.client.api import APIStatus, ResultKey
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
@@ -77,4 +77,17 @@ def test_do_command_raises_no_connection_for_server_connection_error():
     }
 
     with pytest.raises(NoConnection, match=r"cannot connect to server: ERROR_SERVER_CONNECTION"):
+        session._do_command("list_jobs", enforce_meta=False)
+
+
+def test_do_command_raises_authentication_error_for_error_cert():
+    session = Session.__new__(Session)
+    session.api = MagicMock()
+    session.api.closed = False
+    session.api.do_command.return_value = {
+        ResultKey.STATUS: APIStatus.ERROR_CERT,
+        ResultKey.DETAILS: "certificate validation failed",
+    }
+
+    with pytest.raises(AuthenticationError, match="certificate validation failed"):
         session._do_command("list_jobs", enforce_meta=False)

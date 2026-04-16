@@ -37,6 +37,10 @@ def test_auth_hint_defaults_to_credentials():
     assert cli_mod._auth_hint_from_detail("Incorrect user name or password") == "Check startup kit credentials."
 
 
+def test_auth_hint_defaults_to_credentials_for_cert_error():
+    assert cli_mod._auth_hint_from_detail("certificate validation failed") == "Check startup kit credentials."
+
+
 def test_auth_hint_uses_structured_auth_code():
     assert cli_mod._auth_hint_from_detail(
         "Incorrect user name or password", auth_code="AUTH_STUDY_USER_NOT_MAPPED"

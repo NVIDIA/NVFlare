@@ -84,7 +84,9 @@ def check_packages(args):
             "package": os.path.abspath(package_path),
             "checks": checks,
             "overall": overall,
-        }
+        },
+        exit_code=0 if overall_pass else 1,
+        status="ok" if overall_pass else "check_failed",
     )
 
     if not overall_pass:
