@@ -14,6 +14,7 @@
 
 """Tests for recipe utilities and ExecEnv script validation."""
 
+import importlib
 import json
 import logging
 import os
@@ -435,3 +436,16 @@ class TestRecipeExecuteExportParamIsolation:
         server_app = recipe.job._deploy_map.get("server")
         assert server_app is not None
         assert server_app.app_config.additional_params == {}
+
+
+def test_recipe_spec_import_does_not_mutate_sys_argv(monkeypatch):
+    import sys
+
+    original_argv = ["python", "job.py", "--export", "--export-dir", "/tmp/out", "--other", "value"]
+    monkeypatch.setattr(sys, "argv", list(original_argv))
+
+    import nvflare.recipe.spec as spec_module
+
+    importlib.reload(spec_module)
+
+    assert sys.argv == original_argv

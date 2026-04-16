@@ -122,3 +122,30 @@ participants:
         config = CF.parse_file(dst)
         assert config.get("poc.startup_kit").endswith("/example_project/prod_00/admin@nvidia.com")
         assert config.get("poc.workspace") == workspace
+
+    def test_force_does_not_delete_workspace_before_rejecting_project_file_inside_workspace(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import prepare_poc
+
+        workspace = tmp_path / "poc_ws"
+        workspace.mkdir()
+        project_file = workspace / "project.yml"
+        project_file.write_text("name: example_project\nparticipants: []\n")
+        sentinel = workspace / "keep.txt"
+        sentinel.write_text("keep me")
+
+        cmd_args = MagicMock()
+        cmd_args.output = "json"
+        cmd_args.force = True
+        cmd_args.clients = []
+        cmd_args.number_of_clients = 2
+        cmd_args.docker_image = None
+        cmd_args.he = False
+        cmd_args.project_input = str(project_file)
+
+        with patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(workspace)):
+            with pytest.raises(SystemExit) as exc_info:
+                prepare_poc(cmd_args)
+
+        assert exc_info.value.code == 4
+        assert workspace.exists()
+        assert sentinel.exists()

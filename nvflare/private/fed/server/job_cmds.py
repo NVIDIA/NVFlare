@@ -392,7 +392,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 return
 
         if parsed.tail_lines is not None:
-            lines = lines[-parsed.tail_lines :]
+            if parsed.tail_lines == 0:
+                lines = []
+            else:
+                lines = lines[-parsed.tail_lines :]
 
         log_content = "".join(lines)
         conn.append_dict({"logs": {"server": log_content}}, meta=make_meta(MetaStatusValue.OK))

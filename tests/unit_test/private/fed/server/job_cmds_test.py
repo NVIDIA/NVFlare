@@ -856,3 +856,32 @@ def test_submit_job_reports_all_deploy_map_sites_outside_study(monkeypatch):
     assert conn.errors[0][0] == "sites 'site2', 'site3' are not enrolled in study 'cancer-research'"
     assert engine.job_def_manager.created_meta is None
     assert conn.successes == []
+
+
+def test_get_job_log_tail_zero_returns_no_lines(tmp_path):
+    job_id = "job-123"
+    log_root = tmp_path / job_id
+    log_root.mkdir(parents=True)
+    log_path = log_root / "log.txt"
+    log_path.write_text("line1\nline2\nline3\n")
+
+    class _FakeWorkspace:
+        def get_log_root(self, _job_id):
+            assert _job_id == job_id
+            return str(log_root)
+
+    class _FakeEngine:
+        job_def_manager = None
+
+        def get_workspace(self):
+            return _FakeWorkspace()
+
+    conn = _MockConnection(app_ctx=_FakeEngine())
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", job_id, "-n", "0"])
+
+    assert conn.errors == []
+    assert len(conn.dicts) == 1
+    payload, meta = conn.dicts[0]
+    assert payload == {"logs": {"server": ""}}
+    assert meta[MetaKey.STATUS] == "ok"

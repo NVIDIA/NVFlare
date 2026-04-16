@@ -29,7 +29,7 @@ from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
-from nvflare.lighter.constants import ProvisionMode
+from nvflare.lighter.constants import PropKey, ProvisionMode
 from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
 from nvflare.lighter.provision import gen_default_project_config, prepare_project
 from nvflare.lighter.provisioner import Provisioner
@@ -486,10 +486,6 @@ def prepare_poc(cmd_args):
             )
             return
         # Interactive: let _prepare_poc handle the prompt
-    elif os.path.exists(poc_workspace) and force:
-        # --force: bypass prompt by removing workspace before calling _prepare_poc
-        shutil.rmtree(poc_workspace, ignore_errors=True)
-
     try:
         result = _prepare_poc(
             cmd_args.clients,
@@ -500,6 +496,9 @@ def prepare_poc(cmd_args):
             project_conf_path,
             force=force,
         )
+    except CLIException as e:
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+        return
     except Exception as e:
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         return
@@ -721,6 +720,7 @@ def start_poc(cmd_args):
         project_config, service_config = setup_service_config(poc_workspace)
         if project_config:
             clients = [p["name"] for p in project_config.get("participants", []) if p.get("type") == "client"]
+            server_url = _get_server_url(project_config, service_config)
     except Exception:
         pass
 
@@ -757,6 +757,17 @@ def get_service_list(cmd_args):
     else:
         services_list = []
     return services_list
+
+
+def _get_server_url(project_config, service_config) -> str:
+    server_name = service_config.get(SC.FLARE_SERVER, "server") if service_config else "server"
+    participants = project_config.get("participants", []) if project_config else []
+    port = 8002
+    for participant in participants:
+        if participant.get("type") == "server" and participant.get("name") == server_name:
+            port = participant.get(PropKey.FED_LEARN_PORT, 8002)
+            break
+    return f"grpc://localhost:{port}"
 
 
 def _start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_list=None, study: Optional[str] = None):

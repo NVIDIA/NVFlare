@@ -31,7 +31,7 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "INVALID_ARGS": {
         "message": "Invalid arguments.",
-        "hint": "Run the command with -h for usage.",
+        "hint": "Run the command with -h or --help for usage.",
     },
     "STARTUP_KIT_MISSING": {
         "message": "Startup kit not found.",
@@ -229,6 +229,20 @@ def get_error(code: str, **kwargs) -> Tuple[str, str]:
         return "Unknown error.", "Check logs for details."
     template = entry["message"]
     hint = entry["hint"]
+    if code == "CONNECTION_FAILED":
+        host = kwargs.get("host")
+        port = kwargs.get("port")
+        if host is not None and port is not None:
+            return f"Cannot connect to the FLARE server at {host}:{port}.", hint
+        if host is not None:
+            return f"Cannot connect to the FLARE server at {host}.", hint
+        return "Cannot connect to the FLARE server.", hint
+    if code == "AUTH_FAILED" and "username" in kwargs:
+        return f"Authentication failed for user {kwargs['username']}.", hint
+    if code == "TIMEOUT" and "timeout" in kwargs:
+        return f"Operation timed out after {kwargs['timeout']} seconds.", hint
+    if code == "INVALID_ARGS" and "detail" in kwargs:
+        return f"Invalid arguments: {kwargs['detail']}", hint
     try:
         message = template.format_map(kwargs)
     except KeyError:

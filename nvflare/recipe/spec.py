@@ -18,35 +18,27 @@ from contextlib import contextmanager
 from typing import Dict, List, Optional, Union
 
 
-def _pop_recipe_args() -> tuple:
-    """Remove --export / --export-dir from sys.argv at import time.
-
-    This runs once when nvflare.recipe is first imported — before any user
-    argparse parser calls parse_args() — so the user's parser never sees these
-    flags and doesn't need to declare them.
-    """
+def _peek_recipe_args(argv: Optional[List[str]] = None) -> tuple:
+    """Inspect --export / --export-dir flags without mutating sys.argv."""
+    if argv is None:
+        argv = sys.argv[1:]
     export = False
     export_dir = "./fl_job"
-    new_argv = []
-    i = 1
-    while i < len(sys.argv):
-        if sys.argv[i] == "--export":
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--export":
             export = True
             i += 1
-        elif sys.argv[i] == "--export-dir" and i + 1 < len(sys.argv):
-            export_dir = sys.argv[i + 1]
+        elif argv[i] == "--export-dir" and i + 1 < len(argv):
+            export_dir = argv[i + 1]
             i += 2
-        elif sys.argv[i].startswith("--export-dir="):
-            export_dir = sys.argv[i].split("=", 1)[1]
+        elif argv[i].startswith("--export-dir="):
+            export_dir = argv[i].split("=", 1)[1]
             i += 1
         else:
-            new_argv.append(sys.argv[i])
             i += 1
-    sys.argv[1:] = new_argv
     return export, export_dir
 
-
-_RECIPE_EXPORT, _RECIPE_EXPORT_DIR = _pop_recipe_args()
 
 from nvflare.apis.filter import Filter
 from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
@@ -463,14 +455,15 @@ class Recipe(ABC):
         Returns:
             Run when executing, None when exporting.
         """
-        if _RECIPE_EXPORT:
+        recipe_export, recipe_export_dir = _peek_recipe_args()
+        if recipe_export:
             self.export(
-                job_dir=_RECIPE_EXPORT_DIR,
+                job_dir=recipe_export_dir,
                 server_exec_params=server_exec_params,
                 client_exec_params=client_exec_params,
                 env=env,
             )
-            print(f"Job exported to: {_RECIPE_EXPORT_DIR}")
+            print(f"Job exported to: {recipe_export_dir}")
             return None
 
         return self.run(env, server_exec_params=server_exec_params, client_exec_params=client_exec_params)

@@ -184,6 +184,43 @@ class TestPocOutput:
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
 
+    def test_start_poc_reports_configured_server_port(self, capsys, tmp_path):
+        """start_poc should use the configured fed-learn port, not a hard-coded default."""
+        from nvflare.lighter.constants import PropKey
+        from nvflare.tool.poc.poc_commands import start_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        args = MagicMock()
+        args.service = "all"
+        args.exclude = ""
+        args.gpu = None
+        args.study = None
+
+        project_config = {
+            "participants": [
+                {"name": "server", "type": "server", PropKey.FED_LEARN_PORT: 9443},
+                {"name": "site-1", "type": "client"},
+                {"name": "site-2", "type": "client"},
+            ]
+        }
+        service_config = {SC.FLARE_SERVER: "server", SC.FLARE_PROJ_ADMIN: "admin@nvidia.com"}
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands._start_poc", return_value=None),
+            patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(project_config, service_config)),
+        ):
+            start_poc(args)
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["status"] == "ok"
+        assert data["data"]["server_url"] == "grpc://localhost:9443"
+        assert data["data"]["clients"] == ["site-1", "site-2"]
+
     # ------------------------------------------------------------------ poc prepare parsers
 
     def test_poc_prepare_parser_has_force_flag(self):

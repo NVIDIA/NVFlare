@@ -74,9 +74,9 @@ def _normalize_and_validate_studies(project_dict: dict, participant_defs: list, 
         if study_name == "default":
             raise ValueError("study name 'default' is reserved")
 
-        err, _reason = name_check(study_name, "study")
+        err, reason = name_check(study_name, "study")
         if err:
-            raise ValueError(f"invalid study name '{study_name}'")
+            raise ValueError(f"invalid study name '{study_name}': {reason}")
 
         if study_def is None:
             normalized[study_name] = {}
