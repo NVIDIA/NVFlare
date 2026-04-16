@@ -54,13 +54,6 @@ def _read_cert_type_from_cert(cert) -> str:
     return attrs[0].value if attrs else ""
 
 
-_PACKAGE_EXAMPLES = [
-    "nvflare package -e grpc://fl-server:8002 --dir ./alice --project-name myproject",
-    "nvflare package -e grpc://fl-server:8002 --dir ./hospital-1 -w ./workspace --project-name myproject",
-    "nvflare package -n hospital-1 -e grpc://fl-server:8002 --cert ./signed/hospital-1/hospital-1.crt --key ./csr/hospital-1.key --rootca ./signed/hospital-1/rootCA.pem",
-]
-
-
 class PrebuiltCertBuilder(Builder):
     """Builder that installs pre-made cert/key/rootCA into each participant's kit directory.
 
@@ -471,7 +464,7 @@ def handle_package(args):
     """Assemble a startup kit from locally generated key + Project Admin cert + rootCA.pem."""
 
     # Step 1: --schema check (before any other work)
-    from nvflare.tool.package.package_cli import _package_parser
+    from nvflare.tool.package.package_cli import _PACKAGE_EXAMPLES, _package_parser
 
     handle_schema_flag(_package_parser, "nvflare package", _PACKAGE_EXAMPLES, sys.argv[1:])
 

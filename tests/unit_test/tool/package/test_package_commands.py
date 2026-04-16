@@ -195,6 +195,25 @@ def test_package_help_includes_working_examples():
     assert "--rootca ./signed/hospital-1/rootCA.pem" in help_text
 
 
+def test_package_schema_uses_shared_examples(capsys):
+    import argparse
+
+    from nvflare.tool.cli_schema import handle_schema_flag
+    from nvflare.tool.package.package_cli import _PACKAGE_EXAMPLES, def_package_cli_parser
+
+    root = argparse.ArgumentParser(prog="nvflare")
+    subs = root.add_subparsers()
+    parser = def_package_cli_parser(subs)["package"]
+
+    with pytest.raises(SystemExit) as exc_info:
+        handle_schema_flag(parser, "nvflare package", _PACKAGE_EXAMPLES, ["--schema"])
+    assert exc_info.value.code == 0
+
+    schema = json.loads(capsys.readouterr().out)
+    assert schema["command"] == "nvflare package"
+    assert schema["examples"] == _PACKAGE_EXAMPLES
+
+
 # ---------------------------------------------------------------------------
 # Unit tests: _discover_name_from_dir
 # ---------------------------------------------------------------------------

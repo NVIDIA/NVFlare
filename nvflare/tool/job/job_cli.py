@@ -551,6 +551,7 @@ def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
     if not is_json_mode():
         print_human("trying to connect to the server")
     study = getattr(cmd_args, "study", "default") if cmd_args else "default"
+    # Session uses the empty-study convention to mean "query/submit across all studies".
     study_arg = "" if study == "all" else study
     from nvflare.tool.cli_output import get_connect_timeout
 
@@ -998,6 +999,7 @@ def cmd_job_list(cmd_args):
     )
 
     study = getattr(cmd_args, "study", "default")
+    # Session uses the empty-study convention to mean "list across all studies".
     study_arg = "" if study == "all" else study
 
     try:
