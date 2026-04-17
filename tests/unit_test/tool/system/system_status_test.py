@@ -234,8 +234,10 @@ class TestSystemStatus:
             mock_stdin.isatty.return_value = False
             with patch("nvflare.tool.system.system_cli.output_error") as mocked_output_error:
                 with patch("nvflare.tool.cli_output.prompt_yn") as prompt_yn:
-                    _confirm_or_force("confirm?", args)
+                    with pytest.raises(SystemExit) as exc_info:
+                        _confirm_or_force("confirm?", args)
 
+        assert exc_info.value.code == 4
         mocked_output_error.assert_called_once()
         prompt_yn.assert_not_called()
 
