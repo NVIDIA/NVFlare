@@ -115,30 +115,21 @@ class TestPocOutput:
 
     def test_prepare_poc_prompt_on_stderr_not_stdout(self, capsys, tmp_path):
         """When workspace exists and user is prompted interactively, prompt appears on stderr."""
-        from nvflare.tool.poc.poc_commands import prepare_poc
+        from nvflare.tool.poc.poc_commands import _prepare_poc
 
         poc_ws = str(tmp_path / "poc_ws")
+        tmp_path.joinpath("poc_ws").mkdir()
 
-        args = self._make_prepare_args(force=False)
-
-        with (
-            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=poc_ws),
-            patch("nvflare.tool.poc.poc_commands._prepare_poc", return_value=False),
-            patch("nvflare.tool.install_skills.install_skills", return_value=None),
-            patch("os.path.exists", return_value=True),
-            patch("sys.stdin") as mock_stdin,
-        ):
+        with patch("sys.stdin") as mock_stdin:
             mock_stdin.isatty.return_value = True
             mock_stdin.readline.return_value = "N\n"
-            prepare_poc(args)
+            result = _prepare_poc([], 2, poc_ws, force=False)
 
         captured = capsys.readouterr()
-        # stdout must have no JSON (user declined, _prepare_poc returned False)
+        assert result is False
         assert captured.out.strip() == ""
-        # The internal _prepare_poc was mocked to return False;
-        # but the prompt question is written by _prepare_poc itself, so the
-        # important thing is that nothing from the prompt leaked to stdout.
-        assert not captured.out.strip().startswith("{")
+        assert "Preparing POC workspace at" in captured.err
+        assert "This will delete poc workspace directory" in captured.err
 
     # ------------------------------------------------------------------ stop_poc split-stream test
 

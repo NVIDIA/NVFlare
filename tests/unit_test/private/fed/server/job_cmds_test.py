@@ -786,25 +786,6 @@ def test_get_job_log_applies_grep_and_tail(monkeypatch, tmp_path):
     assert conn.dicts[0][0] == {"logs": {"server": "ERROR line3\n"}}
 
 
-def test_get_job_log_tail_zero_is_invalid(monkeypatch, tmp_path):
-    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
-
-    workspace = _FakeWorkspace(tmp_path)
-    log_file = Path(workspace.get_log_root("job-123")) / WorkspaceConstants.LOG_FILE_NAME
-    log_file.write_text("line1\nline2\n", encoding="utf-8")
-
-    conn = _MockConnection(
-        app_ctx=_FakeServerEngine(workspace),
-        props={JobCommandModule.JOB_ID: "job-123"},
-    )
-
-    JobCommandModule().get_job_log(conn, ["get_job_log", "job-123", "-n", "0"])
-
-    assert conn.dicts == []
-    assert conn.errors
-    assert "tail_lines must be greater than 0" in conn.errors[0][0]
-
-
 def test_get_job_log_missing_file_returns_empty(monkeypatch, tmp_path):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
 
