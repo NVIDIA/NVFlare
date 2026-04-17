@@ -4,6 +4,10 @@ metadata:
   name: {{ include "nvflare-client.name" . }}
   labels:
     {{- include "nvflare-client.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   selector:
     {{- include "nvflare-client.selectorLabels" . | nindent 4 }}
