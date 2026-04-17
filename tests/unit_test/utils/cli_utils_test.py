@@ -24,8 +24,8 @@ from nvflare.utils.cli_utils import (
     get_hidden_nvflare_dir,
     get_startup_kit_dir_for_target,
     load_hidden_config,
-    persist_hidden_config_migration,
     migrate_config_to_v2,
+    persist_hidden_config_migration,
 )
 
 
