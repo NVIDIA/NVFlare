@@ -174,12 +174,22 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def list_jobs(self, detailed: bool = False, all: bool = False) -> List[dict]:
+    def list_jobs(
+        self,
+        detailed: bool = False,
+        limit: Optional[int] = None,
+        id_prefix: Optional[str] = None,
+        name_prefix: Optional[str] = None,
+        reverse: bool = False,
+    ) -> List[dict]:
         """Get the job info from the server
 
         Args:
             detailed: True to get the detailed information for each job, False by default
-            all: True to get jobs submitted by all users (default is to only list jobs submitted by the same user)
+            limit: maximum number of jobs to show, with 0 or None to show all
+            id_prefix: if included, only return jobs with the beginning of the job ID matching the prefix
+            name_prefix: if included, only return jobs with the beginning of the job name matching the prefix
+            reverse: if specified, list jobs in the reverse order of submission times
 
         Returns: a list of job metadata
 
