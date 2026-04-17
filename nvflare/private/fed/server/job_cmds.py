@@ -690,7 +690,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def _send_detail_list(conn: Connection, jobs: List[Job]):
         list_of_jobs = []
         for job in jobs:
-            JobCommandModule._set_duration(job)
+            try:
+                JobCommandModule._set_duration(job)
+            except Exception:
+                pass
             normalized_meta = dict(job.meta)
             normalized_meta[JobMetaKey.STUDY.value] = get_job_meta_study(job.meta)
             conn.append_string(json.dumps(normalized_meta, indent=4))
@@ -701,7 +704,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def _send_summary_list(conn: Connection, jobs: List[Job]):
         table = conn.append_table(["Job ID", "Name", "Status", "Submit Time", "Run Duration"], name=MetaKey.JOBS)
         for job in jobs:
-            JobCommandModule._set_duration(job)
+            try:
+                JobCommandModule._set_duration(job)
+            except Exception:
+                pass
             table_row = [
                 job.meta.get(JobMetaKey.JOB_ID.value, ""),
                 CommandUtil.get_job_name(job.meta),

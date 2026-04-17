@@ -384,6 +384,28 @@ def test_list_jobs_defaults_to_default_study_when_session_study_missing(monkeypa
     assert len(conn.successes) == 1
 
 
+def test_list_jobs_ignores_duration_parse_failures(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    jobs = [
+        _FakeListedJob(
+            {
+                JobMetaKey.JOB_ID.value: "job-1",
+                JobMetaKey.JOB_NAME.value: "broken-duration",
+                JobMetaKey.STATUS.value: RunStatus.RUNNING.value,
+                JobMetaKey.START_TIME.value: "not-a-timestamp",
+            }
+        )
+    ]
+    conn = _MockConnection(app_ctx=_FakeListEngine(jobs), props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().list_jobs(conn, ["list_jobs"])
+
+    assert conn.errors == []
+    assert len(conn.tables) == 1
+    assert len(conn.tables[0].rows) == 1
+    assert conn.tables[0].rows[0][0][0] == "job-1"
+
+
 def test_get_job_meta_normalizes_legacy_job_study(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     jobs = [_FakeListedJob({JobMetaKey.JOB_ID.value: "legacy-job", JobMetaKey.JOB_NAME.value: "legacy"})]

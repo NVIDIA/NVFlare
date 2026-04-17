@@ -690,13 +690,13 @@ class SessionSpec(ABC):
         pass
 
 
-def job_monitor_cb_signature(session: SessionSpec, job_id: str, job_mea: dict, *args, **kwargs) -> bool:
+def job_monitor_cb_signature(session: SessionSpec, job_id: str, job_meta: dict, *args, **kwargs) -> bool:
     """
 
     Args:
         session: the session
         job_id: ID of the job being monitored
-        job_mea: meta info of the job
+        job_meta: meta info of the job
         *args:
         **kwargs:
 

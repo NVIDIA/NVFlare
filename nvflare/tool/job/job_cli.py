@@ -23,9 +23,6 @@ from functools import partial
 from tempfile import mkdtemp
 from typing import List, Optional, Tuple
 
-_JOB_HELP_FORMATTER = partial(argparse.HelpFormatter, max_help_position=24, width=120)
-
-
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
 
@@ -72,6 +69,8 @@ from nvflare.utils.cli_utils import (
     print_hidden_config_migration_notice,
     save_config,
 )
+
+_JOB_HELP_FORMATTER = partial(argparse.HelpFormatter, max_help_position=24, width=120)
 
 CMD_LIST_TEMPLATES = "list_templates"
 CMD_SHOW_VARIABLES = "show_variables"
@@ -878,7 +877,7 @@ def convert_args_list_to_dict(kvs: Optional[List[str]] = None) -> dict:
     if kvs:
         for kv in kvs:
             try:
-                key, value = kv.split("=")
+                key, value = kv.split("=", 1)
                 kv_dict[key.strip()] = value.strip()
             except ValueError:
                 raise ValueError(f"Invalid key-value pair: '{kv}'")
