@@ -266,6 +266,19 @@ class TestGetJobLogs:
         assert "-n" in cmd
         assert "50" in cmd
 
+    @pytest.mark.parametrize("tail_lines", [0, -1])
+    def test_rejects_non_positive_tail_lines(self, tail_lines):
+        session = _make_session()
+
+        with pytest.raises(ValueError, match="greater than 0"):
+            session.get_job_logs("job1", tail_lines=tail_lines)
+
+    def test_rejects_non_integer_tail_lines(self):
+        session = _make_session()
+
+        with pytest.raises(ValueError, match="tail_lines must be int"):
+            session.get_job_logs("job1", tail_lines=2.5)
+
     def test_includes_grep_pattern_flag(self):
         session = _make_session()
         from nvflare.fuel.hci.client.api import APIStatus

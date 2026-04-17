@@ -932,6 +932,11 @@ class Session(SessionSpec):
         self._validate_job_id(job_id)
         if target != "server":
             raise ValueError("get_job_logs currently only supports target='server'")
+        if tail_lines is not None:
+            if not isinstance(tail_lines, int):
+                raise ValueError(f"tail_lines must be int but got {type(tail_lines)}")
+            if tail_lines <= 0:
+                raise ValueError("tail_lines must be greater than 0")
 
         parts = [AdminCommandNames.GET_JOB_LOG, job_id]
         if tail_lines is not None:
