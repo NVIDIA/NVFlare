@@ -1086,12 +1086,14 @@ poc_sub_cmd_handlers = {
 
 # Populated by define_*_parser functions; used by handlers for --schema support
 _poc_sub_cmd_parsers = {}
+_poc_root_parser = None
 
 
 def def_poc_parser(sub_cmd):
+    global _poc_root_parser
     cmd = "poc"
     parser = sub_cmd.add_parser(cmd, help="manage a local proof-of-concept FL system")
-    add_legacy_options(parser)
+    _poc_root_parser = parser
 
     poc_parser = parser.add_subparsers(title=cmd, dest="poc_sub_cmd", help="poc subcommand")
     define_prepare_parser(poc_parser)
@@ -1100,61 +1102,6 @@ def def_poc_parser(sub_cmd):
     define_stop_parser(poc_parser)
     define_clean_parser(poc_parser)
     return {cmd: parser}
-
-
-def add_legacy_options(parser):
-    parser.add_argument(
-        "--prepare",
-        dest="old_prepare_poc",
-        action="store_const",
-        const=old_prepare_poc,
-        help="deprecated, suggest use 'nvflare poc prepare'",
-    )
-    parser.add_argument(
-        "--start",
-        dest="old_start_poc",
-        action="store_const",
-        const=old_start_poc,
-        help="deprecated, suggest use 'nvflare poc start'",
-    )
-    parser.add_argument(
-        "--stop",
-        dest="old_stop_poc",
-        action="store_const",
-        const=old_stop_poc,
-        help="deprecated, suggest use 'nvflare poc stop'",
-    )
-    parser.add_argument(
-        "--clean",
-        dest="old_clean_poc",
-        action="store_const",
-        const=old_clean_poc,
-        help="deprecated, suggest use 'nvflare poc clean'",
-    )
-
-
-def old_start_poc():
-    from nvflare.tool.cli_output import print_human
-
-    print_human(f"'nvflare poc --{CMD_START_POC}' is deprecated, please use 'nvflare poc {CMD_START_POC}' ")
-
-
-def old_stop_poc():
-    from nvflare.tool.cli_output import print_human
-
-    print_human(f"'nvflare poc --{CMD_STOP_POC}' is deprecated, please use 'nvflare poc {CMD_STOP_POC}' ")
-
-
-def old_clean_poc():
-    from nvflare.tool.cli_output import print_human
-
-    print_human(f"'nvflare poc --{CMD_CLEAN_POC}' is deprecated, please use 'nvflare poc {CMD_CLEAN_POC}' ")
-
-
-def old_prepare_poc():
-    from nvflare.tool.cli_output import print_human
-
-    print_human(f"'nvflare poc --{CMD_PREPARE_POC}' is deprecated, please use 'nvflare poc {CMD_PREPARE_POC}' ")
 
 
 def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optional[str] = None):
@@ -1294,19 +1241,25 @@ def get_local_host_gpu_ids():
 
 
 def handle_poc_cmd(cmd_args):
-    if cmd_args.poc_sub_cmd:
-        poc_cmd_handler = poc_sub_cmd_handlers.get(cmd_args.poc_sub_cmd, None)
+    poc_sub_cmd = getattr(cmd_args, "poc_sub_cmd", None)
+    if poc_sub_cmd:
+        poc_cmd_handler = poc_sub_cmd_handlers.get(poc_sub_cmd, None)
         poc_cmd_handler(cmd_args)
-    elif cmd_args.old_start_poc:
-        old_start_poc()
-    elif cmd_args.old_stop_poc:
-        old_stop_poc()
-    elif cmd_args.old_clean_poc:
-        old_clean_poc()
-    elif cmd_args.old_prepare_poc:
-        old_prepare_poc()
-    else:
-        raise CLIUnknownCmdException("unknown command")
+        return
+
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        _poc_root_parser,
+        "nvflare poc",
+        [
+            "nvflare poc prepare --schema",
+            "nvflare poc start --schema",
+            "nvflare poc stop --schema",
+        ],
+        getattr(cmd_args, "_argv", sys.argv[1:]),
+    )
+    raise CLIUnknownCmdException("unknown command")
 
 
 def get_poc_workspace():

@@ -338,6 +338,30 @@ class TestPocOutput:
         args = root.parse_args(["poc", "prepare", "--schema"])
         assert args.schema is True
 
+    def test_poc_root_schema_outputs_schema_json(self, capsys):
+        """nvflare poc --schema should render root schema instead of touching runtime-only flags."""
+        import argparse
+
+        from nvflare.tool.poc.poc_commands import def_poc_parser, handle_poc_cmd
+
+        root = argparse.ArgumentParser(prog="nvflare")
+        subs = root.add_subparsers(dest="sub_command")
+        def_poc_parser(subs)
+
+        with patch("sys.argv", ["nvflare", "poc", "--schema"]):
+            with pytest.raises(SystemExit) as exc_info:
+                handle_poc_cmd(
+                    argparse.Namespace(
+                        poc_sub_cmd=None,
+                        _argv=["poc", "--schema"],
+                    )
+                )
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        schema = json.loads(captured.out)
+        assert schema["command"] == "nvflare poc"
+
     def test_poc_start_parser_accepts_study(self):
         import argparse
 
