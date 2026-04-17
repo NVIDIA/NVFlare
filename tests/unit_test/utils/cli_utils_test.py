@@ -27,6 +27,7 @@ from nvflare.utils.cli_utils import (
     load_hidden_config,
     migrate_config_to_v2,
     persist_hidden_config_migration,
+    save_config,
 )
 
 
@@ -169,6 +170,25 @@ poc_workspace {
 
         assert backup_path is None
         assert not (hidden_dir / "config.conf.bak").exists()
+
+    def test_save_config_replaces_file_atomically_without_temp_leak(self, tmp_path):
+        config_path = tmp_path / "config.conf"
+        config_path.write_text("version = 1\n")
+        config = CF.parse_string(
+            """
+                version = 2
+                poc {
+                    startup_kit = "/tmp/nvflare/poc/prod_00"
+                }
+            """
+        )
+
+        save_config(config, str(config_path))
+
+        persisted = config_path.read_text()
+        assert "version = 2" in persisted
+        assert 'startup_kit = "/tmp/nvflare/poc/prod_00"' in persisted
+        assert list(tmp_path.glob("tmp*")) == []
 
     @pytest.mark.parametrize(
         "inputs, result", [(([], "a"), ["a"]), ((["a"], "a"), ["a"]), ((["a", "b"], "b"), ["a", "b"])]

@@ -15,6 +15,7 @@ import os
 import pathlib
 import shutil
 import sys
+import tempfile
 from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -411,8 +412,17 @@ def save_config(dst_config: ConfigTree, dst_path, keep_origin_format: bool = Tru
             require_clean_up = True
 
     config_str = hocon_to_string(fmt, dst_config)
-    with open(dst_config_path, "w") as outfile:
-        outfile.write(f"{config_str}\n")
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile("w", dir=os.path.dirname(dst_config_path), delete=False) as outfile:
+            temp_path = outfile.name
+            outfile.write(f"{config_str}\n")
+            outfile.flush()
+            os.fsync(outfile.fileno())
+        os.replace(temp_path, dst_config_path)
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
 
     if require_clean_up:
         if os.path.exists(dst_path):
