@@ -261,7 +261,7 @@ class HelmChartBuilder(Builder):
         chart = {
             "apiVersion": "v2",
             "name": "nvflare-client",
-            "description": f"NVFlare federated learning client pod and service for {client.name}",
+            "description": f"NVFlare federated learning client deployment and service for {client.name}",
             "type": "application",
             "version": "0.1.0",
             "appVersion": tag or "latest",
@@ -326,7 +326,6 @@ class HelmChartBuilder(Builder):
             },
             "command": ["/usr/local/bin/python3"],
             "args": args,
-            "restartPolicy": "Never",
         }
         with open(os.path.join(chart_dir, ProvFileName.VALUES_YAML), "wt") as f:
             yaml.dump(values, f, default_flow_style=False)
@@ -334,7 +333,7 @@ class HelmChartBuilder(Builder):
     def _write_client_template_files(self, templates_dir: str):
         for src, dst in [
             (_helm_src("client", "_helpers.tpl"), "_helpers.tpl"),
-            (_helm_src("client", "pod.yaml"), "client-pod.yaml"),
+            (_helm_src("client", "deployment.yaml"), "client-deployment.yaml"),
             (_helm_src("client", "service.yaml"), "service.yaml"),
             (_helm_src("client", "serviceaccount.yaml"), "serviceaccount.yaml"),
             (_helm_src("client", "role.yaml"), "role.yaml"),
