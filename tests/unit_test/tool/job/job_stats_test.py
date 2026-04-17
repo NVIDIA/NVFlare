@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
 from nvflare.tool import cli_output
 
 
@@ -113,6 +113,16 @@ class TestJobStats:
         assert envelope["status"] == "error"
         assert envelope["error_code"] == "CONNECTION_FAILED"
         assert envelope["exit_code"] == 2
+
+    def test_stats_authentication_error_propagates(self):
+        from nvflare.tool.job.job_cli import cmd_job_stats
+
+        mock_sess = MagicMock()
+        mock_sess.show_stats.side_effect = AuthenticationError("bad cert")
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            with pytest.raises(AuthenticationError):
+                cmd_job_stats(_make_args())
 
     def test_stats_parser(self):
         """'stats' subparser parses positional job_id correctly."""

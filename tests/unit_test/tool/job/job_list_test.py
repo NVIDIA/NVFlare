@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.fuel.flare_api.api_spec import AuthenticationError
 from nvflare.tool import cli_output
 
 
@@ -162,6 +163,17 @@ class TestJobList:
         data = json.loads(captured.out)
         for job in data["data"]:
             assert "study" in job
+
+    def test_authentication_error_propagates(self):
+        from nvflare.tool.job.job_cli import cmd_job_list
+
+        args = self._make_args()
+        mock_sess = MagicMock()
+        mock_sess.list_jobs.side_effect = AuthenticationError("bad cert")
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            with pytest.raises(AuthenticationError):
+                cmd_job_list(args)
 
     def test_schema_flag_prints_json_and_exits_0(self, capsys):
         """--schema prints JSON schema to stdout and exits 0."""

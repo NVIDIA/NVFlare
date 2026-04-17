@@ -992,7 +992,7 @@ def _session(admin_user_dir=None, username=None, study="default"):
 
 
 def cmd_job_list(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import NoConnection
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1017,6 +1017,8 @@ def cmd_job_list(cmd_args):
                 reverse=getattr(cmd_args, "reverse", False),
                 limit=getattr(cmd_args, "max", None),
             )
+    except AuthenticationError:
+        raise
     except NoConnection as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
@@ -1029,7 +1031,7 @@ def cmd_job_list(cmd_args):
 
 
 def cmd_job_meta(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1046,6 +1048,8 @@ def cmd_job_meta(cmd_args):
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         return
+    except AuthenticationError:
+        raise
     except NoConnection as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
@@ -1058,7 +1062,7 @@ def cmd_job_meta(cmd_args):
 
 
 def cmd_job_abort(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import JobNotFound, JobNotRunning, NoConnection
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, JobNotRunning, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1087,6 +1091,8 @@ def cmd_job_abort(cmd_args):
     except JobNotRunning:
         output_error("JOB_NOT_RUNNING", job_id=cmd_args.job_id)
         return
+    except AuthenticationError:
+        raise
     except NoConnection as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
@@ -1095,7 +1101,7 @@ def cmd_job_abort(cmd_args):
 
 
 def cmd_job_clone(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1112,6 +1118,8 @@ def cmd_job_clone(cmd_args):
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         return
+    except AuthenticationError:
+        raise
     except NoConnection as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
@@ -1120,7 +1128,7 @@ def cmd_job_clone(cmd_args):
 
 
 def cmd_job_download(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1139,6 +1147,8 @@ def cmd_job_download(cmd_args):
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         return
+    except AuthenticationError:
+        raise
     except NoConnection as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
@@ -1149,7 +1159,7 @@ def cmd_job_download(cmd_args):
 
 
 def cmd_job_delete(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1175,6 +1185,8 @@ def cmd_job_delete(cmd_args):
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         return
+    except AuthenticationError:
+        raise
     except NoConnection as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
@@ -1246,7 +1258,7 @@ _TERMINAL_JOB_STATES = {"FINISHED_OK", "FINISHED_EXCEPTION", "ABORTED", "ABANDON
 
 
 def cmd_job_stats(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1274,6 +1286,8 @@ def cmd_job_stats(cmd_args):
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         return
+    except AuthenticationError:
+        raise
     except NoConnection as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return

@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import JobNotFound
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound
 from nvflare.tool import cli_output
 
 
@@ -139,6 +139,17 @@ class TestJobDelete:
             with pytest.raises(SystemExit) as exc_info:
                 cmd_job_delete(args)
         assert exc_info.value.code == 1
+
+    def test_delete_authentication_error_propagates(self):
+        from nvflare.tool.job.job_cli import cmd_job_delete
+
+        args = self._make_args(force=True)
+        mock_sess = MagicMock()
+        mock_sess.delete_job.side_effect = AuthenticationError("bad cert")
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            with pytest.raises(AuthenticationError):
+                cmd_job_delete(args)
 
     def test_delete_parser_force_flag(self):
         """delete parser should have --force flag."""

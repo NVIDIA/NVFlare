@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import JobNotFound
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound
 from nvflare.tool import cli_output
 
 
@@ -81,6 +81,17 @@ class TestJobDownload:
             with pytest.raises(SystemExit) as exc_info:
                 cmd_job_download(args)
         assert exc_info.value.code == 1
+
+    def test_download_authentication_error_propagates(self):
+        from nvflare.tool.job.job_cli import cmd_job_download
+
+        args = self._make_args()
+        mock_sess = MagicMock()
+        mock_sess.download_job_result.side_effect = AuthenticationError("bad cert")
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            with pytest.raises(AuthenticationError):
+                cmd_job_download(args)
 
     def test_download_parser(self):
         """download parser should accept job_id and -o flag."""
