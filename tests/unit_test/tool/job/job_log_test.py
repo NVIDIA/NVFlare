@@ -289,6 +289,27 @@ class TestJobLogHuman:
         output_error.assert_called_once_with("SITE_NOT_FOUND", site="site-1")
         output_ok.assert_not_called()
 
+    def test_log_terminal_job_still_exits_when_output_error_is_mocked(self):
+        from nvflare.tool.job.job_cli import cmd_job_log
+
+        args = _make_args(level="WARNING", site="server")
+        mock_sess = self._make_session(status="FINISHED_OK")
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            with patch("nvflare.tool.cli_output.output_error") as output_error:
+                with patch("nvflare.tool.cli_output.output_ok") as output_ok:
+                    with pytest.raises(SystemExit) as exc_info:
+                        cmd_job_log(args)
+
+        assert exc_info.value.code == 1
+        output_error.assert_called_once_with(
+            "JOB_NOT_RUNNING",
+            exit_code=1,
+            job_id="abc123",
+            detail="job is in terminal state: FINISHED_OK",
+        )
+        output_ok.assert_not_called()
+
     def test_log_parser(self):
         """Primary 'log-config' parser parses correctly."""
         import argparse

@@ -1316,7 +1316,7 @@ def cmd_job_logs(cmd_args):
             exit_code=4,
             detail="only --site server is currently supported; client log streaming is not yet available",
         )
-        return
+        raise SystemExit(4)
 
     try:
         with _session() as sess:
@@ -1674,7 +1674,7 @@ def cmd_job_log(cmd_args):
                     job_id=cmd_args.job_id,
                     detail=f"job is in terminal state: {job_status}",
                 )
-                return
+                raise SystemExit(1)
             sess.configure_job_log(cmd_args.job_id, level, target=site)
     except (AuthenticationError, AuthorizationError, NoConnection):
         raise

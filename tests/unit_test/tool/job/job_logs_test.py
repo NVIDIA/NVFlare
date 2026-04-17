@@ -203,6 +203,22 @@ class TestJobLogs:
         envelope = json.loads(capsys.readouterr().out)
         assert envelope["error_code"] == "INVALID_ARGS"
 
+    def test_logs_non_server_site_still_exits_when_output_error_is_mocked(self):
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        with patch("nvflare.tool.cli_output.output_error") as output_error:
+            with patch("nvflare.tool.job.job_cli._session") as session_factory:
+                with pytest.raises(SystemExit) as exc_info:
+                    cmd_job_logs(_make_args(site="site-1"))
+
+        assert exc_info.value.code == 4
+        output_error.assert_called_once_with(
+            "INVALID_ARGS",
+            exit_code=4,
+            detail="only --site server is currently supported; client log streaming is not yet available",
+        )
+        session_factory.assert_not_called()
+
     def test_logs_parser(self):
         """'logs' subparser parses job_id, server-only --site, --tail, and --grep correctly."""
         import argparse
