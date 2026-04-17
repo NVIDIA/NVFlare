@@ -6,6 +6,26 @@ Migration Guide
 
 This guide covers API and configuration changes when upgrading between FLARE releases.
 
+Upcoming Main-Branch Changes
+============================
+
+FLARE API Compatibility Note
+----------------------------
+
+On the current ``main`` branch, :class:`NoConnection<nvflare.fuel.flare_api.api_spec.NoConnection>`
+now subclasses Python's built-in ``ConnectionError`` instead of directly subclassing
+``Exception``.
+
+Impact:
+
+- Existing code that catches ``ConnectionError`` will now also catch
+  ``NoConnection``.
+- Existing code that catches ``NoConnection`` continues to work unchanged.
+
+If your application distinguishes FLARE connection failures from broader OS or
+network exceptions, review any broad ``except ConnectionError:`` handlers before
+upgrading to the next release built from ``main``.
+
 Upgrading from 2.7.0/2.7.1 to 2.7.2
 ======================================
 
