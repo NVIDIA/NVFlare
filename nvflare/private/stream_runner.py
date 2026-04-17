@@ -247,7 +247,7 @@ class ObjectStreamer(FLComponent):
             self.error(request, f"no stream processing info registered for {channel}:{topic}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        factory, consumed_cb, stream_done_db, cb_kwargs = factory_info
+        factory, consumed_cb, stream_done_cb, cb_kwargs = factory_info
 
         self.debug(request, "received stream request")
         with self.tx_lock:
@@ -270,6 +270,10 @@ class ObjectStreamer(FLComponent):
                         self.error(request, "missing stream ctx in seq 0")
                         return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
+                    # Receiver-side consumers can use this hook to end only their own
+                    # stream session asynchronously (for example on idle timeout).
+                    stream_ctx[StreamContextKey.END_STREAM] = lambda rc, end_fl_ctx: self._end_tx(tx_id, rc, end_fl_ctx)
+
                     consumer = factory.get_consumer(stream_ctx, fl_ctx)
                     if not consumer:
                         self.error(request, f"no consumer from factory {type(factory)}")
@@ -289,7 +293,7 @@ class ObjectStreamer(FLComponent):
                         consumer=consumer,
                         stream_ctx=stream_ctx,
                         consumed_cb=consumed_cb,
-                        stream_done_cb=stream_done_db,
+                        stream_done_cb=stream_done_cb,
                         cb_kwargs=cb_kwargs,
                     )
                     self.tx_table[tx_id] = info

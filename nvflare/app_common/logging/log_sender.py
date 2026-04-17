@@ -22,9 +22,11 @@ from nvflare.apis.storage import DataTypes
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.logging.constants import LOG_STREAM_EVENT_TYPE, Channels
 from nvflare.app_common.streamers.file_streamer import FileStreamer
+from nvflare.fuel.utils.deprecated import deprecated
 from nvflare.widgets.widget import Widget
 
 
+@deprecated("Use JobLogStreamer instead")
 class ErrorLogSender(Widget):
     def __init__(self, event_type=EventType.JOB_COMPLETED, should_report_error_log: bool = True):
         super().__init__()

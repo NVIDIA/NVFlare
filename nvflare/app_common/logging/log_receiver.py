@@ -18,9 +18,11 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.streaming import StreamContext
 from nvflare.app_common.logging.constants import Channels
 from nvflare.app_common.streamers.file_streamer import FileStreamer
+from nvflare.fuel.utils.deprecated import deprecated
 from nvflare.widgets.widget import Widget
 
 
+@deprecated("Use JobLogReceiver instead")
 class LogReceiver(Widget):
     def __init__(self):
         """Receives log data.
