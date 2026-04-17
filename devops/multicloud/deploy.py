@@ -108,7 +108,8 @@ def _parse_kubeconfig(kc_path: Path, cloud: str) -> dict:
         if len(parts) < 6:
             raise ValueError(f"{kc_path}: malformed EKS ARN {cluster_name!r}")
         return {"region": parts[3], "eks_cluster_name": parts[5].split("/", 1)[1]}
-    raise ValueError(f"{kc_path}: cannot parse kubeconfig for unknown cloud {cloud!r}")
+    # No autoderive for other clouds (e.g. azure); not needed for current operations.
+    return {}
 
 
 def load_config(config_path: Path) -> DeployConfig:
@@ -745,6 +746,9 @@ def _flatten_set(prefix: str, d: dict) -> list[tuple[str, str]]:
         key = f"{prefix}.{k}"
         if isinstance(v, dict):
             result.extend(_flatten_set(key, v))
+        elif isinstance(v, bool):
+            # helm --set treats only lowercase true/false as booleans
+            result.append((key, "true" if v else "false"))
         else:
             result.append((key, str(v)))
     return result
