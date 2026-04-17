@@ -457,10 +457,10 @@ def get_return_code(job_handle, job_id, workspace, logger):
             with open(rc_file, "r") as f:
                 return_code = int(f.readline())
             os.remove(rc_file)
-        except Exception:
+        except Exception as e:
             logger.warning(
-                f"Could not get the return_code from {rc_file} of the job:{job_id}, "
-                f"Return the RC from the job_handle:{job_handle}"
+                f"Could not get the return code from {rc_file} of the job:{job_id}, "
+                f"falling back to the return code from the job_handle:{job_handle}: {secure_format_exception(e)}"
             )
             return_code = job_handle.poll()
     else:

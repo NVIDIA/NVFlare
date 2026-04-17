@@ -193,6 +193,7 @@ class _FakeServerEngine:
         self.workspace = workspace
         self.job_def_manager = MagicMock()
         self.configure_job_log = MagicMock(return_value=None)
+        self._clients = []
 
     def get_workspace(self):
         return self.workspace
@@ -201,6 +202,27 @@ class _FakeServerEngine:
         from nvflare.apis.fl_context import FLContext
 
         return FLContext()
+
+    def get_clients(self):
+        return list(self._clients)
+
+    def validate_targets(self, client_names):
+        by_name = {c.name: c for c in self._clients}
+        clients = []
+        invalid = []
+        for client_name in client_names:
+            client = by_name.get(client_name)
+            if client:
+                clients.append(client)
+            else:
+                invalid.append(client_name)
+        return clients, invalid
+
+
+class _FakeClient:
+    def __init__(self, name, token):
+        self.name = name
+        self.token = token
 
 
 class _FakeStudyRegistry:
@@ -502,6 +524,42 @@ def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch)
     engine.configure_job_log.assert_called_once_with("job-1", "DEBUG")
     assert processed == [client_replies]
     assert any("successfully configured server job job-1 log" in msg for msg, _meta in conn.strings)
+
+
+def test_configure_job_log_specific_client_target_is_honored(tmp_path, monkeypatch):
+    monkeypatch.setattr(cmd_utils_module, "ServerEngineSpec", object)
+    job_id = "123e4567-e89b-42d3-a456-426614174000"
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    engine._clients = [_FakeClient("site-a", "token-a"), _FakeClient("site-b", "token-b")]
+    engine.job_def_manager.get_job.return_value = _FakeListedJob(
+        {
+            JobMetaKey.STATUS.value: RunStatus.RUNNING,
+            JobMetaKey.STUDY.value: "default",
+        }
+    )
+    conn = _MockConnection(app_ctx=engine, props={ConnProps.ACTIVE_STUDY: "default"})
+    module = JobCommandModule()
+
+    rc = module.authorize_configure_job_log(conn, ["configure_job_log", job_id, "client", "site-a", "DEBUG"])
+
+    assert rc == PreAuthzReturnCode.REQUIRE_AUTHZ
+    assert conn.get_prop(JobCommandModule.TARGET_CLIENT_TOKENS) == ["token-a"]
+    assert conn.get_prop(JobCommandModule.TARGET_CLIENT_NAMES) == ["site-a"]
+
+    def _send_request_to_clients(conn, message):
+        assert conn.get_prop(JobCommandModule.TARGET_CLIENT_TOKENS) == ["token-a"]
+        assert conn.get_prop(JobCommandModule.TARGET_CLIENT_NAMES) == ["site-a"]
+        return [object()]
+
+    processed = []
+    monkeypatch.setattr(module, "send_request_to_clients", _send_request_to_clients)
+    monkeypatch.setattr(module, "process_replies_to_table", lambda conn, replies: processed.append(replies))
+
+    module.configure_job_log(conn, ["configure_job_log", job_id, "client", "site-a", "DEBUG"])
+
+    engine.configure_job_log.assert_not_called()
+    assert len(processed) == 1
 
 
 def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):
@@ -858,7 +916,8 @@ def test_submit_job_reports_all_deploy_map_sites_outside_study(monkeypatch):
     assert conn.successes == []
 
 
-def test_get_job_log_tail_zero_returns_no_lines(tmp_path):
+def test_get_job_log_tail_zero_returns_syntax_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
     job_id = "job-123"
     log_root = tmp_path / job_id
     log_root.mkdir(parents=True)
@@ -880,8 +939,7 @@ def test_get_job_log_tail_zero_returns_no_lines(tmp_path):
 
     JobCommandModule().get_job_log(conn, ["get_job_log", job_id, "-n", "0"])
 
-    assert conn.errors == []
-    assert len(conn.dicts) == 1
-    payload, meta = conn.dicts[0]
-    assert payload == {"logs": {"server": ""}}
-    assert meta[MetaKey.STATUS] == "ok"
+    assert len(conn.errors) == 1
+    msg, meta = conn.errors[0]
+    assert msg == "tail_lines must be greater than 0"
+    assert meta[MetaKey.STATUS] == "syntax_error"
