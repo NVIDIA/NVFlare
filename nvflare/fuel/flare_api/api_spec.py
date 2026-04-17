@@ -256,8 +256,92 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
+    def get_job_logs(
+        self, job_id: str, target: str = "server", tail_lines: int = None, grep_pattern: str = None
+    ) -> dict:
+        """Retrieve logs for the specified job.
+
+        Args:
+            job_id: ID of the job
+            target: target site name. Only ``server`` is currently supported
+            tail_lines: optional number of tail lines to retrieve
+            grep_pattern: optional substring filter
+
+        Returns: dict with ``logs`` mapping site names to log content.
+
+        """
+        pass
+
+    @abstractmethod
+    def configure_job_log(self, job_id: str, config, target: str = "all") -> None:
+        """Configure logging for a running job.
+
+        Args:
+            job_id: ID of the running job
+            config: log level, log mode, file path, or dictConfig payload
+            target: ``all``, ``server``, or a client site name
+
+        Returns: None
+
+        """
+        pass
+
+    @abstractmethod
+    def configure_site_log(self, config, target: str = "all") -> None:
+        """Configure site-level logging.
+
+        Args:
+            config: log level, log mode, file path, or dictConfig payload
+            target: ``all``, ``server``, or a client site name
+
+        Returns: None
+
+        """
+        pass
+
+    @abstractmethod
+    def wait_for_job(self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0) -> dict:
+        """Wait until the specified job reaches a terminal state.
+
+        Args:
+            job_id: ID of the job
+            timeout: maximum seconds to wait, or ``0`` to wait indefinitely
+            poll_interval: seconds between status polls
+
+        Returns: terminal job metadata/status information.
+
+        """
+        pass
+
+    @abstractmethod
     def get_system_info(self) -> SystemInfo:
         """Get general info of the FLARE system"""
+        pass
+
+    @abstractmethod
+    def check_status(self, target_type: str, targets=None) -> dict:
+        """Report status for the server and/or clients.
+
+        Args:
+            target_type: ``server``, ``client``, or ``all``
+            targets: optional client names when ``target_type`` is ``client``
+
+        Returns: status information keyed by site name.
+
+        """
+        pass
+
+    @abstractmethod
+    def report_resources(self, target_type: str, targets=None) -> dict:
+        """Report resource information for the server and/or clients.
+
+        Args:
+            target_type: ``server``, ``client``, or ``all``
+            targets: optional client names when ``target_type`` is ``client``
+
+        Returns: resource information keyed by site name.
+
+        """
         pass
 
     @abstractmethod
