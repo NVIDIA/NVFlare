@@ -75,12 +75,18 @@ class JobLogReceiver(Widget):
     def _effective_dest_dir(self) -> str:
         return self._dest_dir or tempfile.gettempdir()
 
+    @staticmethod
+    def _sanitize_path_component(name: str) -> str:
+        """Strip path separators and traversal sequences from a single path component."""
+        # Use only the base name to prevent directory traversal via '/' or '..'
+        return os.path.basename(name) if name else "unknown"
+
     def _on_chunk_received(self, data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext):
         f = stream_ctx.get(_KEY_RECV_FILE)
         if f is None:
-            client = stream_ctx.get(StreamCtxKey.CLIENT_NAME)
-            job_id = stream_ctx.get(StreamCtxKey.JOB_ID)
-            log_file_name = LogStreamer.get_file_name(stream_ctx) or "log.txt"
+            client = self._sanitize_path_component(stream_ctx.get(StreamCtxKey.CLIENT_NAME))
+            job_id = self._sanitize_path_component(stream_ctx.get(StreamCtxKey.JOB_ID))
+            log_file_name = self._sanitize_path_component(LogStreamer.get_file_name(stream_ctx) or "log.txt")
             path = os.path.join(self._effective_dest_dir(), job_id, client, log_file_name)
             os.makedirs(os.path.dirname(path), exist_ok=True)
             self.log_debug(fl_ctx, f"Opening log file for {client} job {job_id}: {path}")

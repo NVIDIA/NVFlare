@@ -41,8 +41,9 @@ LogStreamer differs from FileStreamer in three fundamental ways:
    concludes the sender is unreachable, closes the stream via the engine's
    ``END_STREAM`` hook, and fires ``stream_done_cb`` with
    ``StreamContextKey.RC = ReturnCode.TIMEOUT``.  To avoid spurious timeouts,
-   ``liveness_interval`` must be strictly less than ``idle_timeout`` (enforced
-   at call time).
+   ``liveness_interval`` must be strictly less than ``idle_timeout``.  These
+   values are configured on different sites so this cannot be enforced at
+   call time — ensure they are consistent at deployment.
 
 Relationship between the two parameters
 ----------------------------------------
