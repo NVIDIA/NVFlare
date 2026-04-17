@@ -63,6 +63,10 @@ class JobLogStreamer(Widget):
         poll_interval: float = 0.5,
     ):
         super().__init__()
+        if os.path.isabs(log_file_name):
+            raise ValueError(f"log_file_name must be a relative base name, not an absolute path: {log_file_name}")
+        if ".." in log_file_name.split(os.sep):
+            raise ValueError(f"log_file_name must not contain '..': {log_file_name}")
         self._log_file_name = log_file_name
         self._liveness_interval = liveness_interval
         self._poll_interval = poll_interval
