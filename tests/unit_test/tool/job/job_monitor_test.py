@@ -20,6 +20,7 @@ import pytest
 
 from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, MonitorReturnCode, NoConnection
 from nvflare.tool import cli_output
+from nvflare.tool.job.job_cli import _parse_monitor_start_ts
 
 
 def _make_args(job_id="abc123", timeout=0, interval=2, stats_target="server", metrics=None):
@@ -40,6 +41,30 @@ def _make_meta(status="FINISHED_OK", job_name="test-job", duration="0:01:30"):
         JobMetaKey.JOB_NAME.value: job_name,
         JobMetaKey.DURATION.value: duration,
     }
+
+
+def test_parse_monitor_start_ts_from_start_time():
+    from nvflare.apis.job_def import JobMetaKey
+
+    meta = {
+        JobMetaKey.START_TIME.value: "2026-04-16 12:34:56.000000",
+    }
+
+    result = _parse_monitor_start_ts(meta, JobMetaKey.START_TIME.value, JobMetaKey.SUBMIT_TIME_ISO.value)
+
+    assert result is not None
+
+
+def test_parse_monitor_start_ts_from_submit_time_iso():
+    from nvflare.apis.job_def import JobMetaKey
+
+    meta = {
+        JobMetaKey.SUBMIT_TIME_ISO.value: "2026-04-16T12:34:56",
+    }
+
+    result = _parse_monitor_start_ts(meta, JobMetaKey.START_TIME.value, JobMetaKey.SUBMIT_TIME_ISO.value)
+
+    assert result is not None
 
 
 def _mock_session(rc, meta):
