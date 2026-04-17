@@ -41,6 +41,37 @@ Impact:
 For whole local PoC lifecycle control, use the PoC start/stop flow instead of
 the general system admin API.
 
+CLI Startup Kit Resolution Change
+---------------------------------
+
+On the current ``main`` branch, the ``NVFLARE_STARTUP_KIT_DIR`` environment
+variable now takes precedence over the persisted CLI config when resolving the
+startup kit for server-connected CLI commands.
+
+Impact:
+
+- If both ``NVFLARE_STARTUP_KIT_DIR`` and the CLI config specify startup kit
+  paths, the environment variable wins.
+- Shell profiles that export ``NVFLARE_STARTUP_KIT_DIR`` may override
+  ``poc.startup_kit`` or ``prod.startup_kit`` from ``~/.nvflare/config.conf``.
+
+If you rely on the persisted CLI config, review your shell environment before
+upgrading to the next release built from ``main``.
+
+Study Name Validation Relaxation
+--------------------------------
+
+On the current ``main`` branch, study names now allow underscores in internal
+positions, so names such as ``my_study`` are valid.
+
+Impact:
+
+- ``project.yml`` validation now accepts study names with internal underscores.
+- Login and study-scoped authorization paths will accept the same names.
+
+If you maintain external validation or naming policy around study identifiers,
+update those checks to match the new rule before upgrading.
+
 Upgrading from 2.7.0/2.7.1 to 2.7.2
 ======================================
 
