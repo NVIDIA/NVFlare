@@ -30,7 +30,9 @@ This CLI is Stage 1 of the agent-consumer readiness plan. The design must satisf
 
 ### 1. Machine-readable output on every command
 
-Every command outputs JSON by default. Output envelope is stable and versioned:
+Every command supports a stable, versioned JSON envelope via ``--out-format json``.
+The default output format remains human-readable text (``txt``). When JSON mode is
+requested, the output envelope is stable and versioned:
 
 ```json
 {
@@ -42,9 +44,9 @@ Every command outputs JSON by default. Output envelope is stable and versioned:
 
 `schema_version` allows agents to detect breaking changes. The stdout/stderr contract is:
 
-Contract — stream split:
+Contract — stream split in JSON mode:
 
-- For normal command handler execution, stdout contains exactly one JSON envelope and nothing else.
+- For normal command handler execution with ``--out-format json``, stdout contains exactly one JSON envelope and nothing else.
 - Human-readable progress, warnings, prompts, and diagnostics go to stderr.
 
 Exceptions: the following are plain text and are explicitly outside the JSON command-output contract:
@@ -75,7 +77,8 @@ Default (JSON):
 }
 ```
 
-Errors are also returned as JSON envelopes on stdout. Human-facing diagnostics should be written to stderr.
+With ``--out-format json``, errors are also returned as JSON envelopes on stdout.
+Human-facing diagnostics should be written to stderr.
 
 Exit code is non-zero. Error message templates support `str.format_map()` substitution via `**kwargs` in `output_error()`.
 
