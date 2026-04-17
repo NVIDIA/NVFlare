@@ -111,6 +111,17 @@ def test_report_resources_invalid_target_uses_report_resources_usage():
     assert "Usage: report_resources server|client|all <client-name>" in conn.strings[0][0]
 
 
+def test_sys_info_invalid_target_uses_sys_info_usage():
+    module = SystemCommandModule()
+    conn = _MockConnection()
+
+    module.sys_info(conn, ["sys_info", "bogus"])
+
+    assert conn.tables == []
+    assert conn.strings
+    assert "Usage: sys_info server|client <client-name>" in conn.strings[0][0]
+
+
 def test_report_version_all_includes_server_and_clients(monkeypatch):
     module = SystemCommandModule()
     conn = _MockConnection()

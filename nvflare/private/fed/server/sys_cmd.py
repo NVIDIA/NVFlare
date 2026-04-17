@@ -140,9 +140,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
             self._process_replies(conn, replies)
             return
 
-        conn.append_string(
-            "invalid target type {}. Usage: check_status server|client <client-name>".format(target_type)
-        )
+        conn.append_string("invalid target type {}. Usage: sys_info server|client <client-name>".format(target_type))
 
     def configure_site_log(self, conn: Connection, args: [str]):
         if len(args) < 3:
