@@ -179,3 +179,59 @@ def test_recipe_catalog_skips_plain_import_errors_from_optional_recipes(monkeypa
     )
 
     assert _load_catalog(framework="pytorch") == []
+
+
+def test_recipe_catalog_prefers_leaf_recipe_class_when_module_has_base_and_subclass(monkeypatch):
+    from nvflare.recipe.spec import Recipe
+    from nvflare.tool.recipe.recipe_cli import _load_catalog
+
+    class BaseRecipe(Recipe):
+        """Base helper recipe."""
+
+        def __init__(self):
+            pass
+
+    class FinalRecipe(BaseRecipe):
+        """Concrete exported recipe."""
+
+        def __init__(self):
+            pass
+
+    fake_package = ModuleType("fake.recipes")
+    fake_package.__path__ = ["fake/recipes"]
+
+    fake_module = ModuleType("fake.recipes.swarm")
+    BaseRecipe.__module__ = "fake.recipes.swarm"
+    FinalRecipe.__module__ = "fake.recipes.swarm"
+    setattr(fake_module, "BaseRecipe", BaseRecipe)
+    setattr(fake_module, "FinalRecipe", FinalRecipe)
+
+    monkeypatch.setattr(
+        "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
+        [{"package": "fake.recipes", "framework": "pytorch"}],
+    )
+
+    def fake_import_module(name):
+        if name == "fake.recipes":
+            return fake_package
+        if name == "fake.recipes.swarm":
+            return fake_module
+        raise ImportError(name)
+
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli.importlib.import_module", fake_import_module)
+    monkeypatch.setattr(
+        "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
+        lambda path, prefix="": [(None, "fake.recipes.swarm", False)],
+    )
+
+    catalog = _load_catalog(framework="pytorch")
+
+    assert catalog == [
+        {
+            "name": "swarm-pt",
+            "description": "Concrete exported recipe.",
+            "framework": "pytorch",
+            "module": "fake.recipes.swarm",
+            "class": "FinalRecipe",
+        }
+    ]

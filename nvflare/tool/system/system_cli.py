@@ -115,6 +115,7 @@ def _confirm_or_force(prompt, args):
             exit_code=4,
             detail="non-interactive mode requires --force",
         )
+        return
     from nvflare.tool.cli_output import prompt_yn
 
     if not prompt_yn(prompt):

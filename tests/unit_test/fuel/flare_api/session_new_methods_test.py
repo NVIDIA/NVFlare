@@ -159,6 +159,17 @@ class TestShutdown:
             session.shutdown(TargetType.SERVER)
         session.close.assert_called_once()
 
+    def test_shutdown_preserves_result_if_close_fails(self):
+        session = _make_session()
+        session.close = MagicMock(side_effect=RuntimeError("logout failed"))
+        expected_meta = _ok_meta_result()[ResultKey.META]
+
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()):
+            result = session.shutdown(TargetType.SERVER)
+
+        assert result == expected_meta
+        session.close.assert_called_once()
+
 
 class TestRestart:
     def test_sends_restart_command(self):

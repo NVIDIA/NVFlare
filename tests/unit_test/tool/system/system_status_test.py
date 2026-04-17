@@ -224,6 +224,21 @@ class TestSystemStatus:
 
         get_startup.assert_called_once_with(startup_kit_dir="/tmp/custom-startup", target="prod")
 
+    def test_confirm_or_force_does_not_prompt_when_output_error_is_mocked(self):
+        from nvflare.tool.system.system_cli import _confirm_or_force
+
+        args = MagicMock()
+        args.force = False
+
+        with patch("sys.stdin") as mock_stdin:
+            mock_stdin.isatty.return_value = False
+            with patch("nvflare.tool.system.system_cli.output_error") as mocked_output_error:
+                with patch("nvflare.tool.cli_output.prompt_yn") as prompt_yn:
+                    _confirm_or_force("confirm?", args)
+
+        mocked_output_error.assert_called_once()
+        prompt_yn.assert_not_called()
+
     def test_get_system_session_warns_when_defaulting_to_poc_target(self, capsys, monkeypatch):
         from nvflare.tool.system.system_cli import _get_system_session
 

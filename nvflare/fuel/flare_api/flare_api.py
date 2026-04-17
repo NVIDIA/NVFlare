@@ -539,7 +539,13 @@ class Session(SessionSpec):
 
         command = " ".join(parts)
         result = self._do_command(command)
-        self.close()
+        try:
+            self.close()
+        except Exception:
+            # The shutdown request already succeeded; the server may tear down the
+            # connection before the client can complete logout. Preserve the command
+            # result instead of masking it with a secondary close failure.
+            pass
         return result[ResultKey.META]
 
     def set_timeout(self, value: float):

@@ -81,6 +81,24 @@ def _iter_recipe_classes(module):
             yield obj
 
 
+def _select_recipe_class(module):
+    """Select the single CLI-exposed recipe class for a module.
+
+    Recipe discovery is module-oriented: the CLI name comes from the module name, so a
+    module contributes at most one catalog entry. If a module defines both a reusable base
+    recipe and a concrete subclass, prefer the leaf subclass.
+    """
+
+    classes = list(_iter_recipe_classes(module))
+    if not classes:
+        return None
+    if len(classes) == 1:
+        return classes[0]
+
+    leaf_classes = [cls for cls in classes if not any(cls is not other and issubclass(other, cls) for other in classes)]
+    return leaf_classes[0] if leaf_classes else classes[0]
+
+
 def _load_catalog(framework: str = None) -> list:
     """Return available recipes, filtered by framework if given.
 
@@ -105,20 +123,23 @@ def _load_catalog(framework: str = None) -> list:
                 except ImportError:
                     continue
 
-                for recipe_cls in _iter_recipe_classes(mod):
-                    cli_name = _recipe_cli_name(module_name, root["framework"])
-                    if cli_name in seen:
-                        continue
-                    seen.add(cli_name)
-                    results.append(
-                        {
-                            "name": cli_name,
-                            "description": _recipe_description(recipe_cls),
-                            "framework": root["framework"],
-                            "module": module_name,
-                            "class": recipe_cls.__name__,
-                        }
-                    )
+                recipe_cls = _select_recipe_class(mod)
+                if recipe_cls is None:
+                    continue
+
+                cli_name = _recipe_cli_name(module_name, root["framework"])
+                if cli_name in seen:
+                    continue
+                seen.add(cli_name)
+                results.append(
+                    {
+                        "name": cli_name,
+                        "description": _recipe_description(recipe_cls),
+                        "framework": root["framework"],
+                        "module": module_name,
+                        "class": recipe_cls.__name__,
+                    }
+                )
 
     results.sort(key=lambda entry: entry["name"])
     return results
