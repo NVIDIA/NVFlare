@@ -262,6 +262,17 @@ class TestSystemVersion:
 
         mock_sess.report_version.assert_called_once_with("server", None)
 
+    def test_version_server_does_not_fetch_system_info(self):
+        from nvflare.tool.system.system_cli import cmd_system_version
+
+        mock_sess = _make_session(raw_versions={"server": {"version": "2.8.0"}})
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=mock_sess):
+            with patch.object(_nvflare_mod, "__version__", "2.8.0"):
+                cmd_system_version(_make_args(site="server"))
+
+        mock_sess.get_system_info.assert_not_called()
+
     def test_version_unknown_version_falls_back(self, capsys):
         """Sites not present in raw_versions dict get version='unknown'."""
         from nvflare.tool.system.system_cli import cmd_system_version

@@ -419,15 +419,18 @@ def cmd_system_version(args):
 
     try:
         with _system_session(args) as sess:
-            sys_info = sess.get_system_info()
-            known_sites = ["server"] + [client.name for client in sys_info.client_info]
+            if target_type == "server":
+                known_sites = ["server"]
+                targets = None
+            else:
+                sys_info = sess.get_system_info()
+                known_sites = ["server"] + [client.name for client in sys_info.client_info]
 
-            if site != "all":
-                if site not in known_sites:
+                if site != "all" and site not in known_sites:
                     output_error("SITE_NOT_FOUND", site=site)
                     raise SystemExit(1)
 
-            targets = [site] if target_type == "client" else None
+                targets = [site] if target_type == "client" else None
             raw_versions = sess.report_version(target_type, targets)
     except (AuthenticationError, NoConnection):
         raise
