@@ -104,6 +104,18 @@ class TestSystemStatus:
         data = json.loads(captured.out)
         assert data["hint"] == "Start the server or verify the admin startup kit endpoint."
 
+    def test_status_unexpected_exception_maps_to_internal_error(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_status
+
+        args = self._make_args()
+        with patch("nvflare.tool.system.system_cli._get_system_session", side_effect=RuntimeError("boom")):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_system_status(args)
+
+        assert exc_info.value.code == 5
+        data = json.loads(capsys.readouterr().out)
+        assert data["error_code"] == "INTERNAL_ERROR"
+
     def test_status_default_target_is_all(self, capsys):
         """When target is None, defaults to 'all'."""
         from nvflare.tool.system.system_cli import cmd_system_status

@@ -306,6 +306,8 @@ def cmd_system_status(args):
             exit_code=2,
             detail=str(e),
         )
+    except Exception as e:
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
 
     _output_system_status(result, target_type)
 
