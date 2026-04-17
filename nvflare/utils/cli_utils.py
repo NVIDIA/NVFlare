@@ -190,6 +190,12 @@ def persist_hidden_config_migration(hidden_nvflare_config_file: str, migrated_co
     print_hidden_config_migration_notice(hidden_nvflare_config_file, backup_path)
 
 
+def ensure_hidden_config_migrated():
+    hidden_nvflare_config_file, migrated_config, migration_needed = load_hidden_config_state()
+    if migration_needed and migrated_config is not None:
+        persist_hidden_config_migration(hidden_nvflare_config_file, migrated_config)
+
+
 def backup_hidden_config_file(hidden_nvflare_config_file: str) -> Optional[str]:
     backup_path = f"{hidden_nvflare_config_file}.bak"
     if os.path.exists(hidden_nvflare_config_file):

@@ -21,6 +21,7 @@ from nvflare.utils.cli_utils import (
     append_if_not_in_list,
     backup_hidden_config_file,
     create_startup_kit_config,
+    ensure_hidden_config_migrated,
     get_hidden_nvflare_config_path,
     get_hidden_nvflare_dir,
     get_startup_kit_dir_for_target,
@@ -160,6 +161,29 @@ poc_workspace {
         backup_path = hidden_dir / "config.conf.bak"
         assert backup_path.exists()
         assert backup_path.read_text().strip() == legacy_text
+
+    def test_ensure_hidden_config_migrated_persists_legacy_file_once(self, tmp_path, monkeypatch):
+        hidden_dir = tmp_path / ".nvflare"
+        hidden_dir.mkdir()
+        config_path = hidden_dir / "config.conf"
+        legacy_text = """
+startup_kit {
+  path = "/tmp/nvflare/legacy/prod_00"
+}
+poc_workspace {
+  path = "/tmp/nvflare/poc"
+}
+""".strip()
+        config_path.write_text(legacy_text)
+
+        monkeypatch.setattr("nvflare.utils.cli_utils.get_or_create_hidden_nvflare_dir", lambda: hidden_dir)
+
+        ensure_hidden_config_migrated()
+
+        persisted = config_path.read_text()
+        assert "version = 2" in persisted
+        assert "startup_kit {" not in persisted
+        assert (hidden_dir / "config.conf.bak").read_text().strip() == legacy_text
 
     def test_backup_hidden_config_file_returns_none_when_source_missing(self, tmp_path):
         hidden_dir = tmp_path / ".nvflare"

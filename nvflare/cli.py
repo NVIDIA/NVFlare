@@ -42,6 +42,7 @@ from nvflare.utils.cli_utils import (
     create_job_template_config,
     create_poc_workspace_config,
     create_startup_kit_config,
+    ensure_hidden_config_migrated,
     load_hidden_config_state,
     print_hidden_config_migration_notice,
     save_config,
@@ -565,6 +566,7 @@ def print_nvflare_version():
 
 def main():
     version_check()
+    ensure_hidden_config_migrated()
     run("nvflare")
 
 
