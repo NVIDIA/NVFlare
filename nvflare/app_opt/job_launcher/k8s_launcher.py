@@ -25,7 +25,7 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
-from nvflare.utils.job_launcher_utils import get_client_job_args, get_server_job_args
+from nvflare.utils.job_launcher_utils import extract_job_image, get_client_job_args, get_server_job_args
 
 
 class JobState(Enum):
@@ -346,10 +346,10 @@ class K8sJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"missing {FLContextKey.WORKSPACE_OBJECT} in FLContext")
         app_custom_folder = workspace_obj.get_app_custom_dir(raw_job_id)
         args = fl_ctx.get_prop(FLContextKey.ARGS)
-        k8s_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}).get(site_name, {}).get("k8s", {})
-        job_image = k8s_spec.get("image")
+        job_image = extract_job_image(job_meta, site_name)
+        site_resources = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}).get(site_name, {})
         study = job_meta.get(JobMetaKey.STUDY.value)
-        job_resource = k8s_spec.get("num_of_gpus", None)
+        job_resource = site_resources.get("num_of_gpus", None)
         job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
         if not job_args:
             raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
@@ -406,9 +406,8 @@ class K8sJobLauncher(JobLauncherSpec):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
             job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
-            site_name = fl_ctx.get_identity_name()
-            k8s_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}).get(site_name, {}).get("k8s", {})
-            if k8s_spec.get("image"):
+            job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
+            if job_image:
                 add_launcher(self, fl_ctx)
 
     @abstractmethod
