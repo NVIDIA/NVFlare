@@ -181,6 +181,33 @@ def test_recipe_catalog_skips_plain_import_errors_from_optional_recipes(monkeypa
     assert _load_catalog(framework="pytorch") == []
 
 
+def test_recipe_catalog_skips_syntax_errors_from_optional_recipes(monkeypatch):
+    from nvflare.tool.recipe.recipe_cli import _load_catalog
+
+    fake_package = ModuleType("fake.recipes")
+    fake_package.__path__ = ["fake/recipes"]
+
+    monkeypatch.setattr(
+        "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
+        [{"package": "fake.recipes", "framework": "pytorch"}],
+    )
+
+    def fake_import_module(name):
+        if name == "fake.recipes":
+            return fake_package
+        if name == "fake.recipes.broken":
+            raise SyntaxError("invalid syntax")
+        raise ModuleNotFoundError(name)
+
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli.importlib.import_module", fake_import_module)
+    monkeypatch.setattr(
+        "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
+        lambda path, prefix="": [(None, "fake.recipes.broken", False)],
+    )
+
+    assert _load_catalog(framework="pytorch") == []
+
+
 def test_recipe_catalog_prefers_leaf_recipe_class_when_module_has_base_and_subclass(monkeypatch):
     from nvflare.recipe.spec import Recipe
     from nvflare.tool.recipe.recipe_cli import _load_catalog

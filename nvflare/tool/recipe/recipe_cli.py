@@ -111,7 +111,7 @@ def _load_catalog(framework: str = None) -> list:
             continue
         try:
             package = importlib.import_module(root["package"])
-        except ImportError:
+        except (ImportError, SyntaxError):
             pass
 
         else:
@@ -120,7 +120,7 @@ def _load_catalog(framework: str = None) -> list:
                     continue
                 try:
                     mod = importlib.import_module(module_name)
-                except ImportError:
+                except (ImportError, SyntaxError):
                     continue
 
                 recipe_cls = _select_recipe_class(mod)
