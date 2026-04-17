@@ -1,9 +1,11 @@
 # Live Job Log Streaming
 
 This package provides real-time log streaming from clients to the server
-during federated jobs.  It replaces the deprecated `ErrorLogSender` /
-`LogReceiver` pair, which could only send a static snapshot of the error log
-after a job finished.
+during federated jobs.  Unlike the deprecated `ErrorLogSender` / `LogReceiver`
+pair, which could only send a static snapshot of the error log after a job
+finished, the new live log streaming supports jobs running on different hosts
+(e.g. Docker containers or Kubernetes pods) because the streamer runs inside
+the job subprocess alongside the log file.
 
 ## Components
 
