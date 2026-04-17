@@ -63,11 +63,13 @@ from nvflare.tool.job.job_client_const import (
 )
 from nvflare.utils.cli_utils import (
     TARGET_POC,
+    backup_hidden_config_file,
     create_job_template_config,
     find_job_templates_location,
     get_curr_dir,
-    get_hidden_config,
     get_startup_kit_dir_for_target,
+    load_hidden_config_state,
+    print_hidden_config_migration_notice,
     save_config,
 )
 
@@ -370,9 +372,17 @@ def list_templates(cmd_args):
 
 
 def update_job_templates_dir(job_templates_dir: str):
-    config_file_path, nvflare_config = get_hidden_config()
+    config_file_path, nvflare_config, migration_needed = load_hidden_config_state()
+    if nvflare_config is None:
+        from pyhocon import ConfigFactory as CF
+
+        nvflare_config = CF.parse_string("{}")
+
     config = create_job_template_config(nvflare_config, job_templates_dir)
+    backup_path = backup_hidden_config_file(config_file_path) if migration_needed else None
     save_config(config, config_file_path)
+    if backup_path:
+        print_hidden_config_migration_notice(config_file_path, backup_path)
 
 
 def display_available_templates(template_index_conf):
@@ -953,7 +963,7 @@ def _get_session(admin_user_dir=None, username=None, study="default"):
             u, d = find_admin_user_and_dir()
         except ValueError as e:
             output_error("STARTUP_KIT_MISSING", exit_code=2, detail=str(e))
-            return
+            raise SystemExit(2)
         if username is None:
             username = u
         if admin_user_dir is None:
@@ -1535,7 +1545,7 @@ def cmd_job_monitor(cmd_args):
     except (AuthenticationError, NoConnection):
         raise
     except Exception as e:
-        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         return
 
     if rc == MonitorReturnCode.TIMEOUT:
@@ -1603,6 +1613,7 @@ def cmd_job_log(cmd_args):
             message="Log config is not a recognised log mode.",
             hint="Supply one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
         )
+        return
 
     try:
         with _session() as sess:
@@ -1614,17 +1625,22 @@ def cmd_job_log(cmd_args):
                     exit_code=1,
                     detail=f"job is in terminal state: {job_status}",
                 )
+                return
             sess.configure_job_log(cmd_args.job_id, level, target=site)
     except (AuthenticationError, NoConnection):
         raise
     except InvalidTarget:
         output_error("SITE_NOT_FOUND", site=site)
+        return
     except NoReply:
         output_error("SITE_NOT_FOUND", site=site)
+        return
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        return
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
 
     sites = [site] if site != "all" else ["all"]
     output_ok({"job_id": cmd_args.job_id, "config": level, "sites": sites, "status": "applied"})

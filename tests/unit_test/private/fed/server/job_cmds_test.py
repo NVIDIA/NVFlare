@@ -712,6 +712,22 @@ def test_get_job_log_missing_file_returns_empty(monkeypatch, tmp_path):
     assert conn.successes == []
 
 
+def test_get_job_log_mismatched_job_id_sources_returns_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+
+    workspace = _FakeWorkspace(tmp_path)
+    conn = _MockConnection(
+        app_ctx=_FakeServerEngine(workspace),
+        props={JobCommandModule.JOB_ID: "job-from-prop"},
+    )
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-from-arg"])
+
+    assert conn.dicts == []
+    assert conn.errors
+    assert "job_id mismatch between connection property and parsed argument" in conn.errors[0][0]
+
+
 def test_submit_job_reports_all_deploy_map_sites_outside_study(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     monkeypatch.setattr(job_cmds_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)

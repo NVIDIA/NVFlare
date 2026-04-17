@@ -18,6 +18,8 @@ import os
 import sys
 import traceback
 
+from pyhocon import ConfigFactory as CF
+
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
@@ -35,11 +37,13 @@ from nvflare.tool.recipe.recipe_cli import def_recipe_parser, handle_recipe_cmd
 from nvflare.tool.system.system_cli import def_system_cli_parser, handle_system_cmd
 from nvflare.utils.cli_utils import (
     TARGET_POC,
+    backup_hidden_config_file,
     TARGET_PROD,
     create_job_template_config,
     create_poc_workspace_config,
     create_startup_kit_config,
-    get_hidden_config,
+    load_hidden_config_state,
+    print_hidden_config_migration_notice,
     save_config,
 )
 
@@ -197,7 +201,8 @@ def handle_config_cmd(args):
         sys.argv[1:],
     )
 
-    config_file_path, nvflare_config = get_hidden_config()
+    config_file_path, loaded_config, migration_needed = load_hidden_config_state()
+    nvflare_config = loaded_config or CF.parse_string("{}")
     requested_poc_startup = args.poc_startup_kit_dir
     requested_prod_startup = args.prod_startup_kit_dir
     requested_poc_workspace = args.poc_workspace_dir
@@ -248,8 +253,12 @@ def handle_config_cmd(args):
         nvflare_config = create_job_template_config(nvflare_config, args.job_templates_dir)
     except ValueError as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+        return
 
+    backup_path = backup_hidden_config_file(config_file_path) if migration_needed else None
     save_config(nvflare_config, config_file_path)
+    if backup_path:
+        print_hidden_config_migration_notice(config_file_path, backup_path)
 
     poc_startup_kit_dir = nvflare_config.get("poc.startup_kit", None) if nvflare_config else requested_poc_startup
     prod_startup_kit_dir = nvflare_config.get("prod.startup_kit", None) if nvflare_config else requested_prod_startup
@@ -324,29 +333,63 @@ def _patch_help_on_error(parser, json_mode: bool = False):
                 _patch_help_on_error(sub, json_mode=json_mode)
 
 
-def _normalize_global_args(argv):
+def _build_global_arg_parser():
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
+    parser.add_argument(
+        "--out-format",
+        dest="out_format",
+        choices=["txt", "json"],
+        default="txt",
+        help="output format: 'txt' (default, human-readable to stdout/stderr) or 'json' for machine-readable JSON envelope on stdout",
+    )
+    parser.add_argument(
+        "--connect-timeout",
+        dest="connect_timeout",
+        type=float,
+        default=5.0,
+        help="seconds to wait for server connection (default: 5.0)",
+    )
+    return parser
+
+
+def _classify_global_options(global_parser):
+    no_value = set()
+    with_value = set()
+    for action in global_parser._actions:
+        if not action.option_strings:
+            continue
+        if action.nargs == 0:
+            no_value.update(action.option_strings)
+        else:
+            with_value.update(action.option_strings)
+    return no_value, with_value
+
+
+def _normalize_global_args(argv, global_parser):
     """Move supported global options ahead of the subcommand without parsing them.
 
     This keeps argparse as the single source of truth while preserving the CLI's
     existing behavior of accepting global flags after the subcommand.
     """
 
+    no_value_options, with_value_options = _classify_global_options(global_parser)
     global_args = []
     remaining_args = []
     i = 0
     while i < len(argv):
         arg = argv[i]
-        if arg in ("--version", "-V"):
+        if arg in no_value_options:
             global_args.append(arg)
             i += 1
-        elif arg in ("--out-format", "--connect-timeout"):
+        elif arg in with_value_options:
             global_args.append(arg)
             if i + 1 < len(argv):
                 global_args.append(argv[i + 1])
                 i += 2
             else:
                 i += 1
-        elif arg.startswith("--out-format=") or arg.startswith("--connect-timeout="):
+        elif any(arg.startswith(f"{option}=") for option in with_value_options if option.startswith("--")):
             global_args.append(arg)
             i += 1
         else:
@@ -355,42 +398,11 @@ def _normalize_global_args(argv):
     return global_args + remaining_args
 
 
-def _is_json_mode_requested(argv):
-    for i, arg in enumerate(argv):
-        if arg == "--out-format" and i + 1 < len(argv):
-            return argv[i + 1] == "json"
-        if arg.startswith("--out-format="):
-            return arg.split("=", 1)[1] == "json"
-    return False
-
-
-def _get_global_option_value(argv, option_name, default=None):
-    for i, arg in enumerate(argv):
-        if arg == option_name and i + 1 < len(argv):
-            return argv[i + 1]
-        if arg.startswith(f"{option_name}="):
-            return arg.split("=", 1)[1]
-    return default
-
-
 def parse_args(prog_name: str):
-    normalized_argv = _normalize_global_args(sys.argv[1:])
-    _parser = argparse.ArgumentParser(description=prog_name)
-    _parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
-    _parser.add_argument(
-        "--out-format",
-        dest="out_format",
-        choices=["txt", "json"],
-        default="txt",
-        help="output format: 'txt' (default, human-readable to stdout/stderr) or 'json' for machine-readable JSON envelope on stdout",
-    )
-    _parser.add_argument(
-        "--connect-timeout",
-        dest="connect_timeout",
-        type=float,
-        default=5.0,
-        help="seconds to wait for server connection (default: 5.0)",
-    )
+    global_parser = _build_global_arg_parser()
+    normalized_argv = _normalize_global_args(sys.argv[1:], global_parser)
+    global_args, _ = global_parser.parse_known_args(normalized_argv)
+    _parser = argparse.ArgumentParser(description=prog_name, parents=[global_parser])
     sub_cmd = _parser.add_subparsers(title="commands", metavar="", dest="sub_command")
     sub_cmd_parsers = {}
     sub_cmd_parsers.update(def_poc_parser(sub_cmd))
@@ -429,13 +441,13 @@ def parse_args(prog_name: str):
         ns.system_sub_cmd = sub_sub
         ns.cert_sub_command = sub_sub
         ns.recipe_sub_cmd = sub_sub
-        ns.out_format = _get_global_option_value(normalized_argv, "--out-format", "txt")
-        ns.connect_timeout = float(_get_global_option_value(normalized_argv, "--connect-timeout", 5.0))
-        ns.version = "--version" in normalized_argv or "-V" in normalized_argv
+        ns.out_format = global_args.out_format
+        ns.connect_timeout = global_args.connect_timeout
+        ns.version = global_args.version
         return _parser, ns, sub_cmd_parsers
 
     # Patch every parser so it prints full help before exiting on error.
-    _patch_help_on_error(_parser, json_mode=_is_json_mode_requested(normalized_argv))
+    _patch_help_on_error(_parser, json_mode=global_args.out_format == "json")
 
     args, unknown = _parser.parse_known_args(normalized_argv)
     args._raw_sub_command = args.__dict__.get("sub_command")

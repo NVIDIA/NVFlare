@@ -241,6 +241,23 @@ class TestJobMonitorOutput:
         data = json.loads(captured.out)
         assert data["error_code"] == "INTERNAL_ERROR"
 
+    def test_unexpected_monitor_exception_exits_internal_error(self, capsys):
+        @contextmanager
+        def _fake_session():
+            sess = MagicMock()
+            sess.monitor_job_and_return_job_meta.side_effect = KeyError("stats blew up")
+            yield sess
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_monitor(_make_args())
+        assert exc_info.value.code == 5
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["error_code"] == "INTERNAL_ERROR"
+
     # ------------------------------------------------------------------
     # Envelope contents
     # ------------------------------------------------------------------

@@ -236,6 +236,22 @@ class TestJobLogHuman:
         envelope = json.loads(captured.out)
         assert envelope["error_code"] == "SITE_NOT_FOUND"
 
+    def test_log_unknown_site_does_not_emit_success_when_output_error_is_mocked(self):
+        from nvflare.tool.job.job_cli import cmd_job_log
+
+        args = _make_args(level="WARNING", site="site-1")
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"status": "RUNNING"}
+        mock_sess.configure_job_log.side_effect = InvalidTarget("INVALID_CLIENT(s): site-1")
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            with patch("nvflare.tool.cli_output.output_error") as output_error:
+                with patch("nvflare.tool.cli_output.output_ok") as output_ok:
+                    cmd_job_log(args)
+
+        output_error.assert_called_once_with("SITE_NOT_FOUND", site="site-1")
+        output_ok.assert_not_called()
+
     def test_log_parser(self):
         """Primary 'log-config' parser parses correctly."""
         import argparse

@@ -46,7 +46,7 @@ class TestConfigOutput:
         mock_config = MagicMock()
         mock_config.get.return_value = None
 
-        with patch("nvflare.cli.get_hidden_config", return_value=("/fake/config.conf", mock_config)):
+        with patch("nvflare.cli.load_hidden_config_state", return_value=("/fake/config.conf", mock_config, False)):
             with patch("nvflare.tool.cli_schema.handle_schema_flag"):
                 handle_config_cmd(args)
 
@@ -83,7 +83,7 @@ class TestConfigOutput:
         mock_config = MagicMock()
         mock_config.get.return_value = "/path/to/startup"
 
-        with patch("nvflare.cli.get_hidden_config", return_value=("/fake/config.conf", mock_config)):
+        with patch("nvflare.cli.load_hidden_config_state", return_value=("/fake/config.conf", mock_config, False)):
             with patch("nvflare.cli.create_startup_kit_config", return_value=mock_config):
                 with patch("nvflare.cli.create_poc_workspace_config", return_value=mock_config):
                     with patch("nvflare.cli.create_job_template_config", return_value=mock_config):
@@ -104,7 +104,7 @@ class TestConfigOutput:
         mock_config = MagicMock()
         mock_config.get.return_value = None
 
-        with patch("nvflare.cli.get_hidden_config", return_value=("/fake/config.conf", mock_config)):
+        with patch("nvflare.cli.load_hidden_config_state", return_value=("/fake/config.conf", mock_config, False)):
             with patch(
                 "nvflare.cli.create_startup_kit_config",
                 side_effect=ValueError("invalid startup kit location '/bad/startup'"),
@@ -119,6 +119,26 @@ class TestConfigOutput:
         assert data["status"] == "error"
         assert data["error_code"] == "INVALID_ARGS"
         assert "invalid startup kit location" in data["message"]
+
+    def test_invalid_startup_kit_path_does_not_save_when_output_error_is_mocked(self):
+        from nvflare.cli import handle_config_cmd
+
+        args = self._make_args(poc_startup_kit_dir="/bad/startup")
+        mock_config = MagicMock()
+        mock_config.get.return_value = None
+
+        with patch("nvflare.cli.load_hidden_config_state", return_value=("/fake/config.conf", mock_config, False)):
+            with patch(
+                "nvflare.cli.create_startup_kit_config",
+                side_effect=ValueError("invalid startup kit location '/bad/startup'"),
+            ):
+                with patch("nvflare.tool.cli_output.output_error") as output_error:
+                    with patch("nvflare.cli.save_config") as save_config:
+                        with patch("nvflare.tool.cli_schema.handle_schema_flag"):
+                            handle_config_cmd(args)
+
+        output_error.assert_called_once()
+        save_config.assert_not_called()
 
     def test_config_parser_accepts_legacy_startup_alias(self):
         import argparse
@@ -142,7 +162,7 @@ class TestConfigOutput:
         mock_config = MagicMock()
         mock_config.get.return_value = "/path/to/startup"
 
-        with patch("nvflare.cli.get_hidden_config", return_value=("/fake/config.conf", mock_config)):
+        with patch("nvflare.cli.load_hidden_config_state", return_value=("/fake/config.conf", mock_config, False)):
             with patch("nvflare.cli.create_startup_kit_config", return_value=mock_config) as create_startup:
                 with patch("nvflare.cli.create_poc_workspace_config", return_value=mock_config):
                     with patch("nvflare.cli.create_job_template_config", return_value=mock_config):
@@ -162,7 +182,7 @@ class TestConfigOutput:
         mock_config = MagicMock()
         mock_config.get.return_value = None
 
-        with patch("nvflare.cli.get_hidden_config", return_value=("/fake/config.conf", mock_config)):
+        with patch("nvflare.cli.load_hidden_config_state", return_value=("/fake/config.conf", mock_config, False)):
             with patch("nvflare.tool.cli_schema.handle_schema_flag"):
                 with pytest.raises(SystemExit) as exc_info:
                     handle_config_cmd(args)

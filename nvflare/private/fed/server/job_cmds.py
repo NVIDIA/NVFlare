@@ -472,7 +472,18 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             )
             return
 
-        job_id = conn.get_prop(self.JOB_ID, parsed_args.job_id)
+        prop_job_id = conn.get_prop(self.JOB_ID)
+        if prop_job_id is not None and parsed_args.job_id is not None and prop_job_id != parsed_args.job_id:
+            conn.append_error(
+                "job_id mismatch between connection property and parsed argument",
+                meta=make_meta(
+                    MetaStatusValue.SYNTAX_ERROR,
+                    "job_id mismatch between connection property and parsed argument",
+                ),
+            )
+            return
+
+        job_id = prop_job_id if prop_job_id is not None else parsed_args.job_id
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngine):
             raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))

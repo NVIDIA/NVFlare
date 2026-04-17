@@ -152,3 +152,31 @@ def test_recipe_catalog_is_discovered_from_package_modules(monkeypatch):
             "class": "FakeRecipe",
         }
     ]
+
+
+def test_recipe_catalog_reraises_non_module_not_found_import_errors(monkeypatch):
+    from nvflare.tool.recipe.recipe_cli import _load_catalog
+
+    fake_package = ModuleType("fake.recipes")
+    fake_package.__path__ = ["fake/recipes"]
+
+    monkeypatch.setattr(
+        "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
+        [{"package": "fake.recipes", "framework": "pytorch"}],
+    )
+
+    def fake_import_module(name):
+        if name == "fake.recipes":
+            return fake_package
+        if name == "fake.recipes.broken":
+            raise ImportError("broken recipe import")
+        raise ModuleNotFoundError(name)
+
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli.importlib.import_module", fake_import_module)
+    monkeypatch.setattr(
+        "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
+        lambda path, prefix="": [(None, "fake.recipes.broken", False)],
+    )
+
+    with pytest.raises(ImportError, match="broken recipe import"):
+        _load_catalog(framework="pytorch")

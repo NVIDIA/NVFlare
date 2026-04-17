@@ -93,7 +93,7 @@ def _load_catalog(framework: str = None) -> list:
             continue
         try:
             package = importlib.import_module(root["package"])
-        except ImportError:
+        except ModuleNotFoundError:
             pass
 
         else:
@@ -102,7 +102,7 @@ def _load_catalog(framework: str = None) -> list:
                     continue
                 try:
                     mod = importlib.import_module(module_name)
-                except ImportError:
+                except ModuleNotFoundError:
                     continue
 
                 for recipe_cls in _iter_recipe_classes(mod):

@@ -209,7 +209,8 @@ class TestResolveJobFolder:
         startup_dir.mkdir(parents=True)
         (startup_dir / "fed_admin.json").write_text('{"admin": {"username": "admin@nvidia.com"}}')
 
-        username, resolved = find_admin_user_and_dir(startup_kit_dir=str(admin_dir))
+        with patch("nvflare.tool.job.job_cli.get_startup_kit_dir_for_target", return_value=str(admin_dir)):
+            username, resolved = find_admin_user_and_dir(startup_kit_dir=str(admin_dir))
 
         assert username == "admin@nvidia.com"
         assert resolved == str(admin_dir)
@@ -222,7 +223,8 @@ class TestResolveJobFolder:
         startup_dir.mkdir(parents=True)
         (startup_dir / "fed_admin.json").write_text('{"admin": {"username": "admin@nvidia.com"}}')
 
-        username, resolved = find_admin_user_and_dir(startup_kit_dir=str(startup_dir))
+        with patch("nvflare.tool.job.job_cli.get_startup_kit_dir_for_target", return_value=str(startup_dir)):
+            username, resolved = find_admin_user_and_dir(startup_kit_dir=str(startup_dir))
 
         assert username == "admin@nvidia.com"
         assert resolved == str(admin_dir)
@@ -244,4 +246,18 @@ def test_get_session_missing_startup_kit_emits_startup_kit_missing(capsys, monke
     assert exc_info.value.code == 2
     envelope = json.loads(capsys.readouterr().out)
     assert envelope["error_code"] == "STARTUP_KIT_MISSING"
-    assert "no startup kit configured" in envelope["message"]
+
+
+def test_get_session_missing_startup_kit_still_exits_when_output_error_is_mocked():
+    from nvflare.tool.job.job_cli import _get_session
+
+    with patch(
+        "nvflare.tool.job.job_cli.find_admin_user_and_dir",
+        side_effect=ValueError("startup kit directory /tmp/missing must be an admin startup kit directory"),
+    ):
+        with patch("nvflare.tool.cli_output.output_error") as output_error:
+            with pytest.raises(SystemExit) as exc_info:
+                _get_session()
+
+    assert exc_info.value.code == 2
+    output_error.assert_called_once()

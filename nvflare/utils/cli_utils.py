@@ -13,6 +13,7 @@
 # limitations under the License.
 import os
 import pathlib
+import shutil
 import sys
 from collections import OrderedDict
 from pathlib import Path
@@ -163,12 +164,12 @@ def find_startup_kit_location(target: Optional[str] = None) -> str:
     return _get_optional_config_value(nvflare_config, "poc.startup_kit", "startup_kit.path", "startup_kit")
 
 
-def load_hidden_config() -> ConfigTree:
+def load_hidden_config_state() -> Tuple[str, Optional[ConfigTree], bool]:
     hidden_dir = get_or_create_hidden_nvflare_dir()
     hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(hidden_dir))
     nvflare_config = load_config(hidden_nvflare_config_file)
     if nvflare_config is None:
-        return None
+        return hidden_nvflare_config_file, None, False
 
     try:
         current_version = nvflare_config.get_int(CONFIG_VERSION)
@@ -176,15 +177,36 @@ def load_hidden_config() -> ConfigTree:
         current_version = None
 
     if current_version == CURRENT_CONFIG_VERSION and not _has_legacy_config_keys(nvflare_config):
-        return nvflare_config
+        return hidden_nvflare_config_file, nvflare_config, False
 
     migrated = migrate_config_to_v2(nvflare_config)
-    save_config(migrated, hidden_nvflare_config_file)
+    return hidden_nvflare_config_file, migrated, True
+
+
+def persist_hidden_config_migration(hidden_nvflare_config_file: str, migrated_config: ConfigTree):
+    backup_path = backup_hidden_config_file(hidden_nvflare_config_file)
+    save_config(migrated_config, hidden_nvflare_config_file)
+    print_hidden_config_migration_notice(hidden_nvflare_config_file, backup_path)
+
+
+def backup_hidden_config_file(hidden_nvflare_config_file: str) -> str:
+    backup_path = f"{hidden_nvflare_config_file}.bak"
+    if os.path.exists(hidden_nvflare_config_file):
+        shutil.copy2(hidden_nvflare_config_file, backup_path)
+    return backup_path
+
+
+def print_hidden_config_migration_notice(hidden_nvflare_config_file: str, backup_path: str):
     print(
-        f"Migrated {hidden_nvflare_config_file} to config version {CURRENT_CONFIG_VERSION}.",
+        f"Migrated {hidden_nvflare_config_file} to config version {CURRENT_CONFIG_VERSION}. "
+        f"Backup saved to {backup_path}.",
         file=sys.stderr,
     )
-    return migrated
+
+
+def load_hidden_config() -> ConfigTree:
+    _, nvflare_config, _ = load_hidden_config_state()
+    return nvflare_config
 
 
 def create_startup_kit_config(
@@ -398,8 +420,7 @@ def save_config(dst_config: ConfigTree, dst_path, keep_origin_format: bool = Tru
 
 
 def get_hidden_config() -> (str, ConfigTree):
-    hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(get_or_create_hidden_nvflare_dir()))
-    conf = load_hidden_config()
+    hidden_nvflare_config_file, conf, _ = load_hidden_config_state()
     nvflare_config = CF.parse_string("{}") if not conf else conf
     return hidden_nvflare_config_file, nvflare_config
 

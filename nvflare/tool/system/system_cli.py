@@ -141,14 +141,14 @@ def _get_system_session(args=None):
         username, startup = _resolve_admin_user_and_dir_from_startup_kit(startup)
     except ValueError as e:
         output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e))
-        return None
+        raise SystemExit(4)
     except Exception:
         output_error(
             "STARTUP_KIT_MISSING",
             exit_code=4,
             detail="admin username could not be resolved from the startup kit",
         )
-        return None
+        raise SystemExit(4)
 
     timeout = get_connect_timeout()
     return new_cli_session(username=username, startup_kit_location=startup, timeout=timeout)

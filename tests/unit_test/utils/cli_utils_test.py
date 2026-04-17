@@ -24,6 +24,7 @@ from nvflare.utils.cli_utils import (
     get_hidden_nvflare_dir,
     get_startup_kit_dir_for_target,
     load_hidden_config,
+    persist_hidden_config_migration,
     migrate_config_to_v2,
 )
 
@@ -108,12 +109,11 @@ class TestCLIUtils:
                 assert "/tmp/nvflare/poc/prod_00" == get_startup_kit_dir_for_target(target="poc")
                 assert "/tmp/nvflare/prod/admin@nvidia.com" == get_startup_kit_dir_for_target(target="prod")
 
-    def test_load_hidden_config_persists_legacy_migration(self, tmp_path, monkeypatch):
+    def test_load_hidden_config_migrates_in_memory_without_persisting(self, tmp_path, monkeypatch):
         hidden_dir = tmp_path / ".nvflare"
         hidden_dir.mkdir()
         config_path = hidden_dir / "config.conf"
-        config_path.write_text(
-            """
+        legacy_text = """
 startup_kit {
   path = "/tmp/nvflare/legacy/prod_00"
 }
@@ -121,7 +121,7 @@ poc_workspace {
   path = "/tmp/nvflare/poc"
 }
 """.strip()
-        )
+        config_path.write_text(legacy_text)
 
         monkeypatch.setattr("nvflare.utils.cli_utils.get_or_create_hidden_nvflare_dir", lambda: hidden_dir)
 
@@ -129,9 +129,33 @@ poc_workspace {
 
         assert migrated.get_int("version") == 2
         persisted = config_path.read_text()
+        assert persisted.strip() == legacy_text
+        assert not (hidden_dir / "config.conf.bak").exists()
+
+    def test_persist_hidden_config_migration_writes_backup_and_migrated_config(self, tmp_path):
+        hidden_dir = tmp_path / ".nvflare"
+        hidden_dir.mkdir()
+        config_path = hidden_dir / "config.conf"
+        legacy_text = """
+startup_kit {
+  path = "/tmp/nvflare/legacy/prod_00"
+}
+poc_workspace {
+  path = "/tmp/nvflare/poc"
+}
+""".strip()
+        config_path.write_text(legacy_text)
+
+        migrated = migrate_config_to_v2(CF.parse_string(legacy_text))
+        persist_hidden_config_migration(str(config_path), migrated)
+
+        persisted = config_path.read_text()
         assert "version = 2" in persisted
         assert "config_version" not in persisted
         assert "startup_kit {" not in persisted
+        backup_path = hidden_dir / "config.conf.bak"
+        assert backup_path.exists()
+        assert backup_path.read_text().strip() == legacy_text
 
     @pytest.mark.parametrize(
         "inputs, result", [(([], "a"), ["a"]), ((["a"], "a"), ["a"]), ((["a", "b"], "b"), ["a", "b"])]
