@@ -72,6 +72,22 @@ class TestJobAbort:
                 cmd_job_abort(args)
         assert exc_info.value.code == 4
 
+    def test_abort_non_interactive_still_exits_when_output_error_is_mocked(self):
+        from nvflare.tool.job.job_cli import cmd_job_abort
+
+        args = self._make_args(force=False)
+
+        with patch("sys.stdin") as mock_stdin:
+            mock_stdin.isatty.return_value = False
+            with patch("nvflare.tool.cli_output.output_error") as mocked_output_error:
+                with patch("nvflare.tool.cli_output.prompt_yn") as mocked_prompt:
+                    with pytest.raises(SystemExit) as exc_info:
+                        cmd_job_abort(args)
+
+        assert exc_info.value.code == 4
+        mocked_output_error.assert_called_once()
+        mocked_prompt.assert_not_called()
+
     def test_abort_interactive_user_confirms(self, capsys):
         """Interactive mode: user says Y → abort proceeds; stdout is one JSON line."""
         from nvflare.tool.job.job_cli import cmd_job_abort

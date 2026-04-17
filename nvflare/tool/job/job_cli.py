@@ -1076,6 +1076,7 @@ def cmd_job_abort(cmd_args):
     if not cmd_args.force:
         if not sys.stdin.isatty():
             output_error("INVALID_ARGS", exit_code=4, detail="use --force in non-interactive mode")
+            raise SystemExit(4)
         from nvflare.tool.cli_output import print_human, prompt_yn
 
         if not prompt_yn(f"Abort job '{cmd_args.job_id}'?"):
@@ -1173,6 +1174,7 @@ def cmd_job_delete(cmd_args):
     if not cmd_args.force:
         if not sys.stdin.isatty():
             output_error("INVALID_ARGS", exit_code=4, detail="use --force in non-interactive mode")
+            raise SystemExit(4)
         from nvflare.tool.cli_output import print_human, prompt_yn
 
         if not prompt_yn(f"Delete job '{cmd_args.job_id}'?"):
