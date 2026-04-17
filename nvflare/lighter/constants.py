@@ -92,6 +92,8 @@ class CtxKey(WorkDir, PropKey):
     ROOT_PRI_KEY = "root_pri_key"
     RELAY_MAP = "relay_map"
     CLIENT_MAP = "client_map"
+    ERRORS = "__errors__"
+    WARNINGS = "__warnings__"
 
 
 class ProvisionMode:

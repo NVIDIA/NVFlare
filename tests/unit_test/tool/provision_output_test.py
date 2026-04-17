@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.lighter.constants import CtxKey
 from nvflare.tool import cli_output
 
 
@@ -166,6 +167,28 @@ class TestProvisionOutput:
         assert data["status"] == "error"
         assert data["error_code"] == "INTERNAL_ERROR"
         assert "Provisioning failed in edge mode: boom" in data["message"]
+
+    def test_build_error_ctx_returns_structured_error_with_ctx_diagnostics(self, capsys, tmp_path):
+        from nvflare.lighter.provision import handle_provision
+
+        args = self._make_args(project_file="project.yml")
+        fake_ctx = {
+            CtxKey.BUILD_ERROR: True,
+            CtxKey.ERRORS: ["Exception boom raised during provision.  Incomplete prod_n folder removed."],
+            CtxKey.WARNINGS: ["the connect_to.host 'bad-host' may be invalid: bad name"],
+        }
+
+        with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
+            with patch("nvflare.lighter.provision.provision", return_value=fake_ctx):
+                with pytest.raises(SystemExit) as exc_info:
+                    handle_provision(args)
+
+        assert exc_info.value.code == 5
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INTERNAL_ERROR"
+        assert "Errors:" in data["message"]
+        assert "Warnings:" in data["message"]
 
     def test_copy_project_suppresses_human_text_in_json_mode(self, capsys, tmp_path):
         """Generating a sample project in JSON mode should not emit human guidance."""

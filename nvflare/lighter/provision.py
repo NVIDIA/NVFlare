@@ -22,7 +22,7 @@ import sys
 from typing import Optional
 
 from nvflare.apis.utils.format_check import name_check
-from nvflare.lighter.constants import AdminRole, ParticipantType, PropKey
+from nvflare.lighter.constants import AdminRole, CtxKey, ParticipantType, PropKey
 from nvflare.lighter.entity import participant_from_dict
 from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
 from nvflare.lighter.provisioner import Provisioner
@@ -162,7 +162,7 @@ def copy_project(project: str, dest: str):
 
 
 def handle_provision(args):
-    from nvflare.tool.cli_output import output_ok
+    from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
     from nvflare.tool.install_skills import install_skills
 
@@ -212,7 +212,21 @@ def handle_provision(args):
     add_user_full_path = os.path.join(current_path, args.add_user) if args.add_user else None
     add_client_full_path = os.path.join(current_path, args.add_client) if args.add_client else None
 
-    provision(args, project_full_path, workspace_full_path, add_user_full_path, add_client_full_path)
+    ctx = provision(args, project_full_path, workspace_full_path, add_user_full_path, add_client_full_path)
+
+    if isinstance(ctx, dict) and ctx.get(CtxKey.BUILD_ERROR):
+        diagnostic_lines = []
+        errors = ctx.get(CtxKey.ERRORS, [])
+        warnings = ctx.get(CtxKey.WARNINGS, [])
+        if errors:
+            diagnostic_lines.append("Errors:")
+            diagnostic_lines.extend(f"- {msg}" for msg in errors)
+        if warnings:
+            diagnostic_lines.append("Warnings:")
+            diagnostic_lines.extend(f"- {msg}" for msg in warnings)
+        detail = "\n".join(diagnostic_lines) if diagnostic_lines else "Provisioning failed during kit assembly."
+        output_error("INTERNAL_ERROR", exit_code=5, detail=detail)
+        raise SystemExit(5)
 
     # Collect packages from workspace
     packages = []
@@ -271,13 +285,13 @@ def provision(
 
             output_error("INTERNAL_ERROR", exit_code=5, detail=f"Provisioning failed in edge mode: {e}")
             raise SystemExit(5)
-        return
+        return None
 
     project = prepare_project(project_dict, add_user_full_path, add_client_full_path)
     builders = prepare_builders(project_dict)
     packager = prepare_packager(project_dict)
     provisioner = Provisioner(workspace_full_path, builders, packager)
-    provisioner.provision(project)
+    return provisioner.provision(project)
 
 
 def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=None):
