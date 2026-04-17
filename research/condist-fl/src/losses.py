@@ -77,7 +77,7 @@ class ConDistTransform(object):
             condition = torch.where(torch.logical_or(targets == c, ground_truth == c), 1, condition)
         mask = 1 - condition
 
-        return mask.astype(torch.float32)
+        return mask.to(dtype=torch.float32)
 
     def __call__(self, preds: Tensor, targets: Tensor, ground_truth: Tensor) -> Tuple[Tensor]:
         mask = self.generate_mask(targets, ground_truth)
