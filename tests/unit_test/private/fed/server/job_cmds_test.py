@@ -260,6 +260,31 @@ def test_submit_job_exposes_study_in_submit_event(monkeypatch):
     assert engine.job_def_manager.created_meta[JobMetaKey.STUDY.value] == "cancer-research"
 
 
+def test_submit_job_strips_user_supplied_from_hub_site(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(
+        job_cmds_module,
+        "JobMetaValidator",
+        lambda: _FakeJobMetaValidatorWithMeta({JobMetaKey.FROM_HUB_SITE.value: "site-x"}),
+    )
+
+    engine = _FakeEngine()
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            ConnProps.FILE_LOCATION: "job.zip",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "role",
+        },
+    )
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    assert conn.errors == []
+    assert JobMetaKey.FROM_HUB_SITE.value not in engine.job_def_manager.created_meta
+
+
 def test_submit_job_defaults_study_when_cmd_props_missing(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidator)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
@@ -710,6 +735,28 @@ def test_get_job_log_missing_file_returns_empty(monkeypatch, tmp_path):
     assert conn.errors == []
     assert conn.dicts[0][0] == {"logs": {"server": ""}}
     assert conn.successes == []
+
+
+def test_get_job_log_handles_file_deleted_after_exists(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+
+    workspace = _FakeWorkspace(tmp_path)
+    conn = _MockConnection(
+        app_ctx=_FakeServerEngine(workspace),
+        props={JobCommandModule.JOB_ID: "job-123"},
+    )
+
+    monkeypatch.setattr(job_cmds_module.os.path, "exists", lambda _path: True)
+
+    def _raise_deleted(*_args, **_kwargs):
+        raise FileNotFoundError("deleted during read")
+
+    monkeypatch.setattr(JobCommandModule, "_collect_job_log_lines", _raise_deleted)
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-123"])
+
+    assert conn.errors == []
+    assert conn.dicts[0][0] == {"logs": {"server": ""}}
 
 
 def test_get_job_log_mismatched_job_id_sources_returns_error(monkeypatch, tmp_path):

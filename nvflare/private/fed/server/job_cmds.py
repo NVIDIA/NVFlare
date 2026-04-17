@@ -491,17 +491,23 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         workspace = engine.get_workspace()
         log_file = os.path.join(workspace.get_log_root(job_id), WorkspaceConstants.LOG_FILE_NAME)
         log_lines = []
-        if os.path.exists(log_file):
-            if parsed_args.tail_lines is not None and parsed_args.tail_lines <= 0:
-                conn.append_error(
-                    "tail_lines must be greater than 0",
-                    meta=make_meta(MetaStatusValue.SYNTAX_ERROR, "tail_lines must be greater than 0"),
-                )
-                return
+        try:
+            if os.path.exists(log_file):
+                if parsed_args.tail_lines is not None and parsed_args.tail_lines <= 0:
+                    conn.append_error(
+                        "tail_lines must be greater than 0",
+                        meta=make_meta(MetaStatusValue.SYNTAX_ERROR, "tail_lines must be greater than 0"),
+                    )
+                    return
 
-            log_lines = self._collect_job_log_lines(
-                log_file, tail_lines=parsed_args.tail_lines, grep_pattern=parsed_args.grep_pattern
-            )
+                log_lines = self._collect_job_log_lines(
+                    log_file, tail_lines=parsed_args.tail_lines, grep_pattern=parsed_args.grep_pattern
+                )
+        except FileNotFoundError:
+            # The log file can disappear between the existence check and the open() if the
+            # active run rotates or cleans up the workspace. Treat that as an empty live-log
+            # read rather than surfacing an internal error to the admin client.
+            log_lines = []
 
         conn.append_dict({"logs": {SERVER_SITE_NAME: "".join(log_lines)}}, meta=make_meta(MetaStatusValue.OK))
 

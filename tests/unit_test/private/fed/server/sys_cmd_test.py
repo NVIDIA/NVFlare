@@ -140,6 +140,31 @@ def test_report_version_all_includes_server_and_clients(monkeypatch):
     assert payload["site-1"] == {"version": "2.8.0"}
 
 
+def test_report_version_server_only_returns_server_payload():
+    module = SystemCommandModule()
+    conn = _MockConnection()
+
+    module.report_version(conn, [AdminCommandNames.REPORT_VERSION, "server"])
+
+    assert conn.errors == []
+    assert len(conn.dicts) == 1
+    payload, _meta = conn.dicts[0]
+    assert list(payload.keys()) == ["server"]
+    assert payload["server"]["version"]
+
+
+def test_report_version_client_without_replies_emits_error(monkeypatch):
+    module = SystemCommandModule()
+    conn = _MockConnection()
+    monkeypatch.setattr(module, "send_request_to_clients", lambda conn, message: [])
+
+    module.report_version(conn, [AdminCommandNames.REPORT_VERSION, "client"])
+
+    assert conn.dicts == []
+    assert conn.errors
+    assert conn.errors[0][0] == "no responses from clients"
+
+
 def test_report_version_preserves_client_error_payload(monkeypatch):
     module = SystemCommandModule()
     conn = _MockConnection()
