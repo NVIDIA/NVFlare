@@ -575,8 +575,9 @@ def print_nvflare_version():
 
 
 def main():
-    version_check()
-    ensure_hidden_config_migrated()
+    if "--schema" not in sys.argv:
+        version_check()
+        ensure_hidden_config_migrated()
     run("nvflare")
 
 

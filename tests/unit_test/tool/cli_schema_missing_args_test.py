@@ -102,6 +102,20 @@ class TestSchemaWithMissingArgs:
         schema = json.loads(captured.out)
         assert schema["command"] == "nvflare recipe list"
 
+    def test_recipe_schema_bypasses_version_check(self, capsys):
+        """--schema should work even if the runtime version gate would reject normal CLI execution."""
+        with patch("sys.argv", ["nvflare", "recipe", "--schema"]):
+            from nvflare import cli
+
+            with patch("nvflare.cli.version_check", side_effect=RuntimeError("unsupported")):
+                with pytest.raises(SystemExit) as exc_info:
+                    cli.main()
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        schema = json.loads(captured.out)
+        assert schema["command"] == "nvflare recipe list"
+
     def test_schema_output_is_valid_json(self, capsys):
         """handle_schema_flag output is valid JSON with required top-level fields."""
         import argparse
