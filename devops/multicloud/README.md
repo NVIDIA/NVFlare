@@ -1,58 +1,64 @@
-# Multicloud Deployment for NVFlare on Kubernetes
+# Multicloud NVFlare Deployment
 
-Deploy NVFlare (1 server + 2 clients) across existing k8s clusters.
+YAML-driven deploy of one NVFlare server + N clients across existing
+Kubernetes clusters.
 
-- GCP GKE Autopilot: server + 1 client
-- AWS EKS Auto Mode: 1 client
+Shipped configs:
+- `gcp-server.yaml` — GCP server, GCP client, AWS client
+- `aws-server.yaml` — AWS server, GCP client, AWS client
+
+Cluster topology is defined in the YAML (`clouds:` + `participants:`);
+everything else comes from that file. Region / project / EKS cluster
+name are autoderived from each kubeconfig's current-context, so the
+YAML stays minimal.
 
 ## Prerequisites
 
 - Clusters created via `devops/gcp/gke/create_cluster.sh` and
-  `devops/aws/eks/create_cluster.sh` (sets up StorageClasses, EFS)
-- Docker image built from current branch and pushed to both registries
-- Kubeconfigs in `.tmp/kubeconfigs/`
+  `devops/aws/eks/create_cluster.sh` — each saves a kubeconfig under
+  `.tmp/kubeconfigs/<cloud>.yaml`.
+- NVFlare image pushed to both registries (GAR + ECR).
+- `helm`, `kubectl`, and the cloud CLIs on `$PATH`.
 
 ## Deploy
 
 ```bash
-python devops/multicloud/scripts/deploy.py up \
-  --gcp-image us-central1-docker.pkg.dev/<project>/nvflare/nvflare:<tag> \
-  --aws-image <account>.dkr.ecr.<region>.amazonaws.com/nvflare/nvflare:<tag>
+python devops/multicloud/scripts/deploy.py up
 ```
 
-Or with env vars:
+Default config is `gcp-server.yaml`; pass `--config devops/multicloud/aws-server.yaml` to switch topology. Image URLs come from the config (`clouds.<x>.image`).
 
-```bash
-GCP_IMAGE=<image> AWS_IMAGE=<image> python devops/multicloud/scripts/deploy.py up
-```
+Re-run after a failure — idempotent. Skips namespaces / PVCs / helm
+releases that already exist; always re-runs `nvflare provision` (fast).
 
-The script is **resumable** — re-run after a failure and it skips
-already-completed steps (namespaces, PVCs, helm releases).
-
-## Status
+## Inspect / tear down
 
 ```bash
 python devops/multicloud/scripts/deploy.py status
+python devops/multicloud/scripts/deploy.py down
+python devops/multicloud/scripts/deploy.py --dry-run up       # print commands, don't execute
 ```
 
-## Destroy
+## Flags
+
+| Flag | Env | Default | Applies to |
+|------|-----|---------|-----------|
+| `--config <path>` | — | `devops/multicloud/gcp-server.yaml` | all subcommands |
+| `--dry-run` | — | false | all subcommands |
+| `--server-ip` | `SERVER_IP` | auto-reserve | `up` |
+
+## Live dashboard
+
+`k8sview.py` renders a live pod / PVC / LB / events view across every
+participant in a config:
 
 ```bash
-python devops/multicloud/scripts/deploy.py down
+python devops/multicloud/scripts/k8sview.py --config devops/multicloud/gcp-server.yaml
 ```
 
-## Options
+Requires `rich` and `kubernetes` (`uv pip install rich kubernetes`).
 
-| Flag | Env var | Default | Description |
-|------|---------|---------|-------------|
-| `--gcp-image` | `GCP_IMAGE` | (required) | GCP container image |
-| `--aws-image` | `AWS_IMAGE` | (optional) | AWS container image (ECR) |
-| `--server-ip` | `GCP_SERVER_IP` | auto-reserve | Static IP for server |
-| `--gcp-project` | `GCP_PROJECT` | auto-detect | GCP project ID |
-| `--gcp-region` | `GCP_REGION` | us-central1 | GCP region |
-| `--force-provision` | | false | Re-provision even if output exists |
+## See also
 
-## Documentation
-
-- `devops/gcp/gke/README.md` — GKE cluster setup + NVFlare prerequisites
-- `devops/aws/eks/README.md` — EKS cluster setup + NVFlare prerequisites
+- `devops/gcp/gke/README.md` — GKE cluster setup
+- `devops/aws/eks/README.md` — EKS cluster setup + SELinux/ECR notes

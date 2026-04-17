@@ -62,6 +62,7 @@ class Participant:
     role: str  # "server" or "client"
     cloud: str
     launcher_class: str
+    image: str
     helm_overrides: list = field(default_factory=list)
     security_context: dict | None = None
     pending_timeout: int | None = None
@@ -149,6 +150,9 @@ def load_config(config_path: Path) -> DeployConfig:
         kubeconfig = merged.get("kubeconfig")
         if not kubeconfig:
             raise ValueError(f"{config_path}: participant {entry['name']} has no kubeconfig (set on cloud or entry)")
+        image = merged.get("image")
+        if not image:
+            raise ValueError(f"{config_path}: participant {entry['name']} has no image (set on cloud or entry)")
         kc_path = (config_path.parent / kubeconfig).resolve()
 
         participants.append(
@@ -159,6 +163,7 @@ def load_config(config_path: Path) -> DeployConfig:
                 role=role,
                 cloud=cloud,
                 launcher_class=LAUNCHER_FOR_ROLE[role],
+                image=image,
                 helm_overrides=list(merged.get("helm_overrides") or []),
                 security_context=merged.get("security_context"),
                 pending_timeout=merged.get("pending_timeout"),
@@ -489,7 +494,7 @@ def release_ip(
 # ---------------------------------------------------------------------------
 # Provision
 # ---------------------------------------------------------------------------
-def provision(server_ip: str, image: str, config: DeployConfig) -> Path:
+def provision(server_ip: str, config: DeployConfig) -> Path:
     print("Provisioning ...")
     if DRY_RUN:
         project_file = WORK_DIR / "project.yml"
@@ -497,10 +502,11 @@ def provision(server_ip: str, image: str, config: DeployConfig) -> Path:
         run(["nvflare", "provision", "-p", str(project_file), "-w", str(provision_dir)])
         return Path("<prod_dir>")
 
+    server = next(p for p in config.participants if p.role == "server")
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     project_text = PROJECT_TEMPLATE.read_text()
     project_text = project_text.replace("__SERVER_IP__", server_ip)
-    project_text = project_text.replace("__DOCKER_IMAGE__", image)
+    project_text = project_text.replace("__DOCKER_IMAGE__", server.image)
     project = yaml.safe_load(project_text)
 
     template_server = next(e for e in project["participants"] if e.get("type") == "server")
@@ -587,7 +593,6 @@ def deploy_participant(
     p: Participant,
     prod_dir: Path,
     server_ip: str | None = None,
-    aws_image: str | None = None,
     aws_server_alloc_id: str | None = None,
     aws_server_subnet: str | None = None,
 ):
@@ -717,15 +722,11 @@ def deploy_participant(
             for k, v in _flatten_set("securityContext", p.security_context):
                 helm_args += ["--set", f"{k}={v}"]
 
-        if p.cloud == "aws":
-            if not aws_image:
-                print("  WARNING: No --aws-image set. AWS client will use GCP image from values.yaml.")
-                print("           EKS cannot pull from GCP Artifact Registry without mirroring.")
-            elif ":" in aws_image:
-                repo, tag = aws_image.rsplit(":", 1)
-                helm_args += ["--set", f"image.repository={repo}", "--set", f"image.tag={tag}"]
-            else:
-                helm_args += ["--set", f"image.repository={aws_image}"]
+        if ":" in p.image:
+            repo, tag = p.image.rsplit(":", 1)
+            helm_args += ["--set", f"image.repository={repo}", "--set", f"image.tag={tag}"]
+        else:
+            helm_args += ["--set", f"image.repository={p.image}"]
 
         helm(p.kubeconfig, *helm_args)
 
@@ -814,14 +815,7 @@ def cmd_up(args):
     )
     save_state(state)
 
-    # Provision (skip if already done)
-    prod_dir = None
-    existing = list(WORK_DIR.glob("provision/*/prod_*"))
-    if existing and not args.force_provision and not DRY_RUN:
-        prod_dir = sorted(existing)[-1]
-        print(f"Reusing existing provision: {prod_dir}")
-    else:
-        prod_dir = provision(server_ip, args.gcp_image, config)
+    prod_dir = provision(server_ip, config)
 
     # Post-process resources.json
     print("Post-processing resources.json for K8sJobLauncher ...")
@@ -842,7 +836,6 @@ def cmd_up(args):
             p,
             prod_dir,
             server_ip=server_ip,
-            aws_image=args.aws_image,
             aws_server_alloc_id=aws_alloc_id,
             aws_server_subnet=aws_subnet,
         )
@@ -931,10 +924,7 @@ def main():
     sub = parser.add_subparsers(dest="command")
 
     up = sub.add_parser("up", help="Deploy server + clients")
-    up.add_argument("--gcp-image", default=os.environ.get("GCP_IMAGE", ""), help="GCP container image")
-    up.add_argument("--aws-image", default=os.environ.get("AWS_IMAGE", ""), help="AWS container image (ECR)")
-    up.add_argument("--server-ip", default=os.environ.get("GCP_SERVER_IP"), help="Static IP (omit to auto-reserve)")
-    up.add_argument("--force-provision", action="store_true", help="Re-provision even if output exists")
+    up.add_argument("--server-ip", default=os.environ.get("SERVER_IP"), help="Static IP (omit to auto-reserve)")
 
     sub.add_parser("down", help="Tear down everything")
     sub.add_parser("status", help="Show deployment status")

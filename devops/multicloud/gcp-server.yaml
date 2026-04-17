@@ -3,6 +3,7 @@ name: gcp-server
 clouds:
   gcp:
     kubeconfig: ../../.tmp/kubeconfigs/gcp.yaml
+    image: us-central1-docker.pkg.dev/nv-nvflare-20260312202153/nvflare/nvflare:pcnudde-dev
     helm_overrides: []
     pvc_config:
       nvfletc:  { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
@@ -10,6 +11,7 @@ clouds:
       nvfldata: { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
   aws:
     kubeconfig: ../../.tmp/kubeconfigs/aws.yaml
+    image: 637528030358.dkr.ecr.us-west-2.amazonaws.com/nvflare/nvflare:pcnudde-dev
     helm_overrides: []
     security_context: { seLinuxOptions: { type: spc_t } }
     pvc_config:
