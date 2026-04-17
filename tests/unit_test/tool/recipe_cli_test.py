@@ -45,7 +45,7 @@ def test_recipe_list_human_output_not_duplicated(monkeypatch, capsys):
     monkeypatch.setattr(cli_output, "_output_format", "txt")
     monkeypatch.setattr(
         "nvflare.tool.recipe.recipe_cli._load_catalog",
-        lambda framework=None: [{"name": "fedavg", "framework": "any", "description": "demo"}],
+        lambda framework=None: [{"name": "fedavg", "framework": "core", "description": "demo"}],
     )
 
     cmd_recipe_list(Namespace(framework=None))
@@ -150,6 +150,56 @@ def test_recipe_catalog_is_discovered_from_package_modules(monkeypatch):
             "framework": "pytorch",
             "module": "fake.recipes.fedavg",
             "class": "FakeRecipe",
+        }
+    ]
+
+
+def test_recipe_catalog_core_framework_is_not_special_catch_all(monkeypatch):
+    from nvflare.recipe.spec import Recipe
+    from nvflare.tool.recipe.recipe_cli import _load_catalog
+
+    class CoreRecipe(Recipe):
+        """Core recipe."""
+
+        def __init__(self):
+            pass
+
+    core_package = ModuleType("fake.core")
+    core_package.__path__ = ["fake/core"]
+
+    core_module = ModuleType("fake.core.fedavg")
+    CoreRecipe.__module__ = "fake.core.fedavg"
+    setattr(core_module, "CoreRecipe", CoreRecipe)
+
+    monkeypatch.setattr(
+        "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
+        [
+            {"package": "fake.core", "framework": "core"},
+            {"package": "fake.pt", "framework": "pytorch"},
+        ],
+    )
+
+    def fake_import_module(name):
+        if name == "fake.core":
+            return core_package
+        if name == "fake.core.fedavg":
+            return core_module
+        raise ModuleNotFoundError(name)
+
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli.importlib.import_module", fake_import_module)
+    monkeypatch.setattr(
+        "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
+        lambda path, prefix="": [(None, "fake.core.fedavg", False)],
+    )
+
+    assert _load_catalog(framework="pytorch") == []
+    assert _load_catalog(framework="core") == [
+        {
+            "name": "fedavg",
+            "description": "Core recipe.",
+            "framework": "core",
+            "module": "fake.core.fedavg",
+            "class": "CoreRecipe",
         }
     ]
 

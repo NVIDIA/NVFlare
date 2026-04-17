@@ -20,7 +20,7 @@ import sys
 from nvflare.tool.cli_output import output_usage_error
 
 _RECIPE_PACKAGE_ROOTS = [
-    {"package": "nvflare.recipe", "framework": "any"},
+    {"package": "nvflare.recipe", "framework": "core"},
     {"package": "nvflare.app_opt.pt.recipes", "framework": "pytorch"},
     {"package": "nvflare.app_opt.tf.recipes", "framework": "tensorflow"},
     {"package": "nvflare.app_opt.sklearn.recipes", "framework": "sklearn"},
@@ -49,7 +49,7 @@ def _framework_install_hint_text(framework: str = None) -> str:
 
 def _recipe_cli_name(module_name: str, framework: str) -> str:
     stem = module_name.rsplit(".", 1)[-1].replace("_", "-")
-    if framework == "any":
+    if framework == "core":
         return stem
     if framework == "pytorch":
         return f"{stem}-pt"
@@ -107,7 +107,7 @@ def _load_catalog(framework: str = None) -> list:
     results = []
     seen = set()
     for root in _RECIPE_PACKAGE_ROOTS:
-        if framework and root["framework"] not in (framework, "any"):
+        if framework and root["framework"] != framework:
             continue
         try:
             package = importlib.import_module(root["package"])
@@ -211,7 +211,7 @@ def def_recipe_parser(sub_cmd):
         "--framework",
         type=str,
         default=None,
-        choices=["any", "pytorch", "tensorflow", "sklearn", "xgboost"],
+        choices=["core", "pytorch", "tensorflow", "sklearn", "xgboost"],
         help="filter by framework",
     )
     list_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
