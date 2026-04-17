@@ -492,6 +492,24 @@ class TestCertSign:
             handle_cert_sign(args)
         assert exc_info.value.code == 1
 
+    def test_sign_invalid_csr_includes_parse_detail(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = _setup_ca(tmp_path)
+        bad_csr_path = str(tmp_path / "bad.csr")
+        with open(bad_csr_path, "wb") as f:
+            f.write(b"not a csr")
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=bad_csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "bad.csr" in captured.err
+        assert "INVALID_CSR" in captured.err
+        assert "Unable to load PEM file" in captured.err or "MismatchedTags" in captured.err
+
     def test_sign_csr_path_must_be_file(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         ca_dir = _setup_ca(tmp_path)

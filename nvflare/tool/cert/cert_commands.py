@@ -562,7 +562,7 @@ def handle_cert_sign(args):
     try:
         csr = x509.load_pem_x509_csr(csr_data, default_backend())
     except Exception as e:
-        output_error("INVALID_CSR", path=csr_path)
+        output_error("INVALID_CSR", path=csr_path, detail=str(e))
 
     if not csr.is_signature_valid:
         output_error("INVALID_CSR", path=csr_path)
