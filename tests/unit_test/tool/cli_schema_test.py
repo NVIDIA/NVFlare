@@ -271,7 +271,9 @@ class TestSchemaWithMissingRequiredArgs:
         monkeypatch.setattr(sys, "argv", ["nvflare", "preflight_check", "-p", "/nonexistent"])
         from nvflare.tool.preflight_check import check_packages
 
-        args = pytest.importorskip("argparse").Namespace(package_path="/nonexistent", schema=False)
+        args = pytest.importorskip("argparse").Namespace(
+            package_path="/nonexistent", schema=False, _raw_sub_command="preflight_check", _argv=sys.argv[1:]
+        )
         with patch("os.path.isdir", return_value=False):
             with pytest.raises(SystemExit):
                 check_packages(args)

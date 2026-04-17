@@ -19,8 +19,10 @@ import pytest
 
 
 def test_recipe_missing_subcommand_prints_help_then_error(capsys):
+    from nvflare.tool import cli_output
     from nvflare.tool.recipe.recipe_cli import def_recipe_parser, handle_recipe_cmd
 
+    cli_output._output_format = "txt"
     parser = ArgumentParser(prog="nvflare")
     subparsers = parser.add_subparsers(dest="sub_command")
     def_recipe_parser(subparsers)

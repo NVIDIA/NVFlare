@@ -254,7 +254,8 @@ class TestGetJobLogs:
             session.get_job_logs("job1", grep_pattern="CUDA out of memory")
         cmd = mock_cmd.call_args[0][0]
         assert "-g" in cmd
-        assert "'CUDA out of memory'" in cmd
+        assert "CUDA out of memory" in cmd
+        assert "'CUDA out of memory'" not in cmd
 
     def test_returns_logs_dict(self):
         session = _make_session()
