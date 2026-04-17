@@ -541,7 +541,7 @@ def find_admin_user_and_dir(startup_kit_dir: Optional[str] = None, target: Optio
 
 
 def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
-    from nvflare.fuel.flare_api.api_spec import InternalError, InvalidJobDefinition, NoConnection
+    from nvflare.fuel.flare_api.api_spec import AuthorizationError, InternalError, InvalidJobDefinition, NoConnection
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
 
     if not is_json_mode():
@@ -562,6 +562,9 @@ def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
         except InvalidJobDefinition as e:
             output_error("JOB_INVALID", detail=str(e))
             raise SystemExit(1)
+        except AuthorizationError as e:
+            output_error("AUTH_FAILED", exit_code=2, detail=str(e))
+            raise SystemExit(2)
         except InternalError as e:
             output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
             raise SystemExit(5)

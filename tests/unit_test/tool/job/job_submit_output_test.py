@@ -109,6 +109,24 @@ class TestJobSubmitOutput:
         assert data["error_code"] == "INTERNAL_ERROR"
         assert "ERROR_SYNTAX" in data["message"]
 
+    def test_internal_submit_job_authorization_error_maps_to_auth_failed(self, capsys):
+        from nvflare.fuel.flare_api.api_spec import AuthorizationError
+        from nvflare.tool.job.job_cli import internal_submit_job
+
+        fake_session = MagicMock()
+        fake_session.submit_job.side_effect = AuthorizationError("user not authorized for the action 'submit_job'")
+
+        with patch("nvflare.tool.job.job_cli.new_cli_session", return_value=fake_session):
+            with pytest.raises(SystemExit) as exc_info:
+                internal_submit_job("/tmp/startup", "admin@nvidia.com", "/tmp/job")
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "AUTH_FAILED"
+        assert "not authorized" in data["message"].lower()
+
     def test_internal_submit_job_forwards_all_study_literal(self):
         from nvflare.tool.job.job_cli import internal_submit_job
 
