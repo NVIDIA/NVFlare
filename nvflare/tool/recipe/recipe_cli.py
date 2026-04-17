@@ -211,7 +211,7 @@ def def_recipe_parser(sub_cmd):
         "--framework",
         type=str,
         default=None,
-        choices=["core", "pytorch", "tensorflow", "sklearn", "xgboost"],
+        choices=["pytorch", "tensorflow", "sklearn", "xgboost"],
         help="filter by framework",
     )
     list_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
