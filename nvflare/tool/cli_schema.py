@@ -59,7 +59,7 @@ def parser_to_schema(
         is_positional = not action.option_strings
         if is_positional:
             name = action.dest
-            required = action.nargs not in ("?", "*", argparse.OPTIONAL, argparse.ZERO_OR_MORE)
+            required = action.nargs not in (argparse.OPTIONAL, argparse.ZERO_OR_MORE)
         else:
             name = max(action.option_strings, key=len)
             required = bool(getattr(action, "required", False))

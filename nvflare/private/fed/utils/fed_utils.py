@@ -276,7 +276,7 @@ def get_scope_info():
             if privacy_manager.default_scope:
                 default_scope_name = privacy_manager.default_scope.name
         return scope_names, default_scope_name
-    except:
+    except Exception:
         return [], "processing_error"
 
 
