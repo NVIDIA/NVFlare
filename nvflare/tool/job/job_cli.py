@@ -561,13 +561,13 @@ def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
             job_id = sess.submit_job(temp_job_dir)
         except InvalidJobDefinition as e:
             output_error("JOB_INVALID", detail=str(e))
-            return
+            raise SystemExit(1)
         except InternalError as e:
             output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
-            return
+            raise SystemExit(5)
         except NoConnection as e:
             output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-            return
+            raise SystemExit(2)
         output_ok({"job_id": job_id})
     finally:
         sess.close()

@@ -19,6 +19,7 @@ from pyhocon import ConfigFactory as CF
 
 from nvflare.utils.cli_utils import (
     append_if_not_in_list,
+    backup_hidden_config_file,
     create_startup_kit_config,
     get_hidden_nvflare_config_path,
     get_hidden_nvflare_dir,
@@ -53,13 +54,15 @@ class TestCLIUtils:
                     """
                 )
                 config = create_startup_kit_config(
-                    nvflare_config=prev_conf, startup_kit_dir="/tmp/nvflare/poc/example_project/prod_00"
+                    nvflare_config=prev_conf,
+                    target="prod",
+                    startup_kit_dir="/tmp/nvflare/poc/example_project/prod_00",
                 )
 
                 assert "/tmp/nvflare/poc" == config.get("poc.workspace")
                 assert "/tmp/nvflare/poc/example_project/prod_00" == config.get("prod.startup_kit")
 
-                config = create_startup_kit_config(nvflare_config=prev_conf, startup_kit_dir="")
+                config = create_startup_kit_config(nvflare_config=prev_conf, target="prod", startup_kit_dir="")
 
                 assert config.get("prod.startup_kit", None) is None
 
@@ -156,6 +159,16 @@ poc_workspace {
         backup_path = hidden_dir / "config.conf.bak"
         assert backup_path.exists()
         assert backup_path.read_text().strip() == legacy_text
+
+    def test_backup_hidden_config_file_returns_none_when_source_missing(self, tmp_path):
+        hidden_dir = tmp_path / ".nvflare"
+        hidden_dir.mkdir()
+        config_path = hidden_dir / "config.conf"
+
+        backup_path = backup_hidden_config_file(str(config_path))
+
+        assert backup_path is None
+        assert not (hidden_dir / "config.conf.bak").exists()
 
     @pytest.mark.parametrize(
         "inputs, result", [(([], "a"), ["a"]), ((["a"], "a"), ["a"]), ((["a", "b"], "b"), ["a", "b"])]

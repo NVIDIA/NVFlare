@@ -189,19 +189,19 @@ def persist_hidden_config_migration(hidden_nvflare_config_file: str, migrated_co
     print_hidden_config_migration_notice(hidden_nvflare_config_file, backup_path)
 
 
-def backup_hidden_config_file(hidden_nvflare_config_file: str) -> str:
+def backup_hidden_config_file(hidden_nvflare_config_file: str) -> Optional[str]:
     backup_path = f"{hidden_nvflare_config_file}.bak"
     if os.path.exists(hidden_nvflare_config_file):
         shutil.copy2(hidden_nvflare_config_file, backup_path)
-    return backup_path
+        return backup_path
+    return None
 
 
-def print_hidden_config_migration_notice(hidden_nvflare_config_file: str, backup_path: str):
-    print(
-        f"Migrated {hidden_nvflare_config_file} to config version {CURRENT_CONFIG_VERSION}. "
-        f"Backup saved to {backup_path}.",
-        file=sys.stderr,
-    )
+def print_hidden_config_migration_notice(hidden_nvflare_config_file: str, backup_path: Optional[str]):
+    message = f"Migrated {hidden_nvflare_config_file} to config version {CURRENT_CONFIG_VERSION}."
+    if backup_path:
+        message += f" Backup saved to {backup_path}."
+    print(message, file=sys.stderr)
 
 
 def load_hidden_config() -> ConfigTree:
@@ -211,8 +211,8 @@ def load_hidden_config() -> ConfigTree:
 
 def create_startup_kit_config(
     nvflare_config: ConfigTree,
+    target: str,
     startup_kit_dir: Optional[str] = None,
-    target: str = TARGET_PROD,
 ) -> ConfigTree:
     """
     Args:

@@ -122,6 +122,23 @@ class TestJobSubmitOutput:
 
         assert new_session.call_args.kwargs["study"] == "all"
 
+    def test_internal_submit_job_exits_before_output_ok_when_output_error_is_mocked(self):
+        from nvflare.fuel.flare_api.api_spec import InvalidJobDefinition
+        from nvflare.tool.job.job_cli import internal_submit_job
+
+        fake_session = MagicMock()
+        fake_session.submit_job.side_effect = InvalidJobDefinition("bad job")
+
+        with patch("nvflare.tool.job.job_cli.new_cli_session", return_value=fake_session):
+            with patch("nvflare.tool.cli_output.output_error") as output_error:
+                with patch("nvflare.tool.cli_output.output_ok") as output_ok:
+                    with pytest.raises(SystemExit) as exc_info:
+                        internal_submit_job("/tmp/startup", "admin@nvidia.com", "/tmp/job")
+
+        assert exc_info.value.code == 1
+        output_error.assert_called_once()
+        output_ok.assert_not_called()
+
     def test_submit_parser_no_longer_accepts_wait_or_timeout(self):
         root = argparse.ArgumentParser()
         parser = def_job_cli_parser(root.add_subparsers(dest="sub_command"))["job"]
