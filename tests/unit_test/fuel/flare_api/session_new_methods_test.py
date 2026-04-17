@@ -335,35 +335,61 @@ class TestConfigureJobLog:
     def test_sends_dict_config_as_json(self):
         session = _make_session()
         import json
-        import shlex
 
         config = {"version": 1, "disable_existing_loggers": False}
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
             session.configure_job_log("job1", config)
         cmd = mock_cmd.call_args[0][0]
-        assert AdminCommandNames.CONFIGURE_JOB_LOG in cmd
-        assert "job1" in cmd
-        assert shlex.quote(json.dumps(config)) in cmd
+        assert split_to_args(cmd) == [
+            AdminCommandNames.CONFIGURE_JOB_LOG,
+            "job1",
+            "all",
+            json.dumps(config),
+        ]
 
     def test_uses_target_parameter(self):
         session = _make_session()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
             session.configure_job_log("job1", "DEBUG", target="site-1")
         cmd = mock_cmd.call_args[0][0]
-        assert f"{AdminCommandNames.CONFIGURE_JOB_LOG} job1 client site-1 DEBUG" == cmd
+        assert split_to_args(cmd) == [
+            AdminCommandNames.CONFIGURE_JOB_LOG,
+            "job1",
+            "client",
+            "site-1",
+            "DEBUG",
+        ]
 
     def test_site_named_client_is_treated_as_explicit_client(self):
         session = _make_session()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
             session.configure_job_log("job1", "DEBUG", target="client")
         cmd = mock_cmd.call_args[0][0]
-        assert f"{AdminCommandNames.CONFIGURE_JOB_LOG} job1 client client DEBUG" == cmd
+        assert split_to_args(cmd) == [
+            AdminCommandNames.CONFIGURE_JOB_LOG,
+            "job1",
+            "client",
+            "client",
+            "DEBUG",
+        ]
 
     def test_disables_meta_enforcement(self):
         session = _make_session()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
             session.configure_job_log("job1", "INFO")
         assert mock_cmd.call_args.kwargs["enforce_meta"] is False
+
+    def test_quotes_string_config_with_spaces(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.configure_job_log("job1", "/my workspace/log.conf")
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [
+            AdminCommandNames.CONFIGURE_JOB_LOG,
+            "job1",
+            "all",
+            "/my workspace/log.conf",
+        ]
 
 
 class TestConfigureSiteLog:
@@ -378,14 +404,16 @@ class TestConfigureSiteLog:
     def test_sends_dict_config_as_json(self):
         session = _make_session()
         import json
-        import shlex
 
         config = {"version": 1, "disable_existing_loggers": False}
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
             session.configure_site_log(config)
         cmd = mock_cmd.call_args[0][0]
-        assert AdminCommandNames.CONFIGURE_SITE_LOG in cmd
-        assert shlex.quote(json.dumps(config)) in cmd
+        assert split_to_args(cmd) == [
+            AdminCommandNames.CONFIGURE_SITE_LOG,
+            "all",
+            json.dumps(config),
+        ]
 
     def test_uses_target_parameter(self):
         session = _make_session()
@@ -399,6 +427,17 @@ class TestConfigureSiteLog:
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
             session.configure_site_log("WARNING")
         assert mock_cmd.call_args.kwargs["enforce_meta"] is False
+
+    def test_quotes_site_log_string_config_with_spaces(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.configure_site_log("/my workspace/log.conf", target="site-2")
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [
+            AdminCommandNames.CONFIGURE_SITE_LOG,
+            "site-2",
+            "/my workspace/log.conf",
+        ]
 
 
 class TestWaitForJob:

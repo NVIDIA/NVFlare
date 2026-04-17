@@ -958,19 +958,20 @@ class Session(SessionSpec):
         Returns: None
 
         """
-        import json as _json
-        import shlex as _shlex
-
         self._validate_job_id(job_id)
         if isinstance(config, dict):
-            config_str = _shlex.quote(_json.dumps(config))
+            config_str = json.dumps(config)
         else:
             config_str = str(config)
 
-        target_spec = target if target in ("all", "server") else f"client {target}"
-        self._do_command(
-            f"{AdminCommandNames.CONFIGURE_JOB_LOG} {job_id} {target_spec} {config_str}", enforce_meta=False
-        )
+        parts = [AdminCommandNames.CONFIGURE_JOB_LOG, job_id]
+        if target in ("all", "server"):
+            parts.append(target)
+        else:
+            parts.extend(["client", target])
+        parts.append(config_str)
+        command = join_args(parts)
+        self._do_command(command, enforce_meta=False)
 
     def configure_site_log(self, config, target: str = "all") -> None:
         """Configure site-level logging.
@@ -982,15 +983,13 @@ class Session(SessionSpec):
         Returns: None
 
         """
-        import json as _json
-        import shlex as _shlex
-
         if isinstance(config, dict):
-            config_str = _shlex.quote(_json.dumps(config))
+            config_str = json.dumps(config)
         else:
             config_str = str(config)
 
-        self._do_command(f"{AdminCommandNames.CONFIGURE_SITE_LOG} {target} {config_str}", enforce_meta=False)
+        command = join_args([AdminCommandNames.CONFIGURE_SITE_LOG, target, config_str])
+        self._do_command(command, enforce_meta=False)
 
     def wait_for_job(self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0) -> dict:
         """Block until job reaches a terminal state.
