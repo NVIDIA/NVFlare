@@ -429,7 +429,7 @@ def parse_args(prog_name: str):
         ns.poc_sub_cmd = sub_sub
         ns.system_sub_cmd = sub_sub
         ns.cert_sub_command = sub_sub
-        ns.recipe_sub_cmd = sub_sub
+        ns.recipe_sub_cmd = sub_sub or "list"
         ns.out_format = global_args.out_format
         ns.connect_timeout = global_args.connect_timeout
         ns.version = global_args.version

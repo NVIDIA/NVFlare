@@ -120,6 +120,8 @@ class TestJobMonitorOutput:
         data = json.loads(captured.out)
         assert data["status"] == "error"
         assert data["exit_code"] == 1
+        assert data["error_code"] == "JOB_FAILED"
+        assert "job logs" in data["hint"]
         assert data["data"]["status"] == "FAILED"
 
     def test_aborted_outputs_error_envelope_exits_1(self, capsys):
@@ -135,6 +137,8 @@ class TestJobMonitorOutput:
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["status"] == "error"
+        assert data["error_code"] == "JOB_ABORTED"
+        assert "job meta" in data["hint"]
         assert data["data"]["status"] == "ABORTED"
 
     def test_abandoned_exits_1(self, capsys):
@@ -149,6 +153,7 @@ class TestJobMonitorOutput:
 
         data = json.loads(capsys.readouterr().out)
         assert data["status"] == "error"
+        assert data["error_code"] == "JOB_ABANDONED"
         assert data["data"]["status"] == "ABANDONED"
 
     def test_finished_exception_exits_1(self, capsys):
@@ -163,6 +168,7 @@ class TestJobMonitorOutput:
 
         data = json.loads(capsys.readouterr().out)
         assert data["status"] == "error"
+        assert data["error_code"] == "JOB_FINISHED_EXCEPTION"
         assert data["data"]["status"] == "FINISHED_EXCEPTION"
 
     # ------------------------------------------------------------------

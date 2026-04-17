@@ -93,6 +93,15 @@ class TestSchemaWithMissingArgs:
         schema = json.loads(captured.out)
         assert schema["command"] == "nvflare system shutdown"
 
+    def test_recipe_schema_defaults_to_list_subcommand(self, capsys):
+        """nvflare recipe --schema should use the default list subcommand in fast-path parsing."""
+        exit_code = self._run_schema(["nvflare", "recipe", "--schema"])
+        assert exit_code == 0
+
+        captured = capsys.readouterr()
+        schema = json.loads(captured.out)
+        assert schema["command"] == "nvflare recipe list"
+
     def test_schema_output_is_valid_json(self, capsys):
         """handle_schema_flag output is valid JSON with required top-level fields."""
         import argparse

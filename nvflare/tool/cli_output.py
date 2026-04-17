@@ -129,7 +129,13 @@ def output(data: Any, fmt: Optional[str]) -> None:
         _render_table(data)
 
 
-def output_ok(data: Any, exit_code: int = 0, status: str = "ok") -> None:
+def output_ok(
+    data: Any,
+    exit_code: int = 0,
+    status: str = "ok",
+    error_code: str = None,
+    hint: str = None,
+) -> None:
     """Print command success output.
 
     The stable envelope contract only defines status values "ok" and "error".
@@ -137,7 +143,11 @@ def output_ok(data: Any, exit_code: int = 0, status: str = "ok") -> None:
     if status not in _VALID_OUTPUT_STATUS:
         raise ValueError(f"invalid output status '{status}'")
     if _is_json_mode():
-        print(json.dumps({"schema_version": SCHEMA_VERSION, "status": status, "exit_code": exit_code, "data": data}))
+        payload = {"schema_version": SCHEMA_VERSION, "status": status, "exit_code": exit_code, "data": data}
+        if status == "error":
+            payload["error_code"] = error_code or "ERROR"
+            payload["hint"] = hint or ""
+        print(json.dumps(payload))
     else:
         _render_table(data)
     if exit_code != 0:

@@ -138,6 +138,8 @@ class TestJobLogHuman:
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert envelope["error_code"] == "JOB_NOT_RUNNING"
+        assert "abc123" in envelope["message"]
+        assert "{job_id}" not in envelope["message"]
 
     def test_log_job_not_running_aborted_exits_1(self, capsys):
         """meta status 'ABORTED' → JOB_NOT_RUNNING error, exit 1."""
@@ -154,6 +156,8 @@ class TestJobLogHuman:
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert envelope["error_code"] == "JOB_NOT_RUNNING"
+        assert "abc123" in envelope["message"]
+        assert "{job_id}" not in envelope["message"]
 
     def test_log_job_not_found_exits_1(self, capsys):
         """JobNotFound → JOB_NOT_FOUND, exit 1."""

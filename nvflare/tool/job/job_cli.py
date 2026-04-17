@@ -1586,7 +1586,26 @@ def cmd_job_monitor(cmd_args):
         data["stats_raw"] = cb_state.get("last_stats_raw")
 
     if status in ("FAILED", "FINISHED_EXCEPTION", "ABORTED", "ABANDONED"):
-        output_ok(data, exit_code=1, status="error")
+        error_envelopes = {
+            "FAILED": (
+                "JOB_FAILED",
+                "Use 'nvflare job logs <job_id>' and 'nvflare job meta <job_id>' to inspect the failure.",
+            ),
+            "FINISHED_EXCEPTION": (
+                "JOB_FINISHED_EXCEPTION",
+                "Use 'nvflare job logs <job_id>' and 'nvflare job meta <job_id>' to inspect the failure.",
+            ),
+            "ABORTED": (
+                "JOB_ABORTED",
+                "Use 'nvflare job meta <job_id>' to see abort details.",
+            ),
+            "ABANDONED": (
+                "JOB_ABANDONED",
+                "Use 'nvflare job meta <job_id>' to inspect the abandonment details.",
+            ),
+        }
+        error_code, hint = error_envelopes[status]
+        output_ok(data, exit_code=1, status="error", error_code=error_code, hint=hint)
     else:
         output_ok(data)
 
@@ -1628,6 +1647,7 @@ def cmd_job_log(cmd_args):
                 output_error(
                     "JOB_NOT_RUNNING",
                     exit_code=1,
+                    job_id=cmd_args.job_id,
                     detail=f"job is in terminal state: {job_status}",
                 )
                 return
