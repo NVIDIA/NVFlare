@@ -57,7 +57,7 @@ class InternalError(Exception):
     pass
 
 
-class JobTimeout(InternalError):
+class JobTimeout(Exception):
     pass
 
 

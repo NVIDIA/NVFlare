@@ -481,6 +481,11 @@ class TestConfigureSiteLog:
 
 
 class TestWaitForJob:
+    def test_job_timeout_is_not_internal_error(self):
+        from nvflare.fuel.flare_api.api_spec import InternalError, JobTimeout
+
+        assert not issubclass(JobTimeout, InternalError)
+
     def test_returns_job_meta_on_finish(self):
         session = _make_session()
         job_meta = {"status": "FINISHED_OK", "id": "job1"}
