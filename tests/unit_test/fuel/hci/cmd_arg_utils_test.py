@@ -25,13 +25,13 @@ class TestCmdArgUtils:
         assert args == ["submit_job", "/tmp/nvflare/o'connor_job"]
 
     def test_parse_command_line_supports_single_quoted_path_with_props(self):
-        line, args, props = parse_command_line("submit_job '/tmp/nvflare/my job' #format=csv")
+        line, args, props = parse_command_line("submit_job '/tmp/nvflare/my job' #test_prop=value")
         assert line == "submit_job '/tmp/nvflare/my job'"
         assert args == ["submit_job", "/tmp/nvflare/my job"]
-        assert props == "format=csv"
+        assert props == "test_prop=value"
 
     def test_parse_command_line_keeps_unquoted_props_behavior(self):
-        line, args, props = parse_command_line("list_job #format=csv")
+        line, args, props = parse_command_line("list_job #test_prop=value")
         assert line == "list_job"
         assert args == ["list_job"]
-        assert props == "format=csv"
+        assert props == "test_prop=value"
