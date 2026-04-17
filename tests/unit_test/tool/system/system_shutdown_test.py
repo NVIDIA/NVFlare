@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import json
 from unittest.mock import MagicMock, patch
 
@@ -28,7 +29,7 @@ class TestSystemShutdown:
     def json_mode(self, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
 
-    def _make_args(self, target="all", client_names=None, force=False, output="json"):
+    def _make_args(self, target="server", client_names=None, force=False, output="json"):
         args = MagicMock()
         args.target = target
         args.client_names = client_names or []
@@ -131,3 +132,12 @@ class TestSystemShutdown:
         with patch("nvflare.tool.system.system_cli._get_system_session", return_value=mock_sess):
             with pytest.raises(NoConnection):
                 cmd_system_shutdown(args)
+
+    def test_shutdown_parser_rejects_client_target(self):
+        from nvflare.tool.system.system_cli import def_system_cli_parser
+
+        parser = argparse.ArgumentParser(prog="nvflare system")
+        def_system_cli_parser(parser)
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["shutdown", "client", "--force"])

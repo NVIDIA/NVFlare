@@ -67,19 +67,17 @@ def def_system_cli_parser(system_parser):
     _system_sub_cmd_parsers[CMD_SYSTEM_RESOURCES] = p
 
     # shutdown
-    p = sub.add_parser(CMD_SYSTEM_SHUTDOWN, help="shut down server, client(s), or all")
+    p = sub.add_parser(CMD_SYSTEM_SHUTDOWN, help="shut down the FL server")
     _add_system_connection_args(p)
-    p.add_argument("target", choices=["server", "client", "all"])
-    p.add_argument("client_names", nargs="*", default=[])
+    p.add_argument("target", choices=["server"])
     p.add_argument("--force", action="store_true")
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_SHUTDOWN] = p
 
     # restart
-    p = sub.add_parser(CMD_SYSTEM_RESTART, help="restart server, client(s), or all")
+    p = sub.add_parser(CMD_SYSTEM_RESTART, help="restart the FL server")
     _add_system_connection_args(p)
-    p.add_argument("target", choices=["server", "client", "all"])
-    p.add_argument("client_names", nargs="*", default=[])
+    p.add_argument("target", choices=["server"])
     p.add_argument("--force", action="store_true")
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_RESTART] = p
@@ -349,18 +347,17 @@ def cmd_system_shutdown(args):
     handle_schema_flag(
         _system_sub_cmd_parsers.get(CMD_SYSTEM_SHUTDOWN),
         "nvflare system shutdown",
-        ["nvflare system shutdown all --force", "nvflare system shutdown server --force"],
+        ["nvflare system shutdown server --force"],
         sys.argv[1:],
     )
 
-    target = getattr(args, "target", "all")
-    client_names = getattr(args, "client_names", [])
+    target = getattr(args, "target", "server")
 
     _confirm_or_force(f"Really shutdown {target}?", args)
 
     try:
         with _system_session(args) as sess:
-            result = sess.shutdown(target, client_names if client_names else None)
+            result = sess.shutdown(target)
     except (AuthenticationError, NoConnection):
         raise
     except Exception as e:
@@ -376,18 +373,17 @@ def cmd_system_restart(args):
     handle_schema_flag(
         _system_sub_cmd_parsers.get(CMD_SYSTEM_RESTART),
         "nvflare system restart",
-        ["nvflare system restart all --force", "nvflare system restart client --force"],
+        ["nvflare system restart server --force"],
         sys.argv[1:],
     )
 
-    target = getattr(args, "target", "all")
-    client_names = getattr(args, "client_names", [])
+    target = getattr(args, "target", "server")
 
     _confirm_or_force(f"Really restart {target}?", args)
 
     try:
         with _system_session(args) as sess:
-            result = sess.restart(target, client_names if client_names else None)
+            result = sess.restart(target)
     except (AuthenticationError, NoConnection):
         raise
     except Exception as e:

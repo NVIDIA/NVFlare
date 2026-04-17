@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import json
 from unittest.mock import MagicMock, patch
 
@@ -28,7 +29,7 @@ class TestSystemRestart:
     def json_mode(self, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
 
-    def _make_args(self, target="all", client_names=None, force=False):
+    def _make_args(self, target="server", client_names=None, force=False):
         args = MagicMock()
         args.target = target
         args.client_names = client_names or []
@@ -53,7 +54,7 @@ class TestSystemRestart:
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
         assert data["data"]["result"] == "restart initiated"
-        assert data["data"]["target"] == "all"
+        assert data["data"]["target"] == "server"
 
     def test_restart_non_interactive_without_force_exits_4(self):
         """Non-interactive mode without --force exits with code 4."""
@@ -117,3 +118,12 @@ class TestSystemRestart:
         with patch("nvflare.tool.system.system_cli._get_system_session", return_value=mock_sess):
             with pytest.raises(NoConnection):
                 cmd_system_restart(args)
+
+    def test_restart_parser_rejects_all_target(self):
+        from nvflare.tool.system.system_cli import def_system_cli_parser
+
+        parser = argparse.ArgumentParser(prog="nvflare system")
+        def_system_cli_parser(parser)
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["restart", "all", "--force"])

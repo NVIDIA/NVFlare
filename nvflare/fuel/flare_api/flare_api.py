@@ -502,52 +502,43 @@ class Session(SessionSpec):
         return meta.get(MetaKey.CLIENT_STATUS, None)
 
     def restart(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
-        """Restart specified system target(s).
+        """Restart the FL server.
 
         Args:
-            target_type (str): what system target (server, client, or all) to restart
-            client_names (List[str]): clients to be restarted if target_type is client. If not specified, all clients.
+            target_type (str): must be ``server``
+            client_names (List[str]): unused; retained for signature compatibility
 
         Returns: a dict that contains detailed info about the restart request:
             status - the overall status of the result.
-            server_status - whether the server is restarted successfully - only if target_type is "all" or "server".
-            client_status - a dict (keyed on client name) that specifies status of each client - only if target_type
-            is "all" or "client".
+            server_status - whether the server is restarted successfully.
 
         """
-        if target_type not in _VALID_TARGET_TYPES:
-            raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
+        if target_type != TargetType.SERVER:
+            raise ValueError("restart only supports target_type 'server'")
 
         parts = [AdminCommandNames.RESTART, target_type]
-        if target_type == TargetType.CLIENT and client_names:
-            processed_targets_str = process_targets_into_str(client_names)
-            parts.append(processed_targets_str)
 
         command = " ".join(parts)
         result = self._do_command(command)
         return result[ResultKey.META]
 
     def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None) -> dict:
-        """Shut down specified system target(s).
+        """Shut down the FL server.
 
         Args:
-            target_type: what system target (server, client, or all) to shut down
-            client_names: clients to be shut down if target_type is client. If not specified, all clients.
+            target_type: must be ``server``
+            client_names: unused; retained for signature compatibility
 
         Returns: a dict that contains detailed info about the shutdown request.
         """
-        if target_type not in _VALID_TARGET_TYPES:
-            raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
+        if target_type != TargetType.SERVER:
+            raise ValueError("shutdown only supports target_type 'server'")
 
         parts = [AdminCommandNames.SHUTDOWN, target_type]
-        if target_type == TargetType.CLIENT and client_names:
-            processed_targets_str = process_targets_into_str(client_names)
-            parts.append(processed_targets_str)
 
         command = " ".join(parts)
         result = self._do_command(command)
-        if target_type in [TargetType.ALL, TargetType.SERVER]:
-            self.close()
+        self.close()
         return result[ResultKey.META]
 
     def set_timeout(self, value: float):
