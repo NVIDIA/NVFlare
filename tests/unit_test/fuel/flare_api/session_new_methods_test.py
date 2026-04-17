@@ -454,10 +454,12 @@ class TestWaitForJob:
 
     def test_raises_timeout_error_on_timeout(self):
         session = _make_session()
+        from nvflare.fuel.flare_api.api_spec import JobTimeout
+
         with patch.object(
             session,
             "monitor_job_and_return_job_meta",
             return_value=(MonitorReturnCode.TIMEOUT, None),
         ):
-            with pytest.raises(TimeoutError):
+            with pytest.raises(JobTimeout):
                 session.wait_for_job("job1", timeout=5.0)

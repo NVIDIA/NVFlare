@@ -48,6 +48,7 @@ from .api_spec import (
     JobNotDone,
     JobNotFound,
     JobNotRunning,
+    JobTimeout,
     MonitorReturnCode,
     NoClientsAvailable,
     NoConnection,
@@ -1001,12 +1002,12 @@ class Session(SessionSpec):
 
         Returns: final job meta dict
 
-        Raises: TimeoutError if timeout is exceeded before job finishes
+        Raises: JobTimeout if timeout is exceeded before job finishes
 
         """
         rc, job_meta = self.monitor_job_and_return_job_meta(job_id, timeout=timeout, poll_interval=poll_interval)
         if rc == MonitorReturnCode.TIMEOUT:
-            raise TimeoutError(f"job {job_id} did not finish within {timeout}s")
+            raise JobTimeout(f"job {job_id} did not finish within {timeout}s")
         return job_meta
 
     def do_app_command(self, job_id: str, topic: str, cmd_data) -> dict:

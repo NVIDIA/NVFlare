@@ -57,6 +57,10 @@ class InternalError(Exception):
     pass
 
 
+class JobTimeout(InternalError):
+    pass
+
+
 class AuthenticationError(Exception):
     def __init__(self, message="", auth_code=None):
         super().__init__(message)
@@ -603,6 +607,18 @@ class SessionSpec(ABC):
             targets: list of client names if target type is "client". All clients if not specified.
 
         Returns: a dict with version information per site
+
+        """
+        pass
+
+    @abstractmethod
+    def remove_client(self, client_name: str) -> None:
+        """Remove a connected client from the system.
+
+        Args:
+            client_name: name of the client to remove
+
+        Returns: None
 
         """
         pass
