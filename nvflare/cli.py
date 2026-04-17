@@ -390,7 +390,7 @@ def _normalize_global_args(argv, global_parser):
 def parse_args(prog_name: str):
     global_parser = _build_global_arg_parser()
     normalized_argv = _normalize_global_args(sys.argv[1:], global_parser)
-    global_args, _ = global_parser.parse_known_args(normalized_argv)
+    global_args, remaining_after_global = global_parser.parse_known_args(normalized_argv)
     _parser = argparse.ArgumentParser(description=prog_name, parents=[global_parser])
     sub_cmd = _parser.add_subparsers(title="commands", metavar="", dest="sub_command")
     sub_cmd_parsers = {}
@@ -417,7 +417,7 @@ def parse_args(prog_name: str):
         # validation failures. Build just enough namespace to route to the handler;
         # the handler calls handle_schema_flag() as its first line and exits before
         # accessing any command-specific args.
-        positionals = [a for a in normalized_argv if not a.startswith("-")]
+        positionals = [a for a in remaining_after_global if not a.startswith("-")]
         ns = argparse.Namespace()
         raw_cmd = positionals[0] if positionals else None
         ns._raw_sub_command = raw_cmd

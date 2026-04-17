@@ -102,6 +102,14 @@ class TestSchemaWithMissingArgs:
         schema = json.loads(captured.out)
         assert schema["command"] == "nvflare recipe list"
 
+    def test_recipe_schema_ignores_space_separated_global_flag_values(self, capsys):
+        exit_code = self._run_schema(["nvflare", "--out-format", "json", "recipe", "--schema"])
+        assert exit_code == 0
+
+        captured = capsys.readouterr()
+        schema = json.loads(captured.out)
+        assert schema["command"] == "nvflare recipe list"
+
     def test_recipe_schema_bypasses_version_check(self, capsys):
         """--schema should work even if the runtime version gate would reject normal CLI execution."""
         with patch("sys.argv", ["nvflare", "recipe", "--schema"]):
