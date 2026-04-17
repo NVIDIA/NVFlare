@@ -1,0 +1,80 @@
+{
+    "format_version": 2,
+    "executors": [
+        {
+            "tasks": [
+                "*"
+            ],
+            "executor": {
+                "path": "nvflare.app_opt.pt.client_api_launcher_executor.PTClientAPILauncherExecutor",
+                "args": {
+                    "pipe_id": "pipe",
+                    "launcher_id": "launcher",
+                    "max_resends": null
+                }
+            }
+        }
+    ],
+    "components": [
+        {
+            "id": "event_to_fed",
+            "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
+            "args": {
+                "events_to_convert": [
+                    "analytix_log_stats"
+                ]
+            }
+        },
+        {
+            "id": "pipe",
+            "path": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
+            "args": {
+                "mode": "PASSIVE",
+                "site_name": "{SITE_NAME}",
+                "token": "{JOB_ID}",
+                "root_url": "{CP_URL}",
+                "secure_mode": "{SECURE_MODE}",
+                "workspace_dir": "{WORKSPACE}"
+            }
+        },
+        {
+            "id": "launcher",
+            "path": "nvflare.app_common.launchers.subprocess_launcher.SubprocessLauncher",
+            "args": {
+                "script": "python3 -m torch.distributed.run --nnodes=1 --nproc_per_node=2 --master_port=7777 custom/client.py "
+            }
+        },
+        {
+            "id": "metrics_pipe",
+            "path": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
+            "args": {
+                "mode": "PASSIVE",
+                "site_name": "{SITE_NAME}",
+                "token": "{JOB_ID}",
+                "root_url": "{CP_URL}",
+                "secure_mode": "{SECURE_MODE}",
+                "workspace_dir": "{WORKSPACE}"
+            }
+        },
+        {
+            "id": "metric_relay",
+            "path": "nvflare.app_common.widgets.metric_relay.MetricRelay",
+            "args": {
+                "pipe_id": "metrics_pipe",
+                "heartbeat_timeout": 0,
+                "event_type": "fed.analytix_log_stats"
+            }
+        },
+        {
+            "id": "config_preparer",
+            "path": "nvflare.app_common.widgets.external_configurator.ExternalConfigurator",
+            "args": {
+                "component_ids": [
+                    "metric_relay"
+                ]
+            }
+        }
+    ],
+    "task_data_filters": [],
+    "task_result_filters": []
+}

@@ -106,6 +106,27 @@ def generate_server_command(fl_ctx) -> str:
     return f"{sys.executable} {args_str}"
 
 
+_LAUNCHER_MODE_KEYS = {"process", "docker", "k8s"}
+
+
+def get_launcher_resource_spec(job_meta, site_name, mode):
+    """Extract the resource spec for a site for a specific launcher mode.
+
+    New nested format: resource_spec[site][mode] = {num_of_gpus: ..., shm_size: ..., ...}
+    Legacy flat format: resource_spec[site] = {num_of_gpus: ...} — treated as process mode for
+    backward compatibility; Docker and K8s modes receive an empty spec.
+
+    Returns a dict for the given mode, or an empty dict if not specified.
+    """
+    resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
+    site_spec = resource_spec.get(site_name) or {}
+    if any(k in site_spec for k in _LAUNCHER_MODE_KEYS):
+        return site_spec.get(mode, {})
+    # Legacy flat format — treat as process only
+    return site_spec if mode == "process" else {}
+
+
+# TODO: remove in follow-up PR once K8s launcher is updated to use get_launcher_resource_spec
 def extract_job_image(job_meta, site_name):
     deploy_map = job_meta.get(JobMetaKey.DEPLOY_MAP, {})
     fallback = None

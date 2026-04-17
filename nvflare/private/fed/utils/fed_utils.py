@@ -523,6 +523,12 @@ def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
         job_launcher = job_launcher_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
         if not (job_launcher and isinstance(job_launcher, list)):
             raise RuntimeError(f"There's no job launcher can handle this job: {job_meta}.")
+        if len(job_launcher) != 1:
+            launcher_types = [type(x).__name__ for x in job_launcher]
+            raise RuntimeError(
+                f"Exactly one job launcher must be configured for this site, but found {len(job_launcher)}: "
+                f"{launcher_types}."
+            )
 
     launcher = job_launcher[0]
     if not isinstance(launcher, JobLauncherSpec):
