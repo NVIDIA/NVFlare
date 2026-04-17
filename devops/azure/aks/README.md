@@ -30,7 +30,7 @@ az aks install-cli
 
 ## Quick Start
 
-Run these commands from the `tests/tools/azure/aks` directory.
+Run these commands from the `devops/azure/aks` directory.
 
 Create the AKS Automatic cluster and fetch credentials:
 

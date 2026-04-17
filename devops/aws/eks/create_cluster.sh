@@ -12,7 +12,7 @@ ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 eksctl create cluster -f "${SCRIPT_DIR}/cluster.yaml"
 
 # Save kubeconfig for multicloud deploy scripts
-REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../../../.." && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../../.." && pwd)"
 mkdir -p "${REPO_ROOT}/.tmp/kubeconfigs"
 aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${REGION}" \
   --kubeconfig "${REPO_ROOT}/.tmp/kubeconfigs/aws.yaml"

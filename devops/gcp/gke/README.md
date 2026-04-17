@@ -39,7 +39,7 @@ gke-gcloud-auth-plugin --version
 
 ## Quick Start
 
-Run these commands from the `tests/tools/gcp/gke` directory.
+Run these commands from the `devops/gcp/gke` directory.
 
 Create the GKE Autopilot cluster and fetch credentials:
 
@@ -149,7 +149,7 @@ gcloud compute addresses create <name> --region=<region> --project=<project>
 gcloud compute addresses describe <name> --region=<region> --format="value(address)"
 ```
 
-If you use `tests/tools/multicloud/scripts/deploy.py up`, it can auto-reserve the server IP for you. This step is only needed for manual Helm installs.
+If you use `devops/multicloud/scripts/deploy.py up`, it can auto-reserve the server IP for you. This step is only needed for manual Helm installs.
 
 ### Helm install overrides for Autopilot
 

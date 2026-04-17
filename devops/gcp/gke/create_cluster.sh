@@ -51,7 +51,7 @@ credentials_cmd=(
 "${credentials_cmd[@]}"
 
 # Save kubeconfig for multicloud deploy scripts
-REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../../../.." && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../../.." && pwd)"
 mkdir -p "${REPO_ROOT}/.tmp/kubeconfigs"
 KUBECONFIG="${REPO_ROOT}/.tmp/kubeconfigs/gcp.yaml" "${credentials_cmd[@]}"
 echo "Kubeconfig saved to .tmp/kubeconfigs/gcp.yaml"

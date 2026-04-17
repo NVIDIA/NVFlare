@@ -1,15 +1,15 @@
-name: aws-server
+name: gcp-server
 
 clouds:
   gcp:
-    kubeconfig: ../../../.tmp/kubeconfigs/gcp.yaml
+    kubeconfig: ../../.tmp/kubeconfigs/gcp.yaml
     helm_overrides: []
     pvc_config:
       nvfletc:  { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
       nvflws:   { sc: filestore-rwx, access: ReadWriteMany,  size: 1Ti }
       nvfldata: { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
   aws:
-    kubeconfig: ../../../.tmp/kubeconfigs/aws.yaml
+    kubeconfig: ../../.tmp/kubeconfigs/aws.yaml
     helm_overrides: []
     security_context: { seLinuxOptions: { type: spc_t } }
     pvc_config:
@@ -18,6 +18,6 @@ clouds:
       nvfldata: { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }
 
 participants:
-  - { name: aws-server,   cloud: aws, namespace: nvflare-server,   role: server }
+  - { name: gcp-server,   cloud: gcp, namespace: nvflare-server,   role: server }
   - { name: gcp-client-1, cloud: gcp, namespace: nvflare-client-1, role: client }
   - { name: aws-client-2, cloud: aws, namespace: nvflare-client-2, role: client }

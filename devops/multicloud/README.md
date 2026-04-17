@@ -7,15 +7,15 @@ Deploy NVFlare (1 server + 2 clients) across existing k8s clusters.
 
 ## Prerequisites
 
-- Clusters created via `tests/tools/gcp/gke/create_cluster.sh` and
-  `tests/tools/aws/eks/create_cluster.sh` (sets up StorageClasses, EFS)
+- Clusters created via `devops/gcp/gke/create_cluster.sh` and
+  `devops/aws/eks/create_cluster.sh` (sets up StorageClasses, EFS)
 - Docker image built from current branch and pushed to both registries
 - Kubeconfigs in `.tmp/kubeconfigs/`
 
 ## Deploy
 
 ```bash
-python tests/tools/multicloud/scripts/deploy.py up \
+python devops/multicloud/scripts/deploy.py up \
   --gcp-image us-central1-docker.pkg.dev/<project>/nvflare/nvflare:<tag> \
   --aws-image <account>.dkr.ecr.<region>.amazonaws.com/nvflare/nvflare:<tag>
 ```
@@ -23,7 +23,7 @@ python tests/tools/multicloud/scripts/deploy.py up \
 Or with env vars:
 
 ```bash
-GCP_IMAGE=<image> AWS_IMAGE=<image> python tests/tools/multicloud/scripts/deploy.py up
+GCP_IMAGE=<image> AWS_IMAGE=<image> python devops/multicloud/scripts/deploy.py up
 ```
 
 The script is **resumable** — re-run after a failure and it skips
@@ -32,13 +32,13 @@ already-completed steps (namespaces, PVCs, helm releases).
 ## Status
 
 ```bash
-python tests/tools/multicloud/scripts/deploy.py status
+python devops/multicloud/scripts/deploy.py status
 ```
 
 ## Destroy
 
 ```bash
-python tests/tools/multicloud/scripts/deploy.py down
+python devops/multicloud/scripts/deploy.py down
 ```
 
 ## Options
@@ -54,8 +54,8 @@ python tests/tools/multicloud/scripts/deploy.py down
 
 ## Documentation
 
-- `tests/tools/gcp/gke/README.md` — GKE cluster setup + NVFlare prerequisites
-- `tests/tools/aws/eks/README.md` — EKS cluster setup + NVFlare prerequisites
+- `devops/gcp/gke/README.md` — GKE cluster setup + NVFlare prerequisites
+- `devops/aws/eks/README.md` — EKS cluster setup + NVFlare prerequisites
 - `BUGS.md` — issues found and resolution status
 - `DEPLOY_NOTES.md` — operational notes per cloud
 - `RECOMMENDATIONS.md` — what to fix in core vs deploy tooling

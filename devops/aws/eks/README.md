@@ -22,7 +22,7 @@ export AWS_PROFILE=my-sso-profile
 
 ## Quick Start
 
-Run these commands from the `tests/tools/aws/eks` directory.
+Run these commands from the `devops/aws/eks` directory.
 
 Edit `cluster.yaml` if you want a different cluster name or region.
 

@@ -45,7 +45,7 @@ LAUNCHER_FOR_ROLE = {
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 TOOL_DIR = SCRIPT_DIR.parent
-REPO_ROOT = TOOL_DIR.parents[2]
+REPO_ROOT = TOOL_DIR.parents[1]
 WORK_DIR = TOOL_DIR / ".work"
 STATE_FILE = WORK_DIR / "state.json"
 PROJECT_TEMPLATE = TOOL_DIR / "project.yml"
