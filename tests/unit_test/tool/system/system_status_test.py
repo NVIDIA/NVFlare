@@ -104,6 +104,23 @@ class TestSystemStatus:
         data = json.loads(captured.out)
         assert data["hint"] == "Start the server or verify the admin startup kit endpoint."
 
+    def test_status_connection_failed_does_not_fall_through_when_error_output_mocked(self):
+        from nvflare.tool.system.system_cli import cmd_system_status
+
+        args = self._make_args()
+        mocked_output = MagicMock()
+        mocked_render = MagicMock()
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", side_effect=NoConnection("connection error")):
+            with patch("nvflare.tool.system.system_cli.output_error_message", mocked_output):
+                with patch("nvflare.tool.system.system_cli._output_system_status", mocked_render):
+                    with pytest.raises(SystemExit) as exc_info:
+                        cmd_system_status(args)
+
+        assert exc_info.value.code == 2
+        mocked_output.assert_called_once()
+        mocked_render.assert_not_called()
+
     def test_status_unexpected_exception_maps_to_internal_error(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_status
 

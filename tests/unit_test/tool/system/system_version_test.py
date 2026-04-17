@@ -210,6 +210,24 @@ class TestSystemVersion:
         assert "{site}" not in envelope["message"]
         assert "nonexistent" in envelope["message"]
 
+    def test_version_site_not_found_does_not_fall_through_when_error_output_mocked(self):
+        from nvflare.tool.system.system_cli import cmd_system_version
+
+        mock_sess = _make_session(client_names=["site-1"])
+        mocked_output = MagicMock()
+        mocked_render = MagicMock()
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=mock_sess):
+            with patch.object(_nvflare_mod, "__version__", "2.8.0"):
+                with patch("nvflare.tool.system.system_cli.output_error", mocked_output):
+                    with patch("nvflare.tool.system.system_cli._output_system_version", mocked_render):
+                        with pytest.raises(SystemExit) as exc_info:
+                            cmd_system_version(_make_args(site="nonexistent"))
+
+        assert exc_info.value.code == 1
+        mocked_output.assert_called_once()
+        mocked_render.assert_not_called()
+
     def test_version_connection_failed_exits_2(self):
         """Session failure → CONNECTION_FAILED, exits 2."""
         from nvflare.tool.system.system_cli import cmd_system_version

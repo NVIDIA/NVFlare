@@ -88,6 +88,23 @@ class TestSystemLogConfig:
                 cmd_system_log(args)
         assert exc_info.value.code == 2
 
+    def test_log_connection_failed_does_not_emit_success_when_error_output_mocked(self):
+        from nvflare.tool.system.system_cli import cmd_system_log
+
+        args = self._make_args(level="INFO")
+        mocked_output = MagicMock()
+        mocked_ok = MagicMock()
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", side_effect=Exception("timeout")):
+            with patch("nvflare.tool.system.system_cli.output_error", mocked_output):
+                with patch("nvflare.tool.system.system_cli.output_ok", mocked_ok):
+                    with pytest.raises(SystemExit) as exc_info:
+                        cmd_system_log(args)
+
+        assert exc_info.value.code == 2
+        mocked_output.assert_called_once()
+        mocked_ok.assert_not_called()
+
     def test_log_site_passed_to_session(self):
         from nvflare.tool.system.system_cli import cmd_system_log
 

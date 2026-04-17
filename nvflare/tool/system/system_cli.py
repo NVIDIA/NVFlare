@@ -306,8 +306,10 @@ def cmd_system_status(args):
             exit_code=2,
             detail=str(e),
         )
+        raise SystemExit(2)
     except Exception as e:
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
+        raise SystemExit(5)
 
     _output_system_status(result, target_type)
 
@@ -333,6 +335,7 @@ def cmd_system_resources(args):
         raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        raise SystemExit(2)
 
     if not result:
         from nvflare.tool.cli_output import is_json_mode, print_human
@@ -365,6 +368,7 @@ def cmd_system_shutdown(args):
         raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        raise SystemExit(2)
 
     output_ok({"target": target, "status": "shutdown initiated", "result": result})
 
@@ -391,6 +395,7 @@ def cmd_system_restart(args):
         raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        raise SystemExit(2)
 
     output_ok({"target": target, "status": "restart initiated", "result": result})
 
@@ -420,6 +425,7 @@ def cmd_system_version(args):
             if site != "all":
                 if site not in known_sites:
                     output_error("SITE_NOT_FOUND", site=site)
+                    raise SystemExit(1)
 
             targets = [site] if target_type == "client" else None
             raw_versions = sess.report_version(target_type, targets)
@@ -427,6 +433,7 @@ def cmd_system_version(args):
         raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        raise SystemExit(2)
 
     sites = [site] if site != "all" else known_sites
     versions = []
@@ -471,6 +478,7 @@ def cmd_system_log(args):
             message="Log config is not a recognised log mode.",
             hint="Supply one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
         )
+        raise SystemExit(4)
 
     try:
         with _system_session(args) as sess:
@@ -479,6 +487,7 @@ def cmd_system_log(args):
         raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        raise SystemExit(2)
 
     output_ok({"site": site, "log_config": level, "status": "applied"})
 
