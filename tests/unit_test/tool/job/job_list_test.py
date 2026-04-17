@@ -75,7 +75,7 @@ class TestJobList:
             cmd_job_list(args)
 
         _, kwargs = mock_sess.list_jobs.call_args
-        assert kwargs.get("reverse") is True or mock_sess.list_jobs.call_args[0][2] is True
+        assert kwargs["reverse"] is True
 
     def _init_parsers(self):
         import argparse

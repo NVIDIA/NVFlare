@@ -62,6 +62,13 @@ class TestListJobs:
             result = session.list_jobs()
         assert result == jobs
 
+    def test_quotes_name_and_id_prefixes(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result({MetaKey.JOBS: []})) as mock_cmd:
+            session.list_jobs(name_prefix="hello world", id_prefix="job 1")
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.LIST_JOBS, "-n", "hello world", "job 1"]
+
 
 class TestGetJobMeta:
     def test_sends_get_job_meta_command(self):

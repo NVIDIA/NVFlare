@@ -33,18 +33,6 @@ def _make_valid_job(root: str) -> str:
     return root
 
 
-def _make_submit_fn():
-    """
-    Import and return the nested _resolve_job_folder function by invoking submit_job
-    with --schema (exits immediately) and capturing the closure via monkey-patching.
-    """
-    # We exercise _resolve_job_folder indirectly through submit_job, since it is a
-    # closure defined inside the function body. Instead, we duplicate the logic here
-    # to unit-test it in isolation — but all assertions below use the real function
-    # by calling submit_job with a real filesystem fixture.
-    pass
-
-
 class TestResolveJobFolder:
     """_resolve_job_folder inside submit_job selects the correct folder."""
 

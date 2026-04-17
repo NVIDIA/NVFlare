@@ -16,7 +16,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import AuthenticationError, InternalError, InvalidJobDefinition, NoConnection
+from nvflare.fuel.flare_api.api_spec import (
+    AuthenticationError,
+    ClientInfo,
+    InternalError,
+    InvalidJobDefinition,
+    JobNotFound,
+    NoConnection,
+    ServerInfo,
+)
 from nvflare.fuel.flare_api.flare_api import Session, new_session
 from nvflare.fuel.hci.client.api import APIStatus, ResultKey
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
@@ -139,3 +147,16 @@ def test_new_session_applies_cli_relevant_session_options():
     assert fake_session.api.auto_login_max_tries == 1
     fake_session.try_connect.assert_called_once_with(5.0)
     assert returned is fake_session
+
+
+def test_validate_job_id_rejects_non_string_job_id():
+    with pytest.raises(JobNotFound, match="invalid job_id 0"):
+        Session._validate_job_id(0)
+
+
+def test_server_info_str_handles_none_start_time():
+    assert str(ServerInfo("running", None)) == "status: running, start_time: unknown"
+
+
+def test_client_info_str_handles_none_last_connect_time():
+    assert str(ClientInfo("site-1", None)) == "site-1(last_connect_time: unknown)"

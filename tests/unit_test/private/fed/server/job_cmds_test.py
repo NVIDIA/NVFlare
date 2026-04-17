@@ -406,6 +406,10 @@ def test_list_jobs_ignores_duration_parse_failures(monkeypatch):
     assert conn.tables[0].rows[0][0][0] == "job-1"
 
 
+def test_job_match_tolerates_missing_job_id_and_name():
+    assert JobCommandModule._job_match({}, "job", "name", "", "default") is False
+
+
 def test_get_job_meta_normalizes_legacy_job_study(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     jobs = [_FakeListedJob({JobMetaKey.JOB_ID.value: "legacy-job", JobMetaKey.JOB_NAME.value: "legacy"})]

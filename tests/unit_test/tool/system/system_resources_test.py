@@ -132,3 +132,18 @@ class TestSystemResources:
 
         captured = capsys.readouterr()
         assert "No resources specified." in captured.out
+
+    def test_resources_human_empty_result_does_not_fall_through_to_output_ok(self):
+        from nvflare.tool.system.system_cli import cmd_system_resources
+
+        args = self._make_args(output="default")
+        mock_sess = MagicMock()
+        mock_sess.report_resources.return_value = {}
+        mocked_ok = MagicMock()
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=mock_sess):
+            with patch("nvflare.tool.cli_output._output_format", "default"):
+                with patch("nvflare.tool.system.system_cli.output_ok", mocked_ok):
+                    cmd_system_resources(args)
+
+        mocked_ok.assert_not_called()

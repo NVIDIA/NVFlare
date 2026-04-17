@@ -559,7 +559,7 @@ def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
         try:
             job_id = sess.submit_job(temp_job_dir)
         except InvalidJobDefinition as e:
-            output_error("JOB_INVALID", detail=str(e))
+            output_error("JOB_INVALID", exit_code=1, detail=str(e))
             raise SystemExit(1)
         except AuthorizationError as e:
             output_error("AUTH_FAILED", exit_code=2, detail=str(e))
@@ -1406,7 +1406,7 @@ def _parse_monitor_start_ts(meta: dict, start_time_key: str, submit_time_iso_key
 
 
 def _parse_monitor_duration_seconds(value) -> float:
-    if not value or value == "N/A":
+    if value is None or value == "" or value == "N/A":
         return None
     if isinstance(value, (int, float)):
         return float(value)

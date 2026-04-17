@@ -99,7 +99,8 @@ class ServerInfo:
         self.start_time = start_time
 
     def __str__(self) -> str:
-        return f"status: {self.status}, start_time: {time.asctime(time.localtime(self.start_time))}"
+        start_time = "unknown" if self.start_time is None else time.asctime(time.localtime(self.start_time))
+        return f"status: {self.status}, start_time: {start_time}"
 
 
 class ClientInfo:
@@ -108,7 +109,10 @@ class ClientInfo:
         self.last_connect_time = last_connect_time
 
     def __str__(self) -> str:
-        return f"{self.name}(last_connect_time: {time.asctime(time.localtime(self.last_connect_time))})"
+        last_connect_time = (
+            "unknown" if self.last_connect_time is None else time.asctime(time.localtime(self.last_connect_time))
+        )
+        return f"{self.name}(last_connect_time: {last_connect_time})"
 
 
 class JobInfo:

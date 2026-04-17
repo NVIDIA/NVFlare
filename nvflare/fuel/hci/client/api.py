@@ -739,7 +739,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         if requester:
             try:
                 reply = requester.send_request(self, conn, ctx)
-            except:
+            except Exception:
                 traceback.print_exc()
                 process_json_func(make_error(f"{type(requester)} failed to send request to Admin Server"))
                 return
@@ -758,7 +758,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             try:
                 json_data = validate_proto(reply)
                 process_json_func(json_data)
-            except:
+            except Exception:
                 traceback.print_exc()
                 process_json_func(make_error(f"{ReplyKeyword.COMM_FAILURE} with Admin Server"))
 

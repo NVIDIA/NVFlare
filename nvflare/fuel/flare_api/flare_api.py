@@ -224,11 +224,11 @@ class Session(SessionSpec):
 
     @staticmethod
     def _validate_job_id(job_id: str):
-        if not job_id:
-            raise JobNotFound("job_id is required but not specified.")
-
         if not isinstance(job_id, str):
             raise JobNotFound(f"invalid job_id {job_id}")
+
+        if not job_id:
+            raise JobNotFound("job_id is required but not specified.")
 
     def clone_job(self, job_id: str) -> str:
         """Create a new job by cloning a specified job.
@@ -333,25 +333,24 @@ class Session(SessionSpec):
         if name_prefix is not None and not isinstance(name_prefix, str):
             raise ValueError(f"name_prefix must be None or str but got {type(name_prefix)}")
 
-        command = AdminCommandNames.LIST_JOBS
+        parts = [AdminCommandNames.LIST_JOBS]
         if detailed:
-            command = command + " -d"
+            parts.append("-d")
         if reverse:
-            command = command + " -r"
+            parts.append("-r")
         if limit:
             if not isinstance(limit, int):
                 raise InvalidArgumentError(f"limit must be int but got {type(limit)}")
-            command = command + " -m " + str(limit)
+            parts.extend(["-m", str(limit)])
         if name_prefix:
             if not isinstance(name_prefix, str):
                 raise InvalidArgumentError("name_prefix must be str but got {}.".format(type(name_prefix)))
-            else:
-                command = command + " -n " + name_prefix
+            parts.extend(["-n", name_prefix])
         if id_prefix:
             if not isinstance(id_prefix, str):
                 raise InvalidArgumentError("id_prefix must be str but got {}.".format(type(id_prefix)))
-            else:
-                command = command + " " + id_prefix
+            parts.append(id_prefix)
+        command = join_args(parts)
         result = self._do_command(command)
         meta = result[ResultKey.META]
         jobs_list = meta.get(MetaKey.JOBS, [])
@@ -802,11 +801,11 @@ class Session(SessionSpec):
         self._collect_info(AdminCommandNames.RESET_ERRORS, job_id, TargetType.ALL)
 
     def _collect_info(self, cmd: str, job_id: str, target_type: str, targets=None) -> dict:
-        if not job_id:
-            raise ValueError("job_id is required but not specified.")
-
         if not isinstance(job_id, str):
             raise TypeError("job_id must be str but got {}.".format(type(job_id)))
+
+        if not job_id:
+            raise ValueError("job_id is required but not specified.")
 
         if target_type not in _VALID_TARGET_TYPES:
             raise ValueError(f"invalid target_type {target_type}: must be one of {_VALID_TARGET_TYPES}")

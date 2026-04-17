@@ -215,7 +215,6 @@ def _render_status_human(result, target_type):
 
         if clients or client_status:
             print_human("")
-            print_human(f"{'CLIENT':<16} {'FQCN':<20} {'LAST CONNECT TIME':<19} STATUS")
             names = []
             seen = set()
             for c in clients:
@@ -229,12 +228,20 @@ def _render_status_human(result, target_type):
                     names.append(name)
                     seen.add(name)
 
+            client_w = max([len("CLIENT")] + [len(name) for name in names]) if names else len("CLIENT")
+            fqcn_w = max(
+                [len("FQCN")]
+                + [len((client_info_by_name.get(name, {}) or {}).get("fqcn", "-")) for name in names]
+            ) if names else len("FQCN")
+            last_seen_w = len("LAST CONNECT TIME")
+            print_human(f"{'CLIENT':<{client_w}} {'FQCN':<{fqcn_w}} {'LAST CONNECT TIME':<{last_seen_w}} STATUS")
+
             for name in names:
                 info = client_info_by_name.get(name, {})
                 status = client_status_by_name.get(name, {}).get("status", "unknown")
                 fqcn = info.get("fqcn", "-")
                 last_seen = _fmt_ts(info.get("client_last_conn_time")) if info else "-"
-                print_human(f"{name:<16} {fqcn:<20} {last_seen:<19} {status}")
+                print_human(f"{name:<{client_w}} {fqcn:<{fqcn_w}} {last_seen:<{last_seen_w}} {status}")
 
 
 def _output_system_status(result, target_type):
@@ -342,6 +349,7 @@ def cmd_system_resources(args):
 
         if not is_json_mode():
             print_human("No resources specified.")
+            return
 
     output_ok(result)
 
