@@ -36,7 +36,7 @@ import logging
 import sys
 from typing import Any, Optional
 
-SCHEMA_VERSION = "1"
+from nvflare.tool.cli_contract import SCHEMA_VERSION
 
 logger = logging.getLogger(__name__)
 

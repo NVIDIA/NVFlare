@@ -16,7 +16,7 @@ import argparse
 import json
 from typing import List, Optional
 
-SCHEMA_VERSION = "1"
+from nvflare.tool.cli_contract import SCHEMA_VERSION
 
 _PATH_KEYWORDS = ("dir", "path", "file", "output")
 
