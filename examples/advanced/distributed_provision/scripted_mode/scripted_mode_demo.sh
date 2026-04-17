@@ -50,13 +50,14 @@ for site_yaml in "${SITE_YAMLS[@]}"; do
 
 done
 
-# 3) Sign CSR for each site
+# 3) Sign CSR for each site.
+# This accepts the role proposed in each site-admin-generated CSR.
 for i in "${!SITE_NAMES[@]}"; do
   SITE_NAME="${SITE_NAMES[$i]}"
   CSR_PATH="${CSR_PATHS[$i]}"
   SITE_SIGNED_DIR="${SIGNED_DIR}/${SITE_NAME}"
   mkdir -p "${SITE_SIGNED_DIR}"
-  nvflare --out-format json cert sign -r "${CSR_PATH}" -c "${CA_DIR}" -o "${SITE_SIGNED_DIR}" --force >"${WORK_DIR}/sign_${SITE_NAME}.json"
+  nvflare --out-format json cert sign -r "${CSR_PATH}" -c "${CA_DIR}" -o "${SITE_SIGNED_DIR}" --accept-csr-role --force >"${WORK_DIR}/sign_${SITE_NAME}.json"
 
 done
 

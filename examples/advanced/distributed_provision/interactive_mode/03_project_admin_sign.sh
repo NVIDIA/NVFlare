@@ -2,6 +2,11 @@
 set -euo pipefail
 
 # Project Admin: sign a CSR and return signed cert + rootCA.pem.
+# Usage:
+#   ./03_project_admin_sign.sh <csr_path> <ca_dir> <out_dir>
+#     Accept the role proposed by the trusted site-admin-generated CSR.
+#   ./03_project_admin_sign.sh <csr_path> <ca_dir> <out_dir> <type>
+#     Override the role while signing.
 # Usage: ./03_project_admin_sign.sh <csr_path> <ca_dir> <out_dir> [type]
 
 CSR_PATH="${1:-}"
@@ -19,6 +24,5 @@ mkdir -p "${OUT_DIR}"
 if [[ -n "${OVERRIDE_TYPE}" ]]; then
   nvflare cert sign -r "${CSR_PATH}" -t "${OVERRIDE_TYPE}" -c "${CA_DIR}" -o "${OUT_DIR}"
 else
-  nvflare cert sign -r "${CSR_PATH}" -c "${CA_DIR}" -o "${OUT_DIR}"
+  nvflare cert sign -r "${CSR_PATH}" -c "${CA_DIR}" -o "${OUT_DIR}" --accept-csr-role
 fi
-

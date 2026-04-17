@@ -144,7 +144,7 @@ Steps
 | 3    | Project Admin     | ``nvflare cert init --project my-project -o ./ca``                |
 |      |                   | *(one-time per federation)*                                       |
 +------+-------------------+-------------------------------------------------------------------+
-| 4    | Project Admin     | ``nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed``       |
+| 4    | Project Admin     | ``nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed --accept-csr-role`` |
 +------+-------------------+-------------------------------------------------------------------+
 | 5    | Project Admin     | Return ``hospital-1.crt`` + ``rootCA.pem`` to site admin          |
 +------+-------------------+-------------------------------------------------------------------+
@@ -214,9 +214,9 @@ Example for the FL server named ``fl-server``:
 
 .. note::
 
-   The ``-t`` flag in ``cert csr`` is a **proposal** only. The Project Admin sets
-   the final type authoritatively when signing. The org admin should generate CSRs
-   on behalf of participants to ensure the correct type is requested.
+   The ``-t`` flag in ``cert csr`` is required so the CSR always carries an
+   explicit site-admin-proposed type. The Project Admin must then either accept
+   that proposal explicitly or override it explicitly at signing time.
 
 Step 3 — Site Admin: Send CSR to Project Admin
 ===============================================
@@ -232,23 +232,24 @@ For each received CSR, the Project Admin runs:
 
 .. code-block:: bash
 
-   nvflare cert sign -r <participant>.csr -c ./ca -o ./signed/<participant>
+   nvflare cert sign -r <participant>.csr -c ./ca -o ./signed/<participant> --accept-csr-role
 
-The certificate type is read from the CSR's embedded proposal. The Project Admin
-may override it with ``-t <type>``:
+If the Project Admin does not want to accept the role proposed by the site
+admin, they may override it with ``-t <type>``:
 
 .. code-block:: bash
 
    nvflare cert sign -r <participant>.csr -t <type> -c ./ca -o ./signed/<participant>
 
-The ``-t`` argument **overrides** whatever type was proposed in the CSR, ensuring
-the Project Admin has final authority over certificate types.
+The ``--accept-csr-role`` argument means the Project Admin is explicitly trusting
+the role proposed by the site admin in the CSR. The ``-t`` argument
+**overrides** whatever type was proposed in the CSR.
 
-Example — signing the ``hospital-1`` client CSR (type embedded in CSR):
+Example — signing the ``hospital-1`` client CSR while accepting the site admin's proposed type:
 
 .. code-block:: bash
 
-   nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed/hospital-1
+   nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed/hospital-1 --accept-csr-role
 
 Example — signing the ``fl-server`` server CSR with explicit type override:
 
@@ -373,11 +374,11 @@ This example sets up a federation with one server (``fl-server``) and one client
    # 1. Initialize root CA
    nvflare cert init --project my-project -o ./ca
 
-   # 4a. Sign server CSR (type embedded in CSR; override with -t if needed)
-   nvflare cert sign -r fl-server.csr -c ./ca -o ./signed/fl-server
+   # 4a. Sign server CSR (accept the site-admin-proposed type)
+   nvflare cert sign -r fl-server.csr -c ./ca -o ./signed/fl-server --accept-csr-role
 
    # 4b. Sign client CSR
-   nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed/hospital-1
+   nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed/hospital-1 --accept-csr-role
 
 **Server site (fl-server):**
 
@@ -445,9 +446,9 @@ Generate a local private key and CSR (Site Admin).
 | ``-o`` / ``--output-dir`` | Directory for key and CSR files         | Yes      |
 +------------------+--------------------------------------------------+----------+
 | ``-t`` / ``--type``   | Proposed certificate type. Embedded in      | No       |
-|                  | the CSR as a hint for the Project Admin.         |          |
-|                  | The Project Admin may override with              |          |
-|                  | ``cert sign -t <type>``.                         |          |
+|                  | the CSR as the site-admin-proposed type.         |          |
+|                  | The Project Admin must either accept it with     |          |
+|                  | ``--accept-csr-role`` or override with ``-t``.   |          |
 +------------------+--------------------------------------------------+----------+
 | ``--org``        | Organization name                                | No       |
 +------------------+--------------------------------------------------+----------+
