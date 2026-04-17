@@ -1574,7 +1574,7 @@ def cmd_job_monitor(cmd_args):
         data["stats_raw"] = cb_state.get("last_stats_raw")
 
     if status in ("FAILED", "FINISHED_EXCEPTION", "ABORTED", "ABANDONED"):
-        output_ok(data, exit_code=1)
+        output_ok(data, exit_code=1, status="error")
     else:
         output_ok(data)
 

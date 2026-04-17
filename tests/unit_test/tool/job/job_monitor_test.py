@@ -106,7 +106,7 @@ class TestJobMonitorOutput:
         assert data["data"]["job_id"] == "abc123"
         assert data["data"]["status"] == "FINISHED_OK"
 
-    def test_failed_outputs_ok_envelope_exits_1(self, capsys):
+    def test_failed_outputs_error_envelope_exits_1(self, capsys):
         meta = _make_meta("FAILED")
         ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, meta)
         with ctx:
@@ -118,11 +118,11 @@ class TestJobMonitorOutput:
 
         captured = capsys.readouterr()
         data = json.loads(captured.out)
-        assert data["status"] == "ok"
+        assert data["status"] == "error"
         assert data["exit_code"] == 1
         assert data["data"]["status"] == "FAILED"
 
-    def test_aborted_outputs_ok_envelope_exits_1(self, capsys):
+    def test_aborted_outputs_error_envelope_exits_1(self, capsys):
         meta = _make_meta("ABORTED")
         ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, meta)
         with ctx:
@@ -134,7 +134,7 @@ class TestJobMonitorOutput:
 
         captured = capsys.readouterr()
         data = json.loads(captured.out)
-        assert data["status"] == "ok"
+        assert data["status"] == "error"
         assert data["data"]["status"] == "ABORTED"
 
     def test_abandoned_exits_1(self, capsys):
@@ -147,6 +147,10 @@ class TestJobMonitorOutput:
                 cmd_job_monitor(_make_args())
         assert exc_info.value.code == 1
 
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["data"]["status"] == "ABANDONED"
+
     def test_finished_exception_exits_1(self, capsys):
         meta = _make_meta("FINISHED_EXCEPTION")
         ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, meta)
@@ -156,6 +160,10 @@ class TestJobMonitorOutput:
             with pytest.raises(SystemExit) as exc_info:
                 cmd_job_monitor(_make_args())
         assert exc_info.value.code == 1
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["data"]["status"] == "FINISHED_EXCEPTION"
 
     # ------------------------------------------------------------------
     # Error cases
