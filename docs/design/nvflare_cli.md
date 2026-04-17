@@ -48,6 +48,7 @@ Contract — stream split in JSON mode:
 
 - For normal command handler execution with ``--out-format json``, stdout contains exactly one JSON envelope and nothing else.
 - Human-readable progress, warnings, prompts, and diagnostics go to stderr.
+- Lower-level provisioning diagnostics must be accumulated and attached to the final structured error in JSON mode, rather than printed directly as ad hoc fallback text.
 
 Exceptions: the following are plain text and are explicitly outside the JSON command-output contract:
 
