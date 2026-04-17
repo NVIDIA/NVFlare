@@ -149,6 +149,24 @@ class TestProvisionOutput:
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
 
+    def test_edge_mode_failure_returns_structured_error(self, capsys, tmp_path):
+        from nvflare.lighter.provision import handle_provision
+
+        args = self._make_args(project_file="project.yml")
+        project_dict = {"edge": {"enabled": True}, "gen_scripts": False}
+
+        with patch("nvflare.lighter.provision.load_yaml", return_value=project_dict):
+            with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
+                with patch("nvflare.lighter.provision.provision_for_edge", side_effect=RuntimeError("boom")):
+                    with pytest.raises(SystemExit) as exc_info:
+                        handle_provision(args)
+
+        assert exc_info.value.code == 5
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INTERNAL_ERROR"
+        assert "Provisioning failed in edge mode: boom" in data["message"]
+
     def test_copy_project_suppresses_human_text_in_json_mode(self, capsys, tmp_path):
         """Generating a sample project in JSON mode should not emit human guidance."""
         from nvflare.lighter.provision import copy_project

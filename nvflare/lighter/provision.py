@@ -267,7 +267,10 @@ def provision(
         try:
             provision_for_edge(edge_params, project_dict)
         except Exception as e:
-            raise Exception(f"Provisioning failed in edge mode: {e}")
+            from nvflare.tool.cli_output import output_error
+
+            output_error("INTERNAL_ERROR", exit_code=5, detail=f"Provisioning failed in edge mode: {e}")
+            raise SystemExit(5)
         return
 
     project = prepare_project(project_dict, add_user_full_path, add_client_full_path)
@@ -282,6 +285,8 @@ def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=
     if api_version not in [3, 4]:
         raise ValueError(f"API version expected 3 or 4 but found {api_version}")
     project_name = project_dict.get(PropKey.NAME)
+    if not project_name:
+        raise ValueError("missing project name")
     if len(project_name) > 63:
         from nvflare.tool.cli_output import print_human
 
@@ -317,6 +322,7 @@ def add_extra_clients(add_client_file_path, participant_defs):
         print_human("The yaml file format is")
         print_human(adding_client_error_msg)
         output_error("INVALID_ARGS", exit_code=4, detail="invalid client yaml format")
+        raise SystemExit(4)
 
 
 def add_extra_users(add_user_file_path, participant_defs):
@@ -331,6 +337,7 @@ def add_extra_users(add_user_file_path, participant_defs):
         print_human("The yaml file format is")
         print_human(adding_user_error_msg)
         output_error("INVALID_ARGS", exit_code=4, detail="invalid user yaml format")
+        raise SystemExit(4)
 
 
 def main():
