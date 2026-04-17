@@ -26,6 +26,7 @@ from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey, UidSource
 from nvflare.fuel.hci.client.config import secure_load_admin_config
 from nvflare.fuel.hci.cmd_arg_utils import (
+    join_args,
     process_targets_into_str,
     validate_file_string,
     validate_options_string,
@@ -931,7 +932,7 @@ class Session(SessionSpec):
         if grep_pattern is not None:
             parts.extend(["-g", grep_pattern])
 
-        command = " ".join(parts)
+        command = join_args(parts)
         reply = self._do_command(command, enforce_meta=False)
         payload = self._get_dict_data(reply)
         if isinstance(payload, dict) and "logs" in payload:
