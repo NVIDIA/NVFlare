@@ -170,6 +170,17 @@ class TestShutdown:
         assert result == expected_meta
         session.close.assert_called_once()
 
+    def test_shutdown_system_sends_all_target_command(self):
+        session = _make_session()
+        stopped_info = MagicMock()
+        stopped_info.server_info.status = "stopped"
+
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            with patch.object(session, "_do_get_system_info", return_value=stopped_info):
+                session.shutdown_system()
+
+        mock_cmd.assert_called_once_with(f"{AdminCommandNames.SHUTDOWN} {TargetType.ALL}")
+
 
 class TestRestart:
     def test_sends_restart_command(self):

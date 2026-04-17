@@ -594,7 +594,7 @@ class Session(SessionSpec):
         Note: the user must be a Project Admin to use this method; otherwise the NOT_AUTHORIZED exception will be raised.
 
         """
-        self.shutdown(target_type=TargetType.ALL)
+        self._do_command(f"{AdminCommandNames.SHUTDOWN} {TargetType.ALL}")
         sys_info = self._do_get_system_info(AdminCommandNames.ADMIN_CHECK_STATUS)
         if sys_info.server_info.status != "stopped":
             raise JobNotDone("there are still running jobs")
