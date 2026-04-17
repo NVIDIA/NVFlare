@@ -188,3 +188,5 @@ CLAUDE.local.md
 # memory profiler output
 tests/memory_profile/**/*.dat
 /HEAD
+.claude/
+uv.lock

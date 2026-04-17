@@ -16,7 +16,7 @@ import os
 import sys
 
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, SystemVarName
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs
 
 
@@ -129,13 +129,18 @@ def get_launcher_resource_spec(job_meta, site_name, mode):
 # TODO: remove in follow-up PR once K8s launcher is updated to use get_launcher_resource_spec
 def extract_job_image(job_meta, site_name):
     deploy_map = job_meta.get(JobMetaKey.DEPLOY_MAP, {})
+    fallback = None
     for _, participants in deploy_map.items():
         for item in participants:
             if isinstance(item, dict):
                 sites = item.get(JobConstants.SITES)
+                if not sites:
+                    continue
                 if site_name in sites:
                     return item.get(JobConstants.JOB_IMAGE)
-    return None
+                if ALL_SITES in sites and fallback is None:
+                    fallback = item.get(JobConstants.JOB_IMAGE)
+    return fallback
 
 
 def add_custom_dir_to_path(app_custom_folder, new_env):
