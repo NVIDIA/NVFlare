@@ -408,6 +408,26 @@ class TestRecipeExecuteExportParamIsolation:
         recipe.execute(env, server_exec_params={"param_b": 2})
         assert server_app.app_config.additional_params == {}
 
+    def test_execute_empty_server_params_still_restore_snapshot(self, temp_script):
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_execute_empty_param_isolation",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            model={"class_path": "model.DummyModel", "args": {}},
+        )
+
+        env = _DummyExecEnv()
+        server_app = recipe.job._deploy_map.get("server")
+        assert server_app is not None
+        server_app.app_config.additional_params.update({"persisted": 1})
+
+        recipe.execute(env, server_exec_params={})
+
+        assert server_app.app_config.additional_params == {"persisted": 1}
+
     def test_execute_then_export_no_cross_contamination(self, temp_script):
         from nvflare.recipe.fedavg import FedAvgRecipe
 

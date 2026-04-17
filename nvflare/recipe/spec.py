@@ -179,7 +179,7 @@ class Recipe(ABC):
     @contextmanager
     def _temporary_exec_params(self, server_exec_params: dict = None, client_exec_params: dict = None):
         params_snapshot = None
-        if server_exec_params or client_exec_params:
+        if server_exec_params is not None or client_exec_params is not None:
             params_snapshot = self._snapshot_additional_params()
 
         try:
