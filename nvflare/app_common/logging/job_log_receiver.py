@@ -81,11 +81,19 @@ class JobLogReceiver(Widget):
         # Use only the base name to prevent directory traversal via '/' or '..'
         return os.path.basename(name) if name else "unknown"
 
+    def _get_trusted_stream_identity(self, fl_ctx: FLContext):
+        peer_ctx = fl_ctx.get_peer_context()
+        if peer_ctx is None:
+            return "unknown", "unknown"
+
+        client = self._sanitize_path_component(peer_ctx.get_identity_name(default="unknown"))
+        job_id = self._sanitize_path_component(peer_ctx.get_job_id(default="unknown"))
+        return client, job_id
+
     def _on_chunk_received(self, data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext):
         f = stream_ctx.get(_KEY_RECV_FILE)
         if f is None:
-            client = self._sanitize_path_component(stream_ctx.get(StreamCtxKey.CLIENT_NAME))
-            job_id = self._sanitize_path_component(stream_ctx.get(StreamCtxKey.JOB_ID))
+            client, job_id = self._get_trusted_stream_identity(fl_ctx)
             log_file_name = self._sanitize_path_component(LogStreamer.get_file_name(stream_ctx) or "log.txt")
             path = os.path.join(self._effective_dest_dir(), job_id, client, log_file_name)
             os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -103,8 +111,7 @@ class JobLogReceiver(Widget):
             stream_ctx[_KEY_RECV_FILE] = None
 
         rc = LogStreamer.get_rc(stream_ctx)
-        client = stream_ctx.get(StreamCtxKey.CLIENT_NAME)
-        job_id = stream_ctx.get(StreamCtxKey.JOB_ID)
+        client, job_id = self._get_trusted_stream_identity(fl_ctx)
 
         if rc != ReturnCode.OK:
             file_path = stream_ctx.get(_KEY_RECV_PATH)
