@@ -264,13 +264,13 @@ def check_auth(clouds_used: set):
     print("  Auth OK")
 
 
-def check_auth_for(kubeconfig: str):
+def check_auth_for(cloud: str):
     """Re-check auth before cloud-specific operations."""
-    if "aws" in kubeconfig.lower():
+    if cloud == "aws":
         r = run_quiet(["aws", "sts", "get-caller-identity"])
         if r.returncode != 0:
             sys.exit("AWS session expired. Run: aws sso login")
-    else:
+    elif cloud == "gcp":
         r = run_quiet(["gcloud", "auth", "print-access-token"])
         if r.returncode != 0:
             sys.exit("GCP auth expired. Run: gcloud auth login")
@@ -293,7 +293,10 @@ def _synthetic_state(config: DeployConfig) -> dict:
         "gcp_region": config.gcp_region or "us-central1",
         "aws_region": config.aws_region,
         "server_cloud": config.server_cloud,
-        "participants": {p.name: {"kubeconfig": p.kubeconfig, "namespace": p.namespace} for p in config.participants},
+        "participants": {
+            p.name: {"kubeconfig": p.kubeconfig, "namespace": p.namespace, "cloud": p.cloud}
+            for p in config.participants
+        },
     }
     if config.server_cloud == "aws":
         state["aws_eip_allocation_id"] = "<alloc-id>"
@@ -595,7 +598,7 @@ def deploy_participant(
     print(f"Deploying {p.name} → {p.namespace}")
     print(f"{'=' * 60}")
 
-    check_auth_for(p.kubeconfig)
+    check_auth_for(p.cloud)
 
     # 1. Namespace (idempotent)
     if not namespace_exists(p.kubeconfig, p.namespace):
@@ -659,7 +662,7 @@ def deploy_participant(
         }
 
         if pod_exists(p.kubeconfig, p.namespace, pod_name):
-            kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name)
+            kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name, "--timeout=60s")
 
         kubectl(
             p.kubeconfig,
@@ -714,7 +717,7 @@ def deploy_participant(
             for k, v in _flatten_set("securityContext", p.security_context):
                 helm_args += ["--set", f"{k}={v}"]
 
-        if "aws" in p.kubeconfig.lower():
+        if p.cloud == "aws":
             if not aws_image:
                 print("  WARNING: No --aws-image set. AWS client will use GCP image from values.yaml.")
                 print("           EKS cannot pull from GCP Artifact Registry without mirroring.")
@@ -757,9 +760,17 @@ def _flatten_set(prefix: str, d: dict) -> list[tuple[str, str]]:
 def cmd_up(args):
     config = load_config(Path(args.config))
     participants = config.participants
-    check_auth({p.cloud for p in participants})
+    clouds_used = {p.cloud for p in participants}
+    check_auth(clouds_used)
 
-    gcp_project = config.gcp_project or run(["gcloud", "config", "get-value", "project"], capture=True).stdout.strip()
+    if config.server_cloud == "aws" and not config.aws_eks_cluster_name:
+        sys.exit("clouds.aws.eks_cluster_name is required when the server is in AWS")
+
+    gcp_project = None
+    if "gcp" in clouds_used:
+        gcp_project = (
+            config.gcp_project or run(["gcloud", "config", "get-value", "project"], capture=True).stdout.strip()
+        )
     gcp_region = config.gcp_region or "us-central1"
     aws_region = config.aws_region
 
@@ -781,8 +792,6 @@ def cmd_up(args):
 
     # Discover AWS NLB subnet when server is in AWS
     if config.server_cloud == "aws":
-        if not config.aws_eks_cluster_name:
-            sys.exit("clouds.aws.eks_cluster_name is required when the server is in AWS")
         nlb_subnet = state.get("aws_nlb_subnet_id") or _discover_aws_public_subnet(
             config.aws_eks_cluster_name, aws_region
         )
@@ -798,7 +807,9 @@ def cmd_up(args):
             "gcp_region": gcp_region,
             "aws_region": aws_region,
             "server_cloud": config.server_cloud,
-            "participants": {p.name: {"kubeconfig": p.kubeconfig, "namespace": p.namespace} for p in participants},
+            "participants": {
+                p.name: {"kubeconfig": p.kubeconfig, "namespace": p.namespace, "cloud": p.cloud} for p in participants
+            },
         }
     )
     save_state(state)
@@ -854,10 +865,10 @@ def cmd_down(args):
     fail = False
 
     for name, info in participants.items():
-        kc, ns = info["kubeconfig"], info["namespace"]
+        kc, ns, cloud = info["kubeconfig"], info["namespace"], info.get("cloud", "")
         print(f"Tearing down {name} ({ns}) ...")
         try:
-            check_auth_for(kc)
+            check_auth_for(cloud)
         except SystemExit:
             print(f"  Auth failed for {kc} — skipping")
             fail = True
