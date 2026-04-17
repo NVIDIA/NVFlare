@@ -1514,8 +1514,6 @@ def cmd_job_monitor(cmd_args):
         nonlocal start_ts
         if start_ts is None:
             start_ts = _parse_monitor_start_ts(job_meta, JobMetaKey.START_TIME.value, JobMetaKey.SUBMIT_TIME_ISO.value)
-        if status in ("RUNNING", "DISPATCHED") and start_ts is None:
-            start_ts = _parse_monitor_start_ts(job_meta, JobMetaKey.START_TIME.value, JobMetaKey.SUBMIT_TIME_ISO.value)
         if status in ("RUNNING", "DISPATCHED") and now - state["last_stats_ts"] >= stats_interval:
             try:
                 stats = _sess.show_stats(_job_id, stats_target, None)
