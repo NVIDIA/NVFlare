@@ -45,8 +45,10 @@ def test_auth_hint_defaults_to_credentials():
     assert cli_mod._auth_hint_from_detail("Incorrect user name or password") == "Check startup kit credentials."
 
 
-def test_auth_hint_defaults_to_credentials_for_cert_error():
-    assert cli_mod._auth_hint_from_detail("certificate validation failed") == "Check startup kit credentials."
+def test_auth_hint_uses_cert_specific_guidance_for_cert_error():
+    assert cli_mod._auth_hint_from_detail("certificate validation failed") == (
+        "Check that the startup kit certificate, key, and root CA match the server trust chain."
+    )
 
 
 def test_auth_hint_uses_structured_auth_code():
@@ -83,7 +85,7 @@ def test_run_uses_study_specific_auth_hint_in_json_mode(capsys):
     assert payload["hint"].startswith("Add the study under 'studies:'")
 
 
-def test_run_uses_default_credential_hint_for_error_cert_in_json_mode(capsys):
+def test_run_uses_cert_specific_hint_for_error_cert_in_json_mode(capsys):
     auth_error = AuthenticationError("certificate validation failed")
 
     args = MagicMock()
@@ -105,7 +107,7 @@ def test_run_uses_default_credential_hint_for_error_cert_in_json_mode(capsys):
     assert exc_info.value.code == 2
     payload = json.loads(capsys.readouterr().out)
     assert payload["error_code"] == "AUTH_FAILED"
-    assert payload["hint"] == "Check startup kit credentials."
+    assert payload["hint"] == "Check that the startup kit certificate, key, and root CA match the server trust chain."
 
 
 def test_run_routes_cli_exception_through_error_envelope(capsys):

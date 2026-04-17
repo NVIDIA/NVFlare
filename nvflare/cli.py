@@ -483,6 +483,8 @@ def _auth_hint_from_detail(detail: str, auth_code: str = None) -> str:
         return "Add this user under the study's admins mapping in project.yml, reprovision, redeploy or restart the server, then try again."
     if "invalid study name" in detail:
         return "Use a valid study name in project.yml, reprovision, redeploy or restart the server, then try again."
+    if "certificate validation failed" in detail or "error_cert" in detail:
+        return "Check that the startup kit certificate, key, and root CA match the server trust chain."
     return "Check startup kit credentials."
 
 
