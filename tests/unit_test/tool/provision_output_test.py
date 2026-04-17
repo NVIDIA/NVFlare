@@ -132,6 +132,7 @@ class TestProvisionOutput:
         from nvflare.lighter.provision import handle_provision
 
         args = self._make_args(project_file="project.yml")
+        (tmp_path / "project.yml").write_text("name: proj\n", encoding="utf-8")
 
         with patch("nvflare.lighter.provision.os.path.join", side_effect=lambda *a: "/".join(a)):
             with patch("nvflare.lighter.provision.provision") as mock_prov:
@@ -165,11 +166,27 @@ class TestProvisionOutput:
         assert data["error_code"] == "INVALID_ARGS"
         assert "cannot use -p/--project_file together with -g/--generate" in data["message"]
 
+    def test_missing_project_file_returns_invalid_args(self, capsys, tmp_path):
+        from nvflare.lighter.provision import handle_provision
+
+        args = self._make_args(project_file="missing.yml")
+
+        with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
+            with pytest.raises(SystemExit) as exc_info:
+                handle_provision(args)
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INVALID_ARGS"
+        assert "project file does not exist:" in data["message"]
+
     def test_edge_mode_failure_returns_structured_error(self, capsys, tmp_path):
         from nvflare.lighter.provision import handle_provision
 
         args = self._make_args(project_file="project.yml")
         project_dict = {"edge": {"enabled": True}, "gen_scripts": False}
+        (tmp_path / "project.yml").write_text("name: proj\n", encoding="utf-8")
 
         with patch("nvflare.lighter.provision.load_yaml", return_value=project_dict):
             with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
@@ -192,6 +209,7 @@ class TestProvisionOutput:
             CtxKey.ERRORS: ["Exception boom raised during provision.  Incomplete prod_n folder removed."],
             CtxKey.WARNINGS: ["the connect_to.host 'bad-host' may be invalid: bad name"],
         }
+        (tmp_path / "project.yml").write_text("name: proj\n", encoding="utf-8")
 
         with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
             with patch("nvflare.lighter.provision.provision", return_value=fake_ctx):

@@ -208,6 +208,9 @@ def handle_provision(args):
     workspace_full_path = os.path.join(current_path, workspace)
 
     project_full_path = os.path.join(current_path, project_file)
+    if not os.path.isfile(project_full_path):
+        output_error("INVALID_ARGS", exit_code=4, detail=f"project file does not exist: {project_full_path}")
+        raise SystemExit(4)
     from nvflare.tool.cli_output import is_json_mode, print_human
 
     if not is_json_mode():
