@@ -353,19 +353,6 @@ def _build_global_arg_parser():
     return parser
 
 
-def _classify_global_options(global_parser):
-    no_value = set()
-    with_value = set()
-    for action in global_parser._actions:
-        if not action.option_strings:
-            continue
-        if action.nargs == 0:
-            no_value.update(action.option_strings)
-        else:
-            with_value.update(action.option_strings)
-    return no_value, with_value
-
-
 def _normalize_global_args(argv, global_parser):
     """Move supported global options ahead of the subcommand without parsing them.
 
@@ -373,28 +360,29 @@ def _normalize_global_args(argv, global_parser):
     existing behavior of accepting global flags after the subcommand.
     """
 
-    no_value_options, with_value_options = _classify_global_options(global_parser)
+    option_actions = global_parser._option_string_actions
     global_args = []
     remaining_args = []
     i = 0
     while i < len(argv):
         arg = argv[i]
-        if arg in no_value_options:
-            global_args.append(arg)
+        option, has_inline_value = (arg.split("=", 1)[0], True) if arg.startswith("--") and "=" in arg else (arg, False)
+        action = option_actions.get(option)
+        if action is None:
+            remaining_args.append(arg)
             i += 1
-        elif arg in with_value_options:
-            global_args.append(arg)
+            continue
+
+        global_args.append(arg)
+        if action.nargs != 0 and not has_inline_value:
             if i + 1 < len(argv):
                 global_args.append(argv[i + 1])
                 i += 2
             else:
                 i += 1
-        elif any(arg.startswith(f"{option}=") for option in with_value_options if option.startswith("--")):
-            global_args.append(arg)
-            i += 1
         else:
-            remaining_args.append(arg)
             i += 1
+
     return global_args + remaining_args
 
 
