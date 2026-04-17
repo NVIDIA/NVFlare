@@ -418,6 +418,20 @@ class TestPocOutput:
         args = root.parse_args(["poc", "start", "-p", "admin@nvidia.com", "--study", "cancer_research"])
         assert args.study == "cancer_research"
 
+    def test_is_docker_run_returns_false_without_static_file_builder(self):
+        from nvflare.tool.poc.poc_commands import is_docker_run
+
+        project_config = {
+            "builders": [
+                {
+                    "path": "nvflare.lighter.impl.cert.CertBuilder",
+                    "args": {},
+                }
+            ]
+        }
+
+        assert is_docker_run(project_config) is False
+
     def test_get_service_command_adds_study_only_for_admin_start(self):
         from nvflare.tool.poc.poc_commands import get_service_command
         from nvflare.tool.poc.service_constants import FlareServiceConstants as SC

@@ -369,11 +369,14 @@ def update_server_name(project_config):
 def is_docker_run(project_config: OrderedDict):
     if "builders" not in project_config:
         return False
-    static_builder = [
+    static_builders = [
         b
         for b in project_config.get("builders")
         if b.get("path") == "nvflare.lighter.impl.static_file.StaticFileBuilder"
-    ][0]
+    ]
+    if not static_builders:
+        return False
+    static_builder = static_builders[0]
     return "docker_image" in static_builder["args"]
 
 
