@@ -168,6 +168,7 @@ def cmd_recipe_list(cmd_args):
             exit_code=4,
             detail=f"no installed recipes found for framework '{framework}'",
         )
+        raise SystemExit(4)
 
     if is_json_mode():
         output_ok(catalog)

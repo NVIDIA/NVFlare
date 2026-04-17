@@ -106,6 +106,25 @@ def test_recipe_list_human_empty_framework_catalog_suggests_framework_install(mo
     assert "pip install torch" in captured.err
 
 
+def test_recipe_list_empty_framework_catalog_still_exits_when_output_error_is_mocked(monkeypatch):
+    from unittest.mock import patch
+
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_list
+
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._load_catalog", lambda framework=None: [])
+
+    with patch("nvflare.tool.cli_output.output_error_message") as output_error_message:
+        with patch("nvflare.tool.cli_output.output_ok") as output_ok:
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_recipe_list(Namespace(framework="pytorch"))
+
+    assert exc_info.value.code == 4
+    output_error_message.assert_called_once()
+    output_ok.assert_not_called()
+
+
 def test_recipe_catalog_is_discovered_from_package_modules(monkeypatch):
     from nvflare.recipe.spec import Recipe
     from nvflare.tool.recipe.recipe_cli import _load_catalog

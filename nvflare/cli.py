@@ -216,7 +216,7 @@ def handle_config_cmd(args):
                 exit_code=4,
                 detail="--startup_kit_dir cannot be used together with --poc.startup_kit or --prod.startup_kit",
             )
-            return
+            raise SystemExit(4)
         requested_poc_startup = legacy_startup_kit_dir
         print_human(
             "WARNING: 'nvflare config -d/--startup_kit_dir' is deprecated. "

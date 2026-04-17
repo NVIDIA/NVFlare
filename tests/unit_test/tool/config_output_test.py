@@ -192,6 +192,28 @@ class TestConfigOutput:
         assert data["error_code"] == "INVALID_ARGS"
         assert "startup_kit_dir cannot be used together" in data["message"]
 
+    def test_legacy_startup_alias_conflict_still_exits_when_output_error_is_mocked(self):
+        from nvflare.cli import handle_config_cmd
+
+        args = self._make_args(legacy_startup_kit_dir="/legacy", poc_startup_kit_dir="/new")
+        mock_config = MagicMock()
+        mock_config.get.return_value = None
+
+        with patch("nvflare.cli.load_hidden_config_state", return_value=("/fake/config.conf", mock_config, False)):
+            with patch("nvflare.tool.cli_schema.handle_schema_flag"):
+                with patch("nvflare.tool.cli_output.output_error") as output_error:
+                    with patch("nvflare.cli.save_config") as save_config:
+                        with pytest.raises(SystemExit) as exc_info:
+                            handle_config_cmd(args)
+
+        assert exc_info.value.code == 4
+        output_error.assert_called_once_with(
+            "INVALID_ARGS",
+            exit_code=4,
+            detail="--startup_kit_dir cannot be used together with --poc.startup_kit or --prod.startup_kit",
+        )
+        save_config.assert_not_called()
+
     def test_config_parser_no_longer_accepts_legacy_workspace_alias(self):
         import argparse
 
