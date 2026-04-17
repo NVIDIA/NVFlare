@@ -26,6 +26,21 @@ If your application distinguishes FLARE connection failures from broader OS or
 network exceptions, review any broad ``except ConnectionError:`` handlers before
 upgrading to the next release built from ``main``.
 
+FLARE API Lifecycle Restriction
+-------------------------------
+
+On the current ``main`` branch, :meth:`Session.shutdown<nvflare.fuel.flare_api.api_spec.SessionSpec.shutdown>`
+and :meth:`Session.restart<nvflare.fuel.flare_api.api_spec.SessionSpec.restart>`
+are now restricted to ``TargetType.SERVER`` only.
+
+Impact:
+
+- Existing callers that pass ``TargetType.ALL`` or ``TargetType.CLIENT`` will now fail.
+- Server-scoped lifecycle control continues to work unchanged.
+
+For whole local PoC lifecycle control, use the PoC start/stop flow instead of
+the general system admin API.
+
 Upgrading from 2.7.0/2.7.1 to 2.7.2
 ======================================
 
