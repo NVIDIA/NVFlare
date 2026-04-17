@@ -119,7 +119,8 @@ class _LogChunkConsumer(BaseChunkConsumer):
 
     def _watchdog(self):
         """Background thread: end this stream when it goes idle."""
-        while not self._done.wait(timeout=1.0):
+        poll = min(1.0, self._idle_timeout / 3)
+        while not self._done.wait(timeout=poll):
             elapsed = time.time() - self._last_received_time
             if elapsed >= self._idle_timeout:
                 self.logger.warning(f"log stream idle for {elapsed:.1f}s (threshold {self._idle_timeout}s) — closing")

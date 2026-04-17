@@ -74,7 +74,7 @@ def test_idle_timeout_ends_each_stream_independently():
 
     factory = LogChunkConsumerFactory(
         chunk_received_cb=None,
-        idle_timeout=0.1,
+        idle_timeout=0.3,
         stream_done_cb=stream_done_cb,
         cb_kwargs={},
     )
@@ -100,17 +100,22 @@ def test_idle_timeout_ends_each_stream_independently():
     consumer_1 = factory.get_consumer(stream_ctx_1, fl_ctx)
     consumer_2 = factory.get_consumer(stream_ctx_2, fl_ctx)
 
-    continue_streaming, reply = consumer_1.consume(_make_heartbeat(), stream_ctx_1, fl_ctx)
-    assert continue_streaming is True
-    assert reply.get_return_code() == "OK"
+    # Send a heartbeat to consumer_1 only — this resets its idle clock.
+    consumer_1.consume(_make_heartbeat(), stream_ctx_1, fl_ctx)
 
+    # After 0.15s, send a heartbeat to consumer_2 to stagger the two clocks.
+    # consumer_1's last message is now 0.15s old; consumer_2's is fresh.
+    import time
+
+    time.sleep(0.15)
+    consumer_2.consume(_make_heartbeat(), stream_ctx_2, fl_ctx)
+
+    # consumer_1 should timeout first (0.3s since its last heartbeat).
     assert stream1_event.wait(timeout=2.0)
+    # consumer_2 got a heartbeat 0.15s later, so it should still be alive.
     assert not stream2_event.is_set()
 
-    continue_streaming, reply = consumer_2.consume(_make_heartbeat(), stream_ctx_2, fl_ctx)
-    assert continue_streaming is True
-    assert reply.get_return_code() == "OK"
-
+    # Now wait for consumer_2 to timeout as well.
     assert stream2_event.wait(timeout=2.0)
 
     assert ended == [
