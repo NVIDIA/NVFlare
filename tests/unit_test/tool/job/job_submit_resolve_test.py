@@ -229,8 +229,8 @@ class TestResolveJobFolder:
 
 
 def test_get_session_missing_startup_kit_emits_startup_kit_missing(capsys, monkeypatch):
-    from nvflare.tool.job.job_cli import _get_session
     from nvflare.tool import cli_output
+    from nvflare.tool.job.job_cli import _get_session
 
     monkeypatch.setattr(cli_output, "_output_format", "json")
 

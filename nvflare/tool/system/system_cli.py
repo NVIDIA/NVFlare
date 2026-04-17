@@ -19,7 +19,6 @@ import time
 from contextlib import contextmanager
 
 import nvflare
-
 from nvflare.tool.cli_output import output_error, output_error_message, output_ok, output_usage_error
 
 CMD_SYSTEM_STATUS = "status"
