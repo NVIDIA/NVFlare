@@ -102,13 +102,10 @@ class JobLogReceiver(Widget):
 
         if rc != ReturnCode.OK:
             file_path = stream_ctx.get(_KEY_RECV_PATH)
-            self.log_error(fl_ctx, f"Live log stream from {client} job {job_id} ended with rc={rc}")
-            if file_path:
-                try:
-                    os.remove(file_path)
-                    self.log_info(fl_ctx, f"Removed partial log file: {file_path}")
-                except OSError:
-                    pass
+            self.log_warning(
+                fl_ctx,
+                f"Live log stream from {client} job {job_id} ended with rc={rc}; partial log retained at {file_path}",
+            )
             return
 
         file_path = stream_ctx.get(_KEY_RECV_PATH)
