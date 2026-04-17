@@ -340,15 +340,11 @@ def _ip_tag() -> str:
 
 def reserve_ip(
     server_cloud: str,
-    provided_ip: str | None,
     *,
     gcp_project: str | None = None,
     gcp_region: str | None = None,
     aws_region: str | None = None,
 ) -> tuple[str, str]:
-    if provided_ip:
-        print(f"Using provided IP: {provided_ip}")
-        return provided_ip, ""
     if server_cloud == "gcp":
         return _reserve_ip_gcp(gcp_project, gcp_region)
     if server_cloud == "aws":
@@ -785,7 +781,6 @@ def cmd_up(args):
     else:
         server_ip, ip_name = reserve_ip(
             config.server_cloud,
-            args.server_ip,
             gcp_project=gcp_project,
             gcp_region=gcp_region,
             aws_region=aws_region,
@@ -923,8 +918,7 @@ def main():
     parser.add_argument("--config", default=default_config, help="Path to deploy config YAML")
     sub = parser.add_subparsers(dest="command")
 
-    up = sub.add_parser("up", help="Deploy server + clients")
-    up.add_argument("--server-ip", default=os.environ.get("SERVER_IP"), help="Static IP (omit to auto-reserve)")
+    sub.add_parser("up", help="Deploy server + clients")
 
     sub.add_parser("down", help="Tear down everything")
     sub.add_parser("status", help="Show deployment status")

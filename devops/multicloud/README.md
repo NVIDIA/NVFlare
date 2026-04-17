@@ -41,11 +41,10 @@ python devops/multicloud/scripts/deploy.py --dry-run up       # print commands, 
 
 ## Flags
 
-| Flag | Env | Default | Applies to |
-|------|-----|---------|-----------|
-| `--config <path>` | — | `devops/multicloud/gcp-server.yaml` | all subcommands |
-| `--dry-run` | — | false | all subcommands |
-| `--server-ip` | `SERVER_IP` | auto-reserve | `up` |
+| Flag | Default | Applies to |
+|------|---------|-----------|
+| `--config <path>` | `devops/multicloud/gcp-server.yaml` | all subcommands |
+| `--dry-run` | false | all subcommands |
 
 ## Live dashboard
 
