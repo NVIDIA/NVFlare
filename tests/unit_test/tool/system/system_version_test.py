@@ -275,6 +275,14 @@ class TestSystemVersion:
             with patch.object(_nvflare_mod, "__version__", "2.8.0"):
                 cmd_system_version(_make_args())
 
+        payload = json.loads(capsys.readouterr().out)["data"]
+        assert payload["compatible"] is False
+        assert payload["mismatched_sites"] == ["site-1"]
+        assert payload["sites"] == [
+            {"site": "server", "version": "2.8.0"},
+            {"site": "site-1", "version": "unknown"},
+        ]
+
 
 class TestSystemVersionHuman:
     @pytest.fixture(autouse=True)
