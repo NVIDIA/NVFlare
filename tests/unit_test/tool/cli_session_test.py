@@ -28,7 +28,6 @@ def test_new_cli_session_delegates_to_secure_session_factory():
         debug=False,
         study="default",
         timeout=2.5,
-        command_timeout=2.5,
         auto_login_max_tries=1,
     )
     assert returned is fake_sess

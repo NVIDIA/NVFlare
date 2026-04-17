@@ -1279,7 +1279,7 @@ def cmd_job_stats(cmd_args):
 
 
 def cmd_job_logs(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1310,6 +1310,8 @@ def cmd_job_logs(cmd_args):
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         return
+    except AuthenticationError:
+        raise
     except NoConnection as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return

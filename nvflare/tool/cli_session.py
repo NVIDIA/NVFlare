@@ -31,6 +31,5 @@ def new_cli_session(
         debug=debug,
         study=study,
         timeout=timeout,
-        command_timeout=timeout,
         auto_login_max_tries=1,
     )
