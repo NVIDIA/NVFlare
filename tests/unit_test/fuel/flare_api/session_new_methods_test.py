@@ -281,6 +281,21 @@ class TestGetJobLogs:
             "CUDA out of memory",
         ]
 
+    def test_quotes_grep_pattern_with_embedded_double_quote(self):
+        session = _make_session()
+        from nvflare.fuel.hci.client.api import APIStatus
+
+        reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            session.get_job_logs("job1", grep_pattern='foo"bar')
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [
+            AdminCommandNames.GET_JOB_LOG,
+            "job1",
+            "-g",
+            'foo"bar',
+        ]
+
     def test_ignores_empty_grep_pattern(self):
         session = _make_session()
         from nvflare.fuel.hci.client.api import APIStatus
