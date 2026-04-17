@@ -143,7 +143,7 @@ def _def_cert_csr_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argum
         dest="cert_type",
         choices=_VALID_CERT_TYPES,
         help=(
-            "Proposed certificate type. Embedded in the CSR as a hint for the Project Admin. "
+            "Proposed certificate type. Required and embedded in the CSR as a hint for the Project Admin. "
             "The Project Admin may override this when running 'nvflare cert sign'. "
             "Typically set by the org admin on behalf of the participant."
         ),
@@ -207,6 +207,13 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         dest="cert_type",
         choices=_VALID_CERT_TYPES,
         help="Cert type to issue. Authoritative — embedded in signed cert UNSTRUCTURED_NAME.",
+    )
+    p.add_argument(
+        "--accept-csr-role",
+        action="store_true",
+        default=False,
+        dest="accept_csr_role",
+        help="Accept the type embedded in the CSR instead of overriding it with -t/--type.",
     )
     p.add_argument(
         "--valid-days",

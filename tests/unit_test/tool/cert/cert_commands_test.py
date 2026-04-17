@@ -32,7 +32,7 @@ from cryptography.x509.oid import NameOID
 import nvflare.tool.cert.cert_cli  # noqa: F401
 from nvflare.lighter.utils import load_crt
 from nvflare.tool import cli_output
-from nvflare.tool.cert.cert_commands import handle_cert_csr, handle_cert_init, handle_cert_sign
+from nvflare.tool.cert.cert_commands import _generate_csr, handle_cert_csr, handle_cert_init, handle_cert_sign
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -71,6 +71,7 @@ def _sign_args(**kwargs):
         ca_dir=None,
         output_dir=None,
         cert_type=None,
+        accept_csr_role=False,
         valid_days=1095,
         force=False,
         schema=False,
@@ -86,6 +87,7 @@ def _run_init(tmp_path, **kwargs):
 
 
 def _run_csr(tmp_path, name="hospital-1", **kwargs):
+    kwargs.setdefault("cert_type", "client")
     args = _csr_args(name=name, output_dir=str(tmp_path), **kwargs)
     return handle_cert_csr(args)
 
@@ -262,15 +264,16 @@ class TestCertCsr:
         cn = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
         assert cn == "hospital-1"
 
-    def test_csr_no_role_in_subject(self, tmp_path):
-        """cert csr no longer embeds a role — cert sign's -t is authoritative."""
+    def test_csr_role_embedded_in_subject(self, tmp_path):
+        """cert csr requires a proposed role and embeds it in the CSR."""
         _run_csr(tmp_path, name="h1")
         csr = _load_csr_file(str(tmp_path / "h1.csr"))
         role_attrs = csr.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
-        assert len(role_attrs) == 0
+        assert len(role_attrs) == 1
+        assert role_attrs[0].value == "client"
 
     def test_org_in_subject(self, tmp_path):
-        args = _csr_args(name="h1", output_dir=str(tmp_path), org="ACME")
+        args = _csr_args(name="h1", output_dir=str(tmp_path), org="ACME", cert_type="client")
         handle_cert_csr(args)
         csr = _load_csr_file(str(tmp_path / "h1.csr"))
         org_attrs = csr.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)
@@ -312,20 +315,20 @@ class TestCertCsr:
 
     def test_force_flag_overwrites_existing_key(self, tmp_path, capsys):
         (tmp_path / "h1.key").write_bytes(b"old-key")
-        rc = handle_cert_csr(_csr_args(name="h1", output_dir=str(tmp_path), force=True))
+        rc = handle_cert_csr(_csr_args(name="h1", output_dir=str(tmp_path), cert_type="client", force=True))
         assert rc == 0
         capsys.readouterr()  # discard output
         assert b"PRIVATE KEY" in (tmp_path / "h1.key").read_bytes()
 
     def test_output_dir_created(self, tmp_path):
         new_dir = str(tmp_path / "newdir")
-        rc = handle_cert_csr(_csr_args(name="h1", output_dir=new_dir))
+        rc = handle_cert_csr(_csr_args(name="h1", output_dir=new_dir, cert_type="client"))
         assert rc == 0
         assert os.path.exists(new_dir)
 
     def test_agent_mode_json_envelope(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
-        handle_cert_csr(_csr_args(name="h1", output_dir=str(tmp_path)))
+        handle_cert_csr(_csr_args(name="h1", output_dir=str(tmp_path), cert_type="client"))
         data = json.loads(capsys.readouterr().out)
         assert data["schema_version"] == "1"
         assert data["status"] == "ok"
@@ -335,7 +338,7 @@ class TestCertCsr:
 
     def test_agent_mode_no_key_material_in_output(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
-        handle_cert_csr(_csr_args(name="h1", output_dir=str(tmp_path)))
+        handle_cert_csr(_csr_args(name="h1", output_dir=str(tmp_path), cert_type="client"))
         out = capsys.readouterr().out
         assert "BEGIN RSA PRIVATE KEY" not in out
         assert "BEGIN PRIVATE KEY" not in out
@@ -343,7 +346,7 @@ class TestCertCsr:
     def test_schema_flag(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(sys, "argv", ["nvflare", "cert", "csr", "--schema"])
         with pytest.raises(SystemExit) as exc_info:
-            handle_cert_csr(_csr_args())
+            handle_cert_csr(_csr_args(cert_type="client"))
         assert exc_info.value.code == 0
         data = json.loads(capsys.readouterr().out)
         assert data["schema_version"] == "1"
@@ -356,7 +359,7 @@ class TestCertCsr:
         assert exc_info.value.code == 4
         captured = capsys.readouterr()
         assert "INVALID_ARGS" in captured.err
-        assert "missing required argument(s): -o/--output-dir, -n/--name" in captured.err
+        assert "missing required argument(s): -o/--output-dir, -n/--name, -t/--type" in captured.err
         assert "usage:" in captured.err
 
 
@@ -377,7 +380,7 @@ def _setup_csr(tmp_path, name="hospital-1"):
     """Run cert csr and return csr_path."""
     csr_dir = str(tmp_path / "csr")
     os.makedirs(csr_dir, exist_ok=True)
-    args = _csr_args(name=name, output_dir=csr_dir)
+    args = _csr_args(name=name, output_dir=csr_dir, cert_type="client")
     handle_cert_csr(args)
     return os.path.join(csr_dir, f"{name}.csr")
 
@@ -689,12 +692,11 @@ class TestCertCsrWithRole:
         assert role_attrs[0].value == "lead"
 
     def test_csr_no_role_when_type_absent(self, tmp_path):
-        """cert csr without -t produces no UNSTRUCTURED_NAME in CSR."""
+        """cert csr without -t is rejected."""
         args = _csr_args(name="h1", output_dir=str(tmp_path))
-        handle_cert_csr(args)
-        csr = _load_csr_file(str(tmp_path / "h1.csr"))
-        role_attrs = csr.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
-        assert len(role_attrs) == 0
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_csr(args)
+        assert exc_info.value.code == 4
 
     def test_csr_role_all_valid_types(self, tmp_path):
         """Each valid cert type can be embedded in a CSR."""
@@ -714,8 +716,8 @@ class TestCertCsrWithRole:
 
 
 class TestCertSignReadsTypeFromCsr:
-    def test_sign_reads_type_from_csr_when_t_absent(self, tmp_path):
-        """cert sign without -t reads role from CSR UNSTRUCTURED_NAME."""
+    def test_sign_accepts_type_from_csr_when_flag_is_set(self, tmp_path):
+        """cert sign --accept-csr-role reads role from CSR UNSTRUCTURED_NAME."""
         ca_dir = _setup_ca(tmp_path)
         # Generate CSR with role embedded
         csr_dir = str(tmp_path / "csr")
@@ -725,7 +727,7 @@ class TestCertSignReadsTypeFromCsr:
         csr_path = os.path.join(csr_dir, "alice.csr")
 
         out_dir = str(tmp_path / "signed")
-        sign_args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir)
+        sign_args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, accept_csr_role=True)
         rc = handle_cert_sign(sign_args)
         assert rc == 0
         cert = load_crt(os.path.join(out_dir, "alice.crt"))
@@ -749,12 +751,49 @@ class TestCertSignReadsTypeFromCsr:
         role_attrs = cert.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
         assert role_attrs[0].value == "lead"
 
-    def test_sign_no_t_no_csr_role_fails(self, tmp_path):
-        """cert sign without -t and CSR has no role → error (INVALID_ARGS)."""
+    def test_sign_without_explicit_decision_fails(self, tmp_path):
+        """cert sign requires either --accept-csr-role or -t."""
         ca_dir = _setup_ca(tmp_path)
-        csr_path = _setup_csr(tmp_path)  # no role in CSR
+        csr_dir = str(tmp_path / "csr")
+        os.makedirs(csr_dir, exist_ok=True)
+        args = _csr_args(name="alice", output_dir=csr_dir, cert_type="lead")
+        handle_cert_csr(args)
+        csr_path = os.path.join(csr_dir, "alice.csr")
         out_dir = str(tmp_path / "signed")
-        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir)  # cert_type=None
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir)
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 4
+
+    def test_sign_accept_csr_role_without_csr_role_fails(self, tmp_path):
+        """--accept-csr-role requires a role embedded in the CSR."""
+        ca_dir = _setup_ca(tmp_path)
+        csr_dir = tmp_path / "csr"
+        csr_dir.mkdir()
+        _, pem_csr = _generate_csr("hospital-1")
+        csr_path = csr_dir / "hospital-1.csr"
+        csr_path.write_bytes(pem_csr)
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=str(csr_path), ca_dir=ca_dir, output_dir=out_dir, accept_csr_role=True)
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 4
+
+    def test_sign_type_and_accept_csr_role_are_mutually_exclusive(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_dir = str(tmp_path / "csr")
+        os.makedirs(csr_dir, exist_ok=True)
+        args = _csr_args(name="bob", output_dir=csr_dir, cert_type="member")
+        handle_cert_csr(args)
+        csr_path = os.path.join(csr_dir, "bob.csr")
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(
+            csr_path=csr_path,
+            ca_dir=ca_dir,
+            output_dir=out_dir,
+            cert_type="lead",
+            accept_csr_role=True,
+        )
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_sign(args)
         assert exc_info.value.code == 4

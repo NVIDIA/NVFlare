@@ -175,9 +175,9 @@ def handle_cert_init(args):
 def _generate_csr(name: str, org: str = None, role: str = None):
     """Generate RSA private key and CSR.
 
-    The optional ``role`` is embedded in the CSR's UNSTRUCTURED_NAME field as a
-    hint to the Project Admin.  The Project Admin's ``cert sign -t`` is always
-    authoritative and may override whatever is in the CSR.
+    The ``role`` is embedded in the CSR's UNSTRUCTURED_NAME field as the
+    site-admin-proposed type for the Project Admin to either accept explicitly
+    or override explicitly when signing.
 
     Returns:
         (pem_private_key: bytes, pem_csr: bytes)
@@ -272,8 +272,8 @@ def handle_cert_csr(args):
         _cert_cli._cert_csr_parser,
         "nvflare cert csr",
         [
-            "nvflare cert csr -n hospital-1 -o ./csr",
-            "nvflare cert csr -n fl-server -o ./server-csr --org ACME --force",
+            "nvflare cert csr -n hospital-1 -t client -o ./csr",
+            "nvflare cert csr -n fl-server -t server -o ./server-csr --org ACME --force",
             "nvflare cert csr --project-file site.yml -o ./csr",
         ],
         sys.argv[1:],
@@ -293,12 +293,14 @@ def handle_cert_csr(args):
             )
         site = _load_single_site_yaml(args.project_file)
 
-    # 3. Validate required args (-o is required in all modes; -n only without --project-file)
+    # 3. Validate required args (-o is required in all modes; -n/-t only without --project-file)
     missing_flags = []
     if not getattr(args, "output_dir", None):
         missing_flags.append("-o/--output-dir")
     if site is None and not getattr(args, "name", None):
         missing_flags.append("-n/--name")
+    if site is None and not getattr(args, "cert_type", None):
+        missing_flags.append("-t/--type")
     if missing_flags:
         output_usage_error(
             _cert_cli._cert_csr_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
@@ -503,13 +505,13 @@ def handle_cert_sign(args):
         _cert_cli._cert_sign_parser,
         "nvflare cert sign",
         [
-            "nvflare cert sign -r ./hospital-1.csr -c ./ca -o ./signed -t client",
+            "nvflare cert sign -r ./hospital-1.csr -c ./ca -o ./signed --accept-csr-role",
             "nvflare cert sign -r ./alice.csr -c ./ca -o ./alice-signed -t lead",
         ],
         sys.argv[1:],
     )
 
-    # 2. Validate required args (-t/--type is optional; read from CSR if omitted)
+    # 2. Validate required args and signer decision mode
     missing_flags = [
         flag
         for flag, attr in (
@@ -522,6 +524,14 @@ def handle_cert_sign(args):
     if missing_flags:
         output_usage_error(
             _cert_cli._cert_sign_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
+        )
+    if getattr(args, "cert_type", None) and getattr(args, "accept_csr_role", False):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="use either -t/--type or --accept-csr-role, not both",
         )
 
     # 3. Validate CSR file exists
@@ -557,20 +567,36 @@ def handle_cert_sign(args):
     if not csr.is_signature_valid:
         output_error("INVALID_CSR", path=csr_path)
 
-    # 6. Resolve cert type: -t is authoritative when given; otherwise read from CSR UNSTRUCTURED_NAME.
+    # 6. Resolve cert type explicitly: signer either overrides with -t or accepts the CSR role.
     cert_type = getattr(args, "cert_type", None)
-    if not cert_type:
+    if getattr(args, "accept_csr_role", False):
         # Read proposed role from CSR subject UNSTRUCTURED_NAME (set by 'cert csr -t')
         _csr_role_attrs = csr.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
         if _csr_role_attrs:
             cert_type = _csr_role_attrs[0].value
-    if not cert_type or cert_type not in _VALID_CERT_TYPES:
+        if not cert_type:
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail="CSR does not contain a proposed role; re-run with -t/--type or generate the CSR with 'cert csr -t'",
+            )
+    elif not cert_type:
         output_error_message(
             "INVALID_ARGS",
             "Invalid arguments.",
             _USAGE_HINT,
             exit_code=4,
-            detail="-t/--type is required (or embed role in CSR with 'cert csr -t')",
+            detail="specify either -t/--type to override the role or --accept-csr-role to trust the CSR role",
+        )
+    if cert_type not in _VALID_CERT_TYPES:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(_VALID_CERT_TYPES))}",
         )
     subject_cn = _get_cn(csr.subject)
     if os.sep in subject_cn or (os.altsep and os.altsep in subject_cn) or subject_cn.startswith("."):
