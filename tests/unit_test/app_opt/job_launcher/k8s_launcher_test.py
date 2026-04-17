@@ -64,8 +64,8 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     K8sJobHandle,
     PodPhase,
     PvName,
+    VOLUME_MOUNT_LIST,
     _job_args_dict,
-    _volume_mount_list,
     uuid4_to_rfc1123,
 )
 
@@ -76,7 +76,7 @@ def _make_job_config(**overrides):
         "image": "nvflare/nvflare:test",
         "container_name": "container-test-job-123",
         "command": "nvflare.private.fed.app.client.worker_process",
-        "volume_mount_list": _volume_mount_list(),
+        "volume_mount_list": VOLUME_MOUNT_LIST,
         "volume_list": [
             {"name": PvName.WORKSPACE.value, "persistentVolumeClaim": {"claimName": "ws-pvc"}},
             {"name": PvName.DATA.value, "persistentVolumeClaim": {"claimName": "data-pvc"}},
@@ -270,7 +270,7 @@ class TestK8sJobHandle:
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
         container = handle.get_manifest()["spec"]["containers"][0]
-        assert container["volumeMounts"] == _volume_mount_list()
+        assert container["volumeMounts"] == VOLUME_MOUNT_LIST
 
     def test_manifest_args_contain_command(self):
         cfg = _make_job_config()

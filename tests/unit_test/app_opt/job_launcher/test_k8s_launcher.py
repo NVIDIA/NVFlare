@@ -12,34 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.app_opt.job_launcher.k8s_launcher import K8sJobHandle, PvName, _volume_mount_list, uuid4_to_rfc1123
+from nvflare.app_opt.job_launcher.k8s_launcher import VOLUME_MOUNT_LIST, K8sJobHandle, PvName, uuid4_to_rfc1123
 
 
 class TestVolumeMountList:
-    def test_data_read_only_by_default(self):
-        mounts = _volume_mount_list()
-        data_mount = next(m for m in mounts if m["name"] == PvName.DATA.value)
+    def test_data_mount_is_read_only(self):
+        data_mount = next(m for m in VOLUME_MOUNT_LIST if m["name"] == PvName.DATA.value)
         assert data_mount["readOnly"] is True
-
-    def test_data_read_only_true(self):
-        mounts = _volume_mount_list(data_read_only=True)
-        data_mount = next(m for m in mounts if m["name"] == PvName.DATA.value)
-        assert data_mount["readOnly"] is True
-
-    def test_data_read_only_false(self):
-        mounts = _volume_mount_list(data_read_only=False)
-        data_mount = next(m for m in mounts if m["name"] == PvName.DATA.value)
-        assert data_mount["readOnly"] is False
 
     def test_workspace_always_writable(self):
-        mounts = _volume_mount_list()
-        ws_mount = next(m for m in mounts if m["name"] == PvName.WORKSPACE.value)
+        ws_mount = next(m for m in VOLUME_MOUNT_LIST if m["name"] == PvName.WORKSPACE.value)
         assert "readOnly" not in ws_mount
 
     def test_mount_paths(self):
-        mounts = _volume_mount_list()
-        ws_mount = next(m for m in mounts if m["name"] == PvName.WORKSPACE.value)
-        data_mount = next(m for m in mounts if m["name"] == PvName.DATA.value)
+        ws_mount = next(m for m in VOLUME_MOUNT_LIST if m["name"] == PvName.WORKSPACE.value)
+        data_mount = next(m for m in VOLUME_MOUNT_LIST if m["name"] == PvName.DATA.value)
         assert ws_mount["mountPath"] == "/var/tmp/nvflare/workspace"
         assert data_mount["mountPath"] == "/var/tmp/nvflare/data"
 
@@ -71,7 +58,7 @@ class TestJobHandleSecurityContext:
             "name": "test-job",
             "image": "test:latest",
             "command": "nvflare.test.module",
-            "volume_mount_list": _volume_mount_list(),
+            "volume_mount_list": VOLUME_MOUNT_LIST,
             "volume_list": [],
         }
         if security_context:

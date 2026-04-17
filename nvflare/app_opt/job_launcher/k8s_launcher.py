@@ -83,11 +83,10 @@ class PvName(Enum):
     DATA = "nvfldata"
 
 
-def _volume_mount_list(data_read_only: bool = True) -> list:
-    return [
-        {"name": PvName.WORKSPACE.value, "mountPath": "/var/tmp/nvflare/workspace"},
-        {"name": PvName.DATA.value, "mountPath": "/var/tmp/nvflare/data", "readOnly": data_read_only},
-    ]
+VOLUME_MOUNT_LIST = [
+    {"name": PvName.WORKSPACE.value, "mountPath": "/var/tmp/nvflare/workspace"},
+    {"name": PvName.DATA.value, "mountPath": "/var/tmp/nvflare/data", "readOnly": True},
+]
 
 
 def uuid4_to_rfc1123(uuid_str: str) -> str:
@@ -292,7 +291,6 @@ class K8sJobLauncher(JobLauncherSpec):
         namespace=DEFAULT_NAMESPACE,
         pending_timeout=DEFAULT_PENDING_TIMEOUT,
         python_path=DEFAULT_PYTHON_PATH,
-        data_read_only: bool = True,
         security_context: dict = None,
     ):
         super().__init__()
@@ -304,7 +302,6 @@ class K8sJobLauncher(JobLauncherSpec):
         self.namespace = namespace
         self.pending_timeout = pending_timeout
         self.python_path = python_path
-        self.data_read_only = data_read_only
         self.security_context = security_context
         self.study_data_pvc_dict = None
         self.default_data_pvc = None
@@ -379,7 +376,7 @@ class K8sJobLauncher(JobLauncherSpec):
             "image": job_image,
             "container_name": f"container-{job_id}",
             "command": job_cmd,
-            "volume_mount_list": _volume_mount_list(self.data_read_only),
+            "volume_mount_list": VOLUME_MOUNT_LIST,
             "volume_list": [
                 {"name": PvName.WORKSPACE.value, "persistentVolumeClaim": {"claimName": self.workspace_pvc}},
                 {"name": PvName.DATA.value, "persistentVolumeClaim": {"claimName": data_pvc}},
