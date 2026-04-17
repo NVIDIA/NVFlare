@@ -25,7 +25,6 @@ from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels
 from nvflare.app_common.streamers.log_streamer import LogStreamer
 from nvflare.widgets.widget import Widget
 
-
 _thread_counter = itertools.count()
 
 

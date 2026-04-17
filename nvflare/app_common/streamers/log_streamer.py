@@ -60,25 +60,19 @@ from typing import List, Tuple
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
-from nvflare.apis.streaming import (
-    ConsumerFactory,
-    ObjectConsumer,
-    StreamableEngine,
-    StreamContext,
-    StreamContextKey,
-)
+from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, StreamableEngine, StreamContext, StreamContextKey
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
 
 from .streamer_base import (  # noqa: F401
-    StreamerBase,
-    BaseChunkConsumer,
-    BaseChunkProducer,
     KEY_DATA,
     KEY_DATA_SIZE,
     KEY_EOF,
     KEY_FILE_NAME,
     KEY_HEARTBEAT,
     KEY_STREAM_DONE_CB,
+    BaseChunkConsumer,
+    BaseChunkProducer,
+    StreamerBase,
 )
 
 
@@ -132,9 +126,7 @@ class _LogChunkConsumer(BaseChunkConsumer):
 
             elapsed = time.time() - self._last_received_time
             if elapsed >= self._idle_timeout:
-                self.logger.warning(
-                    f"log stream idle for {elapsed:.1f}s (threshold {self._idle_timeout}s) — closing"
-                )
+                self.logger.warning(f"log stream idle for {elapsed:.1f}s (threshold {self._idle_timeout}s) — closing")
                 self._done.set()
                 end_stream = self._stream_ctx.get(StreamContextKey.END_STREAM)
                 if callable(end_stream):
