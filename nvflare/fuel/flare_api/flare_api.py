@@ -879,7 +879,7 @@ class Session(SessionSpec):
                         resources[str(row[0])] = row[1]
         return resources
 
-    def report_version(self, target_type: str, targets=None) -> dict:
+    def report_version(self, target_type: str, targets: Optional[List[str]] = None) -> dict:
         """Report NVFlare version for specified system target(s).
 
         Args:
