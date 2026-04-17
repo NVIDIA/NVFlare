@@ -59,12 +59,17 @@ echo "Created EFS filesystem: ${EFS_ID}"
 echo "Waiting for EFS to be available ..."
 aws efs describe-file-systems --file-system-id "${EFS_ID}" --region "${REGION}" \
   --query 'FileSystems[0].LifeCycleState' --output text
+STATE=""
 for i in $(seq 1 30); do
   STATE="$(aws efs describe-file-systems --file-system-id "${EFS_ID}" --region "${REGION}" \
     --query 'FileSystems[0].LifeCycleState' --output text)"
   if [[ "${STATE}" == "available" ]]; then break; fi
   sleep 5
 done
+if [[ "${STATE}" != "available" ]]; then
+  echo "EFS ${EFS_ID} did not reach 'available' state after 150s (current: ${STATE})" >&2
+  exit 1
+fi
 
 # Create a security group allowing NFS from the VPC CIDR
 VPC_CIDR="$(aws ec2 describe-vpcs --vpc-ids "${VPC_ID}" --region "${REGION}" \

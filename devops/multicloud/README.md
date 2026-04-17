@@ -56,6 +56,3 @@ python devops/multicloud/scripts/deploy.py down
 
 - `devops/gcp/gke/README.md` — GKE cluster setup + NVFlare prerequisites
 - `devops/aws/eks/README.md` — EKS cluster setup + NVFlare prerequisites
-- `BUGS.md` — issues found and resolution status
-- `DEPLOY_NOTES.md` — operational notes per cloud
-- `RECOMMENDATIONS.md` — what to fix in core vs deploy tooling

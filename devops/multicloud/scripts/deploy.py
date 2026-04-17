@@ -251,14 +251,16 @@ def helm(kubeconfig: str, *args) -> subprocess.CompletedProcess:
     return run(["helm", "--kubeconfig", kubeconfig] + list(args))
 
 
-def check_auth():
+def check_auth(clouds_used: set):
     print("Checking cloud auth ...")
-    r = run_quiet(["gcloud", "auth", "print-access-token"])
-    if r.returncode != 0:
-        sys.exit("GCP auth failed. Run: gcloud auth login")
-    r = run_quiet(["aws", "sts", "get-caller-identity"])
-    if r.returncode != 0:
-        sys.exit("AWS auth failed. Run: aws sso login")
+    if "gcp" in clouds_used:
+        r = run_quiet(["gcloud", "auth", "print-access-token"])
+        if r.returncode != 0:
+            sys.exit("GCP auth failed. Run: gcloud auth login")
+    if "aws" in clouds_used:
+        r = run_quiet(["aws", "sts", "get-caller-identity"])
+        if r.returncode != 0:
+            sys.exit("AWS auth failed. Run: aws sso login")
     print("  Auth OK")
 
 
@@ -716,9 +718,11 @@ def deploy_participant(
             if not aws_image:
                 print("  WARNING: No --aws-image set. AWS client will use GCP image from values.yaml.")
                 print("           EKS cannot pull from GCP Artifact Registry without mirroring.")
-            else:
+            elif ":" in aws_image:
                 repo, tag = aws_image.rsplit(":", 1)
                 helm_args += ["--set", f"image.repository={repo}", "--set", f"image.tag={tag}"]
+            else:
+                helm_args += ["--set", f"image.repository={aws_image}"]
 
         helm(p.kubeconfig, *helm_args)
 
@@ -751,10 +755,9 @@ def _flatten_set(prefix: str, d: dict) -> list[tuple[str, str]]:
 # Commands
 # ---------------------------------------------------------------------------
 def cmd_up(args):
-    check_auth()
-
     config = load_config(Path(args.config))
     participants = config.participants
+    check_auth({p.cloud for p in participants})
 
     gcp_project = config.gcp_project or run(["gcloud", "config", "get-value", "project"], capture=True).stdout.strip()
     gcp_region = config.gcp_region or "us-central1"
