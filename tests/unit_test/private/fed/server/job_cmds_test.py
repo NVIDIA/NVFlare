@@ -457,7 +457,7 @@ def test_get_job_log_tail_caps_buffered_line_count(tmp_path, monkeypatch):
 
     payload, _meta = conn.dicts[0]
     assert payload["logs"]["server"].startswith("line3\nline4\nline5\n")
-    assert "truncated after" in payload["logs"]["server"]
+    assert "truncated after 3 lines" in payload["logs"]["server"]
 
 
 def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch):

@@ -524,7 +524,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             capped_by_line_limit = False
             lines = []
         collected_bytes = 0
-        truncated = False
+        truncated_by_bytes = False
+        truncated_by_lines = False
 
         with open(log_file, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -534,41 +535,45 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 line_len = len(line.encode("utf-8", errors="replace"))
                 if tail_lines is None:
                     if collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
-                        truncated = True
+                        truncated_by_bytes = True
                         break
                     collected_bytes += line_len
                     lines.append(line)
                 else:
                     if line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
-                        truncated = True
+                        truncated_by_bytes = True
                         continue
 
                     while lines and len(lines) >= max_tail_lines:
                         _removed_line, removed_len = lines.popleft()
                         collected_bytes -= removed_len
                         if capped_by_line_limit:
-                            truncated = True
+                            truncated_by_lines = True
 
                     while lines and collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
                         _removed_line, removed_len = lines.popleft()
                         collected_bytes -= removed_len
-                        truncated = True
+                        truncated_by_bytes = True
 
                     # If a single retained line would still exceed the byte budget after
                     # eviction, drop it and report truncation rather than returning a
                     # response that exceeds the server-side safety limit.
                     if collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
-                        truncated = True
+                        truncated_by_bytes = True
                         continue
 
                     lines.append((line, line_len))
                     collected_bytes += line_len
 
         result = [line for line, _ in lines] if tail_lines is not None else list(lines)
-        if truncated:
-            result.append(
-                f"... output truncated after {self.MAX_RETURNED_JOB_LOG_BYTES} bytes; use -n/-g to narrow results ...\n"
-            )
+        if truncated_by_bytes or truncated_by_lines:
+            if truncated_by_bytes and truncated_by_lines:
+                limit_text = f"{self.MAX_RETURNED_JOB_LOG_BYTES} bytes and {self.MAX_RETURNED_JOB_LOG_LINES} lines"
+            elif truncated_by_bytes:
+                limit_text = f"{self.MAX_RETURNED_JOB_LOG_BYTES} bytes"
+            else:
+                limit_text = f"{self.MAX_RETURNED_JOB_LOG_LINES} lines"
+            result.append(f"... output truncated after {limit_text}; use -n/-g to narrow results ...\n")
         return result
 
     def list_job_components(self, conn: Connection, args: List[str]):

@@ -226,6 +226,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def download_job_components(self, job_id: str) -> str:
         """Download additional job components (e.g., ERRORLOG_site-1) for a specified job.
 
@@ -635,7 +636,7 @@ class SessionSpec(ABC):
 
     @abstractmethod
     def monitor_job_and_return_job_meta(
-        self, job_id: str, timeout: int = 0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs
+        self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs
     ) -> (MonitorReturnCode, Optional[dict]):
         """Monitor the job progress until one of the conditions occurs:
          - job is done
