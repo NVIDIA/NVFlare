@@ -707,6 +707,8 @@ def deploy_participant(
                     "service.beta.kubernetes.io/aws-load-balancer-scheme": "internet-facing",
                     "service.beta.kubernetes.io/aws-load-balancer-eip-allocations": aws_server_alloc_id,
                     "service.beta.kubernetes.io/aws-load-balancer-subnets": aws_server_subnet,
+                    # Single-AZ NLB (one subnet annotation) needs cross-zone to reach pods in other AZs.
+                    "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled": "true",
                 }
                 for k, v in annotations.items():
                     escaped = k.replace(".", r"\.")
