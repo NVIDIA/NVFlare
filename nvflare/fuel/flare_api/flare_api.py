@@ -906,7 +906,7 @@ class Session(SessionSpec):
         if not client_name or not isinstance(client_name, str):
             raise ValueError("client_name must be a non-empty str")
 
-        self._do_command(f"{AdminCommandNames.REMOVE_CLIENT} {client_name}")
+        self._do_command(join_args([AdminCommandNames.REMOVE_CLIENT, client_name]))
 
     def get_job_logs(
         self, job_id: str, target: str = "server", tail_lines: int = None, grep_pattern: str = None

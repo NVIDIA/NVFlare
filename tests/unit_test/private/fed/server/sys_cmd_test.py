@@ -100,6 +100,17 @@ def test_report_resources_all_keeps_server_when_no_clients_reply(monkeypatch):
     assert rows == [["server", "unlimited"]]
 
 
+def test_report_resources_invalid_target_uses_report_resources_usage():
+    module = SystemCommandModule()
+    conn = _MockConnection()
+
+    module.report_resources(conn, ["report_resources", "bogus"])
+
+    assert conn.tables == []
+    assert conn.strings
+    assert "Usage: report_resources server|client|all <client-name>" in conn.strings[0][0]
+
+
 def test_report_version_all_includes_server_and_clients(monkeypatch):
     module = SystemCommandModule()
     conn = _MockConnection()

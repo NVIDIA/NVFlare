@@ -140,7 +140,9 @@ class SystemCommandModule(CommandModule, CommandUtil):
             self._process_replies(conn, replies)
             return
 
-        conn.append_string("invalid target type {}. Usage: sys_info server|client <client-name>".format(target_type))
+        conn.append_string(
+            "invalid target type {}. Usage: check_status server|client <client-name>".format(target_type)
+        )
 
     def configure_site_log(self, conn: Connection, args: [str]):
         if len(args) < 3:
@@ -218,7 +220,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
         target_type = args[1]
         if target_type not in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             conn.append_string(
-                "invalid target type {}. Usage: sys_info server|client <client-name>".format(target_type)
+                "invalid target type {}. Usage: report_resources server|client|all <client-name>".format(target_type)
             )
             return
 

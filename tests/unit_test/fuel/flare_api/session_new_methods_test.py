@@ -180,8 +180,14 @@ class TestRemoveClient:
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
             session.remove_client("site-1")
         cmd = mock_cmd.call_args[0][0]
-        assert AdminCommandNames.REMOVE_CLIENT in cmd
-        assert "site-1" in cmd
+        assert split_to_args(cmd) == [AdminCommandNames.REMOVE_CLIENT, "site-1"]
+
+    def test_quotes_spaced_client_name(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.remove_client("site 1")
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.REMOVE_CLIENT, "site 1"]
 
     def test_raises_on_empty_client_name(self):
         session = _make_session()
