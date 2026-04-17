@@ -149,3 +149,103 @@ participants:
         assert exc_info.value.code == 4
         assert workspace.exists()
         assert sentinel.exists()
+
+    def test_prepare_jobs_dir_raises_when_output_error_is_mocked(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import prepare_jobs_dir
+
+        args = MagicMock()
+        args.jobs_dir = str(tmp_path / "jobs")
+        args.force = False
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands._prepare_jobs_dir", side_effect=Exception("boom")),
+            patch("nvflare.tool.cli_output.output_error"),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                prepare_jobs_dir(args)
+
+        assert exc_info.value.code == 5
+
+    def test_prepare_poc_raises_when_output_error_is_mocked_for_noninteractive_conflict(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import prepare_poc
+
+        workspace = str(tmp_path / "poc_ws")
+        os.makedirs(workspace)
+
+        cmd_args = MagicMock()
+        cmd_args.output = "json"
+        cmd_args.force = False
+        cmd_args.clients = []
+        cmd_args.number_of_clients = 2
+        cmd_args.docker_image = None
+        cmd_args.he = False
+        cmd_args.project_input = ""
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=workspace),
+            patch("sys.stdin") as mock_stdin,
+            patch("nvflare.tool.cli_output.output_error"),
+        ):
+            mock_stdin.isatty.return_value = False
+            with pytest.raises(SystemExit) as exc_info:
+                prepare_poc(cmd_args)
+
+        assert exc_info.value.code == 4
+
+    def test_start_poc_raises_when_output_error_is_mocked(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import start_poc
+
+        args = MagicMock()
+        args.service = "all"
+        args.exclude = ""
+        args.gpu = None
+        args.study = None
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands._start_poc", side_effect=Exception("boom")),
+            patch("nvflare.tool.cli_output.output_error"),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                start_poc(args)
+
+        assert exc_info.value.code == 5
+
+    def test_stop_poc_raises_when_output_error_is_mocked(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import stop_poc
+
+        args = MagicMock()
+        args.service = None
+        args.ex = None
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands._stop_poc", side_effect=Exception("boom")),
+            patch("nvflare.tool.cli_output.output_error"),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                stop_poc(args)
+
+        assert exc_info.value.code == 5
+
+    def test_clean_poc_raises_when_output_error_is_mocked(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import clean_poc
+
+        args = MagicMock()
+        args.force = True
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands._clean_poc", side_effect=Exception("boom")),
+            patch("nvflare.tool.cli_output.output_error"),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                clean_poc(args)
+
+        assert exc_info.value.code == 5

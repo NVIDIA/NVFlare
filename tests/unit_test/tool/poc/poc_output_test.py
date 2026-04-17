@@ -210,6 +210,7 @@ class TestPocOutput:
         from nvflare.tool.poc.poc_commands import clean_poc
 
         args = MagicMock()
+        args.force = True
 
         with (
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
@@ -232,6 +233,7 @@ class TestPocOutput:
         from nvflare.tool.poc.poc_commands import clean_poc
 
         args = MagicMock()
+        args.force = True
 
         with (
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
@@ -246,6 +248,40 @@ class TestPocOutput:
         data = json.loads(captured.out)
         assert data["status"] == "error"
         assert data["error_code"] == "INVALID_ARGS"
+
+    def test_clean_poc_non_interactive_without_force_exits_4(self, capsys, tmp_path):
+        from nvflare.tool.poc.poc_commands import clean_poc
+
+        args = MagicMock()
+        args.force = False
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("sys.stdin") as mock_stdin,
+            patch("os.path.isdir", return_value=True),
+            patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=({"name": "proj"}, {})),
+            patch("nvflare.tool.poc.poc_commands.is_poc_ready", return_value=True),
+            patch("nvflare.tool.poc.poc_commands.is_poc_running", return_value=False),
+        ):
+            mock_stdin.isatty.return_value = False
+            with pytest.raises(SystemExit) as exc_info:
+                clean_poc(args)
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["error_code"] == "INVALID_ARGS"
+
+    def test_clean_poc_parser_has_force_flag(self):
+        import argparse
+
+        from nvflare.tool.poc.poc_commands import def_poc_parser
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        def_poc_parser(subs)
+
+        args = root.parse_args(["poc", "clean", "--force"])
+        assert args.force is True
 
     def test_start_poc_reports_configured_server_port(self, capsys, tmp_path):
         """start_poc should use the configured fed-learn port, not a hard-coded default."""
@@ -361,6 +397,23 @@ class TestPocOutput:
         captured = capsys.readouterr()
         schema = json.loads(captured.out)
         assert schema["command"] == "nvflare poc"
+
+    def test_handle_poc_cmd_unknown_subcommand_exits_4(self, capsys):
+        import argparse
+
+        from nvflare.tool.poc.poc_commands import def_poc_parser, handle_poc_cmd
+
+        root = argparse.ArgumentParser(prog="nvflare")
+        subs = root.add_subparsers(dest="sub_command")
+        def_poc_parser(subs)
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_poc_cmd(argparse.Namespace(poc_sub_cmd="bogus", _argv=["poc", "bogus"]))
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INVALID_ARGS"
 
     def test_poc_start_parser_accepts_study(self):
         import argparse

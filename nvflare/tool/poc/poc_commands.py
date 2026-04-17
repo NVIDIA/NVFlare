@@ -168,10 +168,10 @@ def prepare_jobs_dir(cmd_args):
         result = _prepare_jobs_dir(cmd_args.jobs_dir, poc_workspace, force=force)
     except CLIException as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
-        return
+        raise SystemExit(4)
     except Exception as e:
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
-        return
+        raise SystemExit(5)
     if result is False:
         return
 
@@ -489,7 +489,7 @@ def prepare_poc(cmd_args):
                 exit_code=4,
                 detail="workspace exists; use --force to overwrite in non-interactive mode",
             )
-            return
+            raise SystemExit(4)
         # Interactive: let _prepare_poc handle the prompt
     try:
         result = _prepare_poc(
@@ -503,10 +503,10 @@ def prepare_poc(cmd_args):
         )
     except CLIException as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
-        return
+        raise SystemExit(4)
     except Exception as e:
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
-        return
+        raise SystemExit(5)
 
     if result is False:
         return  # user said no at prompt
@@ -712,10 +712,10 @@ def start_poc(cmd_args):
         _start_poc(poc_workspace, gpu_ids, excluded, services_list, study=study)
     except CLIException as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
-        return
+        raise SystemExit(4)
     except Exception as e:
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
-        return
+        raise SystemExit(5)
 
     # Get client names from project config
     clients = []
@@ -849,10 +849,10 @@ def stop_poc(cmd_args):
         _stop_poc(poc_workspace, excluded, services_list)
     except CLIException as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
-        return
+        raise SystemExit(4)
     except Exception as e:
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
-        return
+        raise SystemExit(5)
 
     output_ok({"status": "stopped"})
 
@@ -1031,15 +1031,16 @@ def clean_poc(cmd_args):
         sys.argv[1:],
     )
     poc_workspace = get_poc_workspace()
+    force = getattr(cmd_args, "force", False)
 
     try:
-        result = _clean_poc(poc_workspace)
+        result = _clean_poc(poc_workspace, force=force)
     except CLIException as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
-        return
+        raise SystemExit(4)
     except Exception as e:
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
-        return
+        raise SystemExit(5)
     if result is False:
         return
 
@@ -1054,7 +1055,7 @@ def is_poc_running(poc_workspace, service_config, project_config):
     return os.path.exists(pid_file)
 
 
-def _clean_poc(poc_workspace: str) -> bool:
+def _clean_poc(poc_workspace: str, force: bool = False) -> bool:
     import shutil
 
     if os.path.isdir(poc_workspace):
@@ -1063,8 +1064,14 @@ def _clean_poc(poc_workspace: str) -> bool:
             raise CLIException(f"{poc_workspace} is not valid poc directory")
         if is_poc_ready(poc_workspace, service_config, project_config):
             if not is_poc_running(poc_workspace, service_config, project_config):
+                from nvflare.tool.cli_output import print_human, prompt_yn
+
+                if not force:
+                    if not sys.stdin.isatty():
+                        raise CLIException("workspace exists; use --force to clean in non-interactive mode")
+                    if not prompt_yn(f"POC workspace already exists: {poc_workspace}. Remove it?"):
+                        return False
                 shutil.rmtree(poc_workspace, ignore_errors=True)
-                from nvflare.tool.cli_output import print_human
 
                 print_human(f"{poc_workspace} is removed")
                 return True
@@ -1167,6 +1174,7 @@ def define_clean_parser(poc_parser):
     clean_parser = poc_parser.add_parser(CMD_CLEAN_POC, help="clean up poc workspace")
     _poc_sub_cmd_parsers[CMD_CLEAN_POC] = clean_parser
     clean_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    clean_parser.add_argument("--force", action="store_true", help="remove workspace without prompting")
     clean_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
@@ -1244,6 +1252,11 @@ def handle_poc_cmd(cmd_args):
     poc_sub_cmd = getattr(cmd_args, "poc_sub_cmd", None)
     if poc_sub_cmd:
         poc_cmd_handler = poc_sub_cmd_handlers.get(poc_sub_cmd, None)
+        if poc_cmd_handler is None:
+            from nvflare.tool.cli_output import output_usage_error
+
+            output_usage_error(_poc_root_parser, "unknown poc command", exit_code=4)
+            raise SystemExit(4)
         poc_cmd_handler(cmd_args)
         return
 
