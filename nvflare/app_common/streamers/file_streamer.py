@@ -22,15 +22,15 @@ from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, StreamableEn
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
 
 from .streamer_base import (  # noqa: F401
-    StreamerBase,
-    BaseChunkConsumer,
-    BaseChunkProducer,
     KEY_DATA,
     KEY_DATA_SIZE,
     KEY_EOF,
     KEY_FILE_LOCATION,
     KEY_FILE_NAME,
     KEY_FILE_SIZE,
+    BaseChunkConsumer,
+    BaseChunkProducer,
+    StreamerBase,
 )
 
 
