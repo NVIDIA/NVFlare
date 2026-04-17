@@ -72,6 +72,24 @@ Impact:
 If you maintain external validation or naming policy around study identifiers,
 update those checks to match the new rule before upgrading.
 
+Site Log Configuration Restriction
+----------------------------------
+
+On the current ``main`` branch, :meth:`Session.configure_site_log<nvflare.fuel.flare_api.api_spec.SessionSpec.configure_site_log>`
+and the corresponding ``nvflare system log-config`` path now accept only simple
+log levels and built-in log modes.
+
+Impact:
+
+- JSON ``dictConfig`` payloads are no longer accepted for site-wide log changes.
+- File-path based logging configs are no longer accepted for site-wide log changes.
+- Supported values remain the standard log levels plus built-in modes such as
+  ``concise``, ``msg_only``, ``full``, ``verbose``, and ``reload``.
+
+If you previously used advanced JSON/file-based configs with
+``configure_site_log``, switch to the supported level/mode values before
+upgrading to the next release built from ``main``.
+
 Upgrading from 2.7.0/2.7.1 to 2.7.2
 ======================================
 
