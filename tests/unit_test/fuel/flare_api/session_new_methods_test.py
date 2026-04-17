@@ -317,6 +317,22 @@ class TestGetJobLogs:
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1"]
 
+    def test_grep_target_quotes_pattern_with_embedded_double_quote(self):
+        session = _make_session()
+        from nvflare.fuel.hci.client.api import APIStatus
+
+        reply = {
+            ResultKey.STATUS: APIStatus.SUCCESS,
+            ResultKey.META: None,
+            "data": [{"type": "string", "data": "matched"}],
+        }
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            result = session.grep_target("server", pattern='foo"bar', file="log.txt")
+
+        assert result == "matched"
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == ["grep", "server", 'foo"bar', "log.txt"]
+
     def test_returns_logs_dict(self):
         session = _make_session()
         from nvflare.fuel.hci.client.api import APIStatus

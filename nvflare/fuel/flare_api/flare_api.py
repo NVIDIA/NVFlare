@@ -726,7 +726,7 @@ class Session(SessionSpec):
                 raise SyntaxError("pattern is required but not specified.")
             if not isinstance(pattern, str):
                 raise ValueError("pattern is not str.")
-            parts.append('"' + pattern + '"')
+            parts.append(pattern)
 
         if fp_required and not fp:
             raise SyntaxError(f"{fp_type} is required but not specified.")
@@ -737,7 +737,7 @@ class Session(SessionSpec):
             else:
                 validate_file_string(fp)
             parts.append(fp)
-        command = " ".join(parts)
+        command = join_args(parts)
         reply = self._do_command(command, enforce_meta=False)
         return self._get_string_data(reply)
 
