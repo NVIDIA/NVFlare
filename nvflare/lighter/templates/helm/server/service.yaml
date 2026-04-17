@@ -4,12 +4,18 @@ metadata:
   name: nvflare-server
   labels:
     {{- include "nvflare-server.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
+  {{- if .Values.service }}
   {{- if .Values.service.type }}
   type: {{ .Values.service.type }}
   {{- end }}
   {{- if .Values.service.loadBalancerIP }}
   loadBalancerIP: {{ .Values.service.loadBalancerIP }}
+  {{- end }}
   {{- end }}
   selector:
     {{- include "nvflare-server.selectorLabels" . | nindent 4 }}

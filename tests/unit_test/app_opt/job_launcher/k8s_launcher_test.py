@@ -209,7 +209,7 @@ class TestK8sJobHandle:
     def test_max_stuck_count_uses_pending_timeout_when_no_timeout(self):
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg, timeout=None)
-        assert handle._max_stuck_count == 30
+        assert handle._max_stuck_count == 120
 
     def test_max_stuck_count_uses_custom_pending_timeout(self):
         cfg = _make_job_config()
@@ -1242,3 +1242,49 @@ class TestK8sJobLauncherLaunchJob:
                 launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
         finally:
             _exit_patches(patches)
+
+
+# ---------------------------------------------------------------------------
+# VOLUME_MOUNT_LIST shape
+# ---------------------------------------------------------------------------
+class TestVolumeMountList:
+    def test_data_mount_is_read_only(self):
+        data_mount = next(m for m in VOLUME_MOUNT_LIST if m["name"] == PvName.DATA.value)
+        assert data_mount["readOnly"] is True
+
+    def test_workspace_always_writable(self):
+        ws_mount = next(m for m in VOLUME_MOUNT_LIST if m["name"] == PvName.WORKSPACE.value)
+        assert "readOnly" not in ws_mount
+
+    def test_mount_paths(self):
+        ws_mount = next(m for m in VOLUME_MOUNT_LIST if m["name"] == PvName.WORKSPACE.value)
+        data_mount = next(m for m in VOLUME_MOUNT_LIST if m["name"] == PvName.DATA.value)
+        assert ws_mount["mountPath"] == "/var/tmp/nvflare/workspace"
+        assert data_mount["mountPath"] == "/var/tmp/nvflare/data"
+
+
+# ---------------------------------------------------------------------------
+# Pod-level security context
+# ---------------------------------------------------------------------------
+class TestJobHandleSecurityContext:
+    def _make_handle_with_sec(self, security_context=None):
+        cfg = _make_job_config()
+        if security_context is not None:
+            cfg["security_context"] = security_context
+        return _make_handle(cfg=cfg, namespace="test")
+
+    def test_no_security_context_by_default(self):
+        handle = self._make_handle_with_sec()
+        manifest = handle.get_manifest()
+        assert "securityContext" not in manifest["spec"]
+
+    def test_security_context_applied(self):
+        ctx = {"seLinuxOptions": {"type": "spc_t"}}
+        handle = self._make_handle_with_sec(security_context=ctx)
+        manifest = handle.get_manifest()
+        assert manifest["spec"]["securityContext"] == ctx
+
+    def test_security_context_empty_dict_not_applied(self):
+        handle = self._make_handle_with_sec(security_context={})
+        manifest = handle.get_manifest()
+        assert "securityContext" not in manifest["spec"]
