@@ -24,10 +24,10 @@
       "args": {}
     },
     {
-        "id": "error_log_sender",
-        "path": "nvflare.app_common.logging.log_sender.ErrorLogSender",
+        "id": "system_log_streamer",
+        "path": "nvflare.app_common.logging.system_log_streamer.SystemLogStreamer",
         "args": {}
-    }, 
+    },
     {
             "id": "security_handler",
             "path": "security_handler.CustomSecurityHandler"

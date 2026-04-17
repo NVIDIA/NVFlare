@@ -90,9 +90,11 @@ local_client_resources: |
         "args": {}
       },
       {
-          "id": "error_log_sender",
-          "path": "nvflare.app_common.logging.log_sender.ErrorLogSender",
-          "args": {}
+          "id": "system_log_streamer",
+          "path": "nvflare.app_common.logging.system_log_streamer.SystemLogStreamer",
+          "args": {
+            "log_file_name": "error_log.txt"
+          }
       }
     ]
   }
@@ -235,7 +237,7 @@ local_server_resources: |
           },
           {
               "id": "log_receiver",
-              "path": "nvflare.app_common.logging.log_receiver.LogReceiver",
+              "path": "nvflare.app_common.logging.job_log_receiver.JobLogReceiver",
               "args": {}
           }
       ]

@@ -98,7 +98,7 @@ class JobLogStreamer(Widget):
             self.log_info(fl_ctx, f"Waiting for log file to be created: {log_path}")
             while not os.path.exists(log_path):
                 if stop_event.is_set():
-                    self.log_warning(fl_ctx, f"Job ended before log file was created: {log_path}")
+                    self.log_info(fl_ctx, f"{self._log_file_name} was not created during this job: {log_path}")
                     return
                 time.sleep(self._poll_interval)
 

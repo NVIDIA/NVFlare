@@ -415,8 +415,8 @@ class StaticFileBuilder(Builder):
         ctx.build_from_template(dest_dir, TemplateSectionKey.CLIENT_README, ProvFileName.README_TXT)
 
     def _modify_error_sender(self, section: str, client: Participant) -> str:
-        """Modify the local resources section and remove the "error_log_sender" component if necessary.
-        By default, the "error_log_sender" component is included in local resources.
+        """Modify the local resources section and remove the "system_log_streamer" component if necessary.
+        By default, the "system_log_streamer" component is included in local resources.
         However, if the project does not allow errors to be sent, then this component must be removed.
 
         Args:
@@ -426,7 +426,7 @@ class StaticFileBuilder(Builder):
         Returns: modified section content
 
         """
-        allow = client.get_prop_fb(PropKey.ALLOW_ERROR_SENDING, False)
+        allow = client.get_prop_fb(PropKey.ALLOW_ERROR_SENDING, default=False)
         if allow:
             # error sending is allowed - so no change needed.
             return section
@@ -439,7 +439,7 @@ class StaticFileBuilder(Builder):
 
         assert isinstance(components, list)
         for c in components:
-            if c["id"] == "error_log_sender":
+            if c["id"] == "system_log_streamer":
                 # must remove this component
                 components.remove(c)
                 break
