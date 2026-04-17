@@ -113,6 +113,48 @@ class TestProvisionOutput:
         args = parser.parse_args(["--force"])
         assert args.force is True
 
+    def test_existing_project_workspace_requires_force_in_noninteractive_mode(self, capsys, tmp_path):
+        from nvflare.lighter.provision import handle_provision
+
+        args = self._make_args(project_file="project.yml", force=False)
+        (tmp_path / "project.yml").write_text("name: proj\n", encoding="utf-8")
+        project_ws = tmp_path / "workspace" / "proj"
+        project_ws.mkdir(parents=True)
+        (project_ws / "prod_00").mkdir()
+
+        with (
+            patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)),
+            patch("sys.stdin") as mock_stdin,
+        ):
+            mock_stdin.isatty.return_value = False
+            with pytest.raises(SystemExit) as exc_info:
+                handle_provision(args)
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["error_code"] == "INVALID_ARGS"
+        assert "workspace exists; use --force to continue in non-interactive mode" in data["message"]
+
+    def test_force_skips_existing_project_workspace_prompt(self, capsys, tmp_path):
+        from nvflare.lighter.provision import handle_provision
+
+        args = self._make_args(project_file="project.yml", force=True)
+        (tmp_path / "project.yml").write_text("name: proj\n", encoding="utf-8")
+        project_ws = tmp_path / "workspace" / "proj"
+        project_ws.mkdir(parents=True)
+        (project_ws / "prod_00").mkdir()
+
+        with (
+            patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)),
+            patch("nvflare.lighter.provision.provision") as mock_prov,
+            patch("nvflare.tool.install_skills.install_skills"),
+        ):
+            handle_provision(args)
+
+        mock_prov.assert_called_once()
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "ok"
+
     def test_install_skills_called_on_success(self, capsys, tmp_path):
         """install_skills should be called (and its failure ignored) on success."""
         from nvflare.lighter.provision import handle_provision
