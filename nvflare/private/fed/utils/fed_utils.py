@@ -151,6 +151,9 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
     startup_dir = workspace.get_startup_kit_dir()
     SecurityContentService.initialize(content_folder=startup_dir)
 
+    # valid_config is False when the startup kit has no signature.json. That is the expected
+    # shape for plain centrally provisioned mTLS kits, where TLS credentials are the trust
+    # anchor and there is no additional content-integrity manifest to verify.
     if secure_train and SecurityContentService.security_content_manager.valid_config:
         insecure_list = _check_secure_content(site_type=site_type)
         if len(insecure_list):
@@ -208,6 +211,9 @@ def security_init_for_job(secure_train: bool, workspace: Workspace, site_type: s
     startup_dir = workspace.get_startup_kit_dir()
     SecurityContentService.initialize(content_folder=startup_dir)
 
+    # valid_config is False when the startup kit has no signature.json. That is the expected
+    # shape for plain centrally provisioned mTLS kits, where TLS credentials are the trust
+    # anchor and there is no additional content-integrity manifest to verify.
     if secure_train and SecurityContentService.security_content_manager.valid_config:
         insecure_list = _check_secure_content(site_type=site_type)
         if len(insecure_list):
