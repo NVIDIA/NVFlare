@@ -13,8 +13,6 @@
 # limitations under the License.
 
 import json
-import os
-import tempfile
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
@@ -24,11 +22,10 @@ from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, 
 from nvflare.tool import cli_output
 
 
-def _make_args(job_id="abc123", level=None, config=None, site="all"):
+def _make_args(job_id="abc123", level=None, site="all"):
     args = MagicMock()
     args.job_id = job_id
     args.level = level
-    args.config = config
     args.site = site
     return args
 
@@ -54,7 +51,7 @@ class TestJobLog:
         return mock_sess
 
     def test_log_level_string_applied(self, capsys):
-        """level='DEBUG' with no --config and running job → ok envelope with config=='DEBUG'."""
+        """level='DEBUG' on a running job → ok envelope with config=='DEBUG'."""
         from nvflare.tool.job.job_cli import cmd_job_log
 
         args = _make_args(level="DEBUG")
@@ -71,26 +68,11 @@ class TestJobLog:
         assert envelope["data"]["status"] == "applied"
         assert envelope["data"]["sites"] == ["all"]
 
-    def test_log_level_inline_json(self, capsys):
-        """--config with inline JSON dict → ok envelope with parsed dict as config."""
-        from nvflare.tool.job.job_cli import cmd_job_log
-
-        args = _make_args(config='{"version": 1}')
-        mock_sess = self._make_session(status="RUNNING")
-
-        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
-            cmd_job_log(args)
-
-        captured = capsys.readouterr()
-        envelope = json.loads(captured.out)
-        assert envelope["status"] == "ok"
-        assert envelope["data"]["config"] == {"version": 1}
-
     def test_log_invalid_config_exits_4(self, capsys):
-        """Neither level nor --config → LOG_CONFIG_INVALID error, SystemExit with code 4."""
+        """Missing level/mode → LOG_CONFIG_INVALID error, SystemExit with code 4."""
         from nvflare.tool.job.job_cli import cmd_job_log
 
-        args = _make_args(level=None, config=None)
+        args = _make_args(level=None)
 
         with pytest.raises(SystemExit) as exc_info:
             cmd_job_log(args)
@@ -99,39 +81,6 @@ class TestJobLog:
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert envelope["error_code"] == "LOG_CONFIG_INVALID"
-
-    def test_log_both_level_and_config_exits_4(self, capsys):
-        """Providing both --level and --config → INVALID_ARGS, exits 4."""
-        from nvflare.tool.job.job_cli import cmd_job_log
-
-        args = _make_args(level="DEBUG", config='{"version": 1}')
-
-        with pytest.raises(SystemExit) as exc_info:
-            cmd_job_log(args)
-
-        assert exc_info.value.code == 4
-        envelope = json.loads(capsys.readouterr().out)
-        assert envelope["error_code"] == "INVALID_ARGS"
-
-    def test_log_bad_json_file_exits_4(self, capsys):
-        """Malformed JSON file should map to LOG_CONFIG_INVALID instead of INTERNAL_ERROR."""
-        from nvflare.tool.job.job_cli import cmd_job_log
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            f.write("{not valid json")
-            tmp_path = f.name
-
-        try:
-            args = _make_args(config=tmp_path)
-
-            with pytest.raises(SystemExit) as exc_info:
-                cmd_job_log(args)
-
-            assert exc_info.value.code == 4
-            envelope = json.loads(capsys.readouterr().out)
-            assert envelope["error_code"] == "LOG_CONFIG_INVALID"
-        finally:
-            os.unlink(tmp_path)
 
 
 class TestJobLogHuman:
@@ -162,7 +111,7 @@ class TestJobLogHuman:
         subs = root.add_subparsers()
         define_job_log_parser(subs)
 
-        args = _make_args(level=None, config=None)
+        args = _make_args(level=None)
 
         with pytest.raises(SystemExit) as exc_info:
             cmd_job_log(args)
@@ -170,8 +119,8 @@ class TestJobLogHuman:
         assert exc_info.value.code == 4
         captured = capsys.readouterr()
         assert "usage:" in captured.err
-        assert "\n\nLog config is not valid JSON or a recognised log mode." in captured.err
-        assert "Hint: Supply a valid dictConfig JSON file or one of:" in captured.err
+        assert "\n\nLog config is not a recognised log mode." in captured.err
+        assert "Hint: Supply one of:" in captured.err
         assert "Code: LOG_CONFIG_INVALID (exit 4)" in captured.err
 
     def test_log_job_not_running_finished_ok_exits_1(self, capsys):
@@ -288,7 +237,7 @@ class TestJobLogHuman:
         assert envelope["error_code"] == "SITE_NOT_FOUND"
 
     def test_log_parser(self):
-        """Primary 'log-config' parser and deprecated 'log' alias both parse correctly."""
+        """Primary 'log-config' parser parses correctly."""
         import argparse
 
         from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser
@@ -302,22 +251,3 @@ class TestJobLogHuman:
         args = parser.parse_args(["abc123", "DEBUG"])
         assert args.job_id == "abc123"
         assert args.level == "DEBUG"
-
-        alias_args = root.parse_args(["job", "log", "abc123", "DEBUG"])
-        assert alias_args.sub_command == "job"
-        assert alias_args.job_sub_cmd == "log"
-        assert alias_args.job_id == "abc123"
-        assert alias_args.level == "DEBUG"
-
-    def test_log_schema_uses_invoked_alias_name(self, monkeypatch, capsys):
-        from nvflare.tool.job.job_cli import cmd_job_log
-
-        args = _make_args()
-        monkeypatch.setattr("sys.argv", ["nvflare", "job", "log", "abc123", "--schema"])
-
-        with pytest.raises(SystemExit) as exc_info:
-            cmd_job_log(args)
-
-        assert exc_info.value.code == 0
-        payload = json.loads(capsys.readouterr().out)
-        assert payload["command"] == "nvflare job log"

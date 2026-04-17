@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
-import os
 import sys
 import time
 from contextlib import contextmanager
@@ -26,7 +24,7 @@ CMD_SYSTEM_RESOURCES = "resources"
 CMD_SYSTEM_SHUTDOWN = "shutdown"
 CMD_SYSTEM_RESTART = "restart"
 CMD_SYSTEM_VERSION = "version"
-CMD_SYSTEM_LOG = "log"
+CMD_SYSTEM_LOG_CONFIG = "log-config"
 
 _system_sub_cmd_parsers = {}
 
@@ -93,8 +91,8 @@ def def_system_cli_parser(system_parser):
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_VERSION] = p
 
-    # log
-    p = sub.add_parser(CMD_SYSTEM_LOG, help="change logging level on server or client sites")
+    # log-config
+    p = sub.add_parser(CMD_SYSTEM_LOG_CONFIG, help="change logging level on server or client sites")
     _add_system_connection_args(p)
     p.add_argument(
         "level",
@@ -102,10 +100,9 @@ def def_system_cli_parser(system_parser):
         default=None,
         help="DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload",
     )
-    p.add_argument("--config", default=None, help="path to dictConfig JSON file or inline JSON")
     p.add_argument("--site", default="all", help="server, a client name, or all")
     p.add_argument("--schema", action="store_true")
-    _system_sub_cmd_parsers[CMD_SYSTEM_LOG] = p
+    _system_sub_cmd_parsers[CMD_SYSTEM_LOG_CONFIG] = p
 
     return _system_sub_cmd_parsers
 
@@ -126,32 +123,14 @@ def _confirm_or_force(prompt, args):
         raise SystemExit(0)
 
 
-def resolve_log_config(level_str, config_str):
-    """Resolve log configuration from level string or config string/file.
-
-    Returns a str level or dict dictConfig.
-    """
-    if config_str:
-        if os.path.isfile(config_str):
-            try:
-                with open(config_str) as f:
-                    return json.load(f)
-            except OSError as e:
-                raise ValueError(str(e)) from e
-            except json.JSONDecodeError as e:
-                raise ValueError(f"invalid JSON in config file: {e}") from e
-        try:
-            return json.loads(config_str)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"invalid inline JSON: {e}") from e
-    return level_str
-
-
 def _get_system_session(args=None):
     """Create a secure session using the startup kit."""
     from nvflare.tool.cli_output import get_connect_timeout, print_human
     from nvflare.tool.cli_session import new_cli_session
     from nvflare.utils.cli_utils import get_startup_kit_dir_for_target
+
+    username = None
+    startup = None
 
     try:
         from nvflare.tool.job.job_cli import _resolve_admin_user_and_dir_from_startup_kit
@@ -164,12 +143,14 @@ def _get_system_session(args=None):
         username, startup = _resolve_admin_user_and_dir_from_startup_kit(startup)
     except ValueError as e:
         output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e))
+        return None
     except Exception:
         output_error(
             "STARTUP_KIT_MISSING",
             exit_code=4,
             detail="admin username could not be resolved from the startup kit",
         )
+        return None
 
     timeout = get_connect_timeout()
     return new_cli_session(username=username, startup_kit_location=startup, timeout=timeout)
@@ -469,50 +450,38 @@ def cmd_system_log(args):
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
-        _system_sub_cmd_parsers.get(CMD_SYSTEM_LOG),
-        "nvflare system log",
+        _system_sub_cmd_parsers.get(CMD_SYSTEM_LOG_CONFIG),
+        "nvflare system log-config",
         [
-            "nvflare system log DEBUG",
-            "nvflare system log --config /path/to/logging.json",
+            "nvflare system log-config DEBUG",
+            "nvflare system log-config concise",
         ],
         sys.argv[1:],
     )
 
     level = getattr(args, "level", None)
-    config_str = getattr(args, "config", None)
     site = getattr(args, "site", "all")
 
-    if level and config_str:
-        output_error("INVALID_ARGS", exit_code=4, detail="level and --config are mutually exclusive")
-
-    if not level and not config_str:
-        parser = _system_sub_cmd_parsers.get(CMD_SYSTEM_LOG)
-        output_usage_error(
-            None if getattr(args, "schema", False) else parser, "specify a log level or --config JSON/file", exit_code=4
-        )
-
-    try:
-        log_config = resolve_log_config(level, config_str)
-    except ValueError as e:
-        parser = _system_sub_cmd_parsers.get(CMD_SYSTEM_LOG)
+    if not level:
+        parser = _system_sub_cmd_parsers.get(CMD_SYSTEM_LOG_CONFIG)
         output_usage_error(
             None if getattr(args, "schema", False) else parser,
-            str(e),
+            "specify a log level or mode",
             exit_code=4,
             error_code="LOG_CONFIG_INVALID",
-            message="Log config is not valid JSON or a recognised log mode.",
-            hint="Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
+            message="Log config is not a recognised log mode.",
+            hint="Supply one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
         )
 
     try:
         with _system_session(args) as sess:
-            sess.configure_site_log(log_config, target=site)
+            sess.configure_site_log(level, target=site)
     except (AuthenticationError, NoConnection):
         raise
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
 
-    output_ok({"site": site, "log_config": log_config, "status": "applied"})
+    output_ok({"site": site, "log_config": level, "status": "applied"})
 
 
 _system_handlers = {
@@ -521,7 +490,7 @@ _system_handlers = {
     CMD_SYSTEM_SHUTDOWN: cmd_system_shutdown,
     CMD_SYSTEM_RESTART: cmd_system_restart,
     CMD_SYSTEM_VERSION: cmd_system_version,
-    CMD_SYSTEM_LOG: cmd_system_log,
+    CMD_SYSTEM_LOG_CONFIG: cmd_system_log,
 }
 
 

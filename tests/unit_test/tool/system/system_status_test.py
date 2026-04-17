@@ -141,6 +141,24 @@ class TestSystemStatus:
         assert envelope["error_code"] == "STARTUP_KIT_MISSING"
         assert "admin username could not be resolved" in envelope["message"]
 
+    def test_get_system_session_returns_none_if_output_error_is_mocked(self):
+        from nvflare.tool.system.system_cli import _get_system_session
+
+        args = MagicMock()
+        args.target = None
+        args.startup_target = None
+        args.startup_kit = None
+
+        with patch(
+            "nvflare.utils.cli_utils.get_startup_kit_dir_for_target",
+            side_effect=ValueError("no startup kit configured"),
+        ):
+            with patch("nvflare.tool.system.system_cli.output_error") as mocked_output_error:
+                result = _get_system_session(args)
+
+        mocked_output_error.assert_called_once()
+        assert result is None
+
     def test_get_system_session_startup_kit_fallback_error_uses_startup_kit_missing(self, capsys):
         from nvflare.tool.system.system_cli import _get_system_session
 

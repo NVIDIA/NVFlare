@@ -89,7 +89,6 @@ CMD_JOB_LOGS = "logs"
 # Job lifecycle helpers
 CMD_JOB_MONITOR = "monitor"
 CMD_JOB_LOG_CONFIG = "log-config"
-CMD_JOB_LOG = "log"
 
 
 def find_filename_basename(f: str):
@@ -579,7 +578,6 @@ job_sub_cmd_handlers = {
     CMD_JOB_LOGS: None,
     CMD_JOB_MONITOR: None,
     CMD_JOB_LOG_CONFIG: None,
-    CMD_JOB_LOG: None,
 }
 
 job_sub_cmd_parser = {
@@ -597,7 +595,6 @@ job_sub_cmd_parser = {
     CMD_JOB_LOGS: None,
     CMD_JOB_MONITOR: None,
     CMD_JOB_LOG_CONFIG: None,
-    CMD_JOB_LOG: None,
 }
 
 
@@ -1583,52 +1580,28 @@ def cmd_job_log(cmd_args):
     from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, JobNotFound, NoConnection, NoReply
     from nvflare.tool.cli_output import output_error, output_ok, output_usage_error
     from nvflare.tool.cli_schema import handle_schema_flag
-    from nvflare.tool.system.system_cli import resolve_log_config
-
-    invoked_sub_cmd = CMD_JOB_LOG_CONFIG
-    if len(sys.argv) > 2 and sys.argv[1] == "job" and sys.argv[2] in (CMD_JOB_LOG_CONFIG, CMD_JOB_LOG):
-        invoked_sub_cmd = sys.argv[2]
 
     handle_schema_flag(
         job_sub_cmd_parser[CMD_JOB_LOG_CONFIG],
-        f"nvflare job {invoked_sub_cmd}",
+        "nvflare job log-config",
         [
-            f"nvflare job {invoked_sub_cmd} abc123 DEBUG",
-            f"nvflare job {invoked_sub_cmd} abc123 concise",
-            f"nvflare job {invoked_sub_cmd} abc123 --config /path/to/logging.json",
+            "nvflare job log-config abc123 DEBUG",
+            "nvflare job log-config abc123 concise",
         ],
         sys.argv[1:],
     )
 
     level = getattr(cmd_args, "level", None)
-    config_str = getattr(cmd_args, "config", None)
     site = getattr(cmd_args, "site", "all")
 
-    if level and config_str:
-        output_usage_error(
-            job_sub_cmd_parser[CMD_JOB_LOG_CONFIG], "--level and --config are mutually exclusive", exit_code=4
-        )
-
-    if not level and not config_str:
+    if not level:
         output_usage_error(
             job_sub_cmd_parser[CMD_JOB_LOG_CONFIG],
-            "provide a valid level name or --config JSON/file",
+            "provide a valid level name or mode",
             exit_code=4,
             error_code="LOG_CONFIG_INVALID",
-            message="Log config is not valid JSON or a recognised log mode.",
-            hint="Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
-        )
-
-    try:
-        log_config = resolve_log_config(level, config_str)
-    except ValueError as e:
-        output_usage_error(
-            job_sub_cmd_parser[CMD_JOB_LOG_CONFIG],
-            str(e),
-            exit_code=4,
-            error_code="LOG_CONFIG_INVALID",
-            message="Log config is not valid JSON or a recognised log mode.",
-            hint="Supply a valid dictConfig JSON file or one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
+            message="Log config is not a recognised log mode.",
+            hint="Supply one of: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload.",
         )
 
     try:
@@ -1641,7 +1614,7 @@ def cmd_job_log(cmd_args):
                     exit_code=1,
                     detail=f"job is in terminal state: {job_status}",
                 )
-            sess.configure_job_log(cmd_args.job_id, log_config, target=site)
+            sess.configure_job_log(cmd_args.job_id, level, target=site)
     except (AuthenticationError, NoConnection):
         raise
     except InvalidTarget:
@@ -1654,7 +1627,7 @@ def cmd_job_log(cmd_args):
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
 
     sites = [site] if site != "all" else ["all"]
-    output_ok({"job_id": cmd_args.job_id, "config": log_config, "sites": sites, "status": "applied"})
+    output_ok({"job_id": cmd_args.job_id, "config": level, "sites": sites, "status": "applied"})
 
 
 def define_job_monitor_parser(job_subparser):
@@ -1682,11 +1655,7 @@ def define_job_monitor_parser(job_subparser):
 
 
 def define_job_log_parser(job_subparser):
-    p = job_subparser.add_parser(
-        CMD_JOB_LOG_CONFIG,
-        aliases=[CMD_JOB_LOG],
-        help="change logging configuration for a running job",
-    )
+    p = job_subparser.add_parser(CMD_JOB_LOG_CONFIG, help="change logging configuration for a running job")
     p.add_argument("job_id", type=str, help="job ID")
     p.add_argument(
         "level",
@@ -1694,10 +1663,7 @@ def define_job_log_parser(job_subparser):
         default=None,
         help="log level or mode: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload",
     )
-    p.add_argument("--config", default=None, help="path to dictConfig JSON file or inline JSON")
     p.add_argument("--site", default="all", help="target site name or all")
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_LOG_CONFIG] = p
-    job_sub_cmd_parser[CMD_JOB_LOG] = p
     job_sub_cmd_handlers[CMD_JOB_LOG_CONFIG] = cmd_job_log
-    job_sub_cmd_handlers[CMD_JOB_LOG] = cmd_job_log
