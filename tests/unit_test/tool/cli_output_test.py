@@ -183,6 +183,23 @@ class TestOutputOk:
         except (json.JSONDecodeError, ValueError):
             pass
 
+    def test_human_mode_error_prints_hint_and_code(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        with pytest.raises(SystemExit) as exc_info:
+            output_ok(
+                {"status": "FAILED", "job_id": "abc123"},
+                exit_code=1,
+                status="error",
+                error_code="JOB_FAILED",
+                hint="Use 'nvflare job logs <job_id>' and 'nvflare job meta <job_id>' to inspect the failure.",
+            )
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "status: FAILED" in captured.out
+        assert "job_id: abc123" in captured.out
+        assert "Hint: Use 'nvflare job logs <job_id>'" in captured.err
+        assert "Code: JOB_FAILED (exit 1)" in captured.err
+
 
 # --- output_error_message() tests: explicit message/hint/fmt) ---
 

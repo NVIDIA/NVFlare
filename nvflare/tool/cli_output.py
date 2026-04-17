@@ -150,6 +150,11 @@ def output_ok(
         print(json.dumps(payload))
     else:
         _render_table(data)
+        if status == "error":
+            if hint:
+                print(f"Hint: {hint}", file=sys.stderr)
+            if error_code:
+                print(f"Code: {error_code} (exit {exit_code})", file=sys.stderr)
     if exit_code != 0:
         sys.exit(exit_code)
 

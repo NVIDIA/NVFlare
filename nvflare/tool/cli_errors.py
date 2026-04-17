@@ -190,6 +190,14 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "Job '{job_id}' was aborted.",
         "hint": "Use 'nvflare job meta <job_id>' to see abort details.",
     },
+    "JOB_FINISHED_EXCEPTION": {
+        "message": "Job '{job_id}' reached terminal state FINISHED_EXCEPTION.",
+        "hint": "Use 'nvflare job logs <job_id>' and 'nvflare job meta <job_id>' to inspect the failure.",
+    },
+    "JOB_ABANDONED": {
+        "message": "Job '{job_id}' was abandoned.",
+        "hint": "Use 'nvflare job meta <job_id>' to inspect the abandonment details.",
+    },
     # --- Recipe / run ---
     "RECIPE_ENTRY_NOT_FOUND": {
         "message": "Recipe entry not found.",
