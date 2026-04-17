@@ -80,9 +80,16 @@ just after the stop signal fires (e.g. between `ABOUT_TO_END_RUN` and
 another retry can occur -- this handles the case where log lines trickle
 in over multiple poll intervals during shutdown.
 
-Lines written *after* `fire_event(END_RUN)` returns (such as
-"END\_RUN fired", "End the Simulator run") are structurally uncapturable
-because they are written after `join()` completes.
+### Caveat: last few log lines are always missing
+
+The streamed log file will always be missing the last few lines of the
+original log.  These lines (e.g. "END\_RUN fired", "End the Simulator
+run", "Clean up ClientRunner") are written by the framework *after* the
+`END_RUN` event handler returns -- which is after `join()` completes and
+the stream is already closed.  There is no way to capture them without
+modifying the core framework to emit additional events after those log
+calls.  In practice these are job-teardown housekeeping messages and do
+not affect the usefulness of the streamed log.
 
 ## Fresh abort signal (JobLogStreamer)
 
