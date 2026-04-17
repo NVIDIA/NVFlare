@@ -935,7 +935,7 @@ class Session(SessionSpec):
         parts = [AdminCommandNames.GET_JOB_LOG, job_id]
         if tail_lines is not None:
             parts.extend(["-n", str(tail_lines)])
-        if grep_pattern is not None:
+        if grep_pattern:
             parts.extend(["-g", grep_pattern])
 
         command = join_args(parts)
