@@ -27,6 +27,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_file, zip_directory_to_file
 from nvflare.lighter.utils import load_private_key_file, sign_folders
 
+from .api import _print_hci_message
 from .api_spec import CommandContext, HCIRequester
 from .api_status import APIStatus
 
@@ -123,7 +124,7 @@ class FileTransferModule(CommandModule):
 
         handler = self.cmd_handlers.get(server_cmd_spec.client_cmd)
         if handler is None:
-            print("no cmd handler found for {}".format(server_cmd_spec.client_cmd))
+            _print_hci_message("no cmd handler found for {}".format(server_cmd_spec.client_cmd))
             return None
 
         return CommandModuleSpec(

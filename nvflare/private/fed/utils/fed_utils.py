@@ -151,6 +151,9 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
     startup_dir = workspace.get_startup_kit_dir()
     SecurityContentService.initialize(content_folder=startup_dir)
 
+    # valid_config is False when the startup kit has no signature.json. That is the expected
+    # shape for plain centrally provisioned mTLS kits, where TLS credentials are the trust
+    # anchor and there is no additional content-integrity manifest to verify.
     if secure_train and SecurityContentService.security_content_manager.valid_config:
         insecure_list = _check_secure_content(site_type=site_type)
         if len(insecure_list):
@@ -175,7 +178,8 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
         policy_file_path = workspace.get_authorization_file_path()
 
         if policy_file_path and os.path.exists(policy_file_path):
-            policy_config = json.load(open(policy_file_path, "rt"))
+            with open(policy_file_path, "rt") as f:
+                policy_config = json.load(f)
             authorizer = FLAuthorizer(site_org, policy_config)
 
     if not authorizer:
@@ -208,6 +212,9 @@ def security_init_for_job(secure_train: bool, workspace: Workspace, site_type: s
     startup_dir = workspace.get_startup_kit_dir()
     SecurityContentService.initialize(content_folder=startup_dir)
 
+    # valid_config is False when the startup kit has no signature.json. That is the expected
+    # shape for plain centrally provisioned mTLS kits, where TLS credentials are the trust
+    # anchor and there is no additional content-integrity manifest to verify.
     if secure_train and SecurityContentService.security_content_manager.valid_config:
         insecure_list = _check_secure_content(site_type=site_type)
         if len(insecure_list):
@@ -234,7 +241,8 @@ def get_job_meta_from_workspace(workspace: Workspace, job_id: str) -> dict:
 
 def create_job_processing_context_properties(workspace: Workspace, job_id: str) -> dict:
     job_meta = get_job_meta_from_workspace(workspace, job_id)
-    assert isinstance(job_meta, dict), f"job_meta must be dict but got {type(job_meta)}"
+    if not isinstance(job_meta, dict):
+        raise RuntimeError(f"job_meta must be dict but got {type(job_meta)}")
     scope_name = job_meta.get(JobMetaKey.SCOPE, "")
     scope_object = PrivacyService.get_scope(scope_name)
     scope_props = None
@@ -269,7 +277,7 @@ def get_scope_info():
             if privacy_manager.default_scope:
                 default_scope_name = privacy_manager.default_scope.name
         return scope_names, default_scope_name
-    except:
+    except Exception:
         return [], "processing_error"
 
 

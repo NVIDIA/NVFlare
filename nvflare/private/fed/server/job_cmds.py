@@ -14,13 +14,15 @@
 
 import datetime
 import json
+import os
 import shutil
 import uuid
+from collections import deque
 from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ReturnCode, ServerCommandKey
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ReturnCode, ServerCommandKey, WorkspaceConstants
 from nvflare.apis.job_def import (
     ALL_SITES,
     DEFAULT_STUDY,
@@ -82,8 +84,19 @@ def _create_list_job_cmd_parser():
     return parser
 
 
+def _create_get_job_log_cmd_parser():
+    parser = SafeArgumentParser(prog=AdminCommandNames.GET_JOB_LOG)
+    parser.add_argument("job_id", help="Job ID")
+    parser.add_argument("-n", dest="tail_lines", type=int, help="Tail line count")
+    parser.add_argument("-g", dest="grep_pattern", help="Filter log lines containing the substring pattern")
+    return parser
+
+
 class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     """Command module with commands for job management."""
+
+    MAX_RETURNED_JOB_LOG_BYTES = 5 * 1024 * 1024
+    MAX_RETURNED_JOB_LOG_LINES = 10000
 
     def __init__(self):
         super().__init__()
@@ -115,6 +128,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     usage=f"{AdminCommandNames.LIST_JOBS} [-n name_prefix] [-d] [-u] [-r] [-m num_of_jobs] [job_id_prefix]",
                     handler_func=self.list_jobs,
                     authz_func=self.command_authz_required,
+                ),
+                CommandSpec(
+                    name=AdminCommandNames.GET_JOB_LOG,
+                    description="get server log text for a job",
+                    usage=f"{AdminCommandNames.GET_JOB_LOG} job_id [-n tail_lines] [-g grep_pattern]",
+                    handler_func=self.get_job_log,
+                    authz_func=self.authorize_job_id,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.GET_JOB_META,
@@ -441,6 +461,121 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
                 )
 
+    def get_job_log(self, conn: Connection, args: List[str]):
+        try:
+            parser = _create_get_job_log_cmd_parser()
+            parsed_args = parser.parse_args(args[1:])
+        except Exception as e:
+            conn.append_error(
+                secure_format_exception(e),
+                meta=make_meta(MetaStatusValue.SYNTAX_ERROR, secure_format_exception(e)),
+            )
+            return
+
+        prop_job_id = conn.get_prop(self.JOB_ID)
+        parsed_job_id = parsed_args.job_id.lower() if isinstance(parsed_args.job_id, str) else parsed_args.job_id
+        if prop_job_id is not None and parsed_job_id is not None and prop_job_id != parsed_job_id:
+            conn.append_error(
+                "job_id mismatch between connection property and parsed argument",
+                meta=make_meta(
+                    MetaStatusValue.SYNTAX_ERROR,
+                    "job_id mismatch between connection property and parsed argument",
+                ),
+            )
+            return
+
+        job_id = prop_job_id if prop_job_id is not None else parsed_job_id
+        engine = conn.app_ctx
+        if not isinstance(engine, ServerEngine):
+            raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
+
+        workspace = engine.get_workspace()
+        log_file = os.path.join(workspace.get_log_root(job_id), WorkspaceConstants.LOG_FILE_NAME)
+        log_lines = []
+        try:
+            if os.path.exists(log_file):
+                if parsed_args.tail_lines is not None and parsed_args.tail_lines <= 0:
+                    conn.append_error(
+                        "tail_lines must be greater than 0",
+                        meta=make_meta(MetaStatusValue.SYNTAX_ERROR, "tail_lines must be greater than 0"),
+                    )
+                    return
+
+                log_lines = self._collect_job_log_lines(
+                    log_file, tail_lines=parsed_args.tail_lines, grep_pattern=parsed_args.grep_pattern
+                )
+        except FileNotFoundError:
+            # The log file can disappear between the existence check and the open() if the
+            # active run rotates or cleans up the workspace. Treat that as an empty live-log
+            # read rather than surfacing an internal error to the admin client.
+            log_lines = []
+
+        conn.append_dict({"logs": {SERVER_SITE_NAME: "".join(log_lines)}}, meta=make_meta(MetaStatusValue.OK))
+
+    def _collect_job_log_lines(self, log_file: str, tail_lines=None, grep_pattern=None):
+        if tail_lines is not None:
+            # Bound tail mode by both requested lines and an internal safety cap so an
+            # extreme `-n` on a file with very short lines cannot grow server memory
+            # without limit before the byte cap has a chance to kick in.
+            max_tail_lines = min(tail_lines, self.MAX_RETURNED_JOB_LOG_LINES)
+            capped_by_line_limit = tail_lines > self.MAX_RETURNED_JOB_LOG_LINES
+            lines = deque()
+        else:
+            capped_by_line_limit = False
+            lines = []
+        collected_bytes = 0
+        truncated_by_bytes = False
+        truncated_by_lines = False
+
+        with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if grep_pattern and grep_pattern not in line:
+                    continue
+
+                line_len = len(line.encode("utf-8", errors="replace"))
+                if tail_lines is None:
+                    if collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
+                        truncated_by_bytes = True
+                        break
+                    collected_bytes += line_len
+                    lines.append(line)
+                else:
+                    if line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
+                        truncated_by_bytes = True
+                        continue
+
+                    while lines and len(lines) >= max_tail_lines:
+                        _removed_line, removed_len = lines.popleft()
+                        collected_bytes -= removed_len
+                        if capped_by_line_limit:
+                            truncated_by_lines = True
+
+                    while lines and collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
+                        _removed_line, removed_len = lines.popleft()
+                        collected_bytes -= removed_len
+                        truncated_by_bytes = True
+
+                    # If a single retained line would still exceed the byte budget after
+                    # eviction, drop it and report truncation rather than returning a
+                    # response that exceeds the server-side safety limit.
+                    if collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
+                        truncated_by_bytes = True
+                        continue
+
+                    lines.append((line, line_len))
+                    collected_bytes += line_len
+
+        result = [line for line, _ in lines] if tail_lines is not None else list(lines)
+        if truncated_by_bytes or truncated_by_lines:
+            if truncated_by_bytes and truncated_by_lines:
+                limit_text = f"{self.MAX_RETURNED_JOB_LOG_BYTES} bytes and {self.MAX_RETURNED_JOB_LOG_LINES} lines"
+            elif truncated_by_bytes:
+                limit_text = f"{self.MAX_RETURNED_JOB_LOG_BYTES} bytes"
+            else:
+                limit_text = f"{self.MAX_RETURNED_JOB_LOG_LINES} lines"
+            result.append(f"... output truncated after {limit_text}; use -n/-g to narrow results ...\n")
+        return result
+
     def list_job_components(self, conn: Connection, args: List[str]):
         if len(args) < 2:
             conn.append_error("Usage: list_job_components job_id", meta=make_meta(MetaStatusValue.SYNTAX_ERROR))
@@ -544,9 +679,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     @staticmethod
     def _job_match(job_meta: Dict, id_prefix: str, name_prefix: str, user_name: str, requested_study: str) -> bool:
+        job_id = (job_meta.get("job_id") or "").lower()
+        job_name = (job_meta.get("name") or "").lower()
         return (
-            ((not id_prefix) or job_meta.get("job_id").lower().startswith(id_prefix.lower()))
-            and ((not name_prefix) or job_meta.get("name").lower().startswith(name_prefix.lower()))
+            ((not id_prefix) or job_id.startswith(id_prefix.lower()))
+            and ((not name_prefix) or job_name.startswith(name_prefix.lower()))
             and ((not user_name) or job_meta.get("submitter_name") == user_name)
             and (get_job_meta_study(job_meta) == requested_study)
         )
@@ -555,7 +692,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def _send_detail_list(conn: Connection, jobs: List[Job]):
         list_of_jobs = []
         for job in jobs:
-            JobCommandModule._set_duration(job)
+            try:
+                JobCommandModule._set_duration(job)
+            except Exception:
+                pass
             normalized_meta = dict(job.meta)
             normalized_meta[JobMetaKey.STUDY.value] = get_job_meta_study(job.meta)
             conn.append_string(json.dumps(normalized_meta, indent=4))
@@ -566,7 +706,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def _send_summary_list(conn: Connection, jobs: List[Job]):
         table = conn.append_table(["Job ID", "Name", "Status", "Submit Time", "Run Duration"], name=MetaKey.JOBS)
         for job in jobs:
-            JobCommandModule._set_duration(job)
+            try:
+                JobCommandModule._set_duration(job)
+            except Exception:
+                pass
             table_row = [
                 job.meta.get(JobMetaKey.JOB_ID.value, ""),
                 CommandUtil.get_job_name(job.meta),
@@ -589,7 +732,12 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     @staticmethod
     def _set_duration(job):
         if job.meta.get(JobMetaKey.STATUS) == RunStatus.RUNNING.value:
-            start_time = datetime.datetime.strptime(job.meta.get(JobMetaKey.START_TIME.value), "%Y-%m-%d %H:%M:%S.%f")
+            try:
+                start_time = datetime.datetime.strptime(
+                    job.meta.get(JobMetaKey.START_TIME.value), "%Y-%m-%d %H:%M:%S.%f"
+                )
+            except (TypeError, ValueError):
+                return
             duration = datetime.datetime.now() - start_time
             job.meta[JobMetaKey.DURATION.value] = str(duration)
 

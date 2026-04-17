@@ -13,12 +13,15 @@
 # limitations under the License.
 import os
 from typing import Any
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.fobs import register_custom_folder
-from nvflare.private.fed.utils.fed_utils import extract_participants
+from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties, extract_participants
 
 
 class ExampleTestClass:
@@ -73,3 +76,10 @@ class TestFedUtils:
         results = extract_participants(participants)
         expected = ["site-1", "site-2", "site-3", "site-4", "site-5"]
         assert results == expected
+
+    def test_create_job_processing_context_properties_rejects_non_dict_job_meta(self):
+        workspace = MagicMock()
+
+        with patch("nvflare.private.fed.utils.fed_utils.get_job_meta_from_workspace", return_value=[]):
+            with pytest.raises(RuntimeError, match="job_meta must be dict"):
+                create_job_processing_context_properties(workspace, "job-1")

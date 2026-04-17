@@ -26,6 +26,7 @@ from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey, UidSource
 from nvflare.fuel.hci.client.config import secure_load_admin_config
 from nvflare.fuel.hci.cmd_arg_utils import (
+    join_args,
     process_targets_into_str,
     validate_file_string,
     validate_options_string,
@@ -33,6 +34,7 @@ from nvflare.fuel.hci.cmd_arg_utils import (
     validate_required_target_string,
 )
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey, ReplyKeyword
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .api_spec import (
     AuthenticationError,
@@ -47,6 +49,7 @@ from .api_spec import (
     JobNotDone,
     JobNotFound,
     JobNotRunning,
+    JobTimeout,
     MonitorReturnCode,
     NoClientsAvailable,
     NoConnection,
@@ -114,7 +117,7 @@ class Session(SessionSpec):
         self._study = study
         if name_check(self._study, "study")[0]:
             raise ValueError(
-                f"study name '{self._study}' contains unsupported characters. Use only lowercase letters, numbers, and hyphens."
+                f"study name '{self._study}' contains unsupported characters. Use only lowercase letters, numbers, underscores, and hyphens."
             )
 
     def close(self):
@@ -126,7 +129,18 @@ class Session(SessionSpec):
             raise SessionClosed("session closed")
 
         self.api.connect(timeout)
-        self.api.login()
+        result = self.api.login()
+        status = result.get(ResultKey.STATUS) if isinstance(result, dict) else None
+        details = result.get(ResultKey.DETAILS, "") if isinstance(result, dict) else ""
+        if status == APIStatus.SUCCESS:
+            return
+        if status in [APIStatus.ERROR_AUTHENTICATION, APIStatus.ERROR_CERT]:
+            raise AuthenticationError(details or "authentication failed", auth_code=result.get("auth_code"))
+        if status == APIStatus.ERROR_AUTHORIZATION:
+            raise AuthorizationError(details or "authorization failed")
+        if status == APIStatus.ERROR_SERVER_CONNECTION:
+            raise NoConnection(details or "cannot connect to server")
+        raise InternalError(details or f"login failed: {status}")
 
     def _do_command(self, command: str, enforce_meta=True, props=None):
         if self.api.closed:
@@ -183,15 +197,21 @@ class Session(SessionSpec):
             raise InternalError("missing status in result")
 
         if status in [APIStatus.ERROR_CERT, APIStatus.ERROR_AUTHENTICATION]:
-            raise AuthenticationError(f"user not authenticated: {status}")
+            details = result.get(ResultKey.DETAILS, "")
+            raise AuthenticationError(details or f"user not authenticated: {status}", auth_code=result.get("auth_code"))
         elif status == APIStatus.ERROR_AUTHORIZATION:
             raise AuthorizationError(f"user not authorized for the action '{command}'")
         elif status == APIStatus.ERROR_INACTIVE_SESSION:
             raise SessionClosed("the session is closed on server")
         elif status in [APIStatus.ERROR_PROTOCOL, APIStatus.ERROR_SYNTAX]:
-            raise InternalError(f"protocol error: {status}")
+            status_text = status.value if hasattr(status, "value") else str(status)
+            details = result.get(ResultKey.DETAILS, "")
+            if details:
+                raise InternalError(f"protocol error: {status_text}: {details}")
+            raise InternalError(f"protocol error: {status_text}")
         elif status in [APIStatus.ERROR_SERVER_CONNECTION]:
-            raise ConnectionError(f"cannot connect to server: {status}")
+            status_text = status.value if hasattr(status, "value") else str(status)
+            raise NoConnection(f"cannot connect to server: {status_text}")
         elif status != APIStatus.SUCCESS:
             details = result.get(ResultKey.DETAILS, "")
             raise RuntimeError(f"runtime error encountered: {status}: {details}")
@@ -204,11 +224,11 @@ class Session(SessionSpec):
 
     @staticmethod
     def _validate_job_id(job_id: str):
-        if not job_id:
-            raise JobNotFound("job_id is required but not specified.")
-
         if not isinstance(job_id, str):
             raise JobNotFound(f"invalid job_id {job_id}")
+
+        if not job_id:
+            raise JobNotFound("job_id is required but not specified.")
 
     def clone_job(self, job_id: str) -> str:
         """Create a new job by cloning a specified job.
@@ -313,47 +333,54 @@ class Session(SessionSpec):
         if name_prefix is not None and not isinstance(name_prefix, str):
             raise ValueError(f"name_prefix must be None or str but got {type(name_prefix)}")
 
-        command = AdminCommandNames.LIST_JOBS
+        parts = [AdminCommandNames.LIST_JOBS]
         if detailed:
-            command = command + " -d"
+            parts.append("-d")
         if reverse:
-            command = command + " -r"
+            parts.append("-r")
         if limit:
             if not isinstance(limit, int):
                 raise InvalidArgumentError(f"limit must be int but got {type(limit)}")
-            command = command + " -m " + str(limit)
+            parts.extend(["-m", str(limit)])
         if name_prefix:
             if not isinstance(name_prefix, str):
                 raise InvalidArgumentError("name_prefix must be str but got {}.".format(type(name_prefix)))
-            else:
-                command = command + " -n " + name_prefix
+            parts.extend(["-n", name_prefix])
         if id_prefix:
             if not isinstance(id_prefix, str):
                 raise InvalidArgumentError("id_prefix must be str but got {}.".format(type(id_prefix)))
-            else:
-                command = command + " " + id_prefix
+            parts.append(id_prefix)
+        command = join_args(parts)
         result = self._do_command(command)
         meta = result[ResultKey.META]
         jobs_list = meta.get(MetaKey.JOBS, [])
         return jobs_list
 
-    def download_job_result(self, job_id: str) -> str:
+    def download_job_result(self, job_id: str, destination: str = None) -> str:
         """Download result of the job.
 
         Args:
             job_id (str): ID of the job
+            destination (str): optional directory to move the downloaded result into.
+                If not specified, result is left in the download_dir from the admin config.
 
         Returns: folder path to the location of the job result
 
-        If the job size is smaller than the maximum size set on the server, the job will download to the download_dir
-        set in Session through the admin config, and the path to the downloaded result will be returned. If the size
-        of the job is larger than the maximum size, the location to download the job will be returned.
-
         """
+        import shutil
+
         self._validate_job_id(job_id)
         result = self._do_command(AdminCommandNames.DOWNLOAD_JOB + " " + job_id)
         meta = result[ResultKey.META]
         location = meta.get(MetaKey.LOCATION)
+
+        if destination and location and os.path.exists(location):
+            destination = os.path.abspath(destination)
+            os.makedirs(destination, exist_ok=True)
+            final_path = os.path.join(destination, os.path.basename(location))
+            shutil.move(location, final_path)
+            return final_path
+
         return location
 
     def list_job_components(self, job_id: str) -> List[str]:
@@ -471,58 +498,56 @@ class Session(SessionSpec):
             processed_targets_str = process_targets_into_str(client_names)
             parts.append(processed_targets_str)
 
-        command = " ".join(parts)
+        command = join_args(parts)
         result = self._do_command(command)
         meta = result[ResultKey.META]
         return meta.get(MetaKey.CLIENT_STATUS, None)
 
     def restart(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
-        """Restart specified system target(s).
+        """Restart the FL server.
 
         Args:
-            target_type (str): what system target (server, client, or all) to restart
-            client_names (List[str]): clients to be restarted if target_type is client. If not specified, all clients.
+            target_type (str): must be ``server``
+            client_names (List[str]): unused; retained for signature compatibility
 
         Returns: a dict that contains detailed info about the restart request:
             status - the overall status of the result.
-            server_status - whether the server is restarted successfully - only if target_type is "all" or "server".
-            client_status - a dict (keyed on client name) that specifies status of each client - only if target_type
-            is "all" or "client".
+            server_status - whether the server is restarted successfully.
 
         """
-        if target_type not in _VALID_TARGET_TYPES:
-            raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
+        if target_type != TargetType.SERVER:
+            raise ValueError("restart only supports target_type 'server'")
 
         parts = [AdminCommandNames.RESTART, target_type]
-        if target_type == TargetType.CLIENT and client_names:
-            processed_targets_str = process_targets_into_str(client_names)
-            parts.append(processed_targets_str)
 
         command = " ".join(parts)
         result = self._do_command(command)
         return result[ResultKey.META]
 
-    def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None):
-        """Shut down specified system target(s).
+    def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None) -> dict:
+        """Shut down the FL server.
 
         Args:
-            target_type: what system target (server, client, or all) to shut down
-            client_names: clients to be shut down if target_type is client. If not specified, all clients.
+            target_type: must be ``server``
+            client_names: unused; retained for signature compatibility
 
-        Returns: None
+        Returns: a dict that contains detailed info about the shutdown request.
         """
-        if target_type not in _VALID_TARGET_TYPES:
-            raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
+        if target_type != TargetType.SERVER:
+            raise ValueError("shutdown only supports target_type 'server'")
 
         parts = [AdminCommandNames.SHUTDOWN, target_type]
-        if target_type == TargetType.CLIENT and client_names:
-            processed_targets_str = process_targets_into_str(client_names)
-            parts.append(processed_targets_str)
 
         command = " ".join(parts)
-        self._do_command(command)
-        if target_type in [TargetType.ALL, TargetType.SERVER]:
+        result = self._do_command(command)
+        try:
             self.close()
+        except Exception:
+            # The shutdown request already succeeded; the server may tear down the
+            # connection before the client can complete logout. Preserve the command
+            # result instead of masking it with a secondary close failure.
+            pass
+        return result[ResultKey.META]
 
     def set_timeout(self, value: float):
         """Set a session-specific command timeout.
@@ -569,7 +594,7 @@ class Session(SessionSpec):
         Note: the user must be a Project Admin to use this method; otherwise the NOT_AUTHORIZED exception will be raised.
 
         """
-        self.shutdown(target_type=TargetType.ALL)
+        self._do_command(f"{AdminCommandNames.SHUTDOWN} {TargetType.ALL}")
         sys_info = self._do_get_system_info(AdminCommandNames.ADMIN_CHECK_STATUS)
         if sys_info.server_info.status != "stopped":
             raise JobNotDone("there are still running jobs")
@@ -701,7 +726,7 @@ class Session(SessionSpec):
                 raise SyntaxError("pattern is required but not specified.")
             if not isinstance(pattern, str):
                 raise ValueError("pattern is not str.")
-            parts.append('"' + pattern + '"')
+            parts.append(pattern)
 
         if fp_required and not fp:
             raise SyntaxError(f"{fp_type} is required but not specified.")
@@ -712,7 +737,7 @@ class Session(SessionSpec):
             else:
                 validate_file_string(fp)
             parts.append(fp)
-        command = " ".join(parts)
+        command = join_args(parts)
         reply = self._do_command(command, enforce_meta=False)
         return self._get_string_data(reply)
 
@@ -776,11 +801,11 @@ class Session(SessionSpec):
         self._collect_info(AdminCommandNames.RESET_ERRORS, job_id, TargetType.ALL)
 
     def _collect_info(self, cmd: str, job_id: str, target_type: str, targets=None) -> dict:
-        if not job_id:
-            raise ValueError("job_id is required but not specified.")
-
         if not isinstance(job_id, str):
             raise TypeError("job_id must be str but got {}.".format(type(job_id)))
+
+        if not job_id:
+            raise ValueError("job_id is required but not specified.")
 
         if target_type not in _VALID_TARGET_TYPES:
             raise ValueError(f"invalid target_type {target_type}: must be one of {_VALID_TARGET_TYPES}")
@@ -790,9 +815,205 @@ class Session(SessionSpec):
             processed_targets_str = process_targets_into_str(targets)
             parts.append(processed_targets_str)
 
+        command = join_args(parts)
+        reply = self._do_command(command, enforce_meta=False)
+        return self._get_dict_data(reply)
+
+    def check_status(self, target_type: str, targets=None) -> dict:
+        """Get status of specified system target(s).
+
+        Args:
+            target_type (str): type of target (server, client, or all)
+            targets: list of client names if target type is "client". All clients if not specified.
+
+        Returns: a dict with status information
+
+        """
+        if target_type not in _VALID_TARGET_TYPES:
+            raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
+
+        parts = [AdminCommandNames.CHECK_STATUS, target_type]
+        if target_type == TargetType.CLIENT and targets:
+            processed_targets_str = process_targets_into_str(targets)
+            parts.append(processed_targets_str)
+
+        command = join_args(parts)
+        result = self._do_command(command)
+        return result[ResultKey.META]
+
+    def report_resources(self, target_type: str, targets=None) -> dict:
+        """Report resources of specified system target(s).
+
+        Args:
+            target_type (str): type of target (server, client, or all)
+            targets: list of client names if target type is "client". All clients if not specified.
+
+        Returns: a dict with resource information.
+
+        Notes:
+            The underlying admin protocol currently returns this data as a table-shaped payload.
+            Session normalizes the current table layout into a simpler site->value dict for CLI
+            consumers. If the server-side table shape changes in the future, this adapter needs to
+            be updated alongside that protocol change.
+
+        """
+        if target_type not in _VALID_TARGET_TYPES:
+            raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
+
+        parts = [AdminCommandNames.REPORT_RESOURCES, target_type]
+        if target_type == TargetType.CLIENT and targets:
+            processed_targets_str = process_targets_into_str(targets)
+            parts.append(processed_targets_str)
+
+        command = " ".join(parts)
+        result = self._do_command(command, enforce_meta=False)
+        data_items = result.get(ProtoKey.DATA, [])
+        resources = {}
+        for item in data_items:
+            if isinstance(item, dict) and item.get(ProtoKey.TYPE) == ProtoKey.TABLE:
+                rows = item.get(ProtoKey.ROWS, [])
+                if not rows or len(rows) < 2:
+                    continue
+                for row in rows[1:]:
+                    if isinstance(row, list) and len(row) >= 2:
+                        resources[str(row[0])] = row[1]
+        return resources
+
+    def report_version(self, target_type: str, targets: Optional[List[str]] = None) -> dict:
+        """Report NVFlare version for specified system target(s).
+
+        Args:
+            target_type (str): type of target (server, client, or all)
+            targets: list of client names if target type is "client". All clients if not specified.
+
+        Returns: a dict with version information per site
+
+        """
+        if target_type not in _VALID_TARGET_TYPES:
+            raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
+
+        parts = [AdminCommandNames.REPORT_VERSION, target_type]
+        if target_type == TargetType.CLIENT and targets:
+            processed_targets_str = process_targets_into_str(targets)
+            parts.append(processed_targets_str)
+
         command = " ".join(parts)
         reply = self._do_command(command, enforce_meta=False)
         return self._get_dict_data(reply)
+
+    def remove_client(self, client_name: str) -> None:
+        """Remove a client from the system.
+
+        Args:
+            client_name (str): name of the client to remove
+
+        Returns: None
+
+        """
+        if not client_name or not isinstance(client_name, str):
+            raise ValueError("client_name must be a non-empty str")
+
+        self._do_command(join_args([AdminCommandNames.REMOVE_CLIENT, client_name]))
+
+    def get_job_logs(
+        self, job_id: str, target: str = "server", tail_lines: int = None, grep_pattern: str = None
+    ) -> dict:
+        """Retrieve job logs from server workspace.
+
+        Args:
+            job_id (str): ID of the job
+            target (str): target site name. Only "server" is currently supported.
+            tail_lines (int): optional number of tail lines to retrieve
+            grep_pattern (str): optional grep pattern to filter log lines
+
+        Returns: dict with "logs" keys mapping site name to log text.
+
+        """
+        self._validate_job_id(job_id)
+        if target != "server":
+            raise ValueError("get_job_logs currently only supports target='server'")
+        if tail_lines is not None:
+            if not isinstance(tail_lines, int):
+                raise ValueError(f"tail_lines must be int but got {type(tail_lines)}")
+            if tail_lines <= 0:
+                raise ValueError("tail_lines must be greater than 0")
+
+        parts = [AdminCommandNames.GET_JOB_LOG, job_id]
+        if tail_lines is not None:
+            parts.extend(["-n", str(tail_lines)])
+        if grep_pattern:
+            parts.extend(["-g", grep_pattern])
+
+        command = join_args(parts)
+        reply = self._do_command(command, enforce_meta=False)
+        payload = self._get_dict_data(reply)
+        if isinstance(payload, dict) and "logs" in payload:
+            return {"logs": payload.get("logs", {})}
+        return {"logs": payload}
+
+    def configure_job_log(self, job_id: str, config, target: str = "all") -> None:
+        """Configure logging for a running job.
+
+        Args:
+            job_id (str): ID of the job (must be RUNNING)
+            config: str (level or LogMode), dict (dictConfig), or file path
+            target (str): "all", "server", or a client site name. Any value
+                other than "all" or "server" is sent through the client-targeted
+                admin command path.
+
+        Returns: None
+
+        """
+        self._validate_job_id(job_id)
+        if isinstance(config, dict):
+            config_str = json.dumps(config)
+        else:
+            config_str = str(config)
+
+        parts = [AdminCommandNames.CONFIGURE_JOB_LOG, job_id]
+        if target in ("all", "server"):
+            parts.append(target)
+        else:
+            parts.extend(["client", target])
+        parts.append(config_str)
+        command = join_args(parts)
+        self._do_command(command, enforce_meta=False)
+
+    def configure_site_log(self, config, target: str = "all") -> None:
+        """Configure site-level logging.
+
+        Args:
+            config: str (level or LogMode), dict (dictConfig), or file path
+            target (str): target site name or "all"
+
+        Returns: None
+
+        """
+        if isinstance(config, dict):
+            config_str = json.dumps(config)
+        else:
+            config_str = str(config)
+
+        command = join_args([AdminCommandNames.CONFIGURE_SITE_LOG, target, config_str])
+        self._do_command(command, enforce_meta=False)
+
+    def wait_for_job(self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0) -> dict:
+        """Block until job reaches a terminal state.
+
+        Args:
+            job_id (str): ID of the job to wait for
+            timeout (float): how long to wait; 0 means wait indefinitely
+            poll_interval (float): seconds between status polls
+
+        Returns: final job meta dict
+
+        Raises: JobTimeout if timeout is exceeded before job finishes
+
+        """
+        rc, job_meta = self.monitor_job_and_return_job_meta(job_id, timeout=timeout, poll_interval=poll_interval)
+        if rc == MonitorReturnCode.TIMEOUT:
+            raise JobTimeout(f"job {job_id} did not finish within {timeout}s")
+        return job_meta
 
     def do_app_command(self, job_id: str, topic: str, cmd_data) -> dict:
         """Ask a running job to execute an app command
@@ -933,14 +1154,22 @@ def basic_cb_with_print(session: Session, job_id: str, job_meta, *cb_args, **cb_
 
     This demonstrates how a custom callback can be used.
 
+    When the CLI output helper is available, use it so human progress updates follow the CLI
+    stdout/stderr routing policy. Non-CLI callers still get a plain print() fallback.
+
     """
+    try:
+        from nvflare.tool.cli_output import print_human as _emit
+    except ImportError:
+        _emit = print
+
     if job_meta["status"] == "RUNNING":
         if cb_kwargs["cb_run_counter"]["count"] < 3:
-            print(job_meta)
+            _emit(job_meta)
         else:
-            print(".", end="")
+            _emit(".", end="")
     else:
-        print("\n" + str(job_meta))
+        _emit("\n" + str(job_meta))
 
     cb_kwargs["cb_run_counter"]["count"] += 1
     return True
@@ -953,6 +1182,8 @@ def new_session(
     debug: bool = False,
     timeout: float = 10.0,
     study: str = DEFAULT_STUDY,
+    command_timeout: float = None,
+    auto_login_max_tries: int = None,
 ) -> Session:
     session = Session(
         username=username,
@@ -961,8 +1192,23 @@ def new_session(
         secure_mode=secure_mode,
         study=study,
     )
-    session.try_connect(timeout)
-    return session
+    if auto_login_max_tries is not None and getattr(session, "api", None):
+        session.api.auto_login_max_tries = auto_login_max_tries
+    if command_timeout is not None:
+        session.set_timeout(command_timeout)
+    try:
+        session.try_connect(timeout)
+        return session
+    except Exception:
+        try:
+            session.close()
+        except Exception as cleanup_error:
+            # Preserve the original connection/setup failure if cleanup on a partially
+            # initialized session also errors.
+            logger = get_obj_logger(session)
+            if logger:
+                logger.debug("failed to close partially initialized session during cleanup: %s", cleanup_error)
+        raise
 
 
 def new_secure_session(
@@ -971,6 +1217,8 @@ def new_secure_session(
     debug: bool = False,
     timeout: float = 10.0,
     study: str = DEFAULT_STUDY,
+    command_timeout: float = None,
+    auto_login_max_tries: int = None,
 ) -> Session:
     """Create a new secure FLARE API session with the NVFLARE system.
 
@@ -980,11 +1228,22 @@ def new_secure_session(
         debug (bool): enable debug mode
         timeout (float): how long to try to establish the session, in seconds
         study (str): active study context for submitted jobs and session-scoped job listing; defaults to "default"
+        command_timeout (float): optional per-session command timeout sent to the admin server
+        auto_login_max_tries (int): optional cap on API auto-login retries before connect
 
     Returns: a Session object
 
     """
-    return new_session(username, startup_kit_location, True, debug, timeout, study=study)
+    return new_session(
+        username,
+        startup_kit_location,
+        True,
+        debug,
+        timeout,
+        study=study,
+        command_timeout=command_timeout,
+        auto_login_max_tries=auto_login_max_tries,
+    )
 
 
 def new_insecure_session(

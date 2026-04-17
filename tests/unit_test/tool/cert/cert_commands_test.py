@@ -19,6 +19,8 @@ import json
 import os
 import platform
 import stat
+import sys
+from unittest.mock import patch
 
 import pytest
 from cryptography import x509
@@ -29,7 +31,8 @@ from cryptography.x509.oid import NameOID
 # Ensure parsers are initialized by importing cert_cli (registers module-level parser refs)
 import nvflare.tool.cert.cert_cli  # noqa: F401
 from nvflare.lighter.utils import load_crt
-from nvflare.tool.cert.cert_commands import handle_cert_csr, handle_cert_init, handle_cert_sign
+from nvflare.tool import cli_output
+from nvflare.tool.cert.cert_commands import _generate_csr, handle_cert_csr, handle_cert_init, handle_cert_sign
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -42,7 +45,6 @@ def _init_args(**kwargs):
         output_dir=None,
         org=None,
         force=False,
-        output_fmt=None,
         schema=False,
     )
     defaults.update(kwargs)
@@ -55,8 +57,8 @@ def _csr_args(**kwargs):
         output_dir=None,
         org=None,
         cert_type=None,
+        project_file=None,
         force=False,
-        output_fmt=None,
         schema=False,
     )
     defaults.update(kwargs)
@@ -69,9 +71,9 @@ def _sign_args(**kwargs):
         ca_dir=None,
         output_dir=None,
         cert_type=None,
+        accept_csr_role=False,
         valid_days=1095,
         force=False,
-        output_fmt=None,
         schema=False,
     )
     defaults.update(kwargs)
@@ -85,6 +87,7 @@ def _run_init(tmp_path, **kwargs):
 
 
 def _run_csr(tmp_path, name="hospital-1", **kwargs):
+    kwargs.setdefault("cert_type", "client")
     args = _csr_args(name=name, output_dir=str(tmp_path), **kwargs)
     return handle_cert_csr(args)
 
@@ -163,36 +166,43 @@ class TestCertInit:
         assert len(org_attrs) == 1
         assert org_attrs[0].value == "NVIDIA"
 
-    def test_schema_output(self, tmp_path, capsys):
-        args = _init_args(output_dir=str(tmp_path), schema=True)
-        rc = handle_cert_init(args)
-        assert rc == 0
-        out = capsys.readouterr().out
-        data = json.loads(out)
+    def test_schema_output(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["nvflare", "cert", "init", "--schema"])
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_init(_init_args())
+        assert exc_info.value.code == 0
+        data = json.loads(capsys.readouterr().out)
         assert data["schema_version"] == "1"
         assert data["command"] == "nvflare cert init"
         assert len(data["args"]) > 0
 
-    def test_output_json_success(self, tmp_path, capsys):
-        args = _init_args(output_dir=str(tmp_path), output_fmt="json")
-        rc = handle_cert_init(args)
+    def test_missing_required_args_show_help_and_missing_flags(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_init(_init_args(project=None, output_dir=None))
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        assert "INVALID_ARGS" in captured.err
+        assert "missing required argument(s): --project, -o/--output-dir" in captured.err
+        assert "usage:" in captured.err
+
+    def test_agent_mode_json_envelope(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        rc = handle_cert_init(_init_args(output_dir=str(tmp_path)))
         assert rc == 0
-        out = capsys.readouterr().out
-        data = json.loads(out)
+        data = json.loads(capsys.readouterr().out)
         assert data["schema_version"] == "1"
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
         assert "ca_cert" in data["data"]
         assert "ca_key" in data["data"]
         assert "project" in data["data"]
         assert "valid_until" in data["data"]
 
-    def test_output_json_implies_force(self, tmp_path):
-        # Pre-create rootCA.key — json mode should NOT error
+    def test_force_flag_overwrites_existing_ca(self, tmp_path):
         (tmp_path / "rootCA.key").write_bytes(b"old-key")
-        args = _init_args(output_dir=str(tmp_path), output_fmt="json")
-        rc = handle_cert_init(args)
+        rc = handle_cert_init(_init_args(output_dir=str(tmp_path), force=True))
         assert rc == 0
-        # New key should be written
         assert (tmp_path / "rootCA.key").exists()
 
     def test_output_dir_created(self, tmp_path):
@@ -254,15 +264,16 @@ class TestCertCsr:
         cn = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
         assert cn == "hospital-1"
 
-    def test_csr_no_role_in_subject(self, tmp_path):
-        """cert csr no longer embeds a role — cert sign's -t is authoritative."""
+    def test_csr_role_embedded_in_subject(self, tmp_path):
+        """cert csr requires a proposed role and embeds it in the CSR."""
         _run_csr(tmp_path, name="h1")
         csr = _load_csr_file(str(tmp_path / "h1.csr"))
         role_attrs = csr.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
-        assert len(role_attrs) == 0
+        assert len(role_attrs) == 1
+        assert role_attrs[0].value == "client"
 
     def test_org_in_subject(self, tmp_path):
-        args = _csr_args(name="h1", output_dir=str(tmp_path), org="ACME")
+        args = _csr_args(name="h1", output_dir=str(tmp_path), org="ACME", cert_type="client")
         handle_cert_csr(args)
         csr = _load_csr_file(str(tmp_path / "h1.csr"))
         org_attrs = csr.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)
@@ -302,51 +313,54 @@ class TestCertCsr:
         assert (bak_dir / "h1.key").exists()
         assert (bak_dir / "h1.csr").exists()
 
-    def test_output_json_implies_force(self, tmp_path, capsys):
+    def test_force_flag_overwrites_existing_key(self, tmp_path, capsys):
         (tmp_path / "h1.key").write_bytes(b"old-key")
-        args = _csr_args(name="h1", output_dir=str(tmp_path), output_fmt="json")
-        rc = handle_cert_csr(args)
+        rc = handle_cert_csr(_csr_args(name="h1", output_dir=str(tmp_path), cert_type="client", force=True))
         assert rc == 0
-        out = capsys.readouterr().out
-        data = json.loads(out)
-        assert data["status"] == "ok"
+        capsys.readouterr()  # discard output
+        assert b"PRIVATE KEY" in (tmp_path / "h1.key").read_bytes()
 
     def test_output_dir_created(self, tmp_path):
         new_dir = str(tmp_path / "newdir")
-        args = _csr_args(name="h1", output_dir=new_dir)
-        rc = handle_cert_csr(args)
+        rc = handle_cert_csr(_csr_args(name="h1", output_dir=new_dir, cert_type="client"))
         assert rc == 0
         assert os.path.exists(new_dir)
 
-    def test_output_json_envelope(self, tmp_path, capsys):
-        args = _csr_args(name="h1", output_dir=str(tmp_path), output_fmt="json")
-        handle_cert_csr(args)
-        out = capsys.readouterr().out
-        data = json.loads(out)
+    def test_agent_mode_json_envelope(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        handle_cert_csr(_csr_args(name="h1", output_dir=str(tmp_path), cert_type="client"))
+        data = json.loads(capsys.readouterr().out)
         assert data["schema_version"] == "1"
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
+        assert "key" in data["data"]
+        assert "csr" in data["data"]
 
-    def test_output_json_no_key_material(self, tmp_path, capsys):
-        args = _csr_args(name="h1", output_dir=str(tmp_path), output_fmt="json")
-        handle_cert_csr(args)
+    def test_agent_mode_no_key_material_in_output(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        handle_cert_csr(_csr_args(name="h1", output_dir=str(tmp_path), cert_type="client"))
         out = capsys.readouterr().out
         assert "BEGIN RSA PRIVATE KEY" not in out
         assert "BEGIN PRIVATE KEY" not in out
 
-    def test_schema_flag(self, tmp_path, capsys):
-        args = _csr_args(schema=True)
-        rc = handle_cert_csr(args)
-        assert rc == 0
-        out = capsys.readouterr().out
-        data = json.loads(out)
+    def test_schema_flag(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["nvflare", "cert", "csr", "--schema"])
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_csr(_csr_args(cert_type="client"))
+        assert exc_info.value.code == 0
+        data = json.loads(capsys.readouterr().out)
         assert data["schema_version"] == "1"
         assert data["command"] == "nvflare cert csr"
 
-    def test_output_quiet(self, tmp_path, capsys):
-        args = _csr_args(name="h1", output_dir=str(tmp_path), output_fmt="quiet")
-        rc = handle_cert_csr(args)
-        assert rc == 0
-        assert (tmp_path / "h1.key").exists()
+    def test_missing_required_args_show_help_and_missing_flags(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_csr(_csr_args(name=None, output_dir=None))
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        assert "INVALID_ARGS" in captured.err
+        assert "missing required argument(s): -o/--output-dir, -n/--name, -t/--type" in captured.err
+        assert "usage:" in captured.err
 
 
 # ---------------------------------------------------------------------------
@@ -355,18 +369,18 @@ class TestCertCsr:
 
 
 def _setup_ca(tmp_path):
-    """Run cert init and return ca_dir path. Uses quiet output to avoid polluting capsys."""
+    """Run cert init and return ca_dir path."""
     ca_dir = str(tmp_path / "ca")
-    args = _init_args(output_dir=ca_dir, output_fmt="quiet")
+    args = _init_args(output_dir=ca_dir)
     handle_cert_init(args)
     return ca_dir
 
 
 def _setup_csr(tmp_path, name="hospital-1"):
-    """Run cert csr and return csr_path. Uses quiet output to avoid polluting capsys."""
+    """Run cert csr and return csr_path."""
     csr_dir = str(tmp_path / "csr")
     os.makedirs(csr_dir, exist_ok=True)
-    args = _csr_args(name=name, output_dir=csr_dir, output_fmt="quiet")
+    args = _csr_args(name=name, output_dir=csr_dir, cert_type="client")
     handle_cert_csr(args)
     return os.path.join(csr_dir, f"{name}.csr")
 
@@ -478,6 +492,38 @@ class TestCertSign:
             handle_cert_sign(args)
         assert exc_info.value.code == 1
 
+    def test_sign_invalid_csr_includes_parse_detail(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = _setup_ca(tmp_path)
+        bad_csr_path = str(tmp_path / "bad.csr")
+        with open(bad_csr_path, "wb") as f:
+            f.write(b"not a csr")
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=bad_csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "bad.csr" in captured.err
+        assert "INVALID_CSR" in captured.err
+        assert "Unable to load PEM file" in captured.err or "MismatchedTags" in captured.err
+
+    def test_sign_csr_path_must_be_file(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = _setup_ca(tmp_path)
+        csr_dir = str(tmp_path / "csr_dir")
+        os.makedirs(csr_dir, exist_ok=True)
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=csr_dir, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        assert "must be a file path, not a directory" in captured.err
+        assert "INTERNAL_ERROR" not in captured.err
+
     def test_sign_ca_dir_invalid(self, tmp_path):
         csr_path = _setup_csr(tmp_path)
         out_dir = str(tmp_path / "signed")
@@ -491,40 +537,50 @@ class TestCertSign:
             handle_cert_sign(args)
         assert exc_info.value.code == 1
 
-    def test_sign_output_json(self, tmp_path, capsys):
+    def test_sign_agent_mode_json_envelope(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
         ca_dir = _setup_ca(tmp_path)
         csr_path = _setup_csr(tmp_path)
         capsys.readouterr()  # discard setup output
         out_dir = str(tmp_path / "signed")
-        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client", output_fmt="json")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
         rc = handle_cert_sign(args)
         assert rc == 0
-        out = capsys.readouterr().out
-        data = json.loads(out)
+        data = json.loads(capsys.readouterr().out)
         assert data["schema_version"] == "1"
         assert data["status"] == "ok"
+        assert data["exit_code"] == 0
         assert "signed_cert" in data["data"]
         assert "rootca" in data["data"]
         assert "serial" in data["data"]
 
-    def test_sign_output_json_implies_force(self, tmp_path):
+    def test_sign_force_overwrites_existing_cert(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
         csr_path = _setup_csr(tmp_path)
         out_dir = str(tmp_path / "signed")
         os.makedirs(out_dir, exist_ok=True)
         open(os.path.join(out_dir, "hospital-1.crt"), "w").close()
-        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client", output_fmt="json")
-        rc = handle_cert_sign(args)
-        assert rc == 0
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client", force=True)
+        assert handle_cert_sign(args) == 0
 
-    def test_sign_schema_output(self, tmp_path, capsys):
-        args = _sign_args(schema=True)
-        rc = handle_cert_sign(args)
-        assert rc == 0
-        out = capsys.readouterr().out
-        data = json.loads(out)
+    def test_sign_schema_output(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["nvflare", "cert", "sign", "--schema"])
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(_sign_args())
+        assert exc_info.value.code == 0
+        data = json.loads(capsys.readouterr().out)
         assert data["schema_version"] == "1"
         assert data["command"] == "nvflare cert sign"
+
+    def test_missing_required_args_show_help_and_missing_flags(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(_sign_args(csr_path=None, ca_dir=None, output_dir=None))
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        assert "INVALID_ARGS" in captured.err
+        assert "missing required argument(s): -r/--csr, -c/--ca-dir, -o/--output-dir" in captured.err
+        assert "usage:" in captured.err
 
     def test_sign_rootca_copied(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
@@ -654,12 +710,11 @@ class TestCertCsrWithRole:
         assert role_attrs[0].value == "lead"
 
     def test_csr_no_role_when_type_absent(self, tmp_path):
-        """cert csr without -t produces no UNSTRUCTURED_NAME in CSR."""
+        """cert csr without -t is rejected."""
         args = _csr_args(name="h1", output_dir=str(tmp_path))
-        handle_cert_csr(args)
-        csr = _load_csr_file(str(tmp_path / "h1.csr"))
-        role_attrs = csr.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
-        assert len(role_attrs) == 0
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_csr(args)
+        assert exc_info.value.code == 4
 
     def test_csr_role_all_valid_types(self, tmp_path):
         """Each valid cert type can be embedded in a CSR."""
@@ -679,18 +734,18 @@ class TestCertCsrWithRole:
 
 
 class TestCertSignReadsTypeFromCsr:
-    def test_sign_reads_type_from_csr_when_t_absent(self, tmp_path):
-        """cert sign without -t reads role from CSR UNSTRUCTURED_NAME."""
+    def test_sign_accepts_type_from_csr_when_flag_is_set(self, tmp_path):
+        """cert sign --accept-csr-role reads role from CSR UNSTRUCTURED_NAME."""
         ca_dir = _setup_ca(tmp_path)
         # Generate CSR with role embedded
         csr_dir = str(tmp_path / "csr")
         os.makedirs(csr_dir, exist_ok=True)
-        args = _csr_args(name="alice", output_dir=csr_dir, cert_type="lead", output_fmt="quiet")
+        args = _csr_args(name="alice", output_dir=csr_dir, cert_type="lead")
         handle_cert_csr(args)
         csr_path = os.path.join(csr_dir, "alice.csr")
 
         out_dir = str(tmp_path / "signed")
-        sign_args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir)
+        sign_args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, accept_csr_role=True)
         rc = handle_cert_sign(sign_args)
         assert rc == 0
         cert = load_crt(os.path.join(out_dir, "alice.crt"))
@@ -703,7 +758,7 @@ class TestCertSignReadsTypeFromCsr:
         csr_dir = str(tmp_path / "csr")
         os.makedirs(csr_dir, exist_ok=True)
         # CSR proposes 'member', Project Admin overrides to 'lead'
-        args = _csr_args(name="bob", output_dir=csr_dir, cert_type="member", output_fmt="quiet")
+        args = _csr_args(name="bob", output_dir=csr_dir, cert_type="member")
         handle_cert_csr(args)
         csr_path = os.path.join(csr_dir, "bob.csr")
 
@@ -714,12 +769,303 @@ class TestCertSignReadsTypeFromCsr:
         role_attrs = cert.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
         assert role_attrs[0].value == "lead"
 
-    def test_sign_no_t_no_csr_role_fails(self, tmp_path):
-        """cert sign without -t and CSR has no role → error (INVALID_ARGS)."""
+    def test_sign_without_explicit_decision_fails(self, tmp_path):
+        """cert sign requires either --accept-csr-role or -t."""
         ca_dir = _setup_ca(tmp_path)
-        csr_path = _setup_csr(tmp_path)  # no role in CSR
+        csr_dir = str(tmp_path / "csr")
+        os.makedirs(csr_dir, exist_ok=True)
+        args = _csr_args(name="alice", output_dir=csr_dir, cert_type="lead")
+        handle_cert_csr(args)
+        csr_path = os.path.join(csr_dir, "alice.csr")
         out_dir = str(tmp_path / "signed")
-        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir)  # cert_type=None
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir)
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_sign(args)
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 4
+
+    def test_sign_accept_csr_role_without_csr_role_fails(self, tmp_path):
+        """--accept-csr-role requires a role embedded in the CSR."""
+        ca_dir = _setup_ca(tmp_path)
+        csr_dir = tmp_path / "csr"
+        csr_dir.mkdir()
+        _, pem_csr = _generate_csr("hospital-1")
+        csr_path = csr_dir / "hospital-1.csr"
+        csr_path.write_bytes(pem_csr)
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=str(csr_path), ca_dir=ca_dir, output_dir=out_dir, accept_csr_role=True)
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 4
+
+    def test_sign_type_and_accept_csr_role_are_mutually_exclusive(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_dir = str(tmp_path / "csr")
+        os.makedirs(csr_dir, exist_ok=True)
+        args = _csr_args(name="bob", output_dir=csr_dir, cert_type="member")
+        handle_cert_csr(args)
+        csr_path = os.path.join(csr_dir, "bob.csr")
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(
+            csr_path=csr_path,
+            ca_dir=ca_dir,
+            output_dir=out_dir,
+            cert_type="lead",
+            accept_csr_role=True,
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 4
+
+
+# ---------------------------------------------------------------------------
+# _load_single_site_yaml unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestLoadSingleSiteYaml:
+    from nvflare.tool.cert.cert_commands import _load_single_site_yaml
+
+    def _write_yaml(self, tmp_path, content: str) -> str:
+        p = tmp_path / "site.yml"
+        p.write_text(content)
+        return str(p)
+
+    def test_valid_yaml_returns_correct_dict(self, tmp_path):
+        from nvflare.tool.cert.cert_commands import _load_single_site_yaml
+
+        path = self._write_yaml(tmp_path, "name: hospital-1\norg: ACME\ntype: client\n")
+        result = _load_single_site_yaml(path)
+        assert result == {"name": "hospital-1", "org": "ACME", "cert_type": "client"}
+
+    def test_type_key_maps_to_cert_type(self, tmp_path):
+        from nvflare.tool.cert.cert_commands import _load_single_site_yaml
+
+        path = self._write_yaml(tmp_path, "name: srv\norg: NVIDIA\ntype: server\n")
+        result = _load_single_site_yaml(path)
+        assert result["cert_type"] == "server"
+
+    def test_file_not_found_exits_1(self, tmp_path):
+        from nvflare.tool.cert.cert_commands import _load_single_site_yaml
+
+        with pytest.raises(SystemExit) as exc_info:
+            _load_single_site_yaml(str(tmp_path / "no-such.yml"))
+        assert exc_info.value.code == 1
+
+    def test_not_a_mapping_exits_4(self, tmp_path):
+        from nvflare.tool.cert.cert_commands import _load_single_site_yaml
+
+        path = self._write_yaml(tmp_path, "- a\n- b\n")
+        with pytest.raises(SystemExit) as exc_info:
+            _load_single_site_yaml(path)
+        assert exc_info.value.code == 4
+
+    def test_missing_name_exits_4(self, tmp_path):
+        from nvflare.tool.cert.cert_commands import _load_single_site_yaml
+
+        path = self._write_yaml(tmp_path, "org: ACME\ntype: client\n")
+        with pytest.raises(SystemExit) as exc_info:
+            _load_single_site_yaml(path)
+        assert exc_info.value.code == 4
+
+    def test_missing_org_exits_4(self, tmp_path):
+        from nvflare.tool.cert.cert_commands import _load_single_site_yaml
+
+        path = self._write_yaml(tmp_path, "name: h1\ntype: client\n")
+        with pytest.raises(SystemExit) as exc_info:
+            _load_single_site_yaml(path)
+        assert exc_info.value.code == 4
+
+    def test_missing_type_exits_4(self, tmp_path):
+        from nvflare.tool.cert.cert_commands import _load_single_site_yaml
+
+        path = self._write_yaml(tmp_path, "name: h1\norg: ACME\n")
+        with pytest.raises(SystemExit) as exc_info:
+            _load_single_site_yaml(path)
+        assert exc_info.value.code == 4
+
+    def test_invalid_type_exits_4(self, tmp_path):
+        from nvflare.tool.cert.cert_commands import _load_single_site_yaml
+
+        path = self._write_yaml(tmp_path, "name: h1\norg: ACME\ntype: gpu\n")
+        with pytest.raises(SystemExit) as exc_info:
+            _load_single_site_yaml(path)
+        assert exc_info.value.code == 4
+
+    def test_empty_name_exits_4(self, tmp_path):
+        from nvflare.tool.cert.cert_commands import _load_single_site_yaml
+
+        path = self._write_yaml(tmp_path, "name: ''\norg: ACME\ntype: client\n")
+        with pytest.raises(SystemExit) as exc_info:
+            _load_single_site_yaml(path)
+        assert exc_info.value.code == 4
+
+
+# ---------------------------------------------------------------------------
+# handle_cert_csr --project-file tests
+# ---------------------------------------------------------------------------
+
+
+class TestCertCsrProjectFile:
+    def _write_site_yaml(self, tmp_path, name="hospital-1", org="ACME", cert_type="client") -> str:
+        content = f"name: {name}\norg: {org}\ntype: {cert_type}\n"
+        p = tmp_path / "site.yml"
+        p.write_text(content)
+        return str(p)
+
+    def test_happy_path_creates_key_and_csr(self, tmp_path):
+        site_file = self._write_site_yaml(tmp_path, name="hospital-1")
+        out_dir = tmp_path / "out"
+        args = _csr_args(name=None, project_file=site_file, output_dir=str(out_dir))
+        rc = handle_cert_csr(args)
+        assert rc == 0
+        assert (out_dir / "hospital-1.key").exists()
+        assert (out_dir / "hospital-1.csr").exists()
+
+    def test_csr_cn_taken_from_yaml_name(self, tmp_path):
+        site_file = self._write_site_yaml(tmp_path, name="fl-server")
+        out_dir = tmp_path / "out"
+        args = _csr_args(name=None, project_file=site_file, output_dir=str(out_dir))
+        handle_cert_csr(args)
+        csr = _load_csr_file(str(out_dir / "fl-server.csr"))
+        cn = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+        assert cn == "fl-server"
+
+    def test_csr_org_taken_from_yaml(self, tmp_path):
+        site_file = self._write_site_yaml(tmp_path, org="NVIDIA")
+        out_dir = tmp_path / "out"
+        args = _csr_args(name=None, project_file=site_file, output_dir=str(out_dir))
+        handle_cert_csr(args)
+        csr = _load_csr_file(str(out_dir / "hospital-1.csr"))
+        org_attrs = csr.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)
+        assert len(org_attrs) == 1
+        assert org_attrs[0].value == "NVIDIA"
+
+    def test_missing_output_dir_exits_4(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        site_file = self._write_site_yaml(tmp_path)
+        args = _csr_args(name=None, project_file=site_file, output_dir=None)
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_csr(args)
+        assert exc_info.value.code == 4
+
+    def test_mutual_exclusivity_with_name_exits_4(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        site_file = self._write_site_yaml(tmp_path)
+        out_dir = tmp_path / "out"
+        args = _csr_args(name="conflicting", project_file=site_file, output_dir=str(out_dir))
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_csr(args)
+        assert exc_info.value.code == 4
+
+    def test_mutual_exclusivity_with_org_exits_4(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        site_file = self._write_site_yaml(tmp_path)
+        out_dir = tmp_path / "out"
+        args = _csr_args(name=None, org="ConflictingOrg", project_file=site_file, output_dir=str(out_dir))
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_csr(args)
+        assert exc_info.value.code == 4
+
+    def test_mutual_exclusivity_with_type_exits_4(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        site_file = self._write_site_yaml(tmp_path)
+        out_dir = tmp_path / "out"
+        args = _csr_args(name=None, cert_type="server", project_file=site_file, output_dir=str(out_dir))
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_csr(args)
+        assert exc_info.value.code == 4
+
+    def test_nonexistent_project_file_exits_1(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        out_dir = tmp_path / "out"
+        args = _csr_args(name=None, project_file=str(tmp_path / "no-such.yml"), output_dir=str(out_dir))
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_csr(args)
+        assert exc_info.value.code == 1
+
+    def test_force_allowed_with_project_file(self, tmp_path):
+        site_file = self._write_site_yaml(tmp_path, name="h1")
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+        (out_dir / "h1.key").write_bytes(b"old-key")
+        args = _csr_args(name=None, project_file=site_file, output_dir=str(out_dir), force=True)
+        rc = handle_cert_csr(args)
+        assert rc == 0
+        assert b"PRIVATE KEY" in (out_dir / "h1.key").read_bytes()
+
+    def test_mutual_exclusivity_checked_before_yaml_load(self, tmp_path, monkeypatch):
+        """Conflict with --name must error even when the YAML file doesn't exist."""
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        out_dir = tmp_path / "out"
+        args = _csr_args(
+            name="conflict",
+            project_file=str(tmp_path / "no-such.yml"),
+            output_dir=str(out_dir),
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_csr(args)
+        # Must be INVALID_ARGS exit 4 (mutual exclusivity), not file-not-found exit 1
+        assert exc_info.value.code == 4
+
+
+class TestHandleCertCmdRouting:
+    """Tests for handle_cert_cmd top-level dispatch."""
+
+    def test_no_subcommand_exits_4(self, capsys):
+        """nvflare cert with no subcommand prints help and exits with INVALID_ARGS."""
+        from argparse import ArgumentParser
+        from unittest.mock import MagicMock
+
+        from nvflare.tool.cert.cert_cli import def_cert_cli_parser, handle_cert_cmd
+
+        parser = ArgumentParser(prog="nvflare")
+        subparsers = parser.add_subparsers(dest="sub_command")
+        def_cert_cli_parser(subparsers)
+        args = MagicMock()
+        args.cert_sub_command = None
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_cmd(args)
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        assert "usage:" in captured.err
+        assert "cert subcommand required" in captured.err
+        assert "Code: INVALID_ARGS (exit 4)" in captured.err
+
+    def test_unknown_subcommand_exits_4(self, capsys):
+        """nvflare cert <unknown> prints help and exits with INVALID_ARGS."""
+        from argparse import ArgumentParser
+        from unittest.mock import MagicMock
+
+        from nvflare.tool.cert.cert_cli import def_cert_cli_parser, handle_cert_cmd
+
+        parser = ArgumentParser(prog="nvflare")
+        subparsers = parser.add_subparsers(dest="sub_command")
+        def_cert_cli_parser(subparsers)
+        args = MagicMock()
+        args.cert_sub_command = "nonexistent"
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_cmd(args)
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        assert "usage:" in captured.err
+        assert "invalid cert subcommand" in captured.err
+        assert "Code: INVALID_ARGS (exit 4)" in captured.err
+
+    def test_compat_output_alias_sets_output_format(self, tmp_path):
+        from argparse import ArgumentParser
+
+        from nvflare.tool.cert.cert_cli import def_cert_cli_parser, handle_cert_cmd
+
+        parser = ArgumentParser(prog="nvflare")
+        subparsers = parser.add_subparsers(dest="sub_command")
+        def_cert_cli_parser(subparsers)
+        args = parser.parse_args(["cert", "init", "--project", "Demo", "-o", str(tmp_path), "--output", "json"])
+
+        with patch("nvflare.tool.cli_output.set_output_format") as set_output_format:
+            with patch("nvflare.tool.cert.cert_commands.handle_cert_init", return_value=0) as handle_init:
+                handle_cert_cmd(args)
+
+        set_output_format.assert_called_once_with("json")
+        handle_init.assert_called_once_with(args)

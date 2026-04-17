@@ -17,6 +17,7 @@ from typing import List
 
 import psutil
 
+from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -85,6 +86,14 @@ class SystemCommandModule(CommandModule, CommandUtil):
                     usage="report_env <client-name>",
                     handler_func=self.report_env,
                     authz_func=self.authorize_client_operation,
+                    visible=True,
+                ),
+                CommandSpec(
+                    name=AdminCommandNames.REPORT_VERSION,
+                    description="get NVFlare version info",
+                    usage=f"{AdminCommandNames.REPORT_VERSION} server|client|all <client-name> ...",
+                    handler_func=self.report_version,
+                    authz_func=self.authorize_server_operation,
                     visible=True,
                 ),
                 CommandSpec(
@@ -207,21 +216,24 @@ class SystemCommandModule(CommandModule, CommandUtil):
             return
 
         target_type = args[1]
-        if target_type != self.TARGET_TYPE_CLIENT and target_type != self.TARGET_TYPE_SERVER:
+        if target_type not in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             conn.append_string(
-                "invalid target type {}. Usage: sys_info server|client <client-name>".format(target_type)
+                "invalid target type {}. Usage: report_resources server|client|all <client-name>".format(target_type)
             )
             return
 
-        site_resources = {"server": "unlimited"}
+        site_resources = {}
 
-        if target_type == self.TARGET_TYPE_CLIENT:
+        if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
+            site_resources["server"] = "unlimited"
+
+        if target_type in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
             message = new_message(conn, topic=SysCommandTopic.REPORT_RESOURCES, body="", require_authz=True)
             replies = self.send_request_to_clients(conn, message)
-            if not replies:
+            if not replies and target_type == self.TARGET_TYPE_CLIENT:
                 conn.append_error("no responses from clients")
                 return
-            site_resources = _parse_replies(conn, replies)
+            site_resources.update(_parse_replies(conn, replies or []))
 
         table = conn.append_table(["Sites", "Resources"])
         for k, v in site_resources.items():
@@ -238,6 +250,60 @@ class SystemCommandModule(CommandModule, CommandUtil):
         table = conn.append_table(["Sites", "Env"], name=MetaKey.CLIENTS)
         for k, v in site_resources.items():
             table.add_row([str(k), str(v)], meta=v)
+
+    def report_version(self, conn: Connection, args: List[str]):
+        """Return per-site version info.
+
+        Successful site replies have shape {"version": "<nvflare-version>"}.
+        Failed or malformed site replies have shape {"error": "<reason>"}.
+        """
+        if len(args) < 2:
+            conn.append_error("syntax error: missing site names")
+            return
+
+        target_type = args[1]
+        if target_type not in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
+            conn.append_error(
+                "invalid target type {}. Usage: {} server|client|all <client-name>".format(
+                    target_type, AdminCommandNames.REPORT_VERSION
+                )
+            )
+            return
+
+        versions = {}
+
+        if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
+            try:
+                import nvflare
+
+                versions["server"] = {"version": nvflare.__version__}
+            except Exception:
+                versions["server"] = {"version": "unknown"}
+
+        if target_type in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
+            message = new_message(conn, topic=SysCommandTopic.REPORT_VERSION, body="", require_authz=True)
+            replies = self.send_request_to_clients(conn, message)
+            if not replies and target_type == self.TARGET_TYPE_CLIENT:
+                conn.append_error("no responses from clients")
+                return
+            for r in replies or []:
+                client_name = r.client_name
+                if r.reply:
+                    if r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
+                        versions[client_name] = {"error": r.reply.body}
+                    else:
+                        try:
+                            payload = json.loads(r.reply.body)
+                            if isinstance(payload, dict):
+                                versions[client_name] = payload
+                            else:
+                                versions[client_name] = {"error": "invalid reply"}
+                        except Exception as e:
+                            versions[client_name] = {"error": f"Bad replies: {secure_format_exception(e)}"}
+                else:
+                    versions[client_name] = {"error": "No replies"}
+
+        conn.append_dict(versions, meta=make_meta(MetaStatusValue.OK))
 
     def dead_client(self, conn: Connection, args: List[str]):
         if len(args) != 3:

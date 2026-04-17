@@ -17,6 +17,8 @@
 import argparse
 from typing import Optional
 
+_VALID_CERT_TYPES = ["client", "server", "org_admin", "lead", "member"]
+
 # Module-level parser references — used by --schema in handlers and for help fallback
 _cert_init_parser: Optional[argparse.ArgumentParser] = None
 _cert_csr_parser: Optional[argparse.ArgumentParser] = None
@@ -29,6 +31,16 @@ def _name_type(value: str) -> str:
     if len(value) > 64:
         raise argparse.ArgumentTypeError(f"name must be 64 characters or fewer (got {len(value)})")
     return value
+
+
+def _add_compat_output_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--output",
+        dest="compat_output_format",
+        choices=["json", "txt", "human"],
+        default=None,
+        help=argparse.SUPPRESS,
+    )
 
 
 def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
@@ -71,18 +83,12 @@ def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         help="Overwrite existing CA files without prompting. Backs up existing files first.",
     )
     p.add_argument(
-        "--output",
-        dest="output_fmt",
-        choices=["json", "quiet"],
-        default=None,
-        help="Output format. 'json' implies --force. Default: human-readable text.",
-    )
-    p.add_argument(
         "--schema",
         action="store_true",
         default=False,
         help="Print JSON schema for this command and exit.",
     )
+    _add_compat_output_arg(p)
     _cert_init_parser = p
     return p
 
@@ -122,14 +128,22 @@ def _def_cert_csr_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argum
         help="Organization name for the certificate.",
     )
     p.add_argument(
+        "--project-file",
+        required=False,
+        default=None,
+        dest="project_file",
+        metavar="SITE_YAML",
+        help="Single-site YAML with name/org/type. Use this instead of --name/--org/--type.",
+    )
+    p.add_argument(
         "-t",
         "--type",
         required=False,
         default=None,
         dest="cert_type",
-        choices=["client", "server", "org_admin", "lead", "member"],
+        choices=_VALID_CERT_TYPES,
         help=(
-            "Proposed certificate type. Embedded in the CSR as a hint for the Project Admin. "
+            "Proposed certificate type. Required and embedded in the CSR as a hint for the Project Admin. "
             "The Project Admin may override this when running 'nvflare cert sign'. "
             "Typically set by the org admin on behalf of the participant."
         ),
@@ -141,18 +155,12 @@ def _def_cert_csr_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argum
         help="Overwrite existing key/CSR without prompting.",
     )
     p.add_argument(
-        "--output",
-        dest="output_fmt",
-        choices=["json", "quiet"],
-        default=None,
-        help="Output format. 'json' implies --force. Default: human-readable text.",
-    )
-    p.add_argument(
         "--schema",
         action="store_true",
         default=False,
         help="Print JSON schema for this command and exit.",
     )
+    _add_compat_output_arg(p)
     _cert_csr_parser = p
     return p
 
@@ -197,8 +205,15 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         required=False,
         default=None,
         dest="cert_type",
-        choices=["client", "server", "org_admin", "lead", "member"],
+        choices=_VALID_CERT_TYPES,
         help="Cert type to issue. Authoritative — embedded in signed cert UNSTRUCTURED_NAME.",
+    )
+    p.add_argument(
+        "--accept-csr-role",
+        action="store_true",
+        default=False,
+        dest="accept_csr_role",
+        help="Accept the type embedded in the CSR instead of overriding it with -t/--type.",
     )
     p.add_argument(
         "--valid-days",
@@ -215,18 +230,12 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         help="Overwrite existing signed cert without prompting.",
     )
     p.add_argument(
-        "--output",
-        dest="output_fmt",
-        choices=["json", "quiet"],
-        default=None,
-        help="Output format. 'json' implies --force. Default: human-readable text.",
-    )
-    p.add_argument(
         "--schema",
         action="store_true",
         default=False,
         help="Print JSON schema for this command and exit.",
     )
+    _add_compat_output_arg(p)
     _cert_sign_parser = p
     return p
 
@@ -270,6 +279,11 @@ def def_cert_cli_parser(sub_cmd) -> dict:
 def handle_cert_cmd(args):
     """Dispatch to the appropriate cert subcommand handler."""
     from nvflare.tool.cert.cert_commands import handle_cert_csr, handle_cert_init, handle_cert_sign
+    from nvflare.tool.cli_output import output_usage_error, set_output_format
+
+    compat_output_format = getattr(args, "compat_output_format", None)
+    if compat_output_format:
+        set_output_format(compat_output_format)
 
     dispatch = {
         "init": handle_cert_init,
@@ -278,9 +292,8 @@ def handle_cert_cmd(args):
     }
     handler = dispatch.get(getattr(args, "cert_sub_command", None))
     if not handler:
-        if _cert_parser is not None:
-            _cert_parser.print_help()
-        import sys
-
-        sys.exit(0)
+        detail = (
+            "cert subcommand required" if getattr(args, "cert_sub_command", None) is None else "invalid cert subcommand"
+        )
+        output_usage_error(_cert_parser, detail, exit_code=4)
     handler(args)

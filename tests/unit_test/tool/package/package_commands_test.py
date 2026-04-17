@@ -31,6 +31,7 @@ from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
+from nvflare.tool import cli_output
 from nvflare.tool.package.package_commands import _discover_name_from_dir, _parse_endpoint, handle_package
 
 # ---------------------------------------------------------------------------
@@ -151,6 +152,68 @@ class TestParseEndpoint:
         assert port == 1
 
 
+def test_missing_endpoint_human_mode_no_help_dump(capsys, monkeypatch, tmp_path):
+    import argparse
+
+    from nvflare.tool.package.package_cli import def_package_cli_parser
+
+    monkeypatch.setattr(cli_output, "_output_format", "txt")
+    root = argparse.ArgumentParser(prog="nvflare")
+    subs = root.add_subparsers()
+    def_package_cli_parser(subs)
+    args = _make_args(
+        endpoint=None,
+        dir=str(tmp_path),
+        workspace=str(tmp_path / "ws"),
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        handle_package(args)
+    assert exc_info.value.code == 4
+    captured = capsys.readouterr()
+    assert "--endpoint is required" in captured.err
+    assert "Code: INVALID_ARGS (exit 4)" in captured.err
+    assert "usage:" in captured.err
+
+
+def test_package_help_includes_working_examples():
+    import argparse
+
+    from nvflare.tool.package.package_cli import def_package_cli_parser
+
+    root = argparse.ArgumentParser(prog="nvflare")
+    subs = root.add_subparsers()
+    parser = def_package_cli_parser(subs)["package"]
+
+    help_text = parser.format_help()
+
+    assert "Examples:" in help_text
+    assert "nvflare package -e grpc://fl-server:8002 -p ./site.yaml --dir ./certs" in help_text
+    assert "nvflare package -e grpc://fl-server:8002 --dir ./hospital-1-kit" in help_text
+    assert "--cert ./signed/hospital-1/hospital-1.crt" in help_text
+    assert "--key ./csr/hospital-1.key" in help_text
+    assert "--rootca ./signed/hospital-1/rootCA.pem" in help_text
+
+
+def test_package_schema_uses_shared_examples(capsys):
+    import argparse
+
+    from nvflare.tool.cli_schema import handle_schema_flag
+    from nvflare.tool.package.package_cli import _PACKAGE_EXAMPLES, def_package_cli_parser
+
+    root = argparse.ArgumentParser(prog="nvflare")
+    subs = root.add_subparsers()
+    parser = def_package_cli_parser(subs)["package"]
+
+    with pytest.raises(SystemExit) as exc_info:
+        handle_schema_flag(parser, "nvflare package", _PACKAGE_EXAMPLES, ["--schema"])
+    assert exc_info.value.code == 0
+
+    schema = json.loads(capsys.readouterr().out)
+    assert schema["command"] == "nvflare package"
+    assert schema["examples"] == _PACKAGE_EXAMPLES
+
+
 # ---------------------------------------------------------------------------
 # Unit tests: _discover_name_from_dir
 # ---------------------------------------------------------------------------
@@ -159,18 +222,36 @@ class TestParseEndpoint:
 class TestDiscoverNameFromDir:
     def test_single_key_detected(self, tmp_path):
         (tmp_path / "alice.key").write_text("dummy")
-        name = _discover_name_from_dir(str(tmp_path), None)
+        name = _discover_name_from_dir(str(tmp_path))
         assert name == "alice"
 
     def test_no_key_exits(self, tmp_path):
         with pytest.raises(SystemExit):
-            _discover_name_from_dir(str(tmp_path), None)
+            _discover_name_from_dir(str(tmp_path))
 
     def test_multiple_keys_exits(self, tmp_path):
         (tmp_path / "alice.key").write_text("dummy")
         (tmp_path / "bob.key").write_text("dummy")
         with pytest.raises(SystemExit):
-            _discover_name_from_dir(str(tmp_path), None)
+            _discover_name_from_dir(str(tmp_path))
+
+
+def test_package_compat_output_alias_sets_output_format(tmp_path):
+    import argparse
+
+    from nvflare.tool.package.package_cli import def_package_cli_parser, handle_package_cmd
+
+    root = argparse.ArgumentParser(prog="nvflare")
+    subs = root.add_subparsers(dest="sub_command")
+    def_package_cli_parser(subs)
+    args = root.parse_args(["package", "-e", "grpc://fl-server:8002", "--dir", str(tmp_path), "--output", "json"])
+
+    with unittest.mock.patch("nvflare.tool.cli_output.set_output_format") as set_output_format:
+        with unittest.mock.patch("nvflare.tool.package.package_commands.handle_package") as handle_package:
+            handle_package_cmd(args)
+
+    set_output_format.assert_called_once_with("json")
+    handle_package.assert_called_once_with(args)
 
 
 # ---------------------------------------------------------------------------
@@ -1452,12 +1533,11 @@ class TestNextStepOutputPath:
         import unittest.mock
 
         captured = {}
-        original_output = __import__("nvflare.tool.cli_output", fromlist=["output"]).output
 
-        def _capture(result, fmt):
+        def _capture(result):
             captured.update(result)
 
-        with unittest.mock.patch("nvflare.tool.package.package_commands.output", side_effect=_capture):
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_ok", side_effect=_capture):
             handle_package(args)
 
         expected_dir = _kit_dir(ws, "testproject", "fl-server")
@@ -1488,10 +1568,10 @@ class TestNextStepOutputPath:
 
         captured = {}
 
-        def _capture(result, fmt):
+        def _capture(result):
             captured.update(result)
 
-        with unittest.mock.patch("nvflare.tool.package.package_commands.output", side_effect=_capture):
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_ok", side_effect=_capture):
             handle_package(args)
 
         expected_dir = _kit_dir(ws, "testproject", "hospital-1")
@@ -1520,10 +1600,10 @@ class TestNextStepOutputPath:
 
         captured = {}
 
-        def _capture(result, fmt):
+        def _capture(result):
             captured.update(result)
 
-        with unittest.mock.patch("nvflare.tool.package.package_commands.output", side_effect=_capture):
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_ok", side_effect=_capture):
             handle_package(args)
 
         expected_dir = _kit_dir(ws, "testproject", "alice@myorg.com")

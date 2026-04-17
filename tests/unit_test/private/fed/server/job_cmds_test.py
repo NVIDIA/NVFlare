@@ -13,18 +13,24 @@
 # limitations under the License.
 
 from argparse import Namespace
+from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
+from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.fuel.hci.proto import MetaKey
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.private.fed.server import cmd_utils as cmd_utils_module
 from nvflare.private.fed.server import job_cmds as job_cmds_module
-from nvflare.private.fed.server.job_cmds import JobCommandModule, _create_list_job_cmd_parser
+from nvflare.private.fed.server.job_cmds import (
+    JobCommandModule,
+    _create_get_job_log_cmd_parser,
+    _create_list_job_cmd_parser,
+)
 
 TEST_CASES = [
     (
@@ -49,6 +55,13 @@ class TestListJobCmdParser:
         parser = _create_list_job_cmd_parser()
         parsed_args = parser.parse_args(args)
         assert parsed_args == expected_args
+
+
+class TestGetJobLogCmdParser:
+    def test_parse_args(self):
+        parser = _create_get_job_log_cmd_parser()
+        parsed_args = parser.parse_args(["job-123", "-n", "10", "-g", "ERROR"])
+        assert parsed_args == Namespace(job_id="job-123", tail_lines=10, grep_pattern="ERROR")
 
 
 class _MockConnection:
@@ -165,6 +178,31 @@ class _FakeListEngine:
         return FLContext()
 
 
+class _FakeWorkspace:
+    def __init__(self, root_dir):
+        self.root_dir = str(root_dir)
+
+    def get_log_root(self, job_id=None):
+        path = Path(self.root_dir) / str(job_id)
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+
+class _FakeServerEngine:
+    def __init__(self, workspace):
+        self.workspace = workspace
+        self.job_def_manager = MagicMock()
+        self.configure_job_log = MagicMock(return_value=None)
+
+    def get_workspace(self):
+        return self.workspace
+
+    def new_context(self):
+        from nvflare.apis.fl_context import FLContext
+
+        return FLContext()
+
+
 class _FakeStudyRegistry:
     def __init__(self, roles=None, sites=None):
         self.roles = roles or {}
@@ -220,6 +258,31 @@ def test_submit_job_exposes_study_in_submit_event(monkeypatch):
     assert len(conn.successes) == 1
     assert engine.submit_event_meta == {JobMetaKey.STUDY.value: "cancer-research"}
     assert engine.job_def_manager.created_meta[JobMetaKey.STUDY.value] == "cancer-research"
+
+
+def test_submit_job_strips_user_supplied_from_hub_site(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(
+        job_cmds_module,
+        "JobMetaValidator",
+        lambda: _FakeJobMetaValidatorWithMeta({JobMetaKey.FROM_HUB_SITE.value: "site-x"}),
+    )
+
+    engine = _FakeEngine()
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            ConnProps.FILE_LOCATION: "job.zip",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "role",
+        },
+    )
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    assert conn.errors == []
+    assert JobMetaKey.FROM_HUB_SITE.value not in engine.job_def_manager.created_meta
 
 
 def test_submit_job_defaults_study_when_cmd_props_missing(monkeypatch):
@@ -321,6 +384,32 @@ def test_list_jobs_defaults_to_default_study_when_session_study_missing(monkeypa
     assert len(conn.successes) == 1
 
 
+def test_list_jobs_ignores_duration_parse_failures(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    jobs = [
+        _FakeListedJob(
+            {
+                JobMetaKey.JOB_ID.value: "job-1",
+                JobMetaKey.JOB_NAME.value: "broken-duration",
+                JobMetaKey.STATUS.value: RunStatus.RUNNING.value,
+                JobMetaKey.START_TIME.value: "not-a-timestamp",
+            }
+        )
+    ]
+    conn = _MockConnection(app_ctx=_FakeListEngine(jobs), props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().list_jobs(conn, ["list_jobs"])
+
+    assert conn.errors == []
+    assert len(conn.tables) == 1
+    assert len(conn.tables[0].rows) == 1
+    assert conn.tables[0].rows[0][0][0] == "job-1"
+
+
+def test_job_match_tolerates_missing_job_id_and_name():
+    assert JobCommandModule._job_match({}, "job", "name", "", "default") is False
+
+
 def test_get_job_meta_normalizes_legacy_job_study(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     jobs = [_FakeListedJob({JobMetaKey.JOB_ID.value: "legacy-job", JobMetaKey.JOB_NAME.value: "legacy"})]
@@ -331,6 +420,88 @@ def test_get_job_meta_normalizes_legacy_job_study(monkeypatch):
     assert conn.errors == []
     assert len(conn.dicts) == 1
     assert conn.dicts[0][0][JobMetaKey.STUDY.value] == "default"
+
+
+def test_get_job_log_tail_uses_bounded_lines(tmp_path):
+    job_cmds_module.ServerEngine = _FakeServerEngine
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+    log_file = Path(workspace.get_log_root("job-1")) / WorkspaceConstants.LOG_FILE_NAME
+    log_file.write_text("line1\nline2\nline3\n", encoding="utf-8")
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "-n", "2"])
+
+    payload, _meta = conn.dicts[0]
+    assert payload["logs"]["server"] == "line2\nline3\n"
+
+
+def test_get_job_log_truncates_large_output(tmp_path, monkeypatch):
+    job_cmds_module.ServerEngine = _FakeServerEngine
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+    log_file = Path(workspace.get_log_root("job-1")) / WorkspaceConstants.LOG_FILE_NAME
+    log_file.write_text("a" * 12 + "\n" + "b" * 12 + "\n", encoding="utf-8")
+
+    monkeypatch.setattr(JobCommandModule, "MAX_RETURNED_JOB_LOG_BYTES", 16)
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1"])
+
+    payload, _meta = conn.dicts[0]
+    assert "truncated after 16 bytes" in payload["logs"]["server"]
+
+
+def test_get_job_log_tail_still_respects_byte_cap(tmp_path, monkeypatch):
+    job_cmds_module.ServerEngine = _FakeServerEngine
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+    log_file = Path(workspace.get_log_root("job-1")) / WorkspaceConstants.LOG_FILE_NAME
+    log_file.write_text("a" * 12 + "\n" + "b" * 12 + "\n" + "c" * 12 + "\n", encoding="utf-8")
+
+    monkeypatch.setattr(JobCommandModule, "MAX_RETURNED_JOB_LOG_BYTES", 16)
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "-n", "10"])
+
+    payload, _meta = conn.dicts[0]
+    assert "truncated after 16 bytes" in payload["logs"]["server"]
+    assert "aaaaaaaaaaaa" not in payload["logs"]["server"]
+
+
+def test_get_job_log_tail_caps_buffered_line_count(tmp_path, monkeypatch):
+    job_cmds_module.ServerEngine = _FakeServerEngine
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+    log_file = Path(workspace.get_log_root("job-1")) / WorkspaceConstants.LOG_FILE_NAME
+    log_file.write_text("".join(f"line{i}\n" for i in range(6)), encoding="utf-8")
+
+    monkeypatch.setattr(JobCommandModule, "MAX_RETURNED_JOB_LOG_LINES", 3)
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "-n", "1000"])
+
+    payload, _meta = conn.dicts[0]
+    assert payload["logs"]["server"].startswith("line3\nline4\nline5\n")
+    assert "truncated after 3 lines" in payload["logs"]["server"]
+
+
+def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch):
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING})
+    conn = _MockConnection(app_ctx=engine)
+    module = JobCommandModule()
+    client_replies = [object()]
+    monkeypatch.setattr(module, "send_request_to_clients", lambda conn, message: client_replies)
+    processed = []
+    monkeypatch.setattr(module, "process_replies_to_table", lambda conn, replies: processed.append(replies))
+
+    module.configure_job_log(conn, ["configure_job_log", "job-1", "all", "DEBUG"])
+
+    engine.configure_job_log.assert_called_once_with("job-1", "DEBUG")
+    assert processed == [client_replies]
+    assert any("successfully configured server job job-1 log" in msg for msg, _meta in conn.strings)
 
 
 def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):
@@ -518,8 +689,133 @@ def test_submit_job_rejects_deploy_map_sites_outside_study(monkeypatch):
 
     assert conn.errors
     assert "site 'site3' is not enrolled in study 'cancer-research'" in conn.errors[0][0]
-    assert engine.job_def_manager.created_meta is None
+
+
+def test_get_job_log_returns_server_log(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+
+    workspace = _FakeWorkspace(tmp_path)
+    log_file = Path(workspace.get_log_root("job-123")) / WorkspaceConstants.LOG_FILE_NAME
+    log_file.write_text("line1\nERROR line2\nline3\n", encoding="utf-8")
+
+    conn = _MockConnection(
+        app_ctx=_FakeServerEngine(workspace),
+        props={JobCommandModule.JOB_ID: "job-123"},
+    )
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-123"])
+
+    assert conn.errors == []
+    assert conn.dicts[0][0] == {"logs": {"server": "line1\nERROR line2\nline3\n"}}
+    assert conn.dicts[0][1][MetaKey.STATUS].lower() == "ok"
+
+
+def test_get_job_log_applies_grep_and_tail(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+
+    workspace = _FakeWorkspace(tmp_path)
+    log_file = Path(workspace.get_log_root("job-123")) / WorkspaceConstants.LOG_FILE_NAME
+    log_file.write_text("INFO line1\nERROR line2\nERROR line3\n", encoding="utf-8")
+
+    conn = _MockConnection(
+        app_ctx=_FakeServerEngine(workspace),
+        props={JobCommandModule.JOB_ID: "job-123"},
+    )
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-123", "-g", "ERROR", "-n", "1"])
+
+    assert conn.errors == []
+    assert conn.dicts[0][0] == {"logs": {"server": "ERROR line3\n"}}
+
+
+def test_get_job_log_tail_zero_is_invalid(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+
+    workspace = _FakeWorkspace(tmp_path)
+    log_file = Path(workspace.get_log_root("job-123")) / WorkspaceConstants.LOG_FILE_NAME
+    log_file.write_text("line1\nline2\n", encoding="utf-8")
+
+    conn = _MockConnection(
+        app_ctx=_FakeServerEngine(workspace),
+        props={JobCommandModule.JOB_ID: "job-123"},
+    )
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-123", "-n", "0"])
+
+    assert conn.dicts == []
+    assert conn.errors
+    assert "tail_lines must be greater than 0" in conn.errors[0][0]
+
+
+def test_get_job_log_missing_file_returns_empty(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+
+    workspace = _FakeWorkspace(tmp_path)
+    conn = _MockConnection(
+        app_ctx=_FakeServerEngine(workspace),
+        props={JobCommandModule.JOB_ID: "job-123"},
+    )
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-123"])
+
+    assert conn.errors == []
+    assert conn.dicts[0][0] == {"logs": {"server": ""}}
     assert conn.successes == []
+
+
+def test_get_job_log_handles_file_deleted_after_exists(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+
+    workspace = _FakeWorkspace(tmp_path)
+    conn = _MockConnection(
+        app_ctx=_FakeServerEngine(workspace),
+        props={JobCommandModule.JOB_ID: "job-123"},
+    )
+
+    monkeypatch.setattr(job_cmds_module.os.path, "exists", lambda _path: True)
+
+    def _raise_deleted(*_args, **_kwargs):
+        raise FileNotFoundError("deleted during read")
+
+    monkeypatch.setattr(JobCommandModule, "_collect_job_log_lines", _raise_deleted)
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-123"])
+
+    assert conn.errors == []
+    assert conn.dicts[0][0] == {"logs": {"server": ""}}
+
+
+def test_get_job_log_mismatched_job_id_sources_returns_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+
+    workspace = _FakeWorkspace(tmp_path)
+    conn = _MockConnection(
+        app_ctx=_FakeServerEngine(workspace),
+        props={JobCommandModule.JOB_ID: "job-from-prop"},
+    )
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-from-arg"])
+
+    assert conn.dicts == []
+    assert conn.errors
+    assert "job_id mismatch between connection property and parsed argument" in conn.errors[0][0]
+
+
+def test_get_job_log_accepts_same_job_id_with_different_case(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+
+    workspace = _FakeWorkspace(tmp_path)
+    log_file = Path(workspace.get_log_root("job-abc123")) / WorkspaceConstants.LOG_FILE_NAME
+    log_file.write_text("line1\n", encoding="utf-8")
+    conn = _MockConnection(
+        app_ctx=_FakeServerEngine(workspace),
+        props={JobCommandModule.JOB_ID: "job-abc123"},
+    )
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "JOB-ABC123"])
+
+    assert conn.errors == []
+    assert conn.dicts[0][0] == {"logs": {"server": "line1\n"}}
 
 
 def test_submit_job_reports_all_deploy_map_sites_outside_study(monkeypatch):
