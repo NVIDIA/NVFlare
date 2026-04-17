@@ -537,7 +537,7 @@ def run(prog_name):
 
         output_error_message(
             "AUTH_FAILED",
-            message="Authentication failed.",
+            message="Authorization failed.",
             hint="Check that the startup kit user is authorized for this command and study.",
             exit_code=2,
             detail=str(e),

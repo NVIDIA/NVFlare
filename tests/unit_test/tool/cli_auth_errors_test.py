@@ -132,7 +132,7 @@ def test_run_routes_authorization_error_through_auth_failed_envelope(capsys):
     assert exc_info.value.code == 2
     payload = json.loads(capsys.readouterr().out)
     assert payload["error_code"] == "AUTH_FAILED"
-    assert "authorized" in payload["message"]
+    assert payload["message"] == "Authorization failed. — user not authorized for the action 'configure_job_log'"
 
 
 def test_run_routes_cli_exception_through_error_envelope(capsys):
