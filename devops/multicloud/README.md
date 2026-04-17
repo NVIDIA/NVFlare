@@ -23,7 +23,7 @@ YAML stays minimal.
 ## Deploy
 
 ```bash
-python devops/multicloud/scripts/deploy.py up
+python devops/multicloud/deploy.py up
 ```
 
 Default config is `gcp-server.yaml`; pass `--config devops/multicloud/aws-server.yaml` to switch topology. Image URLs come from the config (`clouds.<x>.image`).
@@ -34,9 +34,9 @@ releases that already exist; always re-runs `nvflare provision` (fast).
 ## Inspect / tear down
 
 ```bash
-python devops/multicloud/scripts/deploy.py status
-python devops/multicloud/scripts/deploy.py down
-python devops/multicloud/scripts/deploy.py --dry-run up       # print commands, don't execute
+python devops/multicloud/deploy.py status
+python devops/multicloud/deploy.py down
+python devops/multicloud/deploy.py --dry-run up       # print commands, don't execute
 ```
 
 ## Flags
@@ -52,7 +52,7 @@ python devops/multicloud/scripts/deploy.py --dry-run up       # print commands, 
 participant in a config:
 
 ```bash
-python devops/multicloud/scripts/k8sview.py --config devops/multicloud/gcp-server.yaml
+python devops/multicloud/k8sview.py --config devops/multicloud/gcp-server.yaml
 ```
 
 Requires `rich` and `kubernetes` (`uv pip install rich kubernetes`).

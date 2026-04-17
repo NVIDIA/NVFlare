@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-DEPLOY_PY = Path(__file__).resolve().parents[3] / "devops" / "multicloud" / "scripts" / "deploy.py"
+DEPLOY_PY = Path(__file__).resolve().parents[3] / "devops" / "multicloud" / "deploy.py"
 SPEC = importlib.util.spec_from_file_location("multicloud_deploy", DEPLOY_PY)
 DEPLOY_MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = DEPLOY_MODULE

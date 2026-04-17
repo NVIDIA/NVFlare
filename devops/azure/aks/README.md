@@ -1,7 +1,7 @@
 # Azure AKS Automatic
 
 Cluster lifecycle. **NVFlare deployment on AKS is not yet supported** by
-`devops/multicloud/scripts/deploy.py` (Azure IP reservation raises
+`devops/multicloud/deploy.py` (Azure IP reservation raises
 `NotImplementedError`).
 
 ## Prereqs

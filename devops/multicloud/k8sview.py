@@ -51,8 +51,7 @@ except ImportError:
     sys.exit("k8sview requires 'kubernetes'. Install with: uv pip install kubernetes")
 
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-TOOL_DIR = SCRIPT_DIR.parent
+TOOL_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG = TOOL_DIR / "gcp-server.yaml"
 
 STATUS_COLORS = {

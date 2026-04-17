@@ -43,8 +43,7 @@ LAUNCHER_FOR_ROLE = {
     "client": "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
 }
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-TOOL_DIR = SCRIPT_DIR.parent
+TOOL_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TOOL_DIR.parents[1]
 WORK_DIR = TOOL_DIR / ".work"
 STATE_FILE = WORK_DIR / "state.json"
