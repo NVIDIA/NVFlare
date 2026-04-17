@@ -18,7 +18,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, JobNotFound, NoConnection
+from nvflare.fuel.flare_api.api_spec import (
+    AuthenticationError,
+    AuthorizationError,
+    InternalError,
+    InvalidTarget,
+    JobNotFound,
+    NoConnection,
+)
 from nvflare.tool import cli_output
 
 
@@ -197,6 +204,32 @@ class TestJobLogHuman:
         with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
             with pytest.raises(AuthenticationError):
                 cmd_job_log(args)
+
+    def test_log_authorization_error_propagates_to_top_level_handler(self):
+        from nvflare.tool.job.job_cli import cmd_job_log
+
+        args = _make_args(level="INFO")
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.side_effect = AuthorizationError("user not authorized")
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            with pytest.raises(AuthorizationError):
+                cmd_job_log(args)
+
+    def test_log_internal_error_maps_to_internal_error(self, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_log
+
+        args = _make_args(level="INFO")
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.side_effect = InternalError("backend exploded")
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_log(args)
+
+        assert exc_info.value.code == 5
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "INTERNAL_ERROR"
 
     def test_log_site_passed_to_session(self):
         """--site value is forwarded to sess.configure_job_log as target kwarg."""

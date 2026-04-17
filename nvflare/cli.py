@@ -23,7 +23,7 @@ from pyhocon import ConfigFactory as CF
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
-from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, AuthorizationError, NoConnection
 from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, run_command
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
@@ -529,6 +529,16 @@ def run(prog_name):
             "AUTH_FAILED",
             message="Authentication failed.",
             hint=_auth_hint_from_detail(str(e), getattr(e, "auth_code", None)),
+            exit_code=2,
+            detail=str(e),
+        )
+    except AuthorizationError as e:
+        from nvflare.tool.cli_output import output_error_message
+
+        output_error_message(
+            "AUTH_FAILED",
+            message="Authentication failed.",
+            hint="Check that the startup kit user is authorized for this command and study.",
             exit_code=2,
             detail=str(e),
         )

@@ -1625,7 +1625,15 @@ def cmd_job_monitor(cmd_args):
 
 
 def cmd_job_log(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, JobNotFound, NoConnection, NoReply
+    from nvflare.fuel.flare_api.api_spec import (
+        AuthenticationError,
+        AuthorizationError,
+        InternalError,
+        InvalidTarget,
+        JobNotFound,
+        NoConnection,
+        NoReply,
+    )
     from nvflare.tool.cli_output import output_error, output_ok, output_usage_error
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1666,8 +1674,11 @@ def cmd_job_log(cmd_args):
                 )
                 return
             sess.configure_job_log(cmd_args.job_id, level, target=site)
-    except (AuthenticationError, NoConnection):
+    except (AuthenticationError, AuthorizationError, NoConnection):
         raise
+    except InternalError as e:
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
+        return
     except InvalidTarget:
         output_error("SITE_NOT_FOUND", site=site)
         return
@@ -1678,7 +1689,7 @@ def cmd_job_log(cmd_args):
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         return
     except Exception as e:
-        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         return
 
     sites = [site] if site != "all" else ["all"]
