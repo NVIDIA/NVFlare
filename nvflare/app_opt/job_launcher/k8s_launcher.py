@@ -73,6 +73,10 @@ DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT = {
     "-s": None,
 }
 
+DEFAULT_NAMESPACE = "default"
+DEFAULT_PENDING_TIMEOUT = 120
+DEFAULT_PYTHON_PATH = "/usr/local/bin/python"
+
 
 class PvName(Enum):
     WORKSPACE = "nvflws"
@@ -81,7 +85,7 @@ class PvName(Enum):
 
 VOLUME_MOUNT_LIST = [
     {"name": PvName.WORKSPACE.value, "mountPath": "/var/tmp/nvflare/workspace"},
-    {"name": PvName.DATA.value, "mountPath": "/var/tmp/nvflare/data"},
+    {"name": PvName.DATA.value, "mountPath": "/var/tmp/nvflare/data", "readOnly": True},
 ]
 
 
@@ -103,10 +107,10 @@ class K8sJobHandle(JobHandleSpec):
         job_id: str,
         api_instance,
         job_config: dict,
-        namespace="default",
+        namespace=DEFAULT_NAMESPACE,
         timeout=None,
-        pending_timeout=30,
-        python_path="/usr/local/bin/python",
+        pending_timeout=DEFAULT_PENDING_TIMEOUT,
+        python_path=DEFAULT_PYTHON_PATH,
     ):
         super().__init__()
         self.job_id = job_id
@@ -167,6 +171,9 @@ class K8sJobHandle(JobHandleSpec):
         self.pod_manifest["metadata"]["name"] = job_config.get("name")
         self.pod_manifest["spec"]["containers"] = self.container_list
         self.pod_manifest["spec"]["volumes"] = self.volume_list
+        security_context = job_config.get("security_context")
+        if security_context:
+            self.pod_manifest["spec"]["securityContext"] = security_context
 
         image = job_config.get("image")
         if not image:
@@ -281,9 +288,10 @@ class K8sJobLauncher(JobLauncherSpec):
         workspace_pvc: str,
         study_data_pvc_file_path: str,
         timeout=None,
-        namespace="default",
-        pending_timeout=30,
-        python_path="/usr/local/bin/python",
+        namespace=DEFAULT_NAMESPACE,
+        pending_timeout=DEFAULT_PENDING_TIMEOUT,
+        python_path=DEFAULT_PYTHON_PATH,
+        security_context: dict = None,
     ):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -294,6 +302,7 @@ class K8sJobLauncher(JobLauncherSpec):
         self.namespace = namespace
         self.pending_timeout = pending_timeout
         self.python_path = python_path
+        self.security_context = security_context
         self.study_data_pvc_dict = None
         self.default_data_pvc = None
         self.core_v1 = None
@@ -329,7 +338,10 @@ class K8sJobLauncher(JobLauncherSpec):
             from kubernetes.client.api import core_v1_api
 
             try:
-                config.load_kube_config(self.config_file_path)
+                if self.config_file_path:
+                    config.load_kube_config(self.config_file_path)
+                else:
+                    config.load_incluster_config()
                 c = Configuration().get_default_copy()
             except AttributeError:
                 c = Configuration()
@@ -377,6 +389,8 @@ class K8sJobLauncher(JobLauncherSpec):
             job_config.update({"set_list": args.set})
         if job_resource:
             job_config.update({"resources": {"limits": {"nvidia.com/gpu": job_resource}}})
+        if self.security_context:
+            job_config["security_context"] = self.security_context
         job_handle = K8sJobHandle(
             job_id,
             self.core_v1,

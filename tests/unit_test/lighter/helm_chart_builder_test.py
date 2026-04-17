@@ -110,7 +110,7 @@ class TestClientChart:
             assert os.path.isfile(os.path.join(chart_dir, ProvFileName.CHART_YAML))
             assert os.path.isfile(os.path.join(chart_dir, ProvFileName.VALUES_YAML))
             assert os.path.isfile(os.path.join(templates_dir, "_helpers.tpl"))
-            assert os.path.isfile(os.path.join(templates_dir, "client-pod.yaml"))
+            assert os.path.isfile(os.path.join(templates_dir, "client-deployment.yaml"))
             assert os.path.isfile(os.path.join(templates_dir, "service.yaml"))
 
     def test_values_name_matches_client(self):
@@ -139,15 +139,15 @@ class TestClientChart:
             for arg in values.get("args", []):
                 assert not str(arg).startswith("uid="), "uid= must not be in values.yaml args"
 
-    def test_uid_in_pod_template(self):
-        """client-pod.yaml must contain the uid={{ .Values.name }} expression."""
+    def test_uid_in_deployment_template(self):
+        """client-deployment.yaml must contain the uid={{ .Values.name }} expression."""
         project = _make_project(num_clients=1)
         with tempfile.TemporaryDirectory() as root:
             ctx = _make_ctx(root, project)
             _run(HelmChartBuilder(docker_image="myregistry/nvflare:2.7.0"), project, ctx)
 
-            pod_path = os.path.join(_client_chart_dir(ctx, "site-1"), "templates", "client-pod.yaml")
-            with open(pod_path) as f:
+            tmpl_path = os.path.join(_client_chart_dir(ctx, "site-1"), "templates", "client-deployment.yaml")
+            with open(tmpl_path) as f:
                 content = f.read()
 
             assert "uid={{ .Values.name }}" in content
@@ -228,8 +228,8 @@ class TestClientChart:
         assert 'name: {{ include "nvflare-client.name" . }}' in content
         assert "-svc" not in content
 
-    def test_values_restart_policy_is_never(self):
-        """restartPolicy must be 'Never' so a failed job pod is not restarted."""
+    def test_values_has_no_restart_policy(self):
+        """Client runs as a Deployment; restartPolicy is fixed to Always by k8s and not in values."""
         project = _make_project(num_clients=1)
         with tempfile.TemporaryDirectory() as root:
             ctx = _make_ctx(root, project)
@@ -239,7 +239,7 @@ class TestClientChart:
             with open(values_path) as f:
                 values = yaml.safe_load(f)
 
-        assert values["restartPolicy"] == "Never"
+        assert "restartPolicy" not in values
 
     def test_values_port_equals_parent_port(self):
         """port in client values.yaml must equal the parent_port constructor arg."""
