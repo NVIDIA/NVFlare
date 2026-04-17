@@ -150,6 +150,21 @@ class TestProvisionOutput:
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
 
+    def test_generate_conflicts_with_project_file(self, capsys, tmp_path):
+        from nvflare.lighter.provision import handle_provision
+
+        args = self._make_args(project_file="project.yml", generate=True)
+
+        with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
+            with pytest.raises(SystemExit) as exc_info:
+                handle_provision(args)
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INVALID_ARGS"
+        assert "cannot use -p/--project_file together with -g/--generate" in data["message"]
+
     def test_edge_mode_failure_returns_structured_error(self, capsys, tmp_path):
         from nvflare.lighter.provision import handle_provision
 

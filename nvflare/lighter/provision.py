@@ -178,6 +178,10 @@ def handle_provision(args):
 
     current_project_yml = os.path.join(current_path, "project.yml")
 
+    if args.generate and args.project_file:
+        output_error("INVALID_ARGS", exit_code=4, detail="cannot use -p/--project_file together with -g/--generate")
+        raise SystemExit(4)
+
     # Default when no project_file and no -g: generate sample project.yml (pre-2.7.0 behavior)
     if args.gen_edge:
         copy_project("edge_project.yml", current_project_yml)
