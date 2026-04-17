@@ -194,13 +194,20 @@ def _render_status_human(result, target_type):
     if target_type in ("all", "server"):
         print_human(f"Engine status: {result.get('server_status', 'unknown')}")
         print_human(f"Start time: {_fmt_ts(result.get('server_start_time'))}")
-        print_human("---------------------")
-        print_human("| JOB_ID | APP NAME |")
-        print_human("---------------------")
+        job_id_w = max([len("JOB_ID")] + [len(str(job.get("job_id", "?"))) for job in jobs if isinstance(job, dict)])
+        app_name_w = max(
+            [len("APP NAME")] + [len(str(job.get("app_name", "?"))) for job in jobs if isinstance(job, dict)]
+        )
+        separator = f"+-{'-' * job_id_w}-+-{'-' * app_name_w}-+"
+        print_human(separator)
+        print_human(f"| {'JOB_ID':<{job_id_w}} | {'APP NAME':<{app_name_w}} |")
+        print_human(separator)
         for job in jobs:
             if isinstance(job, dict):
-                print_human(f"| {job.get('job_id', '?')} | {job.get('app_name', '?')} |")
-        print_human("---------------------")
+                print_human(
+                    f"| {str(job.get('job_id', '?')):<{job_id_w}} | {str(job.get('app_name', '?')):<{app_name_w}} |"
+                )
+        print_human(separator)
 
     if target_type in ("all", "client"):
         if target_type == "all":
@@ -229,10 +236,11 @@ def _render_status_human(result, target_type):
                     seen.add(name)
 
             client_w = max([len("CLIENT")] + [len(name) for name in names]) if names else len("CLIENT")
-            fqcn_w = max(
-                [len("FQCN")]
-                + [len((client_info_by_name.get(name, {}) or {}).get("fqcn", "-")) for name in names]
-            ) if names else len("FQCN")
+            fqcn_w = (
+                max([len("FQCN")] + [len((client_info_by_name.get(name, {}) or {}).get("fqcn", "-")) for name in names])
+                if names
+                else len("FQCN")
+            )
             last_seen_w = len("LAST CONNECT TIME")
             print_human(f"{'CLIENT':<{client_w}} {'FQCN':<{fqcn_w}} {'LAST CONNECT TIME':<{last_seen_w}} STATUS")
 

@@ -254,7 +254,7 @@ def handle_config_cmd(args):
         nvflare_config = create_job_template_config(nvflare_config, args.job_templates_dir)
     except ValueError as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
-        return
+        raise SystemExit(4)
 
     backup_path = backup_hidden_config_file(config_file_path) if migration_needed else None
     save_config(nvflare_config, config_file_path)
@@ -504,7 +504,10 @@ def run(prog_name):
     try:
         sub_cmd = prog_args.sub_command
         if sub_cmd:
-            handlers[sub_cmd](prog_args)
+            handler = handlers.get(sub_cmd)
+            if handler is None:
+                raise CLIUnknownCmdException(f"unknown command: {sub_cmd}")
+            handler(prog_args)
         elif prog_args.version:
             print_nvflare_version()
         else:

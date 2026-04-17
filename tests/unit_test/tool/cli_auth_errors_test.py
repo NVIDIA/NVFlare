@@ -158,3 +158,26 @@ def test_run_routes_cli_exception_through_error_envelope(capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["error_code"] == "CLI_ERROR"
     assert payload["message"].endswith("boom")
+
+
+def test_run_routes_missing_handler_to_invalid_args_envelope(capsys):
+    args = MagicMock()
+    args.out_format = "json"
+    args.connect_timeout = 5.0
+    args.sub_command = "bogus"
+    args.version = False
+
+    with patch.object(cli_mod, "parse_args", return_value=(MagicMock(), args, {})):
+        with patch(
+            "nvflare.tool.cli_output.set_output_format",
+            side_effect=lambda fmt: setattr(cli_output, "_output_format", fmt),
+        ):
+            with patch("nvflare.tool.cli_output.set_connect_timeout"):
+                with patch.object(cli_mod, "handlers", {}):
+                    with pytest.raises(SystemExit) as exc_info:
+                        cli_mod.run("nvflare")
+
+    assert exc_info.value.code == 4
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error_code"] == "INVALID_ARGS"
+    assert "unknown command: bogus" in payload["message"].lower()

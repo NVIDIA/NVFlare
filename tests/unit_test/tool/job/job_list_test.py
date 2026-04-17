@@ -74,8 +74,7 @@ class TestJobList:
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             cmd_job_list(args)
 
-        _, kwargs = mock_sess.list_jobs.call_args
-        assert kwargs["reverse"] is True
+        mock_sess.list_jobs.assert_called_once_with(name_prefix=None, id_prefix=None, reverse=True, limit=None)
 
     def _init_parsers(self):
         import argparse

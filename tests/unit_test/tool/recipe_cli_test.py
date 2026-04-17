@@ -38,6 +38,19 @@ def test_recipe_missing_subcommand_prints_help_then_error(capsys):
     assert "Code: INVALID_ARGS (exit 4)" in captured.err
 
 
+def test_recipe_missing_subcommand_still_exits_when_usage_error_is_mocked():
+    from unittest.mock import patch
+
+    from nvflare.tool.recipe.recipe_cli import handle_recipe_cmd
+
+    with patch("nvflare.tool.recipe.recipe_cli.output_usage_error") as mocked_usage_error:
+        with pytest.raises(SystemExit) as exc_info:
+            handle_recipe_cmd(Namespace(recipe_sub_cmd=None))
+
+    assert exc_info.value.code == 4
+    mocked_usage_error.assert_called_once()
+
+
 def test_recipe_list_human_output_not_duplicated(monkeypatch, capsys):
     from nvflare.tool import cli_output
     from nvflare.tool.recipe.recipe_cli import cmd_recipe_list

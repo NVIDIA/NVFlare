@@ -135,8 +135,32 @@ class TestConfigOutput:
                 with patch("nvflare.tool.cli_output.output_error") as output_error:
                     with patch("nvflare.cli.save_config") as save_config:
                         with patch("nvflare.tool.cli_schema.handle_schema_flag"):
-                            handle_config_cmd(args)
+                            with pytest.raises(SystemExit) as exc_info:
+                                handle_config_cmd(args)
 
+        assert exc_info.value.code == 4
+        output_error.assert_called_once()
+        save_config.assert_not_called()
+
+    def test_invalid_startup_kit_path_still_exits_when_output_error_is_mocked(self):
+        from nvflare.cli import handle_config_cmd
+
+        args = self._make_args(poc_startup_kit_dir="/bad/startup")
+        mock_config = MagicMock()
+        mock_config.get.return_value = None
+
+        with patch("nvflare.cli.load_hidden_config_state", return_value=("/fake/config.conf", mock_config, False)):
+            with patch(
+                "nvflare.cli.create_startup_kit_config",
+                side_effect=ValueError("invalid startup kit location '/bad/startup'"),
+            ):
+                with patch("nvflare.tool.cli_output.output_error") as output_error:
+                    with patch("nvflare.cli.save_config") as save_config:
+                        with patch("nvflare.tool.cli_schema.handle_schema_flag"):
+                            with pytest.raises(SystemExit) as exc_info:
+                                handle_config_cmd(args)
+
+        assert exc_info.value.code == 4
         output_error.assert_called_once()
         save_config.assert_not_called()
 

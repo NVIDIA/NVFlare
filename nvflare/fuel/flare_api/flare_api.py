@@ -498,7 +498,7 @@ class Session(SessionSpec):
             processed_targets_str = process_targets_into_str(client_names)
             parts.append(processed_targets_str)
 
-        command = " ".join(parts)
+        command = join_args(parts)
         result = self._do_command(command)
         meta = result[ResultKey.META]
         return meta.get(MetaKey.CLIENT_STATUS, None)
@@ -815,7 +815,7 @@ class Session(SessionSpec):
             processed_targets_str = process_targets_into_str(targets)
             parts.append(processed_targets_str)
 
-        command = " ".join(parts)
+        command = join_args(parts)
         reply = self._do_command(command, enforce_meta=False)
         return self._get_dict_data(reply)
 
@@ -837,7 +837,7 @@ class Session(SessionSpec):
             processed_targets_str = process_targets_into_str(targets)
             parts.append(processed_targets_str)
 
-        command = " ".join(parts)
+        command = join_args(parts)
         result = self._do_command(command)
         return result[ResultKey.META]
 

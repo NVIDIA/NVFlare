@@ -241,7 +241,8 @@ def get_job_meta_from_workspace(workspace: Workspace, job_id: str) -> dict:
 
 def create_job_processing_context_properties(workspace: Workspace, job_id: str) -> dict:
     job_meta = get_job_meta_from_workspace(workspace, job_id)
-    assert isinstance(job_meta, dict), f"job_meta must be dict but got {type(job_meta)}"
+    if not isinstance(job_meta, dict):
+        raise RuntimeError(f"job_meta must be dict but got {type(job_meta)}")
     scope_name = job_meta.get(JobMetaKey.SCOPE, "")
     scope_object = PrivacyService.get_scope(scope_name)
     scope_props = None

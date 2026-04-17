@@ -122,6 +122,20 @@ class TestCheckStatus:
             result = session.check_status(TargetType.SERVER)
         assert "server_status" in result
 
+    def test_quotes_client_targets(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.check_status(TargetType.CLIENT, ["site-1"])
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.CHECK_STATUS, TargetType.CLIENT, "site-1"]
+
+    def test_get_client_job_status_quotes_client_names(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.get_client_job_status(["site-1"])
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.CHECK_STATUS, TargetType.CLIENT, "site-1"]
+
 
 class TestReportResources:
     def test_sends_report_resources_command(self):
@@ -236,6 +250,16 @@ class TestShowStats:
         assert AdminCommandNames.SHOW_STATS in cmd
         assert "job1" in cmd
 
+    def test_quotes_client_targets(self):
+        session = _make_session()
+        from nvflare.fuel.hci.client.api import APIStatus
+
+        reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            session.show_stats("job-1", TargetType.CLIENT, ["site-1"])
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.SHOW_STATS, "job-1", TargetType.CLIENT, "site-1"]
+
 
 class TestShowErrors:
     def test_sends_show_errors_command(self):
@@ -248,6 +272,16 @@ class TestShowErrors:
         cmd = mock_cmd.call_args[0][0]
         assert AdminCommandNames.SHOW_ERRORS in cmd
         assert "job1" in cmd
+
+    def test_quotes_client_targets(self):
+        session = _make_session()
+        from nvflare.fuel.hci.client.api import APIStatus
+
+        reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            session.show_errors("job-1", TargetType.CLIENT, ["site-1"])
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.SHOW_ERRORS, "job-1", TargetType.CLIENT, "site-1"]
 
 
 class TestGetJobLogs:

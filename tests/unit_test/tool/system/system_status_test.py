@@ -408,6 +408,26 @@ class TestSystemStatusHuman:
         assert "site-2" in captured.out
         assert "clients: [{'client_name'" not in captured.out
 
+    def test_status_human_output_expands_server_job_table_for_long_job_ids(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_status
+
+        args = self._make_args(target="server")
+        long_job_id = "123e4567-e89b-12d3-a456-426614174000"
+        mock_sess = MagicMock()
+        mock_sess.check_status.return_value = {
+            "server_status": "started",
+            "server_start_time": 1775860407.993352,
+            "jobs": [{"job_id": long_job_id, "app_name": "hello-pt"}],
+            "clients": [],
+            "client_status": [],
+        }
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=mock_sess):
+            cmd_system_status(args)
+
+        captured = capsys.readouterr()
+        assert f"| {long_job_id} | hello-pt |" in captured.out
+
     def test_status_client_human_uses_client_status_count_when_inventory_missing(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_status
 

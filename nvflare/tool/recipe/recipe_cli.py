@@ -228,3 +228,4 @@ def handle_recipe_cmd(args):
         cmd_recipe_list(args)
     else:
         output_usage_error(_recipe_root_parser, "recipe subcommand required", exit_code=4)
+        raise SystemExit(4)
