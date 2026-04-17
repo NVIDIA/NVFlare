@@ -178,7 +178,8 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
         policy_file_path = workspace.get_authorization_file_path()
 
         if policy_file_path and os.path.exists(policy_file_path):
-            policy_config = json.load(open(policy_file_path, "rt"))
+            with open(policy_file_path, "rt") as f:
+                policy_config = json.load(f)
             authorizer = FLAuthorizer(site_org, policy_config)
 
     if not authorizer:
