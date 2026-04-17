@@ -252,6 +252,14 @@ def _load_single_site_yaml(path: str) -> dict:
             exit_code=4,
             detail="site yaml must contain: name, org, type",
         )
+    if cert_type not in _VALID_CERT_TYPES:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(_VALID_CERT_TYPES))}",
+        )
     return {"name": name, "org": org, "cert_type": cert_type}
 
 

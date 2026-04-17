@@ -154,6 +154,23 @@ class TestJobLogs:
             grep_pattern="ERROR",
         )
 
+    def test_logs_multi_word_grep_passed_without_shell_quotes(self):
+        """Multi-word grep patterns should be passed through literally, not shell-quoted."""
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.return_value = {"logs": {}}
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            cmd_job_logs(_make_args(grep="CUDA out of memory"))
+
+        mock_sess.get_job_logs.assert_called_once_with(
+            "abc123",
+            target="server",
+            tail_lines=None,
+            grep_pattern="CUDA out of memory",
+        )
+
     def test_logs_non_server_site_rejected(self, capsys):
         """--site with a non-server value → INVALID_ARGS, exits 4."""
         from nvflare.tool.job.job_cli import cmd_job_logs

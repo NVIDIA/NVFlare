@@ -931,8 +931,6 @@ class Session(SessionSpec):
 
         """
         self._validate_job_id(job_id)
-        import shlex as _shlex
-
         if target != "server":
             raise ValueError("get_job_logs currently only supports target='server'")
 
@@ -940,7 +938,7 @@ class Session(SessionSpec):
         if tail_lines is not None:
             parts.extend(["-n", str(tail_lines)])
         if grep_pattern is not None:
-            parts.extend(["-g", _shlex.quote(grep_pattern)])
+            parts.extend(["-g", grep_pattern])
 
         command = " ".join(parts)
         reply = self._do_command(command, enforce_meta=False)

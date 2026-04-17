@@ -1585,13 +1585,17 @@ def cmd_job_log(cmd_args):
     from nvflare.tool.cli_schema import handle_schema_flag
     from nvflare.tool.system.system_cli import resolve_log_config
 
+    invoked_sub_cmd = CMD_JOB_LOG_CONFIG
+    if len(sys.argv) > 2 and sys.argv[1] == "job" and sys.argv[2] in (CMD_JOB_LOG_CONFIG, CMD_JOB_LOG):
+        invoked_sub_cmd = sys.argv[2]
+
     handle_schema_flag(
         job_sub_cmd_parser[CMD_JOB_LOG_CONFIG],
-        "nvflare job log-config",
+        f"nvflare job {invoked_sub_cmd}",
         [
-            "nvflare job log-config abc123 DEBUG",
-            "nvflare job log-config abc123 concise",
-            "nvflare job log-config abc123 --config /path/to/logging.json",
+            f"nvflare job {invoked_sub_cmd} abc123 DEBUG",
+            f"nvflare job {invoked_sub_cmd} abc123 concise",
+            f"nvflare job {invoked_sub_cmd} abc123 --config /path/to/logging.json",
         ],
         sys.argv[1:],
     )

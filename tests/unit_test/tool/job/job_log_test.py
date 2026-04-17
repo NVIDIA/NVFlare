@@ -308,3 +308,16 @@ class TestJobLogHuman:
         assert alias_args.job_sub_cmd == "log"
         assert alias_args.job_id == "abc123"
         assert alias_args.level == "DEBUG"
+
+    def test_log_schema_uses_invoked_alias_name(self, monkeypatch, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_log
+
+        args = _make_args()
+        monkeypatch.setattr("sys.argv", ["nvflare", "job", "log", "abc123", "--schema"])
+
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_job_log(args)
+
+        assert exc_info.value.code == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["command"] == "nvflare job log"

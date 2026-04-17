@@ -103,7 +103,7 @@ def _config_to_plain_dict(nvflare_config: Optional[ConfigTree]) -> dict:
 def _has_legacy_config_keys(nvflare_config: Optional[ConfigTree]) -> bool:
     if not nvflare_config:
         return False
-    return any(
+    return (
         _get_optional_config_value(
             nvflare_config,
             "config_version",
@@ -113,7 +113,6 @@ def _has_legacy_config_keys(nvflare_config: Optional[ConfigTree]) -> bool:
             "poc_workspace",
         )
         is not None
-        for _ in [0]
     )
 
 
