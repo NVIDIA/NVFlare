@@ -34,6 +34,7 @@ from nvflare.fuel.hci.cmd_arg_utils import (
     validate_required_target_string,
 )
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey, ReplyKeyword
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .api_spec import (
     AuthenticationError,
@@ -1202,10 +1203,12 @@ def new_session(
     except Exception:
         try:
             session.close()
-        except Exception:
+        except Exception as cleanup_error:
             # Preserve the original connection/setup failure if cleanup on a partially
             # initialized session also errors.
-            pass
+            logger = get_obj_logger(session)
+            if logger:
+                logger.debug("failed to close partially initialized session during cleanup: %s", cleanup_error)
         raise
 
 

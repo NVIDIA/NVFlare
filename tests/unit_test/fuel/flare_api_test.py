@@ -108,12 +108,18 @@ def test_new_session_preserves_connect_failure_when_close_also_fails():
     fake_session = MagicMock()
     fake_session.try_connect.side_effect = NoConnection("cannot connect")
     fake_session.close.side_effect = RuntimeError("logout failed")
+    fake_logger = MagicMock()
 
     with patch("nvflare.fuel.flare_api.flare_api.Session", return_value=fake_session):
-        with pytest.raises(NoConnection, match="cannot connect"):
-            new_session("admin@nvidia.com", "/tmp/startup", timeout=5.0)
+        with patch("nvflare.fuel.flare_api.flare_api.get_obj_logger", return_value=fake_logger):
+            with pytest.raises(NoConnection, match="cannot connect"):
+                new_session("admin@nvidia.com", "/tmp/startup", timeout=5.0)
 
     fake_session.close.assert_called_once()
+    fake_logger.debug.assert_called_once_with(
+        "failed to close partially initialized session during cleanup: %s",
+        fake_session.close.side_effect,
+    )
 
 
 def test_new_session_applies_cli_relevant_session_options():
