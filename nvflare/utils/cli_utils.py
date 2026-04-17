@@ -452,12 +452,7 @@ def find_in_list(arr: List, item) -> bool:
     if arr is None:
         return False
 
-    found = False
-    for a in arr:
-        if a.__eq__(item):
-            return True
-
-    return found
+    return any(a == item for a in arr)
 
 
 def append_if_not_in_list(arr: List, item) -> List:
