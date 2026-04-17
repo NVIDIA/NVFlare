@@ -309,6 +309,7 @@ class Session(SessionSpec):
         id_prefix: Optional[str] = None,
         name_prefix: Optional[str] = None,
         reverse: bool = False,
+        **kwargs,
     ) -> List[dict]:
         """Get the job info from the server.
 
@@ -318,10 +319,32 @@ class Session(SessionSpec):
             id_prefix (str): if included, only return jobs with the beginning of the job ID matching the id_prefix
             name_prefix (str): if included, only return jobs with the beginning of the job name matching the name_prefix
             reverse (bool): if specified, list jobs in the reverse order of submission times
+            **kwargs: deprecated legacy aliases accepted for compatibility
 
         Returns: a list of job metadata
 
         """
+        legacy_aliases = {
+            "max_num": "limit",
+            "job_id_prefix": "id_prefix",
+            "job_name_prefix": "name_prefix",
+            "id": "id_prefix",
+            "name": "name_prefix",
+        }
+        for legacy_key, canonical_key in legacy_aliases.items():
+            if legacy_key not in kwargs:
+                continue
+            value = kwargs.pop(legacy_key)
+            if canonical_key == "limit" and limit is None:
+                limit = value
+            elif canonical_key == "id_prefix" and id_prefix is None:
+                id_prefix = value
+            elif canonical_key == "name_prefix" and name_prefix is None:
+                name_prefix = value
+
+        if kwargs:
+            raise TypeError(f"unsupported list_jobs kwargs: {sorted(kwargs.keys())}")
+
         if not isinstance(detailed, bool):
             raise ValueError(f"detailed must be bool but got {type(detailed)}")
         if not isinstance(reverse, bool):

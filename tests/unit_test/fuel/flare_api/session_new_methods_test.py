@@ -69,6 +69,18 @@ class TestListJobs:
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [AdminCommandNames.LIST_JOBS, "-n", "hello world", "job 1"]
 
+    def test_accepts_legacy_kwargs(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result({MetaKey.JOBS: []})) as mock_cmd:
+            session.list_jobs(max_num=5, job_id_prefix="job", job_name_prefix="hello")
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.LIST_JOBS, "-m", "5", "-n", "hello", "job"]
+
+    def test_rejects_unknown_legacy_kwargs(self):
+        session = _make_session()
+        with pytest.raises(TypeError, match="unsupported list_jobs kwargs"):
+            session.list_jobs(unknown_filter="x")
+
 
 class TestGetJobMeta:
     def test_sends_get_job_meta_command(self):

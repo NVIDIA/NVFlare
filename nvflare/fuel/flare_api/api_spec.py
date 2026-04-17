@@ -185,6 +185,7 @@ class SessionSpec(ABC):
         id_prefix: Optional[str] = None,
         name_prefix: Optional[str] = None,
         reverse: bool = False,
+        **kwargs,
     ) -> List[dict]:
         """Get the job info from the server
 
@@ -194,6 +195,7 @@ class SessionSpec(ABC):
             id_prefix: if included, only return jobs with the beginning of the job ID matching the prefix
             name_prefix: if included, only return jobs with the beginning of the job name matching the prefix
             reverse: if specified, list jobs in the reverse order of submission times
+            **kwargs: deprecated legacy aliases accepted for compatibility
 
         Returns: a list of job metadata
 
