@@ -1188,7 +1188,12 @@ def new_session(
         session.try_connect(timeout)
         return session
     except Exception:
-        session.close()
+        try:
+            session.close()
+        except Exception:
+            # Preserve the original connection/setup failure if cleanup on a partially
+            # initialized session also errors.
+            pass
         raise
 
 

@@ -158,6 +158,15 @@ def def_config_parser(sub_cmd):
         help="production startup kit location",
     )
     config_parser.add_argument(
+        "-d",
+        "--startup_kit_dir",
+        dest="legacy_startup_kit_dir",
+        type=str,
+        nargs="?",
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    config_parser.add_argument(
         "--poc.workspace",
         dest="poc_workspace_dir",
         type=str,
@@ -174,7 +183,7 @@ def def_config_parser(sub_cmd):
 
 
 def handle_config_cmd(args):
-    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_output import output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -192,6 +201,21 @@ def handle_config_cmd(args):
     requested_poc_startup = args.poc_startup_kit_dir
     requested_prod_startup = args.prod_startup_kit_dir
     requested_poc_workspace = args.poc_workspace_dir
+    legacy_startup_kit_dir = getattr(args, "legacy_startup_kit_dir", None)
+
+    if legacy_startup_kit_dir is not None:
+        if requested_poc_startup is not None or requested_prod_startup is not None:
+            output_error(
+                "INVALID_ARGS",
+                exit_code=4,
+                detail="--startup_kit_dir cannot be used together with --poc.startup_kit or --prod.startup_kit",
+            )
+            return
+        requested_poc_startup = legacy_startup_kit_dir
+        print_human(
+            "WARNING: 'nvflare config -d/--startup_kit_dir' is deprecated. "
+            "Use '--poc.startup_kit' for the same setting."
+        )
 
     if (
         requested_poc_startup is None

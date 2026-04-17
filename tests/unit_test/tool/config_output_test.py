@@ -31,6 +31,7 @@ class TestConfigOutput:
         args = MagicMock()
         args.poc_startup_kit_dir = kwargs.get("poc_startup_kit_dir", None)
         args.prod_startup_kit_dir = kwargs.get("prod_startup_kit_dir", None)
+        args.legacy_startup_kit_dir = kwargs.get("legacy_startup_kit_dir", None)
         args.poc_workspace_dir = kwargs.get("poc_workspace_dir", None)
         args.job_templates_dir = kwargs.get("job_templates_dir", None)
         args.debug = False
@@ -119,7 +120,7 @@ class TestConfigOutput:
         assert data["error_code"] == "INVALID_ARGS"
         assert "invalid startup kit location" in data["message"]
 
-    def test_config_parser_no_longer_accepts_legacy_aliases(self):
+    def test_config_parser_accepts_legacy_startup_alias(self):
         import argparse
 
         from nvflare.cli import def_config_parser
@@ -127,9 +128,57 @@ class TestConfigOutput:
         root = argparse.ArgumentParser()
         subs = root.add_subparsers()
         def_config_parser(subs)
+        args = root.parse_args(["config", "-d", "/path/to/startup"])
+        assert args.legacy_startup_kit_dir == "/path/to/startup"
 
         with pytest.raises(SystemExit):
-            root.parse_args(["config", "-d", "/path/to/startup"])
+            root.parse_args(["config", "-pw", "/path/to/poc"])
 
+    def test_legacy_startup_alias_warns_and_maps_to_poc(self, capsys):
+        from nvflare.cli import handle_config_cmd
+
+        args = self._make_args(legacy_startup_kit_dir="/path/to/startup")
+
+        mock_config = MagicMock()
+        mock_config.get.return_value = "/path/to/startup"
+
+        with patch("nvflare.cli.get_hidden_config", return_value=("/fake/config.conf", mock_config)):
+            with patch("nvflare.cli.create_startup_kit_config", return_value=mock_config) as create_startup:
+                with patch("nvflare.cli.create_poc_workspace_config", return_value=mock_config):
+                    with patch("nvflare.cli.create_job_template_config", return_value=mock_config):
+                        with patch("nvflare.cli.save_config"):
+                            with patch("nvflare.tool.cli_schema.handle_schema_flag"):
+                                handle_config_cmd(args)
+
+        create_startup.assert_any_call(mock_config, "/path/to/startup", target="poc")
+        captured = capsys.readouterr()
+        assert "deprecated" in captured.err.lower()
+        assert "--poc.startup_kit" in captured.err
+
+    def test_legacy_startup_alias_conflicts_with_new_targeted_flags(self, capsys):
+        from nvflare.cli import handle_config_cmd
+
+        args = self._make_args(legacy_startup_kit_dir="/legacy", poc_startup_kit_dir="/new")
+        mock_config = MagicMock()
+        mock_config.get.return_value = None
+
+        with patch("nvflare.cli.get_hidden_config", return_value=("/fake/config.conf", mock_config)):
+            with patch("nvflare.tool.cli_schema.handle_schema_flag"):
+                with pytest.raises(SystemExit) as exc_info:
+                    handle_config_cmd(args)
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["error_code"] == "INVALID_ARGS"
+        assert "startup_kit_dir cannot be used together" in data["message"]
+
+    def test_config_parser_no_longer_accepts_legacy_workspace_alias(self):
+        import argparse
+
+        from nvflare.cli import def_config_parser
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        def_config_parser(subs)
         with pytest.raises(SystemExit):
             root.parse_args(["config", "-pw", "/path/to/poc"])
