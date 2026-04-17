@@ -102,13 +102,14 @@ class _LogChunkConsumer(BaseChunkConsumer):
         chunk_received_cb,
         idle_timeout: float,
         cb_kwargs: dict,
+        fl_ctx: FLContext = None,
     ):
         super().__init__()
         self._chunk_received_cb = chunk_received_cb
         self._idle_timeout = idle_timeout
         self._cb_kwargs = cb_kwargs
         self._stream_ctx = stream_ctx
-        self._fl_ctx = None  # set on the first consume(); needed by the watchdog
+        self._fl_ctx = fl_ctx  # updated on each consume(); seeded from get_consumer()
         self._last_received_time = time.time()
         self._done = threading.Event()
 
@@ -119,15 +120,13 @@ class _LogChunkConsumer(BaseChunkConsumer):
     def _watchdog(self):
         """Background thread: end this stream when it goes idle."""
         while not self._done.wait(timeout=1.0):
-            if self._fl_ctx is None:
-                # No message has arrived yet; the clock effectively hasn't started.
-                self._last_received_time = time.time()
-                continue
-
             elapsed = time.time() - self._last_received_time
             if elapsed >= self._idle_timeout:
                 self.logger.warning(f"log stream idle for {elapsed:.1f}s (threshold {self._idle_timeout}s) — closing")
                 self._done.set()
+                if self._fl_ctx is None:
+                    self.logger.error("no fl_ctx available — cannot call end_stream")
+                    return
                 end_stream = self._stream_ctx.get(StreamContextKey.END_STREAM)
                 if callable(end_stream):
                     end_stream(ReturnCode.TIMEOUT, self._fl_ctx)
@@ -185,6 +184,7 @@ class LogChunkConsumerFactory(ConsumerFactory):
             chunk_received_cb=self._chunk_received_cb,
             idle_timeout=self._idle_timeout,
             cb_kwargs=self._cb_kwargs,
+            fl_ctx=fl_ctx,
         )
 
 
