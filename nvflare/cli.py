@@ -247,8 +247,8 @@ def handle_config_cmd(args):
         return
 
     try:
-        nvflare_config = create_startup_kit_config(nvflare_config, requested_poc_startup, target=TARGET_POC)
-        nvflare_config = create_startup_kit_config(nvflare_config, requested_prod_startup, target=TARGET_PROD)
+        nvflare_config = create_startup_kit_config(nvflare_config, TARGET_POC, requested_poc_startup)
+        nvflare_config = create_startup_kit_config(nvflare_config, TARGET_PROD, requested_prod_startup)
         nvflare_config = create_poc_workspace_config(nvflare_config, requested_poc_workspace)
         nvflare_config = create_job_template_config(nvflare_config, args.job_templates_dir)
     except ValueError as e:

@@ -170,7 +170,7 @@ class TestConfigOutput:
                             with patch("nvflare.tool.cli_schema.handle_schema_flag"):
                                 handle_config_cmd(args)
 
-        create_startup.assert_any_call(mock_config, "/path/to/startup", target="poc")
+        create_startup.assert_any_call(mock_config, "poc", "/path/to/startup")
         captured = capsys.readouterr()
         assert "deprecated" in captured.err.lower()
         assert "--poc.startup_kit" in captured.err
