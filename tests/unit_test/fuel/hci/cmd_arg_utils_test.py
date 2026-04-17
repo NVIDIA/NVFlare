@@ -20,15 +20,25 @@ class TestCmdArgUtils:
         args = split_to_args("submit_job '/tmp/nvflare/job_configs/cifar10_splitnn'")
         assert args == ["submit_job", "/tmp/nvflare/job_configs/cifar10_splitnn"]
 
+    def test_split_to_args_preserves_backslashes_for_unquoted_input(self):
+        args = split_to_args(r"submit_job C:\tmp\job")
+        assert args == ["submit_job", r"C:\tmp\job"]
+
     def test_split_to_args_falls_back_for_unmatched_single_quote(self):
         args = split_to_args("submit_job /tmp/nvflare/o'connor_job")
         assert args == ["submit_job", "/tmp/nvflare/o'connor_job"]
 
-    def test_parse_command_line_supports_single_quoted_path_with_props(self):
-        line, args, props = parse_command_line("submit_job '/tmp/nvflare/my job' #test_prop=value")
-        assert line == "submit_job '/tmp/nvflare/my job'"
-        assert args == ["submit_job", "/tmp/nvflare/my job"]
-        assert props == "test_prop=value"
+    def test_parse_command_line_supports_single_quoted_hash_path(self):
+        line, args, props = parse_command_line("submit_job '/tmp/#1_job'")
+        assert line == "submit_job '/tmp/#1_job'"
+        assert args == ["submit_job", "/tmp/#1_job"]
+        assert props is None
+
+    def test_parse_command_line_keeps_double_quoted_behavior(self):
+        line, args, props = parse_command_line('submit_job "/tmp/my job"')
+        assert line == 'submit_job "/tmp/my job"'
+        assert args == ["submit_job", "/tmp/my job"]
+        assert props is None
 
     def test_parse_command_line_keeps_unquoted_props_behavior(self):
         line, args, props = parse_command_line("list_job #test_prop=value")

@@ -27,8 +27,12 @@ def _legacy_split_args(line: str) -> List[str]:
     return line.split(" ")
 
 
-def _split_args(line: str) -> List[str]:
-    """Split HCI command args, honoring shell quotes when possible.
+def _has_quotes(line: str) -> bool:
+    return '"' in line or "'" in line
+
+
+def _split_quoted_args(line: str) -> List[str]:
+    """Split HCI command args for quoted input, honoring shell quotes.
 
     Fall back to the legacy whitespace splitter for malformed quoting so we
     don't turn previously accepted inputs into parse errors.
@@ -41,7 +45,9 @@ def _split_args(line: str) -> List[str]:
 
 
 def split_to_args(line: str) -> List[str]:
-    return _split_args(line)
+    if _has_quotes(line):
+        return _split_quoted_args(line)
+    return _legacy_split_args(line)
 
 
 def parse_command_line(line: str) -> (str, List[str], str):
@@ -53,14 +59,14 @@ def parse_command_line(line: str) -> (str, List[str], str):
     Returns:
 
     """
-    if '"' in line:
-        return line, _split_args(line), None
-    else:
-        # cmd props are after "#"
-        parts = line.split("#", maxsplit=1)
-        line = parts[0].strip()
-        props = parts[1] if len(parts) > 1 else None
-        return line, _split_args(line), props
+    if _has_quotes(line):
+        return line, _split_quoted_args(line), None
+
+    # cmd props are after "#"
+    parts = line.split("#", maxsplit=1)
+    line = parts[0].strip()
+    props = parts[1] if len(parts) > 1 else None
+    return line, _legacy_split_args(line), props
 
 
 def join_args(segs: List[str]) -> str:
