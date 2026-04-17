@@ -22,12 +22,26 @@ from typing import List
 from nvflare.apis.utils.format_check import type_pattern_mapping
 
 
+def _legacy_split_args(line: str) -> List[str]:
+    line = re.sub(" +", " ", line)
+    return line.split(" ")
+
+
+def _split_args(line: str) -> List[str]:
+    """Split HCI command args, honoring shell quotes when possible.
+
+    Fall back to the legacy whitespace splitter for malformed quoting so we
+    don't turn previously accepted inputs into parse errors.
+    """
+    try:
+        args = shlex.split(line)
+        return args if args else _legacy_split_args(line)
+    except ValueError:
+        return _legacy_split_args(line)
+
+
 def split_to_args(line: str) -> List[str]:
-    if '"' in line:
-        return shlex.split(line)
-    else:
-        line = re.sub(" +", " ", line)
-        return line.split(" ")
+    return _split_args(line)
 
 
 def parse_command_line(line: str) -> (str, List[str], str):
@@ -40,14 +54,13 @@ def parse_command_line(line: str) -> (str, List[str], str):
 
     """
     if '"' in line:
-        return line, shlex.split(line), None
+        return line, _split_args(line), None
     else:
         # cmd props are after "#"
         parts = line.split("#", maxsplit=1)
         line = parts[0].strip()
         props = parts[1] if len(parts) > 1 else None
-        line = re.sub(" +", " ", line)
-        return line, line.split(" "), props
+        return line, _split_args(line), props
 
 
 def join_args(segs: List[str]) -> str:
