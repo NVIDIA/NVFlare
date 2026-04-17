@@ -496,6 +496,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     def _collect_job_log_lines(self, log_file: str, tail_lines=None, grep_pattern=None):
         if tail_lines is not None:
+            # Bound tail mode by both requested lines and an internal safety cap so an
+            # extreme `-n` on a file with very short lines cannot grow server memory
+            # without limit before the byte cap has a chance to kick in.
             max_tail_lines = min(tail_lines, self.MAX_RETURNED_JOB_LOG_LINES)
             capped_by_line_limit = tail_lines > self.MAX_RETURNED_JOB_LOG_LINES
             lines = deque()
@@ -533,6 +536,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                         collected_bytes -= removed_len
                         truncated = True
 
+                    # If a single retained line would still exceed the byte budget after
+                    # eviction, drop it and report truncation rather than returning a
+                    # response that exceeds the server-side safety limit.
                     if collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
                         truncated = True
                         continue
