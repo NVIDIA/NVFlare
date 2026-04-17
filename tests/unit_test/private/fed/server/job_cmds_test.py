@@ -418,6 +418,23 @@ def test_get_job_log_tail_still_respects_byte_cap(tmp_path, monkeypatch):
     assert "aaaaaaaaaaaa" not in payload["logs"]["server"]
 
 
+def test_get_job_log_tail_caps_buffered_line_count(tmp_path, monkeypatch):
+    job_cmds_module.ServerEngine = _FakeServerEngine
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+    log_file = Path(workspace.get_log_root("job-1")) / WorkspaceConstants.LOG_FILE_NAME
+    log_file.write_text("".join(f"line{i}\n" for i in range(6)), encoding="utf-8")
+
+    monkeypatch.setattr(JobCommandModule, "MAX_RETURNED_JOB_LOG_LINES", 3)
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "-n", "1000"])
+
+    payload, _meta = conn.dicts[0]
+    assert payload["logs"]["server"].startswith("line3\nline4\nline5\n")
+    assert "truncated after" in payload["logs"]["server"]
+
+
 def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch):
     workspace = _FakeWorkspace(tmp_path)
     engine = _FakeServerEngine(workspace)

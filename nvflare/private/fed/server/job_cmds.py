@@ -96,6 +96,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     """Command module with commands for job management."""
 
     MAX_RETURNED_JOB_LOG_BYTES = 5 * 1024 * 1024
+    MAX_RETURNED_JOB_LOG_LINES = 10000
 
     def __init__(self):
         super().__init__()
@@ -495,8 +496,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     def _collect_job_log_lines(self, log_file: str, tail_lines=None, grep_pattern=None):
         if tail_lines is not None:
+            max_tail_lines = min(tail_lines, self.MAX_RETURNED_JOB_LOG_LINES)
+            capped_by_line_limit = tail_lines > self.MAX_RETURNED_JOB_LOG_LINES
             lines = deque()
         else:
+            capped_by_line_limit = False
             lines = []
         collected_bytes = 0
         truncated = False
@@ -518,9 +522,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                         truncated = True
                         continue
 
-                    while lines and len(lines) >= tail_lines:
+                    while lines and len(lines) >= max_tail_lines:
                         _removed_line, removed_len = lines.popleft()
                         collected_bytes -= removed_len
+                        if capped_by_line_limit:
+                            truncated = True
 
                     while lines and collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
                         _removed_line, removed_len = lines.popleft()
