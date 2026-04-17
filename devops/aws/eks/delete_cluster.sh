@@ -20,9 +20,17 @@ for EFS_ID in ${EFS_IDS}; do
   for MT in ${MT_IDS}; do
     aws efs delete-mount-target --mount-target-id "${MT}" --region "${REGION}" 2>/dev/null || true
   done
-  # Wait for mount targets to be deleted
-  sleep 15
-  aws efs delete-file-system --file-system-id "${EFS_ID}" --region "${REGION}" 2>/dev/null || true
+  # Poll until all mount targets are gone (async; can take well over 15s)
+  for i in $(seq 1 30); do
+    MT_COUNT="$(aws efs describe-mount-targets --file-system-id "${EFS_ID}" --region "${REGION}" \
+      --query 'length(MountTargets)' --output text 2>/dev/null || echo 1)"
+    [[ "${MT_COUNT}" == "0" ]] && break
+    sleep 5
+  done
+  if ! aws efs delete-file-system --file-system-id "${EFS_ID}" --region "${REGION}"; then
+    echo "ERROR: Failed to delete EFS ${EFS_ID} (mount targets still present?)" >&2
+    exit 1
+  fi
   echo "Deleted EFS ${EFS_ID}"
 done
 
