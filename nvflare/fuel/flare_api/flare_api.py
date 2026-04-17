@@ -34,7 +34,7 @@ from nvflare.fuel.hci.cmd_arg_utils import (
     validate_required_target_string,
 )
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey, ReplyKeyword
-from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger, validate_site_log_config
 
 from .api_spec import (
     AuthenticationError,
@@ -1006,16 +1006,13 @@ class Session(SessionSpec):
         """Configure site-level logging.
 
         Args:
-            config: str (level or LogMode), dict (dictConfig), or file path
+            config: str log level or built-in LogMode
             target (str): target site name or "all"
 
         Returns: None
 
         """
-        if isinstance(config, dict):
-            config_str = json.dumps(config)
-        else:
-            config_str = str(config)
+        config_str = validate_site_log_config(config)
 
         command = join_args([AdminCommandNames.CONFIGURE_SITE_LOG, target, config_str])
         self._do_command(command, enforce_meta=False)

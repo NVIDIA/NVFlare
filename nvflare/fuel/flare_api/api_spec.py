@@ -312,7 +312,7 @@ class SessionSpec(ABC):
         """Configure site-level logging.
 
         Args:
-            config: log level, log mode, file path, or dictConfig payload
+            config: log level or built-in log mode
             target: ``all``, ``server``, or a client site name
 
         Returns: None

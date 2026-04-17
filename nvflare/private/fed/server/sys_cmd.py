@@ -22,7 +22,7 @@ from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
-from nvflare.fuel.utils.log_utils import dynamic_log_config
+from nvflare.fuel.utils.log_utils import dynamic_log_config, validate_site_log_config
 from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import SysCommandTopic
 from nvflare.private.fed.server.admin import new_message
@@ -148,7 +148,11 @@ class SystemCommandModule(CommandModule, CommandUtil):
             return
 
         target_type = args[1]
-        config = args[-1]
+        try:
+            config = validate_site_log_config(args[-1])
+        except ValueError as e:
+            conn.append_error(str(e), meta=make_meta(MetaStatusValue.SYNTAX_ERROR, info=str(e)))
+            return
 
         if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             engine = conn.app_ctx

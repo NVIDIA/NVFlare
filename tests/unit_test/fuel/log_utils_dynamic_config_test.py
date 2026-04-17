@@ -49,3 +49,21 @@ def test_log_modes_preserve_concise_and_add_msg_only():
         "%(asctime)s - %(levelname)s - %(message)s"
     )
     assert logmode_config_dict[LogMode.MSG_ONLY]["formatters"]["consoleFormatter"]["fmt"] == "%(message)s"
+
+
+def test_validate_site_log_config_accepts_levels_and_modes():
+    from nvflare.fuel.utils.log_utils import LogMode, validate_site_log_config
+
+    assert validate_site_log_config("INFO") == "INFO"
+    assert validate_site_log_config("20") == "20"
+    assert validate_site_log_config(LogMode.MSG_ONLY) == LogMode.MSG_ONLY
+
+
+def test_validate_site_log_config_rejects_dicts_and_file_paths():
+    from nvflare.fuel.utils.log_utils import validate_site_log_config
+
+    with pytest.raises(ValueError, match="configure_site_log only supports log levels and built-in log modes"):
+        validate_site_log_config({"version": 1})
+
+    with pytest.raises(ValueError, match="configure_site_log only supports log levels and built-in log modes"):
+        validate_site_log_config("/my workspace/log.conf")

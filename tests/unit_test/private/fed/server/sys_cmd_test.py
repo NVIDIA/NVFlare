@@ -15,6 +15,7 @@
 import json
 
 from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.fuel.hci.proto import MetaKey
 from nvflare.private.admin_defs import ReturnCode
 from nvflare.private.fed.server.sys_cmd import SystemCommandModule
 
@@ -203,3 +204,14 @@ def test_report_version_invalid_target_emits_error():
     assert conn.dicts == []
     assert conn.errors
     assert "invalid target type" in conn.errors[0][0]
+
+
+def test_configure_site_log_rejects_dictconfig_json():
+    module = SystemCommandModule()
+    conn = _MockConnection()
+
+    module.configure_site_log(conn, ["configure_site_log", "server", '{"version": 1}'])
+
+    assert conn.errors
+    assert conn.errors[0][0] == "configure_site_log only supports log levels and built-in log modes"
+    assert conn.errors[0][1][MetaKey.STATUS] == "syntax_error"
