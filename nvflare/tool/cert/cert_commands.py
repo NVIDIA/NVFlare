@@ -91,7 +91,7 @@ def handle_cert_init(args):
     # 4. Resolve and create output dir
     output_dir = os.path.abspath(args.output_dir)
     try:
-        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(output_dir, mode=0o700, exist_ok=True)
     except OSError as e:
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
 
@@ -321,7 +321,7 @@ def handle_cert_csr(args):
     # 5. Resolve output dir; create if needed
     out_dir = os.path.abspath(args.output_dir)
     try:
-        os.makedirs(out_dir, exist_ok=True)
+        os.makedirs(out_dir, mode=0o700, exist_ok=True)
     except OSError as e:
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail=str(e))
 
@@ -596,7 +596,7 @@ def handle_cert_sign(args):
     # 7. Resolve output paths; check for existing cert
     output_dir = os.path.abspath(args.output_dir)
     try:
-        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(output_dir, mode=0o700, exist_ok=True)
     except OSError as e:
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
 

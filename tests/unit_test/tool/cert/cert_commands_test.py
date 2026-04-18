@@ -214,6 +214,14 @@ class TestCertInit:
         assert os.path.exists(new_dir)
         assert os.path.exists(os.path.join(new_dir, "rootCA.pem"))
 
+    @pytest.mark.skipif(platform.system() == "Windows", reason="directory chmod semantics differ on Windows")
+    def test_output_dir_permissions(self, tmp_path):
+        new_dir = str(tmp_path / "secure" / "ca")
+        rc = handle_cert_init(_init_args(output_dir=new_dir))
+        assert rc == 0
+        mode = stat.S_IMODE(os.stat(new_dir).st_mode)
+        assert mode == 0o700
+
     def test_ca_cert_subject_cn_matches_name(self, tmp_path):
         _run_init(tmp_path, project="FederationX")
         cert = load_crt(str(tmp_path / "rootCA.pem"))
@@ -332,6 +340,14 @@ class TestCertCsr:
         assert rc == 0
         assert os.path.exists(new_dir)
 
+    @pytest.mark.skipif(platform.system() == "Windows", reason="directory chmod semantics differ on Windows")
+    def test_output_dir_permissions(self, tmp_path):
+        new_dir = str(tmp_path / "secure-csr")
+        rc = handle_cert_csr(_csr_args(name="h1", output_dir=new_dir, cert_type="client"))
+        assert rc == 0
+        mode = stat.S_IMODE(os.stat(new_dir).st_mode)
+        assert mode == 0o700
+
     def test_agent_mode_json_envelope(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
         handle_cert_csr(_csr_args(name="h1", output_dir=str(tmp_path), cert_type="client"))
@@ -408,6 +424,16 @@ class TestCertSign:
         handle_cert_sign(args)
         assert os.path.exists(os.path.join(out_dir, "hospital-1.crt"))
         assert os.path.exists(os.path.join(out_dir, "rootCA.pem"))
+
+    @pytest.mark.skipif(platform.system() == "Windows", reason="directory chmod semantics differ on Windows")
+    def test_sign_output_dir_permissions(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)
+        out_dir = str(tmp_path / "signed-secure")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+        handle_cert_sign(args)
+        mode = stat.S_IMODE(os.stat(out_dir).st_mode)
+        assert mode == 0o700
 
     def test_sign_does_not_mutate_ca_json(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
