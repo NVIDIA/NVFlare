@@ -34,7 +34,7 @@ Command Usage
      clone           clone an existing job
      delete          delete a job
      list_templates  [DEPRECATED] use 'nvflare recipe list'
-     create          [DEPRECATED] use 'python job.py --export --export-dir <job_folder>' + 'nvflare job submit'
+     create          [DEPRECATED] use 'python job.py --export --export-dir <job_folder>' + 'nvflare job submit -j <job_folder>'
      show_variables  [DEPRECATED] use 'nvflare recipe list' or the Job Recipe API
 
 *****************
@@ -128,7 +128,8 @@ Monitor options:
 Exit behavior:
 
 - exit code ``0``: job finished successfully
-- exit code ``1``: job reached a terminal failure state such as ``FAILED`` or ``ABORTED``
+- exit code ``1``: job reached a terminal failure state: ``FAILED``, ``FINISHED_EXCEPTION``, ``ABORTED``, or ``ABANDONED``
+- exit code ``2``: connection or authentication failure prevented monitoring
 - exit code ``3``: monitor timeout
 
 This enables CI/CD-style chaining:

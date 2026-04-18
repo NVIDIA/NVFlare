@@ -192,8 +192,8 @@ Step 2 — Site Admin: Generate a Local Key and CSR
 ==================================================
 
 Each participant (server, each client, each admin user) runs this step on their
-own machine. The optional ``-t`` flag embeds the proposed certificate type in the
-CSR as a hint for the Project Admin.
+own machine. The ``-t`` flag embeds the proposed certificate type in the CSR as
+a hint for the Project Admin.
 
 .. code-block:: bash
 
@@ -403,6 +403,7 @@ This example sets up a federation with one server (``fl-server``) and one client
    # Then package:
    nvflare package -e grpc://fl-server:8002 --dir ./csr
    # Kit type is derived from the signed cert; output to workspace/project/prod_00/fl-server/
+   # The leftover .csr file in ./csr/ is ignored by nvflare package.
 
    # 7. Start
    cd workspace/project/prod_00/fl-server && ./startup/start.sh
@@ -423,6 +424,7 @@ This example sets up a federation with one server (``fl-server``) and one client
    # Then package:
    nvflare package -e grpc://fl-server:8002 --dir ./csr
    # Kit type is derived from the signed cert; output to workspace/project/prod_00/hospital-1/
+   # The leftover .csr file in ./csr/ is ignored by nvflare package.
 
    # 7. Start
    cd workspace/project/prod_00/hospital-1 && ./startup/start.sh
@@ -520,7 +522,7 @@ Assemble a startup kit (Site Admin).
 +--------------------------+--------------------------------------------------------------------------+----------+
 | -p / --project-file      | Site-scoped project YAML for multi-participant mode; requires --dir.    | No       |
 +--------------------------+--------------------------------------------------------------------------+----------+
-| --dir                    | Directory containing key/cert/rootCA files. Required in ``--dir`` mode  | Yes*     |
+| --dir                    | Directory containing key/cert/rootCA files. Required in ``--dir`` mode  | Yes**    |
 |                          | (standalone or with ``-p``).                                            |          |
 +--------------------------+--------------------------------------------------------------------------+----------+
 | -n / --name              | Participant name; required in explicit single mode.                     | No*      |
@@ -542,6 +544,10 @@ Assemble a startup kit (Site Admin).
 
 * ``-n``, ``--cert``, ``--key``, and ``--rootca`` are used together in explicit
   single-participant mode; mutually exclusive with ``-p`` / ``--project-file``.
+* ``--dir`` is required whenever ``nvflare package`` is used in ``--dir`` mode,
+  either standalone or together with ``-p`` / ``--project-file``. It is not
+  used in explicit single-participant mode with ``-n``, ``--cert``, ``--key``,
+  and ``--rootca``.
 
 All commands support the global ``--out-format json`` flag for machine-readable
 output and ``--schema``

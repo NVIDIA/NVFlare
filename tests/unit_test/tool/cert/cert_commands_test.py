@@ -651,6 +651,22 @@ class TestCertSign:
         copy = open(os.path.join(out_dir, "rootCA.pem"), "rb").read()
         assert orig == copy
 
+    def test_sign_aki_matches_issuer_cert(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path, name="site-1")
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+
+        handle_cert_sign(args)
+
+        ca_cert = load_crt(os.path.join(ca_dir, "rootCA.pem"))
+        issued_cert = load_crt(os.path.join(out_dir, "site-1.crt"))
+
+        issuer_ski = ca_cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value.digest
+        issued_aki = issued_cert.extensions.get_extension_for_class(x509.AuthorityKeyIdentifier).value
+
+        assert issued_aki.key_identifier == issuer_ski
+
     def test_sign_multiple_certs_use_distinct_serial_numbers(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
         csr1 = _setup_csr(tmp_path / "csr1", name="client1")

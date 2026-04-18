@@ -442,6 +442,15 @@ def _build_signed_cert(
         safe_attrs.append(attr)
     safe_attrs.append(x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, cert_type))
     safe_subject = x509.Name(safe_attrs)
+    try:
+        issuer_ski = ca_cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value.digest
+        authority_key_identifier = x509.AuthorityKeyIdentifier(
+            key_identifier=issuer_ski,
+            authority_cert_issuer=None,
+            authority_cert_serial_number=None,
+        )
+    except x509.ExtensionNotFound:
+        authority_key_identifier = x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key())
 
     builder = (
         x509.CertificateBuilder()
@@ -458,7 +467,7 @@ def _build_signed_cert(
             critical=False,
         )
         .add_extension(
-            x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()),
+            authority_key_identifier,
             critical=False,
         )
     )

@@ -53,6 +53,11 @@ for site_yaml in "${SITE_YAMLS[@]}"; do
   CSR_PATH="$(jq -r '.data.csr' <"${TMP_CSR_JSON}")"
   KEY_PATH="$(jq -r '.data.key' <"${TMP_CSR_JSON}")"
 
+  if [[ "${SITE_NAME}" == "null" || -z "${SITE_NAME}" ]]; then
+    echo "ERROR: cert csr output did not include a valid participant name." >&2
+    exit 1
+  fi
+
   mv -f "${TMP_CSR_JSON}" "${WORK_DIR}/csr_${SITE_NAME}.json"
   TMP_CSR_JSON=""
   SITE_NAMES+=("${SITE_NAME}")
@@ -82,13 +87,17 @@ for i in "${!SITE_NAMES[@]}"; do
   SITE_BUNDLE_DIR="${SITE_DIR}/${SITE_NAME}"
   mkdir -p "${SITE_BUNDLE_DIR}"
 
-  cp -f "${KEY_PATH}" "${SITE_BUNDLE_DIR}/"
+  install -m 0600 "${KEY_PATH}" "${SITE_BUNDLE_DIR}/"
   if [[ ! -f "${SITE_SIGNED_DIR}/${SITE_NAME}.crt" ]]; then
     echo "ERROR: signed cert not found for ${SITE_NAME}: ${SITE_SIGNED_DIR}/${SITE_NAME}.crt" >&2
     exit 1
   fi
   cp -f "${SITE_SIGNED_DIR}/${SITE_NAME}.crt" "${SITE_BUNDLE_DIR}/"
   cp -f "${CA_DIR}/rootCA.pem" "${SITE_BUNDLE_DIR}/"
+
+  if [[ -n "${ROOTCA_FP}" ]]; then
+    echo "Site ${SITE_NAME}: verify this rootCA.pem SHA256 fingerprint out-of-band before packaging: ${ROOTCA_FP}" >&2
+  fi
 
   nvflare --out-format json package -e "${SERVER_ENDPOINT}" -p "${SITE_YAMLS[$i]}" --dir "${SITE_BUNDLE_DIR}" -w "${WORK_DIR}/workspace" >"${WORK_DIR}/package_${SITE_NAME}.json"
 
