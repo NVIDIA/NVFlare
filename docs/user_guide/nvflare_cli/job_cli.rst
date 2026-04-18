@@ -62,7 +62,7 @@ Submit options:
 - ``-j, --job_folder``: job folder path. Defaults to ``./current_job``.
 - ``--target {poc,prod}``: choose the startup kit from ``~/.nvflare/config.conf``. See the startup kit resolution order below.
 - ``--startup_kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--target``.
-- ``--study``: submit into a named study when the server is configured for multi-study access. If omitted, the default study is used.
+- ``--study``: submit into a named study when the server is configured for multi-study access. If omitted, the literal study name ``default`` is submitted.
 - ``-debug, --debug``: keep the temporary copied job folder for inspection.
 - ``--schema``: print the command schema as JSON and exit.
 
