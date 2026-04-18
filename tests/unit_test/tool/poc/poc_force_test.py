@@ -93,6 +93,7 @@ class TestPocForce:
 
         # Simulate user saying "N" — prompt_yn uses sys.stdin.readline, not input()
         with patch("sys.stdin") as mock_stdin:
+            mock_stdin.isatty.return_value = True
             mock_stdin.readline.return_value = "N\n"
             result = _prepare_poc([], 2, workspace, force=False)
         assert result is False
