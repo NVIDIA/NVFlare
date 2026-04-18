@@ -176,6 +176,20 @@ class Recipe(ABC):
                 params.clear()
                 params.update(original)
 
+    def _replace_additional_params_for_targets(self, targets: List[str], new_params: dict) -> None:
+        deploy_map = getattr(self.job, "_deploy_map", {})
+        for target in targets:
+            app = deploy_map.get(target)
+            if app is None:
+                continue
+            app_config = getattr(app, "app_config", None)
+            if app_config is None:
+                continue
+            params = getattr(app_config, "additional_params", None)
+            if isinstance(params, dict):
+                params.clear()
+                params.update(new_params)
+
     @contextmanager
     def _temporary_exec_params(self, server_exec_params: dict = None, client_exec_params: dict = None):
         params_snapshot = None
@@ -183,11 +197,18 @@ class Recipe(ABC):
             params_snapshot = self._snapshot_additional_params()
 
         try:
-            if server_exec_params:
-                self.job.to_server(server_exec_params)
+            if server_exec_params is not None:
+                if server_exec_params:
+                    self.job.to_server(server_exec_params)
+                else:
+                    self._replace_additional_params_for_targets(["server"], {})
 
-            if client_exec_params:
-                self._add_to_client_apps(client_exec_params)
+            if client_exec_params is not None:
+                if client_exec_params:
+                    self._add_to_client_apps(client_exec_params)
+                else:
+                    client_targets = [target for target in getattr(self.job, "_deploy_map", {}) if target != "server"]
+                    self._replace_additional_params_for_targets(client_targets, {})
             yield
         finally:
             if params_snapshot is not None:

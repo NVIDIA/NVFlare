@@ -424,8 +424,19 @@ class TestRecipeExecuteExportParamIsolation:
         assert server_app is not None
         server_app.app_config.additional_params.update({"persisted": 1})
 
+        seen_during_execute = {}
+
+        def _capture_deploy(job):
+            server = job._deploy_map.get("server")
+            assert server is not None
+            seen_during_execute.update(server.app_config.additional_params)
+            return "dummy-job-id"
+
+        env.deploy = _capture_deploy
+
         recipe.execute(env, server_exec_params={})
 
+        assert seen_during_execute == {}
         assert server_app.app_config.additional_params == {"persisted": 1}
 
     def test_execute_then_export_no_cross_contamination(self, temp_script):
