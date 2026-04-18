@@ -60,7 +60,7 @@ Use ``nvflare job submit`` to submit a pre-built NVFlare job folder:
 Submit options:
 
 - ``-j, --job_folder``: job folder path. Defaults to ``./current_job``.
-- ``--target {poc,prod}``: choose the startup kit from ``~/.nvflare/config.conf``. If omitted, submit defaults to ``poc``.
+- ``--target {poc,prod}``: choose the startup kit from ``~/.nvflare/config.conf``. See the startup kit resolution order below.
 - ``--startup_kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--target``.
 - ``--study``: submit into a named study when the server is configured for multi-study access.
 - ``-debug, --debug``: keep the temporary copied job folder for inspection.
@@ -76,10 +76,9 @@ Startup kit resolution order:
 
 1. ``--startup_kit``
 2. ``NVFLARE_STARTUP_KIT_DIR``
-3. ``--target`` via config:
+3. resolved target via config (explicit ``--target`` value, otherwise default ``poc``):
    - ``poc`` -> ``poc.startup_kit``
    - ``prod`` -> ``prod.startup_kit``
-4. default target ``poc`` when ``--target`` is omitted
 
 Examples:
 
@@ -238,7 +237,7 @@ Change logging configuration for a running job:
 
 - positional ``level``: ``DEBUG``, ``INFO``, ``WARNING``, ``ERROR``, ``CRITICAL``
 - log modes: ``concise``, ``msg_only``, ``full``, ``verbose``, ``reload``
-- ``--site``: target site name or ``all``
+- ``--site``: target site name or ``all``. Default: ``all``.
 - ``--schema``: print the command schema as JSON and exit
 
 Show running job statistics:
