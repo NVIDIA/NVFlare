@@ -951,8 +951,6 @@ def _build_commands(
 
 
 def prepare_env(service_name, gpu_ids: Optional[List[int]], service_config: Dict):
-    import os
-
     my_env = None
     if gpu_ids:
         my_env = os.environ.copy()

@@ -904,7 +904,7 @@ def test_get_job_log_tail_zero_returns_syntax_error(tmp_path, monkeypatch):
     job_id = "job-123"
     log_root = tmp_path / job_id
     log_root.mkdir(parents=True)
-    log_path = log_root / "log.txt"
+    log_path = log_root / WorkspaceConstants.LOG_FILE_NAME
     log_path.write_text("line1\nline2\nline3\n")
 
     class _FakeWorkspace:
