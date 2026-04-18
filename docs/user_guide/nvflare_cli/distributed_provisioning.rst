@@ -449,10 +449,14 @@ Generate a local private key and CSR (Site Admin).
 +------------------+--------------------------------------------------+----------+
 | ``-o`` / ``--output-dir`` | Directory for key and CSR files         | Yes      |
 +------------------+--------------------------------------------------+----------+
-| ``-t`` / ``--type``   | Proposed certificate type. Embedded in      | No       |
+| ``-t`` / ``--type``   | Proposed certificate type. Embedded in      | Yes*     |
 |                  | the CSR as the site-admin-proposed type.         |          |
 |                  | The Project Admin must either accept it with     |          |
 |                  | ``--accept-csr-role`` or override with ``-t``.   |          |
++------------------+--------------------------------------------------+----------+
+| ``-p`` / ``--project-file`` | Site-scoped project yaml supplying name, | No       |
+|                  | org, and type. Mutually exclusive with           |          |
+|                  | ``-n``, ``--org``, and ``-t``.                   |          |
 +------------------+--------------------------------------------------+----------+
 | ``--org``        | Organization name                                | No       |
 +------------------+--------------------------------------------------+----------+
