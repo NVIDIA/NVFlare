@@ -110,7 +110,7 @@ class TestPocOutput:
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=poc_ws),
             patch("nvflare.tool.poc.poc_commands._prepare_poc", return_value=True),
             patch("nvflare.tool.install_skills.install_skills", return_value=None),
-            patch("nvflare.tool.poc.poc_commands._load_yaml", side_effect=RuntimeError("bad yaml"), create=True),
+            patch("nvflare.lighter.utils.load_yaml", side_effect=RuntimeError("bad yaml")),
         ):
             prepare_poc(args)
 
