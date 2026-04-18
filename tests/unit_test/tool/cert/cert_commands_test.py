@@ -124,7 +124,6 @@ class TestCertInit:
         with open(str(tmp_path / "ca.json")) as f:
             meta = json.load(f)
         assert meta["project"] == "MyProject"
-        assert meta["next_serial"] == 2
         assert "created_at" in meta
 
     def test_existing_ca_no_force(self, tmp_path):
@@ -410,20 +409,18 @@ class TestCertSign:
         assert os.path.exists(os.path.join(out_dir, "hospital-1.crt"))
         assert os.path.exists(os.path.join(out_dir, "rootCA.pem"))
 
-    def test_sign_updates_ca_json(self, tmp_path):
+    def test_sign_does_not_mutate_ca_json(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
         csr_path = _setup_csr(tmp_path)
         out_dir = str(tmp_path / "signed")
-
-        def _peek_serial(ca_json_path):
-            with open(ca_json_path) as _f:
-                return json.load(_f).get("next_serial", 2)
-
-        serial_before = _peek_serial(os.path.join(ca_dir, "ca.json"))
+        ca_json_path = os.path.join(ca_dir, "ca.json")
+        with open(ca_json_path) as _f:
+            meta_before = json.load(_f)
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
         handle_cert_sign(args)
-        serial_after = _peek_serial(os.path.join(ca_dir, "ca.json"))
-        assert serial_after == serial_before + 1
+        with open(ca_json_path) as _f:
+            meta_after = json.load(_f)
+        assert meta_after == meta_before
 
     def test_sign_cert_is_valid_x509(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
@@ -560,6 +557,7 @@ class TestCertSign:
         assert "signed_cert" in data["data"]
         assert "rootca" in data["data"]
         assert "serial" in data["data"]
+        assert isinstance(data["data"]["serial"], int)
 
     def test_sign_force_overwrites_existing_cert(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
@@ -600,27 +598,22 @@ class TestCertSign:
         copy = open(os.path.join(out_dir, "rootCA.pem"), "rb").read()
         assert orig == copy
 
-    def test_sign_multiple_certs_serial_increments(self, tmp_path):
+    def test_sign_multiple_certs_use_distinct_serial_numbers(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
         csr1 = _setup_csr(tmp_path / "csr1", name="client1")
         csr2 = _setup_csr(tmp_path / "csr2", name="client2")
-
-        def _peek_serial(ca_json_path):
-            with open(ca_json_path) as _f:
-                return json.load(_f).get("next_serial", 2)
 
         out1 = str(tmp_path / "signed1")
         out2 = str(tmp_path / "signed2")
 
         args1 = _sign_args(csr_path=csr1, ca_dir=ca_dir, output_dir=out1, cert_type="client")
         handle_cert_sign(args1)
-        serial_mid = _peek_serial(os.path.join(ca_dir, "ca.json"))
+        cert1 = load_crt(os.path.join(out1, "client1.crt"))
 
         args2 = _sign_args(csr_path=csr2, ca_dir=ca_dir, output_dir=out2, cert_type="client")
         handle_cert_sign(args2)
-        serial_end = _peek_serial(os.path.join(ca_dir, "ca.json"))
-
-        assert serial_end == serial_mid + 1
+        cert2 = load_crt(os.path.join(out2, "client2.crt"))
+        assert cert1.serial_number != cert2.serial_number
 
     def test_sign_admin_role_cert(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
@@ -678,27 +671,29 @@ class TestCertSign:
         days_remaining = (not_after - now).days
         assert 1093 <= days_remaining <= 1097
 
-    def test_serial_incremented_atomically(self, tmp_path):
-        """_claim_serial reads and increments in one step; serial advances exactly once per sign."""
+    def test_random_serials_do_not_require_ca_json_mutation(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
-
-        def _peek(ca_json_path):
-            with open(ca_json_path) as _f:
-                return json.load(_f).get("next_serial", 2)
-
         ca_json = os.path.join(ca_dir, "ca.json")
-        initial = _peek(ca_json)
+        with open(ca_json) as _f:
+            initial = json.load(_f)
 
         csr1 = _setup_csr(tmp_path / "csr1", name="site-a")
         csr2 = _setup_csr(tmp_path / "csr2", name="site-b")
         csr3 = _setup_csr(tmp_path / "csr3", name="site-c")
+        serials = set()
 
-        for i, csr in enumerate([csr1, csr2, csr3]):
+        for i, (csr, name) in enumerate([(csr1, "site-a"), (csr2, "site-b"), (csr3, "site-c")]):
             out = str(tmp_path / f"out{i}")
             args = _sign_args(csr_path=csr, ca_dir=ca_dir, output_dir=out, cert_type="client")
             handle_cert_sign(args)
+            cert = load_crt(os.path.join(out, f"{name}.crt"))
+            serials.add(cert.serial_number)
 
-        assert _peek(ca_json) == initial + 3
+        with open(ca_json) as _f:
+            final = json.load(_f)
+
+        assert len(serials) == 3
+        assert final == initial
 
 
 # ---------------------------------------------------------------------------

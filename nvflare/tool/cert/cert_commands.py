@@ -144,7 +144,6 @@ def handle_cert_init(args):
         ca_meta = {
             "project": args.project,
             "created_at": created_at,
-            "next_serial": 2,
         }
         with open(ca_json_path, "w") as f:
             json.dump(ca_meta, f, indent=2)
@@ -381,42 +380,12 @@ def _get_cn(name: x509.Name) -> str:
     return ""
 
 
-def _claim_serial(ca_json_path: str) -> int:
-    """Atomically claim the next serial number from ca.json and return it.
-
-    Uses an exclusive file lock so concurrent ``nvflare cert sign`` invocations
-    cannot claim the same serial number. Falls back gracefully on platforms where
-    fcntl is unavailable (e.g. Windows).
-    """
-    try:
-        import fcntl
-
-        def _lock(f):
-            fcntl.flock(f, fcntl.LOCK_EX)
-
-    except ImportError:
-
-        def _lock(f):
-            pass
-
-    with open(ca_json_path, "r+") as f:
-        _lock(f)
-        meta = json.load(f)
-        serial = meta.get("next_serial", 2)
-        meta["next_serial"] = serial + 1
-        f.seek(0)
-        json.dump(meta, f, indent=2)
-        f.truncate()
-    return serial
-
-
 def _build_signed_cert(
     csr: x509.CertificateSigningRequest,
     ca_cert: x509.Certificate,
     ca_key,
     cert_type: str,
     valid_days: int,
-    serial: int,
 ) -> x509.Certificate:
     """Build and sign a certificate from a CSR using the CA key.
 
@@ -478,7 +447,7 @@ def _build_signed_cert(
         .subject_name(safe_subject)
         .issuer_name(ca_cert.subject)
         .public_key(csr.public_key())
-        .serial_number(serial)
+        .serial_number(x509.random_serial_number())
         .not_valid_before(now)
         .not_valid_after(now + datetime.timedelta(days=valid_days))
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
@@ -647,10 +616,7 @@ def handle_cert_sign(args):
     except Exception as e:
         output_error("CA_NOT_FOUND", ca_dir=ca_dir)
 
-    # 9. Atomically claim serial from ca.json (read + increment under exclusive lock)
-    audit_serial = _claim_serial(ca_json_path)
-
-    # 10. Build and sign the certificate
+    # 9. Build and sign the certificate
     valid_days = getattr(args, "valid_days", 1095) or 1095
     try:
         signed_cert = _build_signed_cert(
@@ -659,24 +625,23 @@ def handle_cert_sign(args):
             ca_key=ca_key,
             cert_type=cert_type,
             valid_days=valid_days,
-            serial=audit_serial,
         )
     except Exception as e:
         output_error("CERT_SIGNING_FAILED", reason=str(e))
 
-    # 11. Write signed cert and copy rootCA.pem
+    # 10. Write signed cert and copy rootCA.pem
     with open(cert_out_path, "wb") as f:
         f.write(serialize_cert(signed_cert))
     shutil.copy2(ca_cert_path, rootca_out_path)
 
-    # 12. Compute valid_until for output
+    # 11. Compute valid_until for output
     try:
         _valid_until_dt = signed_cert.not_valid_after_utc
     except AttributeError:
         _valid_until_dt = signed_cert.not_valid_after  # cryptography < 42.0
     valid_until = _valid_until_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # 13. Output result
+    # 12. Output result
     next_step = (
         f"Send {output_filename} and rootCA.pem to the site admin.\n"
         f"They place those files in the same directory as their {subject_cn}.key, then run:\n"
@@ -687,7 +652,7 @@ def handle_cert_sign(args):
         "rootca": rootca_out_path,
         "subject_cn": subject_cn,
         "cert_type": cert_type,
-        "serial": audit_serial,
+        "serial": signed_cert.serial_number,
         "valid_until": valid_until,
         "next_step": next_step,
     }
