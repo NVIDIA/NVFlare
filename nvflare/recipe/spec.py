@@ -404,6 +404,8 @@ class Recipe(ABC):
                 class_names.append(d)
             elif isinstance(d, Decomposer):
                 class_names.append(self._get_full_class_name(d))
+            else:
+                raise TypeError(f"decomposer must be str or Decomposer, got {type(d).__name__}")
 
         reg = DecomposerRegister(class_names)
         self.job.to_server(reg, id="decomposer_reg")

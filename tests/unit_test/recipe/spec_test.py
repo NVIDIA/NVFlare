@@ -355,6 +355,20 @@ class TestRecipeConfigMethods:
         with pytest.raises(TypeError, match="config must be a dict"):
             recipe.add_client_config(123)  # type: ignore[arg-type]
 
+    def test_add_decomposers_type_error(self, temp_script):
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_job",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            model={"class_path": "model.DummyModel", "args": {}},
+        )
+
+        with pytest.raises(TypeError, match="decomposer must be str or Decomposer"):
+            recipe.add_decomposers([object()])  # type: ignore[list-item]
+
 
 class _DummyExecEnv:
     def __init__(self):
