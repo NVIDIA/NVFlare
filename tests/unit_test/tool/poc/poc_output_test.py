@@ -226,6 +226,33 @@ class TestPocOutput:
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
 
+    def test_start_poc_malformed_participants_omits_missing_names(self, capsys, tmp_path):
+        from nvflare.tool.poc.poc_commands import start_poc
+
+        args = MagicMock()
+        args.service = "all"
+        args.exclude = ""
+        args.gpu = None
+        args.study = None
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands._start_poc", return_value=None),
+            patch(
+                "nvflare.tool.poc.poc_commands.setup_service_config",
+                return_value=({"participants": [{"type": "client"}]}, {}),
+            ),
+        ):
+            start_poc(args)
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "ok"
+        assert data["data"]["status"] == "running"
+        assert data["data"]["clients"] == []
+
     def test_prepare_jobs_dir_user_decline_emits_no_success(self, capsys, tmp_path):
         """prepare_jobs_dir should not emit output_ok when the user declines replacement."""
         from nvflare.tool.poc.poc_commands import prepare_jobs_dir

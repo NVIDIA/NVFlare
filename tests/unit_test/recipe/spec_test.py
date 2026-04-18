@@ -369,6 +369,42 @@ class TestRecipeConfigMethods:
         with pytest.raises(TypeError, match="decomposer must be str or Decomposer"):
             recipe.add_decomposers([object()])  # type: ignore[list-item]
 
+    def test_add_decomposers_uses_distinct_registers_for_server_and_clients(self, temp_script, monkeypatch):
+        from nvflare.recipe.fedavg import FedAvgRecipe
+        import nvflare.recipe.spec as spec_module
+
+        recipe = FedAvgRecipe(
+            name="test_job",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            model={"class_path": "model.DummyModel", "args": {}},
+        )
+
+        captured = {}
+
+        def _capture_server(obj, **kwargs):
+            captured["server_obj"] = obj
+            captured["server_kwargs"] = kwargs
+
+        def _capture_clients(obj, **kwargs):
+            captured["client_obj"] = obj
+            captured["client_kwargs"] = kwargs
+
+        class _DummyRegister:
+            def __init__(self, class_names):
+                self.class_names = class_names
+
+        monkeypatch.setattr(spec_module, "DecomposerRegister", _DummyRegister)
+        monkeypatch.setattr(recipe.job, "to_server", _capture_server)
+        monkeypatch.setattr(recipe, "_add_to_client_apps", _capture_clients)
+
+        recipe.add_decomposers(["pkg.mod.Dec"])
+
+        assert captured["server_kwargs"] == {"id": "decomposer_reg"}
+        assert captured["client_kwargs"] == {"id": "decomposer_reg"}
+        assert captured["server_obj"] is not captured["client_obj"]
+
 
 class _DummyExecEnv:
     def __init__(self):
@@ -422,7 +458,7 @@ class TestRecipeExecuteExportParamIsolation:
         recipe.execute(env, server_exec_params={"param_b": 2})
         assert server_app.app_config.additional_params == {}
 
-    def test_execute_empty_server_params_still_restore_snapshot(self, temp_script):
+    def test_execute_empty_server_params_temporarily_clear_then_restore_snapshot(self, temp_script):
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -494,6 +530,13 @@ def test_recipe_spec_import_does_not_mutate_sys_argv(monkeypatch):
     importlib.reload(spec_module)
 
     assert sys.argv == original_argv
+
+
+def test_peek_recipe_args_requires_export_dir_argument():
+    from nvflare.recipe.spec import _peek_recipe_args
+
+    with pytest.raises(ValueError, match="--export-dir requires an argument"):
+        _peek_recipe_args(["--export", "--export-dir"])
 
 
 def test_export_processes_falsy_env(tmp_path):

@@ -514,7 +514,7 @@ def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch)
     monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
     workspace = _FakeWorkspace(tmp_path)
     engine = _FakeServerEngine(workspace)
-    engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING})
+    engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING.value})
     conn = _MockConnection(app_ctx=engine)
     module = JobCommandModule()
     client_replies = [object()]

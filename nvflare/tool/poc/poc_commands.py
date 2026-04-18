@@ -736,10 +736,23 @@ def start_poc(cmd_args):
     try:
         project_config, service_config = setup_service_config(poc_workspace)
         if project_config:
-            clients = [p["name"] for p in project_config.get("participants", []) if p.get("type") == "client"]
+            participants = project_config.get("participants", [])
+            if not isinstance(participants, list):
+                raise CLIException("project.yml participants must be a list")
+            clients = []
+            for p in participants:
+                if not isinstance(p, dict):
+                    raise CLIException("participant entry must be a mapping")
+                if p.get("type") == "client":
+                    name = p.get("name")
+                    if name:
+                        clients.append(name)
             server_url = _get_server_url(project_config, service_config)
-    except Exception:
+    except (OSError, IOError, yaml.YAMLError):
         pass
+    except CLIException as e:
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+        raise SystemExit(4)
 
     output_ok({"status": "running", "server_url": server_url, "clients": clients})
     from nvflare.tool.cli_output import print_human

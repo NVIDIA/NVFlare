@@ -29,7 +29,9 @@ def _peek_recipe_args(argv: Optional[List[str]] = None) -> tuple:
         if argv[i] == "--export":
             export = True
             i += 1
-        elif argv[i] == "--export-dir" and i + 1 < len(argv):
+        elif argv[i] == "--export-dir":
+            if i + 1 >= len(argv):
+                raise ValueError("--export-dir requires an argument")
             export_dir = argv[i + 1]
             i += 2
         elif argv[i].startswith("--export-dir="):
@@ -194,6 +196,15 @@ class Recipe(ABC):
     def _temporary_exec_params(
         self, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None
     ):
+        """Temporarily override per-target additional_params during execute/export.
+
+        Semantics:
+        - None: leave the target's existing additional_params unchanged.
+        - non-empty dict: temporarily apply/merge those params for the target.
+        - empty dict ({}): temporarily clear the target's additional_params for this call.
+
+        Any original additional_params are restored when the context exits.
+        """
         params_snapshot = None
         if server_exec_params is not None or client_exec_params is not None:
             params_snapshot = self._snapshot_additional_params()
@@ -203,6 +214,8 @@ class Recipe(ABC):
                 if server_exec_params:
                     self.job.to_server(server_exec_params)
                 else:
+                    # Preserve the long-standing "empty dict means temporarily clear params"
+                    # behavior rather than treating {} as a no-op.
                     self._replace_additional_params_for_targets(["server"], {})
 
             if client_exec_params is not None:
@@ -409,10 +422,8 @@ class Recipe(ABC):
             else:
                 raise TypeError(f"decomposer must be str or Decomposer, got {type(d).__name__}")
 
-        reg = DecomposerRegister(class_names)
-        self.job.to_server(reg, id="decomposer_reg")
-
-        self._add_to_client_apps(reg, id="decomposer_reg")
+        self.job.to_server(DecomposerRegister(class_names), id="decomposer_reg")
+        self._add_to_client_apps(DecomposerRegister(class_names), id="decomposer_reg")
 
     def export(
         self,
