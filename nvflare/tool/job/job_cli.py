@@ -17,6 +17,7 @@ import datetime
 import os
 import shutil
 import sys
+import time
 import traceback
 from contextlib import contextmanager
 from functools import partial
@@ -1525,8 +1526,6 @@ def _build_monitor_status_callback(
     start: float, start_ts_holder: dict, emit_interval: int, stats_interval: int, stats_target: str, key_aliases: dict
 ):
     def _status_cb(sess, job_id, job_meta, state):
-        import time
-
         from nvflare.apis.job_def import JobMetaKey
 
         state["last_meta"] = job_meta
@@ -1572,8 +1571,6 @@ def _build_monitor_output_data(
 
 
 def cmd_job_monitor(cmd_args):
-    import time
-
     from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, MonitorReturnCode, NoConnection
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
