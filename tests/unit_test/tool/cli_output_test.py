@@ -183,6 +183,7 @@ class TestOutputOk:
         except (json.JSONDecodeError, ValueError):
             pass
 
+
 # --- output_error_message() tests: explicit message/hint/fmt) ---
 
 
