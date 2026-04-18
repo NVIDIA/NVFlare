@@ -1,5 +1,5 @@
 # Single-site template (fill in values)
 # org must match: ^[A-Za-z0-9_]+$ (no hyphens or spaces)
-name: <site_name>
-org: <org_name>
-type: <client|server|org_admin|lead|member>
+name: <site_name>  # max 64 chars; no path separators; must not start with "."
+org: <org_name>  # organization name; must match ^[A-Za-z0-9_]+$ (no hyphens or spaces)
+type: <client|server|org_admin|lead|member>  # client/server => node kit; org_admin/lead/member => admin kit
