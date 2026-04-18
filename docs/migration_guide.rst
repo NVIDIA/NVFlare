@@ -90,6 +90,22 @@ If you previously used advanced JSON/file-based configs with
 ``configure_site_log``, switch to the supported level/mode values before
 upgrading to the next release built from ``main``.
 
+POC Start Default Service Clarification
+---------------------------------------
+
+On the current ``main`` branch, the documented default behavior of
+``nvflare poc start`` is clarified to reflect the actual runtime behavior:
+the default start set is the server plus client services, not every
+participant directory under the workspace.
+
+Impact:
+
+- Running ``nvflare poc start`` with no explicit ``-p`` / ``--service`` starts
+  the server and clients.
+- Admin consoles are not started unless explicitly selected.
+
+This is a documentation/help clarification, not a runtime behavior change.
+
 Upgrading from 2.7.0/2.7.1 to 2.7.2
 ======================================
 
