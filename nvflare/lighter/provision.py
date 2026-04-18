@@ -233,23 +233,22 @@ def handle_provision(args):
     if not project_name:
         output_error("INVALID_ARGS", exit_code=4, detail="missing project name")
         raise SystemExit(4)
-    if project_name:
-        project_workspace = os.path.join(workspace_full_path, project_name)
-        if os.path.isdir(project_workspace) and os.listdir(project_workspace):
-            from nvflare.tool.cli_output import prompt_yn
+    project_workspace = os.path.join(workspace_full_path, project_name)
+    if os.path.isdir(project_workspace) and os.listdir(project_workspace):
+        from nvflare.tool.cli_output import prompt_yn
 
-            if not args.force:
-                if not sys.stdin.isatty():
-                    output_error(
-                        "INVALID_ARGS",
-                        exit_code=4,
-                        detail="workspace exists; use --force to continue in non-interactive mode",
-                    )
-                    raise SystemExit(4)
-                if not prompt_yn(
-                    f"Provision workspace already exists for project '{project_name}' at '{project_workspace}'. Continue?"
-                ):
-                    return
+        if not args.force:
+            if not sys.stdin.isatty():
+                output_error(
+                    "INVALID_ARGS",
+                    exit_code=4,
+                    detail="workspace exists; use --force to continue in non-interactive mode",
+                )
+                raise SystemExit(4)
+            if not prompt_yn(
+                f"Provision workspace already exists for project '{project_name}' at '{project_workspace}'. Continue?"
+            ):
+                return
 
     if not is_json_mode():
         print_human(f"Project yaml file: {project_full_path}.")
