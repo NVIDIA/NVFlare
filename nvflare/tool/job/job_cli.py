@@ -70,8 +70,6 @@ from nvflare.utils.cli_utils import (
     save_config,
 )
 
-_JOB_HELP_FORMATTER = partial(argparse.HelpFormatter, max_help_position=24, width=120)
-
 CMD_LIST_TEMPLATES = "list_templates"
 CMD_SHOW_VARIABLES = "show_variables"
 CMD_CREATE_JOB = "create"
@@ -90,6 +88,8 @@ CMD_JOB_LOGS = "logs"
 # Job lifecycle helpers
 CMD_JOB_MONITOR = "monitor"
 CMD_JOB_LOG_CONFIG = "log-config"
+
+_JOB_HELP_FORMATTER = partial(argparse.HelpFormatter, max_help_position=24, width=120)
 
 
 def find_filename_basename(f: str):
@@ -1525,8 +1525,9 @@ def _build_monitor_status_callback(
     start: float, start_ts_holder: dict, emit_interval: int, stats_interval: int, stats_target: str, key_aliases: dict
 ):
     def _status_cb(sess, job_id, job_meta, state):
-        from nvflare.apis.job_def import JobMetaKey
         import time
+
+        from nvflare.apis.job_def import JobMetaKey
 
         state["last_meta"] = job_meta
         status = job_meta.get("status", "UNKNOWN") if job_meta else "UNKNOWN"
