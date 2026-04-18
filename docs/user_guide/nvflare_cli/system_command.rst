@@ -20,8 +20,8 @@ Command Usage
    system subcommands:
      status     show server and client status
      resources  show server and client resource usage
-     shutdown   shut down server, client(s), or all
-     restart    restart server, client(s), or all
+     shutdown   shut down the FL server
+     restart    restart the FL server
      version    show NVFlare version on each remote site
      log-config change logging level on server or client sites
 
