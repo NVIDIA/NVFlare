@@ -213,7 +213,22 @@ def handle_provision(args):
         raise SystemExit(4)
     from nvflare.tool.cli_output import is_json_mode, print_human
 
-    project_dict = load_yaml(project_full_path)
+    try:
+        project_dict = load_yaml(project_full_path)
+    except Exception as e:
+        output_error(
+            "INVALID_ARGS",
+            exit_code=4,
+            detail=f"project file is empty or not a valid YAML mapping: {project_full_path}: {e}",
+        )
+        raise SystemExit(4)
+    if not project_dict or not isinstance(project_dict, dict):
+        output_error(
+            "INVALID_ARGS",
+            exit_code=4,
+            detail=f"project file is empty or not a valid YAML mapping: {project_full_path}",
+        )
+        raise SystemExit(4)
     project_name = project_dict.get(PropKey.NAME)
     if not project_name:
         output_error("INVALID_ARGS", exit_code=4, detail="missing project name")
