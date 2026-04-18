@@ -577,6 +577,23 @@ class TestCertSign:
             handle_cert_sign(args)
         assert exc_info.value.code == 1
 
+    def test_sign_ca_load_failure_reports_specific_error(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)
+        with open(os.path.join(ca_dir, "rootCA.key"), "wb") as f:
+            f.write(b"not a private key")
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "CA_LOAD_FAILED" in captured.err
+        assert ca_dir in captured.err
+
     def test_sign_agent_mode_json_envelope(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
         ca_dir = _setup_ca(tmp_path)

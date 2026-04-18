@@ -87,6 +87,10 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "No root CA found at {ca_dir}.",
         "hint": "Run 'nvflare cert init' first, or specify the correct --ca-dir.",
     },
+    "CA_LOAD_FAILED": {
+        "message": "Failed to load root CA material from {ca_dir}.",
+        "hint": "Check that rootCA.pem and rootCA.key are readable, valid, and unencrypted.",
+    },
     "CSR_NOT_FOUND": {
         "message": "CSR file not found: {path}.",
         "hint": "Check the path to the .csr file.",

@@ -615,7 +615,7 @@ def handle_cert_sign(args):
         ca_cert = load_crt(ca_cert_path)
         ca_key = load_private_key_file(ca_key_path)
     except Exception as e:
-        output_error("CA_NOT_FOUND", ca_dir=ca_dir)
+        output_error("CA_LOAD_FAILED", ca_dir=ca_dir, detail=str(e))
 
     # 9. Build and sign the certificate
     valid_days = getattr(args, "valid_days", 1095) or 1095
