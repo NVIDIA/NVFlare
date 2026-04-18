@@ -9,7 +9,7 @@ set -euo pipefail
 PROJECT_NAME="${1:-}"
 SERVER_ENDPOINT="${2:-}"
 WORK_DIR="${3:-}"
-if (( $# >= 3 )); then
+if [[ $# -ge 3 ]]; then
   shift 3
 fi
 SITE_YAMLS=("$@")
@@ -29,8 +29,14 @@ SITE_DIR="${WORK_DIR}/site"
 
 mkdir -p "${CA_DIR}" "${CSR_DIR}" "${SIGNED_DIR}" "${SITE_DIR}"
 
-# 1) Root CA (idempotent)
+# 1) Root CA
 nvflare --out-format json cert init --project "${PROJECT_NAME}" -o "${CA_DIR}" --force >"${WORK_DIR}/ca.json"
+ROOTCA_FP=""
+if command -v openssl >/dev/null 2>&1; then
+  ROOTCA_FP="$(openssl x509 -in "${CA_DIR}/rootCA.pem" -noout -fingerprint -sha256 | sed 's/^sha256 Fingerprint=//')"
+  echo "WARNING: cert init --force regenerates the root CA and invalidates previously signed certs." >&2
+  echo "Verify this rootCA.pem SHA256 fingerprint out-of-band before using the generated kits: ${ROOTCA_FP}" >&2
+fi
 
 SITE_NAMES=()
 CSR_PATHS=()
@@ -85,10 +91,13 @@ done
 
 # Summaries
 jq -r '{step:"cert init", data:.data} | @json' <"${WORK_DIR}/ca.json"
+if [[ -n "${ROOTCA_FP}" ]]; then
+  jq -n -r --arg fp "${ROOTCA_FP}" '{step:"verify rootca", fingerprint_sha256:$fp} | @json'
+fi
 for i in "${!SITE_NAMES[@]}"; do
   SITE_NAME="${SITE_NAMES[$i]}"
-  jq -r '{step:"cert csr", site:"'"${SITE_NAME}"'", data:.data} | @json' <"${WORK_DIR}/csr_${SITE_NAME}.json"
-  jq -r '{step:"cert sign", site:"'"${SITE_NAME}"'", data:.data} | @json' <"${WORK_DIR}/sign_${SITE_NAME}.json"
+  jq -r --arg site "${SITE_NAME}" '{step:"cert csr", site:$site, data:.data} | @json' <"${WORK_DIR}/csr_${SITE_NAME}.json"
+  jq -r --arg site "${SITE_NAME}" '{step:"cert sign", site:$site, data:.data} | @json' <"${WORK_DIR}/sign_${SITE_NAME}.json"
   echo "{\"step\":\"package\",\"site\":\"${SITE_NAME}\",\"output\":\"${WORK_DIR}/package_${SITE_NAME}.json\"}"
 
 done

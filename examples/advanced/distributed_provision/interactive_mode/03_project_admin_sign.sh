@@ -26,3 +26,9 @@ if [[ -n "${OVERRIDE_TYPE}" ]]; then
 else
   nvflare cert sign -r "${CSR_PATH}" -c "${CA_DIR}" -o "${OUT_DIR}" --accept-csr-role
 fi
+
+if command -v openssl >/dev/null 2>&1; then
+  echo >&2
+  echo "Share this rootCA.pem SHA256 fingerprint with the site admin for out-of-band verification:" >&2
+  openssl x509 -in "${OUT_DIR}/rootCA.pem" -noout -fingerprint -sha256 >&2
+fi
