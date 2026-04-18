@@ -480,3 +480,44 @@ def test_recipe_spec_import_does_not_mutate_sys_argv(monkeypatch):
     importlib.reload(spec_module)
 
     assert sys.argv == original_argv
+
+
+def test_export_processes_falsy_env(tmp_path):
+    from nvflare.recipe.fedavg import FedAvgRecipe
+    from nvflare.recipe.spec import ExecEnv
+
+    class _FalsyEnv(ExecEnv):
+        def __bool__(self):
+            return False
+
+        def deploy(self, job):
+            return "dummy-job-id"
+
+        def get_job_status(self, job_id):
+            return None
+
+        def abort_job(self, job_id):
+            return None
+
+        def get_job_result(self, job_id, timeout: float = 0.0):
+            return None
+
+    recipe = FedAvgRecipe(
+        name="test_export_falsy_env",
+        num_rounds=2,
+        min_clients=2,
+        train_script=__file__,
+        model={"class_path": "model.DummyModel", "args": {}},
+    )
+
+    seen = {}
+
+    def _capture_process_env(env):
+        seen["env"] = env
+
+    recipe.process_env = _capture_process_env
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        recipe.export(job_dir=tmpdir, env=_FalsyEnv())
+
+    assert "env" in seen

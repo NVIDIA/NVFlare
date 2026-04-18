@@ -429,7 +429,7 @@ class Recipe(ABC):
 
         """
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
-            if env:
+            if env is not None:
                 self.process_env(env)
             self.job.export_job(job_dir)
 
