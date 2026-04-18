@@ -9,7 +9,9 @@ set -euo pipefail
 PROJECT_NAME="${1:-}"
 SERVER_ENDPOINT="${2:-}"
 WORK_DIR="${3:-}"
-shift 3 || true
+if (( $# >= 3 )); then
+  shift 3
+fi
 SITE_YAMLS=("$@")
 
 if [[ -z "${PROJECT_NAME}" || -z "${SERVER_ENDPOINT}" || -z "${WORK_DIR}" || ${#SITE_YAMLS[@]} -eq 0 ]]; then
