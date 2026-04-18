@@ -19,6 +19,7 @@ import pytest
 from pyhocon import ConfigFactory as CF
 
 from nvflare.cli_exception import CLIException
+from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 
 
 class TestPocForce:
@@ -186,6 +187,35 @@ participants:
                 prepare_jobs_dir(args)
 
         assert exc_info.value.code == 5
+
+    def test_prepare_jobs_dir_replaces_existing_empty_symlink(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import _prepare_jobs_dir
+
+        workspace = tmp_path / "workspace"
+        jobs_src = tmp_path / "jobs_src"
+        old_jobs = tmp_path / "old_jobs"
+        jobs_src.mkdir()
+        old_jobs.mkdir()
+
+        admin_name = "admin@nvidia.com"
+        transfer_name = "transfer"
+        console_dir = workspace / "proj" / "prod_00" / admin_name
+        startup_dir = console_dir / SC.STARTUP
+        dst = console_dir / transfer_name
+        startup_dir.mkdir(parents=True)
+        os.symlink(old_jobs, dst)
+
+        project_config = {"name": "proj"}
+        service_config = {SC.FLARE_PROJ_ADMIN: admin_name}
+
+        with patch("nvflare.tool.poc.poc_commands.get_upload_dir", return_value=transfer_name):
+            result = _prepare_jobs_dir(
+                str(jobs_src), str(workspace), config_packages=(project_config, service_config), force=True
+            )
+
+        assert result is True
+        assert os.path.islink(dst)
+        assert os.readlink(dst) == str(jobs_src)
 
     def test_prepare_poc_raises_when_output_error_is_mocked_for_noninteractive_conflict(self, tmp_path):
         from nvflare.tool.poc.poc_commands import prepare_poc

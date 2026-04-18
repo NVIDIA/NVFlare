@@ -242,6 +242,25 @@ class TestProvisionOutput:
         assert data["status"] == "ok"
         assert data["data"]["packages"] == ["server"]
 
+    def test_missing_participants_with_studies_returns_invalid_args(self, capsys, tmp_path):
+        from nvflare.lighter.provision import handle_provision
+
+        args = self._make_args(project_file="project.yml", force=True)
+        (tmp_path / "project.yml").write_text(
+            "name: proj\napi_version: 4\nstudies:\n  study-a:\n    sites: [client1]\n",
+            encoding="utf-8",
+        )
+
+        with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
+            with pytest.raises(SystemExit) as exc_info:
+                handle_provision(args)
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INVALID_ARGS"
+        assert "missing 'participants' in project config" in data["message"]
+
     def test_generate_conflicts_with_project_file(self, capsys, tmp_path):
         from nvflare.lighter.provision import handle_provision
 

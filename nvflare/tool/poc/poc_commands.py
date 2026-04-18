@@ -221,6 +221,8 @@ def _prepare_jobs_dir(
         print_human(f"link job directory from {src} to {dst}")
         os.symlink(src, dst)
     else:
+        if os.path.islink(dst):
+            os.unlink(dst)
         if os.path.isdir(dst):
             shutil.rmtree(dst, ignore_errors=True)
         print_human(f"link job directory from {src} to {dst}")
