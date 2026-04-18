@@ -370,8 +370,8 @@ class TestRecipeConfigMethods:
             recipe.add_decomposers([object()])  # type: ignore[list-item]
 
     def test_add_decomposers_uses_distinct_registers_for_server_and_clients(self, temp_script, monkeypatch):
-        from nvflare.recipe.fedavg import FedAvgRecipe
         import nvflare.recipe.spec as spec_module
+        from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
             name="test_job",
