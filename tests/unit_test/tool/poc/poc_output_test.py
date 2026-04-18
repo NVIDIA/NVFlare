@@ -83,10 +83,6 @@ class TestPocOutput:
             patch("nvflare.tool.poc.poc_commands._prepare_poc", return_value=True),
             patch("nvflare.tool.install_skills.install_skills", return_value=None),
             patch("nvflare.tool.poc.poc_commands.os.path.exists", return_value=False),
-            patch(
-                "nvflare.tool.poc.poc_commands.os.listdir",
-                return_value=["server", "site-1", "site-2", "admin@nvidia.com"],
-            ),
         ):
             prepare_poc(args)
 
@@ -97,6 +93,7 @@ class TestPocOutput:
         assert data["schema_version"] == "1"
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
+        assert data["data"]["clients"] == ["site-1", "site-2"]
 
     def test_prepare_poc_falls_back_to_requested_clients_if_project_reread_fails(self, capsys, tmp_path):
         from nvflare.tool.poc.poc_commands import prepare_poc
