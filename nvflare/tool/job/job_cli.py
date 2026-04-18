@@ -1667,7 +1667,7 @@ def cmd_job_monitor(cmd_args):
             ),
         }
         error_code, hint = error_envelopes[status]
-        output_ok(data, exit_code=1, status="error", error_code=error_code, hint=hint)
+        output_error(error_code, exit_code=1, hint=hint, data=data, job_id=cmd_args.job_id)
     else:
         output_ok(data)
 

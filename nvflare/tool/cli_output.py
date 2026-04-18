@@ -129,32 +129,12 @@ def output(data: Any, fmt: Optional[str]) -> None:
         _render_table(data)
 
 
-def output_ok(
-    data: Any,
-    exit_code: int = 0,
-    status: str = "ok",
-    error_code: str = None,
-    hint: str = None,
-) -> None:
-    """Print command success output.
-
-    The stable envelope contract only defines status values "ok" and "error".
-    """
-    if status not in _VALID_OUTPUT_STATUS:
-        raise ValueError(f"invalid output status '{status}'")
+def output_ok(data: Any, exit_code: int = 0) -> None:
+    """Print command success output."""
     if _is_json_mode():
-        payload = {"schema_version": SCHEMA_VERSION, "status": status, "exit_code": exit_code, "data": data}
-        if status == "error":
-            payload["error_code"] = error_code or "ERROR"
-            payload["hint"] = hint or ""
-        print(json.dumps(payload))
+        print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "exit_code": exit_code, "data": data}))
     else:
         _render_table(data)
-        if status == "error":
-            if hint:
-                print(f"Hint: {hint}", file=sys.stderr)
-            if error_code:
-                print(f"Code: {error_code} (exit {exit_code})", file=sys.stderr)
     if exit_code != 0:
         sys.exit(exit_code)
 
@@ -162,6 +142,8 @@ def output_ok(
 def output_error(
     error_code: str,
     exit_code: int = 1,
+    hint: str = None,
+    data: Any = None,
     detail: str = None,
     **kwargs,
 ) -> None:
@@ -176,23 +158,25 @@ def output_error(
         message = entry["message"]
     if detail:
         message = f"{message} \u2014 {detail}"
+    resolved_hint = hint if hint is not None else entry["hint"]
     if _is_json_mode():
-        print(
-            json.dumps(
-                {
-                    "schema_version": SCHEMA_VERSION,
-                    "status": "error",
-                    "exit_code": exit_code,
-                    "error_code": error_code,
-                    "message": message,
-                    "hint": entry["hint"],
-                }
-            )
-        )
+        payload = {
+            "schema_version": SCHEMA_VERSION,
+            "status": "error",
+            "exit_code": exit_code,
+            "error_code": error_code,
+            "message": message,
+            "hint": resolved_hint,
+        }
+        if data is not None:
+            payload["data"] = data
+        print(json.dumps(payload))
     else:
+        if data is not None:
+            _render_table(data)
         print(message, file=sys.stderr)
-        if entry["hint"]:
-            print(f"Hint: {entry['hint']}", file=sys.stderr)
+        if resolved_hint:
+            print(f"Hint: {resolved_hint}", file=sys.stderr)
         print(f"Code: {error_code} (exit {exit_code})", file=sys.stderr)
     sys.exit(exit_code)
 

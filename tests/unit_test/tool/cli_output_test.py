@@ -183,24 +183,6 @@ class TestOutputOk:
         except (json.JSONDecodeError, ValueError):
             pass
 
-    def test_human_mode_error_prints_hint_and_code(self, capsys, monkeypatch):
-        monkeypatch.setattr(cli_output, "_output_format", "txt")
-        with pytest.raises(SystemExit) as exc_info:
-            output_ok(
-                {"status": "FAILED", "job_id": "abc123"},
-                exit_code=1,
-                status="error",
-                error_code="JOB_FAILED",
-                hint="Use 'nvflare job logs <job_id>' and 'nvflare job meta <job_id>' to inspect the failure.",
-            )
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "status: FAILED" in captured.out
-        assert "job_id: abc123" in captured.out
-        assert "Hint: Use 'nvflare job logs <job_id>'" in captured.err
-        assert "Code: JOB_FAILED (exit 1)" in captured.err
-
-
 # --- output_error_message() tests: explicit message/hint/fmt) ---
 
 
@@ -236,6 +218,35 @@ class TestOutputErrorCertPackage:
         assert result["message"] == "Error message here."
         assert result["hint"] == "Fix hint."
         assert captured.err == ""
+
+
+class TestOutputErrorWithData:
+    def test_json_error_can_include_data(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        with pytest.raises(SystemExit) as exc_info:
+            output_error("JOB_FAILED", exit_code=1, data={"status": "FAILED", "job_id": "abc123"}, job_id="abc123")
+        assert exc_info.value.code == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["status"] == "error"
+        assert payload["error_code"] == "JOB_FAILED"
+        assert payload["data"] == {"status": "FAILED", "job_id": "abc123"}
+
+    def test_human_error_with_data_renders_context_then_hint_and_code(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        with pytest.raises(SystemExit) as exc_info:
+            output_error(
+                "JOB_FAILED",
+                exit_code=1,
+                hint="Use 'nvflare job logs <job_id>' and 'nvflare job meta <job_id>' to inspect the failure.",
+                data={"status": "FAILED", "job_id": "abc123"},
+                job_id="abc123",
+            )
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "status: FAILED" in captured.out
+        assert "job_id: abc123" in captured.out
+        assert "Hint: Use 'nvflare job logs <job_id>'" in captured.err
+        assert "Code: JOB_FAILED (exit 1)" in captured.err
 
     def test_json_format_exits(self):
         with pytest.raises(SystemExit) as exc_info:
