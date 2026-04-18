@@ -187,7 +187,7 @@ Use ``nvflare system log-config`` to change logging on the server or client site
 
 Logging arguments:
 
-- positional ``level``: required log level or built-in log mode
+- positional ``level``: runtime-required log level or built-in log mode; omitting it causes a runtime error
 - ``--site``: ``server``, a client name, or ``all``. Default: ``all``.
 - ``--target {poc,prod}``: choose the configured admin startup kit.
 - ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--target``.
@@ -206,7 +206,7 @@ Supported built-in values for positional ``level``:
 - ``verbose``
 - ``reload``
 
-``level`` is required.
+``level`` is required at runtime. Omitting it does not fail argparse parsing, but the command will return an error.
 
 *********************
 JSON Output and Help
