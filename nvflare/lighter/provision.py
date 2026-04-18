@@ -264,7 +264,6 @@ def handle_provision(args):
                 packages.append(item)
 
     output_ok({"workspace": workspace_full_path, "packages": packages})
-    from nvflare.tool.cli_output import is_json_mode, print_human
 
     if not is_json_mode():
         print_human(f"\nProvisioning complete. Packages written to: {workspace_full_path}")
