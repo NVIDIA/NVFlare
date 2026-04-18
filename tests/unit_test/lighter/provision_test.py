@@ -14,7 +14,7 @@
 
 import pytest
 
-from nvflare.lighter.provision import add_extra_clients, add_extra_users, prepare_project
+from nvflare.lighter.provision import add_extra_clients, add_extra_users, prepare_project, provision_for_edge
 
 
 class TestProvision:
@@ -148,3 +148,29 @@ class TestProvision:
 
         assert exc_info.value.code == 4
         assert participant_defs == []
+
+    def test_add_extra_client_empty_yaml_exits(self, tmp_path):
+        bad_yaml = tmp_path / "bad_client_empty.yml"
+        bad_yaml.write_text("", encoding="utf-8")
+        participant_defs = []
+
+        with pytest.raises(SystemExit) as exc_info:
+            add_extra_clients(str(bad_yaml), participant_defs)
+
+        assert exc_info.value.code == 4
+        assert participant_defs == []
+
+    def test_add_extra_user_empty_yaml_exits(self, tmp_path):
+        bad_yaml = tmp_path / "bad_user_empty.yml"
+        bad_yaml.write_text("", encoding="utf-8")
+        participant_defs = []
+
+        with pytest.raises(SystemExit) as exc_info:
+            add_extra_users(str(bad_yaml), participant_defs)
+
+        assert exc_info.value.code == 4
+        assert participant_defs == []
+
+    def test_provision_for_edge_requires_participants(self):
+        with pytest.raises(ValueError, match="missing 'participants' in project config"):
+            provision_for_edge({}, {"name": "proj"})

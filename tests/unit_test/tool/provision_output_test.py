@@ -173,17 +173,20 @@ class TestProvisionOutput:
         """When -p project.yml is given in JSON mode, no human progress text is emitted."""
         from nvflare.lighter.provision import handle_provision
 
-        args = self._make_args(project_file="project.yml")
+        args = self._make_args(project_file="project.yml", force=True)
         (tmp_path / "project.yml").write_text("name: proj\n", encoding="utf-8")
+        expected_project_dict = {"name": "proj"}
 
-        with patch("nvflare.lighter.provision.provision") as mock_prov:
-            with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
-                with patch("nvflare.tool.install_skills.install_skills"):
-                    with patch("nvflare.lighter.provision.os.path.isdir", return_value=False):
-                        handle_provision(args)
+        with patch("nvflare.lighter.provision.load_yaml", return_value=expected_project_dict):
+            with patch("nvflare.lighter.provision.provision") as mock_prov:
+                with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
+                    with patch("nvflare.tool.install_skills.install_skills"):
+                        with patch("nvflare.lighter.provision.os.path.isdir", return_value=False):
+                            handle_provision(args)
 
         mock_prov.assert_called_once_with(
             args,
+            expected_project_dict,
             str(tmp_path / "project.yml"),
             str(tmp_path / "workspace"),
             None,
@@ -197,6 +200,26 @@ class TestProvisionOutput:
         data = json.loads(stdout_lines[0])
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
+
+    def test_project_file_lists_participant_packages_not_project_dir(self, capsys, tmp_path):
+        from nvflare.lighter.provision import handle_provision
+
+        args = self._make_args(project_file="project.yml", force=True)
+        (tmp_path / "project.yml").write_text("name: proj\n", encoding="utf-8")
+        project_dir = tmp_path / "workspace" / "proj"
+        (project_dir / "server").mkdir(parents=True)
+        (project_dir / "client-a").mkdir()
+
+        with patch("nvflare.lighter.provision.provision") as mock_prov:
+            with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
+                with patch("nvflare.tool.install_skills.install_skills"):
+                    handle_provision(args)
+
+        mock_prov.assert_called_once()
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "ok"
+        assert sorted(data["data"]["packages"]) == ["client-a", "server"]
 
     def test_generate_conflicts_with_project_file(self, capsys, tmp_path):
         from nvflare.lighter.provision import handle_provision

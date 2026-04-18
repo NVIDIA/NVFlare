@@ -93,7 +93,7 @@ class ProdEnv(ExecEnv):
     def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
         return self._get_session_manager().get_job_result(job_id, timeout)
 
-    def deploy(self, job: FedJob):
+    def deploy(self, job: FedJob) -> str:
         """Deploy a job using SessionManager."""
         # Log warnings for non-local scripts (assumed pre-installed on production)
         non_local_scripts = collect_non_local_scripts(job)

@@ -146,8 +146,7 @@ def get_upload_dir(startup_dir) -> str:
 
 
 def is_dir_empty(path: str):
-    target_dir = os.listdir(path)
-    return len(target_dir) == 0
+    return not os.listdir(path)
 
 
 def prepare_jobs_dir(cmd_args):
@@ -736,7 +735,7 @@ def start_poc(cmd_args):
 
 
 def get_gpis(cmd_args):
-    if cmd_args.gpu is not None and isinstance(cmd_args.gpu, list) and len(cmd_args.gpu) > 0:
+    if isinstance(cmd_args.gpu, list) and cmd_args.gpu:
         gpu_ids = get_gpu_ids(cmd_args.gpu, get_local_host_gpu_ids())
     else:
         gpu_ids = []
@@ -1007,8 +1006,8 @@ def _run_poc(
             async_process(service_name, cmd_path, None, service_config)
         else:
             time.sleep(1)
-            gpu_ids = gpu_assignments[service_name] if service_name in clients else None
-            async_process(service_name, cmd_path, gpu_ids, service_config)
+            client_gpu_ids = gpu_assignments[service_name] if service_name in clients else None
+            async_process(service_name, cmd_path, client_gpu_ids, service_config)
 
 
 def clean_poc(cmd_args):

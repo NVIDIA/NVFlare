@@ -263,7 +263,7 @@ def handle_provision(args):
         raise SystemExit(4)
 
     try:
-        ctx = provision(args, project_full_path, workspace_full_path, add_user_full_path, add_client_full_path)
+        ctx = provision(args, project_dict, project_full_path, workspace_full_path, add_user_full_path, add_client_full_path)
     except (ValueError, RuntimeError) as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
@@ -289,9 +289,10 @@ def handle_provision(args):
 
     # Collect packages from workspace
     packages = []
-    if os.path.isdir(workspace_full_path):
-        for item in os.listdir(workspace_full_path):
-            item_path = os.path.join(workspace_full_path, item)
+    project_root = os.path.join(workspace_full_path, project_name)
+    if os.path.isdir(project_root):
+        for item in os.listdir(project_root):
+            item_path = os.path.join(project_root, item)
             if os.path.isdir(item_path):
                 packages.append(item)
 
@@ -322,6 +323,8 @@ def provision_for_edge(params, project_dict):
     project = Project(name=project_name, description=project_description, props=project_dict)
 
     participants = project_dict.get("participants")
+    if not participants:
+        raise ValueError("missing 'participants' in project config")
     admins = [participant_from_dict(p) for p in participants if p.get("type") == "admin"]
     builders = prepare_builders(project_dict)
     hierachical_provision(params, project, builders, admins)
@@ -329,12 +332,12 @@ def provision_for_edge(params, project_dict):
 
 def provision(
     args,
+    project_dict: dict,
     project_full_path: str,
     workspace_full_path: str,
     add_user_full_path: Optional[str] = None,
     add_client_full_path: Optional[str] = None,
 ):
-    project_dict = load_yaml(project_full_path)
     project_dict["gen_scripts"] = args.gen_scripts
     edge_params = project_dict.get("edge")
     if edge_params:
@@ -387,6 +390,8 @@ def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=
 def add_extra_clients(add_client_file_path, participant_defs):
     try:
         extra = load_yaml(add_client_file_path)
+        if not isinstance(extra, dict):
+            raise ValueError("extra client definition must be a mapping")
         extra.update({"type": "client"})
         participant_defs.append(extra)
     except Exception:
@@ -402,6 +407,8 @@ def add_extra_clients(add_client_file_path, participant_defs):
 def add_extra_users(add_user_file_path, participant_defs):
     try:
         extra = load_yaml(add_user_file_path)
+        if not isinstance(extra, dict):
+            raise ValueError("extra user definition must be a mapping")
         extra.update({"type": "admin"})
         participant_defs.append(extra)
     except Exception:
