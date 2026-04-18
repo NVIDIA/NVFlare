@@ -266,6 +266,11 @@ class TestCertCsr:
         cn = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
         assert cn == "hospital-1"
 
+    def test_whitespace_only_name_is_rejected(self, tmp_path):
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_csr(_csr_args(name="   ", output_dir=str(tmp_path), cert_type="client"))
+        assert exc_info.value.code == 4
+
     def test_csr_role_embedded_in_subject(self, tmp_path):
         """cert csr requires a proposed role and embeds it in the CSR."""
         _run_csr(tmp_path, name="h1")
@@ -840,6 +845,43 @@ class TestCertSignReadsTypeFromCsr:
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_sign(args)
         assert exc_info.value.code == 1
+
+    def test_sign_rejects_empty_subject_cn_in_csr(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        subject = x509.Name([x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, "lead")])
+        csr = x509.CertificateSigningRequestBuilder().subject_name(subject).sign(key, hashes.SHA256())
+        csr_dir = tmp_path / "csr-empty"
+        csr_dir.mkdir()
+        csr_path = csr_dir / "empty.csr"
+        csr_path.write_bytes(csr.public_bytes(serialization.Encoding.PEM))
+
+        out_dir = str(tmp_path / "signed-empty")
+        args = _sign_args(csr_path=str(csr_path), ca_dir=ca_dir, output_dir=out_dir, accept_csr_role=True)
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 4
+
+    def test_sign_rejects_whitespace_only_subject_cn_in_csr(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        subject = x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, "   "),
+                x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, "lead"),
+            ]
+        )
+        csr = x509.CertificateSigningRequestBuilder().subject_name(subject).sign(key, hashes.SHA256())
+        csr_dir = tmp_path / "csr-space"
+        csr_dir.mkdir()
+        csr_path = csr_dir / "space.csr"
+        csr_path.write_bytes(csr.public_bytes(serialization.Encoding.PEM))
+
+        out_dir = str(tmp_path / "signed-space")
+        args = _sign_args(csr_path=str(csr_path), ca_dir=ca_dir, output_dir=out_dir, accept_csr_role=True)
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 4
 
     def test_sign_preserves_single_organization_name(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)

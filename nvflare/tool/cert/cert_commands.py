@@ -308,6 +308,8 @@ def handle_cert_csr(args):
 
     # 3. Normalize and validate name
     name = (site["name"] if site else args.name).strip()
+    if not name:
+        output_error("INVALID_NAME", exit_code=4, name=name, reason="Name must not be empty or whitespace only.")
     if len(name) > 64:
         output_error("INVALID_NAME", exit_code=4, name=name, reason="Name must be 64 characters or fewer.")
     if os.sep in name or (os.altsep and os.altsep in name) or name.startswith("."):
@@ -607,6 +609,13 @@ def handle_cert_sign(args):
             detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(_VALID_CERT_TYPES))}",
         )
     subject_cn = _get_cn(csr.subject)
+    if not subject_cn or not subject_cn.strip():
+        output_error(
+            "INVALID_NAME",
+            exit_code=4,
+            name=subject_cn,
+            reason="CSR subject CN must not be empty or whitespace only.",
+        )
     if os.sep in subject_cn or (os.altsep and os.altsep in subject_cn) or subject_cn.startswith("."):
         output_error(
             "INVALID_NAME",
