@@ -10,8 +10,11 @@ json_error() {
   local exit_code="$1"
   local error_code="$2"
   local message="$3"
-  printf '{"status":"error","exit_code":%s,"error_code":"%s","message":"%s"}\n' \
-    "${exit_code}" "${error_code}" "${message}"
+  jq -n -r \
+    --argjson exit_code "${exit_code}" \
+    --arg error_code "${error_code}" \
+    --arg message "${message}" \
+    '{status:"error", exit_code:$exit_code, error_code:$error_code, message:$message}'
   exit "${exit_code}"
 }
 
@@ -36,11 +39,13 @@ CSR_DIR="${WORK_DIR}/csr"
 SIGNED_DIR="${WORK_DIR}/signed"
 SITE_DIR="${WORK_DIR}/site"
 
-mkdir -p "${CA_DIR}" "${CSR_DIR}" "${SIGNED_DIR}" "${SITE_DIR}"
+mkdir -m 0700 -p "${CA_DIR}"
+mkdir -p "${CSR_DIR}" "${SIGNED_DIR}" "${SITE_DIR}"
 
 # 1) Root CA
+jq -n -r '{step:"warning", scope:"cert init", message:"cert init --force regenerates the root CA and invalidates previously signed certs."} | @json'
 nvflare --out-format json cert init --project "${PROJECT_NAME}" -o "${CA_DIR}" --force >"${WORK_DIR}/ca.json"
-ROOTCA_FP="$(openssl x509 -in "${CA_DIR}/rootCA.pem" -noout -fingerprint -sha256 | sed 's/^SHA256 Fingerprint=//')"
+ROOTCA_FP="$(openssl x509 -in "${CA_DIR}/rootCA.pem" -noout -fingerprint -sha256 | sed 's/^[Ss][Hh][Aa]256 Fingerprint=//')"
 
 SITE_NAMES=()
 CSR_PATHS=()
@@ -51,6 +56,7 @@ trap 'rm -f "${TMP_CSR_JSON:-}"' EXIT
 # 2) CSR for each site (uses --project-file)
 for site_yaml in "${SITE_YAMLS[@]}"; do
   TMP_CSR_JSON="$(mktemp "${WORK_DIR}/csr_tmp.XXXXXX.json")"
+  jq -n -r --arg file "${site_yaml}" --arg dir "${CSR_DIR}" '{step:"warning", scope:"cert csr", site_yaml:$file, message:"cert csr --force regenerates participant private keys and CSRs for existing names.", csr_dir:$dir} | @json'
   nvflare --out-format json cert csr --project-file "${site_yaml}" -o "${CSR_DIR}" --force >"${TMP_CSR_JSON}"
 
   SITE_NAME="$(jq -r '.data.name' <"${TMP_CSR_JSON}")"
@@ -60,6 +66,11 @@ for site_yaml in "${SITE_YAMLS[@]}"; do
   if [[ "${SITE_NAME}" == "null" || -z "${SITE_NAME}" ]]; then
     json_error 1 "INVALID_CSR_OUTPUT" "cert csr output did not include a valid participant name."
   fi
+  for existing_site in "${SITE_NAMES[@]}"; do
+    if [[ "${existing_site}" == "${SITE_NAME}" ]]; then
+      json_error 1 "DUPLICATE_SITE_NAME" "duplicate participant name in scripted mode input: ${SITE_NAME}"
+    fi
+  done
 
   mv -f "${TMP_CSR_JSON}" "${WORK_DIR}/csr_${SITE_NAME}.json"
   TMP_CSR_JSON=""
@@ -103,8 +114,6 @@ done
 
 # Summaries
 jq -r '{step:"cert init", data:.data} | @json' <"${WORK_DIR}/ca.json"
-jq -n -r '{step:"warning", scope:"cert init", message:"cert init --force regenerates the root CA and invalidates previously signed certs."} | @json'
-jq -n -r --arg dir "${CSR_DIR}" '{step:"warning", scope:"cert csr", message:"cert csr --force regenerates participant private keys and CSRs for existing names.", csr_dir:$dir} | @json'
 jq -n -r --arg fp "${ROOTCA_FP}" '{step:"verify rootca", fingerprint_sha256:$fp} | @json'
 for i in "${!SITE_NAMES[@]}"; do
   SITE_NAME="${SITE_NAMES[$i]}"

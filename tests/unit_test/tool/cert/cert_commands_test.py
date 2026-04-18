@@ -667,6 +667,24 @@ class TestCertSign:
         assert "ROOTCA_ALREADY_EXISTS" in captured.err
         assert str(out_dir / "rootCA.pem") in captured.err
 
+    def test_sign_cleans_up_partial_output_when_rootca_copy_fails(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)
+        out_dir = tmp_path / "signed"
+
+        with patch("nvflare.tool.cert.cert_commands.shutil.copy2", side_effect=OSError("disk full")):
+            with pytest.raises(SystemExit) as exc_info:
+                handle_cert_sign(
+                    _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=str(out_dir), cert_type="client")
+                )
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "CERT_OUTPUT_WRITE_FAILED" in captured.err
+        assert not (out_dir / "hospital-1.crt").exists()
+        assert not (out_dir / "rootCA.pem").exists()
+
     def test_sign_aki_matches_issuer_cert(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
         csr_path = _setup_csr(tmp_path, name="site-1")

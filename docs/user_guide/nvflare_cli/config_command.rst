@@ -17,7 +17,8 @@ Command Usage
                          [--poc.startup_kit [POC_STARTUP_KIT_DIR]]
                          [--prod.startup_kit [PROD_STARTUP_KIT_DIR]]
                          [-pw [POC_WORKSPACE_DIR]] [--poc.workspace [POC_WORKSPACE_DIR_V2]]
-                         [-jt [JOB_TEMPLATES_DIR]] [-debug] [--schema]
+                         [-jt [JOB_TEMPLATES_DIR]]
+                         [--job_templates_dir [JOB_TEMPLATES_DIR]] [-debug] [--schema]
 
 *****************
 Common Examples

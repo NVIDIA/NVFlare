@@ -642,9 +642,18 @@ def handle_cert_sign(args):
         output_error("CERT_SIGNING_FAILED", reason=str(e))
 
     # 10. Write signed cert and copy rootCA.pem
-    with open(cert_out_path, "wb") as f:
-        f.write(serialize_cert(signed_cert))
-    shutil.copy2(ca_cert_path, rootca_out_path)
+    try:
+        with open(cert_out_path, "wb") as f:
+            f.write(serialize_cert(signed_cert))
+        shutil.copy2(ca_cert_path, rootca_out_path)
+    except OSError as e:
+        for path in (cert_out_path, rootca_out_path):
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
+        output_error("CERT_OUTPUT_WRITE_FAILED", path=output_dir, detail=str(e))
 
     # 11. Compute valid_until for output
     try:

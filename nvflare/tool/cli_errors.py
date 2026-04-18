@@ -131,6 +131,10 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "Certificate signing failed: {reason}",
         "hint": "Check that the CA key and certificate are valid and not corrupted.",
     },
+    "CERT_OUTPUT_WRITE_FAILED": {
+        "message": "Failed to write signed certificate output to {path}.",
+        "hint": "Check output directory permissions and available disk space, then retry.",
+    },
     # --- Package commands ---
     "CERT_NOT_FOUND": {
         "message": "Certificate file not found: {path}.",

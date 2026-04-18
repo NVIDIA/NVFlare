@@ -174,9 +174,8 @@ class TestConfigOutput:
         def_config_parser(subs)
         args = root.parse_args(["config", "-d", "/path/to/startup"])
         assert args.legacy_startup_kit_dir == "/path/to/startup"
-
-        with pytest.raises(SystemExit):
-            root.parse_args(["config", "-pw", "/path/to/poc"])
+        args = root.parse_args(["config", "-pw", "/path/to/poc"])
+        assert args.poc_workspace_dir == "/path/to/poc"
 
     def test_legacy_startup_alias_warns_and_maps_to_poc(self, capsys):
         from nvflare.cli import handle_config_cmd
@@ -238,7 +237,7 @@ class TestConfigOutput:
         )
         save_config.assert_not_called()
 
-    def test_config_parser_no_longer_accepts_legacy_workspace_alias(self):
+    def test_config_parser_accepts_legacy_workspace_alias(self):
         import argparse
 
         from nvflare.cli import def_config_parser
@@ -246,5 +245,5 @@ class TestConfigOutput:
         root = argparse.ArgumentParser()
         subs = root.add_subparsers()
         def_config_parser(subs)
-        with pytest.raises(SystemExit):
-            root.parse_args(["config", "-pw", "/path/to/poc"])
+        args = root.parse_args(["config", "-pw", "/path/to/poc"])
+        assert args.poc_workspace_dir == "/path/to/poc"

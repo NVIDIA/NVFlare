@@ -31,4 +31,6 @@ if command -v openssl >/dev/null 2>&1; then
   echo >&2
   echo "Share this rootCA.pem SHA256 fingerprint with the site admin for out-of-band verification:" >&2
   openssl x509 -in "${OUT_DIR}/rootCA.pem" -noout -fingerprint -sha256 >&2
+else
+  echo "WARNING: openssl not found; share the rootCA.pem fingerprint with the site admin manually." >&2
 fi

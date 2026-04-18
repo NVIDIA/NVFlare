@@ -155,7 +155,7 @@ Steps
 | 6    | Site Admin        | ``nvflare package -e grpc://fl-server:8002 --dir ./csr``          |
 |      |                   | *(kit type derived from signed cert)*                             |
 +------+-------------------+-------------------------------------------------------------------+
-| 7    | Site Admin        | ``cd hospital-1 && ./startup/start.sh``                           |
+| 7    | Site Admin        | ``cd workspace/project/prod_00/hospital-1 && ./startup/start.sh`` |
 +------+-------------------+-------------------------------------------------------------------+
 
 Step 1 is done once per federation. Each new participant repeats steps 2–7 independently.
@@ -475,6 +475,9 @@ Generate a local private key and CSR (Site Admin).
 |                  | ``-n``, ``--org``, and ``-t``.                   |          |
 +------------------+--------------------------------------------------+----------+
 | ``--org``        | Organization name                                | No       |
++------------------+--------------------------------------------------+----------+
+| ``--force``      | Overwrite existing key/CSR files for the same    | No       |
+|                  | participant without prompting.                   |          |
 +------------------+--------------------------------------------------+----------+
 
 * ``-t`` / ``--type`` is required unless ``--project-file`` is used.

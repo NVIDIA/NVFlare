@@ -12,8 +12,7 @@ if [[ -z "${PROJECT_NAME}" || -z "${CA_DIR}" ]]; then
   exit 2
 fi
 
-mkdir -p "${CA_DIR}"
+mkdir -m 0700 -p "${CA_DIR}"
 
 # Root CA does not require org.
 nvflare cert init --project "${PROJECT_NAME}" -o "${CA_DIR}"
-

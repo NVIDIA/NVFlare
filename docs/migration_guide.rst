@@ -60,6 +60,21 @@ Impact:
 If you rely on the persisted CLI config, review your shell environment before
 upgrading to the next release built from ``main``.
 
+CLI Config Flag Clarification
+-----------------------------
+
+On the current ``main`` branch, ``nvflare config`` standardizes on the explicit
+``--poc.workspace`` flag name for the POC workspace setting.
+
+Impact:
+
+- ``--poc.workspace`` is the preferred flag name in docs and examples.
+- The legacy ``-pw`` shorthand remains accepted as a compatibility alias for
+  the POC workspace setting.
+
+If you have older scripts that still use ``-pw``, they continue to work, but
+new examples and documentation use ``--poc.workspace`` for clarity.
+
 Study Name Validation Relaxation
 --------------------------------
 
