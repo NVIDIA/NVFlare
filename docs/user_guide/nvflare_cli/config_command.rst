@@ -16,7 +16,7 @@ Command Usage
    usage: nvflare config [-h] [-d [STARTUP_KIT_DIR]]
                          [--poc.startup_kit [POC_STARTUP_KIT_DIR]]
                          [--prod.startup_kit [PROD_STARTUP_KIT_DIR]]
-                         [-pw [POC_WORKSPACE_DIR]] [--poc.workspace [POC_WORKSPACE_DIR_V2]]
+                         [--poc.workspace [POC_WORKSPACE_DIR]]
                          [-jt [JOB_TEMPLATES_DIR]]
                          [--job_templates_dir [JOB_TEMPLATES_DIR]] [-debug] [--schema]
 
@@ -60,4 +60,7 @@ Configuration notes:
 - ``poc.startup_kit`` and ``prod.startup_kit`` should point to admin startup kit
   directories such as ``.../admin@nvidia.com``.
 - The legacy compatibility alias ``--startup_kit_dir`` updates ``poc.startup_kit``
-  only. It does not set ``prod.startup_kit``.
+  only. It does not set ``prod.startup_kit``. Note: this flag is hidden from
+  ``--help`` because it is a legacy compatibility alias.
+- The legacy compatibility alias ``-pw`` is still accepted for ``--poc.workspace``,
+  but it is hidden from help and docs.

@@ -40,7 +40,7 @@ SIGNED_DIR="${WORK_DIR}/signed"
 SITE_DIR="${WORK_DIR}/site"
 
 mkdir -m 0700 -p "${CA_DIR}"
-mkdir -p "${CSR_DIR}" "${SIGNED_DIR}" "${SITE_DIR}"
+mkdir -m 0700 -p "${CSR_DIR}" "${SIGNED_DIR}" "${SITE_DIR}"
 
 # 1) Root CA
 jq -n -r '{step:"warning", scope:"cert init", message:"cert init --force regenerates the root CA and invalidates previously signed certs."} | @json'
@@ -88,7 +88,7 @@ for i in "${!SITE_NAMES[@]}"; do
   SITE_NAME="${SITE_NAMES[$i]}"
   CSR_PATH="${CSR_PATHS[$i]}"
   SITE_SIGNED_DIR="${SIGNED_DIR}/${SITE_NAME}"
-  mkdir -p "${SITE_SIGNED_DIR}"
+  mkdir -m 0700 -p "${SITE_SIGNED_DIR}"
   nvflare --out-format json cert sign -r "${CSR_PATH}" -c "${CA_DIR}" -o "${SITE_SIGNED_DIR}" --accept-csr-role --force >"${WORK_DIR}/sign_${SITE_NAME}.json"
 
 done
@@ -99,7 +99,7 @@ for i in "${!SITE_NAMES[@]}"; do
   KEY_PATH="${KEY_PATHS[$i]}"
   SITE_SIGNED_DIR="${SIGNED_DIR}/${SITE_NAME}"
   SITE_BUNDLE_DIR="${SITE_DIR}/${SITE_NAME}"
-  mkdir -p "${SITE_BUNDLE_DIR}"
+  mkdir -m 0700 -p "${SITE_BUNDLE_DIR}"
 
   install -m 0600 "${KEY_PATH}" "${SITE_BUNDLE_DIR}/"
   if [[ ! -f "${SITE_SIGNED_DIR}/${SITE_NAME}.crt" ]]; then

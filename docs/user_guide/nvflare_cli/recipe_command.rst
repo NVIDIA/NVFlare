@@ -45,13 +45,13 @@ Supported framework filter values:
 - ``tensorflow``
 - ``sklearn``
 - ``xgboost``
+- ``--schema``: print the command schema as JSON and exit.
 
 Behavior notes:
 
 - Recipes whose optional dependencies are not installed are skipped silently.
 - The command checks recipe modules dynamically and returns only recipes that
   are actually available in the current environment.
-- ``--schema`` prints the JSON schema for the command and exits.
 
 The CLI prints a human-readable table in text mode and also emits the machine-
 readable result envelope.

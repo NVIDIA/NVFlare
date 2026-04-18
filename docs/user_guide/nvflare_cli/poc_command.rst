@@ -118,7 +118,8 @@ Use ``nvflare poc start`` to launch services in the prepared POC workspace:
 
 Options:
 
-- ``-p, --service``: participant to start. Default: server and clients.
+- ``-p, --service``: participant to start. By default, starts the server and
+  clients; admin consoles are excluded unless explicitly requested.
 - ``-ex, --exclude``: participant to exclude from startup.
 - ``-gpu, --gpu``: GPU device IDs to use as ``CUDA_VISIBLE_DEVICES``.
 - ``--study``: study for admin console launches only. Ignored for server and
@@ -157,7 +158,8 @@ Use ``nvflare poc stop`` to stop running POC services:
 
 Options:
 
-- ``-p, --service``: participant to stop. Default: ``all``.
+- ``-p, --service``: participant to stop. By default, stops all running
+  services, including admin consoles.
 - ``-ex, --exclude``: participant to exclude from stop handling.
 - ``-debug, --debug``: debug mode.
 - ``--schema``: print command schema as JSON and exit.

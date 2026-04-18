@@ -145,8 +145,7 @@ def handle_cert_init(args):
             "project": args.project,
             "created_at": created_at,
         }
-        with open(ca_json_path, "w") as f:
-            json.dump(ca_meta, f, indent=2)
+        _write_json_file(ca_json_path, ca_meta)
     except OSError as e:
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
 
@@ -204,6 +203,12 @@ def _write_private_key(path: str, pem_bytes: bytes) -> None:
 def _write_file(path: str, pem_bytes: bytes) -> None:
     with open(path, "wb") as f:
         f.write(pem_bytes)
+
+
+def _write_json_file(path: str, data: dict) -> None:
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2)
 
 
 def _backup_existing_csr(out_dir: str, name: str) -> None:
@@ -673,7 +678,7 @@ def handle_cert_sign(args):
         "rootca": rootca_out_path,
         "subject_cn": subject_cn,
         "cert_type": cert_type,
-        "serial": signed_cert.serial_number,
+        "serial": hex(signed_cert.serial_number),
         "valid_until": valid_until,
         "next_step": next_step,
     }

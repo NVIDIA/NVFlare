@@ -47,6 +47,12 @@ Common Workflow
 4. Inspect metadata, stats, or logs as needed.
 5. Download, clone, abort, or delete the job when appropriate.
 
+.. note::
+
+   ``--startup-target`` and ``--startup_kit`` are accepted only by
+   ``nvflare job submit``. Other ``nvflare job`` subcommands use the configured
+   or default startup kit resolution and do not accept those flags.
+
 ****************
 Submit a Job
 ****************
@@ -234,13 +240,14 @@ Change logging configuration for a running job:
 
    nvflare job log-config <job_id> DEBUG
    nvflare job log-config <job_id> concise
-   nvflare job log-config <job_id> --site all msg_only
+   nvflare job log-config <job_id> msg_only
 
 ``job log-config`` accepts:
 
 - positional ``level``: ``DEBUG``, ``INFO``, ``WARNING``, ``ERROR``, ``CRITICAL``
 - log modes: ``concise``, ``msg_only``, ``full``, ``verbose``, ``reload``
-- ``--site``: target site name or ``all``. Default: ``all``.
+- ``--site``: target site name or ``all``. Default: ``all``; specifying
+  ``--site all`` explicitly is equivalent to omitting it.
 - ``--schema``: print the command schema as JSON and exit
 
 Show running job statistics:

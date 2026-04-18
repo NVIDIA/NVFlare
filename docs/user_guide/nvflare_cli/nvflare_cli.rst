@@ -35,7 +35,8 @@ Command groups
 - ``system``: inspect and operate a running FL system
 - ``config``: store local CLI settings such as the startup kit path
 - ``recipe``: list built-in recipe families for exported jobs
-- ``preflight_check``: validate a provisioned startup kit before deployment
+- ``preflight_check`` / ``preflight``: validate a provisioned startup kit
+  before deployment (``preflight`` is the preferred alias)
 - ``dashboard``: start the Dashboard service
 
 Deprecated commands still exposed in help, such as ``simulator`` and

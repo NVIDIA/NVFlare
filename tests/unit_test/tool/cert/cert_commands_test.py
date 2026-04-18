@@ -120,6 +120,13 @@ class TestCertInit:
         mode = stat.S_IMODE(os.stat(str(key_path)).st_mode)
         assert mode == 0o600
 
+    @pytest.mark.skipif(platform.system() == "Windows", reason="chmod not meaningful on Windows")
+    def test_ca_json_permissions(self, tmp_path):
+        _run_init(tmp_path)
+        ca_json_path = tmp_path / "ca.json"
+        mode = stat.S_IMODE(os.stat(str(ca_json_path)).st_mode)
+        assert mode == 0o600
+
     def test_ca_json_content(self, tmp_path):
         _run_init(tmp_path, project="MyProject")
         with open(str(tmp_path / "ca.json")) as f:
@@ -610,7 +617,8 @@ class TestCertSign:
         assert "signed_cert" in data["data"]
         assert "rootca" in data["data"]
         assert "serial" in data["data"]
-        assert isinstance(data["data"]["serial"], int)
+        assert isinstance(data["data"]["serial"], str)
+        assert data["data"]["serial"].startswith("0x")
 
     def test_sign_force_overwrites_existing_cert(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
