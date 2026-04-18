@@ -186,6 +186,8 @@ Clone an existing job:
 
 ``nvflare job clone`` clones the full server-side job for reuse. The current
 CLI surface takes only the source ``job_id`` and ``--schema``.
+It returns ``source_job_id`` and ``new_job_id``. Use the returned
+``new_job_id`` to monitor or manage the cloned job.
 
 Abort a running job:
 
