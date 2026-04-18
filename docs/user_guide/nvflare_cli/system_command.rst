@@ -90,6 +90,8 @@ Status arguments:
 
 - positional ``target``: optional. ``server`` or ``client``.
 - positional ``client_names``: optional list of client names when targeting clients.
+- ``--target {poc,prod}``: choose the configured admin startup kit.
+- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -106,6 +108,8 @@ Resource arguments:
 
 - positional ``target``: optional. ``server`` or ``client``.
 - positional ``client_names``: optional list of client names when targeting clients.
+- ``--target {poc,prod}``: choose the configured admin startup kit.
+- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -130,6 +134,8 @@ Supported targets:
 Control arguments:
 
 - positional ``target``: required. Must be ``server``.
+- ``--target {poc,prod}``: choose the configured admin startup kit.
+- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--target``.
 - ``--force``: skip the confirmation prompt.
 - ``--schema``: print the command schema as JSON and exit.
 
@@ -152,6 +158,8 @@ sites.
 Version arguments:
 
 - ``--site``: ``server``, a client name, or ``all``. Default: ``all``.
+- ``--target {poc,prod}``: choose the configured admin startup kit.
+- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -181,6 +189,8 @@ Logging arguments:
 
 - positional ``level``: required log level or built-in log mode
 - ``--site``: ``server``, a client name, or ``all``. Default: ``all``.
+- ``--target {poc,prod}``: choose the configured admin startup kit.
+- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Supported built-in values for positional ``level``:

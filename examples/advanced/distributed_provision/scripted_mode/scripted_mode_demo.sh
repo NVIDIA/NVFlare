@@ -41,10 +41,12 @@ fi
 SITE_NAMES=()
 CSR_PATHS=()
 KEY_PATHS=()
+TMP_CSR_JSON=""
+trap 'rm -f "${TMP_CSR_JSON:-}"' EXIT
 
 # 2) CSR for each site (uses --project-file)
 for site_yaml in "${SITE_YAMLS[@]}"; do
-  TMP_CSR_JSON="${WORK_DIR}/csr_tmp.json"
+  TMP_CSR_JSON="$(mktemp "${WORK_DIR}/csr_tmp.XXXXXX.json")"
   nvflare --out-format json cert csr --project-file "${site_yaml}" -o "${CSR_DIR}" --force >"${TMP_CSR_JSON}"
 
   SITE_NAME="$(jq -r '.data.name' <"${TMP_CSR_JSON}")"
@@ -52,6 +54,7 @@ for site_yaml in "${SITE_YAMLS[@]}"; do
   KEY_PATH="$(jq -r '.data.key' <"${TMP_CSR_JSON}")"
 
   mv -f "${TMP_CSR_JSON}" "${WORK_DIR}/csr_${SITE_NAME}.json"
+  TMP_CSR_JSON=""
   SITE_NAMES+=("${SITE_NAME}")
   CSR_PATHS+=("${CSR_PATH}")
   KEY_PATHS+=("${KEY_PATH}")
@@ -100,6 +103,6 @@ for i in "${!SITE_NAMES[@]}"; do
   SITE_NAME="${SITE_NAMES[$i]}"
   jq -r --arg site "${SITE_NAME}" '{step:"cert csr", site:$site, data:.data} | @json' <"${WORK_DIR}/csr_${SITE_NAME}.json"
   jq -r --arg site "${SITE_NAME}" '{step:"cert sign", site:$site, data:.data} | @json' <"${WORK_DIR}/sign_${SITE_NAME}.json"
-  echo "{\"step\":\"package\",\"site\":\"${SITE_NAME}\",\"output\":\"${WORK_DIR}/package_${SITE_NAME}.json\"}"
+  jq -n -r --arg site "${SITE_NAME}" --arg out "${WORK_DIR}/package_${SITE_NAME}.json" '{step:"package", site:$site, output:$out} | @json'
 
 done

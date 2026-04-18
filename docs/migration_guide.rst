@@ -91,6 +91,7 @@ Impact:
 If you previously used advanced JSON/file-based configs with
 ``configure_site_log``, switch to the supported level/mode values before
 upgrading to the next release built from ``main``.
+For dict-based or file-path logging, use ``configure_job_log`` on a running job instead.
 
 POC Start Default Service Clarification
 ---------------------------------------

@@ -32,15 +32,15 @@ The resulting startup kits are structurally identical to those produced by
 
 | Step | Who | Action |
 |------|-----|--------|
-| 1 | Site Admin | `nvflare cert csr -n hospital-1 -t client -o ./csr` |
-| 2 | Site Admin | Send `hospital-1.csr` to Project Admin (email, file share, etc.) |
-| 3 | Project Admin | `nvflare cert init --project my-project -o ./ca` *(one-time per federation)* |
+| 1 | Project Admin | `nvflare cert init --project my-project -o ./ca` *(one-time per federation)* |
+| 2 | Site Admin | `nvflare cert csr -n hospital-1 -t client -o ./csr` |
+| 3 | Site Admin | Send `hospital-1.csr` to Project Admin (email, file share, etc.) |
 | 4 | Project Admin | `nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed/hospital-1 --accept-csr-role` |
 | 5 | Project Admin | Return `hospital-1.crt` + `rootCA.pem` to site |
 | 6 | Site Admin | `nvflare package -e grpc://server:8002 --dir ./csr` *(type derived from signed cert)* |
 | 7 | Site Admin | `cd hospital-1 && ./startup/start.sh` |
 
-Step 3 is done once. Each new participant repeats steps 1–2 and 4–7 independently.
+Step 1 is done once. Each new participant repeats steps 2–7 independently.
 
 ### Multi-Participant Variant
 
