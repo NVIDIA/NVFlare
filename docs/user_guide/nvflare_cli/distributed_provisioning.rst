@@ -25,8 +25,12 @@ The resulting startup kits are structurally identical to those produced by
 
 .. note::
 
-   Distributed provisioning uses mTLS as the sole trust anchor. No ``signature.json``
-   is generated. The ``require_signed_jobs`` policy is always enabled on the server.
+   Distributed provisioning uses project-issued certificates and ``rootCA.pem`` as
+   the trust anchor. No ``signature.json`` is generated. In distributed
+   provisioning, ``require_signed_jobs`` defaults to enabled on the server because
+   ``rootCA.pem`` is present in the startup kit. Operators can explicitly
+   override it in ``fed_server.json``, but disabling signed-job enforcement is
+   strongly discouraged.
 
 .. note::
 
@@ -510,7 +514,7 @@ Assemble a startup kit (Site Admin).
 +--------------------------+--------------------------------------------------------------------------+----------+
 | --project-name           | Project name used in output path and in fed_server/fed_admin configs.   | No       |
 +--------------------------+--------------------------------------------------------------------------+----------+
-| --admin-port             | Admin port; default is service port + 1.                                | No       |
+| --admin-port             | Admin port; default is the endpoint port (learner port).                | No       |
 +--------------------------+--------------------------------------------------------------------------+----------+
 | --force                  | Allow re-packaging when participant exists in latest prod_NN.           | No       |
 +--------------------------+--------------------------------------------------------------------------+----------+
