@@ -98,7 +98,7 @@ Example JSON success response:
 
 .. code-block:: json
 
-   {"schema_version": "1", "status": "ok", "data": {"job_id": "abc123"}}
+   {"schema_version": "1", "status": "ok", "exit_code": 0, "data": {"job_id": "abc123"}}
 
 If the server is configured for studies, you can target one explicitly:
 

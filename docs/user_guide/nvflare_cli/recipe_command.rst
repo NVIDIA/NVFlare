@@ -63,6 +63,7 @@ Example JSON response:
    {
      "schema_version": "1",
      "status": "ok",
+     "exit_code": 0,
      "data": [
        {
          "name": "fedavg-pt",
