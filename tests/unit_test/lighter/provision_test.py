@@ -174,3 +174,13 @@ class TestProvision:
     def test_provision_for_edge_requires_participants(self):
         with pytest.raises(ValueError, match="missing 'participants' in project config"):
             provision_for_edge({}, {"name": "proj"})
+
+    def test_prepare_project_requires_participants(self):
+        project_config = {
+            "api_version": 4,
+            "name": "mytest",
+            "description": "test",
+        }
+
+        with pytest.raises(ValueError, match="missing 'participants' in project config"):
+            prepare_project(project_dict=project_config)

@@ -221,6 +221,27 @@ class TestProvisionOutput:
         assert data["status"] == "ok"
         assert sorted(data["data"]["packages"]) == ["client-a", "server"]
 
+    def test_long_project_name_uses_truncated_workspace_for_packages(self, capsys, tmp_path):
+        from nvflare.lighter.provision import handle_provision
+
+        long_name = "p" * 70
+        truncated = long_name[:63]
+        args = self._make_args(project_file="project.yml", force=True)
+        (tmp_path / "project.yml").write_text(f"name: {long_name}\n", encoding="utf-8")
+        project_dir = tmp_path / "workspace" / truncated
+        (project_dir / "server").mkdir(parents=True)
+
+        with patch("nvflare.lighter.provision.provision") as mock_prov:
+            with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
+                with patch("nvflare.tool.install_skills.install_skills"):
+                    handle_provision(args)
+
+        mock_prov.assert_called_once()
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "ok"
+        assert data["data"]["packages"] == ["server"]
+
     def test_generate_conflicts_with_project_file(self, capsys, tmp_path):
         from nvflare.lighter.provision import handle_provision
 

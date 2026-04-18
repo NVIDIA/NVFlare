@@ -16,6 +16,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
 from nvflare.cli_exception import CLIException
 from nvflare.tool import cli_output
@@ -45,6 +46,13 @@ class TestPocOutput:
         args.service = None
         args.ex = None
         return args
+
+    def test_client_gpu_assignments_uses_enumerated_gpu_id(self):
+        from nvflare.tool.poc.poc_commands import client_gpu_assignments
+
+        assignments = client_gpu_assignments(["site-1", "site-2"], [3, 7, 9])
+
+        assert assignments == {"site-1": [3, 9], "site-2": [7]}
 
     # ------------------------------------------------------------------ unit envelope checks (output_ok / output_error)
 
@@ -108,13 +116,34 @@ class TestPocOutput:
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=poc_ws),
             patch("nvflare.tool.poc.poc_commands._prepare_poc", return_value=True),
             patch("nvflare.tool.install_skills.install_skills", return_value=None),
-            patch("nvflare.lighter.utils.load_yaml", side_effect=RuntimeError("bad yaml")),
+            patch("nvflare.tool.poc.poc_commands.load_yaml", side_effect=yaml.YAMLError("bad yaml")),
         ):
             prepare_poc(args)
 
         data = json.loads(capsys.readouterr().out)
         assert data["status"] == "ok"
         assert data["data"]["clients"] == ["site-a", "site-b"]
+
+    def test_prepare_poc_malformed_participants_returns_invalid_args(self, capsys, tmp_path):
+        from nvflare.tool.poc.poc_commands import prepare_poc
+
+        args = self._make_prepare_args(force=True)
+        poc_ws = str(tmp_path / "poc")
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=poc_ws),
+            patch("nvflare.tool.poc.poc_commands._prepare_poc", return_value=True),
+            patch("nvflare.tool.install_skills.install_skills", return_value=None),
+            patch("nvflare.tool.poc.poc_commands.load_yaml", return_value={"participants": [{"type": "client"}]}),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                prepare_poc(args)
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INVALID_ARGS"
+        assert "client participant missing name" in data["message"]
 
     def test_prepare_poc_workspace_exists_non_interactive_exits_4(self, tmp_path):
         """prepare_poc exits 4 when workspace exists and stdin is not a tty (no --force)."""

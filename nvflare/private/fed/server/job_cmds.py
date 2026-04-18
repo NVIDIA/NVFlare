@@ -619,13 +619,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 job_manager = engine.job_def_manager
                 job = job_manager.get_job(job_id, fl_ctx)
                 job_status = job.meta.get(JobMetaKey.STATUS)
-                if job_status in [RunStatus.SUBMITTED, RunStatus.DISPATCHED]:
+                if job_status in [RunStatus.SUBMITTED.value, RunStatus.DISPATCHED.value]:
                     job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
                     message = f"Aborted the job {job_id} before running it."
                     conn.append_string(message)
                     conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
                     return
-                elif job_status.startswith("FINISHED:"):
+                elif job_status and job_status.startswith("FINISHED:"):
                     message = f"Job for {job_id} is already completed."
                     conn.append_string(message)
                     conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))

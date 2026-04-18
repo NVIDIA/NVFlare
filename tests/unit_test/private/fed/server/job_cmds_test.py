@@ -670,6 +670,43 @@ def test_authorize_job_id_resolves_study_role_before_authz(monkeypatch):
     assert conn.get_prop(ConnProps.USER_ROLE) == "study_lead"
 
 
+def test_abort_job_marks_submitted_job_finished_aborted(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    engine = _FakeEngine()
+    engine.job_def_manager = MagicMock()
+    engine.job_runner = MagicMock()
+    job = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.SUBMITTED.value})
+    job.job_id = "job-123"
+    engine.job_def_manager.get_job.return_value = job
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-123"})
+
+    JobCommandModule().abort_job(conn, ["abort_job", "job-123"])
+
+    engine.job_def_manager.set_status.assert_called_once()
+    engine.job_runner.stop_run.assert_not_called()
+    assert any("Aborted the job job-123 before running it." in msg for msg, _meta in conn.strings)
+
+
+def test_abort_job_handles_missing_status_without_attribute_error(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    engine = _FakeEngine()
+    engine.job_def_manager = MagicMock()
+    job = _FakeListedJob({})
+    job.job_id = "job-123"
+    engine.job_def_manager.get_job.return_value = job
+    engine.job_runner = MagicMock()
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-123"})
+
+    JobCommandModule().abort_job(conn, ["abort_job", "job-123"])
+
+    engine.job_runner.stop_run.assert_called_once()
+    assert engine.job_runner.stop_run.call_args[0][0] == "job-123"
+
+
 def test_submit_job_persists_effective_study_submitter_role(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     monkeypatch.setattr(job_cmds_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)

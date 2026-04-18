@@ -229,9 +229,10 @@ def handle_provision(args):
             detail=f"project file is empty or not a valid YAML mapping: {project_full_path}",
         )
         raise SystemExit(4)
-    project_name = project_dict.get(PropKey.NAME)
-    if not project_name:
-        output_error("INVALID_ARGS", exit_code=4, detail="missing project name")
+    try:
+        project_name = _normalize_project_name(project_dict)
+    except ValueError as e:
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
     project_workspace = os.path.join(workspace_full_path, project_name)
     if os.path.isdir(project_workspace) and os.listdir(project_workspace):
@@ -315,10 +316,21 @@ def gen_default_project_config(src_project_name, dest_project_file):
     shutil.copyfile(os.path.join(file_path, src_project_name), dest_project_file)
 
 
-def provision_for_edge(params, project_dict):
+def _normalize_project_name(project_dict):
     project_name = project_dict.get(PropKey.NAME)
     if not project_name:
         raise ValueError("missing project name")
+    if len(project_name) > 63:
+        from nvflare.tool.cli_output import print_human
+
+        print_human(f"Project name {project_name} is longer than 63.  Will truncate it to {project_name[:63]}.")
+        project_name = project_name[:63]
+        project_dict[PropKey.NAME] = project_name
+    return project_name
+
+
+def provision_for_edge(params, project_dict):
+    project_name = _normalize_project_name(project_dict)
     project_description = project_dict.get(PropKey.DESCRIPTION, "")
     project = Project(name=project_name, description=project_description, props=project_dict)
 
@@ -361,18 +373,12 @@ def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=
     api_version = project_dict.get(PropKey.API_VERSION)
     if api_version not in [3, 4]:
         raise ValueError(f"API version expected 3 or 4 but found {api_version}")
-    project_name = project_dict.get(PropKey.NAME)
-    if not project_name:
-        raise ValueError("missing project name")
-    if len(project_name) > 63:
-        from nvflare.tool.cli_output import print_human
-
-        print_human(f"Project name {project_name} is longer than 63.  Will truncate it to {project_name[:63]}.")
-        project_name = project_name[:63]
-        project_dict[PropKey.NAME] = project_name
+    project_name = _normalize_project_name(project_dict)
     project_description = project_dict.get(PropKey.DESCRIPTION, "")
     project = Project(name=project_name, description=project_description, props=project_dict)
     participant_defs = project_dict.get("participants")
+    if not isinstance(participant_defs, list):
+        raise ValueError("missing 'participants' in project config")
 
     if add_user_file_path:
         add_extra_users(add_user_file_path, participant_defs)

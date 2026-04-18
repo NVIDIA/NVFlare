@@ -75,7 +75,7 @@ def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, 
             client = client_name_map[client_id]
             if client not in gpu_assignments:
                 gpu_assignments[client] = []
-            gpu_assignments[client].append(gpu_ids[gpu_index])
+            gpu_assignments[client].append(gpu_id)
     return gpu_assignments
 
 
@@ -444,8 +444,13 @@ def save_startup_kit_dir_config(workspace, project_name):
             config = None
 
     project_file = os.path.join(workspace, "project.yml")
-    project_config = load_yaml(project_file) if os.path.isfile(project_file) else None
-    project_admin = get_proj_admin(project_config) if project_config else SC.FLARE_PROJ_ADMIN
+    try:
+        project_config = load_yaml(project_file) if os.path.isfile(project_file) else None
+    except Exception:
+        project_config = None
+    if not project_config or not isinstance(project_config, dict):
+        raise CLIException(f"invalid or unreadable project config: {project_file}")
+    project_admin = get_proj_admin(project_config)
     prod_dir = get_prod_dir(workspace, project_name)
     poc_admin_dir = os.path.join(prod_dir, project_admin)
     conf = f"""
@@ -519,15 +524,27 @@ def prepare_poc(cmd_args):
         list(cmd_args.clients) if cmd_args.clients else [f"site-{i + 1}" for i in range(cmd_args.number_of_clients)]
     )
     try:
-        from nvflare.lighter.utils import load_yaml as _load_yaml
-
-        pc = _load_yaml(project_file)
+        pc = load_yaml(project_file)
         if pc:
-            clients = [p["name"] for p in pc.get("participants", []) if p.get("type") == "client"]
-    except Exception:
+            participants = pc.get("participants", [])
+            if not isinstance(participants, list):
+                raise CLIException("project.yml participants must be a list")
+            clients = []
+            for p in participants:
+                if not isinstance(p, dict):
+                    raise CLIException("participant entry must be a mapping")
+                if p.get("type") == "client":
+                    name = p.get("name")
+                    if not name:
+                        raise CLIException("client participant missing name")
+                    clients.append(name)
+    except (OSError, IOError, yaml.YAMLError):
         # If the post-provision readback fails, preserve the best-known client list instead of
         # silently reporting an empty set in the success payload.
         pass
+    except CLIException as e:
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+        raise SystemExit(4)
 
     output_ok({"workspace": poc_workspace, "clients": clients})
     from nvflare.tool.cli_output import print_human
