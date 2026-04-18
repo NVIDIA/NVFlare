@@ -180,7 +180,7 @@ This produces:
 
 - ``./ca/rootCA.pem`` — root CA certificate (distribute to all sites)
 - ``./ca/rootCA.key`` — root CA private key (keep secret, never distribute)
-- ``./ca/ca.json`` — audit metadata (serial counter)
+- ``./ca/ca.json`` — audit metadata for the generated root CA
 
 .. attention::
 
