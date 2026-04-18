@@ -426,7 +426,8 @@ def test_list_jobs_ignores_duration_parse_failures(monkeypatch):
     assert conn.errors == []
     assert len(conn.tables) == 1
     assert len(conn.tables[0].rows) == 1
-    assert conn.tables[0].rows[0][0][0] == "job-1"
+    first_row, _row_meta = conn.tables[0].rows[0]
+    assert first_row[0] == "job-1"
 
 
 def test_job_match_tolerates_missing_job_id_and_name():
