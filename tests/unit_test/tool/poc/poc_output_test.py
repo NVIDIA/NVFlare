@@ -82,8 +82,11 @@ class TestPocOutput:
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=poc_ws),
             patch("nvflare.tool.poc.poc_commands._prepare_poc", return_value=True),
             patch("nvflare.tool.install_skills.install_skills", return_value=None),
-            patch("os.path.exists", return_value=False),
-            patch("os.listdir", return_value=["server", "site-1", "site-2", "admin@nvidia.com"]),
+            patch("nvflare.tool.poc.poc_commands.os.path.exists", return_value=False),
+            patch(
+                "nvflare.tool.poc.poc_commands.os.listdir",
+                return_value=["server", "site-1", "site-2", "admin@nvidia.com"],
+            ),
         ):
             prepare_poc(args)
 
@@ -248,7 +251,7 @@ class TestPocOutput:
 
         with (
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
-            patch("os.path.isdir", return_value=True),
+            patch("nvflare.tool.poc.poc_commands.os.path.isdir", return_value=True),
             patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(None, None)),
         ):
             with pytest.raises(SystemExit) as exc_info:
@@ -269,7 +272,7 @@ class TestPocOutput:
         with (
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
             patch("sys.stdin") as mock_stdin,
-            patch("os.path.isdir", return_value=True),
+            patch("nvflare.tool.poc.poc_commands.os.path.isdir", return_value=True),
             patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=({"name": "proj"}, {})),
             patch("nvflare.tool.poc.poc_commands.is_poc_ready", return_value=True),
             patch("nvflare.tool.poc.poc_commands.is_poc_running", return_value=False),

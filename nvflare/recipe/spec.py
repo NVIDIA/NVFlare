@@ -394,7 +394,7 @@ class Recipe(ABC):
         job_dir: str,
         server_exec_params: Optional[dict] = None,
         client_exec_params: Optional[dict] = None,
-        env: ExecEnv = None,
+        env: Optional[ExecEnv] = None,
     ):
         """Export the recipe to a job definition.
 
