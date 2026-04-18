@@ -460,7 +460,15 @@ def _build_signed_cert(
         NameOID.STATE_OR_PROVINCE_NAME,
         NameOID.LOCALITY_NAME,
     }
-    safe_attrs = [attr for attr in csr.subject if attr.oid in _SAFE_OIDS]
+    safe_attrs = []
+    seen_oids = set()
+    for attr in csr.subject:
+        if attr.oid not in _SAFE_OIDS:
+            continue
+        if attr.oid in seen_oids:
+            raise ValueError(f"CSR contains duplicate subject attribute for OID '{attr.oid._name}'")
+        seen_oids.add(attr.oid)
+        safe_attrs.append(attr)
     safe_attrs.append(x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, cert_type))
     safe_subject = x509.Name(safe_attrs)
 
