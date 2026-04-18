@@ -951,6 +951,28 @@ def test_do_app_command_success_sets_ok_meta(monkeypatch):
     assert conn.dicts[0][1][MetaKey.STATUS] == "ok"
 
 
+def test_do_app_command_preserves_zero_timeout(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngineInternalSpec", object)
+    engine = _FakeEngine()
+    engine.run_processes = {"job-123": object()}
+    result = Shareable()
+    result.set_return_code(ReturnCode.OK)
+    result[ServerCommandKey.DATA] = {"answer": 42}
+    engine.send_app_command = MagicMock(return_value=result)
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            JobCommandModule.JOB_ID: "job-123",
+            ConnProps.CMD_PROPS: {"k": "v"},
+            ConnProps.CMD_TIMEOUT: 0,
+        },
+    )
+
+    JobCommandModule().do_app_command(conn, ["app_command", "job-123", "topic"])
+
+    engine.send_app_command.assert_called_once_with("job-123", "topic", {"k": "v"}, 0)
+
+
 def test_do_app_command_usage_error_uses_append_error(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "ServerEngineInternalSpec", object)
     conn = _MockConnection(

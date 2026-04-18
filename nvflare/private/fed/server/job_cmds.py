@@ -939,7 +939,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             return
 
         timeout = conn.get_prop(ConnProps.CMD_TIMEOUT)
-        if not timeout:
+        if timeout is None:
             timeout = 5.0
         result = engine.send_app_command(job_id, topic, cmd_data, timeout)
         if result is None:
