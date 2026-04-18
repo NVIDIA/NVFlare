@@ -543,6 +543,8 @@ Notes
 
 - The ``--dir`` mode for ``nvflare package`` locates the ``.key`` file automatically.
   Place the signed ``.crt`` and ``rootCA.pem`` in the same directory before running.
+  The directory must contain exactly one ``.key`` file so the participant name can be
+  inferred unambiguously.
 - Startup kits produced by ``nvflare package`` are structurally identical to those
   produced by ``nvflare provision`` and work with all NVFlare runtime components.
 - The server identity for mTLS validation is always the hostname from ``--endpoint``.
