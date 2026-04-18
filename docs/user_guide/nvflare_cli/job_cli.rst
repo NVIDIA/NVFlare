@@ -223,8 +223,8 @@ Retrieve job logs from the server workspace:
 
 Current implementation note:
 
-- ``job logs --site`` currently supports only ``server``. Client log streaming
-  is not yet available in the CLI. Default: ``server``.
+- ``job logs --site`` accepts only ``server``. Default: ``server``. Any other
+  value is rejected during argument parsing.
 - ``job logs`` also supports ``--tail``, ``--grep``, and ``--schema``.
 
 Change logging configuration for a running job:
