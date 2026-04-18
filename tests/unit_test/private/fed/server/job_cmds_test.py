@@ -19,8 +19,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode, ServerCommandKey, WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey, RunStatus
+from nvflare.apis.shareable import Shareable
 from nvflare.fuel.hci.proto import MetaKey
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
@@ -924,3 +925,26 @@ def test_get_job_log_tail_zero_returns_syntax_error(tmp_path, monkeypatch):
     msg, meta = conn.errors[0]
     assert msg == "tail_lines must be greater than 0"
     assert meta[MetaKey.STATUS] == "syntax_error"
+
+
+def test_do_app_command_success_sets_ok_meta(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngineInternalSpec", object)
+    engine = _FakeEngine()
+    engine.run_processes = {"job-123": object()}
+    result = Shareable()
+    result.set_return_code(ReturnCode.OK)
+    result[ServerCommandKey.DATA] = {"answer": 42}
+    engine.send_app_command = MagicMock(return_value=result)
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            JobCommandModule.JOB_ID: "job-123",
+            ConnProps.CMD_PROPS: {"k": "v"},
+        },
+    )
+
+    JobCommandModule().do_app_command(conn, ["app_command", "job-123", "topic"])
+
+    assert conn.errors == []
+    assert conn.dicts[0][0] == {"answer": 42}
+    assert conn.dicts[0][1][MetaKey.STATUS] == "ok"

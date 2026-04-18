@@ -964,4 +964,4 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             return
 
         reply = result.get(ServerCommandKey.DATA)
-        conn.append_dict(reply)
+        conn.append_dict(reply, meta=make_meta(MetaStatusValue.OK))
