@@ -334,6 +334,23 @@ class TestProvisionOutput:
         assert "Errors:" in data["message"]
         assert "Warnings:" in data["message"]
 
+    def test_provision_value_error_returns_invalid_args(self, capsys, tmp_path):
+        from nvflare.lighter.provision import handle_provision
+
+        args = self._make_args(project_file="project.yml")
+        (tmp_path / "project.yml").write_text("name: proj\n", encoding="utf-8")
+
+        with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
+            with patch("nvflare.lighter.provision.provision", side_effect=ValueError("bad study config")):
+                with pytest.raises(SystemExit) as exc_info:
+                    handle_provision(args)
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INVALID_ARGS"
+        assert "bad study config" in data["message"]
+
     def test_copy_project_suppresses_human_text_in_json_mode(self, capsys, tmp_path):
         """Generating a sample project in JSON mode should not emit human guidance."""
         from nvflare.lighter.provision import copy_project

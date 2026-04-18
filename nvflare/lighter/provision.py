@@ -262,7 +262,16 @@ def handle_provision(args):
         output_error("INVALID_ARGS", exit_code=4, detail=f"add_client file does not exist: {add_client_full_path}")
         raise SystemExit(4)
 
-    ctx = provision(args, project_full_path, workspace_full_path, add_user_full_path, add_client_full_path)
+    try:
+        ctx = provision(args, project_full_path, workspace_full_path, add_user_full_path, add_client_full_path)
+    except (ValueError, RuntimeError) as e:
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+        raise SystemExit(4)
+    except SystemExit:
+        raise
+    except Exception as e:
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
+        raise SystemExit(5)
 
     if isinstance(ctx, dict) and ctx.get(CtxKey.BUILD_ERROR):
         diagnostic_lines = []
