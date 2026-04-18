@@ -158,7 +158,6 @@ def handle_cert_init(args):
     # 12. Output result
     result = {
         "ca_cert": rootca_path,
-        "ca_key": ca_key_path,
         "project": args.project,
         "subject_cn": args.project,
         "valid_until": valid_until_str,

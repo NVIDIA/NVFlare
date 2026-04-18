@@ -197,7 +197,7 @@ class TestCertInit:
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
         assert "ca_cert" in data["data"]
-        assert "ca_key" in data["data"]
+        assert "ca_key" not in data["data"]
         assert "project" in data["data"]
         assert "valid_until" in data["data"]
 
