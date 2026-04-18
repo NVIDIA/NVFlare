@@ -72,12 +72,11 @@ for i in "${!SITE_NAMES[@]}"; do
   mkdir -p "${SITE_BUNDLE_DIR}"
 
   cp -f "${KEY_PATH}" "${SITE_BUNDLE_DIR}/"
-  cp -f "${SITE_SIGNED_DIR}/${SITE_NAME}.crt" "${SITE_BUNDLE_DIR}/" 2>/dev/null || true
-  cp -f "${SITE_SIGNED_DIR}/${SITE_NAME}.pem" "${SITE_BUNDLE_DIR}/" 2>/dev/null || true
-  if [[ ! -f "${SITE_BUNDLE_DIR}/${SITE_NAME}.crt" && ! -f "${SITE_BUNDLE_DIR}/${SITE_NAME}.pem" ]]; then
-    echo "ERROR: no signed cert found for ${SITE_NAME} in ${SITE_SIGNED_DIR}" >&2
+  if [[ ! -f "${SITE_SIGNED_DIR}/${SITE_NAME}.crt" ]]; then
+    echo "ERROR: signed cert not found for ${SITE_NAME}: ${SITE_SIGNED_DIR}/${SITE_NAME}.crt" >&2
     exit 1
   fi
+  cp -f "${SITE_SIGNED_DIR}/${SITE_NAME}.crt" "${SITE_BUNDLE_DIR}/"
   cp -f "${CA_DIR}/rootCA.pem" "${SITE_BUNDLE_DIR}/"
 
   nvflare --out-format json package -e "${SERVER_ENDPOINT}" -p "${SITE_YAMLS[$i]}" --dir "${SITE_BUNDLE_DIR}" -w "${WORK_DIR}/workspace" >"${WORK_DIR}/package_${SITE_NAME}.json"
