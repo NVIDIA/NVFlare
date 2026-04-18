@@ -921,7 +921,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         # cmd job_id topic
         if len(args) != 3:
             cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
-            conn.append_string(f"Usage: {cmd_entry.usage}", meta=make_meta(MetaStatusValue.SYNTAX_ERROR, ""))
+            conn.append_error(f"Usage: {cmd_entry.usage}", meta=make_meta(MetaStatusValue.SYNTAX_ERROR, ""))
             return
 
         engine = conn.app_ctx

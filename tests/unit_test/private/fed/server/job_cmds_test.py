@@ -918,7 +918,7 @@ def test_get_job_log_tail_zero_returns_syntax_error(tmp_path, monkeypatch):
         def get_workspace(self):
             return _FakeWorkspace()
 
-    conn = _MockConnection(app_ctx=_FakeEngine())
+    conn = _MockConnection(app_ctx=_FakeEngine(), props={JobCommandModule.JOB_ID: job_id})
 
     JobCommandModule().get_job_log(conn, ["get_job_log", job_id, "-n", "0"])
 
@@ -949,3 +949,18 @@ def test_do_app_command_success_sets_ok_meta(monkeypatch):
     assert conn.errors == []
     assert conn.dicts[0][0] == {"answer": 42}
     assert conn.dicts[0][1][MetaKey.STATUS] == "ok"
+
+
+def test_do_app_command_usage_error_uses_append_error(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngineInternalSpec", object)
+    conn = _MockConnection(
+        app_ctx=_FakeEngine(),
+        props={ConnProps.CMD_ENTRY: type("_CmdEntry", (), {"usage": "app_command job_id topic"})()},
+    )
+
+    JobCommandModule().do_app_command(conn, ["app_command", "job-123"])
+
+    assert conn.errors
+    assert conn.strings == []
+    assert conn.errors[0][0] == "Usage: app_command job_id topic"
+    assert conn.errors[0][1][MetaKey.STATUS] == "syntax_error"

@@ -223,11 +223,27 @@ class TestProvisionOutput:
         assert data["error_code"] == "INVALID_ARGS"
         assert "project file does not exist:" in data["message"]
 
+    def test_missing_project_name_returns_invalid_args(self, capsys, tmp_path):
+        from nvflare.lighter.provision import handle_provision
+
+        args = self._make_args(project_file="project.yml")
+        (tmp_path / "project.yml").write_text("description: no-name\n", encoding="utf-8")
+
+        with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
+            with pytest.raises(SystemExit) as exc_info:
+                handle_provision(args)
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INVALID_ARGS"
+        assert "missing project name" in data["message"]
+
     def test_edge_mode_failure_returns_structured_error(self, capsys, tmp_path):
         from nvflare.lighter.provision import handle_provision
 
         args = self._make_args(project_file="project.yml")
-        project_dict = {"edge": {"enabled": True}, "gen_scripts": False}
+        project_dict = {"name": "proj", "edge": {"enabled": True}, "gen_scripts": False}
         (tmp_path / "project.yml").write_text("name: proj\n", encoding="utf-8")
 
         with patch("nvflare.lighter.provision.load_yaml", return_value=project_dict):

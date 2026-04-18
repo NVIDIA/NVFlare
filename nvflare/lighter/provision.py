@@ -215,6 +215,9 @@ def handle_provision(args):
 
     project_dict = load_yaml(project_full_path)
     project_name = project_dict.get(PropKey.NAME)
+    if not project_name:
+        output_error("INVALID_ARGS", exit_code=4, detail="missing project name")
+        raise SystemExit(4)
     if project_name:
         project_workspace = os.path.join(workspace_full_path, project_name)
         if os.path.isdir(project_workspace) and os.listdir(project_workspace):
