@@ -109,7 +109,7 @@ def get_service_command(
                 cmd = f"docker stop {service_dir}"
 
     else:
-        raise CLIException("unknown cmd_type :", cmd_type)
+        raise CLIException(f"unknown cmd_type: {cmd_type}")
 
     if cmd_type == SC.CMD_START and study and service_dir in admin_dirs and cmd.endswith("fl_admin.sh"):
         cmd = f"{cmd} --study {study}"
@@ -954,12 +954,11 @@ def prepare_env(service_name, gpu_ids: Optional[List[int]], service_config: Dict
     my_env = None
     if gpu_ids:
         my_env = os.environ.copy()
-        if len(gpu_ids) > 0:
-            my_env["CUDA_VISIBLE_DEVICES"] = ",".join([str(gid) for gid in gpu_ids])
+        my_env["CUDA_VISIBLE_DEVICES"] = ",".join([str(gid) for gid in gpu_ids])
 
     if service_config.get(SC.IS_DOCKER_RUN):
         my_env = os.environ.copy() if my_env is None else my_env
-        if gpu_ids and len(gpu_ids) > 0:
+        if gpu_ids:
             my_env["GPU2USE"] = f"--gpus={my_env['CUDA_VISIBLE_DEVICES']}"
 
         my_env["MY_DATA_DIR"] = os.path.join(get_poc_workspace(), "data")
@@ -1048,8 +1047,6 @@ def is_poc_running(poc_workspace, service_config, project_config):
 
 
 def _clean_poc(poc_workspace: str, force: bool = False) -> bool:
-    import shutil
-
     if os.path.isdir(poc_workspace):
         project_config, service_config = setup_service_config(poc_workspace)
         if project_config is None:

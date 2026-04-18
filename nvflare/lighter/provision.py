@@ -255,6 +255,12 @@ def handle_provision(args):
 
     add_user_full_path = os.path.join(current_path, args.add_user) if args.add_user else None
     add_client_full_path = os.path.join(current_path, args.add_client) if args.add_client else None
+    if add_user_full_path and not os.path.isfile(add_user_full_path):
+        output_error("INVALID_ARGS", exit_code=4, detail=f"add_user file does not exist: {add_user_full_path}")
+        raise SystemExit(4)
+    if add_client_full_path and not os.path.isfile(add_client_full_path):
+        output_error("INVALID_ARGS", exit_code=4, detail=f"add_client file does not exist: {add_client_full_path}")
+        raise SystemExit(4)
 
     ctx = provision(args, project_full_path, workspace_full_path, add_user_full_path, add_client_full_path)
 
@@ -301,6 +307,8 @@ def gen_default_project_config(src_project_name, dest_project_file):
 
 def provision_for_edge(params, project_dict):
     project_name = project_dict.get(PropKey.NAME)
+    if not project_name:
+        raise ValueError("missing project name")
     project_description = project_dict.get(PropKey.DESCRIPTION, "")
     project = Project(name=project_name, description=project_description, props=project_dict)
 

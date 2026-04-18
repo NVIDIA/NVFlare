@@ -182,7 +182,13 @@ class TestProvisionOutput:
                     with patch("nvflare.lighter.provision.os.path.isdir", return_value=False):
                         handle_provision(args)
 
-        mock_prov.assert_called_once()
+        mock_prov.assert_called_once_with(
+            args,
+            str(tmp_path / "project.yml"),
+            str(tmp_path / "workspace"),
+            None,
+            None,
+        )
 
         captured = capsys.readouterr()
         assert captured.err == ""
@@ -221,6 +227,38 @@ class TestProvisionOutput:
         assert data["status"] == "error"
         assert data["error_code"] == "INVALID_ARGS"
         assert "project file does not exist:" in data["message"]
+
+    def test_missing_add_user_file_returns_invalid_args(self, capsys, tmp_path):
+        from nvflare.lighter.provision import handle_provision
+
+        args = self._make_args(project_file="project.yml", add_user="missing_user.yml")
+        (tmp_path / "project.yml").write_text("name: proj\n", encoding="utf-8")
+
+        with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
+            with pytest.raises(SystemExit) as exc_info:
+                handle_provision(args)
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INVALID_ARGS"
+        assert "add_user file does not exist:" in data["message"]
+
+    def test_missing_add_client_file_returns_invalid_args(self, capsys, tmp_path):
+        from nvflare.lighter.provision import handle_provision
+
+        args = self._make_args(project_file="project.yml", add_client="missing_client.yml")
+        (tmp_path / "project.yml").write_text("name: proj\n", encoding="utf-8")
+
+        with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
+            with pytest.raises(SystemExit) as exc_info:
+                handle_provision(args)
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INVALID_ARGS"
+        assert "add_client file does not exist:" in data["message"]
 
     def test_missing_project_name_returns_invalid_args(self, capsys, tmp_path):
         from nvflare.lighter.provision import handle_provision

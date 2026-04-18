@@ -446,8 +446,8 @@ def test_get_job_meta_normalizes_legacy_job_study(monkeypatch):
     assert conn.dicts[0][0][JobMetaKey.STUDY.value] == "default"
 
 
-def test_get_job_log_tail_uses_bounded_lines(tmp_path):
-    job_cmds_module.ServerEngine = _FakeServerEngine
+def test_get_job_log_tail_uses_bounded_lines(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
     workspace = _FakeWorkspace(tmp_path)
     engine = _FakeServerEngine(workspace)
     conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
@@ -461,7 +461,7 @@ def test_get_job_log_tail_uses_bounded_lines(tmp_path):
 
 
 def test_get_job_log_truncates_large_output(tmp_path, monkeypatch):
-    job_cmds_module.ServerEngine = _FakeServerEngine
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
     workspace = _FakeWorkspace(tmp_path)
     engine = _FakeServerEngine(workspace)
     conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
@@ -477,7 +477,7 @@ def test_get_job_log_truncates_large_output(tmp_path, monkeypatch):
 
 
 def test_get_job_log_tail_still_respects_byte_cap(tmp_path, monkeypatch):
-    job_cmds_module.ServerEngine = _FakeServerEngine
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
     workspace = _FakeWorkspace(tmp_path)
     engine = _FakeServerEngine(workspace)
     conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
@@ -494,7 +494,7 @@ def test_get_job_log_tail_still_respects_byte_cap(tmp_path, monkeypatch):
 
 
 def test_get_job_log_tail_caps_buffered_line_count(tmp_path, monkeypatch):
-    job_cmds_module.ServerEngine = _FakeServerEngine
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
     workspace = _FakeWorkspace(tmp_path)
     engine = _FakeServerEngine(workspace)
     conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
@@ -511,6 +511,7 @@ def test_get_job_log_tail_caps_buffered_line_count(tmp_path, monkeypatch):
 
 
 def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
     workspace = _FakeWorkspace(tmp_path)
     engine = _FakeServerEngine(workspace)
     engine.job_def_manager.get_job.return_value = _FakeListedJob({JobMetaKey.STATUS.value: RunStatus.RUNNING})
@@ -530,6 +531,7 @@ def test_configure_job_log_all_targets_server_and_clients(tmp_path, monkeypatch)
 
 def test_configure_job_log_specific_client_target_is_honored(tmp_path, monkeypatch):
     monkeypatch.setattr(cmd_utils_module, "ServerEngineSpec", object)
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
     job_id = "123e4567-e89b-42d3-a456-426614174000"
     workspace = _FakeWorkspace(tmp_path)
     engine = _FakeServerEngine(workspace)

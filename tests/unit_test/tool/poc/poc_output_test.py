@@ -93,6 +93,7 @@ class TestPocOutput:
         assert data["schema_version"] == "1"
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
+        assert data["data"]["workspace"] == poc_ws
         assert data["data"]["clients"] == ["site-1", "site-2"]
 
     def test_prepare_poc_falls_back_to_requested_clients_if_project_reread_fails(self, capsys, tmp_path):
