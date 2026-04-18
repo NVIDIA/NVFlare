@@ -510,8 +510,8 @@ Assemble a startup kit (Site Admin).
 +--------------------------+--------------------------------------------------------------------------+----------+
 | -p / --project-file      | Site-scoped project YAML for multi-participant mode; requires --dir.    | No       |
 +--------------------------+--------------------------------------------------------------------------+----------+
-| --dir                    | Directory containing key/cert/rootCA files. Required when ``-p`` is     | Yes*     |
-|                          | used.                                                                   |          |
+| --dir                    | Directory containing key/cert/rootCA files. Required in ``--dir`` mode  | Yes*     |
+|                          | (standalone or with ``-p``).                                            |          |
 +--------------------------+--------------------------------------------------------------------------+----------+
 | -n / --name              | Participant name; required in explicit single mode.                     | No*      |
 +--------------------------+--------------------------------------------------------------------------+----------+
