@@ -113,7 +113,7 @@ def _normalize_and_validate_studies(project_dict: dict, participant_defs: list, 
 
 
 def _project_generation_result(workspace: str, project_yml: str):
-    rel_path = os.path.relpath(project_yml)
+    rel_path = os.path.basename(project_yml)
     return {
         "workspace": workspace,
         "packages": [],
