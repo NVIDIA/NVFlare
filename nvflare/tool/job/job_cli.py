@@ -70,8 +70,6 @@ from nvflare.utils.cli_utils import (
     save_config,
 )
 
-_JOB_HELP_FORMATTER = partial(argparse.HelpFormatter, max_help_position=24, width=120)
-
 CMD_LIST_TEMPLATES = "list_templates"
 CMD_SHOW_VARIABLES = "show_variables"
 CMD_CREATE_JOB = "create"
@@ -90,6 +88,8 @@ CMD_JOB_LOGS = "logs"
 # Job lifecycle helpers
 CMD_JOB_MONITOR = "monitor"
 CMD_JOB_LOG_CONFIG = "log-config"
+
+_JOB_HELP_FORMATTER = partial(argparse.HelpFormatter, max_help_position=24, width=120)
 
 
 def find_filename_basename(f: str):
@@ -1472,12 +1472,110 @@ def _extract_monitor_metrics(stats: dict, key_aliases: dict) -> dict:
     return metrics
 
 
+def _make_monitor_state() -> dict:
+    return {
+        "last_status": None,
+        "last_meta": None,
+        "last_emit_ts": 0.0,
+        "last_stats": None,
+        "last_stats_raw": None,
+        "last_stats_ts": 0.0,
+    }
+
+
+def _refresh_monitor_stats(sess, job_id: str, state: dict, stats_target: str, key_aliases: dict):
+    try:
+        stats = sess.show_stats(job_id, stats_target, None)
+        state["last_stats_raw"] = stats
+        state["last_stats"] = _extract_monitor_metrics(stats, key_aliases)
+    except Exception:
+        state["last_stats"] = None
+        state["last_stats_raw"] = None
+
+
+def _emit_monitor_progress(job_id: str, job_meta: dict, state: dict, now: float, start: float, start_ts):
+    from nvflare.apis.job_def import JobMetaKey
+    from nvflare.tool.cli_output import print_human
+
+    status = job_meta.get("status", "UNKNOWN") if job_meta else "UNKNOWN"
+    summary = _summarize_monitor_meta(job_meta, JobMetaKey)
+    name = summary.get("job_name")
+    elapsed_base = start_ts if start_ts is not None else start
+    elapsed = round(now - elapsed_base, 1)
+    message_parts = []
+    if state["last_status"] is None:
+        message_parts.append(f"job_id: {job_id}")
+        if name:
+            message_parts.append(f"name: {name}")
+        submit_time = summary.get("submit_time")
+        if submit_time:
+            message_parts.append(f"submit_time: {submit_time}")
+    message_parts.append(f"status: {status}")
+    message_parts.append(f"elapsed_s: {elapsed}")
+    metrics = state.get("last_stats") or {}
+    if metrics:
+        metric_str = " ".join(f"{k}={v}" for k, v in metrics.items())
+        message_parts.append(f"metrics: {metric_str}")
+    print_human(" ".join(message_parts))
+    state["last_status"] = status
+    state["last_emit_ts"] = now
+
+
+def _build_monitor_status_callback(
+    start: float, start_ts_holder: dict, emit_interval: int, stats_interval: int, stats_target: str, key_aliases: dict
+):
+    def _status_cb(sess, job_id, job_meta, state):
+        import time
+
+        from nvflare.apis.job_def import JobMetaKey
+
+        state["last_meta"] = job_meta
+        status = job_meta.get("status", "UNKNOWN") if job_meta else "UNKNOWN"
+        now = time.time()
+        if start_ts_holder["value"] is None:
+            start_ts_holder["value"] = _parse_monitor_start_ts(
+                job_meta, JobMetaKey.START_TIME.value, JobMetaKey.SUBMIT_TIME_ISO.value
+            )
+        if status in ("RUNNING", "DISPATCHED") and now - state["last_stats_ts"] >= stats_interval:
+            _refresh_monitor_stats(sess, job_id, state, stats_target, key_aliases)
+            state["last_stats_ts"] = now
+        if status != state["last_status"] or now - state["last_emit_ts"] >= emit_interval:
+            _emit_monitor_progress(job_id, job_meta, state, now, start, start_ts_holder["value"])
+        return status not in _TERMINAL_JOB_STATES
+
+    return _status_cb
+
+
+def _build_monitor_output_data(
+    job_id: str, meta: dict, start: float, start_ts, cb_state: dict, json_mode: bool
+) -> dict:
+    from nvflare.apis.job_def import JobMetaKey
+
+    meta_duration_s = _parse_monitor_duration_seconds(meta.get("duration") if meta else None)
+    if meta_duration_s is not None:
+        duration = round(meta_duration_s, 1)
+    elif start_ts is not None:
+        duration = round(time.time() - start_ts, 1)
+    else:
+        duration = round(time.time() - start, 1)
+
+    data = {
+        "job_id": job_id,
+        "status": meta.get("status", "UNKNOWN"),
+        "duration_s": duration,
+        "job_meta": _summarize_monitor_meta(meta, JobMetaKey),
+        "last_stats": cb_state.get("last_stats"),
+    }
+    if json_mode:
+        data["stats_raw"] = cb_state.get("last_stats_raw")
+    return data
+
+
 def cmd_job_monitor(cmd_args):
     import time
 
-    from nvflare.apis.job_def import JobMetaKey
     from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, MonitorReturnCode, NoConnection
-    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
+    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -1488,65 +1586,24 @@ def cmd_job_monitor(cmd_args):
     )
 
     start = time.time()
-    start_ts = None
+    start_ts_holder = {"value": None}
     timeout = getattr(cmd_args, "timeout", 0)
     interval = getattr(cmd_args, "interval", 2)
-    cb_state = {
-        "last_status": None,
-        "last_meta": None,
-        "last_emit_ts": 0.0,
-        "last_stats": None,
-        "last_stats_raw": None,
-        "last_stats_ts": 0.0,
-    }
+    cb_state = _make_monitor_state()
     emit_interval = max(interval, 5)
     stats_interval = max(interval, 10)
     stats_target = getattr(cmd_args, "stats_target", "server")
     extra_metrics = [m for m in (getattr(cmd_args, "metrics", None) or []) if m]
 
     key_aliases = _build_monitor_key_aliases(extra_metrics)
-
-    def _status_cb(_sess, _job_id, job_meta, state):
-        state["last_meta"] = job_meta
-        status = job_meta.get("status", "UNKNOWN") if job_meta else "UNKNOWN"
-        now = time.time()
-        nonlocal start_ts
-        if start_ts is None:
-            start_ts = _parse_monitor_start_ts(job_meta, JobMetaKey.START_TIME.value, JobMetaKey.SUBMIT_TIME_ISO.value)
-        if status in ("RUNNING", "DISPATCHED") and now - state["last_stats_ts"] >= stats_interval:
-            try:
-                stats = _sess.show_stats(_job_id, stats_target, None)
-                state["last_stats_raw"] = stats
-                state["last_stats"] = _extract_monitor_metrics(stats, key_aliases)
-            except Exception:
-                state["last_stats"] = None
-                state["last_stats_raw"] = None
-            state["last_stats_ts"] = now
-        if status != state["last_status"] or now - state["last_emit_ts"] >= emit_interval:
-            summary = _summarize_monitor_meta(job_meta, JobMetaKey)
-            name = summary.get("job_name")
-            elapsed_base = start_ts if start_ts is not None else start
-            elapsed = round(now - elapsed_base, 1)
-            message_parts = []
-            if state["last_status"] is None:
-                message_parts.append(f"job_id: {_job_id}")
-                if name:
-                    message_parts.append(f"name: {name}")
-                submit_time = summary.get("submit_time")
-                if submit_time:
-                    message_parts.append(f"submit_time: {submit_time}")
-            message_parts.append(f"status: {status}")
-            message_parts.append(f"elapsed_s: {elapsed}")
-            metrics = state.get("last_stats") or {}
-            if metrics:
-                metric_str = " ".join(f"{k}={v}" for k, v in metrics.items())
-                message_parts.append(f"metrics: {metric_str}")
-            print_human(" ".join(message_parts))
-            state["last_status"] = status
-            state["last_emit_ts"] = now
-        if status in _TERMINAL_JOB_STATES:
-            return False
-        return True
+    status_cb = _build_monitor_status_callback(
+        start=start,
+        start_ts_holder=start_ts_holder,
+        emit_interval=emit_interval,
+        stats_interval=stats_interval,
+        stats_target=stats_target,
+        key_aliases=key_aliases,
+    )
 
     try:
         with _session() as sess:
@@ -1554,7 +1611,7 @@ def cmd_job_monitor(cmd_args):
                 cmd_args.job_id,
                 timeout=timeout,
                 poll_interval=interval,
-                cb=_status_cb,
+                cb=status_cb,
                 state=cb_state,
             )
     except JobNotFound:
@@ -1581,22 +1638,14 @@ def cmd_job_monitor(cmd_args):
         return
 
     status = meta.get("status", "UNKNOWN")
-    meta_duration_s = _parse_monitor_duration_seconds(meta.get("duration") if meta else None)
-    if meta_duration_s is not None:
-        duration = round(meta_duration_s, 1)
-    elif start_ts is not None:
-        duration = round(time.time() - start_ts, 1)
-    else:
-        duration = round(time.time() - start, 1)
-    data = {
-        "job_id": cmd_args.job_id,
-        "status": status,
-        "duration_s": duration,
-        "job_meta": _summarize_monitor_meta(meta, JobMetaKey),
-        "last_stats": cb_state.get("last_stats"),
-    }
-    if is_json_mode():
-        data["stats_raw"] = cb_state.get("last_stats_raw")
+    data = _build_monitor_output_data(
+        job_id=cmd_args.job_id,
+        meta=meta,
+        start=start,
+        start_ts=start_ts_holder["value"],
+        cb_state=cb_state,
+        json_mode=is_json_mode(),
+    )
 
     if status in ("FAILED", "FINISHED_EXCEPTION", "ABORTED", "ABANDONED"):
         error_envelopes = {

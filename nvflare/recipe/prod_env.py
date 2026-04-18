@@ -44,7 +44,7 @@ class _ProdEnvValidator(BaseModel):
             raise ValueError(f"startup_kit_location path does not exist: {self.startup_kit_location}")
         if name_check(self.study, "study")[0]:
             raise ValueError(
-                f"study name '{self.study}' contains unsupported characters. Use only lowercase letters, numbers, and hyphens."
+                f"study name '{self.study}' contains unsupported characters. Use only lowercase letters, numbers, underscores, and hyphens."
             )
         return self
 
@@ -93,7 +93,7 @@ class ProdEnv(ExecEnv):
     def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
         return self._get_session_manager().get_job_result(job_id, timeout)
 
-    def deploy(self, job: FedJob):
+    def deploy(self, job: FedJob) -> str:
         """Deploy a job using SessionManager."""
         # Log warnings for non-local scripts (assumed pre-installed on production)
         non_local_scripts = collect_non_local_scripts(job)
@@ -105,7 +105,7 @@ class ProdEnv(ExecEnv):
         try:
             return self._get_session_manager().submit_job(job)
         except Exception as e:
-            raise RuntimeError(f"Failed to submit job via Flare API: {e}")
+            raise RuntimeError(f"Failed to submit job via Flare API: {e}") from e
 
     def _get_session_manager(self):
         """Get or create SessionManager with lazy initialization."""

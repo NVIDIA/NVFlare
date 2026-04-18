@@ -248,6 +248,7 @@ class AdminCommandNames(object):
     SHOW_STATS = "show_stats"
     SHOW_ERRORS = "show_errors"
     RESET_ERRORS = "reset_errors"
+    GET_JOB_LOG = "get_job_log"
     AUX_COMMAND = "aux_command"
     SYS_INFO = "sys_info"
     REPORT_RESOURCES = "report_resources"

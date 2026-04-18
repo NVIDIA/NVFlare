@@ -401,6 +401,31 @@ def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str
         )
 
 
+def validate_site_log_config(config) -> str:
+    """Validate site-wide log configuration input.
+
+    Site-wide log reconfiguration is intentionally narrower than general
+    dictConfig support: only simple log levels and built-in log modes are
+    allowed on this admin command path.
+    """
+
+    if not isinstance(config, str):
+        raise ValueError("configure_site_log only supports log levels and built-in log modes")
+
+    config = config.strip()
+    if not config:
+        raise ValueError("configure_site_log only supports log levels and built-in log modes")
+
+    if config == LogMode.RELOAD or config in logmode_config_dict:
+        return config
+
+    level = int(config) if config.isdigit() else getattr(logging, config.upper(), None)
+    if level is None or not (0 <= level <= 50):
+        raise ValueError("configure_site_log only supports log levels and built-in log modes")
+
+    return config
+
+
 def add_log_file_handler(log_file_name):
     root_logger = logging.getLogger()
     main_handler = root_logger.handlers[0]

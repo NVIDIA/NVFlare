@@ -13,6 +13,7 @@
 # limitations under the License.
 import json
 import os
+import sys
 from typing import List, Optional, Union
 
 import yaml
@@ -47,6 +48,8 @@ class ProvisionContext(dict):
         self[CtxKey.SERVER_NAME] = server.name
         self[CtxKey.TEMP_FILES_LOADED] = []
         self[CtxKey.TEMPLATE] = {}
+        self[CtxKey.ERRORS] = []
+        self[CtxKey.WARNINGS] = []
 
     def get_project(self) -> Project:
         return self.get(CtxKey.PROJECT)
@@ -117,6 +120,12 @@ class ProvisionContext(dict):
     def get_workspace(self):
         return self.get(CtxKey.WORKSPACE)
 
+    def get_errors(self) -> List[str]:
+        return list(self.get(CtxKey.ERRORS, []))
+
+    def get_warnings(self) -> List[str]:
+        return list(self.get(CtxKey.WARNINGS, []))
+
     def yaml_load_template_section(self, section_key: str, replacement=None):
         section = self.build_section_from_template(section_key, replacement)
         return yaml.safe_load(section)
@@ -180,28 +189,42 @@ class ProvisionContext(dict):
         if logger:
             logger.info(msg)
         else:
-            print(f"INFO: {msg}")
+            from nvflare.tool.cli_output import _is_json_mode
+
+            stream = sys.stderr if _is_json_mode() else sys.stdout
+            print(f"INFO: {msg}", file=stream)
 
     def error(self, msg: str):
+        self[CtxKey.ERRORS].append(msg)
         logger = self.get_logger()
         if logger:
             logger.error(msg)
         else:
-            print(f"ERROR: {msg}")
+            from nvflare.tool.cli_output import _is_json_mode
+
+            if not _is_json_mode():
+                print(f"ERROR: {msg}", file=sys.stderr)
 
     def debug(self, msg: str):
         logger = self.get_logger()
         if logger:
             logger.debug(msg)
         else:
-            print(f"DEBUG: {msg}")
+            from nvflare.tool.cli_output import _is_json_mode
+
+            stream = sys.stderr if _is_json_mode() else sys.stdout
+            print(f"DEBUG: {msg}", file=stream)
 
     def warning(self, msg: str):
+        self[CtxKey.WARNINGS].append(msg)
         logger = self.get_logger()
         if logger:
             logger.warning(msg)
         else:
-            print(f"WARNING: {msg}")
+            from nvflare.tool.cli_output import _is_json_mode
+
+            if not _is_json_mode():
+                print(f"WARNING: {msg}", file=sys.stderr)
 
     def get_result_location(self) -> Optional[str]:
         """Get the directory of the provision result.

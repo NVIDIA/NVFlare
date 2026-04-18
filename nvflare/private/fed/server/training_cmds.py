@@ -17,7 +17,7 @@ import time
 from typing import List
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import AdminCommandNames, ReservedTopic, SiteType
+from nvflare.apis.fl_constant import AdminCommandNames, MachineStatus, ReservedTopic, SiteType
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, ReplyKeyword, make_meta
@@ -32,6 +32,18 @@ from nvflare.security.logging import secure_format_exception
 
 from .cmd_utils import CommandUtil
 from .server_engine import ServerEngine
+from .server_status import ServerStatus
+
+
+def _server_status_value(engine: ServerEngineInternalSpec) -> str:
+    server = getattr(engine, "server", None)
+    if server is not None:
+        status = getattr(server, "status", None)
+        if status == ServerStatus.STARTING:
+            return MachineStatus.STARTING.value
+        if status == ServerStatus.STARTED:
+            return MachineStatus.STARTED.value
+    return MachineStatus.STOPPED.value
 
 
 class TrainingCommandModule(CommandModule, CommandUtil):
@@ -255,12 +267,13 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
         if dst in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             engine_info = engine.get_engine_info()
+            server_status = _server_status_value(engine)
             conn.append_string(
-                f"Engine status: {engine_info.status.value}",
+                f"Engine status: {server_status}",
                 meta=make_meta(
                     MetaStatusValue.OK,
                     extra={
-                        MetaKey.SERVER_STATUS: engine_info.status.value,
+                        MetaKey.SERVER_STATUS: server_status,
                         MetaKey.SERVER_START_TIME: engine_info.start_time,
                     },
                 ),

@@ -14,7 +14,7 @@
 
 import pytest
 
-from nvflare.lighter.provision import prepare_project
+from nvflare.lighter.provision import add_extra_clients, add_extra_users, prepare_project, provision_for_edge
 
 
 class TestProvision:
@@ -118,4 +118,69 @@ class TestProvision:
         )
 
         with pytest.raises(ValueError, match="study 'study-a' assigns unknown role 'captain' to 'admin1@org.com'"):
+            prepare_project(project_dict=project_config)
+
+    def test_prepare_project_requires_project_name(self):
+        project_config = self._base_project()
+        project_config["name"] = None
+
+        with pytest.raises(ValueError, match="missing project name"):
+            prepare_project(project_dict=project_config)
+
+    def test_add_extra_client_exits_when_output_error_is_mocked(self, tmp_path):
+        bad_yaml = tmp_path / "bad_client.yml"
+        bad_yaml.write_text("- not-a-mapping\n", encoding="utf-8")
+        participant_defs = []
+
+        with pytest.raises(SystemExit) as exc_info:
+            add_extra_clients(str(bad_yaml), participant_defs)
+
+        assert exc_info.value.code == 4
+        assert participant_defs == []
+
+    def test_add_extra_user_exits_when_output_error_is_mocked(self, tmp_path):
+        bad_yaml = tmp_path / "bad_user.yml"
+        bad_yaml.write_text("- not-a-mapping\n", encoding="utf-8")
+        participant_defs = []
+
+        with pytest.raises(SystemExit) as exc_info:
+            add_extra_users(str(bad_yaml), participant_defs)
+
+        assert exc_info.value.code == 4
+        assert participant_defs == []
+
+    def test_add_extra_client_empty_yaml_exits(self, tmp_path):
+        bad_yaml = tmp_path / "bad_client_empty.yml"
+        bad_yaml.write_text("", encoding="utf-8")
+        participant_defs = []
+
+        with pytest.raises(SystemExit) as exc_info:
+            add_extra_clients(str(bad_yaml), participant_defs)
+
+        assert exc_info.value.code == 4
+        assert participant_defs == []
+
+    def test_add_extra_user_empty_yaml_exits(self, tmp_path):
+        bad_yaml = tmp_path / "bad_user_empty.yml"
+        bad_yaml.write_text("", encoding="utf-8")
+        participant_defs = []
+
+        with pytest.raises(SystemExit) as exc_info:
+            add_extra_users(str(bad_yaml), participant_defs)
+
+        assert exc_info.value.code == 4
+        assert participant_defs == []
+
+    def test_provision_for_edge_requires_participants(self):
+        with pytest.raises(ValueError, match="missing 'participants' in project config"):
+            provision_for_edge({}, {"name": "proj"})
+
+    def test_prepare_project_requires_participants(self):
+        project_config = {
+            "api_version": 4,
+            "name": "mytest",
+            "description": "test",
+        }
+
+        with pytest.raises(ValueError, match="missing 'participants' in project config"):
             prepare_project(project_dict=project_config)

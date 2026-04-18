@@ -79,8 +79,10 @@ def _run_package(name, cert, key, rootca, workspace):
     """
     result = {}
 
-    def _capture(r, fmt):
-        result.update(r)
+    def _capture(data, exit_code=0, status="ok"):
+        result.update(data)
+        result["_exit_code"] = exit_code
+        result["_status"] = status
 
     args = _ns(
         kit_type=None,  # derived from signed cert
@@ -94,7 +96,7 @@ def _run_package(name, cert, key, rootca, workspace):
         project_name=_PROJECT,
         admin_port=None,
     )
-    with unittest.mock.patch("nvflare.tool.package.package_commands.output", side_effect=_capture):
+    with unittest.mock.patch("nvflare.tool.package.package_commands.output_ok", side_effect=_capture):
         handle_package(args)
     return result
 
@@ -423,6 +425,7 @@ class TestDistributedProvisioningE2E:
 
         job_dir = os.path.join(os.path.dirname(__file__), "data", "jobs", "hello-numpy-sag")
         job_id = admin_api.submit_job(job_dir)
+        assert isinstance(job_id, str) and job_id, f"Job submit failed: {job_id!r}"
 
         # Poll until done; log status every 30 s so a timeout is diagnosable.
         deadline = time.time() + _JOB_TIMEOUT

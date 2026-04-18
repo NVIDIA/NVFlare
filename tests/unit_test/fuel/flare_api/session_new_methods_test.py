@@ -69,6 +69,18 @@ class TestListJobs:
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [AdminCommandNames.LIST_JOBS, "-n", "hello world", "job 1"]
 
+    def test_accepts_legacy_kwargs(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result({MetaKey.JOBS: []})) as mock_cmd:
+            session.list_jobs(max_num=5, job_id_prefix="job", job_name_prefix="hello")
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.LIST_JOBS, "-m", "5", "-n", "hello", "job"]
+
+    def test_rejects_unknown_legacy_kwargs(self):
+        session = _make_session()
+        with pytest.raises(TypeError, match="unsupported list_jobs kwargs"):
+            session.list_jobs(unknown_filter="x")
+
 
 class TestGetJobMeta:
     def test_sends_get_job_meta_command(self):
@@ -482,19 +494,11 @@ class TestConfigureSiteLog:
         assert AdminCommandNames.CONFIGURE_SITE_LOG in cmd
         assert "WARNING" in cmd
 
-    def test_sends_dict_config_as_json(self):
+    def test_rejects_dict_config(self):
         session = _make_session()
-        import json
-
         config = {"version": 1, "disable_existing_loggers": False}
-        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+        with pytest.raises(ValueError, match="configure_site_log only supports log levels and built-in log modes"):
             session.configure_site_log(config)
-        cmd = mock_cmd.call_args[0][0]
-        assert split_to_args(cmd) == [
-            AdminCommandNames.CONFIGURE_SITE_LOG,
-            "all",
-            json.dumps(config),
-        ]
 
     def test_uses_target_parameter(self):
         session = _make_session()
@@ -509,16 +513,10 @@ class TestConfigureSiteLog:
             session.configure_site_log("WARNING")
         assert mock_cmd.call_args.kwargs["enforce_meta"] is False
 
-    def test_quotes_site_log_string_config_with_spaces(self):
+    def test_rejects_file_path_style_config(self):
         session = _make_session()
-        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+        with pytest.raises(ValueError, match="configure_site_log only supports log levels and built-in log modes"):
             session.configure_site_log("/my workspace/log.conf", target="site-2")
-        cmd = mock_cmd.call_args[0][0]
-        assert split_to_args(cmd) == [
-            AdminCommandNames.CONFIGURE_SITE_LOG,
-            "site-2",
-            "/my workspace/log.conf",
-        ]
 
 
 class TestWaitForJob:

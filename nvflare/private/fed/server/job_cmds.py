@@ -322,7 +322,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 job_manager = engine.job_def_manager
                 job = job_manager.get_job(job_id, fl_ctx)
                 job_status = job.meta.get(JobMetaKey.STATUS)
-                if not job_status == RunStatus.RUNNING:
+                if job_status != RunStatus.RUNNING.value:
                     conn.append_error(f"Job {job_id} must be running but is {job_status}")
                     return
         except Exception as e:
@@ -619,13 +619,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 job_manager = engine.job_def_manager
                 job = job_manager.get_job(job_id, fl_ctx)
                 job_status = job.meta.get(JobMetaKey.STATUS)
-                if job_status in [RunStatus.SUBMITTED, RunStatus.DISPATCHED]:
+                if job_status in [RunStatus.SUBMITTED.value, RunStatus.DISPATCHED.value]:
                     job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
                     message = f"Aborted the job {job_id} before running it."
                     conn.append_string(message)
                     conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
                     return
-                elif job_status.startswith("FINISHED:"):
+                elif job_status and job_status.startswith("FINISHED:"):
                     message = f"Job for {job_id} is already completed."
                     conn.append_string(message)
                     conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
@@ -921,7 +921,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         # cmd job_id topic
         if len(args) != 3:
             cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
-            conn.append_string(f"Usage: {cmd_entry.usage}", meta=make_meta(MetaStatusValue.SYNTAX_ERROR, ""))
+            conn.append_error(f"Usage: {cmd_entry.usage}", meta=make_meta(MetaStatusValue.SYNTAX_ERROR, ""))
             return
 
         engine = conn.app_ctx
@@ -939,7 +939,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             return
 
         timeout = conn.get_prop(ConnProps.CMD_TIMEOUT)
-        if not timeout:
+        if timeout is None:
             timeout = 5.0
         result = engine.send_app_command(job_id, topic, cmd_data, timeout)
         if result is None:
@@ -964,4 +964,4 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             return
 
         reply = result.get(ServerCommandKey.DATA)
-        conn.append_dict(reply)
+        conn.append_dict(reply, meta=make_meta(MetaStatusValue.OK))
