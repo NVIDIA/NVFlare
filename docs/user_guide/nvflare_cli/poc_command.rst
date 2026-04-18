@@ -118,7 +118,7 @@ Use ``nvflare poc start`` to launch services in the prepared POC workspace:
 
 Options:
 
-- ``-p, --service``: participant to start. Default: ``all``.
+- ``-p, --service``: participant to start. Default: server and clients.
 - ``-ex, --exclude``: participant to exclude from startup.
 - ``-gpu, --gpu``: GPU device IDs to use as ``CUDA_VISIBLE_DEVICES``.
 - ``--study``: study for admin console launches only. Ignored for server and
