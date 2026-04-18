@@ -181,11 +181,12 @@ Use ``nvflare poc clean`` to remove the POC workspace:
 
 .. code-block:: none
 
-   nvflare poc clean [-h] [-debug] [--schema]
+   nvflare poc clean [-h] [-debug] [--force] [--schema]
 
 Options:
 
 - ``-debug, --debug``: debug mode.
+- ``--force``: remove the workspace without an interactive confirmation prompt.
 - ``--schema``: print command schema as JSON and exit.
 
 Behavior notes:
