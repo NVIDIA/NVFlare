@@ -95,6 +95,26 @@ class TestPocOutput:
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
 
+    def test_prepare_poc_falls_back_to_requested_clients_if_project_reread_fails(self, capsys, tmp_path):
+        from nvflare.tool.poc.poc_commands import prepare_poc
+
+        args = self._make_prepare_args(force=True)
+        args.clients = ["site-a", "site-b"]
+        args.number_of_clients = 2
+
+        poc_ws = str(tmp_path / "poc")
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=poc_ws),
+            patch("nvflare.tool.poc.poc_commands._prepare_poc", return_value=True),
+            patch("nvflare.tool.install_skills.install_skills", return_value=None),
+            patch("nvflare.tool.poc.poc_commands._load_yaml", side_effect=RuntimeError("bad yaml"), create=True),
+        ):
+            prepare_poc(args)
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "ok"
+        assert data["data"]["clients"] == ["site-a", "site-b"]
+
     def test_prepare_poc_workspace_exists_non_interactive_exits_4(self, tmp_path):
         """prepare_poc exits 4 when workspace exists and stdin is not a tty (no --force)."""
         from nvflare.tool.poc.poc_commands import prepare_poc

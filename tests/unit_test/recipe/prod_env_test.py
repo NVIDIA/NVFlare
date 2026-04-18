@@ -42,3 +42,18 @@ def test_prod_env_defaults_study():
             env._get_session_manager()
             session_params = mock_session_manager.call_args[0][0]
             assert session_params["study"] == "default"
+
+
+def test_prod_env_deploy_preserves_exception_cause():
+    with tempfile.TemporaryDirectory() as startup_kit_location:
+        env = ProdEnv(startup_kit_location=startup_kit_location)
+        original = RuntimeError("submit failed")
+        fake_job = type("_FakeJob", (), {"_deploy_map": {}})()
+
+        with patch.object(env, "_get_session_manager") as mock_get_session_manager:
+            mock_get_session_manager.return_value.submit_job.side_effect = original
+
+            with pytest.raises(RuntimeError, match="Failed to submit job via Flare API: submit failed") as exc_info:
+                env.deploy(job=fake_job)
+
+        assert exc_info.value.__cause__ is original

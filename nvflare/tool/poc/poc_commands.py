@@ -516,7 +516,9 @@ def prepare_poc(cmd_args):
 
     # Gather client names
     project_file = os.path.join(poc_workspace, "project.yml")
-    clients = []
+    clients = (
+        list(cmd_args.clients) if cmd_args.clients else [f"site-{i + 1}" for i in range(cmd_args.number_of_clients)]
+    )
     try:
         from nvflare.lighter.utils import load_yaml as _load_yaml
 
@@ -524,6 +526,8 @@ def prepare_poc(cmd_args):
         if pc:
             clients = [p["name"] for p in pc.get("participants", []) if p.get("type") == "client"]
     except Exception:
+        # If the post-provision readback fails, preserve the best-known client list instead of
+        # silently reporting an empty set in the success payload.
         pass
 
     output_ok({"workspace": poc_workspace, "clients": clients})

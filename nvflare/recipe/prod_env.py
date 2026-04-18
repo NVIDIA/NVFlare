@@ -105,7 +105,7 @@ class ProdEnv(ExecEnv):
         try:
             return self._get_session_manager().submit_job(job)
         except Exception as e:
-            raise RuntimeError(f"Failed to submit job via Flare API: {e}")
+            raise RuntimeError(f"Failed to submit job via Flare API: {e}") from e
 
     def _get_session_manager(self):
         """Get or create SessionManager with lazy initialization."""
