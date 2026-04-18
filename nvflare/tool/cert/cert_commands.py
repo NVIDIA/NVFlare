@@ -151,7 +151,8 @@ def handle_cert_init(args):
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
 
     # 11. Compute valid_until for output
-    valid_until_dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=3650)
+    valid_days_actual = getattr(args, "valid_days", 3650) or 3650
+    valid_until_dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=valid_days_actual)
     valid_until_str = valid_until_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # 12. Output result
