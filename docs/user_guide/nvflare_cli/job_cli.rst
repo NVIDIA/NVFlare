@@ -28,7 +28,7 @@ Command Usage
      abort           abort a running job
      meta            get metadata for a job
      logs            retrieve job logs from server workspace
-     log             change logging configuration for a running job
+     log-config      change logging configuration for a running job
      stats           show running job statistics
      download        download job result
      clone           clone an existing job

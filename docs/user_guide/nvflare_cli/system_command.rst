@@ -23,7 +23,7 @@ Command Usage
      shutdown   shut down server, client(s), or all
      restart    restart server, client(s), or all
      version    show NVFlare version on each remote site
-     log        change logging level on server or client sites
+     log-config change logging level on server or client sites
 
 *****************
 Common Examples
