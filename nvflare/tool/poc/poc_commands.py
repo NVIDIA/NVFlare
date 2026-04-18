@@ -146,8 +146,8 @@ def get_upload_dir(startup_dir) -> str:
 
 
 def is_dir_empty(path: str):
-    targe_dir = os.listdir(path)
-    return len(targe_dir) == 0
+    target_dir = os.listdir(path)
+    return len(target_dir) == 0
 
 
 def prepare_jobs_dir(cmd_args):
@@ -436,7 +436,7 @@ def prepare_clients(clients, number_of_clients):
 
 
 def save_startup_kit_dir_config(workspace, project_name):
-    dst = get_or_create_hidden_nvflare_config_path()
+    dst = get_hidden_nvflare_config_path(str(get_or_create_hidden_nvflare_dir()))
     config = None
     if os.path.isfile(dst):
         try:
@@ -588,19 +588,6 @@ def _prepare_poc(
     project_name = project_config.get("name") if project_config else None
     save_startup_kit_dir_config(workspace, project_name)
     return True
-
-
-def get_or_create_hidden_nvflare_config_path() -> str:
-    """
-    Get the path for the hidden nvflare configuration file.
-
-    Returns:
-        str: The path to the hidden nvflare configuration file.
-    """
-    hidden_nvflare_dir = get_or_create_hidden_nvflare_dir()
-
-    hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(hidden_nvflare_dir))
-    return hidden_nvflare_config_file
 
 
 def prepare_poc_provision(
@@ -1286,7 +1273,7 @@ def get_poc_workspace():
     poc_workspace = os.getenv("NVFLARE_POC_WORKSPACE")
 
     if not poc_workspace:
-        src_path = get_or_create_hidden_nvflare_config_path()
+        src_path = get_hidden_nvflare_config_path(str(get_or_create_hidden_nvflare_dir()))
         if os.path.isfile(src_path):
             from pyhocon import ConfigFactory as CF
 

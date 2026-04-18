@@ -176,12 +176,11 @@ class TestProvisionOutput:
         args = self._make_args(project_file="project.yml")
         (tmp_path / "project.yml").write_text("name: proj\n", encoding="utf-8")
 
-        with patch("nvflare.lighter.provision.os.path.join", side_effect=lambda *a: "/".join(a)):
-            with patch("nvflare.lighter.provision.provision") as mock_prov:
-                with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
-                    with patch("nvflare.tool.install_skills.install_skills"):
-                        with patch("nvflare.lighter.provision.os.path.isdir", return_value=False):
-                            handle_provision(args)
+        with patch("nvflare.lighter.provision.provision") as mock_prov:
+            with patch("nvflare.lighter.provision.os.getcwd", return_value=str(tmp_path)):
+                with patch("nvflare.tool.install_skills.install_skills"):
+                    with patch("nvflare.lighter.provision.os.path.isdir", return_value=False):
+                        handle_provision(args)
 
         mock_prov.assert_called_once()
 
