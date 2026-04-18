@@ -32,6 +32,8 @@ Then run:
 ```
 
 Notes:
+- `openssl` is required by `04_site_admin_package.sh` to verify the `rootCA.pem`
+  fingerprint before packaging.
 - Before packaging or startup, verify the returned `rootCA.pem` fingerprint with the
   Project Admin through a trusted out-of-band channel. Example:
   `openssl x509 -in rootCA.pem -noout -fingerprint -sha256`

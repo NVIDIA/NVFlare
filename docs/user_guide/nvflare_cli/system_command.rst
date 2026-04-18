@@ -86,12 +86,17 @@ Status and Resources
 
 ``nvflare system status`` reports server and client connectivity.
 
+This command uses the word ``target`` in two different places:
+
+- positional ``target``: ``server`` or ``client``. This tells NVFlare what to query.
+- ``--startup-target {poc,prod}``: this tells the CLI which startup kit to use.
+
 Status arguments:
 
 - positional ``target``: optional. ``server`` or ``client``.
 - positional ``client_names``: optional list of client names when targeting clients.
-- ``--target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--target``.
+- ``--startup-target {poc,prod}``: choose the configured admin startup kit.
+- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -101,15 +106,26 @@ Examples:
    nvflare system status
    nvflare system status server
    nvflare system status client site-1 site-2
+   nvflare system status client site-1 --startup-target prod
+
+In ``nvflare system status client site-1 --startup-target prod``:
+
+- ``client site-1`` means query client ``site-1``.
+- ``--startup-target prod`` means use the ``prod`` startup kit.
 
 ``nvflare system resources`` reports server and client resource usage.
+
+This command uses the word ``target`` in two different places:
+
+- positional ``target``: ``server`` or ``client``. This tells NVFlare what to query.
+- ``--startup-target {poc,prod}``: this tells the CLI which startup kit to use.
 
 Resource arguments:
 
 - positional ``target``: optional. ``server`` or ``client``.
 - positional ``client_names``: optional list of client names when targeting clients.
-- ``--target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--target``.
+- ``--startup-target {poc,prod}``: choose the configured admin startup kit.
+- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -118,6 +134,12 @@ Examples:
 
    nvflare system resources
    nvflare system resources client
+   nvflare system resources client site-1 --startup-target prod
+
+In ``nvflare system resources client site-1 --startup-target prod``:
+
+- ``client site-1`` means query client ``site-1``.
+- ``--startup-target prod`` means use the ``prod`` startup kit.
    nvflare system resources client site-1
 
 **********************
@@ -134,8 +156,8 @@ Supported targets:
 Control arguments:
 
 - positional ``target``: required. Must be ``server``.
-- ``--target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--target``.
+- ``--startup-target {poc,prod}``: choose the configured admin startup kit.
+- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--startup-target``.
 - ``--force``: skip the confirmation prompt.
 - ``--schema``: print the command schema as JSON and exit.
 
@@ -158,8 +180,8 @@ sites.
 Version arguments:
 
 - ``--site``: ``server``, a client name, or ``all``. Default: ``all``.
-- ``--target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--target``.
+- ``--startup-target {poc,prod}``: choose the configured admin startup kit.
+- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -189,8 +211,8 @@ Logging arguments:
 
 - positional ``level``: runtime-required log level or built-in log mode; omitting it causes a runtime error
 - ``--site``: ``server``, a client name, or ``all``. Default: ``all``.
-- ``--target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--target``.
+- ``--startup-target {poc,prod}``: choose the configured admin startup kit.
+- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Supported built-in values for positional ``level``:
@@ -227,7 +249,7 @@ Use ``--schema`` for machine-readable command discovery:
 .. code-block:: shell
 
    nvflare --out-format json system status --schema
-   nvflare --out-format json system shutdown --schema
+   nvflare --out-format json system shutdown server --schema
 
 Human-readable argument errors print command help first, followed by the
 specific error and hint. JSON mode prints only the JSON error envelope.

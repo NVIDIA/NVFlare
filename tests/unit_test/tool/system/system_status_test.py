@@ -330,7 +330,7 @@ class TestSystemStatus:
         parser = argparse.ArgumentParser(prog="nvflare system")
         def_system_cli_parser(parser)
 
-        args = parser.parse_args(["status", "--startup_kit", "/tmp/startup", "--target", "prod"])
+        args = parser.parse_args(["status", "--startup_kit", "/tmp/startup", "--startup-target", "prod"])
 
         assert args.system_sub_cmd == "status"
         assert args.startup_kit == "/tmp/startup"

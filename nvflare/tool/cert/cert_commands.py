@@ -208,7 +208,7 @@ def _write_file(path: str, pem_bytes: bytes) -> None:
 
 def _backup_existing_csr(out_dir: str, name: str) -> None:
     """Move existing <name>.key and <name>.csr to .bak/<timestamp>/ before overwrite."""
-    timestamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S")
     bak_dir = os.path.join(out_dir, ".bak", timestamp)
     os.makedirs(bak_dir, mode=0o700, exist_ok=True)
     for ext in ("key", "csr"):

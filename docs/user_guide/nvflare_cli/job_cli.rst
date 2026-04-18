@@ -60,8 +60,8 @@ Use ``nvflare job submit`` to submit a pre-built NVFlare job folder:
 Submit options:
 
 - ``-j, --job_folder``: job folder path. Defaults to ``./current_job``.
-- ``--target {poc,prod}``: choose the startup kit from ``~/.nvflare/config.conf``. See the startup kit resolution order below.
-- ``--startup_kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--target``.
+- ``--startup-target {poc,prod}``: choose the startup kit from ``~/.nvflare/config.conf``. See the startup kit resolution order below.
+- ``--startup_kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
 - ``--study``: submit into a named study when the server is configured for multi-study access. If omitted, the literal study name ``default`` is submitted.
 - ``-debug, --debug``: keep the temporary copied job folder for inspection.
 - ``--schema``: print the command schema as JSON and exit.
@@ -76,7 +76,7 @@ Startup kit resolution order:
 
 1. ``--startup_kit``
 2. ``NVFLARE_STARTUP_KIT_DIR``
-3. resolved target via config (explicit ``--target`` value, otherwise default ``poc``):
+3. resolved target via config (explicit ``--startup-target`` value, otherwise default ``poc``):
    - ``poc`` -> ``poc.startup_kit``
    - ``prod`` -> ``prod.startup_kit``
 
@@ -84,8 +84,8 @@ Examples:
 
 .. code-block:: shell
 
-   nvflare job submit -j /tmp/nvflare/hello-pt --target poc
-   nvflare job submit -j /tmp/nvflare/hello-pt --target prod
+   nvflare job submit -j /tmp/nvflare/hello-pt --startup-target poc
+   nvflare job submit -j /tmp/nvflare/hello-pt --startup-target prod
    nvflare job submit -j /tmp/nvflare/hello-pt --startup_kit /tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com
 
 ``--startup_kit`` must point to the admin startup kit directory itself, not the
@@ -119,9 +119,9 @@ stderr:
 Monitor options:
 
 - ``job_id``: job ID to monitor.
-- ``--timeout``: max seconds to wait. ``0`` means no timeout.
-- ``--interval``: poll interval in seconds.
-- ``--stats-target``: where to fetch stats from. Choices: ``server``, ``client``, ``all``.
+- ``--timeout``: max seconds to wait. Default: ``0`` (no timeout).
+- ``--interval``: poll interval in seconds. Default: ``2``.
+- ``--stats-target``: where to fetch stats from. Choices: ``server``, ``client``, ``all``. Default: ``server``.
 - ``--metric``: extra metric key to surface from stats. Repeatable.
 - ``--schema``: print the command schema as JSON and exit.
 

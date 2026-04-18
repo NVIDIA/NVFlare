@@ -37,7 +37,7 @@ def _add_system_connection_args(parser):
         help="path to the admin startup kit directory (overrides target-based config lookup)",
     )
     parser.add_argument(
-        "--target",
+        "--startup-target",
         choices=["poc", "prod"],
         default=None,
         dest="startup_target",
@@ -137,7 +137,7 @@ def _get_system_session(args=None):
         startup_target = getattr(args, "startup_target", None) or "poc"
         startup_override = getattr(args, "startup_kit", None)
         if args is not None and getattr(args, "startup_target", None) is None and startup_override is None:
-            print_human("No --target specified; defaulting to the POC startup kit.")
+            print_human("No --startup-target specified; defaulting to the POC startup kit.")
         startup = get_startup_kit_dir_for_target(startup_kit_dir=startup_override, target=startup_target)
         username, startup = _resolve_admin_user_and_dir_from_startup_kit(startup)
     except ValueError as e:

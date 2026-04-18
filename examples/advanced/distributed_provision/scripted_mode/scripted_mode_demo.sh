@@ -31,10 +31,10 @@ mkdir -p "${CA_DIR}" "${CSR_DIR}" "${SIGNED_DIR}" "${SITE_DIR}"
 
 # 1) Root CA
 nvflare --out-format json cert init --project "${PROJECT_NAME}" -o "${CA_DIR}" --force >"${WORK_DIR}/ca.json"
+echo "WARNING: cert init --force regenerates the root CA and invalidates previously signed certs." >&2
 ROOTCA_FP=""
 if command -v openssl >/dev/null 2>&1; then
   ROOTCA_FP="$(openssl x509 -in "${CA_DIR}/rootCA.pem" -noout -fingerprint -sha256 | sed 's/^sha256 Fingerprint=//')"
-  echo "WARNING: cert init --force regenerates the root CA and invalidates previously signed certs." >&2
   echo "Verify this rootCA.pem SHA256 fingerprint out-of-band before using the generated kits: ${ROOTCA_FP}" >&2
 fi
 

@@ -418,13 +418,13 @@ Retain with stderr deprecation warning. Migrate to `python job.py --export --exp
 
 #### `nvflare job submit`
 
-Submits a pre-built job config folder to a running server. Returns `job_id` immediately — no waiting. The job artifact is unchanged at submit time; `--target` only selects which startup kit to use for server connection. If neither `--target` nor `--startup_kit` is supplied, submit defaults to the POC startup kit from `~/.nvflare/config.conf`. Use `nvflare job monitor` to wait for results.
+Submits a pre-built job config folder to a running server. Returns `job_id` immediately — no waiting. The job artifact is unchanged at submit time; `--startup-target` only selects which startup kit to use for server connection. If neither `--startup-target` nor `--startup_kit` is supplied, submit defaults to the POC startup kit from `~/.nvflare/config.conf`. Use `nvflare job monitor` to wait for results.
 
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `-j`, `--job_folder` | str | No | `"./current_job"` | Pre-built job config folder |
-| `--target` | `poc|prod` | No | `poc` | Select startup kit from config; mutually exclusive with `--startup_kit` |
-| `--startup_kit` | str | No | — | Explicit admin startup kit directory, or its `startup/` subdirectory; mutually exclusive with `--target` |
+| `--startup-target` | `poc|prod` | No | `poc` | Select startup kit from config; mutually exclusive with `--startup_kit` |
+| `--startup_kit` | str | No | — | Explicit admin startup kit directory, or its `startup/` subdirectory; mutually exclusive with `--startup-target` |
 | `-debug`, `--debug` | flag | No | — | Debug mode |
 | `--study` | str | No | `"default"` | Study to submit the job to |
 | `--schema` | flag | No | — | Print command schema and exit |
@@ -528,8 +528,8 @@ Startup kit resolution for server-connected commands:
    This must be the admin startup kit directory itself, for example `.../admin@nvidia.com`, or its `startup/` subdirectory.
 2. `NVFLARE_STARTUP_KIT_DIR`
 3. config v2 target lookup:
-   `--target poc` -> `poc.startup_kit`
-   `--target prod` -> `prod.startup_kit`
+   `--startup-target poc` -> `poc.startup_kit`
+   `--startup-target prod` -> `prod.startup_kit`
 4. when target is absent on `nvflare job submit`, default to `poc.startup_kit`
 5. config v1 fallback during migration, normalized to pure v2 on save
 
@@ -585,7 +585,7 @@ Add missing operations to the existing `nvflare job` subcommand:
 
 ```text
 # Job lifecycle (server must be running)
-nvflare job submit    -j <job_folder> [--target poc|prod | --startup_kit <dir>]
+nvflare job submit    -j <job_folder> [--startup-target poc|prod | --startup_kit <dir>]
 nvflare job monitor   <job_id> [--timeout N] [--interval N]
 nvflare job list      [-n prefix] [-i id_prefix] [-r] [-m num] [--study name|all]
 nvflare job meta      <job_id>
@@ -713,7 +713,7 @@ Example:
 
 1. `--startup_kit`
 2. `NVFLARE_STARTUP_KIT_DIR`
-3. `--target poc|prod` via config v2 lookup
+3. `--startup-target poc|prod` via config v2 lookup
 4. default target `poc`
 5. config v1 fallback during migration
 

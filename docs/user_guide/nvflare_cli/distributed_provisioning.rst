@@ -396,7 +396,11 @@ This example sets up a federation with one server (``fl-server``) and one client
 
    # 3. Send ./csr/fl-server.csr to Project Admin
 
-   # 6. Copy signed cert + rootCA.pem into ./csr/ (alongside fl-server.key), then:
+   # 6. Copy signed cert + rootCA.pem into ./csr/ (alongside fl-server.key)
+   cp ./signed/fl-server/fl-server.crt ./csr/
+   cp ./signed/fl-server/rootCA.pem ./csr/
+
+   # Then package:
    nvflare package -e grpc://fl-server:8002 --dir ./csr
    # Kit type is derived from the signed cert; output to workspace/project/prod_00/fl-server/
 
@@ -412,7 +416,11 @@ This example sets up a federation with one server (``fl-server``) and one client
 
    # 3. Send ./csr/hospital-1.csr to Project Admin
 
-   # 6. Copy signed cert + rootCA.pem into ./csr/ (alongside hospital-1.key), then:
+   # 6. Copy signed cert + rootCA.pem into ./csr/ (alongside hospital-1.key)
+   cp ./signed/hospital-1/hospital-1.crt ./csr/
+   cp ./signed/hospital-1/rootCA.pem ./csr/
+
+   # Then package:
    nvflare package -e grpc://fl-server:8002 --dir ./csr
    # Kit type is derived from the signed cert; output to workspace/project/prod_00/hospital-1/
 
@@ -467,6 +475,8 @@ Generate a local private key and CSR (Site Admin).
 | ``--org``        | Organization name                                | No       |
 +------------------+--------------------------------------------------+----------+
 
+* ``-t`` / ``--type`` is required unless ``--project-file`` is used.
+
 ``nvflare cert sign``
 =====================
 
@@ -492,7 +502,7 @@ Sign a CSR with the root CA (Project Admin).
 | ``--valid-days`` | Certificate validity in days. Default: 1095     | No       |
 |                  | (3 years).                                      |          |
 +------------------+--------------------------------------------------+----------+
-| ``--force``      | Overwrite existing certificate                   | No       |
+| ``--force``      | Overwrite existing certificate without backup    | No       |
 +------------------+--------------------------------------------------+----------+
 
 ``nvflare package``
@@ -545,6 +555,8 @@ Notes
   Place the signed ``.crt`` and ``rootCA.pem`` in the same directory before running.
   The directory must contain exactly one ``.key`` file so the participant name can be
   inferred unambiguously.
+  If the directory contains zero or multiple ``.key`` files, ``nvflare package`` returns
+  an argument error instead of building a startup kit.
 - Startup kits produced by ``nvflare package`` are structurally identical to those
   produced by ``nvflare provision`` and work with all NVFlare runtime components.
 - The server identity for mTLS validation is always the hostname from ``--endpoint``.

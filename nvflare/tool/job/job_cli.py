@@ -490,7 +490,7 @@ def submit_job(cmd_args):
         prepare_job_config(cmd_args, app_names, temp_job_dir)
         admin_username, admin_user_dir = find_admin_user_and_dir(
             startup_kit_dir=getattr(cmd_args, "startup_kit", None),
-            target=getattr(cmd_args, "target", None),
+            target=getattr(cmd_args, "startup_target", None),
         )
         internal_submit_job(admin_user_dir, admin_username, temp_job_dir, cmd_args)
 
@@ -655,16 +655,17 @@ def define_submit_job_parser(job_subparser):
     )
     startup_target_group = submit_parser.add_mutually_exclusive_group()
     startup_target_group.add_argument(
-        "--target",
+        "--startup-target",
         choices=["poc", "prod"],
         default=None,
+        dest="startup_target",
         help=f"startup kit target from ~/.nvflare/config.conf, default to {TARGET_POC}",
     )
     startup_target_group.add_argument(
         "--startup_kit",
         type=str,
         default=None,
-        help="explicit startup kit location; mutually exclusive with --target",
+        help="explicit startup kit location; mutually exclusive with --startup-target",
     )
     submit_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     submit_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
