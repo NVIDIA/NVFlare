@@ -137,12 +137,12 @@ Steps
 +------+-------------------+-------------------------------------------------------------------+
 | Step | Who               | Action                                                            |
 +======+===================+===================================================================+
-| 1    | Site Admin        | ``nvflare cert csr -n hospital-1 -t client -o ./csr``             |
-+------+-------------------+-------------------------------------------------------------------+
-| 2    | Site Admin        | Send ``hospital-1.csr`` to Project Admin (email, file share, etc.)|
-+------+-------------------+-------------------------------------------------------------------+
-| 3    | Project Admin     | ``nvflare cert init --project my-project -o ./ca``                |
+| 1    | Project Admin     | ``nvflare cert init --project my-project -o ./ca``                |
 |      |                   | *(one-time per federation)*                                       |
++------+-------------------+-------------------------------------------------------------------+
+| 2    | Site Admin        | ``nvflare cert csr -n hospital-1 -t client -o ./csr``             |
++------+-------------------+-------------------------------------------------------------------+
+| 3    | Site Admin        | Send ``hospital-1.csr`` to Project Admin (email, file share, etc.)|
 +------+-------------------+-------------------------------------------------------------------+
 | 4    | Project Admin     | ``nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed --accept-csr-role`` |
 +------+-------------------+-------------------------------------------------------------------+
@@ -154,7 +154,7 @@ Steps
 | 7    | Site Admin        | ``cd hospital-1 && ./startup/start.sh``                           |
 +------+-------------------+-------------------------------------------------------------------+
 
-Step 3 is done once per federation. Each new participant repeats steps 1–2 and 4–7 independently.
+Step 1 is done once per federation. Each new participant repeats steps 2–7 independently.
 
 Step 1 — Project Admin: Initialize the Root CA (once per federation)
 =====================================================================
@@ -472,6 +472,12 @@ Sign a CSR with the root CA (Project Admin).
 |                  | type proposed in the CSR. Required when the      |          |
 |                  | CSR has no embedded type.                        |          |
 +------------------+--------------------------------------------------+----------+
+| ``--accept-csr-role`` | Accept the type embedded in the CSR instead | No       |
+|                  | of overriding it with ``-t`` / ``--type``.      |          |
++------------------+--------------------------------------------------+----------+
+| ``--valid-days`` | Certificate validity in days. Default: 1095     | No       |
+|                  | (3 years).                                      |          |
++------------------+--------------------------------------------------+----------+
 | ``--force``      | Overwrite existing certificate                   | No       |
 +------------------+--------------------------------------------------+----------+
 
@@ -512,7 +518,8 @@ Assemble a startup kit (Site Admin).
 * ``-n``, ``--cert``, ``--key``, and ``--rootca`` are used together in explicit
   single-participant mode; mutually exclusive with ``-p`` / ``--project-file``.
 
-All commands support ``--output json`` for machine-readable output and ``--schema``
+All commands support the global ``--out-format json`` flag for machine-readable
+output and ``--schema``
 to print the JSON schema for the command's arguments.
 
 *****
