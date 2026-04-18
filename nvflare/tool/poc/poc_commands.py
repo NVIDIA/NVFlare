@@ -1287,7 +1287,9 @@ def get_poc_workspace():
             from pyhocon import ConfigFactory as CF
 
             config = CF.parse_file(src_path)
-            poc_workspace = config.get("poc_workspace.path", None)
+            poc_workspace = config.get("poc.workspace", None)
+            if not poc_workspace:
+                poc_workspace = config.get("poc_workspace.path", None)
 
     if poc_workspace is None or len(poc_workspace.strip()) == 0:
         poc_workspace = DEFAULT_WORKSPACE

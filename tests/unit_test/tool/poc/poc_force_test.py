@@ -98,7 +98,7 @@ class TestPocForce:
         assert result is False
 
     def test_save_startup_kit_dir_config_uses_poc_admin_dir(self, tmp_path):
-        from nvflare.tool.poc.poc_commands import save_startup_kit_dir_config
+        from nvflare.tool.poc.poc_commands import get_poc_workspace, save_startup_kit_dir_config
 
         workspace = str(tmp_path / "poc_ws")
         os.makedirs(workspace, exist_ok=True)
@@ -122,6 +122,10 @@ participants:
         config = CF.parse_file(dst)
         assert config.get("poc.startup_kit").endswith("/example_project/prod_00/admin@nvidia.com")
         assert config.get("poc.workspace") == workspace
+
+        with patch("nvflare.tool.poc.poc_commands.get_or_create_hidden_nvflare_config_path", return_value=dst):
+            with patch.dict(os.environ, {}, clear=True):
+                assert get_poc_workspace() == workspace
 
     def test_force_does_not_delete_workspace_before_rejecting_project_file_inside_workspace(self, tmp_path):
         from nvflare.tool.poc.poc_commands import prepare_poc
