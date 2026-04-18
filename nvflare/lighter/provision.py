@@ -264,7 +264,9 @@ def handle_provision(args):
         raise SystemExit(4)
 
     try:
-        ctx = provision(args, project_dict, project_full_path, workspace_full_path, add_user_full_path, add_client_full_path)
+        ctx = provision(
+            args, project_dict, project_full_path, workspace_full_path, add_user_full_path, add_client_full_path
+        )
     except (ValueError, RuntimeError) as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
