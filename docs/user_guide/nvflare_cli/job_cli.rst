@@ -206,7 +206,7 @@ Delete a job:
 Notes:
 
 - ``abort`` and ``delete`` support ``--force`` to skip the confirmation prompt.
-- ``download`` supports ``-o, --output-dir`` to choose the destination directory.
+- ``download`` supports ``-o, --output-dir`` to choose the destination directory. Default: current working directory (``./``).
 - ``clone``, ``download``, ``abort``, and ``delete`` all support ``--schema``.
 
 **************
