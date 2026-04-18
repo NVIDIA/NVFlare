@@ -166,7 +166,7 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "INVALID_PROJECT_FILE": {
         "message": "Invalid project file.",
-        "hint": "Ensure the file is schema-compatible with 'nvflare provision' project.yaml (api_version: 3).",
+        "hint": "Ensure the file is schema-compatible with 'nvflare provision' project.yaml (api_version: 3 or 4).",
     },
     "UNSUPPORTED_TOPOLOGY": {
         "message": "Relay participants found in project file — hierarchical FL is not supported by 'nvflare package'.",

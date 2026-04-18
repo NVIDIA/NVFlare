@@ -42,6 +42,7 @@ Common options:
 - ``--project``: project name. Used as the root CA certificate CN.
 - ``-o, --output-dir``: directory where CA files are written.
 - ``--org``: optional organization name for the CA certificate.
+- ``--valid-days``: validity period for the root CA certificate in days. Default: ``3650``.
 - ``--force``: overwrite existing CA files after backing them up.
 - ``--schema``: print the JSON schema for this command and exit.
 

@@ -121,7 +121,7 @@ def handle_cert_init(args):
             issuer=args.project,  # self-signed: issuer == subject
             signing_pri_key=pri_key,
             subject_pub_key=pub_key,
-            valid_days=3650,
+            valid_days=getattr(args, "valid_days", 3650) or 3650,
             ca=True,
         )
     except Exception as e:

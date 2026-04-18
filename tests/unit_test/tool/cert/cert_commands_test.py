@@ -46,6 +46,7 @@ def _init_args(**kwargs):
         project="TestProject",
         output_dir=None,
         org=None,
+        valid_days=3650,
         force=False,
         schema=False,
     )
@@ -237,6 +238,15 @@ class TestCertInit:
             delta = cert.not_valid_after - cert.not_valid_before  # cryptography < 42.0
         # Should be ~3650 days
         assert delta.days >= 3640
+
+    def test_ca_cert_valid_days_custom(self, tmp_path):
+        _run_init(tmp_path, valid_days=90)
+        cert = load_crt(str(tmp_path / "rootCA.pem"))
+        try:
+            delta = cert.not_valid_after_utc - cert.not_valid_before_utc
+        except AttributeError:
+            delta = cert.not_valid_after - cert.not_valid_before  # cryptography < 42.0
+        assert 88 <= delta.days <= 92
 
 
 # ---------------------------------------------------------------------------

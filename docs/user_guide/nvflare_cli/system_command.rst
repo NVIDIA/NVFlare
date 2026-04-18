@@ -179,7 +179,7 @@ Use ``nvflare system log-config`` to change logging on the server or client site
 
 Logging arguments:
 
-- positional ``level``: optional log level or built-in log mode
+- positional ``level``: required log level or built-in log mode
 - ``--site``: ``server``, a client name, or ``all``. Default: ``all``.
 - ``--schema``: print the command schema as JSON and exit.
 

@@ -37,6 +37,8 @@ Impact:
 
 - Existing callers that pass ``TargetType.ALL`` or ``TargetType.CLIENT`` will now fail.
 - Server-scoped lifecycle control continues to work unchanged.
+- :meth:`Session.shutdown_system<nvflare.fuel.flare_api.api_spec.SessionSpec.shutdown_system>`
+  is unchanged and still supports whole-system shutdown.
 
 For whole local PoC lifecycle control, use the PoC start/stop flow instead of
 the general system admin API.

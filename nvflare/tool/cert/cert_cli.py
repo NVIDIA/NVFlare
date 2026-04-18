@@ -77,6 +77,15 @@ def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         help="Organization name for the CA certificate (O field). Default: omitted.",
     )
     p.add_argument(
+        "--valid-days",
+        required=False,
+        type=int,
+        default=3650,
+        dest="valid_days",
+        metavar="DAYS",
+        help="Validity period for the root CA certificate in days. Default: 3650.",
+    )
+    p.add_argument(
         "--force",
         action="store_true",
         default=False,

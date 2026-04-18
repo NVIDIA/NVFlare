@@ -34,7 +34,7 @@ Command Usage
      clone           clone an existing job
      delete          delete a job
      list_templates  [DEPRECATED] use 'nvflare recipe list'
-     create          [DEPRECATED] export a recipe-based job, then submit it
+     create          [DEPRECATED] use 'python job.py --export --export-dir <job_folder>' + 'nvflare job submit'
      show_variables  [DEPRECATED] use 'nvflare recipe list' or the Job Recipe API
 
 *****************

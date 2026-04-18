@@ -275,6 +275,9 @@ Send each site their signed certificate and ``rootCA.pem``:
 - ``fl-server/fl-server.crt`` + ``rootCA.pem`` → send to the server site
 
 No private keys are exchanged at this step.
+Before packaging or startup, each site should verify the returned ``rootCA.pem``
+fingerprint with the Project Admin through a trusted out-of-band channel. Example:
+``openssl x509 -in rootCA.pem -noout -fingerprint -sha256``
 
 Step 6 — Site Admin: Assemble the Startup Kit
 ==============================================
@@ -434,6 +437,9 @@ Initialize the root CA (Project Admin, once per federation).
 +------------------+--------------------------------------------------+----------+
 | ``--org``        | Organization name for the CA certificate         | No       |
 +------------------+--------------------------------------------------+----------+
+| ``--valid-days`` | Validity period for the root CA certificate in   | No       |
+|                  | days. Default: ``3650``.                         |          |
++------------------+--------------------------------------------------+----------+
 | ``--force``      | Overwrite existing CA (backs up old files)       | No       |
 +------------------+--------------------------------------------------+----------+
 
@@ -471,8 +477,8 @@ Sign a CSR with the root CA (Project Admin).
 +==================+==================================================+==========+
 | ``-r`` / ``--csr``    | Path to the CSR file to sign                | Yes      |
 +------------------+--------------------------------------------------+----------+
-| ``-c`` / ``--ca-dir`` | Directory containing ``rootCA.key`` and     | Yes      |
-|                  | ``rootCA.pem``                                   |          |
+| ``-c`` / ``--ca-dir`` | Directory containing ``rootCA.key``,       | Yes      |
+|                  | ``rootCA.pem``, and ``ca.json``                  |          |
 +------------------+--------------------------------------------------+----------+
 | ``-o`` / ``--output-dir`` | Directory for signed cert and rootCA.pem | Yes     |
 +------------------+--------------------------------------------------+----------+

@@ -19,3 +19,8 @@ Example (server + two clients):
 ./scripted_mode_demo.sh my-project grpc://localhost:8002 ./distprov_demo \
   ./server.yml ./site-1.yml ./site-2.yml
 ```
+
+Security note:
+- Before packaging or startup, verify the returned `rootCA.pem` fingerprint with the
+  Project Admin through a trusted out-of-band channel. Example:
+  `openssl x509 -in rootCA.pem -noout -fingerprint -sha256`

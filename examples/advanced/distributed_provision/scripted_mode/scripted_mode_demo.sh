@@ -59,7 +59,9 @@ for site_yaml in "${SITE_YAMLS[@]}"; do
 done
 
 # 3) Sign CSR for each site.
-# This accepts the role proposed in each site-admin-generated CSR.
+# This demo accepts the role proposed in each site-admin-generated CSR.
+# In production, review the proposed role for each CSR and use -t to override it
+# if the Project Admin does not want to trust the embedded request.
 for i in "${!SITE_NAMES[@]}"; do
   SITE_NAME="${SITE_NAMES[$i]}"
   CSR_PATH="${CSR_PATHS[$i]}"

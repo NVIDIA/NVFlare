@@ -32,5 +32,8 @@ Then run:
 ```
 
 Notes:
+- Before packaging or startup, verify the returned `rootCA.pem` fingerprint with the
+  Project Admin through a trusted out-of-band channel. Example:
+  `openssl x509 -in rootCA.pem -noout -fingerprint -sha256`
 - Root CA does **not** require org.
 - Org **is required** for each participant to align with project.yml and must match `^[A-Za-z0-9_]+$` (no hyphens or spaces).
