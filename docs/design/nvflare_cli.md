@@ -152,7 +152,7 @@ Only commands that serve common end-user or admin tasks are exposed. Diagnostic,
 | `delete_job` | Admin | Yes -> `nvflare job delete` |
 | `list_job` | — | No — internal/debug use |
 | `download_job_components` | — | No — specialized, not a common task |
-| `configure_job_log` | Both | Yes -> `nvflare job log <job_id>` |
+| `configure_job_log` | Both | Yes -> `nvflare job log-config <job_id>` |
 | `app_command` | — | No — app-specific, no generic CLI shape |
 | `delete_workspace` | — | No — disabled |
 
@@ -168,7 +168,7 @@ Only commands that serve common end-user or admin tasks are exposed. Diagnostic,
 | `sys_info` | Both | Yes -> `nvflare system version` |
 | `report_env` | — | No — workspace paths; internal/debug |
 | `show_scopes` | — | No — internal configuration detail |
-| `configure_site_log` | Both | Yes -> `nvflare system log-level <level>` |
+| `configure_site_log` | Both | Yes -> `nvflare system log-config <level>` |
 
 ### Observability (`info` scope)
 
@@ -184,7 +184,7 @@ Only commands that serve common end-user or admin tasks are exposed. Diagnostic,
 ### Naming
 
 - `job logs` (plural) = read log content
-- `job log` (singular) = write logging configuration
+- `job log-config` = write logging configuration
 
 Current state: there is no proper API to retrieve or parse job logs. Users have been using interactive console shell commands (`cat`, `tail`, `grep` via `tail_target_log` / `grep_target` on `Session`) to find errors. These commands are unstructured, security-sensitive, and not agent-usable. The commands below replace this with a proper log API.
 
@@ -218,23 +218,17 @@ Server-side change needed: add a new admin command that returns job log content 
 
 Session API change needed: add `get_job_logs(job_id, target, tail_lines, grep_pattern)` to `Session` in `flare_api.py`.
 
-### `nvflare job log`
+### `nvflare job log-config`
 
 ```text
-nvflare job log <job_id> [--site server|<client_name>|all]
-                ( --level DEBUG|INFO|WARNING|ERROR|CRITICAL | --config <json_file> )
+nvflare job log-config <job_id> [--site server|<client_name>|all] <level_or_mode>
 ```
-
-Two mutually exclusive forms:
-
-- `--level`
-- `--config <json_file>`
 
 Examples:
 
 ```bash
-nvflare job log abc123 --level DEBUG --site site-1
-nvflare job log abc123 --config ./debug_config.json --site all
+nvflare job log-config abc123 DEBUG --site site-1
+nvflare job log-config abc123 msg_only --site all
 ```
 
 Response always uses `sites`:
@@ -251,14 +245,13 @@ Response always uses `sites`:
 }
 ```
 
-### `nvflare system log-level`
+### `nvflare system log-config`
 
 ```text
-nvflare system log-level [--site server|<client_name>|all]
-                         ( <level> | --config <json_file_or_inline_json> )
+nvflare system log-config [--site server|<client_name>|all] <level_or_mode>
 ```
 
-Same two forms as `nvflare job log` but applies at site level. Effective immediately; persists until next restart or reload.
+Same positional form as `nvflare job log-config` but applies at site level. Effective immediately; persists until next restart or reload.
 
 Session API change needed: add `configure_job_log(job_id, config, target)` and `configure_site_log(config, target)` to `Session` in `flare_api.py`.
 
@@ -605,7 +598,7 @@ nvflare job delete    <job_id> [--force]
 nvflare job stats     <job_id> [--site server|<name>|all]
 nvflare job errors    <job_id> [--site server|<name>|all]
 nvflare job logs      <job_id> [--site server|<name>|all] [--tail N] [--grep PATTERN]
-nvflare job log       <job_id> [--site server|<name>|all] (--level <level> | --config <json_file>)
+nvflare job log-config <job_id> [--site server|<name>|all] <level>
 nvflare job diagnose  <job_id> [--site server|<name>|all]
 ```
 
@@ -666,10 +659,10 @@ All `nvflare network` commands support `--schema`. User-supplied arguments are v
 ```text
 nvflare system status        [server|client] [client_names...]
 nvflare system resources     [server|client] [clients...]
-nvflare system shutdown      <server|client|all> [clients...] [--force]
-nvflare system restart       <server|client|all> [clients...] [--force]
+nvflare system shutdown      <server> [--force]
+nvflare system restart       <server> [--force]
 nvflare system remove-client <client_name>
-nvflare system log-level     [--site server|<client_name>|all] (<level> | --config <json_file_or_json>)
+nvflare system log-config    [--site server|<client_name>|all] <level>
 nvflare system version       [--site server|<name>|all]
 ```
 

@@ -230,15 +230,14 @@ Change logging configuration for a running job:
 
 .. code-block:: shell
 
-   nvflare job log <job_id> DEBUG
-   nvflare job log <job_id> concise
-   nvflare job log <job_id> --site all --config ./logging.json
+   nvflare job log-config <job_id> DEBUG
+   nvflare job log-config <job_id> concise
+   nvflare job log-config <job_id> --site all msg_only
 
-``job log`` accepts:
+``job log-config`` accepts:
 
 - positional ``level``: ``DEBUG``, ``INFO``, ``WARNING``, ``ERROR``, ``CRITICAL``
-- log modes: ``concise``, ``full``, ``verbose``, ``reload``
-- ``--config``: path to a ``logging.config.dictConfig`` JSON file or inline JSON
+- log modes: ``concise``, ``msg_only``, ``full``, ``verbose``, ``reload``
 - ``--site``: target site name or ``all``
 - ``--schema``: print the command schema as JSON and exit
 

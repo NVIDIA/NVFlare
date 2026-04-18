@@ -53,17 +53,11 @@ Show resources for clients only:
 
    nvflare system resources client
 
-Restart all sites:
+Restart the server:
 
 .. code-block:: shell
 
-   nvflare system restart all --force
-
-Restart one client:
-
-.. code-block:: shell
-
-   nvflare system restart client site-1 --force
+   nvflare system restart server --force
 
 Shut down the server:
 
@@ -82,9 +76,9 @@ Change runtime logging:
 
 .. code-block:: shell
 
-   nvflare system log-level concise
-   nvflare system log-level --site server DEBUG
-   nvflare system log-level --site site-1 --config ./logging.json
+   nvflare system log-config concise
+   nvflare system log-config --site server DEBUG
+   nvflare system log-config --site site-1 msg_only
 
 ****************
 Status and Resources
@@ -126,19 +120,16 @@ Examples:
 Shutdown and Restart
 **********************
 
-Use ``shutdown`` and ``restart`` to control server or client processes through
+Use ``shutdown`` and ``restart`` to control the server process through
 the admin channel.
 
 Supported targets:
 
 - ``server``
-- ``client``
-- ``all``
 
 Control arguments:
 
-- positional ``target``: required. One of ``server``, ``client``, or ``all``.
-- positional ``client_names``: optional list of client names when ``target`` is ``client``.
+- positional ``target``: required. Must be ``server``.
 - ``--force``: skip the confirmation prompt.
 - ``--schema``: print the command schema as JSON and exit.
 
@@ -146,8 +137,7 @@ Examples:
 
 .. code-block:: shell
 
-   nvflare system shutdown all --force
-   nvflare system shutdown client site-1 site-2 --force
+   nvflare system shutdown server --force
    nvflare system restart server --force
 
 In non-interactive contexts, ``--force`` is required.
@@ -179,19 +169,17 @@ version, and which sites are mismatched.
 Runtime Logging
 ****************
 
-Use ``nvflare system log-level`` to change logging on the server or client sites.
+Use ``nvflare system log-config`` to change logging on the server or client sites.
 
 .. code-block:: shell
 
-   nvflare system log-level DEBUG
-   nvflare system log-level --site server verbose
-   nvflare system log-level --config ./logging.json
-   nvflare system log-level --site site-1 --config ./logging.json
+   nvflare system log-config DEBUG
+   nvflare system log-config --site server verbose
+   nvflare system log-config --site site-1 msg_only
 
 Logging arguments:
 
 - positional ``level``: optional log level or built-in log mode
-- ``--config``: path to a dictConfig JSON file or inline JSON
 - ``--site``: ``server``, a client name, or ``all``. Default: ``all``.
 - ``--schema``: print the command schema as JSON and exit.
 
@@ -203,12 +191,12 @@ Supported built-in values for positional ``level``:
 - ``ERROR``
 - ``CRITICAL``
 - ``concise``
+- ``msg_only``
 - ``full``
 - ``verbose``
 - ``reload``
 
-``level`` and ``--config`` are mutually exclusive. One of them must be
-provided.
+``level`` is required.
 
 *********************
 JSON Output and Help
