@@ -128,7 +128,7 @@ class TestPocOutput:
 
         with (
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=poc_ws),
-            patch("os.path.exists", return_value=True),
+            patch("nvflare.tool.poc.poc_commands.os.path.exists", return_value=True),
             patch("sys.stdin") as mock_stdin,
         ):
             mock_stdin.isatty.return_value = False
