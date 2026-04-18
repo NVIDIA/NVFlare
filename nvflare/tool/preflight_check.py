@@ -89,7 +89,6 @@ def check_packages(args):
             "overall": overall,
         },
         exit_code=0 if overall_pass else 1,
-        status="ok",
     )
 
 

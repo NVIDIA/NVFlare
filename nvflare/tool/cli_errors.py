@@ -103,6 +103,10 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "Signed certificate already exists at {path}.",
         "hint": "Use --force to overwrite.",
     },
+    "ROOTCA_ALREADY_EXISTS": {
+        "message": "Root CA certificate already exists at {path}.",
+        "hint": "Use --force to overwrite.",
+    },
     "INVALID_CERT_TYPE": {
         "message": "Invalid certificate type '{cert_type}'.",
         "hint": "Use one of: client, server, org_admin, lead, member.",

@@ -618,6 +618,8 @@ def handle_cert_sign(args):
 
     if os.path.exists(cert_out_path) and not args.force:
         output_error("CERT_ALREADY_EXISTS", path=cert_out_path)
+    if os.path.exists(rootca_out_path) and not args.force:
+        output_error("ROOTCA_ALREADY_EXISTS", path=rootca_out_path)
 
     # 8. Load CA material
     try:

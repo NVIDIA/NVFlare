@@ -155,7 +155,7 @@ Common list filters:
 - ``-i, --id``: filter by job ID prefix.
 - ``-r, --reverse``: reverse sort order.
 - ``-m, --max``: maximum number of results to return.
-- ``--study``: list jobs from a named study, or use ``all`` for all studies.
+- ``--study``: list jobs from a named study. If omitted, the literal study name ``default`` is used. There is no special ``all`` keyword.
 - ``--schema``: print the command schema as JSON and exit.
 
 Retrieve metadata for a single job:

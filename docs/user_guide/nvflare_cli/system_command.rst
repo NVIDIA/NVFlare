@@ -96,7 +96,7 @@ Status arguments:
 - positional ``target``: optional. ``server`` or ``client``.
 - positional ``client_names``: optional list of client names when targeting clients.
 - ``--startup-target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup_kit``: explicit admin startup kit directory. If provided, it takes precedence over ``--startup-target``.
+- ``--startup_kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -125,7 +125,7 @@ Resource arguments:
 - positional ``target``: optional. ``server`` or ``client``.
 - positional ``client_names``: optional list of client names when targeting clients.
 - ``--startup-target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup_kit``: explicit admin startup kit directory. If provided, it takes precedence over ``--startup-target``.
+- ``--startup_kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -156,7 +156,7 @@ Control arguments:
 
 - positional ``target``: required. Must be ``server``.
 - ``--startup-target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup_kit``: explicit admin startup kit directory. If provided, it takes precedence over ``--startup-target``.
+- ``--startup_kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
 - ``--force``: skip the confirmation prompt.
 - ``--schema``: print the command schema as JSON and exit.
 
@@ -180,7 +180,7 @@ Version arguments:
 
 - ``--site``: ``server``, a client name, or ``all``. Default: ``all``.
 - ``--startup-target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--startup-target``.
+- ``--startup_kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -211,7 +211,7 @@ Logging arguments:
 - positional ``level``: runtime-required log level or built-in log mode; omitting it returns a CLI error
 - ``--site``: ``server``, a client name, or ``all``. Default: ``all``.
 - ``--startup-target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup_kit``: explicit admin startup kit directory. Mutually exclusive with ``--startup-target``.
+- ``--startup_kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Supported built-in values for positional ``level``:

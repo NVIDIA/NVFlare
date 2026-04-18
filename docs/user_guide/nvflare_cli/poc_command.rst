@@ -204,7 +204,7 @@ The default POC workspace is ``/tmp/nvflare/poc``.
 The workspace can also be controlled by:
 
 - ``NVFLARE_POC_WORKSPACE``
-- ``~/.nvflare/config.conf`` via ``nvflare config -pw <poc_workspace>``
+- ``~/.nvflare/config.conf`` via ``nvflare config --poc.workspace <poc_workspace>``
 
 ``nvflare poc prepare`` writes the POC workspace and startup kit location into
 the local NVFlare config automatically.

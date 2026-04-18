@@ -651,6 +651,22 @@ class TestCertSign:
         copy = open(os.path.join(out_dir, "rootCA.pem"), "rb").read()
         assert orig == copy
 
+    def test_sign_refuses_to_overwrite_existing_rootca_without_force(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)
+        out_dir = tmp_path / "signed"
+        out_dir.mkdir()
+        (out_dir / "rootCA.pem").write_text("foreign-ca")
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(_sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=str(out_dir), cert_type="client"))
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "ROOTCA_ALREADY_EXISTS" in captured.err
+        assert str(out_dir / "rootCA.pem") in captured.err
+
     def test_sign_aki_matches_issuer_cert(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
         csr_path = _setup_csr(tmp_path, name="site-1")

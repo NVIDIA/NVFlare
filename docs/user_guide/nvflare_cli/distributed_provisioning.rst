@@ -470,7 +470,7 @@ Generate a local private key and CSR (Site Admin).
 |                  | The Project Admin must either accept it with     |          |
 |                  | ``--accept-csr-role`` or override with ``-t``.   |          |
 +------------------+--------------------------------------------------+----------+
-| ``-p`` / ``--project-file`` | Site-scoped project yaml supplying name, | No       |
+| ``--project-file`` | Site-scoped project yaml supplying name, | No       |
 |                  | org, and type. Mutually exclusive with           |          |
 |                  | ``-n``, ``--org``, and ``-t``.                   |          |
 +------------------+--------------------------------------------------+----------+
@@ -494,7 +494,7 @@ Sign a CSR with the root CA (Project Admin).
 +------------------+--------------------------------------------------+----------+
 | ``-o`` / ``--output-dir`` | Directory for signed cert and rootCA.pem | Yes     |
 +------------------+--------------------------------------------------+----------+
-| ``-t`` / ``--type``   | Certificate type to issue. Overrides the    | No       |
+| ``-t`` / ``--type``   | Certificate type to issue. Overrides the    | No**     |
 |                  | type proposed in the CSR. Required when the      |          |
 |                  | CSR has no embedded type.                        |          |
 +------------------+--------------------------------------------------+----------+
@@ -506,6 +506,9 @@ Sign a CSR with the root CA (Project Admin).
 +------------------+--------------------------------------------------+----------+
 | ``--force``      | Overwrite existing certificate without backup    | No       |
 +------------------+--------------------------------------------------+----------+
+
+** ``-t`` / ``--type`` is required unless the CSR already contains an embedded
+   type and the Project Admin uses ``--accept-csr-role`` instead.
 
 ``nvflare package``
 ===================
