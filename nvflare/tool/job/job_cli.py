@@ -17,6 +17,7 @@ import datetime
 import os
 import shutil
 import sys
+import time
 import traceback
 from contextlib import contextmanager
 from functools import partial
@@ -88,6 +89,7 @@ CMD_JOB_LOGS = "logs"
 # Job lifecycle helpers
 CMD_JOB_MONITOR = "monitor"
 CMD_JOB_LOG_CONFIG = "log-config"
+CMD_JOB_LOG_ALIAS = "log"
 
 _JOB_HELP_FORMATTER = partial(argparse.HelpFormatter, max_help_position=24, width=120)
 
@@ -489,7 +491,7 @@ def submit_job(cmd_args):
         prepare_job_config(cmd_args, app_names, temp_job_dir)
         admin_username, admin_user_dir = find_admin_user_and_dir(
             startup_kit_dir=getattr(cmd_args, "startup_kit", None),
-            target=getattr(cmd_args, "target", None),
+            target=getattr(cmd_args, "startup_target", None),
         )
         internal_submit_job(admin_user_dir, admin_username, temp_job_dir, cmd_args)
 
@@ -654,16 +656,17 @@ def define_submit_job_parser(job_subparser):
     )
     startup_target_group = submit_parser.add_mutually_exclusive_group()
     startup_target_group.add_argument(
-        "--target",
+        "--startup-target",
         choices=["poc", "prod"],
         default=None,
+        dest="startup_target",
         help=f"startup kit target from ~/.nvflare/config.conf, default to {TARGET_POC}",
     )
     startup_target_group.add_argument(
         "--startup_kit",
         type=str,
         default=None,
-        help="explicit startup kit location; mutually exclusive with --target",
+        help="explicit startup kit location; mutually exclusive with --startup-target",
     )
     submit_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     submit_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
@@ -1525,8 +1528,6 @@ def _build_monitor_status_callback(
     start: float, start_ts_holder: dict, emit_interval: int, stats_interval: int, stats_target: str, key_aliases: dict
 ):
     def _status_cb(sess, job_id, job_meta, state):
-        import time
-
         from nvflare.apis.job_def import JobMetaKey
 
         state["last_meta"] = job_meta
@@ -1572,8 +1573,6 @@ def _build_monitor_output_data(
 
 
 def cmd_job_monitor(cmd_args):
-    import time
-
     from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, MonitorReturnCode, NoConnection
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
@@ -1667,7 +1666,7 @@ def cmd_job_monitor(cmd_args):
             ),
         }
         error_code, hint = error_envelopes[status]
-        output_ok(data, exit_code=1, status="error", error_code=error_code, hint=hint)
+        output_error(error_code, exit_code=1, hint=hint, data=data, job_id=cmd_args.job_id)
     else:
         output_ok(data)
 
@@ -1685,12 +1684,16 @@ def cmd_job_log(cmd_args):
     from nvflare.tool.cli_output import output_error, output_ok, output_usage_error
     from nvflare.tool.cli_schema import handle_schema_flag
 
+    invoked_sub_cmd = CMD_JOB_LOG_CONFIG
+    if len(sys.argv) > 2 and sys.argv[1] == "job" and sys.argv[2] in (CMD_JOB_LOG_CONFIG, CMD_JOB_LOG_ALIAS):
+        invoked_sub_cmd = sys.argv[2]
+
     handle_schema_flag(
         job_sub_cmd_parser[CMD_JOB_LOG_CONFIG],
-        "nvflare job log-config",
+        f"nvflare job {invoked_sub_cmd}",
         [
-            "nvflare job log-config abc123 DEBUG",
-            "nvflare job log-config abc123 concise",
+            f"nvflare job {invoked_sub_cmd} abc123 DEBUG",
+            f"nvflare job {invoked_sub_cmd} abc123 concise",
         ],
         sys.argv[1:],
     )
@@ -1769,7 +1772,11 @@ def define_job_monitor_parser(job_subparser):
 
 
 def define_job_log_parser(job_subparser):
-    p = job_subparser.add_parser(CMD_JOB_LOG_CONFIG, help="change logging configuration for a running job")
+    p = job_subparser.add_parser(
+        CMD_JOB_LOG_CONFIG,
+        aliases=[CMD_JOB_LOG_ALIAS],
+        help="change logging configuration for a running job",
+    )
     p.add_argument("job_id", type=str, help="job ID")
     p.add_argument(
         "level",
@@ -1780,4 +1787,6 @@ def define_job_log_parser(job_subparser):
     p.add_argument("--site", default="all", help="target site name or all")
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_LOG_CONFIG] = p
+    job_sub_cmd_parser[CMD_JOB_LOG_ALIAS] = p
     job_sub_cmd_handlers[CMD_JOB_LOG_CONFIG] = cmd_job_log
+    job_sub_cmd_handlers[CMD_JOB_LOG_ALIAS] = cmd_job_log

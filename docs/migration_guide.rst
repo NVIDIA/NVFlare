@@ -6,6 +6,124 @@ Migration Guide
 
 This guide covers API and configuration changes when upgrading between FLARE releases.
 
+Upcoming Main-Branch Changes
+============================
+
+FLARE API Compatibility Note
+----------------------------
+
+On the current ``main`` branch, :class:`NoConnection<nvflare.fuel.flare_api.api_spec.NoConnection>`
+now subclasses Python's built-in ``ConnectionError`` instead of directly subclassing
+``Exception``.
+
+Impact:
+
+- Existing code that catches ``ConnectionError`` will now also catch
+  ``NoConnection``.
+- Existing code that catches ``NoConnection`` continues to work unchanged.
+
+If your application distinguishes FLARE connection failures from broader OS or
+network exceptions, review any broad ``except ConnectionError:`` handlers before
+upgrading to the next release built from ``main``.
+
+FLARE API Lifecycle Restriction
+-------------------------------
+
+On the current ``main`` branch, :meth:`Session.shutdown<nvflare.fuel.flare_api.api_spec.SessionSpec.shutdown>`
+and :meth:`Session.restart<nvflare.fuel.flare_api.api_spec.SessionSpec.restart>`
+are now restricted to ``TargetType.SERVER`` only.
+
+Impact:
+
+- Existing callers that pass ``TargetType.ALL`` or ``TargetType.CLIENT`` will now fail.
+- Server-scoped lifecycle control continues to work unchanged.
+- :meth:`Session.shutdown_system<nvflare.fuel.flare_api.api_spec.SessionSpec.shutdown_system>`
+  is unchanged and still supports whole-system shutdown.
+
+For whole local PoC lifecycle control, use the PoC start/stop flow instead of
+the general system admin API.
+
+CLI Startup Kit Resolution Change
+---------------------------------
+
+On the current ``main`` branch, the ``NVFLARE_STARTUP_KIT_DIR`` environment
+variable now takes precedence over the persisted CLI config when resolving the
+startup kit for server-connected CLI commands.
+
+Impact:
+
+- If both ``NVFLARE_STARTUP_KIT_DIR`` and the CLI config specify startup kit
+  paths, the environment variable wins.
+- Shell profiles that export ``NVFLARE_STARTUP_KIT_DIR`` may override
+  ``poc.startup_kit`` or ``prod.startup_kit`` from ``~/.nvflare/config.conf``.
+
+If you rely on the persisted CLI config, review your shell environment before
+upgrading to the next release built from ``main``.
+
+CLI Config Flag Clarification
+-----------------------------
+
+On the current ``main`` branch, ``nvflare config`` standardizes on the explicit
+``--poc.workspace`` flag name for the POC workspace setting.
+
+Impact:
+
+- ``--poc.workspace`` is the preferred flag name in docs and examples.
+- The legacy ``-pw`` shorthand remains accepted as a compatibility alias for
+  the POC workspace setting.
+
+If you have older scripts that still use ``-pw``, they continue to work, but
+new examples and documentation use ``--poc.workspace`` for clarity.
+
+Study Name Validation Relaxation
+--------------------------------
+
+On the current ``main`` branch, study names now allow underscores in internal
+positions, so names such as ``my_study`` are valid.
+
+Impact:
+
+- ``project.yml`` validation now accepts study names with internal underscores.
+- Login and study-scoped authorization paths will accept the same names.
+
+If you maintain external validation or naming policy around study identifiers,
+update those checks to match the new rule before upgrading.
+
+Site Log Configuration Restriction
+----------------------------------
+
+On the current ``main`` branch, :meth:`Session.configure_site_log<nvflare.fuel.flare_api.api_spec.SessionSpec.configure_site_log>`
+and the corresponding ``nvflare system log-config`` path now accept only simple
+log levels and built-in log modes.
+
+Impact:
+
+- JSON ``dictConfig`` payloads are no longer accepted for site-wide log changes.
+- File-path based logging configs are no longer accepted for site-wide log changes.
+- Supported values remain the standard log levels plus built-in modes such as
+  ``concise``, ``msg_only``, ``full``, ``verbose``, and ``reload``.
+
+If you previously used advanced JSON/file-based configs with
+``configure_site_log``, switch to the supported level/mode values before
+upgrading to the next release built from ``main``.
+For dict-based or file-path logging, use ``configure_job_log`` on a running job instead.
+
+POC Start Default Service Clarification
+---------------------------------------
+
+On the current ``main`` branch, the documented default behavior of
+``nvflare poc start`` is clarified to reflect the actual runtime behavior:
+the default start set is the server plus client services, not every
+participant directory under the workspace.
+
+Impact:
+
+- Running ``nvflare poc start`` with no explicit ``-p`` / ``--service`` starts
+  the server and clients.
+- Admin consoles are not started unless explicitly selected.
+
+This is a documentation/help clarification, not a runtime behavior change.
+
 Upgrading from 2.7.0/2.7.1 to 2.7.2
 ======================================
 

@@ -87,6 +87,10 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "No root CA found at {ca_dir}.",
         "hint": "Run 'nvflare cert init' first, or specify the correct --ca-dir.",
     },
+    "CA_LOAD_FAILED": {
+        "message": "Failed to load root CA material from {ca_dir}.",
+        "hint": "Check that rootCA.pem and rootCA.key are readable, valid, and unencrypted.",
+    },
     "CSR_NOT_FOUND": {
         "message": "CSR file not found: {path}.",
         "hint": "Check the path to the .csr file.",
@@ -97,6 +101,10 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "CERT_ALREADY_EXISTS": {
         "message": "Signed certificate already exists at {path}.",
+        "hint": "Use --force to overwrite.",
+    },
+    "ROOTCA_ALREADY_EXISTS": {
+        "message": "Root CA certificate already exists at {path}.",
         "hint": "Use --force to overwrite.",
     },
     "INVALID_CERT_TYPE": {
@@ -122,6 +130,10 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     "CERT_SIGNING_FAILED": {
         "message": "Certificate signing failed: {reason}",
         "hint": "Check that the CA key and certificate are valid and not corrupted.",
+    },
+    "CERT_OUTPUT_WRITE_FAILED": {
+        "message": "Failed to write signed certificate output to {path}.",
+        "hint": "Check output directory permissions and available disk space, then retry.",
     },
     # --- Package commands ---
     "CERT_NOT_FOUND": {
@@ -166,7 +178,7 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "INVALID_PROJECT_FILE": {
         "message": "Invalid project file.",
-        "hint": "Ensure the file is schema-compatible with 'nvflare provision' project.yaml (api_version: 3).",
+        "hint": "Ensure the file is schema-compatible with 'nvflare provision' project.yaml (api_version: 3 or 4).",
     },
     "UNSUPPORTED_TOPOLOGY": {
         "message": "Relay participants found in project file — hierarchical FL is not supported by 'nvflare package'.",

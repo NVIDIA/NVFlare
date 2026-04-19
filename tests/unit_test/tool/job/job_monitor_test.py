@@ -126,6 +126,7 @@ class TestJobMonitorOutput:
         assert data["exit_code"] == 1
         assert data["error_code"] == "JOB_FAILED"
         assert "job logs" in data["hint"]
+        assert "message" in data
         assert data["data"]["status"] == "FAILED"
 
     def test_aborted_outputs_error_envelope_exits_1(self, capsys):

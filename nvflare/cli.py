@@ -172,6 +172,7 @@ def def_config_parser(sub_cmd):
         help=argparse.SUPPRESS,
     )
     config_parser.add_argument(
+        "-pw",
         "--poc.workspace",
         dest="poc_workspace_dir",
         type=str,

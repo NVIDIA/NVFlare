@@ -162,7 +162,7 @@ class TestResolveJobFolder:
         args.study = "default"
         args.debug = False
         args.config_file = None
-        args.target = "prod"
+        args.startup_target = "prod"
         args.startup_kit = None
 
         with patch(
@@ -171,7 +171,7 @@ class TestResolveJobFolder:
             with patch("nvflare.tool.job.job_cli.get_app_dirs_from_job_folder", return_value=[]):
                 with patch("nvflare.tool.job.job_cli.prepare_job_config"):
                     with patch("nvflare.tool.job.job_cli.internal_submit_job"):
-                        with patch("sys.argv", ["nvflare", "job", "submit", "-j", job_dir, "--target", "prod"]):
+                        with patch("sys.argv", ["nvflare", "job", "submit", "-j", job_dir, "--startup-target", "prod"]):
                             submit_job(args)
 
         _, kwargs = mock_find.call_args

@@ -88,6 +88,10 @@ def test_do_command_raises_no_connection_for_server_connection_error():
         session._do_command("list_jobs", enforce_meta=False)
 
 
+def test_no_connection_is_connection_error():
+    assert issubclass(NoConnection, ConnectionError)
+
+
 def test_do_command_raises_authentication_error_for_error_cert():
     session = Session.__new__(Session)
     session.api = MagicMock()

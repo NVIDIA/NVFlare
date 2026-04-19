@@ -25,8 +25,19 @@ The resulting startup kits are structurally identical to those produced by
 
 .. note::
 
-   Distributed provisioning uses mTLS as the sole trust anchor. No ``signature.json``
-   is generated. The ``require_signed_jobs`` policy is always enabled on the server.
+   Distributed provisioning uses project-issued certificates and ``rootCA.pem`` as
+   the trust anchor. No ``signature.json`` is generated. In distributed
+   provisioning, ``require_signed_jobs`` defaults to enabled on the server because
+   ``rootCA.pem`` is present in the startup kit. Operators can explicitly
+   override it in ``fed_server.json``, but disabling signed-job enforcement is
+   strongly discouraged.
+
+.. note::
+
+   Study definitions are not represented in per-site ``site.yaml`` inputs for
+   distributed provisioning. In the current design, studies are defined in a
+   centralized ``project.yml`` and materialized into the server-side
+   ``study_registry.json`` during centralized provisioning.
 
 ****************************************
 Centralized vs. Distributed at a Glance
@@ -130,24 +141,24 @@ Steps
 +------+-------------------+-------------------------------------------------------------------+
 | Step | Who               | Action                                                            |
 +======+===================+===================================================================+
-| 1    | Site Admin        | ``nvflare cert csr -n hospital-1 -t client -o ./csr``             |
-+------+-------------------+-------------------------------------------------------------------+
-| 2    | Site Admin        | Send ``hospital-1.csr`` to Project Admin (email, file share, etc.)|
-+------+-------------------+-------------------------------------------------------------------+
-| 3    | Project Admin     | ``nvflare cert init --project my-project -o ./ca``                |
+| 1    | Project Admin     | ``nvflare cert init --project my-project -o ./ca``                |
 |      |                   | *(one-time per federation)*                                       |
 +------+-------------------+-------------------------------------------------------------------+
-| 4    | Project Admin     | ``nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed``       |
+| 2    | Site Admin        | ``nvflare cert csr -n hospital-1 -t client -o ./csr``             |
++------+-------------------+-------------------------------------------------------------------+
+| 3    | Site Admin        | Send ``hospital-1.csr`` to Project Admin (email, file share, etc.)|
++------+-------------------+-------------------------------------------------------------------+
+| 4    | Project Admin     | ``nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed --accept-csr-role`` |
 +------+-------------------+-------------------------------------------------------------------+
 | 5    | Project Admin     | Return ``hospital-1.crt`` + ``rootCA.pem`` to site admin          |
 +------+-------------------+-------------------------------------------------------------------+
 | 6    | Site Admin        | ``nvflare package -e grpc://fl-server:8002 --dir ./csr``          |
 |      |                   | *(kit type derived from signed cert)*                             |
 +------+-------------------+-------------------------------------------------------------------+
-| 7    | Site Admin        | ``cd hospital-1 && ./startup/start.sh``                           |
+| 7    | Site Admin        | ``cd workspace/project/prod_00/hospital-1 && ./startup/start.sh`` |
 +------+-------------------+-------------------------------------------------------------------+
 
-Step 3 is done once per federation. Each new participant repeats steps 1–2 and 4–7 independently.
+Step 1 is done once per federation. Each new participant repeats steps 2–7 independently.
 
 Step 1 — Project Admin: Initialize the Root CA (once per federation)
 =====================================================================
@@ -169,7 +180,7 @@ This produces:
 
 - ``./ca/rootCA.pem`` — root CA certificate (distribute to all sites)
 - ``./ca/rootCA.key`` — root CA private key (keep secret, never distribute)
-- ``./ca/ca.json`` — audit metadata (serial counter)
+- ``./ca/ca.json`` — audit metadata for the generated root CA
 
 .. attention::
 
@@ -181,8 +192,8 @@ Step 2 — Site Admin: Generate a Local Key and CSR
 ==================================================
 
 Each participant (server, each client, each admin user) runs this step on their
-own machine. The optional ``-t`` flag embeds the proposed certificate type in the
-CSR as a hint for the Project Admin.
+own machine. The ``-t`` flag embeds the proposed certificate type in the CSR as
+a hint for the Project Admin.
 
 .. code-block:: bash
 
@@ -207,9 +218,9 @@ Example for the FL server named ``fl-server``:
 
 .. note::
 
-   The ``-t`` flag in ``cert csr`` is a **proposal** only. The Project Admin sets
-   the final type authoritatively when signing. The org admin should generate CSRs
-   on behalf of participants to ensure the correct type is requested.
+   The ``-t`` flag in ``cert csr`` is required so the CSR always carries an
+   explicit site-admin-proposed type. The Project Admin must then either accept
+   that proposal explicitly or override it explicitly at signing time.
 
 Step 3 — Site Admin: Send CSR to Project Admin
 ===============================================
@@ -225,23 +236,24 @@ For each received CSR, the Project Admin runs:
 
 .. code-block:: bash
 
-   nvflare cert sign -r <participant>.csr -c ./ca -o ./signed/<participant>
+   nvflare cert sign -r <participant>.csr -c ./ca -o ./signed/<participant> --accept-csr-role
 
-The certificate type is read from the CSR's embedded proposal. The Project Admin
-may override it with ``-t <type>``:
+If the Project Admin does not want to accept the role proposed by the site
+admin, they may override it with ``-t <type>``:
 
 .. code-block:: bash
 
    nvflare cert sign -r <participant>.csr -t <type> -c ./ca -o ./signed/<participant>
 
-The ``-t`` argument **overrides** whatever type was proposed in the CSR, ensuring
-the Project Admin has final authority over certificate types.
+The ``--accept-csr-role`` argument means the Project Admin is explicitly trusting
+the role proposed by the site admin in the CSR. The ``-t`` argument
+**overrides** whatever type was proposed in the CSR.
 
-Example — signing the ``hospital-1`` client CSR (type embedded in CSR):
+Example — signing the ``hospital-1`` client CSR while accepting the site admin's proposed type:
 
 .. code-block:: bash
 
-   nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed/hospital-1
+   nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed/hospital-1 --accept-csr-role
 
 Example — signing the ``fl-server`` server CSR with explicit type override:
 
@@ -263,6 +275,9 @@ Send each site their signed certificate and ``rootCA.pem``:
 - ``fl-server/fl-server.crt`` + ``rootCA.pem`` → send to the server site
 
 No private keys are exchanged at this step.
+Before packaging or startup, each site should verify the returned ``rootCA.pem``
+fingerprint with the Project Admin through a trusted out-of-band channel. Example:
+``openssl x509 -in rootCA.pem -noout -fingerprint -sha256``
 
 Step 6 — Site Admin: Assemble the Startup Kit
 ==============================================
@@ -366,11 +381,11 @@ This example sets up a federation with one server (``fl-server``) and one client
    # 1. Initialize root CA
    nvflare cert init --project my-project -o ./ca
 
-   # 4a. Sign server CSR (type embedded in CSR; override with -t if needed)
-   nvflare cert sign -r fl-server.csr -c ./ca -o ./signed/fl-server
+   # 4a. Sign server CSR (accept the site-admin-proposed type)
+   nvflare cert sign -r fl-server.csr -c ./ca -o ./signed/fl-server --accept-csr-role
 
    # 4b. Sign client CSR
-   nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed/hospital-1
+   nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed/hospital-1 --accept-csr-role
 
 **Server site (fl-server):**
 
@@ -381,9 +396,14 @@ This example sets up a federation with one server (``fl-server``) and one client
 
    # 3. Send ./csr/fl-server.csr to Project Admin
 
-   # 6. Copy signed cert + rootCA.pem into ./csr/ (alongside fl-server.key), then:
+   # 6. Copy signed cert + rootCA.pem into ./csr/ (alongside fl-server.key)
+   cp ./signed/fl-server/fl-server.crt ./csr/
+   cp ./signed/fl-server/rootCA.pem ./csr/
+
+   # Then package:
    nvflare package -e grpc://fl-server:8002 --dir ./csr
    # Kit type is derived from the signed cert; output to workspace/project/prod_00/fl-server/
+   # The leftover .csr file in ./csr/ is ignored by nvflare package.
 
    # 7. Start
    cd workspace/project/prod_00/fl-server && ./startup/start.sh
@@ -397,9 +417,14 @@ This example sets up a federation with one server (``fl-server``) and one client
 
    # 3. Send ./csr/hospital-1.csr to Project Admin
 
-   # 6. Copy signed cert + rootCA.pem into ./csr/ (alongside hospital-1.key), then:
+   # 6. Copy signed cert + rootCA.pem into ./csr/ (alongside hospital-1.key)
+   cp ./signed/hospital-1/hospital-1.crt ./csr/
+   cp ./signed/hospital-1/rootCA.pem ./csr/
+
+   # Then package:
    nvflare package -e grpc://fl-server:8002 --dir ./csr
    # Kit type is derived from the signed cert; output to workspace/project/prod_00/hospital-1/
+   # The leftover .csr file in ./csr/ is ignored by nvflare package.
 
    # 7. Start
    cd workspace/project/prod_00/hospital-1 && ./startup/start.sh
@@ -422,6 +447,9 @@ Initialize the root CA (Project Admin, once per federation).
 +------------------+--------------------------------------------------+----------+
 | ``--org``        | Organization name for the CA certificate         | No       |
 +------------------+--------------------------------------------------+----------+
+| ``--valid-days`` | Validity period for the root CA certificate in   | No       |
+|                  | days. Default: ``3650``.                         |          |
++------------------+--------------------------------------------------+----------+
 | ``--force``      | Overwrite existing CA (backs up old files)       | No       |
 +------------------+--------------------------------------------------+----------+
 
@@ -437,13 +465,22 @@ Generate a local private key and CSR (Site Admin).
 +------------------+--------------------------------------------------+----------+
 | ``-o`` / ``--output-dir`` | Directory for key and CSR files         | Yes      |
 +------------------+--------------------------------------------------+----------+
-| ``-t`` / ``--type``   | Proposed certificate type. Embedded in      | No       |
-|                  | the CSR as a hint for the Project Admin.         |          |
-|                  | The Project Admin may override with              |          |
-|                  | ``cert sign -t <type>``.                         |          |
+| ``-t`` / ``--type``   | Proposed certificate type. Embedded in      | Yes*     |
+|                  | the CSR as the site-admin-proposed type.         |          |
+|                  | The Project Admin must either accept it with     |          |
+|                  | ``--accept-csr-role`` or override with ``-t``.   |          |
++------------------+--------------------------------------------------+----------+
+| ``--project-file`` | Site-scoped project yaml supplying name, | No       |
+|                  | org, and type. Mutually exclusive with           |          |
+|                  | ``-n``, ``--org``, and ``-t``.                   |          |
 +------------------+--------------------------------------------------+----------+
 | ``--org``        | Organization name                                | No       |
 +------------------+--------------------------------------------------+----------+
+| ``--force``      | Overwrite existing key/CSR files for the same    | No       |
+|                  | participant without prompting.                   |          |
++------------------+--------------------------------------------------+----------+
+
+* ``-t`` / ``--type`` is required unless ``--project-file`` is used.
 
 ``nvflare cert sign``
 =====================
@@ -455,17 +492,26 @@ Sign a CSR with the root CA (Project Admin).
 +==================+==================================================+==========+
 | ``-r`` / ``--csr``    | Path to the CSR file to sign                | Yes      |
 +------------------+--------------------------------------------------+----------+
-| ``-c`` / ``--ca-dir`` | Directory containing ``rootCA.key`` and     | Yes      |
-|                  | ``rootCA.pem``                                   |          |
+| ``-c`` / ``--ca-dir`` | Directory containing ``rootCA.key``,       | Yes      |
+|                  | ``rootCA.pem``, and ``ca.json``                  |          |
 +------------------+--------------------------------------------------+----------+
 | ``-o`` / ``--output-dir`` | Directory for signed cert and rootCA.pem | Yes     |
 +------------------+--------------------------------------------------+----------+
-| ``-t`` / ``--type``   | Certificate type to issue. Overrides the    | No       |
+| ``-t`` / ``--type``   | Certificate type to issue. Overrides the    | No**     |
 |                  | type proposed in the CSR. Required when the      |          |
 |                  | CSR has no embedded type.                        |          |
 +------------------+--------------------------------------------------+----------+
-| ``--force``      | Overwrite existing certificate                   | No       |
+| ``--accept-csr-role`` | Accept the type embedded in the CSR instead | No       |
+|                  | of overriding it with ``-t`` / ``--type``.      |          |
 +------------------+--------------------------------------------------+----------+
+| ``--valid-days`` | Certificate validity in days. Default: 1095     | No       |
+|                  | (3 years).                                      |          |
++------------------+--------------------------------------------------+----------+
+| ``--force``      | Overwrite existing certificate without backup    | No       |
++------------------+--------------------------------------------------+----------+
+
+** ``-t`` / ``--type`` is required unless the CSR already contains an embedded
+   type and the Project Admin uses ``--accept-csr-role`` instead.
 
 ``nvflare package``
 ===================
@@ -482,7 +528,8 @@ Assemble a startup kit (Site Admin).
 +--------------------------+--------------------------------------------------------------------------+----------+
 | -p / --project-file      | Site-scoped project YAML for multi-participant mode; requires --dir.    | No       |
 +--------------------------+--------------------------------------------------------------------------+----------+
-| --dir                    | Directory containing key/cert/rootCA files.                             | Mode     |
+| --dir                    | Directory containing key/cert/rootCA files. Required in ``--dir`` mode  | Yes**    |
+|                          | (standalone or with ``-p``).                                            |          |
 +--------------------------+--------------------------------------------------------------------------+----------+
 | -n / --name              | Participant name; required in explicit single mode.                     | No*      |
 +--------------------------+--------------------------------------------------------------------------+----------+
@@ -496,15 +543,20 @@ Assemble a startup kit (Site Admin).
 +--------------------------+--------------------------------------------------------------------------+----------+
 | --project-name           | Project name used in output path and in fed_server/fed_admin configs.   | No       |
 +--------------------------+--------------------------------------------------------------------------+----------+
-| --admin-port             | Admin port; default is service port + 1.                                | No       |
+| --admin-port             | Admin port; default is the endpoint port (learner port).                | No       |
 +--------------------------+--------------------------------------------------------------------------+----------+
 | --force                  | Allow re-packaging when participant exists in latest prod_NN.           | No       |
 +--------------------------+--------------------------------------------------------------------------+----------+
 
 * ``-n``, ``--cert``, ``--key``, and ``--rootca`` are used together in explicit
   single-participant mode; mutually exclusive with ``-p`` / ``--project-file``.
+* ``--dir`` is required whenever ``nvflare package`` is used in ``--dir`` mode,
+  either standalone or together with ``-p`` / ``--project-file``. It is not
+  used in explicit single-participant mode with ``-n``, ``--cert``, ``--key``,
+  and ``--rootca``.
 
-All commands support ``--output json`` for machine-readable output and ``--schema``
+All commands support the global ``--out-format json`` flag for machine-readable
+output and ``--schema``
 to print the JSON schema for the command's arguments.
 
 *****
@@ -513,6 +565,10 @@ Notes
 
 - The ``--dir`` mode for ``nvflare package`` locates the ``.key`` file automatically.
   Place the signed ``.crt`` and ``rootCA.pem`` in the same directory before running.
+  The directory must contain exactly one ``.key`` file so the participant name can be
+  inferred unambiguously.
+  If the directory contains zero or multiple ``.key`` files, ``nvflare package`` returns
+  an argument error instead of building a startup kit.
 - Startup kits produced by ``nvflare package`` are structurally identical to those
   produced by ``nvflare provision`` and work with all NVFlare runtime components.
 - The server identity for mTLS validation is always the hostname from ``--endpoint``.

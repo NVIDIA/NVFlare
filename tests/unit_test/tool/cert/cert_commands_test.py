@@ -25,12 +25,14 @@ from unittest.mock import patch
 import pytest
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.extensions import BasicConstraints
 from cryptography.x509.oid import NameOID
 
 # Ensure parsers are initialized by importing cert_cli (registers module-level parser refs)
 import nvflare.tool.cert.cert_cli  # noqa: F401
-from nvflare.lighter.utils import load_crt
+from nvflare.lighter.utils import load_crt, load_private_key_file, serialize_cert
 from nvflare.tool import cli_output
 from nvflare.tool.cert.cert_commands import _generate_csr, handle_cert_csr, handle_cert_init, handle_cert_sign
 
@@ -44,6 +46,7 @@ def _init_args(**kwargs):
         project="TestProject",
         output_dir=None,
         org=None,
+        valid_days=3650,
         force=False,
         schema=False,
     )
@@ -110,6 +113,20 @@ class TestCertInit:
         assert (tmp_path / "rootCA.key").exists()
         assert (tmp_path / "ca.json").exists()
 
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_init_rootca_symlink_destination_is_rejected(self, tmp_path):
+        outside_target = tmp_path / "outside-rootca.pem"
+        outside_target.write_text("sentinel")
+        os.symlink(str(outside_target), str(tmp_path / "rootCA.pem"))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_init(tmp_path)
+
+        assert exc_info.value.code == 1
+        assert outside_target.read_text() == "sentinel"
+        assert not (tmp_path / "rootCA.key").exists()
+        assert not (tmp_path / "ca.json").exists()
+
     @pytest.mark.skipif(platform.system() == "Windows", reason="chmod not meaningful on Windows")
     def test_ca_key_permissions(self, tmp_path):
         _run_init(tmp_path)
@@ -117,12 +134,18 @@ class TestCertInit:
         mode = stat.S_IMODE(os.stat(str(key_path)).st_mode)
         assert mode == 0o600
 
+    @pytest.mark.skipif(platform.system() == "Windows", reason="chmod not meaningful on Windows")
+    def test_ca_json_permissions(self, tmp_path):
+        _run_init(tmp_path)
+        ca_json_path = tmp_path / "ca.json"
+        mode = stat.S_IMODE(os.stat(str(ca_json_path)).st_mode)
+        assert mode == 0o600
+
     def test_ca_json_content(self, tmp_path):
         _run_init(tmp_path, project="MyProject")
         with open(str(tmp_path / "ca.json")) as f:
             meta = json.load(f)
         assert meta["project"] == "MyProject"
-        assert meta["next_serial"] == 2
         assert "created_at" in meta
 
     def test_existing_ca_no_force(self, tmp_path):
@@ -195,7 +218,7 @@ class TestCertInit:
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
         assert "ca_cert" in data["data"]
-        assert "ca_key" in data["data"]
+        assert "ca_key" not in data["data"]
         assert "project" in data["data"]
         assert "valid_until" in data["data"]
 
@@ -213,6 +236,46 @@ class TestCertInit:
         assert os.path.exists(new_dir)
         assert os.path.exists(os.path.join(new_dir, "rootCA.pem"))
 
+    def test_init_cleans_up_partial_output_on_write_failure(self, tmp_path, monkeypatch):
+        import nvflare.tool.cert.cert_commands as cert_commands
+
+        def _fail_write_private_key(path, pem_bytes):
+            raise OSError("simulated key write failure")
+
+        monkeypatch.setattr(cert_commands, "_write_private_key", _fail_write_private_key)
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_init(_init_args(output_dir=str(tmp_path)))
+        assert exc_info.value.code == 1
+        assert not (tmp_path / "rootCA.pem").exists()
+        assert not (tmp_path / "rootCA.key").exists()
+        assert not (tmp_path / "ca.json").exists()
+
+    def test_init_cleans_up_partial_key_file_on_mid_write_failure(self, tmp_path, monkeypatch):
+        import nvflare.tool.cert.cert_commands as cert_commands
+
+        def _partial_write_private_key(path, pem_bytes):
+            with open(path, "wb") as f:
+                f.write(pem_bytes[:32])
+            raise OSError("disk full during key write")
+
+        monkeypatch.setattr(cert_commands, "_write_private_key", _partial_write_private_key)
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_init(_init_args(output_dir=str(tmp_path)))
+        assert exc_info.value.code == 1
+        assert not (tmp_path / "rootCA.pem").exists()
+        assert not (tmp_path / "rootCA.key").exists()
+        assert not (tmp_path / "ca.json").exists()
+
+    @pytest.mark.skipif(platform.system() == "Windows", reason="directory chmod semantics differ on Windows")
+    def test_output_dir_permissions(self, tmp_path):
+        new_dir = str(tmp_path / "secure" / "ca")
+        rc = handle_cert_init(_init_args(output_dir=new_dir))
+        assert rc == 0
+        mode = stat.S_IMODE(os.stat(new_dir).st_mode)
+        assert mode == 0o700
+
     def test_ca_cert_subject_cn_matches_name(self, tmp_path):
         _run_init(tmp_path, project="FederationX")
         cert = load_crt(str(tmp_path / "rootCA.pem"))
@@ -228,6 +291,15 @@ class TestCertInit:
             delta = cert.not_valid_after - cert.not_valid_before  # cryptography < 42.0
         # Should be ~3650 days
         assert delta.days >= 3640
+
+    def test_ca_cert_valid_days_custom(self, tmp_path):
+        _run_init(tmp_path, valid_days=90)
+        cert = load_crt(str(tmp_path / "rootCA.pem"))
+        try:
+            delta = cert.not_valid_after_utc - cert.not_valid_before_utc
+        except AttributeError:
+            delta = cert.not_valid_after - cert.not_valid_before  # cryptography < 42.0
+        assert 88 <= delta.days <= 92
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +335,11 @@ class TestCertCsr:
         csr = _load_csr_file(str(tmp_path / "hospital-1.csr"))
         cn = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
         assert cn == "hospital-1"
+
+    def test_whitespace_only_name_is_rejected(self, tmp_path):
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_csr(_csr_args(name="   ", output_dir=str(tmp_path), cert_type="client"))
+        assert exc_info.value.code == 4
 
     def test_csr_role_embedded_in_subject(self, tmp_path):
         """cert csr requires a proposed role and embeds it in the CSR."""
@@ -326,6 +403,14 @@ class TestCertCsr:
         assert rc == 0
         assert os.path.exists(new_dir)
 
+    @pytest.mark.skipif(platform.system() == "Windows", reason="directory chmod semantics differ on Windows")
+    def test_output_dir_permissions(self, tmp_path):
+        new_dir = str(tmp_path / "secure-csr")
+        rc = handle_cert_csr(_csr_args(name="h1", output_dir=new_dir, cert_type="client"))
+        assert rc == 0
+        mode = stat.S_IMODE(os.stat(new_dir).st_mode)
+        assert mode == 0o700
+
     def test_agent_mode_json_envelope(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
         handle_cert_csr(_csr_args(name="h1", output_dir=str(tmp_path), cert_type="client"))
@@ -385,7 +470,40 @@ def _setup_csr(tmp_path, name="hospital-1"):
     return os.path.join(csr_dir, f"{name}.csr")
 
 
+def _overwrite_ca_cert(ca_dir: str, not_before, not_after, ca: bool = True) -> None:
+    ca_cert_path = os.path.join(ca_dir, "rootCA.pem")
+    ca_key_path = os.path.join(ca_dir, "rootCA.key")
+    original_ca = load_crt(ca_cert_path)
+    ca_key = load_private_key_file(ca_key_path)
+
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(original_ca.subject)
+        .issuer_name(original_ca.subject)
+        .public_key(ca_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(not_before)
+        .not_valid_after(not_after)
+        .add_extension(x509.BasicConstraints(ca=ca, path_length=None), critical=True)
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(ca_key.public_key()), critical=False)
+        .sign(ca_key, hashes.SHA256(), default_backend())
+    )
+
+    with open(ca_cert_path, "wb") as f:
+        f.write(serialize_cert(cert))
+
+
 class TestCertSign:
+    def test_sign_parser_rejects_non_positive_valid_days(self, capsys):
+        import nvflare.tool.cert.cert_cli as cert_cli
+
+        cert_cli._ensure_parsers_initialized()
+        parser = cert_cli._cert_sign_parser
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["-r", "req.csr", "-c", "ca", "-o", "out", "-t", "client", "--valid-days", "0"])
+        assert exc_info.value.code == 2
+        assert "value must be >= 1" in capsys.readouterr().err
+
     def test_basic_sign(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
         csr_path = _setup_csr(tmp_path)
@@ -403,20 +521,28 @@ class TestCertSign:
         assert os.path.exists(os.path.join(out_dir, "hospital-1.crt"))
         assert os.path.exists(os.path.join(out_dir, "rootCA.pem"))
 
-    def test_sign_updates_ca_json(self, tmp_path):
+    @pytest.mark.skipif(platform.system() == "Windows", reason="directory chmod semantics differ on Windows")
+    def test_sign_output_dir_permissions(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)
+        out_dir = str(tmp_path / "signed-secure")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+        handle_cert_sign(args)
+        mode = stat.S_IMODE(os.stat(out_dir).st_mode)
+        assert mode == 0o700
+
+    def test_sign_does_not_mutate_ca_json(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
         csr_path = _setup_csr(tmp_path)
         out_dir = str(tmp_path / "signed")
-
-        def _peek_serial(ca_json_path):
-            with open(ca_json_path) as _f:
-                return json.load(_f).get("next_serial", 2)
-
-        serial_before = _peek_serial(os.path.join(ca_dir, "ca.json"))
+        ca_json_path = os.path.join(ca_dir, "ca.json")
+        with open(ca_json_path) as _f:
+            meta_before = json.load(_f)
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
         handle_cert_sign(args)
-        serial_after = _peek_serial(os.path.join(ca_dir, "ca.json"))
-        assert serial_after == serial_before + 1
+        with open(ca_json_path) as _f:
+            meta_after = json.load(_f)
+        assert meta_after == meta_before
 
     def test_sign_cert_is_valid_x509(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
@@ -436,6 +562,16 @@ class TestCertSign:
         cert = load_crt(os.path.join(out_dir, "hospital-1.crt"))
         bc = cert.extensions.get_extension_for_class(BasicConstraints)
         assert bc.value.ca is False
+
+    def test_sign_leaf_key_usage_is_critical(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+        handle_cert_sign(args)
+        cert = load_crt(os.path.join(out_dir, "hospital-1.crt"))
+        key_usage = cert.extensions.get_extension_for_class(x509.KeyUsage)
+        assert key_usage.critical is True
 
     def test_sign_cert_type_authoritative(self, tmp_path):
         """The -t arg controls UNSTRUCTURED_NAME in signed cert; filename uses participant CN."""
@@ -537,6 +673,23 @@ class TestCertSign:
             handle_cert_sign(args)
         assert exc_info.value.code == 1
 
+    def test_sign_ca_load_failure_reports_specific_error(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)
+        with open(os.path.join(ca_dir, "rootCA.key"), "wb") as f:
+            f.write(b"not a private key")
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "CA_LOAD_FAILED" in captured.err
+        assert ca_dir in captured.err
+
     def test_sign_agent_mode_json_envelope(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
         ca_dir = _setup_ca(tmp_path)
@@ -553,6 +706,8 @@ class TestCertSign:
         assert "signed_cert" in data["data"]
         assert "rootca" in data["data"]
         assert "serial" in data["data"]
+        assert isinstance(data["data"]["serial"], str)
+        assert data["data"]["serial"].startswith("0x")
 
     def test_sign_force_overwrites_existing_cert(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
@@ -593,27 +748,108 @@ class TestCertSign:
         copy = open(os.path.join(out_dir, "rootCA.pem"), "rb").read()
         assert orig == copy
 
-    def test_sign_multiple_certs_serial_increments(self, tmp_path):
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_sign_rootca_symlink_destination_is_rejected(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)
+        out_dir = tmp_path / "signed"
+        out_dir.mkdir()
+
+        outside_target = tmp_path / "outside-rootca.pem"
+        outside_target.write_text("sentinel")
+        os.symlink(str(outside_target), str(out_dir / "rootCA.pem"))
+
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=str(out_dir), cert_type="client")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 1
+        assert outside_target.read_text() == "sentinel"
+        assert not (out_dir / "hospital-1.crt").exists()
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_sign_cert_symlink_destination_is_rejected(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)
+        out_dir = tmp_path / "signed"
+        out_dir.mkdir()
+
+        outside_target = tmp_path / "outside-cert.crt"
+        outside_target.write_text("sentinel")
+        os.symlink(str(outside_target), str(out_dir / "hospital-1.crt"))
+
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=str(out_dir), cert_type="client")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 1
+        assert outside_target.read_text() == "sentinel"
+        assert not (out_dir / "rootCA.pem").exists()
+
+    def test_sign_refuses_to_overwrite_existing_rootca_without_force(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)
+        out_dir = tmp_path / "signed"
+        out_dir.mkdir()
+        (out_dir / "rootCA.pem").write_text("foreign-ca")
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(_sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=str(out_dir), cert_type="client"))
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "ROOTCA_ALREADY_EXISTS" in captured.err
+        assert str(out_dir / "rootCA.pem") in captured.err
+
+    def test_sign_cleans_up_partial_output_when_rootca_copy_fails(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)
+        out_dir = tmp_path / "signed"
+
+        with patch("nvflare.tool.cert.cert_commands._write_file_nofollow", side_effect=OSError("disk full")):
+            with pytest.raises(SystemExit) as exc_info:
+                handle_cert_sign(
+                    _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=str(out_dir), cert_type="client")
+                )
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "CERT_OUTPUT_WRITE_FAILED" in captured.err
+        assert not (out_dir / "hospital-1.crt").exists()
+        assert not (out_dir / "rootCA.pem").exists()
+
+    def test_sign_aki_matches_issuer_cert(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path, name="site-1")
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+
+        handle_cert_sign(args)
+
+        ca_cert = load_crt(os.path.join(ca_dir, "rootCA.pem"))
+        issued_cert = load_crt(os.path.join(out_dir, "site-1.crt"))
+
+        issuer_ski = ca_cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value.digest
+        issued_aki = issued_cert.extensions.get_extension_for_class(x509.AuthorityKeyIdentifier).value
+
+        assert issued_aki.key_identifier == issuer_ski
+
+    def test_sign_multiple_certs_use_distinct_serial_numbers(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
         csr1 = _setup_csr(tmp_path / "csr1", name="client1")
         csr2 = _setup_csr(tmp_path / "csr2", name="client2")
-
-        def _peek_serial(ca_json_path):
-            with open(ca_json_path) as _f:
-                return json.load(_f).get("next_serial", 2)
 
         out1 = str(tmp_path / "signed1")
         out2 = str(tmp_path / "signed2")
 
         args1 = _sign_args(csr_path=csr1, ca_dir=ca_dir, output_dir=out1, cert_type="client")
         handle_cert_sign(args1)
-        serial_mid = _peek_serial(os.path.join(ca_dir, "ca.json"))
+        cert1 = load_crt(os.path.join(out1, "client1.crt"))
 
         args2 = _sign_args(csr_path=csr2, ca_dir=ca_dir, output_dir=out2, cert_type="client")
         handle_cert_sign(args2)
-        serial_end = _peek_serial(os.path.join(ca_dir, "ca.json"))
-
-        assert serial_end == serial_mid + 1
+        cert2 = load_crt(os.path.join(out2, "client2.crt"))
+        assert cert1.serial_number != cert2.serial_number
 
     def test_sign_admin_role_cert(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
@@ -629,6 +865,24 @@ class TestCertSign:
         cert = load_crt(os.path.join(out_dir, "bob.crt"))
         key_usage = cert.extensions.get_extension_for_class(x509.KeyUsage)
         assert key_usage.value.content_commitment is True
+        eku = cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+        assert list(eku) == [x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH]
+
+    def test_sign_server_cert_sets_server_auth_eku(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_dir = str(tmp_path / "csr-server")
+        os.makedirs(csr_dir, exist_ok=True)
+        args = _csr_args(name="fl-server", output_dir=csr_dir, cert_type="server")
+        handle_cert_csr(args)
+        csr_path = os.path.join(csr_dir, "fl-server.csr")
+
+        out_dir = str(tmp_path / "signed-server")
+        sign_args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="server")
+        handle_cert_sign(sign_args)
+
+        cert = load_crt(os.path.join(out_dir, "fl-server.crt"))
+        eku = cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+        assert list(eku) == [x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]
 
     def test_valid_days_custom(self, tmp_path):
         """--valid-days controls certificate not_valid_after."""
@@ -671,27 +925,82 @@ class TestCertSign:
         days_remaining = (not_after - now).days
         assert 1093 <= days_remaining <= 1097
 
-    def test_serial_incremented_atomically(self, tmp_path):
-        """_claim_serial reads and increments in one step; serial advances exactly once per sign."""
+    def test_sign_rejects_expired_ca(self, tmp_path, capsys, monkeypatch):
+        import datetime
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
         ca_dir = _setup_ca(tmp_path)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        _overwrite_ca_cert(ca_dir, now - datetime.timedelta(days=2), now - datetime.timedelta(days=1), ca=True)
 
-        def _peek(ca_json_path):
-            with open(ca_json_path) as _f:
-                return json.load(_f).get("next_serial", 2)
+        csr_path = _setup_csr(tmp_path, name="site-1")
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 1
+        assert "expired" in capsys.readouterr().err
 
+    def test_sign_rejects_non_ca_issuer_cert(self, tmp_path, capsys, monkeypatch):
+        import datetime
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = _setup_ca(tmp_path)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        _overwrite_ca_cert(ca_dir, now - datetime.timedelta(days=1), now + datetime.timedelta(days=30), ca=False)
+
+        csr_path = _setup_csr(tmp_path, name="site-1")
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 1
+        assert "not a CA certificate" in capsys.readouterr().err
+
+    def test_leaf_validity_capped_by_ca_expiry(self, tmp_path):
+        import datetime
+
+        ca_dir = _setup_ca(tmp_path)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        capped_ca_expiry = now + datetime.timedelta(days=30)
+        _overwrite_ca_cert(ca_dir, now - datetime.timedelta(days=1), capped_ca_expiry, ca=True)
+
+        csr_path = _setup_csr(tmp_path, name="site-1")
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client", valid_days=9999)
+        handle_cert_sign(args)
+
+        cert = load_crt(os.path.join(out_dir, "site-1.crt"))
+        try:
+            leaf_not_after = cert.not_valid_after_utc
+        except AttributeError:
+            leaf_not_after = cert.not_valid_after.replace(tzinfo=datetime.timezone.utc)
+        assert leaf_not_after <= capped_ca_expiry
+        assert abs((leaf_not_after - capped_ca_expiry).total_seconds()) < 5
+
+    def test_random_serials_do_not_require_ca_json_mutation(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
         ca_json = os.path.join(ca_dir, "ca.json")
-        initial = _peek(ca_json)
+        with open(ca_json) as _f:
+            initial = json.load(_f)
 
         csr1 = _setup_csr(tmp_path / "csr1", name="site-a")
         csr2 = _setup_csr(tmp_path / "csr2", name="site-b")
         csr3 = _setup_csr(tmp_path / "csr3", name="site-c")
+        serials = set()
 
-        for i, csr in enumerate([csr1, csr2, csr3]):
+        for i, (csr, name) in enumerate([(csr1, "site-a"), (csr2, "site-b"), (csr3, "site-c")]):
             out = str(tmp_path / f"out{i}")
             args = _sign_args(csr_path=csr, ca_dir=ca_dir, output_dir=out, cert_type="client")
             handle_cert_sign(args)
+            cert = load_crt(os.path.join(out, f"{name}.crt"))
+            serials.add(cert.serial_number)
 
-        assert _peek(ca_json) == initial + 3
+        with open(ca_json) as _f:
+            final = json.load(_f)
+
+        assert len(serials) == 3
+        assert final == initial
 
 
 # ---------------------------------------------------------------------------
@@ -816,6 +1125,102 @@ class TestCertSignReadsTypeFromCsr:
             handle_cert_sign(args)
         assert exc_info.value.code == 4
 
+    def test_sign_rejects_duplicate_safe_subject_oid_in_csr(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        subject = x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, "alice"),
+                x509.NameAttribute(NameOID.ORGANIZATION_NAME, "attacker-org"),
+                x509.NameAttribute(NameOID.ORGANIZATION_NAME, "victim-org"),
+                x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, "lead"),
+            ]
+        )
+        csr = x509.CertificateSigningRequestBuilder().subject_name(subject).sign(key, hashes.SHA256())
+        csr_dir = tmp_path / "csr"
+        csr_dir.mkdir()
+        csr_path = csr_dir / "alice.csr"
+        csr_path.write_bytes(csr.public_bytes(serialization.Encoding.PEM))
+
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=str(csr_path), ca_dir=ca_dir, output_dir=out_dir, accept_csr_role=True)
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 1
+
+    def test_sign_rejects_empty_subject_cn_in_csr(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        subject = x509.Name([x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, "lead")])
+        csr = x509.CertificateSigningRequestBuilder().subject_name(subject).sign(key, hashes.SHA256())
+        csr_dir = tmp_path / "csr-empty"
+        csr_dir.mkdir()
+        csr_path = csr_dir / "empty.csr"
+        csr_path.write_bytes(csr.public_bytes(serialization.Encoding.PEM))
+
+        out_dir = str(tmp_path / "signed-empty")
+        args = _sign_args(csr_path=str(csr_path), ca_dir=ca_dir, output_dir=out_dir, accept_csr_role=True)
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 4
+
+    def test_sign_rejects_whitespace_only_subject_cn_in_csr(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        subject = x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, "   "),
+                x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, "lead"),
+            ]
+        )
+        csr = x509.CertificateSigningRequestBuilder().subject_name(subject).sign(key, hashes.SHA256())
+        csr_dir = tmp_path / "csr-space"
+        csr_dir.mkdir()
+        csr_path = csr_dir / "space.csr"
+        csr_path.write_bytes(csr.public_bytes(serialization.Encoding.PEM))
+
+        out_dir = str(tmp_path / "signed-space")
+        args = _sign_args(csr_path=str(csr_path), ca_dir=ca_dir, output_dir=out_dir, accept_csr_role=True)
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 4
+
+    def test_sign_rejects_subject_cn_with_newline(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        subject = x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, "alice\nbad"),
+                x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, "lead"),
+            ]
+        )
+        csr = x509.CertificateSigningRequestBuilder().subject_name(subject).sign(key, hashes.SHA256())
+        csr_dir = tmp_path / "csr-newline"
+        csr_dir.mkdir()
+        csr_path = csr_dir / "newline.csr"
+        csr_path.write_bytes(csr.public_bytes(serialization.Encoding.PEM))
+
+        out_dir = str(tmp_path / "signed-newline")
+        args = _sign_args(csr_path=str(csr_path), ca_dir=ca_dir, output_dir=out_dir, accept_csr_role=True)
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 4
+
+    def test_sign_preserves_single_organization_name(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_dir = str(tmp_path / "csr")
+        os.makedirs(csr_dir, exist_ok=True)
+        args = _csr_args(name="alice", output_dir=csr_dir, cert_type="lead", org="valid-org")
+        handle_cert_csr(args)
+        csr_path = os.path.join(csr_dir, "alice.csr")
+
+        out_dir = str(tmp_path / "signed")
+        sign_args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, accept_csr_role=True)
+        handle_cert_sign(sign_args)
+        cert = load_crt(os.path.join(out_dir, "alice.crt"))
+        org_attrs = cert.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)
+        assert [a.value for a in org_attrs] == ["valid-org"]
+
 
 # ---------------------------------------------------------------------------
 # _load_single_site_yaml unit tests
@@ -843,6 +1248,16 @@ class TestLoadSingleSiteYaml:
         path = self._write_yaml(tmp_path, "name: srv\norg: NVIDIA\ntype: server\n")
         result = _load_single_site_yaml(path)
         assert result["cert_type"] == "server"
+
+    def test_include_key_is_not_resolved(self, tmp_path):
+        from nvflare.tool.cert.cert_commands import _load_single_site_yaml
+
+        included = tmp_path / "included.yml"
+        included.write_text("name: hospital-1\norg: ACME\ntype: client\n")
+        path = self._write_yaml(tmp_path, f"include: {included.name}\n")
+        with pytest.raises(SystemExit) as exc_info:
+            _load_single_site_yaml(path)
+        assert exc_info.value.code == 4
 
     def test_file_not_found_exits_1(self, tmp_path):
         from nvflare.tool.cert.cert_commands import _load_single_site_yaml
@@ -929,6 +1344,14 @@ class TestCertCsrProjectFile:
         csr = _load_csr_file(str(out_dir / "fl-server.csr"))
         cn = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
         assert cn == "fl-server"
+
+    def test_project_file_rejects_name_with_newline(self, tmp_path):
+        site_file = self._write_site_yaml(tmp_path, name="hospital-1\nbad")
+        out_dir = tmp_path / "out"
+        args = _csr_args(name=None, project_file=site_file, output_dir=str(out_dir))
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_csr(args)
+        assert exc_info.value.code == 4
 
     def test_csr_org_taken_from_yaml(self, tmp_path):
         site_file = self._write_site_yaml(tmp_path, org="NVIDIA")

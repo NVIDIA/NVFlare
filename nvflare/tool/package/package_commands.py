@@ -82,6 +82,7 @@ class PrebuiltCertBuilder(Builder):
         self.cert_map = cert_map  # {participant_name: (cert_path, key_path)}
 
     def build(self, project: Project, ctx):
+        built_count = 0
         for p in project.get_all_participants():
             if self.cert_map is not None:
                 if p.name not in self.cert_map:
@@ -111,6 +112,12 @@ class PrebuiltCertBuilder(Builder):
             rootca_dst = os.path.join(kit_dir, "rootCA.pem")
             shutil.copy2(self.rootca_path, rootca_dst)
             os.chmod(rootca_dst, 0o644)
+            built_count += 1
+
+        if built_count == 0:
+            raise ValueError(
+                f"no participant kit was built; target_name={self.target_name!r} did not match any project participant"
+            )
 
 
 def _parse_endpoint(endpoint: str) -> tuple:

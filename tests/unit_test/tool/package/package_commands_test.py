@@ -32,7 +32,12 @@ from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 from nvflare.tool import cli_output
-from nvflare.tool.package.package_commands import _discover_name_from_dir, _parse_endpoint, handle_package
+from nvflare.tool.package.package_commands import (
+    PrebuiltCertBuilder,
+    _discover_name_from_dir,
+    _parse_endpoint,
+    handle_package,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -101,6 +106,14 @@ def _kit_dir(workspace, project_name, name):
     return os.path.join(workspace, project_name, "prod_00", name)
 
 
+class _FakeBuilderCtx:
+    def __init__(self, root_dir):
+        self.root_dir = root_dir
+
+    def get_kit_dir(self, participant):
+        return os.path.join(self.root_dir, participant.name)
+
+
 # ---------------------------------------------------------------------------
 # Unit tests: _parse_endpoint
 # ---------------------------------------------------------------------------
@@ -138,6 +151,31 @@ class TestParseEndpoint:
     def test_port_zero_raises(self):
         with pytest.raises(ValueError):
             _parse_endpoint("grpc://server:0")
+
+
+class TestPrebuiltCertBuilder:
+    def test_mismatched_target_name_raises_instead_of_silent_empty_kit(self, tmp_path):
+        ca_key, ca_cert, rootca_path = _make_ca(str(tmp_path))
+        key_path, cert_path = _make_signed_cert(
+            ca_key,
+            ca_cert,
+            "hospital-1",
+            str(tmp_path),
+            "hospital-1.crt",
+            role="client",
+        )
+        project = Project("pkgtest", "")
+        project.add_client("hospital-1", "myorg", {})
+        ctx = _FakeBuilderCtx(str(tmp_path / "kits"))
+        builder = PrebuiltCertBuilder(
+            cert_path=cert_path,
+            key_path=key_path,
+            rootca_path=rootca_path,
+            target_name="typoed-name",
+        )
+
+        with pytest.raises(ValueError, match="no participant kit was built"):
+            builder.build(project, ctx)
 
     def test_port_above_max_raises(self):
         with pytest.raises(ValueError):
