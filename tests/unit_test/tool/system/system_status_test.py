@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import NoConnection
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
 from nvflare.tool import cli_output
 
 
@@ -103,6 +103,17 @@ class TestSystemStatus:
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["hint"] == "Start the server or verify the admin startup kit endpoint."
+
+    def test_status_propagates_authentication_error(self):
+        from nvflare.tool.system.system_cli import cmd_system_status
+
+        args = self._make_args()
+        with patch(
+            "nvflare.tool.system.system_cli._get_system_session",
+            side_effect=AuthenticationError("certificate issue"),
+        ):
+            with pytest.raises(AuthenticationError, match="certificate issue"):
+                cmd_system_status(args)
 
     def test_status_connection_failed_does_not_fall_through_when_error_output_mocked(self):
         from nvflare.tool.system.system_cli import cmd_system_status

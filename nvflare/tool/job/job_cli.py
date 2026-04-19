@@ -89,6 +89,7 @@ CMD_JOB_LOGS = "logs"
 # Job lifecycle helpers
 CMD_JOB_MONITOR = "monitor"
 CMD_JOB_LOG_CONFIG = "log-config"
+CMD_JOB_LOG_ALIAS = "log"
 
 _JOB_HELP_FORMATTER = partial(argparse.HelpFormatter, max_help_position=24, width=120)
 
@@ -1683,12 +1684,16 @@ def cmd_job_log(cmd_args):
     from nvflare.tool.cli_output import output_error, output_ok, output_usage_error
     from nvflare.tool.cli_schema import handle_schema_flag
 
+    invoked_sub_cmd = CMD_JOB_LOG_CONFIG
+    if len(sys.argv) > 2 and sys.argv[1] == "job" and sys.argv[2] in (CMD_JOB_LOG_CONFIG, CMD_JOB_LOG_ALIAS):
+        invoked_sub_cmd = sys.argv[2]
+
     handle_schema_flag(
         job_sub_cmd_parser[CMD_JOB_LOG_CONFIG],
-        "nvflare job log-config",
+        f"nvflare job {invoked_sub_cmd}",
         [
-            "nvflare job log-config abc123 DEBUG",
-            "nvflare job log-config abc123 concise",
+            f"nvflare job {invoked_sub_cmd} abc123 DEBUG",
+            f"nvflare job {invoked_sub_cmd} abc123 concise",
         ],
         sys.argv[1:],
     )
@@ -1767,7 +1772,11 @@ def define_job_monitor_parser(job_subparser):
 
 
 def define_job_log_parser(job_subparser):
-    p = job_subparser.add_parser(CMD_JOB_LOG_CONFIG, help="change logging configuration for a running job")
+    p = job_subparser.add_parser(
+        CMD_JOB_LOG_CONFIG,
+        aliases=[CMD_JOB_LOG_ALIAS],
+        help="change logging configuration for a running job",
+    )
     p.add_argument("job_id", type=str, help="job ID")
     p.add_argument(
         "level",
@@ -1778,4 +1787,6 @@ def define_job_log_parser(job_subparser):
     p.add_argument("--site", default="all", help="target site name or all")
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_LOG_CONFIG] = p
+    job_sub_cmd_parser[CMD_JOB_LOG_ALIAS] = p
     job_sub_cmd_handlers[CMD_JOB_LOG_CONFIG] = cmd_job_log
+    job_sub_cmd_handlers[CMD_JOB_LOG_ALIAS] = cmd_job_log
