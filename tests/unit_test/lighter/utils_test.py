@@ -13,11 +13,13 @@
 # limitations under the License.
 
 import datetime
+import io
 import ipaddress
 import json
 import os
 import shutil
 import tempfile
+from unittest.mock import patch
 
 import pytest
 from cryptography import x509
@@ -26,11 +28,12 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
+import nvflare.lighter.utils as lighter_utils
 from nvflare.lighter.impl.cert import serialize_cert
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import Identity, cert_to_dict
 from nvflare.lighter.utils import generate_cert as lighter_generate_cert
-from nvflare.lighter.utils import load_yaml, sign_folders, verify_folder_signature
+from nvflare.lighter.utils import load_private_key_file, load_yaml, sign_folders, verify_folder_signature
 
 folders = ["folder1", "folder2"]
 files = ["file1", "file2"]
@@ -98,6 +101,27 @@ def test_cert_to_dict_serial_number_is_hex_string():
 
     assert isinstance(cert_dict["serial_number"], str)
     assert cert_dict["serial_number"].startswith("0x")
+
+
+def test_generate_cert_ca_key_usage_is_restricted():
+    root_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+    root_pub_key = root_pri_key.public_key()
+
+    cert = lighter_generate_cert(
+        subject=Identity("root", "nvidia"),
+        issuer=Identity("root", "nvidia"),
+        signing_pri_key=root_pri_key,
+        subject_pub_key=root_pub_key,
+        ca=True,
+    )
+
+    key_usage = cert.extensions.get_extension_for_class(x509.KeyUsage).value
+    assert key_usage.key_cert_sign is True
+    assert key_usage.crl_sign is True
+    assert key_usage.digital_signature is True
+    assert key_usage.key_encipherment is False
+    assert key_usage.data_encipherment is False
+    assert key_usage.key_agreement is False
 
 
 def create_folder():
@@ -329,3 +353,44 @@ class TestGenerateCert:
 
         assert sans.get_values_for_type(x509.IPAddress) == [ipaddress.ip_address("34.118.10.20")]
         assert sans.get_values_for_type(x509.DNSName) == ["server.example.com"]
+
+    def test_generate_cert_uses_timezone_aware_now(self, monkeypatch):
+        original_datetime = lighter_utils.datetime.datetime
+
+        class _DateTime(original_datetime):
+            @classmethod
+            def utcnow(cls):
+                raise AssertionError("generate_cert should not call utcnow()")
+
+        monkeypatch.setattr(lighter_utils.datetime, "datetime", _DateTime)
+
+        root_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+        server_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+        server_pub_key = server_pri_key.public_key()
+
+        cert = lighter_generate_cert(
+            subject=Identity("server", "nvidia"),
+            issuer=Identity("root", "nvidia"),
+            signing_pri_key=root_pri_key,
+            subject_pub_key=server_pub_key,
+        )
+
+        assert cert is not None
+
+
+def test_load_private_key_file_reads_bytes():
+    pem_data = b"-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n"
+    sentinel_key = object()
+    open_calls = []
+
+    def _open(file_path, mode="r", *args, **kwargs):
+        open_calls.append((file_path, mode))
+        return io.BytesIO(pem_data)
+
+    with patch("builtins.open", _open):
+        with patch.object(lighter_utils.serialization, "load_pem_private_key", return_value=sentinel_key) as loader:
+            key = load_private_key_file("test.key")
+
+    assert open_calls == [("test.key", "rb")]
+    loader.assert_called_once_with(pem_data, password=None, backend=default_backend())
+    assert key is sentinel_key

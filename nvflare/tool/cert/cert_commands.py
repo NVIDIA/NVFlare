@@ -35,8 +35,16 @@ from nvflare.lighter.utils import (
     serialize_pri_key,
     x509_name,
 )
+from nvflare.tool import cli_output
 from nvflare.tool.cert.cert_cli import _VALID_CERT_TYPES
-from nvflare.tool.cli_output import output_error, output_error_message, output_ok, output_usage_error
+from nvflare.tool.cli_output import (
+    output_error,
+    output_error_message,
+    output_ok,
+    output_usage_error,
+    print_human,
+    prompt_yn,
+)
 from nvflare.tool.cli_schema import handle_schema_flag
 
 _USAGE_HINT = "Run the command with -h for usage."
@@ -134,11 +142,14 @@ def handle_cert_init(args):
     # 10. Write files
     rootca_path = os.path.join(output_dir, "rootCA.pem")
     ca_json_path = os.path.join(output_dir, "ca.json")
+    written_paths = []
     try:
         with open(rootca_path, "wb") as f:
             f.write(pem_cert)
+        written_paths.append(rootca_path)
 
         _write_private_key(ca_key_path, pem_key)
+        written_paths.append(ca_key_path)
 
         created_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         ca_meta = {
@@ -146,7 +157,14 @@ def handle_cert_init(args):
             "created_at": created_at,
         }
         _write_json_file(ca_json_path, ca_meta)
+        written_paths.append(ca_json_path)
     except OSError as e:
+        for path in written_paths:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
 
     # 11. Compute valid_until for output
@@ -205,6 +223,15 @@ def _write_file(path: str, pem_bytes: bytes) -> None:
         f.write(pem_bytes)
 
 
+def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags, mode)
+    with os.fdopen(fd, "wb") as f:
+        f.write(content)
+
+
 def _write_json_file(path: str, data: dict) -> None:
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
@@ -223,12 +250,13 @@ def _backup_existing_csr(out_dir: str, name: str) -> None:
 
 
 def _load_single_site_yaml(path: str) -> dict:
-    from nvflare.lighter.utils import load_yaml
+    import yaml
 
     if not os.path.isfile(path):
         output_error("PROJECT_FILE_NOT_FOUND", path=path)
     try:
-        data = load_yaml(path)
+        with open(path, "r") as f:
+            data = yaml.safe_load(f)
     except Exception as e:
         output_error_message(
             "INVALID_ARGS",
@@ -386,19 +414,57 @@ def _get_cn(name: x509.Name) -> str:
     return ""
 
 
+def _get_csr_role(csr: x509.CertificateSigningRequest) -> str:
+    role_attrs = csr.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
+    if not role_attrs:
+        return ""
+    return role_attrs[0].value
+
+
+def _get_cert_not_valid_after(cert: x509.Certificate) -> datetime.datetime:
+    try:
+        return cert.not_valid_after_utc
+    except AttributeError:
+        not_after = cert.not_valid_after
+        return (
+            not_after.replace(tzinfo=datetime.timezone.utc)
+            if not_after.tzinfo is None
+            else not_after.astimezone(datetime.timezone.utc)
+        )
+
+
+def _validate_signing_ca(ca_cert: x509.Certificate, now: datetime.datetime) -> datetime.datetime:
+    try:
+        basic_constraints = ca_cert.extensions.get_extension_for_class(x509.BasicConstraints).value
+    except x509.ExtensionNotFound:
+        output_error("CERT_SIGNING_FAILED", reason="CA certificate is missing BasicConstraints")
+
+    if not basic_constraints.ca:
+        output_error("CERT_SIGNING_FAILED", reason="CA certificate is not a CA certificate")
+
+    ca_not_valid_after = _get_cert_not_valid_after(ca_cert)
+    if ca_not_valid_after <= now:
+        output_error(
+            "CERT_SIGNING_FAILED",
+            reason=f"CA certificate expired at {ca_not_valid_after.strftime('%Y-%m-%dT%H:%M:%SZ')}",
+        )
+
+    return ca_not_valid_after
+
+
 def _build_signed_cert(
     csr: x509.CertificateSigningRequest,
     ca_cert: x509.Certificate,
     ca_key,
     cert_type: str,
-    valid_days: int,
+    now: datetime.datetime,
+    not_valid_after: datetime.datetime,
 ) -> x509.Certificate:
     """Build and sign a certificate from a CSR using the CA key.
 
     The subject is rebuilt from safe CSR fields only; UNSTRUCTURED_NAME (role) is always
     set from cert_type (the Project Admin's authoritative -t argument), never from the CSR.
     """
-    now = datetime.datetime.now(datetime.timezone.utc)
     subject_cn = _get_cn(csr.subject)
 
     _ADMIN_ROLES = {"org_admin", "lead", "member"}
@@ -464,9 +530,9 @@ def _build_signed_cert(
         .public_key(csr.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(now)
-        .not_valid_after(now + datetime.timedelta(days=valid_days))
+        .not_valid_after(not_valid_after)
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-        .add_extension(x509.KeyUsage(**key_usage_kwargs), critical=False)
+        .add_extension(x509.KeyUsage(**key_usage_kwargs), critical=True)
         .add_extension(
             x509.SubjectKeyIdentifier.from_public_key(csr.public_key()),
             critical=False,
@@ -563,10 +629,7 @@ def handle_cert_sign(args):
     # 6. Resolve cert type explicitly: signer either overrides with -t or accepts the CSR role.
     cert_type = getattr(args, "cert_type", None)
     if getattr(args, "accept_csr_role", False):
-        # Read proposed role from CSR subject UNSTRUCTURED_NAME (set by 'cert csr -t')
-        _csr_role_attrs = csr.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
-        if _csr_role_attrs:
-            cert_type = _csr_role_attrs[0].value
+        cert_type = _get_csr_role(csr)
         if not cert_type:
             output_error_message(
                 "INVALID_ARGS",
@@ -592,6 +655,10 @@ def handle_cert_sign(args):
             detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(_VALID_CERT_TYPES))}",
         )
     subject_cn = _get_cn(csr.subject)
+    if getattr(args, "accept_csr_role", False) and not cli_output.is_json_mode() and sys.stdin.isatty():
+        if not prompt_yn(f"CSR for '{subject_cn}' proposes role '{cert_type}'. Sign using this CSR role?"):
+            print_human("Cancelled.")
+            return 1
     if not subject_cn or not subject_cn.strip():
         output_error(
             "INVALID_NAME",
@@ -633,15 +700,21 @@ def handle_cert_sign(args):
     except Exception as e:
         output_error("CA_LOAD_FAILED", ca_dir=ca_dir, detail=str(e))
 
+    now = datetime.datetime.now(datetime.timezone.utc)
+    ca_not_valid_after = _validate_signing_ca(ca_cert, now)
+
     # 9. Build and sign the certificate
     valid_days = getattr(args, "valid_days", 1095) or 1095
+    requested_not_valid_after = now + datetime.timedelta(days=valid_days)
+    leaf_not_valid_after = min(requested_not_valid_after, ca_not_valid_after)
     try:
         signed_cert = _build_signed_cert(
             csr=csr,
             ca_cert=ca_cert,
             ca_key=ca_key,
             cert_type=cert_type,
-            valid_days=valid_days,
+            now=now,
+            not_valid_after=leaf_not_valid_after,
         )
     except Exception as e:
         output_error("CERT_SIGNING_FAILED", reason=str(e))
@@ -650,11 +723,13 @@ def handle_cert_sign(args):
     try:
         with open(cert_out_path, "wb") as f:
             f.write(serialize_cert(signed_cert))
-        shutil.copy2(ca_cert_path, rootca_out_path)
+        with open(ca_cert_path, "rb") as f:
+            rootca_bytes = f.read()
+        _write_file_nofollow(rootca_out_path, rootca_bytes)
     except OSError as e:
         for path in (cert_out_path, rootca_out_path):
             try:
-                if os.path.exists(path):
+                if os.path.exists(path) and not os.path.islink(path):
                     os.remove(path)
             except OSError:
                 pass

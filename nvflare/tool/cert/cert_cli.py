@@ -33,6 +33,16 @@ def _name_type(value: str) -> str:
     return value
 
 
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(str(e))
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("value must be >= 1")
+    return parsed
+
+
 def _add_compat_output_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--output",
@@ -79,7 +89,7 @@ def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
     p.add_argument(
         "--valid-days",
         required=False,
-        type=int,
+        type=_positive_int,
         default=3650,
         dest="valid_days",
         metavar="DAYS",
@@ -227,7 +237,7 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
     p.add_argument(
         "--valid-days",
         required=False,
-        type=int,
+        type=_positive_int,
         default=1095,
         dest="valid_days",
         help="Certificate validity in days. Default: 1095 (3 years).",
