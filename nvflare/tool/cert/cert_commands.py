@@ -18,6 +18,7 @@ import datetime
 import ipaddress
 import json
 import os
+import re
 import shutil
 import sys
 
@@ -48,6 +49,31 @@ from nvflare.tool.cli_output import (
 from nvflare.tool.cli_schema import handle_schema_flag
 
 _USAGE_HINT = "Run the command with -h for usage."
+_SAFE_CERT_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def _validate_safe_cert_name(name: str, *, field_label: str) -> None:
+    if not name or not name.strip():
+        output_error(
+            "INVALID_NAME", exit_code=4, name=name, reason=f"{field_label} must not be empty or whitespace only."
+        )
+    if len(name) > 64:
+        output_error("INVALID_NAME", exit_code=4, name=name, reason=f"{field_label} must be 64 characters or fewer.")
+    if os.sep in name or (os.altsep and os.altsep in name) or name.startswith("."):
+        output_error(
+            "INVALID_NAME",
+            exit_code=4,
+            name=name,
+            reason=f"{field_label} must not contain path separators or start with '.'.",
+        )
+    if not _SAFE_CERT_NAME_PATTERN.fullmatch(name):
+        output_error(
+            "INVALID_NAME",
+            exit_code=4,
+            name=name,
+            reason=f"{field_label} must match [A-Za-z0-9][A-Za-z0-9._-]*.",
+        )
+
 
 # ---------------------------------------------------------------------------
 # cert init
@@ -340,14 +366,7 @@ def handle_cert_csr(args):
 
     # 3. Normalize and validate name
     name = (site["name"] if site else args.name).strip()
-    if not name:
-        output_error("INVALID_NAME", exit_code=4, name=name, reason="Name must not be empty or whitespace only.")
-    if len(name) > 64:
-        output_error("INVALID_NAME", exit_code=4, name=name, reason="Name must be 64 characters or fewer.")
-    if os.sep in name or (os.altsep and os.altsep in name) or name.startswith("."):
-        output_error(
-            "INVALID_NAME", exit_code=4, name=name, reason="Name must not contain path separators or start with '.'."
-        )
+    _validate_safe_cert_name(name, field_label="Name")
 
     # 4. Resolve force
     force = args.force
@@ -659,20 +678,7 @@ def handle_cert_sign(args):
         if not prompt_yn(f"CSR for '{subject_cn}' proposes role '{cert_type}'. Sign using this CSR role?"):
             print_human("Cancelled.")
             return 1
-    if not subject_cn or not subject_cn.strip():
-        output_error(
-            "INVALID_NAME",
-            exit_code=4,
-            name=subject_cn,
-            reason="CSR subject CN must not be empty or whitespace only.",
-        )
-    if os.sep in subject_cn or (os.altsep and os.altsep in subject_cn) or subject_cn.startswith("."):
-        output_error(
-            "INVALID_NAME",
-            exit_code=4,
-            name=subject_cn,
-            reason="CSR subject CN must not contain path separators or start with '.'.",
-        )
+    _validate_safe_cert_name(subject_cn, field_label="CSR subject CN")
     output_filename = f"{subject_cn}.crt"
 
     # 7. Resolve output paths; check for existing cert

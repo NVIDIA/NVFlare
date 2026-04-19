@@ -1118,6 +1118,27 @@ class TestCertSignReadsTypeFromCsr:
             handle_cert_sign(args)
         assert exc_info.value.code == 4
 
+    def test_sign_rejects_subject_cn_with_newline(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        subject = x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, "alice\nbad"),
+                x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, "lead"),
+            ]
+        )
+        csr = x509.CertificateSigningRequestBuilder().subject_name(subject).sign(key, hashes.SHA256())
+        csr_dir = tmp_path / "csr-newline"
+        csr_dir.mkdir()
+        csr_path = csr_dir / "newline.csr"
+        csr_path.write_bytes(csr.public_bytes(serialization.Encoding.PEM))
+
+        out_dir = str(tmp_path / "signed-newline")
+        args = _sign_args(csr_path=str(csr_path), ca_dir=ca_dir, output_dir=out_dir, accept_csr_role=True)
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 4
+
     def test_sign_preserves_single_organization_name(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
         csr_dir = str(tmp_path / "csr")
@@ -1256,6 +1277,14 @@ class TestCertCsrProjectFile:
         csr = _load_csr_file(str(out_dir / "fl-server.csr"))
         cn = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
         assert cn == "fl-server"
+
+    def test_project_file_rejects_name_with_newline(self, tmp_path):
+        site_file = self._write_site_yaml(tmp_path, name="hospital-1\nbad")
+        out_dir = tmp_path / "out"
+        args = _csr_args(name=None, project_file=site_file, output_dir=str(out_dir))
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_csr(args)
+        assert exc_info.value.code == 4
 
     def test_csr_org_taken_from_yaml(self, tmp_path):
         site_file = self._write_site_yaml(tmp_path, org="NVIDIA")
