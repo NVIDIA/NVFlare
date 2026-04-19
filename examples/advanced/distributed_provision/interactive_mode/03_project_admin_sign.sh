@@ -19,7 +19,7 @@ if [[ -z "${CSR_PATH}" || -z "${CA_DIR}" || -z "${OUT_DIR}" ]]; then
   exit 2
 fi
 
-mkdir -p "${OUT_DIR}"
+mkdir -m 0700 -p "${OUT_DIR}"
 
 if [[ -n "${OVERRIDE_TYPE}" ]]; then
   nvflare cert sign -r "${CSR_PATH}" -t "${OVERRIDE_TYPE}" -c "${CA_DIR}" -o "${OUT_DIR}"

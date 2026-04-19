@@ -43,7 +43,7 @@ mkdir -m 0700 -p "${CA_DIR}"
 mkdir -m 0700 -p "${CSR_DIR}" "${SIGNED_DIR}" "${SITE_DIR}"
 
 # 1) Root CA
-jq -n -r '{step:"warning", scope:"cert init", message:"cert init --force regenerates the root CA and invalidates previously signed certs."} | @json'
+jq -n -c '{step:"warning", scope:"cert init", message:"cert init --force regenerates the root CA and invalidates previously signed certs."}'
 nvflare --out-format json cert init --project "${PROJECT_NAME}" -o "${CA_DIR}" --force >"${WORK_DIR}/ca.json"
 ROOTCA_FP="$(openssl x509 -in "${CA_DIR}/rootCA.pem" -noout -fingerprint -sha256 | sed 's/^[Ss][Hh][Aa]256 Fingerprint=//')"
 
@@ -56,7 +56,7 @@ trap 'rm -f "${TMP_CSR_JSON:-}"' EXIT
 # 2) CSR for each site (uses --project-file)
 for site_yaml in "${SITE_YAMLS[@]}"; do
   TMP_CSR_JSON="$(mktemp "${WORK_DIR}/csr_tmp.XXXXXX.json")"
-  jq -n -r --arg file "${site_yaml}" --arg dir "${CSR_DIR}" '{step:"warning", scope:"cert csr", site_yaml:$file, message:"cert csr --force regenerates participant private keys and CSRs for existing names.", csr_dir:$dir} | @json'
+  jq -n -c --arg file "${site_yaml}" --arg dir "${CSR_DIR}" '{step:"warning", scope:"cert csr", site_yaml:$file, message:"cert csr --force regenerates participant private keys and CSRs for existing names.", csr_dir:$dir}'
   nvflare --out-format json cert csr --project-file "${site_yaml}" -o "${CSR_DIR}" --force >"${TMP_CSR_JSON}"
 
   SITE_NAME="$(jq -r '.data.name' <"${TMP_CSR_JSON}")"
@@ -113,13 +113,13 @@ for i in "${!SITE_NAMES[@]}"; do
 done
 
 # Summaries
-jq -r '{step:"cert init", data:.data} | @json' <"${WORK_DIR}/ca.json"
-jq -n -r --arg fp "${ROOTCA_FP}" '{step:"verify rootca", fingerprint_sha256:$fp} | @json'
+jq -c '{step:"cert init", data:.data}' <"${WORK_DIR}/ca.json"
+jq -n -c --arg fp "${ROOTCA_FP}" '{step:"verify rootca", fingerprint_sha256:$fp}'
 for i in "${!SITE_NAMES[@]}"; do
   SITE_NAME="${SITE_NAMES[$i]}"
-  jq -r --arg site "${SITE_NAME}" '{step:"cert csr", site:$site, data:.data} | @json' <"${WORK_DIR}/csr_${SITE_NAME}.json"
-  jq -r --arg site "${SITE_NAME}" '{step:"cert sign", site:$site, data:.data} | @json' <"${WORK_DIR}/sign_${SITE_NAME}.json"
-  jq -n -r --arg site "${SITE_NAME}" --arg fp "${ROOTCA_FP}" '{step:"verify rootca", site:$site, fingerprint_sha256:$fp} | @json'
-  jq -n -r --arg site "${SITE_NAME}" --arg out "${WORK_DIR}/package_${SITE_NAME}.json" '{step:"package", site:$site, output:$out} | @json'
+  jq -c --arg site "${SITE_NAME}" '{step:"cert csr", site:$site, data:.data}' <"${WORK_DIR}/csr_${SITE_NAME}.json"
+  jq -c --arg site "${SITE_NAME}" '{step:"cert sign", site:$site, data:.data}' <"${WORK_DIR}/sign_${SITE_NAME}.json"
+  jq -n -c --arg site "${SITE_NAME}" --arg fp "${ROOTCA_FP}" '{step:"verify rootca", site:$site, fingerprint_sha256:$fp}'
+  jq -n -c --arg site "${SITE_NAME}" --arg out "${WORK_DIR}/package_${SITE_NAME}.json" '{step:"package", site:$site, output:$out}'
 
 done

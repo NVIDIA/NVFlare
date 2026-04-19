@@ -161,7 +161,9 @@ Common list filters:
 - ``-i, --id``: filter by job ID prefix.
 - ``-r, --reverse``: reverse sort order.
 - ``-m, --max``: maximum number of results to return.
-- ``--study``: list jobs from a named study. If omitted, the literal study name ``default`` is used. There is no special ``all`` keyword.
+- ``--study``: list jobs from a named study. If omitted, the literal study name
+  ``default`` is used. Values such as ``all`` are passed through to the server
+  unchanged.
 - ``--schema``: print the command schema as JSON and exit.
 
 Retrieve metadata for a single job:
@@ -255,9 +257,10 @@ Show running job statistics:
 .. code-block:: shell
 
    nvflare job stats <job_id>
-   nvflare job stats <job_id> --site all
 
 ``job stats`` supports ``--site`` to target a specific site or ``all``.
+The default is ``all``, so specifying ``--site all`` explicitly is equivalent
+to omitting it.
 It also supports ``--schema``.
 
 ***************************

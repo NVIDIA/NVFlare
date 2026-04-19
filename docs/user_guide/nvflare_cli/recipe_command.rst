@@ -45,6 +45,9 @@ Supported framework filter values:
 - ``tensorflow``
 - ``sklearn``
 - ``xgboost``
+
+Other options:
+
 - ``--schema``: print the command schema as JSON and exit.
 
 Behavior notes:
