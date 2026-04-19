@@ -113,6 +113,20 @@ class TestCertInit:
         assert (tmp_path / "rootCA.key").exists()
         assert (tmp_path / "ca.json").exists()
 
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_init_rootca_symlink_destination_is_rejected(self, tmp_path):
+        outside_target = tmp_path / "outside-rootca.pem"
+        outside_target.write_text("sentinel")
+        os.symlink(str(outside_target), str(tmp_path / "rootCA.pem"))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_init(tmp_path)
+
+        assert exc_info.value.code == 1
+        assert outside_target.read_text() == "sentinel"
+        assert not (tmp_path / "rootCA.key").exists()
+        assert not (tmp_path / "ca.json").exists()
+
     @pytest.mark.skipif(platform.system() == "Windows", reason="chmod not meaningful on Windows")
     def test_ca_key_permissions(self, tmp_path):
         _run_init(tmp_path)

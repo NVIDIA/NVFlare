@@ -171,8 +171,7 @@ def handle_cert_init(args):
     written_paths = []
     try:
         written_paths.append(rootca_path)
-        with open(rootca_path, "wb") as f:
-            f.write(pem_cert)
+        _write_file_nofollow(rootca_path, pem_cert)
 
         written_paths.append(ca_key_path)
         _write_private_key(ca_key_path, pem_key)
