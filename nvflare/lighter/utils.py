@@ -353,6 +353,18 @@ def load_yaml(file):
     return yaml_data
 
 
+def _resolve_include_path(root, item):
+    root_real = os.path.realpath(root or ".")
+    include_path = os.path.realpath(os.path.join(root_real, item))
+    try:
+        common = os.path.commonpath([root_real, include_path])
+    except ValueError:
+        raise ValueError(f"include path escapes root: {item}")
+    if common != root_real:
+        raise ValueError(f"include path escapes root: {item}")
+    return include_path
+
+
 def load_yaml_include(root, yaml_data):
     new_data = {}
     for k, v in yaml_data.items():
@@ -362,7 +374,7 @@ def load_yaml_include(root, yaml_data):
             elif isinstance(v, list):
                 includes = v
             for item in includes:
-                new_data.update(load_yaml(os.path.join(root, item)))
+                new_data.update(load_yaml(_resolve_include_path(root, item)))
         elif isinstance(v, list):
             new_list = []
             for item in v:

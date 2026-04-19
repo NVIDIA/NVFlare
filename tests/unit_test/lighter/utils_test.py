@@ -397,3 +397,16 @@ def test_load_private_key_file_reads_bytes():
     assert open_calls == [("test.key", "rb")]
     loader.assert_called_once_with(pem_data, password=None, backend=default_backend())
     assert key is sentinel_key
+
+
+def test_load_yaml_include_rejects_path_traversal(tmp_path):
+    outside = tmp_path / "outside.yml"
+    outside.write_text("leak: true\n")
+
+    root = tmp_path / "root"
+    root.mkdir()
+    config = root / "config.yml"
+    config.write_text("include: ../outside.yml\n")
+
+    with pytest.raises(ValueError, match="include path escapes root"):
+        load_yaml(config)
