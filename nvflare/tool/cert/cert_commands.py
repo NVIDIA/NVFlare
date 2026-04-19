@@ -170,20 +170,20 @@ def handle_cert_init(args):
     ca_json_path = os.path.join(output_dir, "ca.json")
     written_paths = []
     try:
+        written_paths.append(rootca_path)
         with open(rootca_path, "wb") as f:
             f.write(pem_cert)
-        written_paths.append(rootca_path)
 
-        _write_private_key(ca_key_path, pem_key)
         written_paths.append(ca_key_path)
+        _write_private_key(ca_key_path, pem_key)
 
         created_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         ca_meta = {
             "project": args.project,
             "created_at": created_at,
         }
-        _write_json_file(ca_json_path, ca_meta)
         written_paths.append(ca_json_path)
+        _write_json_file(ca_json_path, ca_meta)
     except OSError as e:
         for path in written_paths:
             try:
@@ -499,6 +499,7 @@ def _build_signed_cert(
             encipher_only=False,
             decipher_only=False,
         )
+        eku_oids = [x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH]
     else:
         # client and server
         key_usage_kwargs = dict(
@@ -512,6 +513,13 @@ def _build_signed_cert(
             encipher_only=False,
             decipher_only=False,
         )
+        eku_oids = [
+            (
+                x509.oid.ExtendedKeyUsageOID.SERVER_AUTH
+                if cert_type == "server"
+                else x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH
+            )
+        ]
 
     # Rebuild subject from safe OIDs only — do NOT copy CSR subject verbatim.
     _SAFE_OIDS = {
@@ -552,6 +560,7 @@ def _build_signed_cert(
         .not_valid_after(not_valid_after)
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
         .add_extension(x509.KeyUsage(**key_usage_kwargs), critical=True)
+        .add_extension(x509.ExtendedKeyUsage(eku_oids), critical=False)
         .add_extension(
             x509.SubjectKeyIdentifier.from_public_key(csr.public_key()),
             critical=False,

@@ -237,6 +237,23 @@ class TestCertInit:
         assert not (tmp_path / "rootCA.key").exists()
         assert not (tmp_path / "ca.json").exists()
 
+    def test_init_cleans_up_partial_key_file_on_mid_write_failure(self, tmp_path, monkeypatch):
+        import nvflare.tool.cert.cert_commands as cert_commands
+
+        def _partial_write_private_key(path, pem_bytes):
+            with open(path, "wb") as f:
+                f.write(pem_bytes[:32])
+            raise OSError("disk full during key write")
+
+        monkeypatch.setattr(cert_commands, "_write_private_key", _partial_write_private_key)
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_init(_init_args(output_dir=str(tmp_path)))
+        assert exc_info.value.code == 1
+        assert not (tmp_path / "rootCA.pem").exists()
+        assert not (tmp_path / "rootCA.key").exists()
+        assert not (tmp_path / "ca.json").exists()
+
     @pytest.mark.skipif(platform.system() == "Windows", reason="directory chmod semantics differ on Windows")
     def test_output_dir_permissions(self, tmp_path):
         new_dir = str(tmp_path / "secure" / "ca")
@@ -816,6 +833,24 @@ class TestCertSign:
         cert = load_crt(os.path.join(out_dir, "bob.crt"))
         key_usage = cert.extensions.get_extension_for_class(x509.KeyUsage)
         assert key_usage.value.content_commitment is True
+        eku = cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+        assert list(eku) == [x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH]
+
+    def test_sign_server_cert_sets_server_auth_eku(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_dir = str(tmp_path / "csr-server")
+        os.makedirs(csr_dir, exist_ok=True)
+        args = _csr_args(name="fl-server", output_dir=csr_dir, cert_type="server")
+        handle_cert_csr(args)
+        csr_path = os.path.join(csr_dir, "fl-server.csr")
+
+        out_dir = str(tmp_path / "signed-server")
+        sign_args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="server")
+        handle_cert_sign(sign_args)
+
+        cert = load_crt(os.path.join(out_dir, "fl-server.crt"))
+        eku = cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+        assert list(eku) == [x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]
 
     def test_valid_days_custom(self, tmp_path):
         """--valid-days controls certificate not_valid_after."""
