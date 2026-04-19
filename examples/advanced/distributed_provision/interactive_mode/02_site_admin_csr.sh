@@ -12,5 +12,6 @@ if [[ -z "${SITE_YAML}" || -z "${CSR_DIR}" ]]; then
   exit 2
 fi
 
-nvflare cert csr --project-file "${SITE_YAML}" -o "${CSR_DIR}"
+mkdir -m 0700 -p "${CSR_DIR}"
 
+nvflare cert csr --project-file "${SITE_YAML}" -o "${CSR_DIR}"
