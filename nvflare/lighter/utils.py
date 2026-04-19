@@ -86,7 +86,7 @@ def generate_cert(
         builder = builder.add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True).add_extension(
             x509.KeyUsage(
                 digital_signature=True,
-                content_commitment=True,
+                content_commitment=False,
                 key_encipherment=False,
                 data_encipherment=False,
                 key_agreement=False,
@@ -95,7 +95,7 @@ def generate_cert(
                 encipher_only=False,
                 decipher_only=False,
             ),
-            critical=False,
+            critical=True,
         )
 
     if server_default_host:

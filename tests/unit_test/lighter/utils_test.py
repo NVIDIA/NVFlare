@@ -116,9 +116,12 @@ def test_generate_cert_ca_key_usage_is_restricted():
     )
 
     key_usage = cert.extensions.get_extension_for_class(x509.KeyUsage).value
+    key_usage_ext = cert.extensions.get_extension_for_class(x509.KeyUsage)
+    assert key_usage_ext.critical is True
     assert key_usage.key_cert_sign is True
     assert key_usage.crl_sign is True
     assert key_usage.digital_signature is True
+    assert key_usage.content_commitment is False
     assert key_usage.key_encipherment is False
     assert key_usage.data_encipherment is False
     assert key_usage.key_agreement is False
