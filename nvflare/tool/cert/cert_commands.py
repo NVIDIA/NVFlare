@@ -736,8 +736,7 @@ def handle_cert_sign(args):
 
     # 10. Write signed cert and copy rootCA.pem
     try:
-        with open(cert_out_path, "wb") as f:
-            f.write(serialize_cert(signed_cert))
+        _write_file_nofollow(cert_out_path, serialize_cert(signed_cert))
         with open(ca_cert_path, "rb") as f:
             rootca_bytes = f.read()
         _write_file_nofollow(rootca_out_path, rootca_bytes)

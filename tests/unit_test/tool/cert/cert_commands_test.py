@@ -752,6 +752,24 @@ class TestCertSign:
         assert outside_target.read_text() == "sentinel"
         assert not (out_dir / "hospital-1.crt").exists()
 
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_sign_cert_symlink_destination_is_rejected(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)
+        out_dir = tmp_path / "signed"
+        out_dir.mkdir()
+
+        outside_target = tmp_path / "outside-cert.crt"
+        outside_target.write_text("sentinel")
+        os.symlink(str(outside_target), str(out_dir / "hospital-1.crt"))
+
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=str(out_dir), cert_type="client")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 1
+        assert outside_target.read_text() == "sentinel"
+        assert not (out_dir / "rootCA.pem").exists()
+
     def test_sign_refuses_to_overwrite_existing_rootca_without_force(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         ca_dir = _setup_ca(tmp_path)
