@@ -55,7 +55,7 @@ trap 'rm -f "${TMP_CSR_JSON:-}"' EXIT
 
 # 2) CSR for each site (uses --project-file)
 for site_yaml in "${SITE_YAMLS[@]}"; do
-  TMP_CSR_JSON="$(mktemp "${WORK_DIR}/csr_tmp.XXXXXX.json")"
+  TMP_CSR_JSON="$(mktemp "${WORK_DIR}/csr_tmp.XXXXXX")"
   jq -n -c --arg file "${site_yaml}" --arg dir "${CSR_DIR}" '{step:"warning", scope:"cert csr", site_yaml:$file, message:"cert csr --force regenerates participant private keys and CSRs for existing names.", csr_dir:$dir}'
   nvflare --out-format json cert csr --project-file "${site_yaml}" -o "${CSR_DIR}" --force >"${TMP_CSR_JSON}"
 
@@ -65,6 +65,12 @@ for site_yaml in "${SITE_YAMLS[@]}"; do
 
   if [[ "${SITE_NAME}" == "null" || -z "${SITE_NAME}" ]]; then
     json_error 1 "INVALID_CSR_OUTPUT" "cert csr output did not include a valid participant name."
+  fi
+  if [[ "${CSR_PATH}" == "null" || -z "${CSR_PATH}" ]]; then
+    json_error 1 "INVALID_CSR_OUTPUT" "cert csr output did not include a valid csr path."
+  fi
+  if [[ "${KEY_PATH}" == "null" || -z "${KEY_PATH}" ]]; then
+    json_error 1 "INVALID_CSR_OUTPUT" "cert csr output did not include a valid key path."
   fi
   for existing_site in "${SITE_NAMES[@]}"; do
     if [[ "${existing_site}" == "${SITE_NAME}" ]]; then

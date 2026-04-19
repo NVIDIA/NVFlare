@@ -40,7 +40,6 @@ Filter by framework:
 
 Supported framework filter values:
 
-- ``any``
 - ``pytorch``
 - ``tensorflow``
 - ``sklearn``
@@ -48,6 +47,7 @@ Supported framework filter values:
 
 Other options:
 
+- Omitting ``--framework`` returns all available recipes.
 - ``--schema``: print the command schema as JSON and exit.
 
 Behavior notes:

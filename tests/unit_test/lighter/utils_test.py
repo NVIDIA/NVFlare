@@ -28,7 +28,7 @@ from cryptography.x509.oid import NameOID
 
 from nvflare.lighter.impl.cert import serialize_cert
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
-from nvflare.lighter.utils import Identity
+from nvflare.lighter.utils import Identity, cert_to_dict
 from nvflare.lighter.utils import generate_cert as lighter_generate_cert
 from nvflare.lighter.utils import load_yaml, sign_folders, verify_folder_signature
 
@@ -89,6 +89,15 @@ def get_test_certs():
     server_pub_key = server_pri_key.public_key()
     server_cert = generate_cert("client", "nvidia", "root", root_pri_key, server_pub_key)
     return root_cert, client_pri_key, client_cert, server_pri_key, server_cert
+
+
+def test_cert_to_dict_serial_number_is_hex_string():
+    root_cert, *_ = get_test_certs()
+
+    cert_dict = cert_to_dict(root_cert)
+
+    assert isinstance(cert_dict["serial_number"], str)
+    assert cert_dict["serial_number"].startswith("0x")
 
 
 def create_folder():

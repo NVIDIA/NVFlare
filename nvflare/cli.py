@@ -178,7 +178,7 @@ def def_config_parser(sub_cmd):
         type=str,
         nargs="?",
         default=None,
-        help=argparse.SUPPRESS,
+        help="POC workspace location",
     )
     config_parser.add_argument(
         "-jt", "--job_templates_dir", type=str, nargs="?", default=None, help="job templates location"

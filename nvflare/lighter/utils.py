@@ -160,7 +160,7 @@ def cert_to_dict(cert):
         "subject": {attr.oid._name: attr.value for attr in cert.subject},
         "issuer": {attr.oid._name: attr.value for attr in cert.issuer},
         "version": cert.version.name,
-        "serial_number": cert.serial_number,
+        "serial_number": hex(cert.serial_number),
         # "not_valid_before": cert.not_valid_before.isoformat(),
         # "not_valid_after": cert.not_valid_after.isoformat(),
         # "signature_algorithm": cert.signature_algorithm.name,
