@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import threading
 import time
 import traceback
@@ -102,6 +103,16 @@ class ResultKey(object):
     STATUS = ProtoKey.STATUS
     DETAILS = ProtoKey.DETAILS
     META = ProtoKey.META
+    AUTH_CODE = "auth_code"
+
+
+def _print_hci_message(msg: str):
+    try:
+        from nvflare.tool.cli_output import print_human
+
+        print_human(msg)
+    except ImportError:
+        print(msg, file=sys.stderr)
 
 
 class _ServerReplyJsonProcessor(object):
@@ -371,7 +382,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             # use value configured in admin config
             timeout = self.default_login_timeout
 
-        print("Connecting to FLARE ...")
+        self._print_hci("Connecting to FLARE ...")
         if self.cell:
             return
 
@@ -482,7 +493,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             per_request_timeout=self.file_download_progress_timeout,
         )
         if err:
-            print(f"failed to receive file {file_name}: {err}")
+            self._print_hci(f"failed to receive file {file_name}: {err}")
             return None
 
         file_stats = os.stat(file_path)
@@ -501,7 +512,10 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
     def debug(self, msg):
         if self._debug:
-            print(f"DEBUG: {msg}")
+            self._print_hci(f"DEBUG: {msg}")
+
+    def _print_hci(self, msg: str):
+        _print_hci_message(msg)
 
     def fire_event(self, event_type: str, ctx: EventContext):
         self.debug(f"firing event {event_type}")
@@ -539,7 +553,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             try:
                 self.fire_session_event(EventType.TRYING_LOGIN, "Trying to login, please wait ...")
             except Exception as ex:
-                print(f"exception handling event {EventType.TRYING_LOGIN}: {secure_format_exception(ex)}")
+                self._print_hci(f"exception handling event {EventType.TRYING_LOGIN}: {secure_format_exception(ex)}")
                 return {
                     ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
                     ResultKey.DETAILS: f"exception handling event {EventType.TRYING_LOGIN}",
@@ -675,11 +689,25 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
                 ResultKey.DETAILS: "Communication Error - please try later",
             }
-        elif self.login_result == "REJECT":
-            return {
+        elif self.login_result == "REJECT" or str(self.login_result).startswith("REJECT:"):
+            detail = "Incorrect user name or password"
+            auth_code = None
+            if str(self.login_result).startswith("REJECT:"):
+                reject_detail = str(self.login_result).split(":", 1)[1].strip()
+                if reject_detail:
+                    parts = reject_detail.split(":", 1)
+                    if len(parts) == 2 and parts[0].strip().startswith("AUTH_"):
+                        auth_code = parts[0].strip()
+                        detail = parts[1].strip() or detail
+                    else:
+                        detail = reject_detail or detail
+            result = {
                 ResultKey.STATUS: APIStatus.ERROR_AUTHENTICATION,
-                ResultKey.DETAILS: "Incorrect user name or password",
+                ResultKey.DETAILS: detail,
             }
+            if auth_code:
+                result[ResultKey.AUTH_CODE] = auth_code
+            return result
         return self._after_login()
 
     def _send_to_cell(self, ctx: CommandContext):
@@ -711,7 +739,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         if requester:
             try:
                 reply = requester.send_request(self, conn, ctx)
-            except:
+            except Exception:
                 traceback.print_exc()
                 process_json_func(make_error(f"{type(requester)} failed to send request to Admin Server"))
                 return
@@ -730,7 +758,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             try:
                 json_data = validate_proto(reply)
                 process_json_func(json_data)
-            except:
+            except Exception:
                 traceback.print_exc()
                 process_json_func(make_error(f"{ReplyKeyword.COMM_FAILURE} with Admin Server"))
 

@@ -60,7 +60,6 @@ class PropKey:
     CONN_SECURITY = "connection_security"
     CUSTOM_CA_CERT = "custom_ca_cert"
     SCHEME = "scheme"
-    RUN_IN_DOCKER = "run_in_docker"
     CAPACITY = "capacity"
     NUM_GPUS = "num_of_gpus"
     GPU_MEM = "mem_per_gpu_in_GiB"
@@ -93,6 +92,8 @@ class CtxKey(WorkDir, PropKey):
     ROOT_PRI_KEY = "root_pri_key"
     RELAY_MAP = "relay_map"
     CLIENT_MAP = "client_map"
+    ERRORS = "__errors__"
+    WARNINGS = "__warnings__"
 
 
 class ProvisionMode:
@@ -174,7 +175,7 @@ class ProvFileName:
     PRIVILEGE_YML = "privilege.yml"
     DOCKER_BUILD_SH = "docker_build.sh"
     DOCKER_SH = "docker.sh"
-    DOCKER_LAUNCHER_SH = "docker_launcher.sh"
+    DOCKER_LAUNCHER_SH = "start_docker.sh"
     FED_SERVER_JSON = "fed_server.json"
     FED_CLIENT_JSON = "fed_client.json"
     STOP_FL_SH = "stop_fl.sh"

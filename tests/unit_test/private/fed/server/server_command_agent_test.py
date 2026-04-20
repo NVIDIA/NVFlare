@@ -14,6 +14,7 @@
 
 from unittest.mock import MagicMock
 
+from nvflare.fuel.f3.cellnet.core_cell import ReturnCode
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
@@ -43,4 +44,4 @@ class TestAuxCommunicateAuthCheck:
 
         assert not mock_engine.dispatch.called, "engine.dispatch should NOT be called when authentication fails"
         assert result is not None, "aux_communicate should return an error reply, not None"
-        assert not mock_engine.dispatch.called, "engine.dispatch should NOT be called when authentication fails"
+        assert result.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.AUTHENTICATION_ERROR

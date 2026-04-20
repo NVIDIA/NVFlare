@@ -14,6 +14,7 @@
 
 """Tests for recipe utilities and ExecEnv script validation."""
 
+import importlib
 import json
 import logging
 import os
@@ -354,6 +355,56 @@ class TestRecipeConfigMethods:
         with pytest.raises(TypeError, match="config must be a dict"):
             recipe.add_client_config(123)  # type: ignore[arg-type]
 
+    def test_add_decomposers_type_error(self, temp_script):
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_job",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            model={"class_path": "model.DummyModel", "args": {}},
+        )
+
+        with pytest.raises(TypeError, match="decomposer must be str or Decomposer"):
+            recipe.add_decomposers([object()])  # type: ignore[list-item]
+
+    def test_add_decomposers_uses_distinct_registers_for_server_and_clients(self, temp_script, monkeypatch):
+        import nvflare.recipe.spec as spec_module
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_job",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            model={"class_path": "model.DummyModel", "args": {}},
+        )
+
+        captured = {}
+
+        def _capture_server(obj, **kwargs):
+            captured["server_obj"] = obj
+            captured["server_kwargs"] = kwargs
+
+        def _capture_clients(obj, **kwargs):
+            captured["client_obj"] = obj
+            captured["client_kwargs"] = kwargs
+
+        class _DummyRegister:
+            def __init__(self, class_names):
+                self.class_names = class_names
+
+        monkeypatch.setattr(spec_module, "DecomposerRegister", _DummyRegister)
+        monkeypatch.setattr(recipe.job, "to_server", _capture_server)
+        monkeypatch.setattr(recipe, "_add_to_client_apps", _capture_clients)
+
+        recipe.add_decomposers(["pkg.mod.Dec"])
+
+        assert captured["server_kwargs"] == {"id": "decomposer_reg"}
+        assert captured["client_kwargs"] == {"id": "decomposer_reg"}
+        assert captured["server_obj"] is not captured["client_obj"]
+
 
 class _DummyExecEnv:
     def __init__(self):
@@ -407,6 +458,37 @@ class TestRecipeExecuteExportParamIsolation:
         recipe.execute(env, server_exec_params={"param_b": 2})
         assert server_app.app_config.additional_params == {}
 
+    def test_execute_empty_server_params_temporarily_clear_then_restore_snapshot(self, temp_script):
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_execute_empty_param_isolation",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            model={"class_path": "model.DummyModel", "args": {}},
+        )
+
+        env = _DummyExecEnv()
+        server_app = recipe.job._deploy_map.get("server")
+        assert server_app is not None
+        server_app.app_config.additional_params.update({"persisted": 1})
+
+        seen_during_execute = {}
+
+        def _capture_deploy(job):
+            server = job._deploy_map.get("server")
+            assert server is not None
+            seen_during_execute.update(server.app_config.additional_params)
+            return "dummy-job-id"
+
+        env.deploy = _capture_deploy
+
+        recipe.execute(env, server_exec_params={})
+
+        assert seen_during_execute == {}
+        assert server_app.app_config.additional_params == {"persisted": 1}
+
     def test_execute_then_export_no_cross_contamination(self, temp_script):
         from nvflare.recipe.fedavg import FedAvgRecipe
 
@@ -435,3 +517,64 @@ class TestRecipeExecuteExportParamIsolation:
         server_app = recipe.job._deploy_map.get("server")
         assert server_app is not None
         assert server_app.app_config.additional_params == {}
+
+
+def test_recipe_spec_import_does_not_mutate_sys_argv(monkeypatch):
+    import sys
+
+    original_argv = ["python", "job.py", "--export", "--export-dir", "/tmp/out", "--other", "value"]
+    monkeypatch.setattr(sys, "argv", list(original_argv))
+
+    import nvflare.recipe.spec as spec_module
+
+    importlib.reload(spec_module)
+
+    assert sys.argv == original_argv
+
+
+def test_peek_recipe_args_requires_export_dir_argument():
+    from nvflare.recipe.spec import _peek_recipe_args
+
+    with pytest.raises(ValueError, match="--export-dir requires an argument"):
+        _peek_recipe_args(["--export", "--export-dir"])
+
+
+def test_export_processes_falsy_env(tmp_path):
+    from nvflare.recipe.fedavg import FedAvgRecipe
+    from nvflare.recipe.spec import ExecEnv
+
+    class _FalsyEnv(ExecEnv):
+        def __bool__(self):
+            return False
+
+        def deploy(self, job):
+            return "dummy-job-id"
+
+        def get_job_status(self, job_id):
+            return None
+
+        def abort_job(self, job_id):
+            return None
+
+        def get_job_result(self, job_id, timeout: float = 0.0):
+            return None
+
+    recipe = FedAvgRecipe(
+        name="test_export_falsy_env",
+        num_rounds=2,
+        min_clients=2,
+        train_script=__file__,
+        model={"class_path": "model.DummyModel", "args": {}},
+    )
+
+    seen = {}
+
+    def _capture_process_env(env):
+        seen["env"] = env
+
+    recipe.process_env = _capture_process_env
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        recipe.export(job_dir=tmpdir, env=_FalsyEnv())
+
+    assert "env" in seen

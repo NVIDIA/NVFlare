@@ -59,6 +59,8 @@ def generate_cert(
     if isinstance(server_additional_hosts, str):
         server_additional_hosts = [server_additional_hosts]
 
+    now = datetime.datetime.now(datetime.timezone.utc)
+
     x509_subject = x509_name(subject.name, subject.org, subject.role)
     x509_issuer = x509_name(issuer.name, issuer.org, issuer.role)
 
@@ -68,8 +70,8 @@ def generate_cert(
         .issuer_name(x509_issuer)
         .public_key(subject_pub_key)
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.datetime.utcnow())
-        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=valid_days))
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=valid_days))
         .add_extension(
             x509.SubjectKeyIdentifier.from_public_key(subject_pub_key),
             critical=False,
@@ -84,16 +86,16 @@ def generate_cert(
         builder = builder.add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True).add_extension(
             x509.KeyUsage(
                 digital_signature=True,
-                content_commitment=True,
-                key_encipherment=True,
-                data_encipherment=True,
-                key_agreement=True,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
                 key_cert_sign=True,
                 crl_sign=True,
                 encipher_only=False,
                 decipher_only=False,
             ),
-            critical=False,
+            critical=True,
         )
 
     if server_default_host:
@@ -160,7 +162,7 @@ def cert_to_dict(cert):
         "subject": {attr.oid._name: attr.value for attr in cert.subject},
         "issuer": {attr.oid._name: attr.value for attr in cert.issuer},
         "version": cert.version.name,
-        "serial_number": cert.serial_number,
+        "serial_number": hex(cert.serial_number),
         # "not_valid_before": cert.not_valid_before.isoformat(),
         # "not_valid_after": cert.not_valid_after.isoformat(),
         # "signature_algorithm": cert.signature_algorithm.name,
@@ -224,8 +226,8 @@ def load_private_key(data: str):
 
 
 def load_private_key_file(file_path):
-    with open(file_path, "rt") as f:
-        return load_private_key(f.read())
+    with open(file_path, "rb") as f:
+        return serialization.load_pem_private_key(f.read(), password=None, backend=default_backend())
 
 
 def sign_folders(folder, signing_pri_key, crt_path=None, max_depth=9999, signature_file=NVFLARE_SIG_FILE):
@@ -351,6 +353,18 @@ def load_yaml(file):
     return yaml_data
 
 
+def _resolve_include_path(root, item):
+    root_real = os.path.realpath(root or ".")
+    include_path = os.path.realpath(os.path.join(root_real, item))
+    try:
+        common = os.path.commonpath([root_real, include_path])
+    except ValueError:
+        raise ValueError(f"include path escapes root: {item}")
+    if common != root_real:
+        raise ValueError(f"include path escapes root: {item}")
+    return include_path
+
+
 def load_yaml_include(root, yaml_data):
     new_data = {}
     for k, v in yaml_data.items():
@@ -360,7 +374,7 @@ def load_yaml_include(root, yaml_data):
             elif isinstance(v, list):
                 includes = v
             for item in includes:
-                new_data.update(load_yaml(os.path.join(root, item)))
+                new_data.update(load_yaml(_resolve_include_path(root, item)))
         elif isinstance(v, list):
             new_list = []
             for item in v:
