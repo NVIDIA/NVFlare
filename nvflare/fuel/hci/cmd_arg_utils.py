@@ -22,7 +22,7 @@ from typing import List
 from nvflare.apis.utils.format_check import type_pattern_mapping
 
 
-def _legacy_split_args(line: str) -> List[str]:
+def _split_unquoted_args(line: str) -> List[str]:
     line = re.sub(" +", " ", line)
     return line.split(" ")
 
@@ -34,20 +34,20 @@ def _has_quotes(line: str) -> bool:
 def _split_quoted_args(line: str) -> List[str]:
     """Split HCI command args for quoted input, honoring shell quotes.
 
-    Fall back to the legacy whitespace splitter for malformed quoting so we
+    Fall back to the unquoted whitespace splitter for malformed quoting so we
     don't turn previously accepted inputs into parse errors.
     """
     try:
         args = shlex.split(line)
-        return args if args else _legacy_split_args(line)
+        return args if args else _split_unquoted_args(line)
     except ValueError:
-        return _legacy_split_args(line)
+        return _split_unquoted_args(line)
 
 
 def split_to_args(line: str) -> List[str]:
     if _has_quotes(line):
         return _split_quoted_args(line)
-    return _legacy_split_args(line)
+    return _split_unquoted_args(line)
 
 
 def parse_command_line(line: str) -> (str, List[str], str):
@@ -66,7 +66,7 @@ def parse_command_line(line: str) -> (str, List[str], str):
     parts = line.split("#", maxsplit=1)
     line = parts[0].strip()
     props = parts[1] if len(parts) > 1 else None
-    return line, _legacy_split_args(line), props
+    return line, _split_unquoted_args(line), props
 
 
 def join_args(segs: List[str]) -> str:
