@@ -637,7 +637,7 @@ class FedJob:
             clients: client names.
             threads: number of threads.
             gpu: gpu assignments for simulating clients, comma separated
-            log_config: log config mode ('concise', 'full', 'verbose'), filepath, or level
+            log_config: log config mode ('concise', 'msg_only', 'full', 'verbose'), filepath, or level
 
         Returns:
         """

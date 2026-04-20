@@ -101,7 +101,7 @@ setup(
         exclude=["tests", "tests.*"],
     ),
     package_data={
-        "": ["*.yml", "*.html", "*.js", "poc.zip", "*.config", "*.conf"],
+        "": ["*.yml", "*.yaml", "*.tpl", "*.html", "*.js", "poc.zip", "*.config", "*.conf"],
         "nvflare.dashboard.application": extra_files,
         "nvflare.tool.job": job_templates,
     },

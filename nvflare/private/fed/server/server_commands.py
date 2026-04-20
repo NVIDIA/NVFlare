@@ -126,6 +126,8 @@ class GetRunInfoCommand(CommandProcessor):
 
     def process(self, data: Shareable, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
+        if not engine:
+            return NO_OP_REPLY
         run_info = engine.get_run_info()
         if run_info:
             return run_info

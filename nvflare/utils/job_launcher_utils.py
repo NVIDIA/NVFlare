@@ -16,7 +16,7 @@ import os
 import sys
 
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, SystemVarName
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs
 
 
@@ -106,15 +106,41 @@ def generate_server_command(fl_ctx) -> str:
     return f"{sys.executable} {args_str}"
 
 
+_LAUNCHER_MODE_KEYS = {"process", "docker", "k8s"}
+
+
+def get_launcher_resource_spec(job_meta, site_name, mode):
+    """Extract the resource spec for a site for a specific launcher mode.
+
+    New nested format: resource_spec[site][mode] = {num_of_gpus: ..., shm_size: ..., ...}
+    Legacy flat format: resource_spec[site] = {num_of_gpus: ...} — treated as process mode for
+    backward compatibility; Docker and K8s modes receive an empty spec.
+
+    Returns a dict for the given mode, or an empty dict if not specified.
+    """
+    resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
+    site_spec = resource_spec.get(site_name) or {}
+    if any(k in site_spec for k in _LAUNCHER_MODE_KEYS):
+        return site_spec.get(mode, {})
+    # Legacy flat format — treat as process only
+    return site_spec if mode == "process" else {}
+
+
+# TODO: remove in follow-up PR once K8s launcher is updated to use get_launcher_resource_spec
 def extract_job_image(job_meta, site_name):
     deploy_map = job_meta.get(JobMetaKey.DEPLOY_MAP, {})
+    fallback = None
     for _, participants in deploy_map.items():
         for item in participants:
             if isinstance(item, dict):
                 sites = item.get(JobConstants.SITES)
+                if not sites:
+                    continue
                 if site_name in sites:
                     return item.get(JobConstants.JOB_IMAGE)
-    return None
+                if ALL_SITES in sites and fallback is None:
+                    fallback = item.get(JobConstants.JOB_IMAGE)
+    return fallback
 
 
 def add_custom_dir_to_path(app_custom_folder, new_env):

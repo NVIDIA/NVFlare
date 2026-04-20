@@ -54,11 +54,12 @@ def join_args(segs: List[str]) -> str:
     result = ""
     sep = ""
     for a in segs:
-        parts = a.split()
-        if len(parts) < 2:
-            p = parts[0]
+        needs_quotes = any(ch.isspace() for ch in a) or '"' in a or "\\" in a
+        if needs_quotes:
+            escaped = a.replace("\\", "\\\\").replace('"', '\\"')
+            p = f'"{escaped}"'
         else:
-            p = '"' + a + '"'
+            p = a
         result = result + sep + p
         sep = " "
 
