@@ -1,7 +1,6 @@
 # NVFlare Agent Notes
 
 - To trigger CI/CD for a PR, post a single-line general comment on the PR exactly: `/build`.
-- Before opening or updating a PR, fetch `upstream/main`, rebase or otherwise resolve merge overlap locally, and confirm the branch is mergeable against the current base branch.
 - Prefer `rg` and `rg --files` for fast codebase search.
 - Keep edits scoped to the task; do not modify unrelated files in a dirty worktree.
 - Start with targeted tests for changed files, then run broader checks as needed.
