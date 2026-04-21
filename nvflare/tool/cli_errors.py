@@ -16,7 +16,10 @@ import os
 from types import MappingProxyType
 from typing import Dict, Mapping, Optional, Tuple
 
-# Primary error registry — Phase 0+1 CLI commands use this via output_error().
+# _ERROR_REGISTRY is a plain mutable dict so entries can be added simply at module load time.
+# It is never exported; callers must use ERROR_REGISTRY (the frozen public view) or the
+# helper functions below.  The two-name pattern avoids accidental mutation from call sites
+# while keeping the definition readable.
 _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     # --- General ---
     "CONNECTION_FAILED": {
@@ -230,6 +233,9 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "hint": "Check the recipe class run() method for errors.",
     },
 }
+# Freeze the registry into an immutable MappingProxyType so callers cannot accidentally
+# add, remove, or overwrite entries at runtime.  Use get_error_entry() / get_error() to
+# look up codes; use _ERROR_REGISTRY directly only when adding new entries in this file.
 ERROR_REGISTRY: Mapping[str, Mapping[str, str]] = MappingProxyType(_ERROR_REGISTRY)
 
 
