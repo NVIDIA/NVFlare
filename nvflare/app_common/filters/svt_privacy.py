@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Union
+from typing import List, Tuple, Union
 
 import numpy as np
 
@@ -20,6 +20,38 @@ from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+
+_SVT_CHUNK_SIZE = 1_000_000
+
+
+def _sample_partition_counts(group_counts: List[int], total_to_sample: int, replace: bool) -> List[int]:
+    sampled_counts = []
+    remaining_groups = int(sum(group_counts))
+    remaining_to_sample = int(total_to_sample)
+
+    for idx, group_count in enumerate(group_counts):
+        group_count = int(group_count)
+
+        if idx == len(group_counts) - 1:
+            sampled = remaining_to_sample
+        elif remaining_to_sample == 0 or group_count == 0:
+            sampled = 0
+        elif replace:
+            sampled = int(np.random.binomial(remaining_to_sample, float(group_count) / float(remaining_groups)))
+        else:
+            sampled = int(
+                np.random.hypergeometric(
+                    ngood=group_count,
+                    nbad=remaining_groups - group_count,
+                    nsample=remaining_to_sample,
+                )
+            )
+
+        sampled_counts.append(sampled)
+        remaining_groups -= group_count
+        remaining_to_sample -= sampled
+
+    return sampled_counts
 
 
 class SVTPrivacy(DXOFilter):
@@ -65,18 +97,41 @@ class SVTPrivacy(DXOFilter):
         """
         self.log_debug(fl_ctx, "inside filter")
         model_diff = dxo.data
-        total_steps = dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, 1)
+        total_steps = np.float64(dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, 1))
 
-        delta_w = np.concatenate([model_diff[name].ravel() / np.float64(total_steps) for name in sorted(model_diff)])
-        self.log_info(
-            fl_ctx,
-            "Delta_w: Max abs: {}, Min abs: {}, Median abs: {}.".format(
-                np.max(np.abs(delta_w)), np.min(np.abs(delta_w)), np.median(np.abs(delta_w))
-            ),
-        )
+        param_items: List[Tuple[str, np.ndarray, bool]] = []
+        total_params = 0
+        max_abs = 0.0
+        min_abs = None
 
-        # precompute thresholds
-        n_upload = np.minimum(np.ceil(np.float64(delta_w.size) * self.fraction), np.float64(delta_w.size))
+        for name in sorted(model_diff):
+            value = np.asarray(model_diff[name])
+            is_scalar = np.ndim(value) == 0
+            flat_value = value.reshape(-1)
+            total_params += flat_value.size
+            param_items.append((name, value, is_scalar))
+
+            for start in range(0, flat_value.size, _SVT_CHUNK_SIZE):
+                end = min(start + _SVT_CHUNK_SIZE, flat_value.size)
+                abs_chunk = np.abs(flat_value[start:end].astype(np.float64, copy=False) / total_steps)
+                if abs_chunk.size == 0:
+                    continue
+                max_abs = max(max_abs, float(np.max(abs_chunk)))
+                chunk_min = float(np.min(abs_chunk))
+                min_abs = chunk_min if min_abs is None else min(min_abs, chunk_min)
+
+        if total_params == 0:
+            return dxo
+
+        self.log_info(fl_ctx, f"Delta_w: Max abs: {max_abs}, Min abs: {min_abs}, total params: {total_params}.")
+
+        n_upload = int(min(np.ceil(float(total_params) * self.fraction), float(total_params)))
+        if n_upload <= 0:
+            for _, value, is_scalar in param_items:
+                if not is_scalar:
+                    value.reshape(-1).fill(0.0)
+            dxo.data = model_diff
+            return dxo
 
         # eps_1: threshold with noise
         lambda_rho = self.gamma * 2.0 / self.epsilon
@@ -88,7 +143,7 @@ class SVTPrivacy(DXOFilter):
             "total params: %s, epsilon: %s, "
             "perparam budget %s, threshold tau: %s + f(eps_1) = %s, "
             "clip gamma: %s",
-            delta_w.size,
+            total_params,
             self.epsilon,
             self.epsilon / n_upload,
             self.tau,
@@ -96,34 +151,102 @@ class SVTPrivacy(DXOFilter):
             self.gamma,
         )
 
-        # selecting weights with additive noise
-        accepted, candidate_idx = [], np.arange(delta_w.size)
-        _clipped_w = np.abs(np.clip(delta_w, a_min=-self.gamma, a_max=self.gamma))
-        while len(accepted) < n_upload:
-            nu_i = np.random.laplace(scale=lambda_nu, size=candidate_idx.shape)
-            above_threshold = (_clipped_w[candidate_idx] + nu_i) >= threshold
-            accepted += candidate_idx[above_threshold].tolist()
-            candidate_idx = candidate_idx[~above_threshold]
-            self.log_info(fl_ctx, "selected {} responses, requested {}".format(len(accepted), n_upload))
-        accepted = np.random.choice(accepted, size=np.int64(n_upload), replace=self.replace)
-        # eps_3 return with noise
-        noise = np.random.laplace(scale=self.gamma * 2.0 / self.noise_var, size=accepted.shape)
-        self.log_info(fl_ctx, "noise max: {}, median {}".format(np.max(np.abs(noise)), np.median(np.abs(noise))))
-        delta_w[accepted] = np.clip(delta_w[accepted] + noise, a_min=-self.gamma, a_max=self.gamma)
-        candidate_idx = list(set(np.arange(delta_w.size)) - set(accepted))
-        delta_w[candidate_idx] = 0.0
+        accepted_masks = [np.zeros(value.size, dtype=np.bool_) for _, value, _ in param_items]
+        accepted_counts = [0] * len(param_items)
+        total_accepted = 0
 
-        # resume original format
-        dp_w, _start = {}, 0
-        for name in sorted(model_diff):
-            if np.ndim(model_diff[name]) == 0:
-                dp_w[name] = model_diff[name]
-                _start += 1
-                continue
-            value = delta_w[_start : (_start + model_diff[name].size)]
-            dp_w[name] = value.reshape(model_diff[name].shape) * np.float64(total_steps)
-            _start += model_diff[name].size
+        while total_accepted < n_upload:
+            for idx, (_, value, _) in enumerate(param_items):
+                flat_value = value.reshape(-1)
+                accepted_mask = accepted_masks[idx]
 
-        # We update the shareable weights only.  Headers are unchanged.
-        dxo.data = dp_w
+                for start in range(0, flat_value.size, _SVT_CHUNK_SIZE):
+                    end = min(start + _SVT_CHUNK_SIZE, flat_value.size)
+                    mask_chunk = accepted_mask[start:end]
+                    remaining_chunk = ~mask_chunk
+                    if not np.any(remaining_chunk):
+                        continue
+
+                    candidate_values = (
+                        flat_value[start:end][remaining_chunk].astype(np.float64, copy=False) / total_steps
+                    )
+                    noisy_response = np.abs(np.clip(candidate_values, a_min=-self.gamma, a_max=self.gamma))
+                    noisy_response += np.random.laplace(scale=lambda_nu, size=candidate_values.size)
+                    above_threshold = noisy_response >= threshold
+                    if not np.any(above_threshold):
+                        continue
+
+                    accepted_idx = np.flatnonzero(remaining_chunk)[above_threshold]
+                    mask_chunk[accepted_idx] = True
+                    n_new = int(accepted_idx.size)
+                    accepted_counts[idx] += n_new
+                    total_accepted += n_new
+
+            self.log_info(fl_ctx, "selected {} responses, requested {}".format(total_accepted, n_upload))
+
+        selected_counts = _sample_partition_counts(accepted_counts, n_upload, self.replace)
+
+        noise_scale = self.gamma * 2.0 / self.noise_var
+        noise_max = 0.0
+        noise_medians = []
+
+        for idx, (_, value, is_scalar) in enumerate(param_items):
+            flat_value = value.reshape(-1)
+            accepted_mask = accepted_masks[idx]
+            remaining_accepted = accepted_counts[idx]
+            remaining_selected = selected_counts[idx]
+
+            for start in range(0, flat_value.size, _SVT_CHUNK_SIZE):
+                end = min(start + _SVT_CHUNK_SIZE, flat_value.size)
+                mask_chunk = accepted_mask[start:end]
+                chunk_accepted = int(np.sum(mask_chunk))
+
+                if end == flat_value.size:
+                    chunk_selected = remaining_selected
+                elif remaining_selected == 0 or chunk_accepted == 0:
+                    chunk_selected = 0
+                elif self.replace:
+                    chunk_selected = int(
+                        np.random.binomial(
+                            remaining_selected,
+                            float(chunk_accepted) / float(remaining_accepted),
+                        )
+                    )
+                else:
+                    chunk_selected = int(
+                        np.random.hypergeometric(
+                            ngood=chunk_accepted,
+                            nbad=remaining_accepted - chunk_accepted,
+                            nsample=remaining_selected,
+                        )
+                    )
+
+                chunk = flat_value[start:end]
+                if is_scalar:
+                    remaining_accepted -= chunk_accepted
+                    remaining_selected -= chunk_selected
+                    continue
+                elif chunk_selected == 0:
+                    chunk.fill(0.0)
+                else:
+                    accepted_idx = np.flatnonzero(mask_chunk)
+                    selected_idx = np.random.choice(accepted_idx, size=chunk_selected, replace=self.replace)
+                    noise = np.random.laplace(scale=noise_scale, size=chunk_selected)
+                    noise_max = max(noise_max, float(np.max(np.abs(noise))))
+                    noise_medians.append(np.median(np.abs(noise)))
+
+                    selected_values = chunk[selected_idx].astype(np.float64, copy=False) / total_steps
+                    selected_values = (
+                        np.clip(selected_values + noise, a_min=-self.gamma, a_max=self.gamma) * total_steps
+                    )
+                    chunk.fill(0.0)
+                    chunk[selected_idx] = selected_values
+
+                remaining_accepted -= chunk_accepted
+                remaining_selected -= chunk_selected
+
+        median_noise = float(np.median(noise_medians)) if noise_medians else 0.0
+        self.log_info(fl_ctx, "noise max: {}, median approx {}".format(noise_max, median_noise))
+
+        dxo.data = model_diff
         return dxo
