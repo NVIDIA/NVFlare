@@ -38,6 +38,8 @@ from nvflare.lighter.utils import (
 )
 from nvflare.tool import cli_output
 from nvflare.tool.cert.cert_constants import ADMIN_CERT_TYPES, VALID_CERT_TYPES
+
+_VALID_CERT_TYPES = set(VALID_CERT_TYPES)
 from nvflare.tool.cli_output import (
     output_error,
     output_error_message,
