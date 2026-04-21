@@ -140,6 +140,19 @@ def test_sample_partition_counts_invariants(group_counts, total_to_sample, repla
         assert all(count <= group_count for count, group_count in zip(sampled_counts, group_counts))
 
 
+def test_sample_partition_counts_replace_keeps_trailing_zero_groups_empty():
+    group_counts = [5, 3, 0, 0]
+    total_to_sample = 4
+
+    for seed in range(50):
+        np.random.seed(seed)
+        sampled_counts = svt_privacy_module._sample_partition_counts(group_counts, total_to_sample, replace=True)
+
+        assert sampled_counts[2:] == [0, 0]
+        assert sampled_counts[1] == total_to_sample - sampled_counts[0]
+        assert sum(sampled_counts) == total_to_sample
+
+
 def test_svt_privacy_uses_chunked_path_without_mutating_input(monkeypatch):
     monkeypatch.setattr(svt_privacy_module, "_SVT_CHUNK_SIZE", 3)
     np.random.seed(37)
