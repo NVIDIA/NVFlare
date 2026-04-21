@@ -38,7 +38,6 @@ from nvflare.tool.cli_schema import handle_schema_flag
 
 _VALID_SCHEMES = {"grpc", "tcp", "http"}
 _ADMIN_ROLES = set(ADMIN_CERT_TYPES)
-_VALID_CERT_TYPES = set(VALID_CERT_TYPES)
 _KIT_TYPE_TO_ROLE = KIT_TYPE_TO_ROLE
 _DUMMY_SERVER_NAME = "__nvflare_dummy_server__"
 _DUMMY_ORG = "myorg"
@@ -203,7 +202,7 @@ def _load_project_from_file(path: str) -> tuple:
         and PropKey.API_VERSION not in project_dict
     ):
         p_type = project_dict.get("type")
-        if p_type not in _VALID_CERT_TYPES:
+        if p_type not in VALID_CERT_TYPES:
             output_error_message(
                 "INVALID_PROJECT_FILE",
                 f"Invalid site type: {p_type}",
@@ -633,7 +632,7 @@ def handle_package(args):
     # Step 8b: Derive kit_type from cert's UNSTRUCTURED_NAME.
     # The signed cert's embedded type is the sole authoritative source.
     kit_type = _read_cert_type_from_cert(cert)
-    if not kit_type or kit_type not in _VALID_CERT_TYPES:
+    if not kit_type or kit_type not in VALID_CERT_TYPES:
         output_error("CERT_TYPE_UNKNOWN", exit_code=1, cert=args.cert)
     args.kit_type = kit_type
 

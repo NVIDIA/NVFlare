@@ -37,8 +37,7 @@ from nvflare.lighter.utils import (
     x509_name,
 )
 from nvflare.tool import cli_output
-from nvflare.tool.cert.cert_cli import _VALID_CERT_TYPES
-from nvflare.tool.cert.cert_constants import ADMIN_CERT_TYPES
+from nvflare.tool.cert.cert_constants import ADMIN_CERT_TYPES, VALID_CERT_TYPES
 from nvflare.tool.cli_output import (
     output_error,
     output_error_message,
@@ -310,13 +309,13 @@ def _load_single_site_yaml(path: str) -> dict:
             exit_code=4,
             detail="site yaml must contain: name, org, type",
         )
-    if cert_type not in _VALID_CERT_TYPES:
+    if cert_type not in VALID_CERT_TYPES:
         output_error_message(
             "INVALID_ARGS",
             "Invalid arguments.",
             _USAGE_HINT,
             exit_code=4,
-            detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(_VALID_CERT_TYPES))}",
+            detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
         )
     return {"name": name, "org": org, "cert_type": cert_type}
 
@@ -673,13 +672,13 @@ def handle_cert_sign(args):
             exit_code=4,
             detail="specify either -t/--type to override the role or --accept-csr-role to trust the CSR role",
         )
-    if cert_type not in _VALID_CERT_TYPES:
+    if cert_type not in VALID_CERT_TYPES:
         output_error_message(
             "INVALID_ARGS",
             "Invalid arguments.",
             _USAGE_HINT,
             exit_code=4,
-            detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(_VALID_CERT_TYPES))}",
+            detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
         )
     subject_cn = _get_cn(csr.subject)
     if getattr(args, "accept_csr_role", False) and not cli_output.is_json_mode() and sys.stdin.isatty():
