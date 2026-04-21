@@ -422,7 +422,8 @@ def _handle_package_yaml_mode(args, scheme, host, port):
         all_builders.insert(0, WorkspaceBuilder())
 
     if not any(isinstance(b, StaticFileBuilder) for b in all_builders):
-        cert_pos = next(i for i, b in enumerate(all_builders) if isinstance(b, PrebuiltCertBuilder))
+        cert_pos = next((i for i, b in enumerate(all_builders) if isinstance(b, PrebuiltCertBuilder)), None)
+        assert cert_pos is not None, "PrebuiltCertBuilder missing from builder list; this is a bug"
         all_builders.insert(cert_pos + 1, StaticFileBuilder(scheme=scheme))
 
     provisioner = Provisioner(root_dir=workspace, builders=all_builders)

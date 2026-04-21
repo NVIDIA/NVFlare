@@ -33,12 +33,14 @@ _system_sub_cmd_parsers = {}
 def _add_system_connection_args(parser):
     parser.add_argument(
         "--startup-kit",
+        "--startup_kit",  # backward compat
         dest="startup_kit",
         default=None,
         help="path to the admin startup kit directory (overrides target-based config lookup)",
     )
     parser.add_argument(
         "--startup-target",
+        "--startup_target",  # backward compat
         choices=["poc", "prod"],
         default=None,
         dest="startup_target",
