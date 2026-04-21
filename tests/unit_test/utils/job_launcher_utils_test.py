@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.utils.job_launcher_utils import get_job_launcher_spec
+import logging
+
+from nvflare.utils.job_launcher_utils import _validate_launcher_spec, get_job_launcher_spec
 
 
 class TestGetJobLauncherSpec:
@@ -59,3 +61,54 @@ class TestGetJobLauncherSpec:
             "resource_spec": {"site-1": {"docker": {"image": "old/img:v1"}}},
         }
         assert get_job_launcher_spec(meta, "site-1", "docker") == {"image": "new/img:v1"}
+
+    def test_fallback_fires_when_launcher_spec_has_other_sites(self):
+        # Fallback to resource_spec fires per (site, mode) pair, not only when
+        # launcher_spec is entirely absent.
+        meta = {
+            "launcher_spec": {"site-2": {"docker": {"image": "site2/img:v1"}}},
+            "resource_spec": {"site-1": {"docker": {"image": "legacy/img:v1"}}},
+        }
+        assert get_job_launcher_spec(meta, "site-1", "docker") == {"image": "legacy/img:v1"}
+
+    def test_fallback_fires_when_launcher_spec_has_other_modes(self):
+        meta = {
+            "launcher_spec": {"site-1": {"k8s": {"image": "k8s/img:v1"}}},
+            "resource_spec": {"site-1": {"docker": {"image": "legacy/img:v1"}}},
+        }
+        assert get_job_launcher_spec(meta, "site-1", "docker") == {"image": "legacy/img:v1"}
+
+
+class TestValidateLauncherSpec:
+    def test_clean_spec_returns_empty(self):
+        spec = {
+            "default": {"docker": {"image": "repo/img:v1"}},
+            "site-1": {"docker": {"image": "repo/img:v1"}},
+        }
+        assert _validate_launcher_spec(spec) == []
+
+    def test_typo_defaults_flagged(self):
+        spec = {"defaults": {"docker": {"image": "repo/img:v1"}}}
+        assert "defaults" in _validate_launcher_spec(spec)
+
+    def test_typo_defaul_flagged(self):
+        spec = {"defaul": {"docker": {"image": "repo/img:v1"}}}
+        assert "defaul" in _validate_launcher_spec(spec)
+
+    def test_exact_reserved_key_not_flagged(self):
+        spec = {"default": {"docker": {"image": "repo/img:v1"}}}
+        assert _validate_launcher_spec(spec) == []
+
+    def test_unrelated_site_name_not_flagged(self):
+        spec = {"site-1": {"docker": {"image": "repo/img:v1"}}}
+        assert _validate_launcher_spec(spec) == []
+
+    def test_non_dict_value_skipped(self):
+        spec = {"defaults": "not-a-dict"}
+        assert _validate_launcher_spec(spec) == []
+
+    def test_warning_emitted_for_suspicious_key(self, caplog):
+        meta = {"launcher_spec": {"defaults": {"docker": {"image": "repo/img:v1"}}}}
+        with caplog.at_level(logging.WARNING, logger="nvflare.utils.job_launcher_utils"):
+            get_job_launcher_spec(meta, "site-1", "docker")
+        assert any("defaults" in msg for msg in caplog.messages)

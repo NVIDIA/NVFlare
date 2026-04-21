@@ -360,6 +360,14 @@ class K8sJobLauncher(JobLauncherSpec):
         args = fl_ctx.get_prop(FLContextKey.ARGS)
         k8s_spec = get_job_launcher_spec(job_meta, site_name, "k8s")
         job_image = k8s_spec.get("image")
+        if not job_image:
+            raise RuntimeError(
+                f"K8sJobLauncher is configured for site '{site_name}' but no job image "
+                f"was specified in meta.json for this site. "
+                f"Set launcher_spec['{site_name}']['k8s']['image'] (preferred), "
+                f"launcher_spec['default']['k8s']['image'] (shared default), "
+                f"or resource_spec['{site_name}']['k8s']['image'] (legacy)."
+            )
         site_resources = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}).get(site_name, {})
         study = job_meta.get(JobMetaKey.STUDY.value)
         job_resource = site_resources.get("num_of_gpus", None)

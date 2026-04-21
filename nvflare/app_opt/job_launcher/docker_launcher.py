@@ -335,7 +335,9 @@ class DockerJobLauncher(JobLauncherSpec):
             raise RuntimeError(
                 f"DockerJobLauncher is configured for site '{site_name}' but no job image "
                 f"was specified in meta.json for this site. "
-                f"Add an 'image' field to launcher_spec['{site_name}']['docker']."
+                f"Set launcher_spec['{site_name}']['docker']['image'] (preferred), "
+                f"launcher_spec['default']['docker']['image'] (shared default), "
+                f"or resource_spec['{site_name}']['docker']['image'] (legacy)."
             )
 
         workspace = self.workspace
@@ -400,7 +402,7 @@ class DockerJobLauncher(JobLauncherSpec):
         docker_spec = get_job_launcher_spec(job_meta, site_name, "docker")
         _site_rs = (job_meta.get(JobMetaKey.RESOURCE_SPEC.value) or {}).get(site_name) or {}
         _flat_gpus = 0 if any(k in _site_rs for k in ("process", "docker", "k8s")) else _site_rs.get("num_of_gpus", 0)
-        num_gpus = docker_spec.get("num_of_gpus") or _flat_gpus
+        num_gpus = docker_spec["num_of_gpus"] if "num_of_gpus" in docker_spec else _flat_gpus
         _RESERVED_KWARGS = {"volumes", "network", "environment", "command", "name", "detach", "user", "working_dir"}
         _NON_CONTAINER_KEYS = {"num_of_gpus", "image"} | _RESERVED_KWARGS
         reserved_in_spec = _RESERVED_KWARGS & set(docker_spec.keys())
