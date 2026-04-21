@@ -21,6 +21,7 @@ import threading
 
 from nvflare.apis.fl_constant import ConfigVarName, JobConstants, SiteType, SystemConfigs
 from nvflare.apis.workspace import Workspace
+from nvflare.app_opt.job_launcher.workspace_http_server import download_workspace, upload_results
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
@@ -61,6 +62,7 @@ def main(args):
     # get parent process id
     parent_pid = os.getppid()
     stop_event = threading.Event()
+    download_workspace(args.workspace)
     workspace = Workspace(root_dir=args.workspace, site_name=SiteType.SERVER)
     set_stats_pool_config_for_job(workspace, args.job_id)
     secure_train = kv_list.get("secure_train", False)
@@ -130,6 +132,7 @@ def main(args):
             err = create_stats_pool_files_for_job(workspace, args.job_id)
             if err:
                 logger.warning(err)
+            upload_results(args.workspace, args.job_id)
 
     except ConfigError as e:
         logger = get_script_logger()

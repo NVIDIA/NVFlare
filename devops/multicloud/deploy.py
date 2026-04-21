@@ -66,6 +66,7 @@ class Participant:
     security_context: dict | None = None
     pending_timeout: int | None = None
     pvc_config: dict = field(default_factory=dict)
+    pod_annotations: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -168,6 +169,7 @@ def load_config(config_path: Path) -> DeployConfig:
                 security_context=merged.get("security_context"),
                 pending_timeout=merged.get("pending_timeout"),
                 pvc_config=merged.get("pvc_config") or {},
+                pod_annotations=merged.get("pod_annotations") or {},
             )
         )
 
@@ -562,7 +564,6 @@ def patch_resources_json(
         if "process_launcher" in c.get("id", "") or "ProcessJobLauncher" in c.get("path", ""):
             args = {
                 "config_file_path": None,
-                "workspace_pvc": "nvflws",
                 "study_data_pvc_file_path": "/var/tmp/nvflare/etc/study_data_pvc.yaml",
                 "namespace": namespace,
                 "python_path": "/usr/local/bin/python3",
@@ -719,6 +720,10 @@ def deploy_participant(
         if p.security_context:
             for k, v in _flatten_set("securityContext", p.security_context):
                 helm_args += ["--set", f"{k}={v}"]
+
+        for k, v in p.pod_annotations.items():
+            escaped = k.replace(".", r"\.").replace("/", r"\/")
+            helm_args += ["--set-string", f"podAnnotations.{escaped}={v}"]
 
         if ":" in p.image:
             repo, tag = p.image.rsplit(":", 1)

@@ -6,6 +6,8 @@ metadata:
     {{- include "nvflare-server.labels" . | nindent 4 }}
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "nvflare-server.selectorLabels" . | nindent 6 }}
@@ -13,6 +15,10 @@ spec:
     metadata:
       labels:
         {{- include "nvflare-server.labels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       {{- if .Values.serviceAccount.create }}
       serviceAccountName: {{ include "nvflare-server.name" . }}
