@@ -66,6 +66,20 @@ _VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
 __all__ = ["NoConnection", "NoReply", "SystemInfo", "TargetType"]
 
 
+def _validate_target_strs(targets: List[str]) -> None:
+    """Validate that each item in ``targets`` is a well-formed target name.
+
+    Wraps :func:`process_targets_into_str` for its validation side-effect only —
+    the joined string it returns is intentionally discarded because callers then
+    do ``parts.extend(targets)`` so that every name becomes its own command
+    argument. If the joined string were appended instead, :func:`join_args`
+    would wrap the whitespace-containing element in double quotes, and the
+    server's ``shlex.split`` in ``parse_command_line`` would collapse multiple
+    names back into a single token (see NVBug 6098943).
+    """
+    process_targets_into_str(targets)
+
+
 class Session(SessionSpec):
     def __init__(
         self,
@@ -518,8 +532,8 @@ class Session(SessionSpec):
         """
         parts = [AdminCommandNames.CHECK_STATUS, TargetType.CLIENT]
         if client_names:
-            processed_targets_str = process_targets_into_str(client_names)
-            parts.append(processed_targets_str)
+            _validate_target_strs(client_names)
+            parts.extend(client_names)
 
         command = join_args(parts)
         result = self._do_command(command)
@@ -540,7 +554,8 @@ class Session(SessionSpec):
 
         parts = [AdminCommandNames.RESTART, target_type]
         if target_type == TargetType.CLIENT and client_names:
-            parts.append(process_targets_into_str(client_names))
+            _validate_target_strs(client_names)
+            parts.extend(client_names)
 
         command = join_args(parts)
         result = self._do_command(command)
@@ -560,7 +575,8 @@ class Session(SessionSpec):
 
         parts = [AdminCommandNames.SHUTDOWN, target_type]
         if target_type == TargetType.CLIENT and client_names:
-            parts.append(process_targets_into_str(client_names))
+            _validate_target_strs(client_names)
+            parts.extend(client_names)
 
         command = join_args(parts)
         result = self._do_command(command)
@@ -837,8 +853,8 @@ class Session(SessionSpec):
 
         parts = [cmd, job_id, target_type]
         if target_type == TargetType.CLIENT and targets:
-            processed_targets_str = process_targets_into_str(targets)
-            parts.append(processed_targets_str)
+            _validate_target_strs(targets)
+            parts.extend(targets)
 
         command = join_args(parts)
         reply = self._do_command(command, enforce_meta=False)
@@ -859,8 +875,8 @@ class Session(SessionSpec):
 
         parts = [AdminCommandNames.CHECK_STATUS, target_type]
         if target_type == TargetType.CLIENT and targets:
-            processed_targets_str = process_targets_into_str(targets)
-            parts.append(processed_targets_str)
+            _validate_target_strs(targets)
+            parts.extend(targets)
 
         command = join_args(parts)
         result = self._do_command(command)
@@ -887,8 +903,8 @@ class Session(SessionSpec):
 
         parts = [AdminCommandNames.REPORT_RESOURCES, target_type]
         if target_type == TargetType.CLIENT and targets:
-            processed_targets_str = process_targets_into_str(targets)
-            parts.append(processed_targets_str)
+            _validate_target_strs(targets)
+            parts.extend(targets)
 
         command = " ".join(parts)
         result = self._do_command(command, enforce_meta=False)
@@ -919,8 +935,8 @@ class Session(SessionSpec):
 
         parts = [AdminCommandNames.REPORT_VERSION, target_type]
         if target_type == TargetType.CLIENT and targets:
-            processed_targets_str = process_targets_into_str(targets)
-            parts.append(processed_targets_str)
+            _validate_target_strs(targets)
+            parts.extend(targets)
 
         command = " ".join(parts)
         reply = self._do_command(command, enforce_meta=False)
