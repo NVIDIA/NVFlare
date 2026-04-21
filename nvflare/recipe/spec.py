@@ -49,7 +49,10 @@ def _consume_recipe_args() -> tuple:
     return export, export_dir
 
 
-# Strip export flags at import time so the caller's ArgumentParser doesn't see them.
+# Intentional import-time sys.argv mutation: strip --export / --export-dir before
+# any ArgumentParser.parse_args() call in job.py runs. Doing this lazily (e.g. inside
+# execute()) would be too late if the caller calls parse_args() first, which is the
+# common pattern. The mutation is safe because job.py is always the process entry point.
 _RECIPE_EXPORT, _RECIPE_EXPORT_DIR = _consume_recipe_args()
 
 
