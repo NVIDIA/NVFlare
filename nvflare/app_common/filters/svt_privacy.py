@@ -21,6 +21,7 @@ from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
+# Keep temporary SVT arrays bounded for large models.
 _SVT_CHUNK_SIZE = 1_000_000
 
 
@@ -127,10 +128,10 @@ class SVTPrivacy(DXOFilter):
 
         n_upload = int(min(np.ceil(float(total_params) * self.fraction), float(total_params)))
         if n_upload <= 0:
-            for _, value, is_scalar in param_items:
-                if not is_scalar:
-                    value.reshape(-1).fill(0.0)
-            dxo.data = model_diff
+            dp_w = {}
+            for name, value, is_scalar in param_items:
+                dp_w[name] = value if is_scalar else np.zeros(value.shape, dtype=value.dtype)
+            dxo.data = dp_w
             return dxo
 
         # eps_1: threshold with noise
@@ -189,12 +190,20 @@ class SVTPrivacy(DXOFilter):
         noise_scale = self.gamma * 2.0 / self.noise_var
         noise_max = 0.0
         noise_medians = []
+        dp_w = {}
 
-        for idx, (_, value, is_scalar) in enumerate(param_items):
+        for idx, (name, value, is_scalar) in enumerate(param_items):
             flat_value = value.reshape(-1)
             accepted_mask = accepted_masks[idx]
             remaining_accepted = accepted_counts[idx]
             remaining_selected = selected_counts[idx]
+
+            if is_scalar:
+                dp_w[name] = value
+                output_flat = None
+            else:
+                dp_w[name] = np.zeros(value.shape, dtype=value.dtype)
+                output_flat = dp_w[name].reshape(-1)
 
             for start in range(0, flat_value.size, _SVT_CHUNK_SIZE):
                 end = min(start + _SVT_CHUNK_SIZE, flat_value.size)
@@ -221,26 +230,23 @@ class SVTPrivacy(DXOFilter):
                         )
                     )
 
-                chunk = flat_value[start:end]
                 if is_scalar:
                     remaining_accepted -= chunk_accepted
                     remaining_selected -= chunk_selected
                     continue
-                elif chunk_selected == 0:
-                    chunk.fill(0.0)
-                else:
+                elif chunk_selected > 0:
                     accepted_idx = np.flatnonzero(mask_chunk)
                     selected_idx = np.random.choice(accepted_idx, size=chunk_selected, replace=self.replace)
                     noise = np.random.laplace(scale=noise_scale, size=chunk_selected)
                     noise_max = max(noise_max, float(np.max(np.abs(noise))))
                     noise_medians.append(np.median(np.abs(noise)))
 
+                    chunk = flat_value[start:end]
                     selected_values = chunk[selected_idx].astype(np.float64, copy=False) / total_steps
                     selected_values = (
                         np.clip(selected_values + noise, a_min=-self.gamma, a_max=self.gamma) * total_steps
                     )
-                    chunk.fill(0.0)
-                    chunk[selected_idx] = selected_values
+                    output_flat[start:end][selected_idx] = selected_values
 
                 remaining_accepted -= chunk_accepted
                 remaining_selected -= chunk_selected
@@ -248,5 +254,5 @@ class SVTPrivacy(DXOFilter):
         median_noise = float(np.median(noise_medians)) if noise_medians else 0.0
         self.log_info(fl_ctx, "noise max: {}, median approx {}".format(noise_max, median_noise))
 
-        dxo.data = model_diff
+        dxo.data = dp_w
         return dxo

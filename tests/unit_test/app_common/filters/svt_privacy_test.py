@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import numpy as np
+import pytest
 
+import nvflare.app_common.filters.svt_privacy as svt_privacy_module
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.filters import SVTPrivacy
@@ -117,3 +119,43 @@ def test_svt_privacy_counts_scalar_toward_upload_budget_but_preserves_scalar_val
     )
     assert nonzero_count in (5, 6)
     assert result.data["scalar"] == np.float32(7.0)
+
+
+@pytest.mark.parametrize(
+    "group_counts,total_to_sample,replace",
+    [
+        ([3, 0, 5, 2], 7, False),
+        ([3, 0, 5, 2], 7, True),
+    ],
+)
+def test_sample_partition_counts_invariants(group_counts, total_to_sample, replace):
+    np.random.seed(31)
+
+    sampled_counts = svt_privacy_module._sample_partition_counts(group_counts, total_to_sample, replace)
+
+    assert len(sampled_counts) == len(group_counts)
+    assert sum(sampled_counts) == total_to_sample
+    assert all(count >= 0 for count in sampled_counts)
+    if not replace:
+        assert all(count <= group_count for count, group_count in zip(sampled_counts, group_counts))
+
+
+def test_svt_privacy_uses_chunked_path_without_mutating_input(monkeypatch):
+    monkeypatch.setattr(svt_privacy_module, "_SVT_CHUNK_SIZE", 3)
+    np.random.seed(37)
+
+    original = np.linspace(-0.8, 0.8, 8, dtype=np.float32)
+    weight_diff = {"layer": original.copy()}
+
+    result = _run_filter(
+        weight_diff,
+        fraction=0.5,
+        epsilon=1.0,
+        noise_var=1e9,
+        gamma=1.0,
+        tau=-1.0,
+        replace=False,
+    )
+
+    assert np.count_nonzero(result.data["layer"]) == 4
+    np.testing.assert_array_equal(weight_diff["layer"], original)
