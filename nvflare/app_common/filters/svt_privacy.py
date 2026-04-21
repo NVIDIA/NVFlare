@@ -26,6 +26,14 @@ _SVT_CHUNK_SIZE = 1_000_000
 
 
 def _sample_partition_counts(group_counts: List[int], total_to_sample: int, replace: bool) -> List[int]:
+    """Partition ``total_to_sample`` across groups while preserving the total.
+
+    The last group absorbs any remaining samples after the sequential draws so the
+    returned counts always sum to ``total_to_sample``. When ``replace`` is ``True``,
+    a group can receive more selected samples than accepted entries because the
+    downstream selection step samples from that group's accepted entries with
+    replacement.
+    """
     sampled_counts = []
     remaining_groups = int(sum(group_counts))
     remaining_to_sample = int(total_to_sample)
@@ -124,7 +132,11 @@ class SVTPrivacy(DXOFilter):
         if total_params == 0:
             return dxo
 
-        self.log_info(fl_ctx, f"Delta_w: Max abs: {max_abs}, Min abs: {min_abs}, total params: {total_params}.")
+        self.log_info(
+            fl_ctx,
+            f"Delta_w: Max abs: {max_abs}, Min abs: {min_abs}, total params: {total_params}. "
+            "Median abs omitted in chunked mode to avoid a full-model temporary buffer.",
+        )
 
         n_upload = int(min(np.ceil(float(total_params) * self.fraction), float(total_params)))
         if n_upload <= 0:
@@ -183,7 +195,7 @@ class SVTPrivacy(DXOFilter):
                     accepted_counts[idx] += n_new
                     total_accepted += n_new
 
-            self.log_info(fl_ctx, "selected {} responses, requested {}".format(total_accepted, n_upload))
+            self.log_debug(fl_ctx, "selected {} responses, requested {}".format(total_accepted, n_upload))
 
         selected_counts = _sample_partition_counts(accepted_counts, n_upload, self.replace)
 
