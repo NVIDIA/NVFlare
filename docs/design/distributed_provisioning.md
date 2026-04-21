@@ -9,7 +9,7 @@ Updated: 2026-04-02
 
 Current FLARE provisioning (`nvflare provision`) is centralized: the Project Admin must
 collect all participant details upfront, generate each site's **private key** centrally,
-and distribute full startup kits over a secure channel. This creates three problems:
+and distribute full startup kits over a secure channel. This creates two problems:
 
 1. **Private keys in transit** — keys are generated centrally and must be sent to each site
 2. **Centralized gathering** — all participant information must be collected before any kit
@@ -170,9 +170,9 @@ all existing deployments fully intact:
 | Mixed federation (some centralized, some distributed) | Each site resolves independently based on its own kit. Both connect to the same server over the same root CA. |
 | Simulator | No PKI; job signing skipped (no key file). No change. |
 
-`nvflare provision` is unchanged. The new `nvflare cert` and `nvflare package` commands
-are purely additive — no existing CLI commands, configuration files, or runtime
-behaviors are modified.
+`nvflare provision` is unchanged. The `nvflare cert` and `nvflare package` CLI surface
+is additive. The runtime and security changes listed above are shared platform changes,
+not distributed-provisioning-specific behavior forks.
 
 ---
 
@@ -294,6 +294,8 @@ Produces: `<name>.key` (stays on site, never shared), `<name>.csr` (send to Proj
 
 The `-t` flag is required. The org admin sets this on behalf of the participant so
 the CSR always carries an explicit requested type.
+
+**Participant names for user/admin types are email addresses** (e.g. `admin@nvidia.com`, `lead@org.com`). The `@` character must be accepted by the cert name validator — the `_SAFE_CERT_NAME_PATTERN` regex in `nvflare/tool/cert/cert_commands.py` is updated from `[A-Za-z0-9][A-Za-z0-9._-]*` to `[A-Za-z0-9][A-Za-z0-9._@-]*`. This change must be applied to both call sites in that file: the `--name` argument handler (line ~368) and the CSR subject CN validator (line ~689). Site process names (`server`, `client`) typically do not contain `@` but the updated validator accepts it uniformly. See `nvflare_cli.md` § "Admin username and `@` in directory names" for the full fix specification including shell quoting behavior.
 
 ### `nvflare cert sign` — Project Admin
 

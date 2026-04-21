@@ -23,7 +23,15 @@ _preflight_parser = None
 def define_preflight_check_parser(parser):
     global _preflight_parser
     _preflight_parser = parser
-    parser.add_argument("-p", "--package_path", required=True, type=str, help="path to specific package")
+    parser.add_argument(
+        "-p",
+        "--package-path",
+        "--package_path",  # backward compat
+        dest="package_path",
+        required=True,
+        type=str,
+        help="path to specific package",
+    )
     parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
@@ -33,13 +41,13 @@ def check_packages(args):
 
     handle_schema_flag(
         _preflight_parser,
-        "nvflare preflight",
-        ["nvflare preflight -p /path/to/package"],
+        "nvflare preflight-check",
+        ["nvflare preflight-check -p /path/to/package"],
         getattr(args, "_argv", []),
     )
 
     if getattr(args, "_raw_sub_command", None) == "preflight_check":
-        print_human("Note: 'preflight_check' is deprecated; use 'nvflare preflight' instead.")
+        print_human("Note: 'preflight_check' is deprecated; use 'nvflare preflight-check' instead.")
     package_path = args.package_path
 
     if not os.path.isdir(package_path):

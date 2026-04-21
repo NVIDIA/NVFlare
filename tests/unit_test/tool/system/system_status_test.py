@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, NoConnection
 from nvflare.tool import cli_output
 
 
@@ -281,7 +281,7 @@ class TestSystemStatus:
         mocked_output_error.assert_called_once()
         prompt_yn.assert_not_called()
 
-    def test_get_system_session_warns_when_defaulting_to_poc_target(self, capsys, monkeypatch):
+    def test_get_system_session_succeeds_when_defaulting_to_poc_target(self, monkeypatch):
         from nvflare.tool.system.system_cli import _get_system_session
 
         monkeypatch.setattr(cli_output, "_output_format", "txt")
@@ -300,10 +300,7 @@ class TestSystemStatus:
             ):
                 with patch("nvflare.tool.cli_session.new_cli_session", return_value=MagicMock()):
                     with patch("nvflare.tool.cli_output.get_connect_timeout", return_value=10.0):
-                        _get_system_session(args)
-
-        captured = capsys.readouterr()
-        assert "defaulting to the POC startup kit" in captured.out
+                        _get_system_session(args)  # should not raise
 
     def test_get_system_session_resolves_startup_kit_once_before_username_lookup(self):
         from nvflare.tool.system.system_cli import _get_system_session
@@ -341,7 +338,7 @@ class TestSystemStatus:
         parser = argparse.ArgumentParser(prog="nvflare system")
         def_system_cli_parser(parser)
 
-        args = parser.parse_args(["status", "--startup_kit", "/tmp/startup", "--startup-target", "prod"])
+        args = parser.parse_args(["status", "--startup-kit", "/tmp/startup", "--startup-target", "prod"])
 
         assert args.system_sub_cmd == "status"
         assert args.startup_kit == "/tmp/startup"
@@ -459,3 +456,338 @@ class TestSystemStatusHuman:
         assert "site-1" in captured.out
         assert "site-2" in captured.out
         assert "Connected: 0" not in captured.out
+
+
+class TestSystemShutdown:
+    """Tests for nvflare system shutdown command."""
+
+    @pytest.fixture(autouse=True)
+    def json_mode(self, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+
+    def _make_args(self, target="server", client_names=None, force=True):
+        args = MagicMock()
+        args.target = target
+        args.client_names = client_names or []
+        args.force = force
+        args.startup_target = None
+        args.startup_kit = None
+        return args
+
+    def _make_session(self, result=None):
+        sess = MagicMock()
+        sess.shutdown.return_value = result or {"status": "ok"}
+        return sess
+
+    def test_shutdown_server_calls_session_shutdown(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_shutdown
+
+        args = self._make_args(target="server")
+        sess = self._make_session()
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
+            cmd_system_shutdown(args)
+
+        sess.shutdown.assert_called_once_with("server", client_names=None)
+
+    def test_shutdown_client_all_calls_session_shutdown(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_shutdown
+
+        args = self._make_args(target="client")
+        sess = self._make_session()
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
+            cmd_system_shutdown(args)
+
+        sess.shutdown.assert_called_once_with("client", client_names=None)
+
+    def test_shutdown_client_named_passes_client_names(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_shutdown
+
+        args = self._make_args(target="client", client_names=["site-1", "site-2"])
+        sess = self._make_session()
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
+            cmd_system_shutdown(args)
+
+        sess.shutdown.assert_called_once_with("client", client_names=["site-1", "site-2"])
+
+    def test_shutdown_all_calls_session_shutdown(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_shutdown
+
+        args = self._make_args(target="all")
+        sess = self._make_session()
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
+            cmd_system_shutdown(args)
+
+        sess.shutdown.assert_called_once_with("all", client_names=None)
+
+    def test_shutdown_invalid_target_exits_4(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_shutdown
+
+        args = self._make_args(target="client", client_names=["unknown-site"])
+        with patch(
+            "nvflare.tool.system.system_cli._get_system_session",
+            side_effect=InvalidTarget("invalid client(s): unknown-site"),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_system_shutdown(args)
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["error_code"] == "INVALID_ARGS"
+        assert "unknown-site" in data["message"]
+
+    def test_shutdown_no_connection_reraises(self):
+        from nvflare.tool.system.system_cli import cmd_system_shutdown
+
+        args = self._make_args()
+        with patch(
+            "nvflare.tool.system.system_cli._get_system_session",
+            side_effect=NoConnection("no server"),
+        ):
+            with pytest.raises(NoConnection):
+                cmd_system_shutdown(args)
+
+    def test_shutdown_auth_error_reraises(self):
+        from nvflare.tool.system.system_cli import cmd_system_shutdown
+
+        args = self._make_args()
+        with patch(
+            "nvflare.tool.system.system_cli._get_system_session",
+            side_effect=AuthenticationError("bad cert"),
+        ):
+            with pytest.raises(AuthenticationError):
+                cmd_system_shutdown(args)
+
+    def test_shutdown_ok_output_shape(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_shutdown
+
+        args = self._make_args(target="server")
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=self._make_session()):
+            cmd_system_shutdown(args)
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "ok"
+        assert data["data"]["target"] == "server"
+        assert data["data"]["status"] == "shutdown initiated"
+
+    def test_shutdown_parser_accepts_all_targets(self):
+        from nvflare.tool.system.system_cli import def_system_cli_parser
+
+        parser = argparse.ArgumentParser(prog="nvflare system")
+        def_system_cli_parser(parser)
+        for target in ("server", "client", "all"):
+            args = parser.parse_args(["shutdown", target, "--force"])
+            assert args.target == target
+            assert args.force is True
+
+    def test_shutdown_parser_accepts_client_names(self):
+        from nvflare.tool.system.system_cli import def_system_cli_parser
+
+        parser = argparse.ArgumentParser(prog="nvflare system")
+        def_system_cli_parser(parser)
+        args = parser.parse_args(["shutdown", "client", "site-1", "site-2"])
+        assert args.target == "client"
+        assert args.client_names == ["site-1", "site-2"]
+
+
+class TestSystemRestart:
+    """Tests for nvflare system restart command."""
+
+    @pytest.fixture(autouse=True)
+    def json_mode(self, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+
+    def _make_args(self, target="server", client_names=None, force=True):
+        args = MagicMock()
+        args.target = target
+        args.client_names = client_names or []
+        args.force = force
+        args.startup_target = None
+        args.startup_kit = None
+        return args
+
+    def _make_session(self, result=None):
+        sess = MagicMock()
+        sess.restart.return_value = result or {"status": "ok"}
+        return sess
+
+    def test_restart_server_calls_session_restart(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_restart
+
+        args = self._make_args(target="server")
+        sess = self._make_session()
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
+            cmd_system_restart(args)
+
+        sess.restart.assert_called_once_with("server", client_names=None)
+
+    def test_restart_client_named_passes_client_names(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_restart
+
+        args = self._make_args(target="client", client_names=["site-1"])
+        sess = self._make_session()
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
+            cmd_system_restart(args)
+
+        sess.restart.assert_called_once_with("client", client_names=["site-1"])
+
+    def test_restart_all_calls_session_restart(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_restart
+
+        args = self._make_args(target="all")
+        sess = self._make_session()
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
+            cmd_system_restart(args)
+
+        sess.restart.assert_called_once_with("all", client_names=None)
+
+    def test_restart_invalid_target_exits_4(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_restart
+
+        args = self._make_args(target="client", client_names=["ghost"])
+        with patch(
+            "nvflare.tool.system.system_cli._get_system_session",
+            side_effect=InvalidTarget("invalid client(s): ghost"),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_system_restart(args)
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["error_code"] == "INVALID_ARGS"
+
+    def test_restart_no_connection_reraises(self):
+        from nvflare.tool.system.system_cli import cmd_system_restart
+
+        args = self._make_args()
+        with patch(
+            "nvflare.tool.system.system_cli._get_system_session",
+            side_effect=NoConnection("no server"),
+        ):
+            with pytest.raises(NoConnection):
+                cmd_system_restart(args)
+
+    def test_restart_ok_output_shape(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_restart
+
+        args = self._make_args(target="server")
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=self._make_session()):
+            cmd_system_restart(args)
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "ok"
+        assert data["data"]["target"] == "server"
+        assert data["data"]["status"] == "restart initiated"
+
+    def test_restart_parser_accepts_all_targets(self):
+        from nvflare.tool.system.system_cli import def_system_cli_parser
+
+        parser = argparse.ArgumentParser(prog="nvflare system")
+        def_system_cli_parser(parser)
+        for target in ("server", "client", "all"):
+            args = parser.parse_args(["restart", target, "--force"])
+            assert args.target == target
+
+    def test_restart_parser_accepts_client_names(self):
+        from nvflare.tool.system.system_cli import def_system_cli_parser
+
+        parser = argparse.ArgumentParser(prog="nvflare system")
+        def_system_cli_parser(parser)
+        args = parser.parse_args(["restart", "client", "site-1", "site-2"])
+        assert args.target == "client"
+        assert args.client_names == ["site-1", "site-2"]
+
+
+class TestSystemRemoveClient:
+    """Tests for nvflare system remove-client command."""
+
+    @pytest.fixture(autouse=True)
+    def json_mode(self, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+
+    def _make_args(self, client_name="site-1", force=True):
+        args = MagicMock()
+        args.client_name = client_name
+        args.force = force
+        args.startup_target = None
+        args.startup_kit = None
+        return args
+
+    def test_remove_client_calls_session_remove_client(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_remove_client
+
+        args = self._make_args(client_name="site-1")
+        sess = MagicMock()
+        sess.remove_client.return_value = None
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
+            cmd_system_remove_client(args)
+
+        sess.remove_client.assert_called_once_with("site-1")
+
+    def test_remove_client_ok_output_shape(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_remove_client
+
+        args = self._make_args(client_name="site-1")
+        sess = MagicMock()
+        sess.remove_client.return_value = None
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
+            cmd_system_remove_client(args)
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "ok"
+        assert data["data"]["client_name"] == "site-1"
+        assert data["data"]["status"] == "removed"
+
+    def test_remove_client_invalid_target_exits_4(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_remove_client
+
+        args = self._make_args(client_name="ghost")
+        with patch(
+            "nvflare.tool.system.system_cli._get_system_session",
+            side_effect=InvalidTarget("invalid client(s): ghost"),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_system_remove_client(args)
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["error_code"] == "INVALID_ARGS"
+
+    def test_remove_client_no_connection_reraises(self):
+        from nvflare.tool.system.system_cli import cmd_system_remove_client
+
+        args = self._make_args()
+        with patch(
+            "nvflare.tool.system.system_cli._get_system_session",
+            side_effect=NoConnection("no server"),
+        ):
+            with pytest.raises(NoConnection):
+                cmd_system_remove_client(args)
+
+    def test_remove_client_auth_error_reraises(self):
+        from nvflare.tool.system.system_cli import cmd_system_remove_client
+
+        args = self._make_args()
+        with patch(
+            "nvflare.tool.system.system_cli._get_system_session",
+            side_effect=AuthenticationError("bad cert"),
+        ):
+            with pytest.raises(AuthenticationError):
+                cmd_system_remove_client(args)
+
+    def test_remove_client_parser_accepts_client_name(self):
+        from nvflare.tool.system.system_cli import def_system_cli_parser
+
+        parser = argparse.ArgumentParser(prog="nvflare system")
+        def_system_cli_parser(parser)
+        args = parser.parse_args(["remove-client", "site-1", "--force"])
+        assert args.client_name == "site-1"
+        assert args.force is True

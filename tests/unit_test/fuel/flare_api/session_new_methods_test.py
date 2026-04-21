@@ -179,11 +179,11 @@ class TestReportResources:
 
 
 class TestShutdown:
-    def test_rejects_non_server_target(self):
+    def test_rejects_invalid_target(self):
         session = _make_session()
         session.close = MagicMock()
-        with pytest.raises(ValueError, match="server"):
-            session.shutdown(TargetType.CLIENT)
+        with pytest.raises(ValueError, match="shutdown target_type"):
+            session.shutdown("invalid-target")
 
     def test_shuts_down_server_closes_session(self):
         session = _make_session()
@@ -223,10 +223,10 @@ class TestRestart:
         cmd = mock_cmd.call_args[0][0]
         assert AdminCommandNames.RESTART in cmd
 
-    def test_rejects_non_server_target(self):
+    def test_rejects_invalid_target(self):
         session = _make_session()
-        with pytest.raises(ValueError, match="server"):
-            session.restart(TargetType.CLIENT)
+        with pytest.raises(ValueError, match="restart target_type"):
+            session.restart("invalid-target")
 
 
 class TestRemoveClient:

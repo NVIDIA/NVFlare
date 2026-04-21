@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Scripted-mode demo: minimal, JSON stdout via --out-format json.
+# Scripted-mode demo: minimal, JSON stdout via --format json.
 # Usage:
 #   ./scripted_mode_demo.sh <project_name> <server_endpoint> <work_dir> <site_yaml...>
 # Each site YAML is a single-site file with: name, org, type.
@@ -44,7 +44,7 @@ mkdir -m 0700 -p "${CSR_DIR}" "${SIGNED_DIR}" "${SITE_DIR}"
 
 # 1) Root CA
 jq -n -c '{step:"warning", scope:"cert init", message:"cert init --force regenerates the root CA and invalidates previously signed certs."}'
-nvflare --out-format json cert init --project "${PROJECT_NAME}" -o "${CA_DIR}" --force >"${WORK_DIR}/ca.json"
+nvflare cert init --project "${PROJECT_NAME}" -o "${CA_DIR}" --force --format json >"${WORK_DIR}/ca.json"
 ROOTCA_FP="$(openssl x509 -in "${CA_DIR}/rootCA.pem" -noout -fingerprint -sha256 | sed 's/^[Ss][Hh][Aa]256 Fingerprint=//')"
 
 SITE_NAMES=()
@@ -57,7 +57,7 @@ trap 'rm -f "${TMP_CSR_JSON:-}"' EXIT
 for site_yaml in "${SITE_YAMLS[@]}"; do
   TMP_CSR_JSON="$(mktemp "${WORK_DIR}/csr_tmp.XXXXXX")"
   jq -n -c --arg file "${site_yaml}" --arg dir "${CSR_DIR}" '{step:"warning", scope:"cert csr", site_yaml:$file, message:"cert csr --force regenerates participant private keys and CSRs for existing names.", csr_dir:$dir}'
-  nvflare --out-format json cert csr --project-file "${site_yaml}" -o "${CSR_DIR}" --force >"${TMP_CSR_JSON}"
+  nvflare cert csr --project-file "${site_yaml}" -o "${CSR_DIR}" --force --format json >"${TMP_CSR_JSON}"
 
   SITE_NAME="$(jq -r '.data.name' <"${TMP_CSR_JSON}")"
   CSR_PATH="$(jq -r '.data.csr' <"${TMP_CSR_JSON}")"
@@ -95,7 +95,7 @@ for i in "${!SITE_NAMES[@]}"; do
   CSR_PATH="${CSR_PATHS[$i]}"
   SITE_SIGNED_DIR="${SIGNED_DIR}/${SITE_NAME}"
   mkdir -m 0700 -p "${SITE_SIGNED_DIR}"
-  nvflare --out-format json cert sign -r "${CSR_PATH}" -c "${CA_DIR}" -o "${SITE_SIGNED_DIR}" --accept-csr-role --force >"${WORK_DIR}/sign_${SITE_NAME}.json"
+  nvflare cert sign -r "${CSR_PATH}" -c "${CA_DIR}" -o "${SITE_SIGNED_DIR}" --accept-csr-role --force --format json >"${WORK_DIR}/sign_${SITE_NAME}.json"
 
 done
 
@@ -114,7 +114,7 @@ for i in "${!SITE_NAMES[@]}"; do
   cp -f "${SITE_SIGNED_DIR}/${SITE_NAME}.crt" "${SITE_BUNDLE_DIR}/"
   cp -f "${CA_DIR}/rootCA.pem" "${SITE_BUNDLE_DIR}/"
 
-  nvflare --out-format json package -e "${SERVER_ENDPOINT}" -p "${SITE_YAMLS[$i]}" --dir "${SITE_BUNDLE_DIR}" -w "${WORK_DIR}/workspace" >"${WORK_DIR}/package_${SITE_NAME}.json"
+  nvflare package -e "${SERVER_ENDPOINT}" -p "${SITE_YAMLS[$i]}" --dir "${SITE_BUNDLE_DIR}" -w "${WORK_DIR}/workspace" --format json >"${WORK_DIR}/package_${SITE_NAME}.json"
 
 done
 

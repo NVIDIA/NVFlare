@@ -67,17 +67,17 @@ class TestRequireSignedJobs:
         assert _require_signed_jobs(ws) is False
 
     def test_malformed_json_falls_through_to_rootca(self, tmp_path):
-        """Malformed JSON in fed_server.json → falls through to rootCA heuristic."""
+        """Malformed JSON in fed_server.json → fail closed."""
         (tmp_path / "fed_server.json").write_text("{invalid json")
         (tmp_path / "rootCA.pem").write_text("fake ca cert")
         ws = _make_workspace(str(tmp_path))
         assert _require_signed_jobs(ws) is True
 
     def test_malformed_json_no_rootca(self, tmp_path):
-        """Malformed JSON, no rootCA.pem → False."""
+        """Malformed JSON, no rootCA.pem → still fail closed."""
         (tmp_path / "fed_server.json").write_text("{invalid json")
         ws = _make_workspace(str(tmp_path))
-        assert _require_signed_jobs(ws) is False
+        assert _require_signed_jobs(ws) is True
 
     def test_world_writable_file_still_returns_value(self, tmp_path):
         """World-writable fed_server.json: still returns correct value (with warning)."""
@@ -90,3 +90,31 @@ class TestRequireSignedJobs:
             assert _require_signed_jobs(ws) is True
         finally:
             os.chmod(str(json_path), 0o644)  # restore
+
+    def test_parse_warning_is_emitted_once_per_path(self, tmp_path, caplog):
+        json_path = tmp_path / "fed_server.json"
+        json_path.write_text("{invalid json")
+        ws = _make_workspace(str(tmp_path))
+
+        caplog.set_level("WARNING")
+        assert _require_signed_jobs(ws) is True
+        assert _require_signed_jobs(ws) is True
+
+        warnings = [r.message for r in caplog.records if "failed to parse fed_server.json" in r.message]
+        assert len(warnings) == 1
+
+    def test_writable_warning_is_emitted_once_per_path(self, tmp_path, caplog):
+        json_path = tmp_path / "fed_server.json"
+        json_path.write_text(json.dumps({"require_signed_jobs": True}))
+        try:
+            os.chmod(str(json_path), 0o666)
+            ws = _make_workspace(str(tmp_path))
+
+            caplog.set_level("WARNING")
+            assert _require_signed_jobs(ws) is True
+            assert _require_signed_jobs(ws) is True
+        finally:
+            os.chmod(str(json_path), 0o644)
+
+        warnings = [r.message for r in caplog.records if "group/world-writable" in r.message]
+        assert len(warnings) == 1
