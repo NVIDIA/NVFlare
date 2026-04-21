@@ -18,12 +18,13 @@ Command Usage
    usage: nvflare system [-h]  ...
 
    system subcommands:
-     status     show server and client status
-     resources  show server and client resource usage
-     shutdown   shut down the FL server
-     restart    restart the FL server
-     version    show NVFlare version on each remote site
-     log-config change logging level on server or client sites
+     status         show server and client status
+     resources      show server and client resource usage
+     shutdown       shut down server, clients, or all
+     restart        restart server, clients, or all
+     remove-client  remove a client from the federation
+     version        show NVFlare version on each remote site
+     log-config     change logging level on server or client sites
 
 *****************
 Common Examples
@@ -65,6 +66,18 @@ Shut down the server:
 
    nvflare system shutdown server --force
 
+Shut down specific clients:
+
+.. code-block:: shell
+
+   nvflare system shutdown client site-1 site-2 --force
+
+Remove a client from the federation:
+
+.. code-block:: shell
+
+   nvflare system remove-client site-1 --force
+
 Show deployed NVFlare versions:
 
 .. code-block:: shell
@@ -96,7 +109,7 @@ Status arguments:
 - positional ``target``: optional. ``server`` or ``client``.
 - positional ``client_names``: optional list of client names when targeting clients.
 - ``--startup-target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup_kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
+- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -125,7 +138,7 @@ Resource arguments:
 - positional ``target``: optional. ``server`` or ``client``.
 - positional ``client_names``: optional list of client names when targeting clients.
 - ``--startup-target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup_kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
+- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -145,18 +158,21 @@ In ``nvflare system resources client site-1 --startup-target prod``:
 Shutdown and Restart
 **********************
 
-Use ``shutdown`` and ``restart`` to control the server process through
+Use ``shutdown`` and ``restart`` to control server or client processes through
 the admin channel.
 
 Supported targets:
 
-- ``server``
+- ``server`` — shut down or restart the FL server (closes the admin session).
+- ``client`` — shut down or restart one or more clients.
+- ``all`` — shut down or restart the server and all clients (closes the admin session).
 
 Control arguments:
 
-- positional ``target``: required. Must be ``server``.
+- positional ``target``: required. One of ``server``, ``client``, or ``all``.
+- positional ``client_names``: optional. One or more client names. Only meaningful when ``target`` is ``client``.
 - ``--startup-target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup_kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
+- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
 - ``--force``: skip the confirmation prompt.
 - ``--schema``: print the command schema as JSON and exit.
 
@@ -165,9 +181,38 @@ Examples:
 .. code-block:: shell
 
    nvflare system shutdown server --force
+   nvflare system shutdown client site-1 site-2 --force
+   nvflare system shutdown all --force
+
    nvflare system restart server --force
+   nvflare system restart client site-1 --force
+   nvflare system restart all --force
 
 In non-interactive contexts, ``--force`` is required.
+
+When ``target`` is ``server`` or ``all``, the admin session closes automatically
+after the command completes.
+
+****************
+Remove Client
+****************
+
+Use ``nvflare system remove-client`` to remove a client from the running
+federation (equivalent to the admin console ``remove_client`` command).
+
+Remove-client arguments:
+
+- positional ``client_name``: required. The name of the client to remove.
+- ``--startup-target {poc,prod}``: choose the configured admin startup kit.
+- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
+- ``--force``: skip the confirmation prompt.
+- ``--schema``: print the command schema as JSON and exit.
+
+Example:
+
+.. code-block:: shell
+
+   nvflare system remove-client site-1 --force
 
 ****************
 Version
@@ -180,7 +225,7 @@ Version arguments:
 
 - ``--site``: ``server``, a client name, or ``all``. Default: ``all``.
 - ``--startup-target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup_kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
+- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -211,7 +256,7 @@ Logging arguments:
 - positional ``level``: runtime-required log level or built-in log mode; omitting it returns a CLI error
 - ``--site``: ``server``, a client name, or ``all``. Default: ``all``.
 - ``--startup-target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup_kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
+- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Supported built-in values for positional ``level``:
@@ -233,22 +278,23 @@ Supported built-in values for positional ``level``:
 JSON Output and Help
 *********************
 
-The top-level CLI supports ``--out-format json`` for machine-readable output:
+Add ``--format json`` after the subcommand for machine-readable output:
 
 .. code-block:: shell
 
-   nvflare --out-format json system status
-   nvflare --out-format json system version --site server
+   nvflare system status --format json
+   nvflare system version --site server --format json
 
-For normal command execution in JSON mode, stdout contains a single JSON
-envelope. Human-readable progress and diagnostics are written to stderr.
+stdout contains a single JSON envelope; human-readable progress and
+diagnostics go to stderr.
 
-Use ``--schema`` for machine-readable command discovery:
+Use ``--schema`` for machine-readable command discovery. ``--schema`` always
+returns JSON so ``--format json`` is not needed with it:
 
 .. code-block:: shell
 
-   nvflare --out-format json system status --schema
-   nvflare --out-format json system shutdown server --schema
+   nvflare system status --schema
+   nvflare system shutdown server --schema
 
 Human-readable argument errors print command help first, followed by the
 specific error and hint. JSON mode prints only the JSON error envelope.

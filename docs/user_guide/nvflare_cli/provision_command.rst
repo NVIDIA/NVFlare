@@ -29,7 +29,7 @@ to copy a default project.yml to the current working directory.
 JSON mode
 =========
 
-``nvflare --out-format json provision`` returns only a JSON envelope on
+``nvflare provision --format json`` returns only a JSON envelope on
 stdout. When the command generates a sample project file, the JSON ``data``
 section includes structured guidance such as:
 

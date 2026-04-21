@@ -23,6 +23,7 @@ CMD_SYSTEM_STATUS = "status"
 CMD_SYSTEM_RESOURCES = "resources"
 CMD_SYSTEM_SHUTDOWN = "shutdown"
 CMD_SYSTEM_RESTART = "restart"
+CMD_SYSTEM_REMOVE_CLIENT = "remove-client"
 CMD_SYSTEM_VERSION = "version"
 CMD_SYSTEM_LOG_CONFIG = "log-config"
 
@@ -31,8 +32,8 @@ _system_sub_cmd_parsers = {}
 
 def _add_system_connection_args(parser):
     parser.add_argument(
-        "--startup_kit",
         "--startup-kit",
+        dest="startup_kit",
         default=None,
         help="path to the admin startup kit directory (overrides target-based config lookup)",
     )
@@ -41,7 +42,7 @@ def _add_system_connection_args(parser):
         choices=["poc", "prod"],
         default=None,
         dest="startup_target",
-        help="startup kit target to use from config.conf when --startup_kit is not supplied",
+        help="startup kit target to use from config.conf when --startup-kit is not supplied",
     )
 
 
@@ -67,20 +68,30 @@ def def_system_cli_parser(system_parser):
     _system_sub_cmd_parsers[CMD_SYSTEM_RESOURCES] = p
 
     # shutdown
-    p = sub.add_parser(CMD_SYSTEM_SHUTDOWN, help="shut down the FL server")
+    p = sub.add_parser(CMD_SYSTEM_SHUTDOWN, help="shut down server, clients, or all")
     _add_system_connection_args(p)
-    p.add_argument("target", choices=["server"])
+    p.add_argument("target", choices=["server", "client", "all"])
+    p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--force", action="store_true")
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_SHUTDOWN] = p
 
     # restart
-    p = sub.add_parser(CMD_SYSTEM_RESTART, help="restart the FL server")
+    p = sub.add_parser(CMD_SYSTEM_RESTART, help="restart server, clients, or all")
     _add_system_connection_args(p)
-    p.add_argument("target", choices=["server"])
+    p.add_argument("target", choices=["server", "client", "all"])
+    p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--force", action="store_true")
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_RESTART] = p
+
+    # remove-client
+    p = sub.add_parser(CMD_SYSTEM_REMOVE_CLIENT, help="remove a client from the federation")
+    _add_system_connection_args(p)
+    p.add_argument("client_name", help="name of the client to remove")
+    p.add_argument("--force", action="store_true")
+    p.add_argument("--schema", action="store_true")
+    _system_sub_cmd_parsers[CMD_SYSTEM_REMOVE_CLIENT] = p
 
     # version
     p = sub.add_parser(CMD_SYSTEM_VERSION, help="show NVFlare version on each remote site")
@@ -124,7 +135,7 @@ def _confirm_or_force(prompt, args):
 
 def _get_system_session(args=None):
     """Create a secure session using the startup kit."""
-    from nvflare.tool.cli_output import get_connect_timeout, print_human
+    from nvflare.tool.cli_output import get_connect_timeout
     from nvflare.tool.cli_session import new_cli_session
     from nvflare.utils.cli_utils import get_startup_kit_dir_for_target
 
@@ -136,8 +147,6 @@ def _get_system_session(args=None):
 
         startup_target = getattr(args, "startup_target", None) or "poc"
         startup_override = getattr(args, "startup_kit", None)
-        if args is not None and getattr(args, "startup_target", None) is None and startup_override is None:
-            print_human("No --startup-target specified; defaulting to the POC startup kit.")
         startup = get_startup_kit_dir_for_target(startup_kit_dir=startup_override, target=startup_target)
         username, startup = _resolve_admin_user_and_dir_from_startup_kit(startup)
     except ValueError as e:
@@ -363,25 +372,29 @@ def cmd_system_resources(args):
 
 
 def cmd_system_shutdown(args):
-    from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, NoConnection
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
         _system_sub_cmd_parsers.get(CMD_SYSTEM_SHUTDOWN),
         "nvflare system shutdown",
-        ["nvflare system shutdown server --force"],
+        ["nvflare system shutdown all --force"],
         sys.argv[1:],
     )
 
-    target = getattr(args, "target", "server")
+    target = args.target
+    client_names = getattr(args, "client_names", [])
 
     _confirm_or_force(f"Really shutdown {target}?", args)
 
     try:
         with _system_session(args) as sess:
-            result = sess.shutdown(target)
+            result = sess.shutdown(target, client_names=client_names or None)
     except (AuthenticationError, NoConnection):
         raise
+    except InvalidTarget as e:
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+        raise SystemExit(4)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         raise SystemExit(2)
@@ -390,7 +403,7 @@ def cmd_system_shutdown(args):
 
 
 def cmd_system_restart(args):
-    from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, NoConnection
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -400,15 +413,19 @@ def cmd_system_restart(args):
         sys.argv[1:],
     )
 
-    target = getattr(args, "target", "server")
+    target = args.target
+    client_names = getattr(args, "client_names", [])
 
     _confirm_or_force(f"Really restart {target}?", args)
 
     try:
         with _system_session(args) as sess:
-            result = sess.restart(target)
+            result = sess.restart(target, client_names=client_names or None)
     except (AuthenticationError, NoConnection):
         raise
+    except InvalidTarget as e:
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+        raise SystemExit(4)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         raise SystemExit(2)
@@ -511,11 +528,41 @@ def cmd_system_log(args):
     output_ok({"site": site, "log_config": level, "status": "applied"})
 
 
+def cmd_system_remove_client(args):
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, NoConnection
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        _system_sub_cmd_parsers.get(CMD_SYSTEM_REMOVE_CLIENT),
+        "nvflare system remove-client",
+        ["nvflare system remove-client site-1 --force"],
+        sys.argv[1:],
+    )
+
+    client_name = args.client_name
+    _confirm_or_force(f"Really remove client '{client_name}'?", args)
+
+    try:
+        with _system_session(args) as sess:
+            sess.remove_client(client_name)
+    except (AuthenticationError, NoConnection):
+        raise
+    except InvalidTarget as e:
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+        raise SystemExit(4)
+    except Exception as e:
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        raise SystemExit(2)
+
+    output_ok({"client_name": client_name, "status": "removed"})
+
+
 _system_handlers = {
     CMD_SYSTEM_STATUS: cmd_system_status,
     CMD_SYSTEM_RESOURCES: cmd_system_resources,
     CMD_SYSTEM_SHUTDOWN: cmd_system_shutdown,
     CMD_SYSTEM_RESTART: cmd_system_restart,
+    CMD_SYSTEM_REMOVE_CLIENT: cmd_system_remove_client,
     CMD_SYSTEM_VERSION: cmd_system_version,
     CMD_SYSTEM_LOG_CONFIG: cmd_system_log,
 }

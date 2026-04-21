@@ -20,7 +20,7 @@ Current default (human-first):
     stdout — human-readable output (tables, summaries, prompts).
     stderr — errors and diagnostics.
 
-JSON output mode (--out-format json):
+JSON output mode (--format json):
     stdout — exactly one JSON envelope per command invocation:
         {"schema_version": "1", "status": "ok"|"error", "data": {...}}
     stderr — all human-readable output: progress, warnings, prompts, diagnostics.
@@ -52,7 +52,7 @@ _VALID_OUTPUT_STATUS = {"ok", "error"}
 def set_output_format(fmt: str) -> None:
     """Set the output format for all cli_output functions.
 
-    Called once by cli.py after --out-format is parsed.
+    Called once by cli.py after --format is parsed.
 
     Args:
         fmt: "txt" (default) for human-readable output to stdout/stderr;
@@ -148,9 +148,9 @@ def output_error(
     **kwargs,
 ) -> None:
     """Print an error from ERROR_REGISTRY and exit. Never returns."""
-    from nvflare.tool.cli_errors import ERROR_REGISTRY
+    from nvflare.tool.cli_errors import get_error_entry
 
-    entry = ERROR_REGISTRY.get(error_code, {"message": error_code, "hint": ""})
+    entry = get_error_entry(error_code) or {"message": error_code, "hint": ""}
     try:
         message = entry["message"].format_map(kwargs) if kwargs else entry["message"]
     except KeyError:

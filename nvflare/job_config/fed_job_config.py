@@ -147,10 +147,7 @@ class FedJobConfig:
         """
         job_dir = os.path.join(job_root, self.job_name)
         if os.path.exists(job_dir):
-            if self._is_valid_job_folder(job_dir):
-                shutil.rmtree(job_dir, ignore_errors=True)
-            else:
-                raise RuntimeError(f"Job folder {job_dir} already exists and is not a valid job folder.")
+            shutil.rmtree(job_dir, ignore_errors=True)
 
         for app_name, fed_app in self.fed_apps.items():
             self.custom_modules = []
@@ -480,8 +477,3 @@ class FedJobConfig:
         for i in range(len(strings)):
             strings[i] = strings[i].strip()
         return ",".join(strings)
-
-    @staticmethod
-    def _is_valid_job_folder(job_folder: str) -> bool:
-        meta_file = os.path.join(job_folder, META_JSON)
-        return os.path.exists(meta_file)

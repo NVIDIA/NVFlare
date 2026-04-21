@@ -17,7 +17,9 @@
 import argparse
 from typing import Optional
 
-_VALID_CERT_TYPES = ["client", "server", "org_admin", "lead", "member"]
+from nvflare.tool.cert.cert_constants import VALID_CERT_TYPES
+
+_VALID_CERT_TYPES = list(VALID_CERT_TYPES)
 
 # Module-level parser references — used by --schema in handlers and for help fallback
 _cert_init_parser: Optional[argparse.ArgumentParser] = None

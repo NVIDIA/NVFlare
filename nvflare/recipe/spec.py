@@ -18,12 +18,17 @@ from contextlib import contextmanager
 from typing import Dict, List, Optional, Union
 
 
-def _peek_recipe_args(argv: Optional[List[str]] = None) -> tuple:
-    """Inspect --export / --export-dir flags without mutating sys.argv."""
-    if argv is None:
-        argv = sys.argv[1:]
+def _consume_recipe_args() -> tuple:
+    """Strip --export / --export-dir from sys.argv and return (export, export_dir).
+
+    Called once at module import time so that the caller's argparse never sees
+    these flags regardless of the order in which parse_args() and execute() appear
+    in job.py.
+    """
+    argv = sys.argv[1:]
     export = False
     export_dir = "./fl_job"
+    remaining = []
     i = 0
     while i < len(argv):
         if argv[i] == "--export":
@@ -38,8 +43,19 @@ def _peek_recipe_args(argv: Optional[List[str]] = None) -> tuple:
             export_dir = argv[i].split("=", 1)[1]
             i += 1
         else:
+            remaining.append(argv[i])
             i += 1
+    sys.argv[1:] = remaining
     return export, export_dir
+
+
+# Strip export flags at import time so the caller's ArgumentParser doesn't see them.
+_RECIPE_EXPORT, _RECIPE_EXPORT_DIR = _consume_recipe_args()
+
+
+def _peek_recipe_args(argv: Optional[List[str]] = None) -> tuple:
+    """Return the export flags consumed at import time (argv argument is ignored)."""
+    return _RECIPE_EXPORT, _RECIPE_EXPORT_DIR
 
 
 from nvflare.apis.filter import Filter
@@ -489,7 +505,8 @@ class Recipe(ABC):
             client_exec_params: execution params for clients
 
         Returns:
-            Run when executing, None when exporting.
+            Run when executing; raises SystemExit(0) when exporting so callers
+            need not guard against a None return value.
         """
         recipe_export, recipe_export_dir = _peek_recipe_args()
         if recipe_export:
@@ -500,6 +517,6 @@ class Recipe(ABC):
                 env=env,
             )
             print(f"Job exported to: {recipe_export_dir}")
-            return None
+            raise SystemExit(0)
 
         return self.run(env, server_exec_params=server_exec_params, client_exec_params=client_exec_params)

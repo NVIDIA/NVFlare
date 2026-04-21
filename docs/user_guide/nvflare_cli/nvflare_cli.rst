@@ -11,18 +11,18 @@ Running ``nvflare -h`` shows the current command surface:
 
 .. code-block:: none
 
-   usage: nvflare [-h] [--version] [--out-format {txt,json}]
+   usage: nvflare [-h] [--version] [--format {txt,json}]
                   [--connect-timeout CONNECT_TIMEOUT] ...
 
 Global options
 ==============
 
 - ``--version`` / ``-V``: print the NVFlare version
-- ``--out-format {txt,json}``: select human-readable output or a JSON envelope
+- ``--format {txt,json}``: select human-readable output or a JSON envelope
 - ``--connect-timeout``: control server connection timeout for remote commands
 
 Human-readable argument errors print command help first, then the specific
-message and hint. ``--out-format json`` prints only the JSON response or JSON
+message and hint. ``--format json`` prints only the JSON response or JSON
 error envelope, which is intended for automation and agent-style callers.
 
 Command groups

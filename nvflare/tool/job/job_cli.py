@@ -71,8 +71,8 @@ from nvflare.utils.cli_utils import (
     save_config,
 )
 
-CMD_LIST_TEMPLATES = "list_templates"
-CMD_SHOW_VARIABLES = "show_variables"
+CMD_LIST_TEMPLATES = "list-templates"
+CMD_SHOW_VARIABLES = "show-variables"
 CMD_CREATE_JOB = "create"
 CMD_SUBMIT_JOB = "submit"
 CMD_JOB_LIST = "list"
@@ -256,7 +256,7 @@ def show_variables(cmd_args):
 
     handle_schema_flag(
         job_sub_cmd_parser[CMD_SHOW_VARIABLES],
-        "nvflare job show_variables",
+        "nvflare job show-variables",
         [],
         sys.argv[1:],
         deprecated=True,
@@ -264,7 +264,9 @@ def show_variables(cmd_args):
     )
     from nvflare.tool.cli_output import print_human
 
-    print_human("WARNING: 'nvflare job show_variables' is deprecated. Use the Job Recipe API instead.")
+    if getattr(cmd_args, "job_sub_cmd", None) == "show_variables":
+        print_human("WARNING: 'nvflare job show_variables' is deprecated; use 'nvflare job show-variables' instead.")
+    print_human("WARNING: 'nvflare job show-variables' is deprecated. Use the Job Recipe API instead.")
     try:
         if not os.path.isdir(cmd_args.job_folder):
             raise ValueError("required job folder is not specified.")
@@ -291,7 +293,7 @@ def check_template_exists(target_template_name, template_index_conf):
     if not found:
         raise ValueError(
             f"Invalid template name {target_template_name}, "
-            f"please check the available templates using nvflare job list_templates"
+            f"please check the available templates using nvflare job list-templates"
         )
 
 
@@ -346,7 +348,7 @@ def list_templates(cmd_args):
 
     handle_schema_flag(
         job_sub_cmd_parser[CMD_LIST_TEMPLATES],
-        "nvflare job list_templates",
+        "nvflare job list-templates",
         [],
         sys.argv[1:],
         deprecated=True,
@@ -354,7 +356,9 @@ def list_templates(cmd_args):
     )
     from nvflare.tool.cli_output import print_human
 
-    print_human("WARNING: 'nvflare job list_templates' is deprecated. Use 'nvflare recipe list' instead.")
+    if getattr(cmd_args, "job_sub_cmd", None) == "list_templates":
+        print_human("WARNING: 'nvflare job list_templates' is deprecated; use 'nvflare job list-templates' instead.")
+    print_human("WARNING: 'nvflare job list-templates' is deprecated. Use 'nvflare recipe list' instead.")
     try:
         job_templates_dir = find_job_templates_location(cmd_args.job_templates_dir)
         job_templates_dir = os.path.abspath(job_templates_dir)
@@ -613,7 +617,12 @@ job_sub_cmd_parser = {
 
 
 def handle_job_cli_cmd(cmd_args):
-    job_cmd_handler = job_sub_cmd_handlers.get(cmd_args.job_sub_cmd, None)
+    sub_cmd = {
+        "list_templates": CMD_LIST_TEMPLATES,
+        "show_variables": CMD_SHOW_VARIABLES,
+    }.get(cmd_args.job_sub_cmd, cmd_args.job_sub_cmd)
+    cmd_args.job_sub_cmd = sub_cmd
+    job_cmd_handler = job_sub_cmd_handlers.get(sub_cmd, None)
     if job_cmd_handler:
         job_cmd_handler(cmd_args)
     elif cmd_args.job_sub_cmd is None:
@@ -644,30 +653,39 @@ def def_job_cli_parser(sub_cmd):
     return {cmd: parser}
 
 
-def define_submit_job_parser(job_subparser):
-    submit_parser = job_subparser.add_parser("submit", help="submit job")
-    submit_parser.add_argument(
-        "-j",
-        "--job_folder",
-        type=str,
-        nargs="?",
-        default=os.path.join(get_curr_dir(), "current_job"),
-        help="job_folder path, default to ./current_job directory",
-    )
-    startup_target_group = submit_parser.add_mutually_exclusive_group()
+def _add_job_connection_args(parser):
+    startup_target_group = parser.add_mutually_exclusive_group()
     startup_target_group.add_argument(
         "--startup-target",
+        "--startup_target",  # backward compat
         choices=["poc", "prod"],
         default=None,
         dest="startup_target",
         help=f"startup kit target from ~/.nvflare/config.conf, default to {TARGET_POC}",
     )
     startup_target_group.add_argument(
-        "--startup_kit",
+        "--startup-kit",
+        "--startup_kit",  # backward compat
+        dest="startup_kit",
         type=str,
         default=None,
         help="explicit startup kit location; mutually exclusive with --startup-target",
     )
+
+
+def define_submit_job_parser(job_subparser):
+    submit_parser = job_subparser.add_parser("submit", help="submit job")
+    submit_parser.add_argument(
+        "-j",
+        "--job-folder",
+        "--job_folder",  # backward compat
+        dest="job_folder",
+        type=str,
+        nargs="?",
+        default=os.path.join(get_curr_dir(), "current_job"),
+        help="job folder path, default to ./current_job directory",
+    )
+    _add_job_connection_args(submit_parser)
     submit_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     submit_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     submit_parser.add_argument("--study", type=str, default="default", help="study to submit the job to")
@@ -675,7 +693,11 @@ def define_submit_job_parser(job_subparser):
 
 
 def define_list_templates_parser(job_subparser):
-    show_jobs_parser = job_subparser.add_parser("list_templates", help="[DEPRECATED] use 'nvflare recipe list'")
+    show_jobs_parser = job_subparser.add_parser(
+        CMD_LIST_TEMPLATES,
+        aliases=["list_templates"],
+        help="[DEPRECATED] use 'nvflare recipe list'",
+    )
     show_jobs_parser.add_argument(
         "-d",
         "--job_templates_dir",
@@ -692,15 +714,18 @@ def define_list_templates_parser(job_subparser):
 
 def define_variables_parser(job_subparser):
     show_variables_parser = job_subparser.add_parser(
-        "show_variables", help="[DEPRECATED] use 'nvflare recipe list' or the Job Recipe API"
+        CMD_SHOW_VARIABLES,
+        aliases=["show_variables"],
+        help="[DEPRECATED] use 'nvflare recipe list' or the Job Recipe API",
     )
     show_variables_parser.add_argument(
         "-j",
+        "--job-folder",
         "--job_folder",
         type=str,
         nargs="?",
         default=os.path.join(get_curr_dir(), "current_job"),
-        help="job_folder path, default to ./current_job directory",
+        help="job folder path, default to ./current_job directory",
     )
     show_variables_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     show_variables_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
@@ -726,7 +751,7 @@ def define_create_job_parser(job_subparser):
         type=str,
         nargs="?",
         default="sag_pt",
-        help="""template name or template folder. You can use list_templates to see available jobs from job templates,
+        help="""template name or template folder. You can use list-templates to see available jobs from job templates,
                 pick name such as 'sag_pt' as template name.
                 Alternatively, you can use the path to the job template folder, such as job_templates/sag_pt
                 """,
@@ -959,13 +984,16 @@ def create_app_dir(job_folder, app_name: str = "app"):
 # ---------------------------------------------------------------------------
 
 
-def _get_session(admin_user_dir=None, username=None, study="default"):
+def _get_session(args=None, admin_user_dir=None, username=None, study="default"):
     """Create a secure session using the startup kit."""
     from nvflare.tool.cli_output import get_connect_timeout, output_error
 
     if admin_user_dir is None or username is None:
         try:
-            u, d = find_admin_user_and_dir()
+            u, d = find_admin_user_and_dir(
+                startup_kit_dir=_get_arg_value(args, "startup_kit"),
+                target=_get_arg_value(args, "startup_target"),
+            )
         except ValueError as e:
             output_error("STARTUP_KIT_MISSING", exit_code=2, detail=str(e))
             raise SystemExit(2)
@@ -984,13 +1012,32 @@ def _get_session(admin_user_dir=None, username=None, study="default"):
 
 
 @contextmanager
-def _session(admin_user_dir=None, username=None, study="default"):
-    sess = _get_session(admin_user_dir=admin_user_dir, username=username, study=study)
+def _session(args=None, admin_user_dir=None, username=None, study="default"):
+    sess = _get_session(args=args, admin_user_dir=admin_user_dir, username=username, study=study)
     try:
         yield sess
     finally:
         if sess is not None:
             sess.close()
+
+
+def _get_arg_value(args, name, default=None):
+    if args is None:
+        return default
+    try:
+        return vars(args).get(name, default)
+    except TypeError:
+        return getattr(args, name, default)
+
+
+def _job_session_for_args(cmd_args=None, study="default"):
+    if cmd_args is not None and (
+        _get_arg_value(cmd_args, "startup_kit") is not None or _get_arg_value(cmd_args, "startup_target") is not None
+    ):
+        return _session(args=cmd_args, study=study)
+    if study != "default":
+        return _session(study=study)
+    return _session()
 
 
 def cmd_job_list(cmd_args):
@@ -1012,7 +1059,7 @@ def cmd_job_list(cmd_args):
     study = getattr(cmd_args, "study", "default")
 
     try:
-        with _session(study=study) as sess:
+        with _job_session_for_args(cmd_args, study=study) as sess:
             jobs = sess.list_jobs(
                 name_prefix=getattr(cmd_args, "name", None),
                 id_prefix=getattr(cmd_args, "id", None),
@@ -1045,7 +1092,7 @@ def cmd_job_meta(cmd_args):
     )
 
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             meta = sess.get_job_meta(cmd_args.job_id)
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
@@ -1086,7 +1133,7 @@ def cmd_job_abort(cmd_args):
             return
 
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             sess.abort_job(cmd_args.job_id)
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
@@ -1116,7 +1163,7 @@ def cmd_job_clone(cmd_args):
     )
 
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             new_job_id = sess.clone_job(cmd_args.job_id)
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
@@ -1145,7 +1192,7 @@ def cmd_job_download(cmd_args):
     destination = os.path.abspath(getattr(cmd_args, "output_dir", "./"))
     print_human(f"Downloading job {cmd_args.job_id} ...")
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             path = sess.download_job_result(cmd_args.job_id, destination)
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
@@ -1184,7 +1231,7 @@ def cmd_job_delete(cmd_args):
             return
 
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             sess.delete_job(cmd_args.job_id)
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
@@ -1210,6 +1257,7 @@ def define_list_jobs_parser(job_subparser):
     p.add_argument("-r", "--reverse", action="store_true", default=False, help="reverse sort order")
     p.add_argument("-m", "--max", type=int, default=None, help="max results to return")
     p.add_argument("--study", type=str, default="default", help="study to list jobs from")
+    _add_job_connection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_LIST] = p
     job_sub_cmd_handlers[CMD_JOB_LIST] = cmd_job_list
@@ -1218,6 +1266,7 @@ def define_list_jobs_parser(job_subparser):
 def define_job_meta_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_META, help="get metadata for a job")
     p.add_argument("job_id", type=str, help="job ID")
+    _add_job_connection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_META] = p
     job_sub_cmd_handlers[CMD_JOB_META] = cmd_job_meta
@@ -1227,6 +1276,7 @@ def define_abort_job_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_ABORT, help="abort a running job")
     p.add_argument("job_id", type=str, help="job ID")
     p.add_argument("--force", action="store_true", help="skip confirmation prompt")
+    _add_job_connection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_ABORT] = p
     job_sub_cmd_handlers[CMD_JOB_ABORT] = cmd_job_abort
@@ -1235,6 +1285,7 @@ def define_abort_job_parser(job_subparser):
 def define_clone_job_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_CLONE, help="clone an existing job")
     p.add_argument("job_id", type=str, help="job ID to clone")
+    _add_job_connection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_CLONE] = p
     job_sub_cmd_handlers[CMD_JOB_CLONE] = cmd_job_clone
@@ -1244,6 +1295,7 @@ def define_download_job_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_DOWNLOAD, help="download job result")
     p.add_argument("job_id", type=str, help="job ID")
     p.add_argument("-o", "--output-dir", dest="output_dir", type=str, default="./", help="destination directory")
+    _add_job_connection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_DOWNLOAD] = p
     job_sub_cmd_handlers[CMD_JOB_DOWNLOAD] = cmd_job_download
@@ -1253,6 +1305,7 @@ def define_delete_job_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_DELETE, help="delete a job")
     p.add_argument("job_id", type=str, help="job ID")
     p.add_argument("--force", action="store_true", help="skip confirmation prompt")
+    _add_job_connection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_DELETE] = p
     job_sub_cmd_handlers[CMD_JOB_DELETE] = cmd_job_delete
@@ -1285,7 +1338,7 @@ def cmd_job_stats(cmd_args):
         targets = [site]
 
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             result = sess.show_stats(cmd_args.job_id, target_type, targets)
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
@@ -1321,7 +1374,7 @@ def cmd_job_logs(cmd_args):
         raise SystemExit(4)
 
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             result = sess.get_job_logs(
                 cmd_args.job_id,
                 target=site,
@@ -1347,6 +1400,7 @@ def define_job_stats_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_STATS, help="show running job statistics")
     p.add_argument("job_id", type=str, help="job ID")
     p.add_argument("--site", default="all", help="target site name or all")
+    _add_job_connection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_STATS] = p
     job_sub_cmd_handlers[CMD_JOB_STATS] = cmd_job_stats
@@ -1363,6 +1417,7 @@ def define_job_logs_parser(job_subparser):
     )
     p.add_argument("--tail", type=int, default=None, help="number of tail lines to retrieve")
     p.add_argument("--grep", default=None, help="grep pattern to filter log lines")
+    _add_job_connection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_LOGS] = p
     job_sub_cmd_handlers[CMD_JOB_LOGS] = cmd_job_logs
@@ -1605,7 +1660,7 @@ def cmd_job_monitor(cmd_args):
     )
 
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             rc, meta = sess.monitor_job_and_return_job_meta(
                 cmd_args.job_id,
                 timeout=timeout,
@@ -1713,7 +1768,7 @@ def cmd_job_log(cmd_args):
         return
 
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             meta = sess.get_job_meta(cmd_args.job_id)
             job_status = meta.get("status", "UNKNOWN") if meta else "UNKNOWN"
             if job_status in _TERMINAL_JOB_STATES:
@@ -1766,6 +1821,7 @@ def define_job_monitor_parser(job_subparser):
         default=None,
         help="extra metric key to surface from stats (repeatable)",
     )
+    _add_job_connection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_MONITOR] = p
     job_sub_cmd_handlers[CMD_JOB_MONITOR] = cmd_job_monitor
@@ -1785,6 +1841,7 @@ def define_job_log_parser(job_subparser):
         help="log level or mode: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload",
     )
     p.add_argument("--site", default="all", help="target site name or all")
+    _add_job_connection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_LOG_CONFIG] = p
     job_sub_cmd_parser[CMD_JOB_LOG_ALIAS] = p

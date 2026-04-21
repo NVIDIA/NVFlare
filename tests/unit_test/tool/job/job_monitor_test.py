@@ -110,6 +110,19 @@ class TestJobMonitorOutput:
         assert data["data"]["job_id"] == "abc123"
         assert data["data"]["status"] == "FINISHED_OK"
 
+    def test_monitor_parser_accepts_startup_kit(self):
+        import argparse
+
+        from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        def_job_cli_parser(subs)
+
+        parser = job_sub_cmd_parser["monitor"]
+        args = parser.parse_args(["abc123", "--startup-kit", "/tmp/startup"])
+        assert args.startup_kit == "/tmp/startup"
+
     def test_failed_outputs_error_envelope_exits_1(self, capsys):
         meta = _make_meta("FAILED")
         ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, meta)
