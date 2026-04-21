@@ -201,44 +201,43 @@ A complete example:
   "deploy_map": {
     "app": ["server", "site-1", "site-2"]
   },
-  "resource_spec": {
-    "server": {
+  "launcher_spec": {
+    "default": {
       "docker": {"image": "nvflare-pt:latest"}
     },
     "site-1": {
       "docker": {
         "image": "nvflare-pt:latest",
-        "num_of_gpus": 1,
         "shm_size": "8g",
         "ipc_mode": "host"
-      },
-      "process": {
-        "num_of_gpus": 1
       }
     }
+  },
+  "resource_spec": {
+    "site-1": {"num_of_gpus": 1}
   },
   "min_clients": 1
 }
 ```
 
-`deploy_map` is launcher-agnostic — it maps app names to site name lists, exactly as in process mode. All launcher-specific configuration lives in `resource_spec`.
+`deploy_map` is launcher-agnostic — it maps app names to site name lists, exactly as in process mode. Launcher-specific configuration lives in `launcher_spec`; GPU placement hints for the scheduler live in `resource_spec`.
 
-A job may carry resource entries for multiple launcher modes for portability across deployments, but the active launcher is chosen only by the site's configured launcher in `resources.json`.
+A job may carry launcher entries for multiple modes (e.g. both `docker` and `k8s`) for portability across deployments, but the active launcher is determined only by the site's configured launcher in `resources.json`.
 
 ### Job Image
 
-The `image` field in `resource_spec[site][docker]` specifies the Docker image for SJ/CJ containers on that site:
+The `image` field in `launcher_spec[site][docker]` specifies the Docker image for SJ/CJ containers on that site. A `default` entry under `launcher_spec` applies to all sites not explicitly listed:
 
 - Per-site. Different sites can specify different images.
 - The site admin must pull or build the image before the job runs. The launcher does not pull images.
-- If no `image` is specified for a site that has `DockerJobLauncher` configured, the job fails immediately with a clear error. There is no silent fallback to process mode.
+- If no `image` is resolvable for a site that has `DockerJobLauncher` configured, the job fails immediately with a clear error. There is no silent fallback to process mode.
 
 ### GPU and Additional Container Flags
 
-All Docker-specific resource requirements and runtime flags live under `resource_spec[site][docker]`. Keys use Docker Python SDK naming (underscores, not hyphens):
+Docker-specific runtime flags live under `launcher_spec[site][docker]`. Keys use Docker Python SDK naming (underscores, not hyphens):
 
 ```json
-"resource_spec": {
+"launcher_spec": {
   "site-1": {
     "docker": {
       "image": "nvflare-pt:latest",
@@ -252,9 +251,11 @@ All Docker-specific resource requirements and runtime flags live under `resource
 
 `DockerJobLauncher` translates `num_of_gpus` to `device_requests: [{"Count": N, "Capabilities": [["gpu"]]}]` before calling `docker run`. For fine-grained control (specific GPU UUIDs, driver constraints), set `device_requests` directly in the `docker` spec — it takes precedence over `num_of_gpus`.
 
-Job-level `resource_spec[site][docker]` is merged with site-level defaults from `default_job_container_kwargs` in `local/resources.json`; job-level wins on conflict. Reserved keys controlled by the launcher (`volumes`, `network`, `environment`, `command`, `name`, `detach`, `user`, `working_dir`) cannot be overridden.
+GPU can also be declared in a flat `resource_spec[site] = {"num_of_gpus": N}` (no mode nesting) — `DockerJobLauncher` falls back to this for backward compatibility when `launcher_spec` is absent and `resource_spec[site]` has no mode keys. New jobs should use `launcher_spec`.
 
-Site-level default environment variables can be set with `default_job_env` in `local/resources.json`. This is intended for site/runtime-specific settings such as NCCL workarounds; launcher-controlled variables like `USER`, `HOME`, and `PYTHONPATH` still take precedence.
+Job-level `launcher_spec[site][docker]` is merged with site-level defaults from `default_job_container_kwargs` in `local/resources.json`; job-level wins on conflict. Reserved keys controlled by the launcher (`volumes`, `network`, `environment`, `command`, `name`, `detach`, `user`, `working_dir`) cannot be overridden.
+
+Site-level default environment variables can be set with `default_job_env` in `local/resources.json`. Launcher-controlled variables like `USER`, `HOME`, and `PYTHONPATH` still take precedence.
 
 Site-level defaults (set by site admin in `local/resources.json`):
 
@@ -268,8 +269,6 @@ Site-level defaults (set by site admin in `local/resources.json`):
   }
 }
 ```
-
-**Legacy flat format:** `resource_spec[site] = {"num_of_gpus": N}` (no `docker`/`process` nesting) is treated as process mode for backward compatibility — Docker mode gets no resource spec from it. New jobs should use the nested format.
 
 ### Dataset / Study Data
 
@@ -307,7 +306,7 @@ sequenceDiagram
     SP->>Launcher: fire BEFORE_JOB_LAUNCH event
     Launcher->>SP: add_launcher(self, fl_ctx)
     SP->>Launcher: launch_job(job_meta, fl_ctx)
-    Launcher->>Launcher: read image from resource_spec[site][docker]
+    Launcher->>Launcher: read image from launcher_spec[site][docker]
     Launcher->>Launcher: override PARENT_URL → SP/CP container name
     Launcher->>Docker: containers.run(job_image, command, network, volumes, ...)
     Docker->>SJ: start container

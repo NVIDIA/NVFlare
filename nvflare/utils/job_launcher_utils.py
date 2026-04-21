@@ -15,8 +15,8 @@ import copy
 import os
 import sys
 
-from nvflare.apis.fl_constant import FLContextKey, JobConstants, SystemVarName
-from nvflare.apis.job_def import ALL_SITES, JobMetaKey
+from nvflare.apis.fl_constant import FLContextKey, SystemVarName
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs
 
 
@@ -126,21 +126,25 @@ def get_launcher_resource_spec(job_meta, site_name, mode):
     return site_spec if mode == "process" else {}
 
 
-# TODO: remove in follow-up PR once K8s launcher is updated to use get_launcher_resource_spec
-def extract_job_image(job_meta, site_name):
-    deploy_map = job_meta.get(JobMetaKey.DEPLOY_MAP, {})
-    fallback = None
-    for _, participants in deploy_map.items():
-        for item in participants:
-            if isinstance(item, dict):
-                sites = item.get(JobConstants.SITES)
-                if not sites:
-                    continue
-                if site_name in sites:
-                    return item.get(JobConstants.JOB_IMAGE)
-                if ALL_SITES in sites and fallback is None:
-                    fallback = item.get(JobConstants.JOB_IMAGE)
-    return fallback
+_LAUNCHER_SPEC_DEFAULT_KEY = "default"
+
+
+def get_job_launcher_spec(job_meta, site_name, mode):
+    """Get launcher-specific config for a site/mode.
+
+    Resolution order:
+    1. Merge launcher_spec["default"][mode] with launcher_spec[site][mode] (site wins).
+    2. Fall back to get_launcher_resource_spec for backward compatibility with the nested
+       resource_spec format when launcher_spec is absent entirely.
+
+    Returns a dict for the given mode, or an empty dict if not specified.
+    """
+    launcher_spec = job_meta.get(JobMetaKey.JOB_LAUNCHER_SPEC.value, {}) or {}
+    default_spec = (launcher_spec.get(_LAUNCHER_SPEC_DEFAULT_KEY) or {}).get(mode) or {}
+    site_spec = (launcher_spec.get(site_name) or {}).get(mode)
+    if default_spec or site_spec is not None:
+        return {**default_spec, **(site_spec or {})}
+    return get_launcher_resource_spec(job_meta, site_name, mode)
 
 
 def add_custom_dir_to_path(app_custom_folder, new_env):

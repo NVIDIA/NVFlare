@@ -12,52 +12,50 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.utils.job_launcher_utils import extract_job_image
+from nvflare.utils.job_launcher_utils import get_job_launcher_spec
 
 
-class TestExtractJobImage:
-    def test_explicit_site_match(self):
-        meta = {"deploy_map": {"app": [{"sites": ["client-1"], "image": "repo/img:v1"}]}}
-        assert extract_job_image(meta, "client-1") == "repo/img:v1"
+class TestGetJobLauncherSpec:
+    def test_site_mode_match(self):
+        meta = {"launcher_spec": {"site-1": {"docker": {"image": "repo/img:v1"}}}}
+        assert get_job_launcher_spec(meta, "site-1", "docker") == {"image": "repo/img:v1"}
 
-    def test_explicit_site_no_match(self):
-        meta = {"deploy_map": {"app": [{"sites": ["client-1"], "image": "repo/img:v1"}]}}
-        assert extract_job_image(meta, "client-2") is None
+    def test_site_not_present_returns_empty(self):
+        meta = {"launcher_spec": {"site-1": {"docker": {"image": "repo/img:v1"}}}}
+        assert get_job_launcher_spec(meta, "site-2", "docker") == {}
 
-    def test_at_all_matches_any_site(self):
-        meta = {"deploy_map": {"app": [{"sites": ["@ALL"], "image": "repo/img:v1"}]}}
-        assert extract_job_image(meta, "client-1") == "repo/img:v1"
-        assert extract_job_image(meta, "server") == "repo/img:v1"
+    def test_mode_not_present_returns_empty(self):
+        meta = {"launcher_spec": {"site-1": {"k8s": {"image": "repo/img:v1"}}}}
+        assert get_job_launcher_spec(meta, "site-1", "docker") == {}
 
-    def test_string_item_returns_none(self):
-        meta = {"deploy_map": {"app": ["@ALL"]}}
-        assert extract_job_image(meta, "client-1") is None
+    def test_default_used_when_no_site_entry(self):
+        meta = {"launcher_spec": {"default": {"docker": {"image": "default/img:v1"}}}}
+        assert get_job_launcher_spec(meta, "site-1", "docker") == {"image": "default/img:v1"}
 
-    def test_empty_deploy_map(self):
-        assert extract_job_image({}, "client-1") is None
-
-    def test_multiple_entries_picks_correct_site(self):
+    def test_site_overrides_default(self):
         meta = {
-            "deploy_map": {
-                "app": [
-                    {"sites": ["server"], "image": "gcr/img:v1"},
-                    {"sites": ["client-1"], "image": "ecr/img:v1"},
-                ]
+            "launcher_spec": {
+                "default": {"docker": {"image": "default/img:v1", "shm_size": "4g"}},
+                "site-1": {"docker": {"image": "site/img:v1"}},
             }
         }
-        assert extract_job_image(meta, "server") == "gcr/img:v1"
-        assert extract_job_image(meta, "client-1") == "ecr/img:v1"
+        result = get_job_launcher_spec(meta, "site-1", "docker")
+        assert result == {"image": "site/img:v1", "shm_size": "4g"}
 
-    def test_at_all_with_explicit_override(self):
+    def test_default_only_applies_to_matching_mode(self):
+        meta = {"launcher_spec": {"default": {"k8s": {"image": "repo/img:v1"}}}}
+        assert get_job_launcher_spec(meta, "site-1", "docker") == {}
+
+    def test_fallback_to_nested_resource_spec(self):
+        meta = {"resource_spec": {"site-1": {"docker": {"image": "nested/img:v1"}}}}
+        assert get_job_launcher_spec(meta, "site-1", "docker") == {"image": "nested/img:v1"}
+
+    def test_no_launcher_spec_no_resource_spec_returns_empty(self):
+        assert get_job_launcher_spec({}, "site-1", "docker") == {}
+
+    def test_launcher_spec_takes_precedence_over_resource_spec(self):
         meta = {
-            "deploy_map": {
-                "app": [
-                    {"sites": ["@ALL"], "image": "default/img:v1"},
-                    {"sites": ["client-1"], "image": "ecr/img:v1"},
-                ]
-            }
+            "launcher_spec": {"site-1": {"docker": {"image": "new/img:v1"}}},
+            "resource_spec": {"site-1": {"docker": {"image": "old/img:v1"}}},
         }
-        # explicit match takes precedence regardless of ordering
-        assert extract_job_image(meta, "client-1") == "ecr/img:v1"
-        # @ALL catches the rest
-        assert extract_job_image(meta, "client-2") == "default/img:v1"
+        assert get_job_launcher_spec(meta, "site-1", "docker") == {"image": "new/img:v1"}
