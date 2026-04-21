@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import sys
+import tempfile
 from types import ModuleType
 from unittest.mock import MagicMock, Mock, patch
 
@@ -65,6 +67,7 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     JobState,
     K8sJobHandle,
     PodPhase,
+    _get_workspace_server_tls_files,
     _job_args_dict,
     uuid4_to_rfc1123,
 )
@@ -72,14 +75,12 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
 _DEFAULT_VOLUME_MOUNT_LIST = [
     {"name": "workspace-job", "mountPath": WORKSPACE_MOUNT_PATH},
     {"name": "startup-kit", "mountPath": f"{WORKSPACE_MOUNT_PATH}/startup", "readOnly": True},
-    {"name": "local-config", "mountPath": f"{WORKSPACE_MOUNT_PATH}/local", "readOnly": True},
     {"name": DATA_PVC_VOLUME_NAME, "mountPath": "/var/tmp/nvflare/data", "readOnly": True},
 ]
 
 _DEFAULT_VOLUME_LIST = [
     {"name": "workspace-job", "emptyDir": {}},
     {"name": "startup-kit", "secret": {"secretName": "nvflare-startup-site1"}},
-    {"name": "local-config", "configMap": {"name": "nvflare-local-site1"}},
     {"name": DATA_PVC_VOLUME_NAME, "persistentVolumeClaim": {"claimName": "data-pvc"}},
 ]
 
@@ -272,11 +273,10 @@ class TestK8sJobHandle:
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
         volumes = handle.get_manifest()["spec"]["volumes"]
-        assert len(volumes) == 4
+        assert len(volumes) == 3
         vol_map = {v["name"]: v for v in volumes}
         assert "emptyDir" in vol_map["workspace-job"]
         assert "secret" in vol_map["startup-kit"]
-        assert "configMap" in vol_map["local-config"]
         assert vol_map[DATA_PVC_VOLUME_NAME]["persistentVolumeClaim"]["claimName"] == "data-pvc"
 
     def test_manifest_volume_mounts(self):
@@ -437,6 +437,16 @@ class TestK8sJobHandle:
         assert handle.poll() == JobReturnCode.ABORTED
         api.read_namespaced_pod.assert_not_called()
 
+    def test_poll_removes_workspace_job_on_terminal_state(self):
+        api = _make_api_instance()
+        resp = Mock()
+        resp.status.phase = PodPhase.SUCCEEDED.value
+        api.read_namespaced_pod.return_value = resp
+        ws_server = Mock()
+        handle = _make_handle(api=api, workspace_server=ws_server, workspace_token="token-1")
+        assert handle.poll() == JobReturnCode.SUCCESS
+        ws_server.remove_job.assert_called_once_with("token-1")
+
     # -- terminate ------------------------------------------------------------
     def test_terminate_deletes_pod_and_sets_terminated(self):
         api = _make_api_instance()
@@ -569,6 +579,23 @@ class TestK8sJobHandle:
         handle = _make_handle(api=api)
         handle.wait()
         assert handle.poll() == JobReturnCode.SUCCESS
+
+    def test_wait_removes_workspace_job_on_terminal_state(self):
+        api = _make_api_instance()
+        resp = Mock()
+        resp.status.phase = PodPhase.SUCCEEDED.value
+        api.read_namespaced_pod.return_value = resp
+        ws_server = Mock()
+        handle = _make_handle(api=api, workspace_server=ws_server, workspace_token="token-1")
+        handle.wait()
+        ws_server.remove_job.assert_called_once_with("token-1")
+
+    def test_terminate_removes_workspace_job(self):
+        api = _make_api_instance()
+        ws_server = Mock()
+        handle = _make_handle(api=api, workspace_server=ws_server, workspace_token="token-1")
+        handle.terminate()
+        ws_server.remove_job.assert_called_once_with("token-1")
 
     # -- enter_states ---------------------------------------------------------
     def test_enter_states_returns_true_when_state_matches(self):
@@ -732,6 +759,10 @@ def _make_k8s_launcher_patches():
         patch("nvflare.app_opt.job_launcher.k8s_launcher.yaml"),
         patch.object(_k8s_core, "CoreV1Api"),
         patch("nvflare.app_opt.job_launcher.k8s_launcher.WorkspaceHTTPServer"),
+        patch(
+            "nvflare.app_opt.job_launcher.k8s_launcher._get_workspace_server_tls_files",
+            return_value=("/fake/startup/server.crt", "/fake/startup/server.key"),
+        ),
         patch("nvflare.app_opt.job_launcher.k8s_launcher.socket.gethostbyname", return_value="10.0.0.1"),
         patch("nvflare.app_opt.job_launcher.k8s_launcher.socket.gethostname", return_value="parent-pod"),
     ]
@@ -911,7 +942,7 @@ def _make_launch_job_meta(site_name="site-1", image="nvflare/nvflare:latest", gp
         JobMetaKey.DEPLOY_MAP.value: {"app": [{"sites": [site_name], "image": image}]},
     }
     if gpu is not None:
-        meta[JobMetaKey.RESOURCE_SPEC.value] = {site_name: {"num_of_gpus": gpu}}
+        meta[JobMetaKey.RESOURCE_SPEC.value] = {site_name: {"k8s": {"image": image, "num_of_gpus": gpu}}}
     return meta
 
 
@@ -955,7 +986,7 @@ class TestK8sJobLauncherLaunchJob:
         mock_ws = MagicMock()
         mock_ws_cls.return_value = mock_ws
         mock_ws.add_job.return_value = "fake-url-token"
-        mock_ws.get_url.return_value = "http://localhost:12345/fake-url-token"
+        mock_ws.get_url.return_value = "https://localhost:12345/fake-url-token"
         mock_ws.start.return_value = 12345
         launcher = ClientK8sJobLauncher(
             config_file_path="/fake/kube/config",
@@ -1108,8 +1139,6 @@ class TestK8sJobLauncherLaunchJob:
             assert "emptyDir" in vol_map["workspace-job"]
             # startup/ delivered via Secret
             assert "secret" in vol_map["startup-kit"]
-            # local/ delivered via ConfigMap
-            assert "configMap" in vol_map["local-config"]
             # data PVC from the PVC file
             assert vol_map[DATA_PVC_VOLUME_NAME]["persistentVolumeClaim"]["claimName"] == "data-pvc"
         finally:
@@ -1287,15 +1316,40 @@ class TestVolumeMountList:
         startup_mount = next(m for m in _DEFAULT_VOLUME_MOUNT_LIST if m["name"] == "startup-kit")
         assert startup_mount["readOnly"] is True
 
-    def test_local_config_is_read_only(self):
-        local_mount = next(m for m in _DEFAULT_VOLUME_MOUNT_LIST if m["name"] == "local-config")
-        assert local_mount["readOnly"] is True
-
     def test_mount_paths(self):
         ws_mount = next(m for m in _DEFAULT_VOLUME_MOUNT_LIST if m["name"] == "workspace-job")
         data_mount = next(m for m in _DEFAULT_VOLUME_MOUNT_LIST if m["name"] == DATA_PVC_VOLUME_NAME)
         assert ws_mount["mountPath"] == "/var/tmp/nvflare/workspace"
         assert data_mount["mountPath"] == "/var/tmp/nvflare/data"
+
+
+class TestWorkspaceServerTlsFiles:
+    def test_prefers_server_cert_pair(self):
+        with tempfile.TemporaryDirectory() as startup_dir:
+            server_crt = os.path.join(startup_dir, "server.crt")
+            server_key = os.path.join(startup_dir, "server.key")
+            client_crt = os.path.join(startup_dir, "client.crt")
+            client_key = os.path.join(startup_dir, "client.key")
+            for path in (server_crt, server_key, client_crt, client_key):
+                with open(path, "w", encoding="utf-8"):
+                    pass
+
+            assert _get_workspace_server_tls_files(startup_dir) == (server_crt, server_key)
+
+    def test_falls_back_to_client_cert_pair(self):
+        with tempfile.TemporaryDirectory() as startup_dir:
+            client_crt = os.path.join(startup_dir, "client.crt")
+            client_key = os.path.join(startup_dir, "client.key")
+            for path in (client_crt, client_key):
+                with open(path, "w", encoding="utf-8"):
+                    pass
+
+            assert _get_workspace_server_tls_files(startup_dir) == (client_crt, client_key)
+
+    def test_raises_when_no_cert_pair_exists(self):
+        with tempfile.TemporaryDirectory() as startup_dir:
+            with pytest.raises(RuntimeError, match="cert/key files"):
+                _get_workspace_server_tls_files(startup_dir)
 
 
 # ---------------------------------------------------------------------------

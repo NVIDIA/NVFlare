@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +31,12 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
 from nvflare.app_opt.job_launcher.workspace_http_server import ENV_WORKSPACE_URL, WorkspaceHTTPServer
-from nvflare.utils.job_launcher_utils import extract_job_image, get_client_job_args, get_server_job_args
+from nvflare.utils.job_launcher_utils import (
+    extract_job_image,
+    get_client_job_args,
+    get_launcher_resource_spec,
+    get_server_job_args,
+)
 
 
 class JobState(Enum):
@@ -86,30 +93,27 @@ DATA_PVC_VOLUME_NAME = "nvfldata"
 WORKSPACE_MOUNT_PATH = "/var/tmp/nvflare/workspace"
 DEFAULT_EPHEMERAL_STORAGE = "1Gi"
 
-# Files actually read by the job pod at runtime. Others in startup/ and local/
-# (shell scripts, sample templates) are dropped to shrink the Secret / ConfigMap.
+# Files actually read from startup/ by the job pod at runtime. Others in
+# startup/ are dropped to shrink the Secret. local/ is bundled whole with each
+# job workspace so job resource files and local custom code keep working.
 _STARTUP_KEEP_SUFFIXES = (".crt", ".key", ".pem", ".json")
-_LOCAL_KEEP_NAMES = {
-    # primary + .default fallback variants loaded via Workspace._fallback_path
-    "resources.json",
-    "resources.json.default",
-    "log_config.json",
-    "log_config.json.default",
-    "comm_config.json",
-    "comm_config.json.default",
-    "authorization.json",
-    "authorization.json.default",  # server-side authz
-    # optional privacy filters — only the active file is read (no .sample fallback)
-    "privacy.json",
-}
 
 
 def _keep_startup_file(fname: str) -> bool:
     return fname.endswith(_STARTUP_KEEP_SUFFIXES)
 
 
-def _keep_local_file(fname: str) -> bool:
-    return fname in _LOCAL_KEEP_NAMES
+def _get_workspace_server_tls_files(startup_dir: str) -> tuple[str, str]:
+    candidates = [
+        ("server.crt", "server.key"),
+        ("client.crt", "client.key"),
+    ]
+    for cert_name, key_name in candidates:
+        cert_file = os.path.join(startup_dir, cert_name)
+        key_file = os.path.join(startup_dir, key_name)
+        if os.path.exists(cert_file) and os.path.exists(key_file):
+            return cert_file, key_file
+    raise RuntimeError(f"workspace HTTPS server requires cert/key files in startup dir: {startup_dir}")
 
 
 def uuid4_to_rfc1123(uuid_str: str) -> str:
@@ -134,11 +138,15 @@ class K8sJobHandle(JobHandleSpec):
         timeout=None,
         pending_timeout=DEFAULT_PENDING_TIMEOUT,
         python_path=DEFAULT_PYTHON_PATH,
+        workspace_server=None,
+        workspace_token: str = "",
     ):
         super().__init__()
         self.job_id = job_id
         self.timeout = timeout
         self.terminal_state = None
+        self.workspace_server = workspace_server
+        self.workspace_token = workspace_token
         self.api_instance = api_instance
         self.namespace = namespace
         self.pod_manifest = {
@@ -234,11 +242,17 @@ class K8sJobHandle(JobHandleSpec):
                 return True
             elif pod_phase in [PodPhase.FAILED.value, PodPhase.SUCCEEDED.value]:  # terminal state
                 self.terminal_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
+                self._remove_workspace_job()
                 return False
             elif self.timeout is not None and time.time() - starting_time > self.timeout:
                 self.terminate()
                 return False
             time.sleep(1)
+
+    def _remove_workspace_job(self) -> None:
+        if self.workspace_server and self.workspace_token:
+            self.workspace_server.remove_job(self.workspace_token)
+            self.workspace_token = ""
 
     def terminate(self):
         from kubernetes.client.rest import ApiException
@@ -255,12 +269,18 @@ class K8sJobHandle(JobHandleSpec):
         except Exception as e:
             self.logger.error(f"unexpected error terminating job {self.job_id}: {e}")
             self.terminal_state = JobState.TERMINATED
+        self._remove_workspace_job()
         return None
 
     def poll(self):
         if self.terminal_state is not None:
             return JOB_RETURN_CODE_MAPPING.get(self.terminal_state)
         job_state = self._query_state()
+        if self.terminal_state is not None:
+            return JOB_RETURN_CODE_MAPPING.get(self.terminal_state)
+        if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
+            self.terminal_state = job_state
+            self._remove_workspace_job()
         return JOB_RETURN_CODE_MAPPING.get(job_state, JobReturnCode.UNKNOWN)
 
     def _query_phase(self):
@@ -272,6 +292,7 @@ class K8sJobHandle(JobHandleSpec):
             if getattr(e, "status", None) == 404:
                 self.logger.info(f"job {self.job_id} pod not found during querying; assuming terminated")
                 self.terminal_state = JobState.TERMINATED
+                self._remove_workspace_job()
             else:
                 self.logger.warning(f"failed to query pod phase {self.job_id}: {e}")
             return PodPhase.UNKNOWN.value
@@ -300,6 +321,7 @@ class K8sJobHandle(JobHandleSpec):
             job_state = self._query_state()
             if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
                 self.terminal_state = job_state  # persist so poll() stays accurate
+                self._remove_workspace_job()
                 return
             time.sleep(1)
 
@@ -366,45 +388,6 @@ class K8sJobLauncher(JobLauncherSpec):
                 raise
         return secret_name
 
-    def _ensure_local_configmap(self, site_name: str, local_dir: str) -> str:
-        """Create or update a k8s ConfigMap containing site local config.
-
-        Returns the ConfigMap name.
-        """
-        from kubernetes.client.rest import ApiException
-
-        cm_name = f"nvflare-local-{site_name.lower().replace('_', '-')}"
-        data = {}
-        if os.path.isdir(local_dir):
-            for fname in os.listdir(local_dir):
-                if not _keep_local_file(fname):
-                    continue
-                fpath = os.path.join(local_dir, fname)
-                if os.path.isfile(fpath):
-                    try:
-                        with open(fpath, "r", encoding="utf-8") as f:
-                            data[fname] = f.read()
-                    except UnicodeDecodeError:
-                        self.logger.warning("Skipping binary file in local/: %s", fname)
-
-        cm_body = {
-            "apiVersion": "v1",
-            "kind": "ConfigMap",
-            "metadata": {"name": cm_name, "namespace": self.namespace},
-            "data": data,
-        }
-        try:
-            self.core_v1.read_namespaced_config_map(name=cm_name, namespace=self.namespace)
-            self.core_v1.replace_namespaced_config_map(name=cm_name, namespace=self.namespace, body=cm_body)
-            self.logger.debug("Updated local ConfigMap %s", cm_name)
-        except ApiException as e:
-            if getattr(e, "status", None) == 404:
-                self.core_v1.create_namespaced_config_map(namespace=self.namespace, body=cm_body)
-                self.logger.debug("Created local ConfigMap %s", cm_name)
-            else:
-                raise
-        return cm_name
-
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
         if self.default_data_pvc is None:
             with open(self.study_data_pvc_file_path, "rt") as f:
@@ -459,7 +442,7 @@ class K8sJobLauncher(JobLauncherSpec):
         if args is None:
             raise RuntimeError(f"missing {FLContextKey.ARGS} in FLContext")
         job_image = extract_job_image(job_meta, site_name)
-        site_resources = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}).get(site_name, {})
+        site_resources = get_launcher_resource_spec(job_meta, site_name, "k8s")
         study = job_meta.get(JobMetaKey.STUDY.value)
         job_resource = site_resources.get("num_of_gpus", None)
         job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
@@ -478,18 +461,13 @@ class K8sJobLauncher(JobLauncherSpec):
 
         workspace_root = args.workspace
         startup_dir = workspace_obj.get_startup_kit_dir()
-        local_dir = workspace_obj.get_site_config_dir()
 
         # Start the shared HTTPS server once; reuse it for all subsequent jobs.
         if self._ws_server is None:
-            cert_file = os.path.join(startup_dir, "server.crt")
-            key_file = os.path.join(startup_dir, "server.key")
-            if not os.path.exists(cert_file):  # fall back to client cert on client sites
-                cert_file = os.path.join(startup_dir, "client.crt")
-                key_file = os.path.join(startup_dir, "client.key")
+            cert_file, key_file = _get_workspace_server_tls_files(startup_dir)
             self._ws_server = WorkspaceHTTPServer(
-                cert_file=cert_file if os.path.exists(cert_file) else "",
-                key_file=key_file if os.path.exists(key_file) else "",
+                cert_file=cert_file,
+                key_file=key_file,
             )
             self._ws_server.start(workspace_root=workspace_root)
 
@@ -502,20 +480,17 @@ class K8sJobLauncher(JobLauncherSpec):
         parent_host = socket.gethostbyname(socket.gethostname())
 
         startup_secret_name = self._ensure_startup_secret(site_name, startup_dir)
-        local_cm_name = self._ensure_local_configmap(site_name, local_dir)
 
         env[ENV_WORKSPACE_URL] = self._ws_server.get_url(parent_host, url_token)
 
         volume_list = [
             {"name": "workspace-job", "emptyDir": {"sizeLimit": DEFAULT_EPHEMERAL_STORAGE}},
             {"name": "startup-kit", "secret": {"secretName": startup_secret_name}},
-            {"name": "local-config", "configMap": {"name": local_cm_name}},
             {"name": DATA_PVC_VOLUME_NAME, "persistentVolumeClaim": {"claimName": data_pvc}},
         ]
         volume_mount_list = [
             {"name": "workspace-job", "mountPath": WORKSPACE_MOUNT_PATH},
             {"name": "startup-kit", "mountPath": f"{WORKSPACE_MOUNT_PATH}/startup", "readOnly": True},
-            {"name": "local-config", "mountPath": f"{WORKSPACE_MOUNT_PATH}/local", "readOnly": True},
             {"name": DATA_PVC_VOLUME_NAME, "mountPath": "/var/tmp/nvflare/data", "readOnly": True},
         ]
 
@@ -548,6 +523,8 @@ class K8sJobLauncher(JobLauncherSpec):
             timeout=self.timeout,
             pending_timeout=self.pending_timeout,
             python_path=self.python_path,
+            workspace_server=self._ws_server,
+            workspace_token=url_token,
         )
         pod_manifest = job_handle.get_manifest()
         self.logger.debug(f"launch job with k8s_launcher. {pod_manifest=}")

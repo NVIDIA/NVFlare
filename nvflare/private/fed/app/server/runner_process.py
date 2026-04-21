@@ -44,6 +44,14 @@ from nvflare.private.fed.utils.fed_utils import (
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
+def _upload_results_safely(logger, workspace_root: str, job_id: str) -> None:
+    try:
+        upload_results(workspace_root, job_id)
+    except Exception as e:
+        if logger:
+            logger.warning(f"failed to upload job results for {job_id}: {secure_format_exception(e)}")
+
+
 def main(args):
     kv_list = parse_vars(args.set)
 
@@ -131,8 +139,9 @@ def main(args):
             security_close()
             err = create_stats_pool_files_for_job(workspace, args.job_id)
             if err:
-                logger.warning(err)
-            upload_results(args.workspace, args.job_id)
+                if logger:
+                    logger.warning(err)
+            _upload_results_safely(logger, args.workspace, args.job_id)
 
     except ConfigError as e:
         logger = get_script_logger()

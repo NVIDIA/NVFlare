@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import http.client
 import io
 import os
 import tempfile
@@ -23,6 +24,7 @@ import pytest
 
 from nvflare.app_opt.job_launcher.workspace_http_server import (
     ENV_WORKSPACE_URL,
+    MAX_REQUEST_BODY_SIZE,
     WorkspaceHTTPServer,
     _zip_workspace,
     download_workspace,
@@ -47,11 +49,21 @@ def _write_file(path: str, content: bytes = b"data") -> None:
 def _make_workspace(root: str, job_id: str) -> dict:
     """Populate a minimal workspace; return {rel_path: bytes} for run_<job_id>/ files."""
     _write_file(os.path.join(root, "startup", "fed_client.json"), b'{"type":"client"}')
-    _write_file(os.path.join(root, "local", "resources.json"), b'{"resources":{}}')
+    local_files = {
+        os.path.join("local", "resources.json"): b'{"resources":{}}',
+        os.path.join("local", "job_resources.json"): b'{"job_resources":{}}',
+        os.path.join("local", "site__j_resources.json"): b'{"job_only": true}',
+        os.path.join("local", "custom", "site_module.py"): b"VALUE = 3\n",
+    }
     run_files = {os.path.join(job_id, "app", "config", "config_train.json"): b'{"rounds":3}'}
+    expected = {}
+    expected.update(local_files)
+    expected.update(run_files)
+    for rel, content in local_files.items():
+        _write_file(os.path.join(root, rel), content)
     for rel, content in run_files.items():
         _write_file(os.path.join(root, rel), content)
-    return run_files
+    return expected
 
 
 def _make_result_files(root: str, job_id: str) -> dict:
@@ -65,9 +77,17 @@ def _make_result_files(root: str, job_id: str) -> dict:
     return files
 
 
+def _make_zip(entries: dict[str, bytes]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, content in entries.items():
+            zf.writestr(name, content)
+    return buf.getvalue()
+
+
 def _start_server(ws_root: str, job_id: str = JOB_ID):
     """Start a shared server, register one job, return (server, url_token)."""
-    server = WorkspaceHTTPServer()
+    server = WorkspaceHTTPServer(require_tls=False)
     server.start(workspace_root=ws_root)
     url_token = server.add_job(job_id, ws_root)
     return server, url_token
@@ -93,13 +113,15 @@ class TestZipWorkspace:
                 names = zf.namelist()
             assert not any(n.startswith("startup") for n in names)
 
-    def test_zip_does_not_contain_local_files(self):
+    def test_zip_contains_full_local_tree(self):
         with tempfile.TemporaryDirectory() as ws_root:
             _make_workspace(ws_root, JOB_ID)
             data = _zip_workspace(ws_root, JOB_ID)
             with zipfile.ZipFile(io.BytesIO(data)) as zf:
                 names = zf.namelist()
-            assert not any(n.startswith("local") for n in names)
+            assert "local/job_resources.json" in names
+            assert "local/site__j_resources.json" in names
+            assert "local/custom/site_module.py" in names
 
     def test_zip_contains_run_dir_files(self):
         with tempfile.TemporaryDirectory() as ws_root:
@@ -151,9 +173,15 @@ class TestZipWorkspace:
 
 
 class TestWorkspaceHTTPServer:
-    def test_start_returns_nonzero_port(self):
+    def test_start_requires_tls_by_default(self):
         with tempfile.TemporaryDirectory() as ws_root:
             server = WorkspaceHTTPServer()
+            with pytest.raises(RuntimeError, match="cert_file"):
+                server.start(workspace_root=ws_root)
+
+    def test_start_returns_nonzero_port(self):
+        with tempfile.TemporaryDirectory() as ws_root:
+            server = WorkspaceHTTPServer(require_tls=False)
             try:
                 port = server.start(workspace_root=ws_root)
                 assert isinstance(port, int) and port > 0
@@ -162,7 +190,7 @@ class TestWorkspaceHTTPServer:
 
     def test_port_property_matches_start(self):
         with tempfile.TemporaryDirectory() as ws_root:
-            server = WorkspaceHTTPServer()
+            server = WorkspaceHTTPServer(require_tls=False)
             try:
                 port = server.start(workspace_root=ws_root)
                 assert server.port == port
@@ -171,7 +199,7 @@ class TestWorkspaceHTTPServer:
 
     def test_add_job_returns_url_token(self):
         with tempfile.TemporaryDirectory() as ws_root:
-            server = WorkspaceHTTPServer()
+            server = WorkspaceHTTPServer(require_tls=False)
             server.start(workspace_root=ws_root)
             try:
                 url_token = server.add_job(JOB_ID, ws_root)
@@ -181,7 +209,7 @@ class TestWorkspaceHTTPServer:
 
     def test_each_job_gets_unique_token(self):
         with tempfile.TemporaryDirectory() as ws_root:
-            server = WorkspaceHTTPServer()
+            server = WorkspaceHTTPServer(require_tls=False)
             server.start(workspace_root=ws_root)
             try:
                 token_a = server.add_job(JOB_ID, ws_root)
@@ -192,7 +220,7 @@ class TestWorkspaceHTTPServer:
 
     def test_get_url_includes_token_in_path(self):
         with tempfile.TemporaryDirectory() as ws_root:
-            server = WorkspaceHTTPServer()
+            server = WorkspaceHTTPServer(require_tls=False)
             try:
                 port = server.start(workspace_root=ws_root)
                 url_token = server.add_job(JOB_ID, ws_root)
@@ -214,9 +242,22 @@ class TestWorkspaceHTTPServer:
             finally:
                 server.stop()
 
+    def test_get_zips_workspace_at_request_time(self):
+        with tempfile.TemporaryDirectory() as ws_root:
+            server, url_token = _start_server(ws_root)
+            try:
+                _write_file(os.path.join(ws_root, JOB_ID, "late.txt"), b"late")
+                url = f"http://127.0.0.1:{server.port}/{url_token}"
+                with urllib.request.urlopen(url, timeout=10) as resp:
+                    body = resp.read()
+                with zipfile.ZipFile(io.BytesIO(body)) as zf:
+                    assert zf.read(f"{JOB_ID}/late.txt") == b"late"
+            finally:
+                server.stop()
+
     def test_unknown_token_returns_404(self):
         with tempfile.TemporaryDirectory() as ws_root:
-            server = WorkspaceHTTPServer()
+            server = WorkspaceHTTPServer(require_tls=False)
             server.start(workspace_root=ws_root)
             try:
                 url = f"http://127.0.0.1:{server.port}/no-such-token"
@@ -230,7 +271,7 @@ class TestWorkspaceHTTPServer:
         with tempfile.TemporaryDirectory() as ws_root:
             _write_file(os.path.join(ws_root, JOB_ID, "a.txt"), b"aaa")
             _write_file(os.path.join(ws_root, JOB_ID_B, "b.txt"), b"bbb")
-            server = WorkspaceHTTPServer()
+            server = WorkspaceHTTPServer(require_tls=False)
             server.start(workspace_root=ws_root)
             try:
                 token_a = server.add_job(JOB_ID, ws_root)
@@ -251,6 +292,51 @@ class TestWorkspaceHTTPServer:
             finally:
                 server.stop()
 
+    def test_upload_rejects_members_outside_job_dir(self):
+        with tempfile.TemporaryDirectory() as ws_root:
+            server, url_token = _start_server(ws_root)
+            try:
+                url = f"http://127.0.0.1:{server.port}/{url_token}"
+                data = _make_zip({"startup/pwned.txt": b"nope"})
+                req = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/zip"})
+                with pytest.raises(urllib.error.HTTPError) as exc:
+                    urllib.request.urlopen(req, timeout=10)
+                assert exc.value.code == 400
+                assert not os.path.exists(os.path.join(ws_root, "startup", "pwned.txt"))
+                assert url_token in server.jobs
+            finally:
+                server.stop()
+
+    def test_upload_rejects_other_job_dir(self):
+        with tempfile.TemporaryDirectory() as ws_root:
+            server, url_token = _start_server(ws_root)
+            try:
+                url = f"http://127.0.0.1:{server.port}/{url_token}"
+                data = _make_zip({f"{JOB_ID_B}/pwned.txt": b"nope"})
+                req = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/zip"})
+                with pytest.raises(urllib.error.HTTPError) as exc:
+                    urllib.request.urlopen(req, timeout=10)
+                assert exc.value.code == 400
+                assert not os.path.exists(os.path.join(ws_root, JOB_ID_B, "pwned.txt"))
+                assert url_token in server.jobs
+            finally:
+                server.stop()
+
+    def test_upload_rejects_path_traversal(self):
+        with tempfile.TemporaryDirectory() as ws_root:
+            server, url_token = _start_server(ws_root)
+            try:
+                url = f"http://127.0.0.1:{server.port}/{url_token}"
+                data = _make_zip({f"{JOB_ID}/../pwned.txt": b"nope"})
+                req = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/zip"})
+                with pytest.raises(urllib.error.HTTPError) as exc:
+                    urllib.request.urlopen(req, timeout=10)
+                assert exc.value.code == 400
+                assert not os.path.exists(os.path.join(ws_root, "pwned.txt"))
+                assert url_token in server.jobs
+            finally:
+                server.stop()
+
     def test_remove_job_makes_subsequent_requests_return_404(self):
         with tempfile.TemporaryDirectory() as ws_root:
             server, url_token = _start_server(ws_root)
@@ -263,16 +349,60 @@ class TestWorkspaceHTTPServer:
             finally:
                 server.stop()
 
+    def test_post_requires_content_length(self):
+        with tempfile.TemporaryDirectory() as ws_root:
+            server, url_token = _start_server(ws_root)
+            conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=10)
+            try:
+                conn.putrequest("POST", f"/{url_token}")
+                conn.endheaders()
+                resp = conn.getresponse()
+                assert resp.status == 411
+                resp.read()
+            finally:
+                conn.close()
+                server.stop()
+
+    def test_post_rejects_invalid_content_length(self):
+        with tempfile.TemporaryDirectory() as ws_root:
+            server, url_token = _start_server(ws_root)
+            conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=10)
+            try:
+                conn.putrequest("POST", f"/{url_token}")
+                conn.putheader("Content-Length", "bogus")
+                conn.endheaders()
+                resp = conn.getresponse()
+                assert resp.status == 400
+                resp.read()
+            finally:
+                conn.close()
+                server.stop()
+
+    def test_post_rejects_oversized_content_length(self):
+        with tempfile.TemporaryDirectory() as ws_root:
+            server, url_token = _start_server(ws_root)
+            conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=10)
+            try:
+                conn.putrequest("POST", f"/{url_token}")
+                conn.putheader("Content-Length", str(MAX_REQUEST_BODY_SIZE + 1))
+                conn.endheaders()
+                resp = conn.getresponse()
+                assert resp.status == 413
+                resp.read()
+            finally:
+                conn.close()
+                server.stop()
+
     def test_stop_terminates_server_thread(self):
         with tempfile.TemporaryDirectory() as ws_root:
-            server = WorkspaceHTTPServer()
+            server = WorkspaceHTTPServer(require_tls=False)
             server.start(workspace_root=ws_root)
             server.stop()
             assert not server._thread.is_alive()
 
     def test_stop_is_idempotent(self):
         with tempfile.TemporaryDirectory() as ws_root:
-            server = WorkspaceHTTPServer()
+            server = WorkspaceHTTPServer(require_tls=False)
             server.start(workspace_root=ws_root)
             server.stop()
             server.stop()  # must not raise
@@ -337,6 +467,12 @@ class TestDownloadWorkspace:
             finally:
                 server.stop()
 
+    def test_https_requires_root_ca(self, monkeypatch):
+        monkeypatch.setenv(ENV_WORKSPACE_URL, "https://example.invalid/token")
+        with tempfile.TemporaryDirectory() as dest:
+            with pytest.raises(RuntimeError, match="rootCA.pem"):
+                download_workspace(dest)
+
 
 # ---------------------------------------------------------------------------
 # TestResultsUpload
@@ -400,6 +536,13 @@ class TestResultsUpload:
             finally:
                 server.stop()
 
+    def test_https_requires_root_ca(self, monkeypatch):
+        with tempfile.TemporaryDirectory() as pod_ws:
+            _make_result_files(pod_ws, JOB_ID)
+            monkeypatch.setenv(ENV_WORKSPACE_URL, "https://example.invalid/token")
+            with pytest.raises(RuntimeError, match="rootCA.pem"):
+                upload_results(pod_ws, JOB_ID)
+
 
 # ---------------------------------------------------------------------------
 # TestFullEndToEnd
@@ -433,7 +576,7 @@ class TestFullEndToEnd:
         ):
             _write_file(os.path.join(ws_root, JOB_ID, "a.txt"), b"aaa")
             _write_file(os.path.join(ws_root, JOB_ID_B, "b.txt"), b"bbb")
-            server = WorkspaceHTTPServer()
+            server = WorkspaceHTTPServer(require_tls=False)
             server.start(workspace_root=ws_root)
             token_a = server.add_job(JOB_ID, ws_root)
             token_b = server.add_job(JOB_ID_B, ws_root)
