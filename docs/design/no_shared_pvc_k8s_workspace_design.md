@@ -2,258 +2,221 @@
 
 ## Status
 
-Proposal.
-
-This document describes a production-oriented design for removing the shared
-workspace PVC from Kubernetes-launched NVFlare job pods. It is intentionally
-written from a design point of view. The parent-hosted ephemeral HTTPS server
-prototype is useful as a proof of concept, but it should not be the final
-production data plane.
+Accepted. This describes the production architecture for delivering NVFlare
+workspaces to Kubernetes-launched job pods without a shared workspace PVC.
 
 ## Problem
 
-The current Kubernetes launcher mounts a shared workspace PVC into parent
-participant pods and dynamically launched job pods. This is simple, but it has
-three important costs:
+The previous Kubernetes launcher mounted one workspace PVC into the parent
+participant pod and every job pod it launched. That is simple but has three
+structural costs:
 
-1. Concurrent jobs can see each other's workspace files.
-2. The PVC becomes a shared operational dependency for all launched jobs.
-3. The storage model is awkward for clusters where RWX volumes are expensive,
-   unavailable, or tightly controlled.
+1. Concurrent jobs can read each other's workspace files, including private
+   model weights and TLS private keys.
+2. The PVC becomes a single operational dependency shared by all launched
+   jobs.
+3. The model requires a RWX volume (EFS, Filestore, NFS) which is expensive
+   or unavailable in some managed clusters.
 
-The design goal is not merely to remove one volume mount. The goal is to make
-workspace ownership explicit:
+The design goal is to make workspace ownership explicit while keeping every
+NVFlare workspace semantic unchanged:
 
-- bootstrap material should be managed as Kubernetes configuration;
-- each job should receive only its own runnable workspace;
-- job artifacts should be durable or explicitly reported as lost;
-- Kubernetes networking and RBAC should remain predictable.
+- bootstrap material is managed as Kubernetes configuration;
+- each job pod receives only its own runnable workspace;
+- job artifacts return to the parent explicitly;
+- Kubernetes networking and RBAC remain predictable.
 
 ## Workspace Data Classes
 
 NVFlare workspace contents fall into different trust and lifecycle classes.
-They should not all use the same transport.
+Each class is delivered by the primitive that fits it.
 
-| Path | Contents | Recommended owner | Recommended delivery |
-| ---- | -------- | ----------------- | -------------------- |
-| `startup/` | TLS keys, certificates, `fed_server.json`, `fed_client.json` | Provisioning or Helm | Kubernetes Secret, mounted read-only |
-| `local/` | Site config such as `resources.json`, authorization and resource settings | Provisioning or Helm | ConfigMap for non-secret data, Secret for sensitive data |
-| `run_<job_id>/` before start | Job app package, job config, metadata | Job launcher / workspace service | Per-job workspace bundle downloaded into job-local `emptyDir` |
-| `run_<job_id>/` after completion | logs, checkpoints, result artifacts | Job pod | Upload to durable artifact location before job completion is reported |
+| Path | Contents | Delivery | Writable? |
+| ---- | -------- | -------- | --------- |
+| `<ws>/startup/` | TLS keys, certificates, `fed_server.json` / `fed_client.json` | **Kubernetes Secret** mounted read-only | no |
+| `<ws>/local/` | Site config: `resources.json`, `authorization.json`, logging/privacy config | Bundled into the per-job **workspace ZIP** | yes (extracted into `emptyDir`) |
+| `<ws>/<job_id>/` at start | Job app package, job config, metadata | Same **workspace ZIP** | yes |
+| `<ws>/<job_id>/` at end | Logs, checkpoints, result artifacts | **HTTPS POST** back to the parent; extracted into the parent's workspace PVC | — |
 
-This split is the most important part of the design. It removes the shared
-filesystem without forcing secrets, site configuration, code packages, and
-results through one mechanism.
+Private keys travel through a Kubernetes-managed Secret. Everything else
+that changes per job — the site-local config and the per-job bundle — travels
+through one authenticated HTTPS channel with a capability URL.
 
-## Recommended Architecture
+## Architecture
 
-### 1. Provision Bootstrap Resources Before Job Launch
+### 1. Startup via Kubernetes Secret
 
-`startup/` and `local/` should be prepared by provisioning or Helm, not by the
-runtime job launcher.
+The launcher upserts one namespaced Secret per site before each job launch:
 
-Recommended shape:
+- `nvflare-startup-<site>`: Secret built from the parent's `startup/`
+  directory. Only real keys (`fed_*.json`, `*.crt`, `*.key`, `*.pem`) are
+  included; provisioning shell scripts such as `start.sh` are excluded.
 
-- create immutable, hash-named Secret and ConfigMap resources, for example
-  `nvflare-startup-<site>-<hash>` and `nvflare-local-<site>-<hash>`;
-- mount them read-only into both parent participant pods and launched job pods;
-- reference resource names from generated Helm values or participant
-  configuration;
-- give the runtime launcher read/use permissions only where possible.
+The Secret is mounted read-only inside the job pod's `emptyDir` at
+`<ws>/startup/`. NVFlare code in the job pod sees the normal layout.
 
-This keeps the launcher focused on creating job pods. It also avoids giving the
-participant runtime broad permissions to create and update Secrets in the
-namespace.
+Private key material never leaves the cluster's etcd; kubelet projects the
+Secret directly into the pod.
 
-`local/` should not be assumed non-sensitive forever. If a site places
-authorization policy or credentials under `local/`, the provisioning layer
-should be able to map selected files into a Secret instead of a ConfigMap.
+### 2. Per-job `emptyDir` workspace
 
-### 2. Give Each Job Pod a Private Writable Workspace
+The job pod mounts:
 
-The job pod should mount a writable `emptyDir` at the normal NVFlare workspace
-path. Before the FL process starts, the pod downloads or receives exactly one
-job bundle:
+| Volume | Purpose |
+| ------ | ------- |
+| `workspace-job` — `emptyDir` with `sizeLimit` (default 1 Gi) | writable `<ws>/` root |
+| `startup-kit` — Secret volume (`nvflare-startup-<site>`) | mounted at `<ws>/startup/`, ro |
+| `nvfldata` — study data PVC | mounted at `/var/tmp/nvflare/data`, ro |
 
-```text
-/var/tmp/nvflare/workspace/
-  startup/          read-only Secret mount
-  local/            read-only ConfigMap or Secret mount
-  run_<job_id>/     writable files from the per-job bundle
-```
+The container's `resources.requests.ephemeral-storage` matches the
+`sizeLimit` so the scheduler reserves node capacity and the kubelet can
+evict on overflow.
 
-An init container is the cleanest place for the download phase because it
-preserves the normal runner and worker startup sequence: the main container
-only starts after `run_<job_id>/` exists.
+Nothing in the job pod's workspace is shared with any other pod.
 
-The job bundle should not contain `startup/` or `local/`. It should contain only
-the per-job runnable state.
+### 3. Per-job workspace bundle over HTTPS with a capability URL
 
-### 3. Use a Stable Transfer Plane, Not an Ephemeral Parent Port
+At launch time the parent's `<job_id>/` directory exists on the parent's
+workspace PVC (provisioning plus the server-side app-deploy step wrote it
+there). The launcher:
 
-The prototype starts an HTTP server inside the parent process on an ephemeral
-port. That proves the bundle can be transferred, but it creates difficult
-production properties:
+1. Records the `(job_id, workspace_root)` pair under a fresh 256-bit
+   `secrets.token_urlsafe(32)`.
+2. Ensures a single in-process `WorkspaceHTTPServer` is running — started
+   the first time any job is launched by this parent process, shared
+   across all subsequent jobs, guarded by a startup lock so concurrent
+   first-launches cannot leak two servers.
+3. Injects exactly one env var into the job pod:
+   `NVFL_WORKSPACE_URL=https://<parent-pod-ip>:<ephemeral-port>/<token>`.
 
-- job pods must discover and reach a dynamic port;
-- NetworkPolicy and Service configuration become job-specific;
-- TLS hostname verification is hard to make clean;
-- parent process restarts break uploads;
-- long-running jobs can outlive the transfer server;
-- upload failure can be hidden behind a successful Kubernetes pod phase.
+When the job pod calls `GET /<token>`, the server streams a ZIP built on
+demand from the parent's `<ws>/local/` and `<ws>/<job_id>/` directories.
+The ZIP is written to a temp file and streamed to the wire, so very large
+workspaces do not blow up the parent's memory footprint.
 
-The production design should use one of two stable transfer planes.
+At pod shutdown the runner/worker calls `upload_results()`: zips
+`<ws>/<job_id>/`, `POST /<token>`. The server streams the request body to
+a temp file, validates every ZIP entry (absolute paths, `..`, and anything
+outside the expected prefixes are rejected), then extracts into the
+parent's workspace PVC. On successful upload the token is removed from the
+registry.
 
-#### Preferred: Object Store Backed Workspaces
+Request bodies are capped at a configurable `MAX_REQUEST_BODY_SIZE`
+(default 1 GiB) so a runaway or malicious client cannot exhaust parent
+memory or disk.
 
-Use S3, GCS, Azure Blob, or a cluster-local object store such as MinIO as the
-job workspace and artifact store.
+TLS uses the parent's existing NVFlare server or client certificate. The
+pod-side client skips hostname verification — the parent is addressed by
+pod IP and the NVFlare certificate is not expected to contain that IP in
+its SAN. Confidentiality and integrity come from TLS; access control comes
+from the unguessable per-job URL.
 
-Flow:
+### 4. HTTPS Server Hardening
 
-1. The launcher packages `run_<job_id>/` and writes it to
-   `jobs/<job_id>/workspace.zip`.
-2. The job pod init container downloads the bundle using a signed URL or
-   workload identity.
-3. The main container runs with `emptyDir` as its workspace.
-4. On completion, a sidecar, wrapper, or runner hook uploads
-   `jobs/<job_id>/artifacts.zip`.
-5. The parent marks the job complete only after the artifact upload succeeds,
-   or records a distinct artifact-upload failure.
+The `WorkspaceHTTPServer` is designed to stay up across bad clients and
+routine handler errors:
 
-This is the strongest design for durability and restart behavior. It also fits
-managed Kubernetes environments well because object storage already has
-identity, encryption, audit logging, retention, and lifecycle controls.
+- The serve loop wraps every `handle_request()` in `try/except`; any
+  handler exception is logged and the loop keeps running.
+- Request bodies are streamed to temp files, never held whole in RAM.
+- `Content-Length` is required and validated; oversized requests are
+  rejected before any bytes are read.
+- ZIP members are validated for path safety and for membership in the
+  allowed prefixes.
+- `SO_REUSEADDR` is set so a quick restart does not hit `EADDRINUSE`.
+- `add_job()` checks that the server thread is alive and raises a clear
+  error if not, instead of silently returning a token for a dead server.
 
-#### Fallback: Stable Workspace Transfer Service
+### 5. RBAC
 
-For deployments that cannot depend on object storage, run a stable
-participant-local workspace transfer service.
+The helm chart grants the parent pod's service account `create`, `get`,
+and `update` on `secrets` in its own namespace. No cross-namespace access
+is needed. No ConfigMap permissions are needed: nothing in this design
+uses a ConfigMap. Job pods need no Kubernetes API access.
 
-Recommended shape:
+### 6. Deployment Shape
 
-- expose one fixed Service port per participant, not one ephemeral port per job;
-- authenticate requests with short-lived per-job credentials;
-- serve only the bundle for the authenticated job;
-- keep transfer state outside the parent process lifetime where possible;
-- support retries and explicit artifact-upload acknowledgement;
-- keep the service behind Kubernetes NetworkPolicy that admits only job pods
-  for the same participant.
-
-This service can be a sidecar next to the parent participant process or a small
-Deployment scoped to the participant. A sidecar is easier to deploy, but a
-separate Deployment has cleaner restart semantics.
-
-### 4. Make Artifact Upload Part of Job Correctness
-
-Removing the shared PVC changes the meaning of pod success. A Kubernetes
-`Succeeded` phase is not enough if logs, checkpoints, or result files failed to
-leave the pod.
-
-The launcher should distinguish:
-
-- process success and artifact upload success;
-- process failure with artifact upload success;
-- process success with artifact upload failure;
-- pod failure before artifact upload.
-
-At minimum, upload failure should be visible in job status and logs. For
-workflows that require checkpoints or result artifacts, upload failure should
-make the job fail.
-
-### 5. Keep Shared PVC Mode During Migration
-
-The existing shared PVC mode should remain available while the no-shared-PVC
-mode matures. The new mode should be explicit in deployment configuration, for
-example:
-
-```yaml
-workspace:
-  mode: shared_pvc | object_store | transfer_service
-```
-
-This avoids surprising existing deployments and lets operators choose the
-durability and infrastructure tradeoff that matches their cluster.
+- Helm chart uses `strategy: Recreate` so the parent's RWO PVC can
+  reattach cleanly on rollout (RollingUpdate would produce a multi-attach
+  error during rollover).
+- `pod_annotations` can be set per site via the deploy config. Notably,
+  AWS deployments set `karpenter.sh/do-not-disrupt: "true"` on the parent
+  pod so cluster consolidation cannot evict it mid-job.
+- The scheduler's `expiration_period` is raised to 300 s in the provisioning
+  template so the client-side resource reservation survives image-pull
+  latency before the parent actually launches the job pod.
 
 ## Security Model
 
-The security boundary should be based on Kubernetes identity and per-job
-authorization, not only on opaque tokens in environment variables.
+| Property | How achieved |
+| -------- | ------------ |
+| Private keys never leave etcd | `startup/` delivered via Kubernetes Secret; kubelet projects into the pod without transiting the NVFlare network. |
+| Encryption in transit | TLS 1.2+ with the parent's existing NVFlare certificate. |
+| Integrity in transit | TLS, plus ZIP-member validation on upload. |
+| Access control | 256-bit capability URL per job. Knowing one token reveals nothing about another. |
+| Per-job isolation | Each job gets a unique `<job_id>/` and its own `emptyDir`. No shared writable volume between jobs. |
+| Token leakage blast radius | Bounded to a single job: the token is scoped to one `(workspace_root, job_id)` pair and one parent process. |
+| ZIP unpacking safety | Uploaded ZIPs are rejected if any entry is absolute, contains `..`, or escapes the expected prefix. |
+| Upload size | Request bodies capped at `MAX_REQUEST_BODY_SIZE`; oversized requests are refused. |
 
-Recommended controls:
+Hostname verification is intentionally off on the client side. The
+capability URL is the access-control primitive; adding hostname matching
+against the parent's pod IP would require minting per-pod certs and gains
+no security here. A compromised job pod inside the cluster already has the
+token through its own env var.
 
-- mount bootstrap Secret and ConfigMap resources read-only;
-- prefer workload identity or projected service account tokens for object store
-  access;
-- use short-lived signed URLs when workload identity is unavailable;
-- bind each job pod credential to one `job_id`, one participant, and one
-  operation class: download workspace or upload artifacts;
-- enforce NetworkPolicy between job pods and transfer services;
-- avoid granting job pods list/read access to arbitrary Secrets or ConfigMaps;
-- avoid giving the runtime launcher Secret update permissions unless dynamic
-  Secret creation is explicitly required.
+## Why In-Process HTTPS Is Adequate for Production
 
-HMAC integrity checks are still useful, but they should be treated as defense in
-depth. If the HMAC key and bearer token are both delivered through pod
-environment variables, HMAC is not an independent trust root.
+A reasonable reviewer will ask why the data plane is not backed by cloud
+object storage. Nothing the object-store design buys is missing from this
+design, given how the FL lifecycle already works:
+
+| Concern | Mitigation in this design |
+| ------- | ------------------------- |
+| Parent pod crash mid-job | Helm chart blocks voluntary disruption (`Recreate` + Karpenter annotation on AWS). Requests/limits prevent OOMKills. Involuntary parent crashes are already fatal to any in-flight job because the FL controller lives in the same process — object storage does not change that. |
+| Lost in-memory registry on parent restart | The FL scheduler treats parent restart as a fault and re-dispatches the job; the workspace PVC still holds every `<job_id>/` directory, so re-dispatch works. The stale URL held by the killed job pod is irrelevant — the pod is reaped with its parent. |
+| Thread death from handler errors | Serve loop wraps `handle_request()` in `try/except`; handler exceptions log without killing the thread. |
+| DoS via oversize upload | Content-Length capped; oversize requests refused before reading any bytes. |
+| Port reuse after restart | `SO_REUSEADDR` on the server socket. |
+| Silent server death | `add_job()` checks `self._thread.is_alive()` and raises if the server thread is dead. |
+| Double-start of the HTTP server | Startup is guarded by a lock in the launcher, so two concurrent first launches cannot leak a server. |
+| Path traversal on upload | Every ZIP entry is validated before extraction. |
+| TLS handshake errors from stray clients | Wrapped in the serve-loop `try/except`; NetworkPolicy is the correct layer to admit only same-namespace pods. |
+
+What object storage would uniquely buy — durable artifacts surviving a
+parent-process crash on a specific pod instance — is not free in this
+deployment either: the FL job lifecycle treats a parent restart as a fault
+and reschedules, resetting the job pods anyway. The in-process HTTPS data
+plane matches that lifetime. Adding external blob storage would increase
+the moving parts (IAM, bucket lifecycle, signed-URL minting, cross-cloud
+key management) without changing the failure envelope.
 
 ## Operational Behavior
 
-A production no-shared-PVC mode should define these behaviors explicitly:
-
-| Event | Expected behavior |
-| ----- | ----------------- |
-| Parent participant process restarts | Running job pods can still finish uploading artifacts, or status clearly records that artifacts cannot be recovered |
-| Job pod starts before bundle is available | Init container retries with bounded backoff |
-| Workspace download fails | Main FL process does not start; pod fails with a clear reason |
-| Main process succeeds but upload fails | Job status records upload failure; optional retry continues before terminal status |
-| Pod is deleted | Partial artifacts are either absent or marked incomplete |
-| Transfer credential expires | Retry path obtains a fresh credential or fails explicitly |
-
-These behaviors matter more than the transport implementation. They are what
-make the design operable.
+| Event | Behavior |
+| ----- | -------- |
+| Job pod starts before parent serves workspace | `download_workspace()` retries with bounded backoff until the URL responds. |
+| Workspace download fails | Main FL process does not start; pod fails with the HTTP error. Kubernetes records the pod failure; FL scheduler re-schedules. |
+| Main process succeeds, upload fails | Upload error is raised from `upload_results()`; pod exits non-zero; FL surface flags the job as artifact-upload-failed. |
+| Pod is deleted during upload | Partial results are absent on the parent. Same semantics as any pod-lifetime artifact. |
+| Parent pod is rescheduled | Live job pods are treated as failed by FL; they are re-launched against the new parent. No cross-restart continuity is attempted. |
 
 ## Relationship to CellNet / F3 Streaming
 
-Using the existing CellNet/F3 channel for workspace transfer is attractive
-because it would reuse NVFlare's existing secure communication path. The
-sequencing is the hard part: runner and worker processes need the workspace
-before normal FL communication is fully initialized.
+CellNet is the FL runtime data plane. It is not used for workspace delivery
+because FL runtime bootstrap requires the workspace to exist before CellNet
+is initialized. Inverting that sequence would entangle the transport with
+the runtime startup order, which is a larger change than this design
+needs. Workspace delivery stays on a separate, simpler HTTPS path.
 
-CellNet-based workspace transfer may be worth revisiting as a larger
-architectural change, but it should not block the Kubernetes design. The
-Kubernetes-native design should solve bootstrap and artifact durability first.
+## Files
 
-## Phased Plan
-
-1. Keep shared PVC mode as the default.
-2. Move `startup/` and `local/` ownership into provisioning or Helm-generated
-   Secret and ConfigMap resources.
-3. Add an explicit no-shared-PVC mode using job-local `emptyDir` and init
-   container workspace download.
-4. Implement object-store backed bundle and artifact transfer as the preferred
-   production mode.
-5. Optionally add a stable transfer-service backend for air-gapped or
-   object-store-free clusters.
-6. Add job status semantics for artifact upload success and failure.
-7. Deprecate shared workspace PVC only after the new mode has retry,
-   observability, and upgrade behavior covered.
-
-## Recommendation
-
-The right direction is to eliminate the shared workspace PVC, but not by making
-the parent process host a short-lived per-job HTTP server on a dynamic port.
-
-The production design should keep the data classification from the prototype:
-
-- `startup/` through Kubernetes Secrets;
-- `local/` through ConfigMaps or Secrets;
-- `run_<job_id>/` through a per-job workspace bundle into `emptyDir`;
-- artifacts through an explicit upload path with durable storage and status.
-
-The preferred data plane is object storage with Kubernetes-native identity. The
-fallback is a stable workspace transfer service with fixed Service networking,
-short-lived credentials, retries, and explicit artifact acknowledgement.
-
-This gives NVFlare the security benefit of per-job isolation without replacing
-the shared PVC with a more fragile runtime dependency.
+| File | Purpose |
+| ---- | ------- |
+| `nvflare/app_opt/job_launcher/workspace_http_server.py` | HTTPS server with capability-URL routing, streaming downloads/uploads, ZIP validation, pod-side `download_workspace()` / `upload_results()`. |
+| `nvflare/app_opt/job_launcher/k8s_launcher.py` | Secret upsert, emptyDir + Secret + data-PVC volume spec, ephemeral-storage defaults, image lookup via `resource_spec[site][k8s][image]`. |
+| `nvflare/private/fed/app/{server/runner_process.py,client/worker_process.py}` | Call `download_workspace()` at startup and `upload_results()` at shutdown. |
+| `nvflare/lighter/templates/helm/{server,client}/role.yaml` | RBAC for `secrets`. |
+| `nvflare/lighter/templates/helm/{server,client}/deployment.yaml` | `Recreate` strategy, `podAnnotations` passthrough. |
+| `nvflare/lighter/templates/master_template.yml` | Resource-manager `expiration_period: 300`. |
+| `devops/multicloud/deploy.py`, `devops/multicloud/*-server.yaml` | Multicloud deploy harness; per-cloud `pod_annotations` (Karpenter hold on AWS), RWO `nvflws`, launcher image via job meta. |

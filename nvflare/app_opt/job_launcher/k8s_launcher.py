@@ -19,6 +19,7 @@ import logging
 import os
 import re
 import socket
+import threading
 import time
 from abc import abstractmethod
 from enum import Enum
@@ -350,6 +351,7 @@ class K8sJobLauncher(JobLauncherSpec):
         self.default_data_pvc = None
         self.core_v1 = None
         self._ws_server: WorkspaceHTTPServer | None = None
+        self._ws_server_lock = threading.Lock()
 
     def _ensure_startup_secret(self, site_name: str, startup_dir: str) -> str:
         """Create or update a k8s Secret containing the site startup kit.
@@ -463,13 +465,14 @@ class K8sJobLauncher(JobLauncherSpec):
         startup_dir = workspace_obj.get_startup_kit_dir()
 
         # Start the shared HTTPS server once; reuse it for all subsequent jobs.
+        # Double-checked lock so concurrent first-launches cannot start two servers.
         if self._ws_server is None:
-            cert_file, key_file = _get_workspace_server_tls_files(startup_dir)
-            self._ws_server = WorkspaceHTTPServer(
-                cert_file=cert_file,
-                key_file=key_file,
-            )
-            self._ws_server.start(workspace_root=workspace_root)
+            with self._ws_server_lock:
+                if self._ws_server is None:
+                    cert_file, key_file = _get_workspace_server_tls_files(startup_dir)
+                    srv = WorkspaceHTTPServer(cert_file=cert_file, key_file=key_file)
+                    srv.start(workspace_root=workspace_root)
+                    self._ws_server = srv
 
         # Register this job; get its unguessable URL token.
         url_token = self._ws_server.add_job(raw_job_id, workspace_root)

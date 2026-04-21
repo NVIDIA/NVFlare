@@ -30,14 +30,14 @@ delivered through the per-job workspace bundle.
 import io
 import logging
 import os
-import shutil
 import secrets
+import shutil
 import ssl
 import tempfile
 import threading
 import zipfile
 from dataclasses import dataclass
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import PurePosixPath
 from urllib.parse import urlparse
 
@@ -46,6 +46,8 @@ logger = logging.getLogger(__name__)
 ENV_WORKSPACE_URL = "NVFL_WORKSPACE_URL"
 MAX_REQUEST_BODY_SIZE = 1 << 30  # 1 GiB
 _STREAM_CHUNK_SIZE = 64 * 1024
+_TRANSFER_RETRIES = 3
+_TRANSFER_BACKOFF_S = 1.0
 
 
 class _RequestError(Exception):
@@ -65,24 +67,27 @@ class _Handler(BaseHTTPRequestHandler):
     """Minimal handler — accesses shared state via self.server.ws."""
 
     def do_GET(self):
-        record = self.server.ws.jobs.get(self.path.strip("/"))
+        record = self.server.ws._claim_for_download(self.path.strip("/"))
         if record is None:
             return self.send_error(404)
-        with tempfile.NamedTemporaryFile() as tmp:
-            _zip_workspace_to_file(record.workspace_root, record.job_id, tmp)
-            tmp.flush()
-            size = tmp.tell()
-            tmp.seek(0)
-            self.send_response(200)
-            self.send_header("Content-Type", "application/zip")
-            self.send_header("Content-Length", str(size))
-            self.end_headers()
-            shutil.copyfileobj(tmp, self.wfile)
+        try:
+            with tempfile.NamedTemporaryFile() as tmp:
+                _zip_workspace_to_file(record.workspace_root, record.job_id, tmp)
+                tmp.flush()
+                size = tmp.tell()
+                tmp.seek(0)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Length", str(size))
+                self.end_headers()
+                shutil.copyfileobj(tmp, self.wfile)
+        finally:
+            self.server.ws._release_download(self.path.strip("/"))
 
     def do_POST(self):
         token = self.path.strip("/")
         ws = self.server.ws
-        record = ws.jobs.get(token)
+        record = ws._claim_for_upload(token)
         if record is None:
             return self.send_error(404)
         os.makedirs(record.workspace_root, exist_ok=True)
@@ -93,15 +98,20 @@ class _Handler(BaseHTTPRequestHandler):
                     _validate_job_zip_members(zf, record.job_id)
                     zf.extractall(record.workspace_root)
         except _RequestError as e:
+            ws._release_upload(token, succeeded=False)
             return self.send_error(e.status_code, e.message)
         except (ValueError, zipfile.BadZipFile) as e:
+            ws._release_upload(token, succeeded=False)
             return self.send_error(400, str(e))
-        ws.jobs.pop(token, None)
+        ws._release_upload(token, succeeded=True)
         self.send_response(200)
         self.end_headers()
 
-    def log_message(self, *_):
-        pass
+    def log_message(self, fmt: str, *args) -> None:
+        # Silence routine 2xx/3xx access logs; keep 4xx/5xx for ops visibility.
+        code = args[1] if len(args) > 1 else ""
+        if isinstance(code, str) and code[:1] in ("4", "5"):
+            logger.warning("ws-http %s - - %s", self.address_string(), fmt % args)
 
 
 class WorkspaceHTTPServer:
@@ -112,11 +122,13 @@ class WorkspaceHTTPServer:
         self._key_file = key_file
         self._require_tls = require_tls
         self._port: int = 0
-        self._server: HTTPServer | None = None
+        self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._scheme = "http"
-        self._stop = threading.Event()
         self.jobs: dict[str, _JobRecord] = {}  # url_token -> job metadata
+        self._in_flight_downloads: set[str] = set()
+        self._upload_claimed: set[str] = set()
+        self._jobs_lock = threading.Lock()
         self.workspace_root = ""
 
     @property
@@ -125,15 +137,18 @@ class WorkspaceHTTPServer:
 
     def start(self, workspace_root: str, bind: str = "0.0.0.0") -> int:
         self.workspace_root = workspace_root
-        srv = HTTPServer((bind, 0), _Handler)
-        srv.ws = self  # back-reference for handler
-        self._port = srv.server_address[1]
 
         if self._require_tls and (not self._cert_file or not self._key_file):
             raise RuntimeError("workspace HTTPS server requires both cert_file and key_file")
-        if self._cert_file or self._key_file:
-            if not self._cert_file or not self._key_file:
-                raise RuntimeError("workspace HTTPS server requires both cert_file and key_file")
+        if (self._cert_file or self._key_file) and not (self._cert_file and self._key_file):
+            raise RuntimeError("workspace HTTPS server requires both cert_file and key_file")
+
+        srv = ThreadingHTTPServer((bind, 0), _Handler)
+        srv.allow_reuse_address = True
+        srv.ws = self  # back-reference for handler
+        self._port = srv.server_address[1]
+
+        if self._cert_file and self._key_file:
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             ctx.minimum_version = ssl.TLSVersion.TLSv1_2
             ctx.load_cert_chain(self._cert_file, self._key_file)
@@ -147,26 +162,62 @@ class WorkspaceHTTPServer:
 
     def add_job(self, job_id: str, workspace_root: str) -> str:
         """Register a job. Returns an unguessable URL token."""
+        if self._thread is None or not self._thread.is_alive():
+            raise RuntimeError("WorkspaceHTTPServer thread is not running; cannot register job")
         token = secrets.token_urlsafe(32)
-        self.jobs[token] = _JobRecord(job_id=job_id, workspace_root=workspace_root)
+        with self._jobs_lock:
+            self.jobs[token] = _JobRecord(job_id=job_id, workspace_root=workspace_root)
         return token
 
     def remove_job(self, token: str) -> None:
-        self.jobs.pop(token, None)
+        with self._jobs_lock:
+            self.jobs.pop(token, None)
+            self._in_flight_downloads.discard(token)
+            self._upload_claimed.discard(token)
 
     def get_url(self, host: str, token: str) -> str:
         return f"{self._scheme}://{host}:{self._port}/{token}"
 
     def stop(self) -> None:
-        self._stop.set()
+        srv = self._server
+        if srv is not None:
+            srv.shutdown()
+            srv.server_close()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=5)
 
+    # -- internal, called by the request handler under the serving thread ------
+    def _claim_for_download(self, token: str) -> _JobRecord | None:
+        with self._jobs_lock:
+            record = self.jobs.get(token)
+            if record is None:
+                return None
+            self._in_flight_downloads.add(token)
+            return record
+
+    def _release_download(self, token: str) -> None:
+        with self._jobs_lock:
+            self._in_flight_downloads.discard(token)
+
+    def _claim_for_upload(self, token: str) -> _JobRecord | None:
+        with self._jobs_lock:
+            record = self.jobs.get(token)
+            if record is None or token in self._upload_claimed:
+                return None
+            self._upload_claimed.add(token)
+            return record
+
+    def _release_upload(self, token: str, succeeded: bool) -> None:
+        with self._jobs_lock:
+            self._upload_claimed.discard(token)
+            if succeeded:
+                self.jobs.pop(token, None)
+
     def _serve(self) -> None:
-        self._server.timeout = 1.0
-        while not self._stop.is_set():
-            self._server.handle_request()
-        self._server.server_close()
+        try:
+            self._server.serve_forever(poll_interval=0.5)
+        except Exception:
+            logger.exception("workspace HTTP serve loop exited abnormally")
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +311,35 @@ def _read_request_body_to_tempfile(rfile, content_length: int):
 # ---------------------------------------------------------------------------
 
 
+def _retry_transient(op_name: str, fn):
+    """Invoke *fn* with bounded exponential backoff on transient transport errors."""
+    import time as _time
+    import urllib.error
+
+    transient = (urllib.error.URLError, ConnectionError, TimeoutError, ssl.SSLError)
+    last_exc: Exception | None = None
+    for attempt in range(1, _TRANSFER_RETRIES + 1):
+        try:
+            return fn()
+        except urllib.error.HTTPError as e:
+            if 500 <= e.code < 600 and attempt < _TRANSFER_RETRIES:
+                logger.warning("%s got %s; retrying (attempt %d/%d)", op_name, e.code, attempt, _TRANSFER_RETRIES)
+                last_exc = e
+            else:
+                raise
+        except transient as e:
+            if attempt < _TRANSFER_RETRIES:
+                logger.warning(
+                    "%s transient error: %s; retrying (attempt %d/%d)", op_name, e, attempt, _TRANSFER_RETRIES
+                )
+                last_exc = e
+            else:
+                raise
+        _time.sleep(_TRANSFER_BACKOFF_S * (2 ** (attempt - 1)))
+    if last_exc is not None:
+        raise last_exc
+
+
 def download_workspace(dest: str) -> None:
     """GET the workspace ZIP and extract into *dest*. No-op if env var unset."""
     url = os.environ.get(ENV_WORKSPACE_URL)
@@ -274,13 +354,17 @@ def download_workspace(dest: str) -> None:
         ctx = _build_ssl_context(ca_cert)
     os.makedirs(dest, exist_ok=True)
     logger.info("Downloading workspace from %s", url)
-    with tempfile.TemporaryFile() as tmp:
-        with urllib.request.urlopen(url, timeout=120, context=ctx) as resp:
-            shutil.copyfileobj(resp, tmp, length=_STREAM_CHUNK_SIZE)
-        tmp.seek(0)
-        with zipfile.ZipFile(tmp) as zf:
-            _validate_relative_zip_members(zf)
-            zf.extractall(dest)
+
+    def _attempt():
+        with tempfile.TemporaryFile() as tmp:
+            with urllib.request.urlopen(url, timeout=120, context=ctx) as resp:
+                shutil.copyfileobj(resp, tmp, length=_STREAM_CHUNK_SIZE)
+            tmp.seek(0)
+            with zipfile.ZipFile(tmp) as zf:
+                _validate_relative_zip_members(zf)
+                zf.extractall(dest)
+
+    _retry_transient("download_workspace", _attempt)
 
 
 def upload_results(workspace_root: str, job_id: str) -> None:
@@ -304,5 +388,8 @@ def upload_results(workspace_root: str, job_id: str) -> None:
         _write_dir_to_zip(zf, run_dir, workspace_root)
     data = buf.getvalue()
 
-    req = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/zip"})
-    urllib.request.urlopen(req, timeout=120, context=ctx).close()
+    def _attempt():
+        req = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/zip"})
+        urllib.request.urlopen(req, timeout=120, context=ctx).close()
+
+    _retry_transient("upload_results", _attempt)
