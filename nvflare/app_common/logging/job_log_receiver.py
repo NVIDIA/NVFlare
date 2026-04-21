@@ -31,12 +31,11 @@ _KEY_RECV_PATH = "JobLogReceiver.recv_path"
 class JobLogReceiver(Widget):
     """Receives live log data streamed by :class:`JobLogStreamer`.
 
-    Unlike :class:`LogReceiver`, which only accepts a complete static file
-    transferred after the job ends, ``JobLogReceiver`` accepts a live stream:
-    each chunk is written directly to its final file as it arrives so that
-    the log can be followed with ``tail -f`` on the server while the job runs.
-    When the stream closes (normal EOF, job abort, or idle timeout) the file
-    is handed to the job manager for storage.
+    ``JobLogReceiver`` accepts a live stream: each chunk is written directly to
+    its final file as it arrives so that the log can be followed with
+    ``tail -f`` on the server while the job runs. When the stream closes
+    (normal EOF, job abort, or idle timeout) the file is handed to the job
+    manager for storage.
 
     The destination file is written to ``{dest_dir}/{job_id}/{client_name}/{log_file_name}``,
     making it easy to locate and tail during a run.

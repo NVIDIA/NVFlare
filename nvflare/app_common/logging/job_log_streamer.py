@@ -31,11 +31,9 @@ _thread_counter = itertools.count()
 class JobLogStreamer(Widget):
     """Streams a job log file to the server in real-time.
 
-    Unlike :class:`ErrorLogSender`, which sends a static snapshot of the error
-    log only after the job finishes, ``JobLogStreamer`` tails the live log file
-    from the moment the job starts and streams new bytes to the server as they
-    are written.  The stream is drained and closed cleanly when the job
-    completes or is aborted.
+    ``JobLogStreamer`` tails the live log file from the moment the job starts
+    and streams new bytes to the server as they are written. The stream is
+    drained and closed cleanly when the job completes or is aborted.
 
     The log file path is discovered by inspecting the active Python logging
     handlers, so it works correctly in both the simulator and production

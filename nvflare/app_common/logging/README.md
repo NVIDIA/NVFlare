@@ -1,132 +1,251 @@
-# Live Job Log Streaming
+# Live Job Log Streaming Design
 
-This package provides real-time log streaming from clients to the server
-during federated jobs.  Unlike the deprecated `ErrorLogSender` / `LogReceiver`
-pair, which could only send a static snapshot of the error log after a job
-finished, the new live log streaming supports jobs running on different hosts
-(e.g. Docker containers or Kubernetes pods) because the streamer runs inside
-the job subprocess alongside the log file.
+## 1. Overview
 
-## Components
+This document describes the design of NVFlare's live job log streaming
+mechanism. The feature provides near-real-time delivery of job log data from
+clients to the server while a federated job is still running.
 
-| Component | Runs in | Purpose |
-|-----------|---------|---------|
-| `JobLogStreamer` | Job subprocess | Tails a log file and streams bytes to the server in real time |
-| `JobLogReceiver` | Server | Receives streamed bytes, writes them to disk, hands the file to the job manager |
-| `SystemLogStreamer` | `CLIENT_PARENT` (resources.json) | Injects a `JobLogStreamer` into any job that doesn't already declare one |
+The design provides a runtime-oriented log streaming path for the primary
+live-streaming use case. It streams active log output while a federated job is
+still running and works across launcher environments where the job subprocess
+owns the relevant log files.
 
-### Deprecated (still functional)
+## 2. Problem Statement
 
-| Component | Replacement |
-|-----------|-------------|
-| `ErrorLogSender` | `SystemLogStreamer` + `JobLogStreamer` |
-| `LogReceiver` | `JobLogReceiver` |
+The legacy log-transfer path sends a completed file only after the job finishes.
+That behavior is insufficient when:
 
-## Why streaming runs inside the job subprocess
+- operators need to observe logs while a job is still executing
+- a job runs in a separate runtime boundary such as Docker or Kubernetes
+- the parent client process cannot directly access the job subprocess log files
 
-The streamer must run inside the job subprocess, not in `CLIENT_PARENT`.
-With Docker or Kubernetes job launchers the job may execute in a different
-container or pod.  The parent process has no filesystem access to the job's
-log files in that case.  By injecting `JobLogStreamer` into the job config
-(via `SystemLogStreamer`), the streamer always runs where the log file
-lives -- regardless of the launch mechanism.
+In those environments, a client-side system component running in
+`CLIENT_PARENT` cannot reliably read the job's log file. The streaming logic
+must execute inside the job subprocess that owns the filesystem view of the
+active log.
 
-## How SystemLogStreamer works
+## 3. Goals and Non-Goals
 
-`SystemLogStreamer` lives in the client's `resources.json`.  When the
-`BEFORE_JOB_LAUNCH` event fires (after the job config is deployed to disk
-but before the subprocess starts) it:
+### Goals
 
-1. Reads the deployed `config_fed_client.json`.
-2. Checks whether a `JobLogStreamer` component is already declared.
-3. If not, appends one with the configured parameters (log file name,
-   poll interval, liveness interval).
-4. Writes the modified config back to disk.
+- Stream job log data from clients to the server while the job is running.
+- Support launchers where the job subprocess runs in a different container or
+  pod than the client parent process.
+- Preserve log data written during shutdown as much as the framework lifecycle
+  allows.
+- Detect dead or disconnected senders during long quiet periods.
+- Keep server-side handling compatible with job artifact storage.
 
-The job subprocess then loads the config and `JobLogStreamer` runs inside it
-as if the user had declared it explicitly.
+### Non-Goals
 
-## Two-phase stop (JobLogStreamer)
+- Capture framework log lines emitted after the `END_RUN` handler has already
+  returned.
+- Replace every historical log-transfer path at once.
+- Enforce cross-site timeout consistency at runtime. Deployment still needs to
+  configure compatible heartbeat and timeout values.
 
-`JobLogStreamer` registers for three events:
+## 4. Components
 
-| Event | Action |
-|-------|--------|
-| `START_RUN` | Starts a background thread that tails the log file |
-| `ABOUT_TO_END_RUN` | Sets `stop_event` but does **not** join -- returns immediately |
-| `END_RUN` | Joins the streaming thread (blocks until EOF is sent) |
+| Component | Location | Responsibility |
+|-----------|----------|----------------|
+| `JobLogStreamer` | Job subprocess | Tails a log file, sends data chunks, emits liveness heartbeats, drains remaining bytes on shutdown |
+| `JobLogReceiver` | Server | Receives stream chunks, writes them to disk immediately, finalizes the result into job-managed storage |
+| `SystemLogStreamer` | Client `resources.json` / `CLIENT_PARENT` | Injects `JobLogStreamer` into jobs that do not already declare one |
 
-Splitting the stop across two events is critical:
+## 5. High-Level Architecture
 
-- **`ABOUT_TO_END_RUN`** fires inside `fire_event()`.  If the handler
-  blocked on `join()` here, `fire_event()` would not return until the
-  stream finished.  Any log lines written by the framework *after*
-  `fire_event()` returns (e.g. "ABOUT\_TO\_END\_RUN fired") would be
-  missed because the stream would already be closed.  By only setting
-  `stop_event`, the handler returns immediately, letting the framework
-  write those lines while the streaming thread is still draining.
+The design splits the feature into three responsibilities:
 
-- **`END_RUN`** joins the thread.  This keeps `client_run()` alive until
-  the streaming thread has sent EOF and the server has acknowledged it.
-  Without this, `executor.shutdown()` could return before the stream
-  finishes, causing `server.abort_run()` to fire and reject the
-  in-flight stream with `TASK_ABORTED`.
+1. System-level injection on the client.
+2. Runtime streaming in the job subprocess.
+3. Stream reception and persistence on the server.
 
-### Drain retry
+`SystemLogStreamer` handles policy and configuration. It modifies the deployed
+job configuration just before launch so that the job process loads a
+`JobLogStreamer` component even when the job author did not explicitly add one.
 
-When the streaming thread sees `stop_event` and no new data, it does not
-send EOF immediately.  Instead it sleeps one more `poll_interval` and
-retries the read.  This captures bytes written by cleanup code that runs
-just after the stop signal fires (e.g. between `ABOUT_TO_END_RUN` and
-`END_RUN`).  If data arrives during the retry, the drain state resets so
-another retry can occur -- this handles the case where log lines trickle
-in over multiple poll intervals during shutdown.
+`JobLogStreamer` handles runtime data movement. It discovers the active log
+directory from the process logging configuration, tails the target file, and
+streams new bytes to the server over the streaming infrastructure.
 
-### Caveat: last few log lines are always missing
+`JobLogReceiver` handles server-side persistence. It writes incoming chunks
+directly to disk so the file can be observed while the job is running, and then
+hands the completed file to the job manager when the stream ends successfully.
 
-The streamed log file will always be missing the last few lines of the
-original log.  These lines (e.g. "END\_RUN fired", "End the Simulator
-run", "Clean up ClientRunner") are written by the framework *after* the
-`END_RUN` event handler returns -- which is after `join()` completes and
-the stream is already closed.  There is no way to capture them without
-modifying the core framework to emit additional events after those log
-calls.  In practice these are job-teardown housekeeping messages and do
-not affect the usefulness of the streamed log.
+## 6. Why the Streamer Runs Inside the Job
 
-## Fresh abort signal (JobLogStreamer)
+The key architectural choice is that log streaming runs in the job subprocess,
+not in `CLIENT_PARENT`.
 
-The job's `run_abort_signal` is triggered before `ABOUT_TO_END_RUN` fires.
-The sender loop in `stream_runner.py` checks this signal at the top of
-every iteration and would abort immediately -- dropping buffered log bytes.
+With local launchers, the parent process may be able to read the job's log
+files. With Docker or Kubernetes launchers, that assumption does not hold. The
+job may execute in a different container or pod, and the parent process may
+have no filesystem access to the log path at all.
 
-To prevent this, `JobLogStreamer` creates a fresh `FLContext` with a new,
-untriggered `Signal`:
+Running `JobLogStreamer` inside the job guarantees that the streamer executes in
+the same environment as the log-producing process. `SystemLogStreamer` exists
+to make that placement automatic.
 
-```python
-stream_fl_ctx = fl_ctx.get_engine().new_context()
-stream_fl_ctx.put(key=ReservedKey.RUN_ABORT_SIGNAL, value=Signal(),
-                  private=True, sticky=False)
-```
+## 7. Configuration Injection Flow
 
-`put()` is used instead of `set_prop()` because `new_context()`
-pre-populates the abort signal as `private+sticky`.  `set_prop()` refuses
-to change the sticky mask on an existing key (silent failure); `put()`
-bypasses this check.  Setting `sticky=False` ensures `_get_prop()` returns
-the local fresh signal immediately without consulting the context manager,
-so the original triggered signal never leaks back in.
+`SystemLogStreamer` is declared in the client's `resources.json`. On
+`BEFORE_JOB_LAUNCH`, after the job configuration has been deployed to disk but
+before the subprocess starts, it performs the following steps:
 
-## Liveness heartbeats and idle timeout
+1. Read the deployed `config_fed_client.json`.
+2. Inspect the configured components.
+3. Determine whether a `JobLogStreamer` is already present.
+4. If absent, append a new `JobLogStreamer` entry with the configured
+   parameters.
+5. Write the updated configuration back to disk.
 
-When the log file is quiet (no new bytes), `JobLogStreamer` sends periodic
-heartbeat messages (no payload) every `liveness_interval` seconds.  On the
-receiver side, `JobLogReceiver` runs a watchdog thread that closes the
-stream if no message (data or heartbeat) arrives within `idle_timeout`
-seconds.
+The job subprocess then starts with the modified configuration and loads the
+streamer as a normal job component.
 
-```
+## 8. Runtime Lifecycle
+
+### 8.1 Startup
+
+`JobLogStreamer` registers for:
+
+| Event | Behavior |
+|-------|----------|
+| `START_RUN` | Create a background streaming thread and begin tailing the log |
+| `ABOUT_TO_END_RUN` | Signal the thread to stop draining, but do not join |
+| `END_RUN` | Join the thread and wait for EOF delivery |
+
+At startup, `JobLogStreamer` locates the log directory from active Python file
+handlers and constructs the target file path from the configured base name.
+
+### 8.2 Steady-State Streaming
+
+The streamer tails the file rather than treating it as a static snapshot. It:
+
+- reads appended bytes in chunks
+- sends those chunks to the server
+- tolerates log rotation by reopening the file when inode or size behavior
+  indicates a rotation or truncation event
+- emits heartbeats when the log is quiet
+
+### 8.3 Shutdown
+
+Shutdown is intentionally split across `ABOUT_TO_END_RUN` and `END_RUN`.
+
+If `ABOUT_TO_END_RUN` blocked on `join()`, the event path would not return until
+streaming finished, and framework log lines written immediately after that event
+would be missed. Instead, `ABOUT_TO_END_RUN` only sets the stop signal.
+
+`END_RUN` performs the join. This keeps `client_run()` alive until the stream
+has drained and EOF has been sent, reducing the chance that later shutdown logic
+aborts the stream before the final bytes reach the server.
+
+## 9. Drain Behavior
+
+When the streamer sees a stop condition and no new data is immediately
+available, it does not send EOF on the first empty read. Instead, it sleeps for
+one additional `poll_interval` and retries the read once more.
+
+This extra drain window is designed to capture shutdown-era log writes that land
+just after the stop signal is raised. If data appears during the retry, the
+drain state resets so another final retry can occur later if needed.
+
+## 10. Abort-Signal Handling
+
+The job's original `run_abort_signal` may already be triggered before
+`ABOUT_TO_END_RUN` is processed. If the streaming path reused that original
+signal directly, the sender loop could terminate immediately and drop buffered
+log bytes.
+
+To prevent that behavior, `JobLogStreamer` creates a fresh `FLContext` with a
+new `Signal` for the streaming thread. The implementation uses `put()` rather
+than `set_prop()` because the inherited abort signal is pre-populated with a
+sticky mask, and `set_prop()` will not change the mask of an existing property.
+
+This design isolates graceful streaming shutdown from the job's broader abort
+path.
+
+## 11. Liveness and Idle Detection
+
+Log streams can be idle for long periods without indicating failure. To
+distinguish a quiet log from a dead sender, the design uses heartbeats and an
+idle watchdog.
+
+- `JobLogStreamer` sends a heartbeat every `liveness_interval` seconds when no
+  new data has been sent.
+- `JobLogReceiver` tracks the time of the last received message, including
+  heartbeats.
+- If no message arrives within `idle_timeout`, the receiver closes the stream
+  and marks it as timed out.
+
+The required relationship is:
+
+```text
 liveness_interval < idle_timeout
 ```
 
-With the defaults (10 s / 30 s), a healthy sender heartbeats every 10 s so
-the 30 s watchdog always resets before it fires.  The timeout only triggers
-when the sender is genuinely unreachable (crash, network partition).
+With the default values of `10s` and `30s`, a healthy sender refreshes the
+receiver's idle timer well before it expires.
+
+## 12. Server-Side Persistence Model
+
+`JobLogReceiver` writes incoming chunks directly to a file as they arrive. This
+allows operators to inspect the evolving file during job execution.
+
+When the stream finishes successfully:
+
+- if a job manager is available, the receiver passes the file into
+  `job_manager.set_client_data(...)`
+- if a job manager is not available, such as some simulator scenarios, the file
+  is retained in a workspace-accessible location
+
+The receiver uses trusted peer context from the server-side `FLContext` when
+associating a stream with a client and job. This prevents the server from
+treating sender-supplied stream metadata as authoritative for storage identity.
+
+## 13. Security Considerations
+
+The design treats stream payload metadata and storage identity differently.
+
+- The streamed file name is used as descriptive metadata and is sanitized before
+  being used in file paths.
+- Client identity and job identity used for persistence must come from the
+  trusted peer context maintained by the server runtime, not directly from
+  sender-provided stream context.
+
+This avoids path-manipulation and misassociation risks where a modified client
+attempts to store data under another client or job.
+
+## 14. Known Limitations
+
+Some late framework log lines are still unavoidably absent from the streamed
+output. Specifically, log messages emitted after the `END_RUN` handler returns
+cannot be captured because the stream has already been closed at that point.
+
+Examples include late teardown messages such as:
+
+- `END_RUN fired`
+- simulator shutdown messages
+- final cleanup messages emitted after the join completes
+
+Capturing those lines would require additional framework lifecycle hooks after
+the current shutdown sequence.
+
+## 15. Operational Guidance
+
+- Prefer `SystemLogStreamer` in client `resources.json` when jobs should receive
+  log streaming automatically.
+- Keep `liveness_interval` strictly smaller than `idle_timeout`.
+- Use one `JobLogStreamer` per log file when multiple files must be streamed.
+- Expect the streamed file to be highly useful for live diagnostics, but not to
+  contain every final teardown log line.
+
+## 16. Summary
+
+The live job log streaming design moves log transport into the job subprocess,
+adds system-level injection for broad coverage, uses heartbeat-based liveness
+detection, and preserves compatibility with NVFlare's server-side job artifact
+storage model.
+
+The result is a runtime-oriented logging path that works across launcher models
+and provides materially better observability than a post-run file handoff.
