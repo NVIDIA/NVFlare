@@ -150,11 +150,21 @@ class TestSystemShutdown:
         mocked_output.assert_called_once()
         mocked_ok.assert_not_called()
 
-    def test_shutdown_parser_rejects_client_target(self):
+    def test_shutdown_parser_accepts_client_target(self):
         from nvflare.tool.system.system_cli import def_system_cli_parser
 
         parser = argparse.ArgumentParser(prog="nvflare system")
         def_system_cli_parser(parser)
 
-        with pytest.raises(SystemExit):
-            parser.parse_args(["shutdown", "client", "--force"])
+        args = parser.parse_args(["shutdown", "client", "--force"])
+        assert args.system_sub_cmd == "shutdown"
+        assert args.target == "client"
+        assert args.force is True
+
+    def test_shutdown_rejects_client_names_for_non_client_target(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_shutdown
+
+        args = self._make_args(target="all", client_names=["site-1"], force=True)
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_system_shutdown(args)
+        assert exc_info.value.code == 4

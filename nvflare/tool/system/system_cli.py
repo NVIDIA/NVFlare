@@ -387,6 +387,14 @@ def cmd_system_shutdown(args):
     target = args.target
     client_names = getattr(args, "client_names", [])
 
+    if target != "client" and client_names:
+        output_error(
+            "INVALID_ARGS",
+            exit_code=4,
+            detail=f"client_names are only valid for target 'client', got target='{target}'",
+        )
+        raise SystemExit(4)
+
     _confirm_or_force(f"Really shutdown {target}?", args)
 
     try:
@@ -417,6 +425,14 @@ def cmd_system_restart(args):
 
     target = args.target
     client_names = getattr(args, "client_names", [])
+
+    if target != "client" and client_names:
+        output_error(
+            "INVALID_ARGS",
+            exit_code=4,
+            detail=f"client_names are only valid for target 'client', got target='{target}'",
+        )
+        raise SystemExit(4)
 
     _confirm_or_force(f"Really restart {target}?", args)
 
