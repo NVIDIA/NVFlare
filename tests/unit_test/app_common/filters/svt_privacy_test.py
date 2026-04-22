@@ -47,11 +47,13 @@ def test_svt_privacy_selects_requested_number_without_replacement():
     result = _run_filter(
         _make_weight_diff(include_scalar=False),
         fraction=0.5,
-        epsilon=1.0,
+        epsilon=200.0,
         noise_var=1e9,
         gamma=1.0,
         tau=-1.0,
         replace=False,
+        epsilon_threshold=100.0,
+        epsilon_query=100.0,
     )
 
     nonzero_count = np.count_nonzero(result.data["layer_a"]) + np.count_nonzero(result.data["layer_b"])
@@ -67,11 +69,13 @@ def test_svt_privacy_zero_fraction_zeros_arrays_and_keeps_scalar():
     result = _run_filter(
         _make_weight_diff(),
         fraction=0.0,
-        epsilon=1.0,
+        epsilon=200.0,
         noise_var=1.0,
         gamma=1.0,
         tau=-1.0,
         replace=False,
+        epsilon_threshold=100.0,
+        epsilon_query=100.0,
     )
 
     assert np.count_nonzero(result.data["layer_a"]) == 0
@@ -85,11 +89,13 @@ def test_svt_privacy_replace_keeps_shapes_and_scalar_passthrough():
     result = _run_filter(
         _make_weight_diff(include_scalar=False),
         fraction=0.75,
-        epsilon=1.0,
+        epsilon=200.0,
         noise_var=1e9,
         gamma=1.0,
         tau=-1.0,
         replace=True,
+        epsilon_threshold=100.0,
+        epsilon_query=100.0,
     )
 
     nonzero_count = np.count_nonzero(result.data["layer_a"]) + np.count_nonzero(result.data["layer_b"])
@@ -105,11 +111,13 @@ def test_svt_privacy_counts_scalar_toward_upload_budget_but_preserves_scalar_val
     result = _run_filter(
         _make_weight_diff(),
         fraction=0.5,
-        epsilon=1.0,
+        epsilon=200.0,
         noise_var=1e9,
         gamma=1.0,
         tau=-1.0,
         replace=False,
+        epsilon_threshold=100.0,
+        epsilon_query=100.0,
     )
 
     nonzero_count = (
@@ -153,6 +161,49 @@ def test_sample_partition_counts_replace_keeps_trailing_zero_groups_empty():
         assert sum(sampled_counts) == total_to_sample
 
 
+def test_compute_epsilon_split_uses_standard_ratio_by_default():
+    epsilon_threshold, epsilon_query = svt_privacy_module._compute_epsilon_split(1.0, 4)
+
+    assert epsilon_threshold == pytest.approx(0.2)
+    assert epsilon_query == pytest.approx(0.8)
+
+
+def test_compute_epsilon_split_honors_explicit_values():
+    epsilon_threshold, epsilon_query = svt_privacy_module._compute_epsilon_split(
+        1.0, 4, epsilon_threshold=0.25, epsilon_query=0.75
+    )
+
+    assert epsilon_threshold == pytest.approx(0.25)
+    assert epsilon_query == pytest.approx(0.75)
+
+
+def test_svt_privacy_clips_before_release_noise(monkeypatch):
+    laplace_outputs = [0.0, np.array([0.0]), np.array([0.5])]
+
+    def fake_laplace(scale, size=None):
+        result = laplace_outputs.pop(0)
+        if size is None:
+            return result
+        return result
+
+    monkeypatch.setattr(np.random, "laplace", fake_laplace)
+    monkeypatch.setattr(np.random, "choice", lambda a, size, replace: np.zeros(size, dtype=np.int64))
+
+    result = _run_filter(
+        {"layer": np.array([2.0], dtype=np.float32)},
+        fraction=1.0,
+        epsilon=2.0,
+        noise_var=1.0,
+        gamma=1.0,
+        tau=0.5,
+        replace=False,
+        epsilon_threshold=1.0,
+        epsilon_query=1.0,
+    )
+
+    assert result.data["layer"][0] == pytest.approx(1.5)
+
+
 def test_svt_privacy_uses_chunked_path_without_mutating_input(monkeypatch):
     monkeypatch.setattr(svt_privacy_module, "_SVT_CHUNK_SIZE", 3)
     np.random.seed(37)
@@ -163,11 +214,13 @@ def test_svt_privacy_uses_chunked_path_without_mutating_input(monkeypatch):
     result = _run_filter(
         weight_diff,
         fraction=0.5,
-        epsilon=1.0,
+        epsilon=200.0,
         noise_var=1e9,
         gamma=1.0,
         tau=-1.0,
         replace=False,
+        epsilon_threshold=100.0,
+        epsilon_query=100.0,
     )
 
     assert np.count_nonzero(result.data["layer"]) == 4

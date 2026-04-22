@@ -63,13 +63,60 @@ def _sample_partition_counts(group_counts: List[int], total_to_sample: int, repl
     return sampled_counts
 
 
+def _compute_epsilon_split(
+    epsilon: float, n_upload: int, epsilon_threshold: float = None, epsilon_query: float = None
+) -> Tuple[float, float]:
+    if epsilon <= 0:
+        raise ValueError("epsilon must be > 0.")
+    if n_upload <= 0:
+        raise ValueError("n_upload must be > 0.")
+
+    if epsilon_threshold is not None:
+        epsilon_threshold = float(epsilon_threshold)
+        if epsilon_threshold <= 0:
+            raise ValueError("epsilon_threshold must be > 0.")
+
+    if epsilon_query is not None:
+        epsilon_query = float(epsilon_query)
+        if epsilon_query <= 0:
+            raise ValueError("epsilon_query must be > 0.")
+
+    if epsilon_threshold is None and epsilon_query is None:
+        # Standard SVT budget allocation for non-monotonic queries:
+        # epsilon_threshold : epsilon_query = 1 : (2c)^(2/3).
+        query_ratio = float((2.0 * n_upload) ** (2.0 / 3.0))
+        epsilon_threshold = float(epsilon) / (1.0 + query_ratio)
+        epsilon_query = float(epsilon) - epsilon_threshold
+    elif epsilon_threshold is None:
+        epsilon_threshold = float(epsilon) - epsilon_query
+    elif epsilon_query is None:
+        epsilon_query = float(epsilon) - epsilon_threshold
+
+    if epsilon_threshold <= 0 or epsilon_query <= 0:
+        raise ValueError("epsilon_threshold and epsilon_query must both be > 0.")
+
+    if not np.isclose(epsilon_threshold + epsilon_query, float(epsilon)):
+        raise ValueError("epsilon_threshold + epsilon_query must equal epsilon.")
+
+    return epsilon_threshold, epsilon_query
+
+
 class SVTPrivacy(DXOFilter):
     def __init__(
-        self, fraction=0.1, epsilon=0.1, noise_var=0.1, gamma=1e-5, tau=1e-6, data_kinds: [str] = None, replace=True
+        self,
+        fraction=0.1,
+        epsilon=0.1,
+        noise_var=0.1,
+        gamma=1e-5,
+        tau=1e-6,
+        data_kinds: [str] = None,
+        replace=True,
+        epsilon_threshold: float = None,
+        epsilon_query: float = None,
     ):
         """Implementation of the standard Sparse Vector Technique (SVT) differential privacy algorithm.
 
-        lambda_rho = gamma * 2.0 / epsilon
+        lambda_rho = gamma / epsilon_threshold
         threshold = tau + np.random.laplace(scale=lambda_rho)
 
         Args:
@@ -80,6 +127,10 @@ class SVTPrivacy(DXOFilter):
             tau (float, optional): Defaults to 1e-6.
             data_kinds (str, optional): Defaults to None.
             replace (bool): whether to sample with replacement. Defaults to True.
+            epsilon_threshold (float, optional): privacy budget used for threshold noise. When omitted,
+                the standard SVT non-monotonic split is used.
+            epsilon_query (float, optional): privacy budget used for query noise. When omitted,
+                the remainder of epsilon is assigned after applying the selected split.
         """
         if not data_kinds:
             data_kinds = [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]
@@ -88,11 +139,14 @@ class SVTPrivacy(DXOFilter):
 
         self.fraction = fraction  # fraction of the model to upload
         self.epsilon = epsilon
-        self.eps_2 = None  # to be derived from eps_1
+        self.eps_1 = None
+        self.eps_2 = None
         self.noise_var = noise_var
         self.gamma = gamma
         self.tau = tau
         self.replace = replace
+        self.epsilon_threshold = epsilon_threshold
+        self.epsilon_query = epsilon_query
 
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Compute the differentially private SVT.
@@ -142,19 +196,27 @@ class SVTPrivacy(DXOFilter):
             dxo.data = dp_w
             return dxo
 
+        self.eps_1, self.eps_2 = _compute_epsilon_split(
+            self.epsilon,
+            n_upload,
+            epsilon_threshold=self.epsilon_threshold,
+            epsilon_query=self.epsilon_query,
+        )
+
         # eps_1: threshold with noise
-        lambda_rho = self.gamma * 2.0 / self.epsilon
+        lambda_rho = self.gamma / self.eps_1
         threshold = self.tau + np.random.laplace(scale=lambda_rho)
         # eps_2: query with noise
-        self.eps_2 = self.epsilon * (2.0 * n_upload) ** (2.0 / 3.0)
-        lambda_nu = self.gamma * 4.0 * n_upload / self.eps_2
+        lambda_nu = self.gamma * 2.0 * n_upload / self.eps_2
         self.logger.info(
             "total params: %s, epsilon: %s, "
-            "perparam budget %s, threshold tau: %s + f(eps_1) = %s, "
+            "threshold epsilon: %s, query epsilon: %s, "
+            "threshold tau: %s + f(eps_1) = %s, "
             "clip gamma: %s",
             total_params,
             self.epsilon,
-            self.epsilon / n_upload,
+            self.eps_1,
+            self.eps_2,
             self.tau,
             threshold,
             self.gamma,
@@ -251,9 +313,8 @@ class SVTPrivacy(DXOFilter):
 
                     chunk = flat_value[start:end]
                     selected_values = chunk[selected_idx].astype(np.float64, copy=False) / total_steps
-                    selected_values = (
-                        np.clip(selected_values + noise, a_min=-self.gamma, a_max=self.gamma) * total_steps
-                    )
+                    selected_values = np.clip(selected_values, a_min=-self.gamma, a_max=self.gamma)
+                    selected_values = (selected_values + noise) * total_steps
                     output_flat[start:end][selected_idx] = selected_values
 
                 remaining_accepted -= chunk_accepted
