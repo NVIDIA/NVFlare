@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import stat
 import tempfile
 import zipfile
 from types import SimpleNamespace
@@ -51,6 +52,16 @@ def _make_workspace(root: str, job_id: str) -> None:
 def _make_zip(path: str, entries: dict[str, bytes]) -> None:
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, content in entries.items():
+            zf.writestr(name, content)
+
+
+def _make_zip_with_symlink(path: str, link_name: str, link_target: str, file_entries: dict[str, bytes]) -> None:
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        info = zipfile.ZipInfo(link_name)
+        info.create_system = 3
+        info.external_attr = (stat.S_IFLNK | 0o777) << 16
+        zf.writestr(info, link_target)
+        for name, content in file_entries.items():
             zf.writestr(name, content)
 
 
@@ -244,6 +255,36 @@ class TestWorkspaceTransferManager:
                 reply = manager._handle_publish_results(request)
                 assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
                 assert not os.path.exists(os.path.join(ws_root, "other-job", "result.txt"))
+            finally:
+                manager.remove_job(JOB_ID)
+
+    def test_publish_results_rejects_symlink_entries(self, monkeypatch):
+        with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
+            owner_cell = _FakeCell(fqcn="site-1.parent")
+            manager = WorkspaceTransferManager(owner_cell)
+            transfer_token = manager.add_job(JOB_ID, ws_root)
+
+            zip_path = os.path.join(tmp, "results-symlink.zip")
+            _make_zip_with_symlink(
+                zip_path,
+                f"{JOB_ID}/link",
+                "../../startup",
+                {f"{JOB_ID}/link/result.txt": b"oops"},
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer.download_file",
+                lambda **kwargs: (None, zip_path),
+            )
+
+            request = new_cell_message(
+                {},
+                {"job_id": JOB_ID, "ref_id": "ref-1", "transfer_token": transfer_token},
+            )
+            request.set_header(MessageHeaderKey.ORIGIN, make_workspace_transfer_fqcn(owner_cell.get_fqcn(), JOB_ID))
+            try:
+                reply = manager._handle_publish_results(request)
+                assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
+                assert "symlink not allowed" in reply.get_header(MessageHeaderKey.ERROR)
             finally:
                 manager.remove_job(JOB_ID)
 

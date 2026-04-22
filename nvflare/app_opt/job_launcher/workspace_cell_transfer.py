@@ -24,12 +24,12 @@ so large bundles move in chunks instead of being buffered into a single message.
 """
 from __future__ import annotations
 
-import atexit
 import hashlib
 import logging
 import os
 import secrets
 import shutil
+import stat
 import tempfile
 import threading
 import time
@@ -107,6 +107,8 @@ def _validate_relative_zip_members(zf: zipfile.ZipFile) -> None:
 def _validate_job_zip_members(zf: zipfile.ZipFile, job_id: str) -> None:
     _validate_relative_zip_members(zf)
     for info in zf.infolist():
+        if stat.S_ISLNK(info.external_attr >> 16):
+            raise ValueError(f"symlink not allowed in results archive: {info.filename}")
         parts = PurePosixPath(info.filename).parts
         if not parts or parts[0] != job_id:
             raise ValueError(f"zip member outside job workspace: {info.filename}")
@@ -349,7 +351,6 @@ def _get_bootstrap_cell(args, owner_fqcn: str, secure_mode: bool) -> Cell:
             _bootstrap_cell, _bootstrap_net_agent = _create_bootstrap_cell(
                 args=args, owner_fqcn=owner_fqcn, secure_mode=secure_mode
             )
-            atexit.register(_close_bootstrap_cell)
         return _bootstrap_cell
 
 
