@@ -21,6 +21,7 @@ import nvflare.lighter as prov
 from nvflare.lighter.constants import CommConfigArg, ConnSecurity, CtxKey, PropKey, ProvFileName
 from nvflare.lighter.entity import Participant
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
+from nvflare.lighter.utils import update_storage_locations
 
 _HELM_TEMPLATES_DIR = os.path.join(os.path.dirname(prov.__file__), "templates", "helm")
 
@@ -130,6 +131,11 @@ class HelmChartBuilder(Builder):
         self._write_server_chart_yaml(chart_dir, server)
         self._write_server_values_yaml(chart_dir, server, fed_learn_port, admin_port)
         self._write_server_template_files(templates_dir)
+
+        # Repoint job-store and snapshot-storage at the workspace PVC mount.
+        # Defaults in master_template.yml put them under /tmp/nvflare/... which
+        # is the container's ephemeral root FS and disappears on pod restart.
+        self._relocate_storage_to_workspace_pvc(ctx, server)
 
     def _write_server_chart_yaml(self, chart_dir: str, server: Participant):
         _, tag = _split_image(self.docker_image)
@@ -339,3 +345,11 @@ class HelmChartBuilder(Builder):
             (_helm_src("client", "role.yaml"), "role.yaml"),
         ]:
             shutil.copy(src, os.path.join(templates_dir, dst))
+
+    def _relocate_storage_to_workspace_pvc(self, ctx: ProvisionContext, participant: Participant):
+        """Rewrite server resources so job and snapshot state live on the workspace PVC."""
+        local_dir = os.path.join(ctx.get_ws_dir(participant), "local")
+        default_resource = os.path.join(local_dir, "resources.json.default")
+        if not os.path.exists(default_resource):
+            return
+        update_storage_locations(local_dir=local_dir, workspace=self.workspace_mount_path)
