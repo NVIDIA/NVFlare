@@ -159,7 +159,8 @@ All validation runs before any file is written. A failed validation returns a st
 | `--data-path` | Accepted declaratively; no path-traversal or existence check at CLI time — `..`-containing paths are not rejected | — |
 | `--mode` | Must be exactly `ro` or `rw` | `INVALID_MODE` |
 | `--data-path` / `--pvc` | Exactly one must be provided | `MISSING_REQUIRED_FLAG` |
-| resolved startup-kit dir | The startup-kit directory resolved from `--startup-kit` or `NVFLARE_STARTUP_KIT_DIR` must exist and be a valid startup-kit directory | exit 4 |
+| startup-kit path source | A startup-kit path must be supplied either via `--startup-kit` or `NVFLARE_STARTUP_KIT_DIR`; if neither source provides a path, the command fails before any file access | `STARTUP_KIT_REQUIRED` |
+| resolved startup-kit dir | The startup-kit directory resolved from `--startup-kit` or `NVFLARE_STARTUP_KIT_DIR` must exist and be a valid startup-kit directory | `INVALID_STARTUP_KIT` |
 
 ## Error Codes
 
@@ -169,6 +170,8 @@ All validation runs before any file is written. A failed validation returns a st
 | `INVALID_DATASET` | 4 | Dataset name fails the name-validation regex, or `--pvc` fails the Kubernetes resource name rules |
 | `INVALID_MODE` | 4 | `--mode` value is not `ro` or `rw` |
 | `MISSING_REQUIRED_FLAG` | 4 | Neither `--data-path` nor `--pvc` was provided to `set-dataset` |
+| `STARTUP_KIT_REQUIRED` | 4 | Neither `--startup-kit` nor `NVFLARE_STARTUP_KIT_DIR` provided a startup-kit path for the local file operation |
+| `INVALID_STARTUP_KIT` | 4 | The resolved startup-kit path does not exist or is not a valid startup-kit directory for the local file operation |
 | `DATA_PATH_NOT_FOUND` | 1 | Docker launcher finds a `source` entry but the configured host path does not exist on the host filesystem at job-start time. Not raised by the subprocess launcher — path absence results in a runtime failure in the job code. |
 | `BACKEND_FIELD_MISSING` | 1 | Launcher finds the study/dataset entry but the `source` key is absent |
 | `STUDY_NOT_FOUND` | 1 | Docker or K8s launcher cannot find an entry for the job's study in `study_data.json` at job-start time — job is not started. Not raised by `SubprocessJobLauncher`; a missing entry results in a runtime failure in the job code. |

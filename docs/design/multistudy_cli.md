@@ -200,11 +200,11 @@ nvflare study show        <name> {--startup-kit <dir> | --startup-target poc|pro
 |------|------|----------|-------------|
 | `<name>` | str | Yes | Study name; must match the existing `name_check(..., "study")` contract: `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$` |
 | `--sites` | str | Yes | Comma-separated site names to enroll. Required for both `project_admin` and `org_admin`. An empty list is rejected with `INVALID_SITE`. |
-| `--startup-kit` | str | Yes* | Explicit path to the startup kit directory |
-| `--startup-target` | `poc\|prod` | Yes* | Resolves startup kit path from `~/.nvflare/config.conf` |
+| `--startup-kit` | str | No* | Explicit path to the startup kit directory |
+| `--startup-target` | `poc\|prod` | No* | Resolves startup kit path from `~/.nvflare/config.conf` |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
-\* Exactly one of `--startup-kit` or `--startup-target` is required.
+\* `--startup-kit` and `--startup-target` are mutually exclusive. The startup kit must be resolvable — via `--startup-kit`, `--startup-target`, or `NVFLARE_STARTUP_KIT_DIR` — see [Connection Flags](#connection-flags). No silent default: if no source resolves, the command fails.
 
 #### Usage Examples — `register`
 
@@ -237,11 +237,11 @@ nvflare study register cancer-research --sites hospital-a,hospital-b,hospital-c 
 |------|------|----------|-------------|
 | `<name>` | str | Yes | Existing study name |
 | `--sites` | str | Yes | Comma-separated site names. Required for both `project_admin` and `org_admin`. An empty list is rejected with `INVALID_SITE`. |
-| `--startup-kit` | str | Yes* | Explicit path to the startup kit directory |
-| `--startup-target` | `poc\|prod` | Yes* | Resolves startup kit path from `~/.nvflare/config.conf` |
+| `--startup-kit` | str | No* | Explicit path to the startup kit directory |
+| `--startup-target` | `poc\|prod` | No* | Resolves startup kit path from `~/.nvflare/config.conf` |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
-\* Exactly one of `--startup-kit` or `--startup-target` is required.
+\* `--startup-kit` and `--startup-target` are mutually exclusive. The startup kit must be resolvable — via `--startup-kit`, `--startup-target`, or `NVFLARE_STARTUP_KIT_DIR` — see [Connection Flags](#connection-flags). No silent default: if no source resolves, the command fails.
 
 Both commands return per-site outcome lists. `add-site`: already-enrolled sites are reported in `already_enrolled` and skipped; newly enrolled sites appear in `added`. `remove-site`: sites not currently enrolled are reported in `not_enrolled` and skipped; removed sites appear in `removed`. Neither command errors on partially overlapping input — the full outcome is always inspectable in the response.
 
@@ -252,9 +252,11 @@ Both commands return per-site outcome lists. `add-site`: already-enrolled sites 
 | Flag | Type | Required | Description |
 |------|------|----------|-------------|
 | `<name>` | str | Yes | Study name to remove |
-| `--startup-kit` | str | Yes* | Explicit path to the startup kit directory |
-| `--startup-target` | `poc\|prod` | Yes* | Resolves startup kit path from `~/.nvflare/config.conf` |
+| `--startup-kit` | str | No* | Explicit path to the startup kit directory |
+| `--startup-target` | `poc\|prod` | No* | Resolves startup kit path from `~/.nvflare/config.conf` |
 | `--schema` | flag | No | Print command schema as JSON and exit |
+
+\* `--startup-kit` and `--startup-target` are mutually exclusive. The startup kit must be resolvable — via `--startup-kit`, `--startup-target`, or `NVFLARE_STARTUP_KIT_DIR` — see [Connection Flags](#connection-flags). No silent default: if no source resolves, the command fails.
 
 ### User Role Management
 
@@ -277,11 +279,11 @@ nvflare study update-user <study> <user> --role <role> {--startup-kit <dir> | --
 | `<study>` | str | Yes | Registered study name |
 | `<user>` | str | Yes | Username or cert CN string to store in the study mapping |
 | `--role` | str | Yes (add, update) | One of: `project_admin`, `org_admin`, `lead`, `member` |
-| `--startup-kit` | str | Yes* | Explicit path to the startup kit directory |
-| `--startup-target` | `poc\|prod` | Yes* | Resolves startup kit path from `~/.nvflare/config.conf` |
+| `--startup-kit` | str | No* | Explicit path to the startup kit directory |
+| `--startup-target` | `poc\|prod` | No* | Resolves startup kit path from `~/.nvflare/config.conf` |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
-\* Exactly one of `--startup-kit` or `--startup-target` is required.
+\* `--startup-kit` and `--startup-target` are mutually exclusive. The startup kit must be resolvable — via `--startup-kit`, `--startup-target`, or `NVFLARE_STARTUP_KIT_DIR` — see [Connection Flags](#connection-flags). No silent default: if no source resolves, the command fails.
 
 #### Usage Examples — user role commands
 
@@ -353,7 +355,7 @@ Dataset commands follow the same conventions as all other `nvflare study` comman
 |------|------|----------|-------------|
 | `<study>` | str | Yes | Study name; must match `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$`. The regex excludes `/`, `.`, and special characters to ensure the name is safe as a filesystem path component. |
 | `<dataset>` | str | Yes | Dataset name; must match `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$`. Same path-safety guarantee as the study name — used directly as a path component in `/data/<study>/<dataset>`. |
-| `--startup-kit` | str | No | Path to the startup-kit root directory; used to locate `local/study_data.json`. If omitted, resolved from `NVFLARE_STARTUP_KIT_DIR` env var. |
+| `--startup-kit` | str | No | Path to the startup-kit root directory; used to locate `local/study_data.json`. If omitted, resolved from `NVFLARE_STARTUP_KIT_DIR` env var. If neither source provides a path, the command fails with `STARTUP_KIT_REQUIRED` (exit 4). |
 | `--data-path` | str | Yes* | Docker/subprocess deployment: stored as the `source` field. For Docker, provide the host-absolute path to the dataset directory (e.g. `/host/data/cancer-train`). For subprocess, use `/data/<study>/<dataset>` — the path where the operator will pre-place data on the host. Accepted declaratively; no path-traversal or existence check at CLI time. |
 | `--pvc` | str | Yes* | Kubernetes deployment: PVC claim name. Stored as the `source` field. Must satisfy Kubernetes resource name rules: `^[a-z0-9](?:[a-z0-9-]{0,251}[a-z0-9])?$`; rejected with `INVALID_DATASET` if malformed. |
 | `--mode` | `ro\|rw` | Yes | Access mode: `ro` for read-only input data; `rw` for read-write staging/output. Any other value is rejected with `INVALID_MODE`. |
@@ -368,7 +370,7 @@ Dataset commands follow the same conventions as all other `nvflare study` comman
 |------|------|----------|-------------|
 | `<study>` | str | Yes | Study name; must match `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$` — path-safe, same rule as `set-dataset` |
 | `<dataset>` | str | Yes | Dataset name; must match `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$` — path-safe, same rule as `set-dataset` |
-| `--startup-kit` | str | No | Path to the startup-kit root directory; used to locate `local/study_data.json`. If omitted, resolved from `NVFLARE_STARTUP_KIT_DIR` env var. |
+| `--startup-kit` | str | No | Path to the startup-kit root directory; used to locate `local/study_data.json`. If omitted, resolved from `NVFLARE_STARTUP_KIT_DIR` env var. If neither source provides a path, the command fails with `STARTUP_KIT_REQUIRED` (exit 4). |
 | `--format` | `json` | No | Emit structured JSON envelope |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
@@ -748,10 +750,10 @@ The response returns per-site outcome lists. `sites` is the complete resulting e
 | `USER_NOT_IN_STUDY` | 1 | `remove-user` / `update-user` rejected: user has no role in this study |
 | `NOT_AUTHORIZED` | 1 | Caller's cert role is insufficient for this operation |
 | `STARTUP_KIT_NOT_CONFIGURED` | 4 | `--startup-target` given but no matching entry in `~/.nvflare/config.conf` |
-| `LOCK_TIMEOUT` | 2 | Mutation lock could not be acquired within 30 seconds — another mutation is in progress |
+| `LOCK_TIMEOUT` | 3 | Mutation lock could not be acquired within 30 seconds — another mutation is in progress |
 | `CONNECTION_FAILED` | 2 | Cannot connect to or authenticate with the server |
 
-All dataset-command error codes (`INVALID_DATASET`, `INVALID_MODE`, `MISSING_REQUIRED_FLAG`, `DATA_PATH_NOT_FOUND`, `BACKEND_FIELD_MISSING`, `NOT_YET_IMPLEMENTED`, and the dataset-context `STUDY_NOT_FOUND`) are defined in `docs/design/study_dataset_mapping.md`.
+All dataset-command error codes (`INVALID_DATASET`, `INVALID_MODE`, `MISSING_REQUIRED_FLAG`, `STARTUP_KIT_REQUIRED`, `INVALID_STARTUP_KIT`, `DATA_PATH_NOT_FOUND`, `BACKEND_FIELD_MISSING`, `NOT_YET_IMPLEMENTED`, and the dataset-context `STUDY_NOT_FOUND`) are defined in `docs/design/study_dataset_mapping.md`.
 
 ---
 
@@ -856,7 +858,7 @@ All mutating commands follow the same serialized pattern:
 
 1. **Authorize** — check cert role; reject if insufficient.
 2. **Validate** — check that the study name, user, role, and sites are syntactically valid before modifying state.
-3. **Acquire mutation lock** — a process-local lock serializes all registry mutations so concurrent admin commands cannot lose updates. The acquire call has a 30-second timeout; if the lock is not acquired within that window, the command returns immediately with `LOCK_TIMEOUT` (exit 2). The lock is always released in a `finally` block — a failure during steps 4–9 cannot leave the lock permanently held.
+3. **Acquire mutation lock** — a process-local lock serializes all registry mutations so concurrent admin commands cannot lose updates. The acquire call has a 30-second timeout; if the lock is not acquired within that window, the command returns immediately with `LOCK_TIMEOUT` (exit 3). The lock is always released in a `finally` block — a failure during steps 4–9 cannot leave the lock permanently held.
 4. **Load current state** — read `study_registry.json` from disk into a working copy while holding the lock.
 5. **Guard** — for `remove_study`, query the job store (while holding the lock) for any job tagged with the study name; reject with `STUDY_HAS_JOBS` if any exist. Running inside the lock eliminates the TOCTOU window between two concurrent `remove` calls, but does not prevent a job submission that races in after this check — see the design limitation note below.
 6. **Apply mutation** — modify the working copy in memory. Only `register_study` mutates the `admins` map (auto-insert caller with cert role if not already present; existing entries are preserved). `add_study_site` and `remove_study_site` mutate only the `sites` list and never touch `admins`.
