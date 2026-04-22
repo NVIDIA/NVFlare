@@ -249,3 +249,23 @@ def test_get_session_missing_startup_kit_still_exits_when_output_error_is_mocked
 
     assert exc_info.value.code == 2
     output_error.assert_called_once()
+
+
+def test_get_session_forwards_startup_args():
+    from nvflare.tool.job.job_cli import _get_session
+
+    args = MagicMock()
+    args.startup_kit = "/tmp/custom-startup"
+    args.startup_target = "prod"
+
+    with patch(
+        "nvflare.tool.job.job_cli.find_admin_user_and_dir",
+        return_value=("admin@nvidia.com", "/tmp/custom-startup"),
+    ) as find_admin:
+        with patch("nvflare.tool.job.job_cli.new_cli_session") as new_session:
+            _get_session(args=args, study="default")
+
+    _, kwargs = find_admin.call_args
+    assert kwargs["startup_kit_dir"] == "/tmp/custom-startup"
+    assert kwargs["target"] == "prod"
+    assert new_session.called

@@ -555,7 +555,7 @@ Assemble a startup kit (Site Admin).
   used in explicit single-participant mode with ``-n``, ``--cert``, ``--key``,
   and ``--rootca``.
 
-All commands support the global ``--out-format json`` flag for machine-readable
+All commands support the global ``--format json`` flag for machine-readable
 output and ``--schema``
 to print the JSON schema for the command's arguments.
 

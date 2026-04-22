@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+import logging
 import os
 import tempfile
 
@@ -478,6 +480,56 @@ class TestServerChart:
             assert values["persistence"]["etc"]["claimName"] == "my-etc-pvc"
             assert values["persistence"]["etc"]["friendlyName"] == "my-etc-pvc"
             assert values["persistence"]["etc"]["mountPath"] == "/mnt/etc"
+
+    def test_server_resources_store_job_and_snapshot_data_on_workspace_pvc(self):
+        project = _make_project()
+        with tempfile.TemporaryDirectory() as root:
+            ctx = _make_ctx(root, project)
+            local_dir = os.path.join(ctx.get_ws_dir(project.get_server()), "local")
+            os.makedirs(local_dir, exist_ok=True)
+            default_resources = {
+                "snapshot_persistor": {"args": {"storage": {"args": {"root_dir": "/tmp/nvflare/snapshot-storage"}}}},
+                "components": [{"id": "job_manager", "args": {"uri_root": "/tmp/nvflare/jobs-storage"}}],
+            }
+            with open(os.path.join(local_dir, "resources.json.default"), "w") as f:
+                json.dump(default_resources, f)
+            _run(
+                HelmChartBuilder(
+                    docker_image="myregistry/nvflare:2.7.0",
+                    workspace_mount_path="/mnt/workspace",
+                ),
+                project,
+                ctx,
+            )
+
+            resources_path = os.path.join(ctx.get_ws_dir(project.get_server()), "local", "resources.json")
+            with open(resources_path) as f:
+                resources = json.load(f)
+
+        assert (
+            resources["snapshot_persistor"]["args"]["storage"]["args"]["root_dir"] == "/mnt/workspace/snapshot-storage"
+        )
+        job_manager = next(comp for comp in resources["components"] if comp["id"] == "job_manager")
+        assert job_manager["args"]["uri_root"] == "/mnt/workspace/jobs-storage"
+
+    def test_server_resources_missing_default_logs_warning(self, caplog):
+        project = _make_project()
+        with tempfile.TemporaryDirectory() as root:
+            ctx = _make_ctx(root, project)
+            with caplog.at_level(logging.WARNING):
+                _run(
+                    HelmChartBuilder(
+                        docker_image="myregistry/nvflare:2.7.0",
+                        workspace_mount_path="/mnt/workspace",
+                    ),
+                    project,
+                    ctx,
+                )
+
+            resources_path = os.path.join(ctx.get_ws_dir(project.get_server()), "local", "resources.json")
+            assert not os.path.exists(resources_path)
+
+        assert "resources.json.default not found" in caplog.text
 
     def test_no_overseer_files_generated(self):
         """Overseer manifests must never be produced by the builder."""

@@ -30,7 +30,7 @@ This CLI is Stage 1 of the agent-consumer readiness plan. The design must satisf
 
 ### 1. Machine-readable output on every command
 
-Every command supports a stable, versioned JSON envelope via ``--out-format json``.
+Every command supports a stable, versioned JSON envelope via ``--format json``.
 The default output format remains human-readable text (``txt``). When JSON mode is
 requested, the output envelope is stable and versioned:
 
@@ -46,7 +46,7 @@ requested, the output envelope is stable and versioned:
 
 Contract — stream split in JSON mode:
 
-- For normal command handler execution with ``--out-format json``, stdout contains exactly one JSON envelope and nothing else.
+- For normal command handler execution with ``--format json``, stdout contains exactly one JSON envelope and nothing else.
 - Human-readable progress, warnings, prompts, and diagnostics go to stderr.
 - Lower-level provisioning diagnostics must be accumulated and attached to the final structured error in JSON mode, rather than printed directly as ad hoc fallback text.
 
@@ -78,7 +78,7 @@ Default (JSON):
 }
 ```
 
-With ``--out-format json``, errors are also returned as JSON envelopes on stdout.
+With ``--format json``, errors are also returned as JSON envelopes on stdout.
 Human-facing diagnostics should be written to stderr.
 
 Exit code is non-zero. Error message templates support `str.format_map()` substitution via `**kwargs` in `output_error()`.
@@ -117,8 +117,8 @@ The JSON output shape and error codes defined here become the MCP tool schemas i
 | --- | --- | --- |
 | `create` | No | Deprecated — retain with stderr warning; use `python job.py --export --export-dir <job_folder>` + `nvflare job submit` instead |
 | `submit` | Yes | Needs JSON output, exit codes, structured errors; returns `job_id` immediately |
-| `list_templates` | No | Deprecated — retain with stderr warning; use `nvflare recipe list` |
-| `show_variables` | No | Deprecated — retain with stderr warning; use Job Recipe API |
+| `list-templates` | No | Deprecated — retain with stderr warning; use `nvflare recipe list`. Underscore alias `list_templates` kept. |
+| `show-variables` | No | Deprecated — retain with stderr warning; use Job Recipe API. Underscore alias `show_variables` kept. |
 
 `submit` already uses `new_secure_session()` (`nvflare/fuel/flare_api/flare_api.py`) for server connectivity. The same session infrastructure is used by `ProdEnv` and `PocEnv`.
 
@@ -129,10 +129,10 @@ The JSON output shape and error codes defined here become the MCP tool schemas i
 | `nvflare simulator` | — | Deprecated — retain with stderr warning; use Job Recipe SimEnv directly (`python job.py`) |
 | `nvflare poc` | `prepare`, `start`, `stop`, `clean` | Add JSON output, exit codes, `--schema`; add `--force` to `prepare` for workspace deletion prompt bypass |
 | `nvflare provision` | — | Add JSON output, `--schema`, `--force` for Y/N prompts; restore pre-2.7.0 default: no args = generate `project.yml` |
-| `nvflare preflight_check` | — | Add JSON output, `--schema`; exit 0=pass, 1=fail |
+| `nvflare preflight-check` | — | Add JSON output, `--schema`; exit 0=pass, 1=fail. Underscore alias `preflight_check` accepted for backward compatibility. |
 | `nvflare config` | — | Add JSON output, `--schema` |
 | `nvflare dashboard` | — | No changes; excluded from this plan |
-| `nvflare authz_preview` | — | Deprecated — retain with stderr warning |
+| `nvflare authz-preview` | — | Deprecated — retain with stderr warning. Underscore alias `authz_preview` accepted for backward compatibility. |
 
 
 ## Visible Admin Console Commands (No CLI Equivalent Today)
@@ -175,7 +175,7 @@ Only commands that serve common end-user or admin tasks are exposed. Diagnostic,
 | Command | User | CLI |
 | --- | --- | --- |
 | `show_stats` | Both | Yes -> `nvflare job stats <job_id>` |
-| `show_errors` | Both | Yes -> `nvflare job errors <job_id>` |
+| `show_errors` | Both | No — not exposed as a CLI command |
 | `reset_errors` | — | No — internal housekeeping |
 
 
@@ -256,31 +256,15 @@ Same positional form as `nvflare job log-config` but applies at site level. Effe
 Session API change needed: add `configure_job_log(job_id, config, target)` and `configure_site_log(config, target)` to `Session` in `flare_api.py`.
 
 
-## Log Retrieval and Heuristic Diagnosis
+## Log Retrieval
 
 | Command | Description |
 | --- | --- |
 | `nvflare job logs <job_id>` | Download job log content from server store |
-| `nvflare job diagnose <job_id>` | Run built-in heuristic pattern matching over errors + logs |
 
 ```text
 nvflare job logs     <job_id> [--site server|<client_name>|all] [--tail N] [--grep PATTERN]
-nvflare job diagnose <job_id> [--site server|<client_name>|all]
 ```
-
-`nvflare job diagnose` fetches errors + logs, runs heuristic pattern matching, and always returns a structured `report` field. `unexplained` sites carry raw log excerpts for deeper analysis without an extra round-trip.
-
-Heuristic patterns:
-
-| Log pattern | Diagnosis | Hint |
-| --- | --- | --- |
-| `CUDA out of memory` / `OOM` | GPU memory exhaustion | Reduce `batch_size` or use gradient checkpointing |
-| `Connection refused` / `SERVER_UNREACHABLE` | Network / firewall | Check server status and network policy |
-| `signature verification failed` / `cert` | Certificate mismatch | Re-provision or check `rootCA` |
-| `Job validation failed` | Bad job configuration | Check `meta.json` and `config_fed_server.json` |
-| `timeout on round` | Slow client | Increase `task_timeout` in job config |
-| `No rounds completed, client in FAILED` | Executor crash | Inspect client error log |
-| `ModuleNotFoundError` | Missing dependency on client | Install required package on client |
 
 
 ## Recipe Catalog
@@ -418,13 +402,13 @@ Retain with stderr deprecation warning. Migrate to `python job.py --export --exp
 
 #### `nvflare job submit`
 
-Submits a pre-built job config folder to a running server. Returns `job_id` immediately — no waiting. The job artifact is unchanged at submit time; `--startup-target` only selects which startup kit to use for server connection. If neither `--startup-target` nor `--startup_kit` is supplied, submit defaults to the POC startup kit from `~/.nvflare/config.conf`. Use `nvflare job monitor` to wait for results.
+Submits a pre-built job config folder to a running server. Returns `job_id` immediately — no waiting. The job artifact is unchanged at submit time; `--startup-target` only selects which startup kit to use for server connection. If neither `--startup-target` nor `--startup-kit` is supplied, submit defaults to the POC startup kit from `~/.nvflare/config.conf`. Use `nvflare job monitor` to wait for results.
 
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `-j`, `--job_folder` | str | No | `"./current_job"` | Pre-built job config folder |
-| `--startup-target` | `poc|prod` | No | `poc` | Select startup kit from config; mutually exclusive with `--startup_kit` |
-| `--startup_kit` | str | No | — | Explicit admin startup kit directory, or its `startup/` subdirectory; mutually exclusive with `--startup-target` |
+| `-j`, `--job-folder` | str | No | `"./current_job"` | Pre-built job config folder |
+| `--startup-target` | `poc|prod` | No | `poc` | Select startup kit from config; mutually exclusive with `--startup-kit` |
+| `--startup-kit` | str | No | — | Explicit admin startup kit directory, or its `startup/` subdirectory; mutually exclusive with `--startup-target` |
 | `-debug`, `--debug` | flag | No | — | Debug mode |
 | `--study` | str | No | `"default"` | Study to submit the job to |
 | `--schema` | flag | No | — | Print command schema and exit |
@@ -444,30 +428,32 @@ Polls a running job until it reaches a terminal state. Prints status updates to 
 | `job_id` | str | Yes | — | Job ID to monitor |
 | `--timeout` | int | No | 0 | Max seconds to wait |
 | `--interval` | int | No | 2 | Poll interval in seconds |
+| `--startup-target` | `poc\|prod` | No | `poc` | Select startup kit from config; mutually exclusive with `--startup-kit` |
+| `--startup-kit` | str | No | — | Explicit admin startup kit directory; mutually exclusive with `--startup-target` |
 | `--schema` | flag | No | — | Print command schema and exit |
 
 Exit code 0 on `FINISHED_OK`, exit code 1 on `FAILED` / `ABORTED`.
 
-#### `nvflare job list_templates` — deprecated
+#### `nvflare job list-templates` — deprecated
 
-Retain with stderr warning; use `nvflare recipe list` instead.
+Retain with stderr warning; use `nvflare recipe list` instead. Underscore alias `list_templates` accepted for backward compatibility.
 
-#### `nvflare job show_variables` — deprecated
+#### `nvflare job show-variables` — deprecated
 
-Retain with stderr warning; job variables are defined and inspected via the Job Recipe API.
+Retain with stderr warning; job variables are defined and inspected via the Job Recipe API. Underscore alias `show_variables` accepted for backward compatibility.
 
 ### `nvflare provision`
 
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `-p`, `--project_file` | str | No | — | `project.yaml` path |
+| `-p`, `--project-file` | str | No | — | `project.yaml` path |
 | `-g`, `--generate` | flag | No | — | Generate sample `project.yaml` |
-| `-e`, `--gen_edge` | flag | No | — | Generate sample edge `project.yaml` |
+| `-e`, `--gen-edge` | flag | No | — | Generate sample edge `project.yaml` |
 | `-w`, `--workspace` | str | No | `"workspace"` | Workspace directory |
-| `-c`, `--custom_folder` | str | No | `"."` | Additional Python code folder |
-| `--add_user` | str | No | `""` | YAML file for added user |
-| `--add_client` | str | No | `""` | YAML file for added client |
-| `-s`, `--gen_scripts` | flag | No | — | Generate startup scripts |
+| `-c`, `--custom-folder` | str | No | `"."` | Additional Python code folder |
+| `--add-user` | str | No | `""` | YAML file for added user |
+| `--add-client` | str | No | `""` | YAML file for added client |
+| `-s`, `--gen-scripts` | flag | No | — | Generate startup scripts |
 | `--force` | flag | No | — | Skip Y/N confirmation prompts |
 | `--schema` | flag | No | — | Print command schema and exit |
 
@@ -475,11 +461,11 @@ Retain with stderr warning; job variables are defined and inspected via the Job 
 
 Retain with stderr warning. Use the Job Recipe `SimEnv` directly from Python.
 
-### `nvflare preflight_check`
+### `nvflare preflight-check`
 
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `-p`, `--package_path` | str | Yes | — | Path to startup kit package |
+| `-p`, `--package-path` | str | Yes | — | Path to startup kit package |
 | `--schema` | flag | No | — | Print command schema and exit |
 
 Exit code must be 0 on all checks pass, 1 on any failure.
@@ -487,6 +473,8 @@ Exit code must be 0 on all checks pass, 1 on any failure.
 ### `nvflare config`
 
 Manages `~/.nvflare/config.conf`.
+
+Config file keys use underscores (`startup_kit`, `poll_interval`, `job_timeout`) — this is the HOCON file convention and is distinct from CLI flag naming. CLI flags use dashes (`--startup-kit`, `--startup-target`); the config file is not a CLI surface.
 
 Config file format:
 
@@ -522,16 +510,19 @@ Persistence rules:
 3. Legacy v1 keys such as `startup_kit.path` and `poc_workspace.path` are still read for backward compatibility, but they must not be written back alongside the v2 sections.
 4. The compatibility alias `nvflare config --startup_kit_dir <path>` updates `poc.startup_kit` only. It does not populate `prod.startup_kit`.
 
-Startup kit resolution for server-connected commands:
+### Admin username and `@` in directory names
 
-1. explicit CLI startup kit argument such as `nvflare job submit --startup_kit <dir>`
-   This must be the admin startup kit directory itself, for example `.../admin@nvidia.com`, or its `startup/` subdirectory.
-2. `NVFLARE_STARTUP_KIT_DIR`
-3. config v2 target lookup:
-   `--startup-target poc` -> `poc.startup_kit`
-   `--startup-target prod` -> `prod.startup_kit`
-4. when target is absent on `nvflare job submit`, default to `poc.startup_kit`
-5. config v1 fallback during migration, normalized to pure v2 on save
+Admin startup kit directories are named after the admin user, typically an email address such as `admin@nvidia.com`. Two issues arise from the `@` character:
+
+1. **Cert name validation** — `_validate_safe_cert_name` currently uses the regex `[A-Za-z0-9][A-Za-z0-9._-]*`, which rejects `@`. The regex must be updated to `[A-Za-z0-9][A-Za-z0-9._@-]*` to allow email-format admin names. Both call sites must be updated: the `--name` argument handler in `cert_commands.py` and the CSR subject CN validator.
+
+2. **Path argument with `@`** — When an admin startup kit path containing `@` is passed on the command line (e.g. `--startup-kit /tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com`), most shells pass it through unchanged. Some shell configurations (notably zsh with certain glob options) may attempt expansion on `@`. NVFlare cannot control shell parsing — if a shell expands `@` in the path, the user must quote the argument: `--startup-kit '/path/to/admin@nvidia.com'`. The NVFlare-side fix is limited to the cert name validator: once `@` is permitted there, the extracted directory basename passes NVFlare's own validation. Shell quoting is the user's responsibility for shells that treat `@` specially.
+
+**Implementation requirement:** update `_SAFE_CERT_NAME_PATTERN` in `nvflare/tool/cert/cert_commands.py` from `[A-Za-z0-9][A-Za-z0-9._-]*` to `[A-Za-z0-9][A-Za-z0-9._@-]*`. No change is needed in argparse or path resolution — `@` is valid at the filesystem level and passes through argparse unchanged.
+
+---
+
+For startup kit resolution order, see §Startup Kit Resolution under Implementation.
 
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -551,9 +542,9 @@ Startup kit resolution for server-connected commands:
 
 No agent-readiness work planned until direction is settled.
 
-### `nvflare authz_preview` — deprecated
+### `nvflare authz-preview` — deprecated
 
-Retain with stderr warning.
+Retain with stderr warning. Underscore alias `authz_preview` accepted for backward compatibility.
 
 
 ## Agent-Readiness Change Summary for Existing Commands
@@ -568,13 +559,13 @@ Retain with stderr warning.
 | `job submit` | Add | Add | Add | Returns `job_id` immediately |
 | `job monitor` | Add | Add | Add | Standalone wait/poll |
 | `provision` | Add | Add | Add | Restore pre-2.7.0 default; add `--force` |
-| `preflight_check` | Add | Add | Fix | 0=pass, 1=fail |
+| `preflight-check` | Add | Add | Fix | 0=pass, 1=fail; alias `preflight_check` kept |
 | `config` | Add | Add | Add | — |
-| `job list_templates` | — | — | — | Deprecated |
-| `job show_variables` | — | — | — | Deprecated |
+| `job list-templates` | — | — | — | Deprecated; alias `list_templates` kept |
+| `job show-variables` | — | — | — | Deprecated; alias `show_variables` kept |
 | `simulator` | — | — | — | Deprecated |
 | `dashboard` | — | — | — | No changes |
-| `authz_preview` | — | — | — | Deprecated |
+| `authz-preview` | — | — | — | Deprecated; alias `authz_preview` kept |
 
 
 ## Design
@@ -583,23 +574,23 @@ Retain with stderr warning.
 
 Add missing operations to the existing `nvflare job` subcommand:
 
+All server-connected `nvflare job` commands require a startup kit. Each accepts `[--startup-target poc|prod | --startup-kit <dir>]`; see §Startup Kit Resolution for the full lookup order.
+
 ```text
 # Job lifecycle (server must be running)
-nvflare job submit    -j <job_folder> [--startup-target poc|prod | --startup_kit <dir>]
-nvflare job monitor   <job_id> [--timeout N] [--interval N]
-nvflare job list      [-n prefix] [-i id_prefix] [-r] [-m num] [--study name|all]
-nvflare job meta      <job_id>
-nvflare job abort     <job_id> [--force]
-nvflare job clone     <job_id>
-nvflare job download  <job_id> [-o destination]
-nvflare job delete    <job_id> [--force]
+nvflare job submit    -j <job_folder> [--startup-target poc|prod | --startup-kit <dir>]
+nvflare job monitor   <job_id> [--timeout N] [--interval N] [--startup-target poc|prod | --startup-kit <dir>]
+nvflare job list      [-n prefix] [-i id_prefix] [-r] [-m num] [--study name|all] [--startup-target poc|prod | --startup-kit <dir>]
+nvflare job meta      <job_id> [--startup-target poc|prod | --startup-kit <dir>]
+nvflare job abort     <job_id> [--force] [--startup-target poc|prod | --startup-kit <dir>]
+nvflare job clone     <job_id> [--startup-target poc|prod | --startup-kit <dir>]
+nvflare job download  <job_id> [-o destination] [--startup-target poc|prod | --startup-kit <dir>]
+nvflare job delete    <job_id> [--force] [--startup-target poc|prod | --startup-kit <dir>]
 
 # Observability (server must be running)
-nvflare job stats     <job_id> [--site server|<name>|all]
-nvflare job errors    <job_id> [--site server|<name>|all]
-nvflare job logs      <job_id> [--site server|<name>|all] [--tail N] [--grep PATTERN]
-nvflare job log-config <job_id> [--site server|<name>|all] <level>
-nvflare job diagnose  <job_id> [--site server|<name>|all]
+nvflare job stats     <job_id> [--site server|<name>|all] [--startup-target poc|prod | --startup-kit <dir>]
+nvflare job logs      <job_id> [--site server|<name>|all] [--tail N] [--grep PATTERN] [--startup-target poc|prod | --startup-kit <dir>]
+nvflare job log-config <job_id> [--site server|<name>|all] <level> [--startup-target poc|prod | --startup-kit <dir>]
 ```
 
 ### Add `nvflare recipe`
@@ -610,17 +601,19 @@ nvflare recipe list [--framework <framework>]
 
 ### Add `nvflare network`
 
+All `nvflare network` commands query the server's cell network topology over an admin session and require a startup kit. Each accepts `[--startup-target poc|prod | --startup-kit <dir>]`; see §Startup Kit Resolution for the full lookup order.
+
 ```text
-nvflare network cells
-nvflare network peers        <target_cell>
-nvflare network conns        <target_cell>
-nvflare network route        <to_cell> [--from <from_cell>]
-nvflare network msg-stats    <target> [--mode mode]
-nvflare network list-pools   <target>
-nvflare network show-pool    <target> <pool_name> [--mode mode]
-nvflare network comm-config  <target>
-nvflare network config-vars  <target>
-nvflare network process-info <target>
+nvflare network cells        [--startup-target poc|prod | --startup-kit <dir>]
+nvflare network peers        <target_cell> [--startup-target poc|prod | --startup-kit <dir>]
+nvflare network conns        <target_cell> [--startup-target poc|prod | --startup-kit <dir>]
+nvflare network route        <to_cell> [--from <from_cell>] [--startup-target poc|prod | --startup-kit <dir>]
+nvflare network msg-stats    <target> [--mode mode] [--startup-target poc|prod | --startup-kit <dir>]
+nvflare network list-pools   <target> [--startup-target poc|prod | --startup-kit <dir>]
+nvflare network show-pool    <target> <pool_name> [--mode mode] [--startup-target poc|prod | --startup-kit <dir>]
+nvflare network comm-config  <target> [--startup-target poc|prod | --startup-kit <dir>]
+nvflare network config-vars  <target> [--startup-target poc|prod | --startup-kit <dir>]
+nvflare network process-info <target> [--startup-target poc|prod | --startup-kit <dir>]
 ```
 
 All `nvflare network` commands support `--schema`. User-supplied arguments are validated against strict patterns before interpolation into `do_command()` strings.
@@ -656,20 +649,22 @@ All `nvflare network` commands support `--schema`. User-supplied arguments are v
 
 ## Add `nvflare system`
 
+All `nvflare system` commands connect to the server and require a startup kit. Each accepts `[--startup-target poc|prod | --startup-kit <dir>]`; see §Startup Kit Resolution for the full lookup order.
+
 ```text
-nvflare system status        [server|client] [client_names...]
-nvflare system resources     [server|client] [clients...]
-nvflare system shutdown      <server> [--force]
-nvflare system restart       <server> [--force]
-nvflare system remove-client <client_name>
-nvflare system log-config    [--site server|<client_name>|all] <level>
-nvflare system version       [--site server|<name>|all]
+nvflare system status        [server|client] [client_names...] [--startup-target poc|prod | --startup-kit <dir>]
+nvflare system resources     [server|client] [clients...] [--startup-target poc|prod | --startup-kit <dir>]
+nvflare system shutdown      <server|client|all> [client_names...] [--force] [--startup-target poc|prod | --startup-kit <dir>]
+nvflare system restart       <server|client|all> [client_names...] [--force] [--startup-target poc|prod | --startup-kit <dir>]
+nvflare system remove-client <client_name> [--startup-target poc|prod | --startup-kit <dir>]
+nvflare system log-config    [--site server|<client_name>|all] <level> [--startup-target poc|prod | --startup-kit <dir>]
+nvflare system version       [--site server|<name>|all] [--startup-target poc|prod | --startup-kit <dir>]
 ```
 
 
 ## Output
 
-For normal command-handler execution, stdout contains exactly one JSON envelope. Human-readable progress, warnings, and diagnostics go to stderr.
+Pass ``--format json`` to any command to receive a structured JSON envelope on stdout. Human-readable progress, warnings, and diagnostics go to stderr.
 
 Exceptions: `--help`, top-level `--version`, and parser-generated usage errors remain plain text.
 
@@ -685,7 +680,7 @@ Example:
   "command": "nvflare job submit",
   "description": "Submit a pre-built job config folder to the FL server. Returns job_id immediately.",
   "args": [
-    {"name": "-j/--job_folder", "type": "path", "required": false, "default": "./current_job", "description": "Pre-built job config folder"},
+    {"name": "-j/--job-folder", "type": "path", "required": false, "default": "./current_job", "description": "Pre-built job config folder"},
     {"name": "--schema", "type": "bool", "required": false, "default": false, "description": "Print command schema as JSON and exit"}
   ],
   "examples": ["nvflare job submit -j ./my_job"]
@@ -700,24 +695,28 @@ Example:
 1   Server/job error (job not found, unauthorized, job FAILED/ABORTED)
 2   Connection / authentication failure
 3   Timeout
-4   Invalid arguments
+4   Invalid arguments  (includes InvalidTarget — unknown client name passed to shutdown/restart)
 5   Internal error (unexpected exception — report a bug; do not retry)
 ```
 
 
 ## Implementation
 
+### Startup Kit Resolution
+
+All server-connected commands (`nvflare job`, `nvflare system`, `nvflare network`) resolve the startup kit using the same ordered lookup:
+
+1. `--startup-kit <dir>` — explicit path on the command line
+2. `NVFLARE_STARTUP_KIT_DIR` — environment variable
+3. `--startup-target poc|prod` — config v2 key lookup (`poc.startup_kit` or `prod.startup_kit`)
+4. default target `poc` — uses `poc.startup_kit` from config when `--startup-target` is absent
+5. config v1 fallback — legacy keys read for backward compatibility; normalized to v2 on save
+
+This resolution order applies uniformly. Command-level descriptions that say "same resolution order as `nvflare job`" refer to this list.
+
 ### Session Reuse
 
-`nvflare job submit` already uses `new_secure_session()` with startup kit discovery. Submit startup kit resolution is:
-
-1. `--startup_kit`
-2. `NVFLARE_STARTUP_KIT_DIR`
-3. `--startup-target poc|prod` via config v2 lookup
-4. default target `poc`
-5. config v1 fallback during migration
-
-All new server-connected commands follow the same session pattern once the startup kit location is resolved.
+`nvflare job submit` already uses `new_secure_session()` with startup kit discovery. All new server-connected commands follow the same session pattern once the startup kit location is resolved.
 
 ### Session API Coverage
 
@@ -729,16 +728,21 @@ Already exposed:
 - `abort_job`
 - `clone_job`
 - `download_job`
+- `shutdown(target_type, client_names=None)` — `target_type` in `server|client|all`; closes session when server/all
+- `restart(target_type, client_names=None)` — `target_type` in `server|client|all`
+- `remove_client(client_name)` — removes a single connected client from the federation
+- `check_status`
+- `report_resources`
+- `get_version`
+- `configure_site_log`
 
 Needs adding:
 
 - `list_jobs`
 - `get_job_meta`
 - `delete_job`
-- all system operations
 - `get_job_logs(job_id, target, tail_lines, grep_pattern)`
 - `configure_job_log(job_id, config, target)`
-- `configure_site_log(config, target)`
 
 New methods are thin wrappers over `AdminAPI.do_command()`.
 
@@ -758,7 +762,6 @@ New methods are thin wrappers over `AdminAPI.do_command()`.
 | `nvflare/agent/skills/nvflare-poc-setup.md` | POC setup skill |
 | `nvflare/agent/skills/nvflare-job-submit.md` | Job workflow skill |
 | `nvflare/agent/skills/nvflare-status-report.md` | Status data collection skill |
-| `nvflare/agent/skills/nvflare-diagnose.md` | Diagnose skill |
 | `nvflare/agent/skills/flare_tools.json` | OpenAI / LangChain tool schemas |
 | `nvflare/tool/cli_schema.py` | Shared parser serializer |
 | `nvflare/tool/cli_output.py` | Shared output helpers |
