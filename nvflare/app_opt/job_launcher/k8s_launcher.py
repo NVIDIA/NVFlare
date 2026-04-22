@@ -25,7 +25,7 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
-from nvflare.utils.job_launcher_utils import extract_job_image, get_client_job_args, get_server_job_args
+from nvflare.utils.job_launcher_utils import get_client_job_args, get_job_launcher_spec, get_server_job_args
 
 
 class JobState(Enum):
@@ -186,7 +186,7 @@ class K8sJobHandle(JobHandleSpec):
             + self.container_args_module_args_sets
         )
         self.container_list[0]["volumeMounts"] = self.container_volume_mount_list
-        if job_config.get("resources", {}).get("limits", {}).get("nvidia.com/gpu"):
+        if job_config.get("resources", {}).get("limits"):
             self.container_list[0]["resources"] = job_config.get("resources")
         app_custom_folder = job_config.get("env", {}).get("PYTHONPATH")
         if app_custom_folder:
@@ -358,7 +358,16 @@ class K8sJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"missing {FLContextKey.WORKSPACE_OBJECT} in FLContext")
         app_custom_folder = workspace_obj.get_app_custom_dir(raw_job_id)
         args = fl_ctx.get_prop(FLContextKey.ARGS)
-        job_image = extract_job_image(job_meta, site_name)
+        k8s_spec = get_job_launcher_spec(job_meta, site_name, "k8s")
+        job_image = k8s_spec.get("image")
+        if not job_image:
+            raise RuntimeError(
+                f"K8sJobLauncher is configured for site '{site_name}' but no job image "
+                f"was specified in meta.json for this site. "
+                f"Set launcher_spec['{site_name}']['k8s']['image'] (preferred), "
+                f"launcher_spec['default']['k8s']['image'] (shared default), "
+                f"or resource_spec['{site_name}']['k8s']['image'] (legacy)."
+            )
         site_resources = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}).get(site_name, {})
         study = job_meta.get(JobMetaKey.STUDY.value)
         job_resource = site_resources.get("num_of_gpus", None)
@@ -387,8 +396,15 @@ class K8sJobLauncher(JobLauncherSpec):
             job_config["env"] = {"PYTHONPATH": app_custom_folder}
         if args is not None and getattr(args, "set", None) is not None:
             job_config.update({"set_list": args.set})
+        resource_limits = {}
         if job_resource:
-            job_config.update({"resources": {"limits": {"nvidia.com/gpu": job_resource}}})
+            resource_limits["nvidia.com/gpu"] = job_resource
+        for key in ("cpu", "memory"):
+            val = k8s_spec.get(key)
+            if val:
+                resource_limits[key] = val
+        if resource_limits:
+            job_config["resources"] = {"limits": resource_limits}
         if self.security_context:
             job_config["security_context"] = self.security_context
         job_handle = K8sJobHandle(
@@ -419,10 +435,7 @@ class K8sJobLauncher(JobLauncherSpec):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
-            job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
-            job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
-            if job_image:
-                add_launcher(self, fl_ctx)
+            add_launcher(self, fl_ctx)
 
     @abstractmethod
     def get_module_args(self, job_id, fl_ctx: FLContext):
