@@ -54,7 +54,7 @@ class TestPatchResourcesJson:
         assert component["id"] == "k8s_launcher"
         assert component["path"] == "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
         assert component["args"]["namespace"] == "nvflare-client-1"
-        assert component["args"]["workspace_pvc"] == "nvflws"
+        assert "workspace_pvc" not in component["args"]
         assert component["args"]["security_context"] == {"seLinuxOptions": {"type": "spc_t"}}
         assert (kit_dir / "etc" / "study_data_pvc.yaml").read_text() == "default: nvfldata\n"
 

@@ -83,6 +83,7 @@ def get_server_job_args(include_exe_module=True, include_set_options=True):
             JobProcessArgs.JOB_ID,
             JobProcessArgs.TOKEN_SIGNATURE,
             JobProcessArgs.PARENT_URL,
+            JobProcessArgs.PARENT_CONN_SEC,
             JobProcessArgs.ROOT_URL,
             JobProcessArgs.SERVICE_HOST,
             JobProcessArgs.SERVICE_PORT,
@@ -109,25 +110,29 @@ def generate_server_command(fl_ctx) -> str:
 _LAUNCHER_MODE_KEYS = {"process", "docker", "k8s"}
 
 
-def get_launcher_resource_spec(job_meta, site_name, mode):
-    """Extract the resource spec for a site for a specific launcher mode.
+def get_site_launcher_spec(site_spec, mode):
+    """Extract the launcher-mode portion of a single site's resource spec.
 
-    New nested format: resource_spec[site][mode] = {num_of_gpus: ..., shm_size: ..., ...}
-    Legacy flat format: resource_spec[site] = {num_of_gpus: ...} — treated as process mode for
+    New nested format: ``{mode: {...}}`` — returns the inner dict for *mode*.
+    Legacy flat format: ``{num_of_gpus: ...}`` — treated as process mode for
     backward compatibility; Docker and K8s modes receive an empty spec.
-
-    Returns a dict for the given mode, or an empty dict if not specified.
     """
-    resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
-    site_spec = resource_spec.get(site_name) or {}
+    site_spec = site_spec or {}
     if any(k in site_spec for k in _LAUNCHER_MODE_KEYS):
         return site_spec.get(mode, {})
-    # Legacy flat format — treat as process only
     return site_spec if mode == "process" else {}
 
 
-# TODO: remove in follow-up PR once K8s launcher is updated to use get_launcher_resource_spec
+def get_launcher_resource_spec(job_meta, site_name, mode):
+    """Extract the launcher-mode resource spec for a site from full job meta."""
+    resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
+    return get_site_launcher_spec(resource_spec.get(site_name), mode)
+
+
 def extract_job_image(job_meta, site_name):
+    image = get_launcher_resource_spec(job_meta, site_name, "k8s").get("image")
+    if image:
+        return image
     deploy_map = job_meta.get(JobMetaKey.DEPLOY_MAP, {})
     fallback = None
     for _, participants in deploy_map.items():

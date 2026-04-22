@@ -21,6 +21,7 @@ import threading
 
 from nvflare.apis.fl_constant import ConfigVarName, JobConstants, SiteType, SystemConfigs
 from nvflare.apis.workspace import Workspace
+from nvflare.app_opt.job_launcher.workspace_cell_transfer import download_workspace, upload_results_safely
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
@@ -61,9 +62,10 @@ def main(args):
     # get parent process id
     parent_pid = os.getppid()
     stop_event = threading.Event()
+    secure_train = kv_list.get("secure_train", False)
+    download_workspace(args, secure_train)
     workspace = Workspace(root_dir=args.workspace, site_name=SiteType.SERVER)
     set_stats_pool_config_for_job(workspace, args.job_id)
-    secure_train = kv_list.get("secure_train", False)
 
     try:
         os.chdir(args.workspace)
@@ -129,7 +131,9 @@ def main(args):
             security_close()
             err = create_stats_pool_files_for_job(workspace, args.job_id)
             if err:
-                logger.warning(err)
+                if logger:
+                    logger.warning(err)
+            upload_results_safely(args, secure_train, log=logger)
 
     except ConfigError as e:
         logger = get_script_logger()
@@ -151,6 +155,14 @@ def parse_arguments():
     parser.add_argument("--port", "-port", type=str, help="service port", required=True)
     parser.add_argument("--ssid", "-id", type=str, help="SSID", required=True)
     parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
+    parser.add_argument(
+        "--parent_conn_sec",
+        "-pcs",
+        type=str,
+        help="parent conn security",
+        required=False,
+        default="",
+    )
     parser.add_argument("--ha_mode", "-ha_mode", type=str, help="HA mode", required=True)
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
     args = parser.parse_args()

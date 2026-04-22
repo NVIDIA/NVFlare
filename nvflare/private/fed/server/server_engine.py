@@ -27,6 +27,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
     AdminCommandNames,
+    ConnPropKey,
     FLContextKey,
     MachineStatus,
     RunProcessKey,
@@ -277,6 +278,17 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             JobProcessArgs.SSID: ("--ssid", str(server_state.ssid)),
             JobProcessArgs.OPTIONS: ("--set", command_options),
         }
+
+        # Pass the parent's listener connection-security mode through to the
+        # launched runner so its short-lived bootstrap CellNet child can connect
+        # back with the same transport/security settings before the normal job
+        # cell is created.
+        params = cell.get_internal_listener_params()
+        if params:
+            parent_conn_sec = params.get(ConnPropKey.CONNECTION_SECURITY)
+            if parent_conn_sec:
+                job_args[JobProcessArgs.PARENT_CONN_SEC] = ("-pcs", parent_conn_sec)
+
         fl_ctx.set_prop(key=FLContextKey.JOB_PROCESS_ARGS, value=job_args, private=True, sticky=False)
         job_handle = job_launcher.launch_job(job.meta, fl_ctx)
         self.logger.info(f"Launch job_id: {job.job_id}  with job launcher: {type(job_launcher)} ")

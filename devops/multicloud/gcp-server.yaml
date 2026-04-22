@@ -7,7 +7,7 @@ clouds:
     helm_overrides: []
     pvc_config:
       nvfletc:  { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
-      nvflws:   { sc: filestore-rwx, access: ReadWriteMany,  size: 1Ti }
+      nvflws:   { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
       nvfldata: { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
   aws:
     kubeconfig: ../../.tmp/kubeconfigs/aws.yaml
@@ -16,7 +16,7 @@ clouds:
     security_context: { seLinuxOptions: { type: spc_t } }
     pvc_config:
       nvfletc:  { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }
-      nvflws:   { sc: efs-sc,      access: ReadWriteMany, size: 10Gi }
+      nvflws:   { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }
       nvfldata: { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }
 
 participants:
