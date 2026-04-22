@@ -132,11 +132,7 @@ class SVTPrivacy(DXOFilter):
         if total_params == 0:
             return dxo
 
-        self.log_info(
-            fl_ctx,
-            f"Delta_w: Max abs: {max_abs}, Min abs: {min_abs}, total params: {total_params}. "
-            "Median abs omitted to avoid extra temporary allocations.",
-        )
+        self.log_info(fl_ctx, f"Delta_w: Max abs: {max_abs}, Min abs: {min_abs}, total params: {total_params}.")
 
         n_upload = int(min(np.ceil(float(total_params) * self.fraction), float(total_params)))
         if n_upload <= 0:
