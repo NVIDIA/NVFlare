@@ -164,3 +164,89 @@ def test_server_info_str_handles_none_start_time():
 
 def test_client_info_str_handles_none_last_connect_time():
     assert str(ClientInfo("site-1", None)) == "site-1(last_connect_time: unknown)"
+
+
+def _make_session_with_meta(meta: dict):
+    session = Session.__new__(Session)
+    session._do_command = MagicMock(
+        return_value={
+            ResultKey.STATUS: "SUCCESS",
+            ResultKey.META: {MetaKey.STATUS: MetaStatusValue.OK, **meta},
+        }
+    )
+    session.close = MagicMock()
+    return session
+
+
+class TestSessionShutdown:
+    def test_shutdown_server_sends_correct_command(self):
+        sess = _make_session_with_meta({})
+        sess.shutdown("server")
+        sess._do_command.assert_called_once_with("shutdown server")
+
+    def test_shutdown_client_sends_correct_command(self):
+        sess = _make_session_with_meta({})
+        sess.shutdown("client")
+        sess._do_command.assert_called_once_with("shutdown client")
+
+    def test_shutdown_all_sends_correct_command(self):
+        sess = _make_session_with_meta({})
+        sess.shutdown("all")
+        sess._do_command.assert_called_once_with("shutdown all")
+
+    def test_shutdown_client_with_names_sends_correct_command(self):
+        sess = _make_session_with_meta({})
+        sess.shutdown("client", client_names=["site-1", "site-2"])
+        cmd = sess._do_command.call_args[0][0]
+        assert cmd.startswith("shutdown client")
+        assert "site-1" in cmd
+        assert "site-2" in cmd
+
+    def test_shutdown_server_closes_session(self):
+        sess = _make_session_with_meta({})
+        sess.shutdown("server")
+        sess.close.assert_called_once()
+
+    def test_shutdown_all_closes_session(self):
+        sess = _make_session_with_meta({})
+        sess.shutdown("all")
+        sess.close.assert_called_once()
+
+    def test_shutdown_client_does_not_close_session(self):
+        sess = _make_session_with_meta({})
+        sess.shutdown("client")
+        sess.close.assert_not_called()
+
+    def test_shutdown_invalid_target_raises_value_error(self):
+        sess = _make_session_with_meta({})
+        with pytest.raises(ValueError, match="shutdown target_type must be one of"):
+            sess.shutdown("relay")
+
+
+class TestSessionRestart:
+    def test_restart_server_sends_correct_command(self):
+        sess = _make_session_with_meta({})
+        sess.restart("server")
+        sess._do_command.assert_called_once_with("restart server")
+
+    def test_restart_client_sends_correct_command(self):
+        sess = _make_session_with_meta({})
+        sess.restart("client")
+        sess._do_command.assert_called_once_with("restart client")
+
+    def test_restart_all_sends_correct_command(self):
+        sess = _make_session_with_meta({})
+        sess.restart("all")
+        sess._do_command.assert_called_once_with("restart all")
+
+    def test_restart_client_with_names_sends_correct_command(self):
+        sess = _make_session_with_meta({})
+        sess.restart("client", client_names=["site-1"])
+        cmd = sess._do_command.call_args[0][0]
+        assert cmd.startswith("restart client")
+        assert "site-1" in cmd
+
+    def test_restart_invalid_target_raises_value_error(self):
+        sess = _make_session_with_meta({})
+        with pytest.raises(ValueError, match="restart target_type must be one of"):
+            sess.restart("relay")

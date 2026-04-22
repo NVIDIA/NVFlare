@@ -29,6 +29,15 @@ def test_prod_env_session_manager_passes_study():
             assert session_params["study"] == "cancer-research"
 
 
+def test_prod_env_accepts_underscore_study_name():
+    with tempfile.TemporaryDirectory() as startup_kit_location:
+        env = ProdEnv(startup_kit_location=startup_kit_location, study="cancer_research")
+        with patch("nvflare.recipe.prod_env.SessionManager") as mock_session_manager:
+            env._get_session_manager()
+            session_params = mock_session_manager.call_args[0][0]
+            assert session_params["study"] == "cancer_research"
+
+
 def test_prod_env_rejects_invalid_study_name():
     with tempfile.TemporaryDirectory() as startup_kit_location:
         with pytest.raises(ValueError):

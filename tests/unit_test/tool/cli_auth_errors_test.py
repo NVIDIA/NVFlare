@@ -64,7 +64,7 @@ def test_run_uses_study_specific_auth_hint_in_json_mode(capsys):
     auth_error.auth_code = "AUTH_UNKNOWN_STUDY"
 
     args = MagicMock()
-    args.out_format = "json"
+    args.format = "json"
     args.connect_timeout = 5.0
     args.sub_command = "job"
     args.version = False
@@ -89,7 +89,7 @@ def test_run_uses_cert_specific_hint_for_error_cert_in_json_mode(capsys):
     auth_error = AuthenticationError("certificate validation failed")
 
     args = MagicMock()
-    args.out_format = "json"
+    args.format = "json"
     args.connect_timeout = 5.0
     args.sub_command = "job"
     args.version = False
@@ -114,7 +114,7 @@ def test_run_routes_authorization_error_through_auth_failed_envelope(capsys):
     auth_error = AuthorizationError("user not authorized for the action 'configure_job_log'")
 
     args = MagicMock()
-    args.out_format = "json"
+    args.format = "json"
     args.connect_timeout = 5.0
     args.sub_command = "job"
     args.version = False
@@ -137,7 +137,7 @@ def test_run_routes_authorization_error_through_auth_failed_envelope(capsys):
 
 def test_run_routes_cli_exception_through_error_envelope(capsys):
     args = MagicMock()
-    args.out_format = "json"
+    args.format = "json"
     args.connect_timeout = 5.0
     args.sub_command = "job"
     args.version = False
@@ -162,7 +162,7 @@ def test_run_routes_cli_exception_through_error_envelope(capsys):
 
 def test_run_routes_missing_handler_to_invalid_args_envelope(capsys):
     args = MagicMock()
-    args.out_format = "json"
+    args.format = "json"
     args.connect_timeout = 5.0
     args.sub_command = "bogus"
     args.version = False

@@ -64,7 +64,7 @@ Validation rules:
 
 - Sites listed in a study must reference existing client participants.
 - Admins listed in a study must reference existing admin participants.
-- Study names follow DNS label format: lowercase alphanumeric and hyphens, 1–63 characters.
+- Study names use lowercase alphanumeric characters plus hyphens or underscores, 1-63 characters, and must start and end with an alphanumeric character.
 - ``"default"`` is reserved and cannot be used as a study name.
 - Provisioning generates ``study_registry.json`` in the server's ``local/`` folder.
 

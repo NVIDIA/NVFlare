@@ -182,7 +182,7 @@ class TestJobSubmitOutput:
         assert args.startup_target == "prod"
         assert args.startup_kit is None
 
-        args = parser.parse_args(["submit", "-j", "./my_job", "--startup_kit", "/tmp/startup"])
+        args = parser.parse_args(["submit", "-j", "./my_job", "--startup-kit", "/tmp/startup"])
         assert args.startup_kit == "/tmp/startup"
         assert args.startup_target is None
 
@@ -191,7 +191,7 @@ class TestJobSubmitOutput:
         parser = def_job_cli_parser(root.add_subparsers(dest="sub_command"))["job"]
 
         with pytest.raises(SystemExit):
-            parser.parse_args(["submit", "-j", "./my_job", "--startup-target", "prod", "--startup_kit", "/tmp/startup"])
+            parser.parse_args(["submit", "-j", "./my_job", "--startup-target", "prod", "--startup-kit", "/tmp/startup"])
 
     def test_submit_parser_rejects_legacy_target_alias(self):
         root = argparse.ArgumentParser()

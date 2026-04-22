@@ -103,7 +103,7 @@ class TestSchemaWithMissingArgs:
         assert schema["command"] == "nvflare recipe list"
 
     def test_recipe_schema_ignores_space_separated_global_flag_values(self, capsys):
-        exit_code = self._run_schema(["nvflare", "--out-format", "json", "recipe", "--schema"])
+        exit_code = self._run_schema(["nvflare", "--format", "json", "recipe", "--schema"])
         assert exit_code == 0
 
         captured = capsys.readouterr()

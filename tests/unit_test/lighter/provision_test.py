@@ -83,6 +83,15 @@ class TestProvision:
         with pytest.raises(ValueError, match="invalid study name 'Study_A'"):
             prepare_project(project_dict=project_config)
 
+    def test_prepare_project_accepts_underscore_in_study_name(self):
+        project_config = self._base_project(
+            studies={"study_a": {"sites": ["client1"], "admins": {"admin1@org.com": "project_admin"}}}
+        )
+
+        project = prepare_project(project_dict=project_config)
+
+        assert "study_a" in project.get_prop("studies")
+
     def test_prepare_project_accepts_null_study_definition_as_empty_mapping(self):
         project_config = self._base_project(studies={"study-a": None})
         project = prepare_project(project_dict=project_config)

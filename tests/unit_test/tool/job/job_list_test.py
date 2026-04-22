@@ -104,6 +104,14 @@ class TestJobList:
         args = parser.parse_args(["--study", "all"])
         assert args.study == "all"
 
+    def test_list_parser_accepts_startup_kit(self):
+        self._init_parsers()
+        from nvflare.tool.job.job_cli import job_sub_cmd_parser
+
+        parser = job_sub_cmd_parser["list"]
+        args = parser.parse_args(["--startup-kit", "/tmp/startup"])
+        assert args.startup_kit == "/tmp/startup"
+
     def test_list_forwards_all_study_literal_to_session(self):
         """The literal study name 'all' is forwarded unchanged to session creation."""
         from nvflare.tool.job.job_cli import cmd_job_list
