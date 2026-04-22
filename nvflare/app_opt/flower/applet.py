@@ -89,6 +89,28 @@ def _validate_flower_executable(executable_name: str, executable_path: str):
         raise RuntimeError(error_msg)
 
 
+def _check_runtime_dependency_installation_support(logger):
+    """Check if Flower version is >= 1.29.0 to support runtime dependency installation."""
+    try:
+        import flwr
+        from packaging.version import parse
+
+        version_str = flwr.__version__
+
+        if parse(version_str) >= parse("1.29.0"):
+            return True
+        else:
+            logger.warning(
+                f"Flower version {version_str} is lower than 1.29.0. "
+                "The '--allow-runtime-dependency-installation' option is not supported and will be ignored."
+            )
+            return False
+
+    except Exception as e:
+        logger.warning(f"Could not verify Flower version for runtime dependency installation support: {e}")
+        return False
+
+
 def _format_run_config_value(value) -> str:
     """Format a Flower run_config value as a TOML-compatible scalar literal."""
     if isinstance(value, bool):
@@ -104,9 +126,10 @@ def _format_run_config_value(value) -> str:
 
 
 class FlowerClientApplet(CLIApplet):
-    def __init__(self, extra_env: dict = None):
+    def __init__(self, extra_env: dict = None, allow_runtime_dependency_installation: bool = False):
         """Constructor of FlowerClientApplet, which extends CLIApplet."""
         CLIApplet.__init__(self, stop_method="term")
+        self.allow_runtime_dependency_installation = allow_runtime_dependency_installation
 
         # Ensure PATH includes the venv bin directory so Flower's internal
         # subprocesses (flower-superexec, etc.) can find executables
@@ -168,6 +191,9 @@ class FlowerClientApplet(CLIApplet):
             f"--clientappio-api-address {clientapp_api_addr}"
         )
 
+        if self.allow_runtime_dependency_installation and _check_runtime_dependency_installation_support(self.logger):
+            cmd += " --allow-runtime-dependency-installation"
+
         # add node config
         node_config_str = self._get_node_config(fl_ctx)
         if node_config_str:
@@ -208,6 +234,7 @@ class FlowerServerApplet(Applet):
         superlink_grace_period=1.0,
         superlink_min_query_interval=10.0,
         run_config: Optional[dict] = None,
+        allow_runtime_dependency_installation: bool = False,
     ):
         """Constructor of FlowerServerApplet.
 
@@ -217,6 +244,7 @@ class FlowerServerApplet(Applet):
             superlink_grace_period: how long to wait for superlink to gracefully shutdown
             superlink_min_query_interval: minimal interval for querying superlink for status
             run_config: optional dict for flwr run --run-config arguments
+            allow_runtime_dependency_installation: whether to allow dynamic dependency installation (flwr>=1.29)
         """
         Applet.__init__(self)
         self._superlink_process_mgr = None
@@ -225,6 +253,7 @@ class FlowerServerApplet(Applet):
         self.superlink_ready_timeout = superlink_ready_timeout
         self.superlink_grace_period = superlink_grace_period
         self.superlink_min_query_interval = superlink_min_query_interval
+        self.allow_runtime_dependency_installation = allow_runtime_dependency_installation
         self.run_id = None
         self.last_query_time = None
         self.last_check_status = None
@@ -308,9 +337,12 @@ class FlowerServerApplet(Applet):
         superlink_cmd = (
             f"{flower_superlink_path} --insecure --fleet-api-type grpc-adapter {db_arg} "
             f"--serverappio-api-address {serverapp_api_addr} "
-            f"--fleet-api-address {fleet_api_addr}  "
-            f"--control-api-address {exec_api_addr}"
+            f"--fleet-api-address {fleet_api_addr} "
+            f"--control-api-address {exec_api_addr} "
         )
+
+        if self.allow_runtime_dependency_installation and _check_runtime_dependency_installation_support(self.logger):
+            superlink_cmd += "--allow-runtime-dependency-installation"
 
         cmd_desc = CommandDescriptor(
             cmd=superlink_cmd,
