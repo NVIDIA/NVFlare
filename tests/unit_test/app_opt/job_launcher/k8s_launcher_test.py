@@ -66,6 +66,7 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     K8sJobHandle,
     PodPhase,
     _job_args_dict,
+    site_name_to_rfc1123,
     uuid4_to_rfc1123,
 )
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_WORKSPACE_OWNER_FQCN, ENV_WORKSPACE_TRANSFER_TOKEN
@@ -78,7 +79,7 @@ _DEFAULT_VOLUME_MOUNT_LIST = [
 
 _DEFAULT_VOLUME_LIST = [
     {"name": "workspace-job", "emptyDir": {}},
-    {"name": "startup-kit", "secret": {"secretName": "nvflare-startup-site1"}},
+    {"name": "startup-kit", "secret": {"secretName": f"nvflare-startup-{site_name_to_rfc1123('site1')}"}},
     {"name": DATA_PVC_VOLUME_NAME, "persistentVolumeClaim": {"claimName": "data-pvc"}},
 ]
 
@@ -152,6 +153,11 @@ class TestUuid4ToRfc1123:
 
     def test_empty_string(self):
         assert uuid4_to_rfc1123("") == ""
+
+
+class TestSiteNameToRfc1123:
+    def test_site_name_collision_gets_distinct_suffixes(self):
+        assert site_name_to_rfc1123("site#1") != site_name_to_rfc1123("site1")
 
 
 # ---------------------------------------------------------------------------

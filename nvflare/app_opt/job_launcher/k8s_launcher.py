@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import hashlib
 import logging
 import os
 import re
@@ -116,6 +117,21 @@ def uuid4_to_rfc1123(uuid_str: str) -> str:
     # Kubernetes label limit: 63 chars; strip trailing hyphens after truncation
     # (truncation can expose a hyphen that was interior before slicing)
     return name[:63].rstrip("-")
+
+
+def site_name_to_rfc1123(site_name: str, max_length: int = 47) -> str:
+    """Convert a site name into a stable RFC1123-safe label with a hash suffix."""
+
+    digest = hashlib.sha256(site_name.encode("utf-8")).hexdigest()[:8]
+    name = site_name.lower()
+    name = re.sub(r"[^a-z0-9-]", "", name).strip("-")
+    if not name:
+        name = "site"
+    if name[0].isdigit():
+        name = "s" + name
+    head_max = max_length - len(digest) - 1
+    name = name[:head_max].rstrip("-") or "site"
+    return f"{name}-{digest}"
 
 
 class K8sJobHandle(JobHandleSpec):
@@ -351,7 +367,7 @@ class K8sJobLauncher(JobLauncherSpec):
         """
         from kubernetes.client.rest import ApiException
 
-        secret_name = f"nvflare-startup-{uuid4_to_rfc1123(site_name)}"
+        secret_name = f"nvflare-startup-{site_name_to_rfc1123(site_name)}"
         data = {}
         if os.path.isdir(startup_dir):
             for fname in os.listdir(startup_dir):
