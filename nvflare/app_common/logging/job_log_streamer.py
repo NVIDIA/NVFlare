@@ -77,7 +77,7 @@ class JobLogStreamer(Widget):
     def _find_log_path(self) -> str:
         """Return the path for log_file_name by locating the log directory from any active file handler.
 
-        All log files (log.txt, log_fl.txt, log_error.txt, …) reside in the same directory.
+        All log files (log.txt, log_fl.txt, error_log.txt, …) reside in the same directory.
         Some of them may not have an active handler in this process (e.g. written by another
         process), so we find the directory from whichever file handler is active and construct
         the target path from it.

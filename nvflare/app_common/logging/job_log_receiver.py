@@ -16,8 +16,9 @@ import shutil
 import tempfile
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ReturnCode, StreamCtxKey, SystemComponents
+from nvflare.apis.fl_constant import ReturnCode, StreamCtxKey, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.storage import DataTypes
 from nvflare.apis.streaming import StreamContext
 from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels
 from nvflare.app_common.streamers.log_streamer import LogStreamer
@@ -79,6 +80,13 @@ class JobLogReceiver(Widget):
         """Strip path separators and traversal sequences from a single path component."""
         # Use only the base name to prevent directory traversal via '/' or '..'
         return os.path.basename(name) if name else "unknown"
+
+    @classmethod
+    def _storage_data_type(cls, log_file_name: str) -> str:
+        log_file_name = cls._sanitize_path_component(log_file_name) or WorkspaceConstants.LOG_FILE_NAME
+        if log_file_name == WorkspaceConstants.ERROR_LOG_FILE_NAME:
+            return DataTypes.ERRORLOG.value
+        return f"{DataTypes.LOG.value}_{log_file_name}"
 
     def _get_trusted_stream_identity(self, fl_ctx: FLContext):
         peer_ctx = fl_ctx.get_peer_context()
@@ -145,8 +153,11 @@ class JobLogReceiver(Widget):
                         return
             self.log_info(fl_ctx, f"Live log '{log_type}' from {client} retained at {file_path}")
             return
-        self.log_info(fl_ctx, f"Saving live log '{log_type}' from {client} for job {job_id}: {file_path}")
-        job_manager.set_client_data(job_id, file_path, client, log_type, fl_ctx)
+        data_type = self._storage_data_type(log_type)
+        self.log_info(
+            fl_ctx, f"Saving live log '{log_type}' as '{data_type}' from {client} for job {job_id}: {file_path}"
+        )
+        job_manager.set_client_data(job_id, file_path, client, data_type, fl_ctx)
 
     def _register(self, event_type: str, fl_ctx: FLContext):
         if self._registered:

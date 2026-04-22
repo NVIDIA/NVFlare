@@ -14,14 +14,25 @@
 
 from unittest.mock import Mock
 
-from nvflare.apis.fl_constant import ReservedKey, ReturnCode, StreamCtxKey
+import pytest
+
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode, StreamCtxKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.storage import DataTypes, StorageSpec
 from nvflare.apis.streaming import StreamContextKey
 from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
 from nvflare.app_common.streamers.log_streamer import KEY_FILE_NAME
 
 
-def test_job_log_receiver_uses_trusted_peer_identity_for_storage(tmp_path):
+@pytest.mark.parametrize(
+    "file_name,expected_data_type",
+    [
+        (WorkspaceConstants.ERROR_LOG_FILE_NAME, DataTypes.ERRORLOG.value),
+        (WorkspaceConstants.LOG_FILE_NAME, f"{DataTypes.LOG.value}_{WorkspaceConstants.LOG_FILE_NAME}"),
+        ("metrics.out", f"{DataTypes.LOG.value}_metrics.out"),
+    ],
+)
+def test_job_log_receiver_uses_trusted_peer_identity_for_storage(tmp_path, file_name, expected_data_type):
     receiver = JobLogReceiver(dest_dir=str(tmp_path))
 
     peer_ctx = FLContext()
@@ -41,20 +52,21 @@ def test_job_log_receiver_uses_trusted_peer_identity_for_storage(tmp_path):
     stream_ctx = {
         StreamCtxKey.CLIENT_NAME: "../../forged_client",
         StreamCtxKey.JOB_ID: "../../forged_job",
-        KEY_FILE_NAME: "live.log",
+        KEY_FILE_NAME: file_name,
     }
     stream_ctx[StreamContextKey.RC] = ReturnCode.OK
 
     receiver._on_chunk_received(b"log line\n", stream_ctx, fl_ctx)
     receiver._on_stream_done(stream_ctx, fl_ctx)
 
-    expected_path = tmp_path / "trusted_job" / "trusted_client" / "live.log"
+    expected_path = tmp_path / "trusted_job" / "trusted_client" / file_name
     assert expected_path.exists()
     assert expected_path.read_bytes() == b"log line\n"
     job_manager.set_client_data.assert_called_once_with(
         "trusted_job",
         str(expected_path),
         "trusted_client",
-        "live.log",
+        expected_data_type,
         fl_ctx,
     )
+    assert StorageSpec.is_valid_component(f"{expected_data_type}_trusted_client")

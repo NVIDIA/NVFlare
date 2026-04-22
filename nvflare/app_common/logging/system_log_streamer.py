@@ -13,12 +13,15 @@
 # limitations under the License.
 import json
 import os
+import threading
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, JobConstants, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, JobConstants, ProcessType, StreamCtxKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels
+from nvflare.app_common.streamers.log_streamer import LogStreamer
 from nvflare.widgets.widget import Widget
 
 _LOG_STREAMER_PATH = "nvflare.app_common.logging.job_log_streamer.JobLogStreamer"
@@ -38,6 +41,12 @@ class SystemLogStreamer(Widget):
     appends one with the configured parameters and writes the file back.  The
     job subprocess then picks up the modified config and ``JobLogStreamer`` runs
     inside the job as if the user had declared it explicitly.
+
+    When configured for ``error_log.txt``, ``SystemLogStreamer`` also uploads a
+    post-run snapshot from ``CLIENT_PARENT`` on ``JOB_COMPLETED``. This preserves
+    error-log delivery for launch/config/bootstrap failures where the job
+    subprocess never reaches ``START_RUN`` and therefore never loads the
+    injected ``JobLogStreamer``.
 
     The server side must have a
     :class:`~nvflare.app_common.logging.job_log_receiver.JobLogReceiver`
@@ -64,6 +73,7 @@ class SystemLogStreamer(Widget):
         self._liveness_interval = liveness_interval
         self._poll_interval = poll_interval
         self.register_event_handler(EventType.BEFORE_JOB_LAUNCH, self._on_before_job_launch)
+        self.register_event_handler(EventType.JOB_COMPLETED, self._on_job_completed)
 
     def _on_before_job_launch(self, event_type: str, fl_ctx: FLContext):
         job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
@@ -125,3 +135,50 @@ class SystemLogStreamer(Widget):
             return
 
         self.log_info(fl_ctx, f"Injected JobLogStreamer into job {job_id}")
+
+    def _stream_completed_log(self, fl_ctx: FLContext, log_path: str, client_name: str, job_id: str):
+        stop_event = threading.Event()
+        stop_event.set()
+
+        try:
+            LogStreamer.stream_log(
+                channel=Channels.LOG_STREAMING_CHANNEL,
+                topic=LIVE_LOG_TOPIC,
+                stream_ctx={
+                    StreamCtxKey.CLIENT_NAME: client_name,
+                    StreamCtxKey.JOB_ID: job_id,
+                },
+                targets=["server"],
+                file_name=log_path,
+                fl_ctx=fl_ctx,
+                stop_event=stop_event,
+                poll_interval=self._poll_interval,
+                liveness_interval=self._liveness_interval,
+            )
+        except Exception:
+            self.log_exception(fl_ctx, f"Failed to upload completed log '{self._log_file_name}' for job {job_id}")
+
+    def _on_job_completed(self, event_type: str, fl_ctx: FLContext):
+        if self._log_file_name != WorkspaceConstants.ERROR_LOG_FILE_NAME:
+            return
+        if fl_ctx.get_process_type() != ProcessType.CLIENT_PARENT:
+            return
+
+        workspace_root = fl_ctx.get_prop(FLContextKey.WORKSPACE_ROOT)
+        client_name = fl_ctx.get_identity_name(default="") or fl_ctx.get_prop(FLContextKey.CLIENT_NAME)
+        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID) or fl_ctx.get_job_id()
+        if not workspace_root or not client_name or not job_id:
+            return
+
+        workspace = Workspace(root_dir=workspace_root, site_name=client_name)
+        log_path = workspace.get_app_error_log_file_path(job_id)
+        if not os.path.exists(log_path):
+            self.log_info(fl_ctx, f"No error log file found for {client_name} job {job_id}")
+            return
+
+        threading.Thread(
+            target=self._stream_completed_log,
+            args=(fl_ctx, log_path, client_name, job_id),
+            daemon=True,
+        ).start()
+        self.log_info(fl_ctx, f"Started completed error log upload for {client_name} job {job_id}: {log_path}")

@@ -86,7 +86,7 @@ Key improvements:
   - To support various needs and backward compatibility, we now have the following default log files:
     - log.txt: default log file from previous NVFLARE versions
     - log.json: JSON format log
-    - log_error.txt: ERROR level logs to log_error.txt for quick error lookup
+    - error_log.txt: ERROR level logs to error_log.txt for quick error lookup
     - log_fl.txt: FL task-specific logs (removes the system and communication related logs and clearly shows logs related to FL tasks such as training)
   - Predefined logging modes for simulator:
     - Concise (default): only FL tasks logs
@@ -205,4 +205,3 @@ With FLARE 2.6.0, we now support:
 3. Native PyTorch tensor transmission
 
 The new `server_expected_format` parameter specifically controls the format used in server-client communication. When set to "pytorch", the entire pipeline - from server to client to script - can operate using PyTorch tensors without any format conversion.
-
