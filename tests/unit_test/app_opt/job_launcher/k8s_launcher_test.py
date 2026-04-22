@@ -338,7 +338,7 @@ class TestK8sJobHandle:
         assert container["resources"]["limits"]["nvidia.com/gpu"] == 1
 
     def test_manifest_no_gpu_resources(self):
-        cfg = _make_job_config(resources={"limits": {"nvidia.com/gpu": None}})
+        cfg = _make_job_config(resources={"limits": {}})
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
         container = handle.get_manifest()["spec"]["containers"][0]
         assert "resources" not in container
@@ -741,7 +741,7 @@ def _setup_launcher(launcher_cls):
 
 
 class TestK8sJobLauncherHandleEvent:
-    def test_adds_launcher_when_image_present(self):
+    def test_always_adds_launcher_on_before_job_launch(self):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
@@ -749,7 +749,7 @@ class TestK8sJobLauncherHandleEvent:
         try:
             launcher = _setup_launcher(ClientK8sJobLauncher)
             fl_ctx = FLContext()
-            job_meta = {JobMetaKey.DEPLOY_MAP.value: {"app": [{"sites": ["site-1"], "image": "nvflare/custom:latest"}]}}
+            job_meta = {JobMetaKey.JOB_LAUNCHER_SPEC.value: {"site-1": {"k8s": {"image": "nvflare/custom:v1"}}}}
             fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
             fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, "site-1", private=False, sticky=True)
 
@@ -761,7 +761,9 @@ class TestK8sJobLauncherHandleEvent:
         finally:
             _exit_patches(patches)
 
-    def test_skips_when_no_image(self):
+    def test_adds_launcher_even_without_image_in_meta(self):
+        # Launcher selection is a site policy (resources.json), not a job decision.
+        # K8sJobLauncher always registers; launch_job raises if no image is configured.
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
@@ -769,13 +771,15 @@ class TestK8sJobLauncherHandleEvent:
         try:
             launcher = _setup_launcher(ClientK8sJobLauncher)
             fl_ctx = FLContext()
-            job_meta = {JobMetaKey.DEPLOY_MAP.value: {}}
+            job_meta = {}
             fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
             fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, "site-1", private=False, sticky=True)
 
             launcher.handle_event(EventType.BEFORE_JOB_LAUNCH, fl_ctx)
 
-            assert fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER) is None
+            launchers = fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
+            assert launchers is not None
+            assert launcher in launchers
         finally:
             _exit_patches(patches)
 
@@ -894,7 +898,7 @@ _EXPECTED_JOB_ID = uuid4_to_rfc1123(_JOB_UUID)
 def _make_launch_job_meta(site_name="site-1", image="nvflare/nvflare:latest", gpu=None):
     meta = {
         JobConstants.JOB_ID: _JOB_UUID,
-        JobMetaKey.DEPLOY_MAP.value: {"app": [{"sites": [site_name], "image": image}]},
+        JobMetaKey.JOB_LAUNCHER_SPEC.value: {site_name: {"k8s": {"image": image}}},
     }
     if gpu is not None:
         meta[JobMetaKey.RESOURCE_SPEC.value] = {site_name: {"num_of_gpus": gpu}}
@@ -1109,6 +1113,38 @@ class TestK8sJobLauncherLaunchJob:
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             assert "resources" not in manifest["spec"]["containers"][0]
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_cpu_memory_limits_from_launcher_spec(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"].update({"cpu": "500m", "memory": "2Gi"})
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            limits = manifest["spec"]["containers"][0]["resources"]["limits"]
+            assert limits["cpu"] == "500m"
+            assert limits["memory"] == "2Gi"
+            assert "nvidia.com/gpu" not in limits
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_gpu_and_cpu_combined(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta(gpu=2)
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"].update({"cpu": "1000m", "memory": "4Gi"})
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            limits = manifest["spec"]["containers"][0]["resources"]["limits"]
+            assert limits["nvidia.com/gpu"] == 2
+            assert limits["cpu"] == "1000m"
+            assert limits["memory"] == "4Gi"
         finally:
             _exit_patches(patches)
 
