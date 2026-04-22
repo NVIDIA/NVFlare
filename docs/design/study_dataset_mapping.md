@@ -24,15 +24,15 @@ Launcher reads: <startup-kit>/local/study_data.json   (same file, host filesyste
 
 ### Kubernetes
 
-The K8s launcher runs inside a pod. The `local/` directory is not automatically available inside the pod; it must be staged to the persistent `etc` volume (the etc-vol PVC) before the launcher can read it. The etc-vol is mounted at `/var/tmp/nvflare/etc/` inside the launcher pod.
+The K8s launcher runs inside a pod. `deploy.py` stages the startup-kit contents to two PVCs via a temporary busybox pod: the `local/` directory goes to the workspace PVC, and launcher configuration files go to the etc PVC (`nvfletc`). The etc PVC is mounted at `/var/tmp/nvflare/etc/` inside the launcher pod. Study data configuration follows the same pattern as the existing `study_data_pvc.yaml`, which is staged directly to the etc PVC root (not under a `local/` subdirectory).
 
 ```
-CLI writes:      <startup-kit>/local/study_data.json        (local machine)
-deploy.py stages: kubectl cp <startup-kit>/local/study_data.json <pod>:/etc-vol/local/study_data.json
-Launcher reads:  /var/tmp/nvflare/etc/local/study_data.json  (inside pod, via etc-vol mount)
+CLI writes:       <startup-kit>/local/study_data.json        (local machine)
+deploy.py stages: kubectl cp <startup-kit>/local/study_data.json <pod>:/etc-vol/study_data.json
+Launcher reads:   /var/tmp/nvflare/etc/study_data.json       (inside pod, via etc-vol mount)
 ```
 
-The launcher is configured with `study_data_file_path: /var/tmp/nvflare/etc/local/study_data.json` in `resources.json` (replacing the current `study_data_pvc_file_path` that points to the YAML file).
+The launcher is configured with `study_data_file_path: /var/tmp/nvflare/etc/study_data.json` in `resources.json` (replacing the current `study_data_pvc_file_path` that points to the YAML file).
 
 If the site admin updates `study_data.json` after initial deployment, they must re-run the `kubectl cp` step (or an equivalent `nvflare study sync-dataset` helper if one is added) and restart the launcher pod for the change to take effect.
 

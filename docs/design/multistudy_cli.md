@@ -104,7 +104,7 @@ The following are intentionally not validated:
 
 ### Machine-readable output
 
-Every command supports `--out-format json` (global flag registered on the top-level `nvflare` parser; may appear in any position on the command line). The JSON envelope is stable and versioned:
+Every command supports `--format json` (global flag registered on the top-level `nvflare` parser; may appear in any position on the command line). The JSON envelope is stable and versioned:
 
 ```json
 {
@@ -167,7 +167,7 @@ All server-backed `nvflare study` commands require a connection to the server. T
 
 ### Study Lifecycle
 
-`--out-format json` is a global flag and may appear anywhere on the command line.
+`--format json` is a global flag and may appear anywhere on the command line.
 
 ```
 # --sites required for both project_admin and org_admin
@@ -331,14 +331,14 @@ nvflare study remove-user cancer-research trainer@org_a.com --startup-target pro
 `set-dataset` and `unset-dataset` are local file operations — they do not connect to the server. On-disk format, launcher behavior, validation rules, migration guidance, and companion code changes are defined in `docs/design/study_dataset_mapping.md`.
 
 ```
-nvflare study set-dataset   <study> <dataset> --startup-kit <dir> {--data-path <path> | --pvc <name>} --mode ro|rw [--out-format json] [--schema]
-nvflare study unset-dataset <study> <dataset> --startup-kit <dir> [--out-format json] [--schema]
+nvflare study set-dataset   <study> <dataset> --startup-kit <dir> {--data-path <path> | --pvc <name>} --mode ro|rw [--format json] [--schema]
+nvflare study unset-dataset <study> <dataset> --startup-kit <dir> [--format json] [--schema]
 ```
 
 Dataset commands follow the same conventions as all other `nvflare study` commands:
 
 - **Local only** — no server connection; `--startup-kit` points to the site-local workspace
-- **Same JSON envelope** — `--out-format json` produces `{"schema_version": "1", "status": "ok", "data": {...}}` or the structured error envelope
+- **Same JSON envelope** — `--format json` produces `{"schema_version": "1", "status": "ok", "data": {...}}` or the structured error envelope
 - **Same exit codes** — 0 success, 1 error, 4 invalid arguments, 5 internal
 - **Same `--schema` flag** — machine-readable argument description, exits immediately
 - **Fail-closed on validation** — no file is written until all inputs are validated
@@ -355,7 +355,7 @@ Dataset commands follow the same conventions as all other `nvflare study` comman
 | `--data-path` | str | Yes* | Docker/subprocess deployment: stored as the `source` field. For Docker, provide the host-absolute path to the dataset directory (e.g. `/host/data/cancer-train`). For subprocess, use `/data/<study>/<dataset>` — the path where the operator will pre-place data on the host. Accepted declaratively; no path-traversal or existence check at CLI time. |
 | `--pvc` | str | Yes* | Kubernetes deployment: PVC claim name. Stored as the `source` field. Must satisfy Kubernetes resource name rules: `^[a-z0-9](?:[a-z0-9-]{0,251}[a-z0-9])?$`; rejected with `INVALID_DATASET` if malformed. |
 | `--mode` | `ro\|rw` | Yes | Access mode: `ro` for read-only input data; `rw` for read-write staging/output. Any other value is rejected with `INVALID_MODE`. |
-| `--out-format` | `json` | No | Emit structured JSON envelope instead of human-readable output |
+| `--format` | `json` | No | Emit structured JSON envelope instead of human-readable output |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
 \* Exactly one of `--data-path` or `--pvc` is required. Both write to the same `source` field in `study_data.json`; the launcher interprets the value based on its own deployment context.
@@ -367,7 +367,7 @@ Dataset commands follow the same conventions as all other `nvflare study` comman
 | `<study>` | str | Yes | Study name |
 | `<dataset>` | str | Yes | Dataset name |
 | `--startup-kit` | str | Yes | Path to the local client workspace or startup-kit root |
-| `--out-format` | `json` | No | Emit structured JSON envelope |
+| `--format` | `json` | No | Emit structured JSON envelope |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
 `unset-dataset` does not accept `--data-path`, `--pvc`, or `--mode`. It removes the named dataset entry regardless of its current contents. `unset-dataset` is idempotent: if `study_data.json` does not exist, the study key is absent, or the dataset key is absent, the command succeeds with exit 0 and returns `"removed": false` in the response envelope — no error is raised for missing state.
@@ -1025,7 +1025,7 @@ All CLI handlers use `new_secure_session()` for server connectivity, identical t
 | In-memory reload | Hot-reload after each mutation; no server restart required |
 | Job-association guard | `remove` rejected unconditionally if any job is tagged with the study name, regardless of job state |
 | Active-session behavior | Existing authenticated sessions unaffected; forced session eviction deferred until a clean session-manager integration is designed |
-| Output format | JSON envelope (`schema_version`, `status`, `data`) via `--out-format json`; human text by default |
+| Output format | JSON envelope (`schema_version`, `status`, `data`) via `--format json`; human text by default |
 | Exit codes | 0 success, 1 server error, 2 connection failure, 3 timeout, 4 invalid args, 5 internal |
 | Agent usability | `--schema` on every subcommand; no interactive prompts |
 | Reprovision interaction | `project.yml` overwrites `study_registry.json` on reprovision; dynamic mutations must be backported to `project.yml` to survive |
