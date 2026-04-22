@@ -223,7 +223,7 @@ class TestSchemaWithMissingRequiredArgs:
     """--schema must reach the handler even when required positional args are absent."""
 
     def test_preflight_check_schema_with_missing_required_p_arg(self, capsys, monkeypatch):
-        """nvflare preflight_check --schema (no -p) must print schema JSON and exit 0, not argparse error."""
+        """nvflare preflight-check --schema (no -p) must print schema JSON and exit 0, not argparse error."""
         import sys
 
         from nvflare.cli import parse_args
@@ -240,7 +240,7 @@ class TestSchemaWithMissingRequiredArgs:
         captured = capsys.readouterr()
         # handle_schema_flag uses indent=2 → multi-line JSON; parse the whole stdout blob.
         schema = json.loads(captured.out)
-        assert schema["command"] == "nvflare preflight"
+        assert schema["command"] == "nvflare preflight-check"
         assert schema["schema_version"] == "1"
         # stderr must not contain an argparse "required" error
         assert "required" not in captured.err.lower() or "required" in str(schema["args"])
@@ -260,7 +260,7 @@ class TestSchemaWithMissingRequiredArgs:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         schema = json.loads(captured.out)
-        assert schema["command"] == "nvflare preflight"
+        assert schema["command"] == "nvflare preflight-check"
         assert schema["schema_version"] == "1"
 
     def test_preflight_check_deprecated_notice(self, capsys, monkeypatch):
@@ -375,7 +375,7 @@ class TestHandleSchemaNoneParser:
 
 
 class TestSimulatorAndAuthzSchema:
-    """--schema on simulator and authz_preview exits 0 with a valid schema."""
+    """--schema on simulator and authz-preview exits 0 with a valid schema."""
 
     def test_simulator_schema_exits_0(self, capsys, monkeypatch):
         """nvflare simulator --schema exits 0 and emits valid JSON with deprecated=True."""
@@ -393,7 +393,7 @@ class TestSimulatorAndAuthzSchema:
         assert schema.get("deprecated") is True
 
     def test_authz_preview_schema_exits_0(self, capsys, monkeypatch):
-        """nvflare authz_preview --schema exits 0 and emits valid JSON with deprecated=True."""
+        """nvflare authz-preview --schema exits 0 and emits valid JSON with deprecated=True."""
         import sys
 
         from nvflare.cli import handle_authz_preview, parse_args
@@ -404,5 +404,5 @@ class TestSimulatorAndAuthzSchema:
             handle_authz_preview(args)
         assert exc_info.value.code == 0
         schema = json.loads(capsys.readouterr().out)
-        assert schema["command"] == "nvflare authz_preview"
+        assert schema["command"] == "nvflare authz-preview"
         assert schema.get("deprecated") is True

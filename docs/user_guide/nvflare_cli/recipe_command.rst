@@ -107,8 +107,8 @@ The top-level CLI also supports JSON output mode:
 
 .. code-block:: shell
 
-   nvflare --out-format json recipe list
-   nvflare --out-format json recipe list --framework sklearn
+   nvflare recipe list --format json
+   nvflare recipe list --framework sklearn --format json
 
 Human-readable argument errors print help first, followed by the specific
 error. JSON mode prints only the JSON envelope.

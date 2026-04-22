@@ -20,7 +20,7 @@ def test_cli_sets_connect_timeout(monkeypatch):
 
     def _fake_parse_args(_):
         args = MagicMock()
-        args.out_format = "txt"
+        args.format = "txt"
         args.connect_timeout = 7.5
         args.sub_command = None
         args.version = False

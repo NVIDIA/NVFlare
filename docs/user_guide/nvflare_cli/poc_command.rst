@@ -218,19 +218,20 @@ for example ``.../prod_00/admin@nvidia.com``, not the broader ``prod_00`` root.
 JSON Output and Help
 *********************
 
-The top-level CLI supports ``--out-format json`` for machine-readable output:
+Add ``--format json`` after the subcommand for machine-readable output:
 
 .. code-block:: shell
 
-   nvflare --out-format json poc prepare -n 2
-   nvflare --out-format json poc start
+   nvflare poc prepare -n 2 --format json
+   nvflare poc start --format json
 
-Use ``--schema`` for machine-readable command discovery:
+Use ``--schema`` for machine-readable command discovery. ``--schema`` always
+returns JSON so ``--format json`` is not needed with it:
 
 .. code-block:: shell
 
-   nvflare --out-format json poc prepare --schema
-   nvflare --out-format json poc start --schema
+   nvflare poc prepare --schema
+   nvflare poc start --schema
 
 Human-readable argument errors print help first, followed by the specific
 error. JSON mode prints only the JSON error envelope.

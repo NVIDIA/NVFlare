@@ -527,49 +527,51 @@ class Session(SessionSpec):
         return meta.get(MetaKey.CLIENT_STATUS, None)
 
     def restart(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
-        """Restart the FL server.
+        """Restart the server, specific clients, or all participants.
 
         Args:
-            target_type (str): must be ``server``
-            client_names (List[str]): unused; retained for signature compatibility
+            target_type: ``server``, ``client``, or ``all``
+            client_names: when target_type is ``client``, restrict to these clients (empty = all clients)
 
-        Returns: a dict that contains detailed info about the restart request:
-            status - the overall status of the result.
-            server_status - whether the server is restarted successfully.
-
+        Returns: a dict with detailed info about the restart request.
         """
-        if target_type != TargetType.SERVER:
-            raise ValueError("restart only supports target_type 'server'")
+        if target_type not in _VALID_TARGET_TYPES:
+            raise ValueError(f"restart target_type must be one of {_VALID_TARGET_TYPES}")
 
         parts = [AdminCommandNames.RESTART, target_type]
+        if target_type == TargetType.CLIENT and client_names:
+            parts.append(process_targets_into_str(client_names))
 
-        command = " ".join(parts)
+        command = join_args(parts)
         result = self._do_command(command)
         return result[ResultKey.META]
 
-    def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None) -> dict:
-        """Shut down the FL server.
+    def shutdown(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
+        """Shut down the server, specific clients, or all participants.
 
         Args:
-            target_type: must be ``server``
-            client_names: unused; retained for signature compatibility
+            target_type: ``server``, ``client``, or ``all``
+            client_names: when target_type is ``client``, restrict to these clients (empty = all clients)
 
-        Returns: a dict that contains detailed info about the shutdown request.
+        Returns: a dict with detailed info about the shutdown request.
         """
-        if target_type != TargetType.SERVER:
-            raise ValueError("shutdown only supports target_type 'server'")
+        if target_type not in _VALID_TARGET_TYPES:
+            raise ValueError(f"shutdown target_type must be one of {_VALID_TARGET_TYPES}")
 
         parts = [AdminCommandNames.SHUTDOWN, target_type]
+        if target_type == TargetType.CLIENT and client_names:
+            parts.append(process_targets_into_str(client_names))
 
-        command = " ".join(parts)
+        command = join_args(parts)
         result = self._do_command(command)
-        try:
-            self.close()
-        except Exception:
-            # The shutdown request already succeeded; the server may tear down the
-            # connection before the client can complete logout. Preserve the command
-            # result instead of masking it with a secondary close failure.
-            pass
+        if target_type in (TargetType.SERVER, TargetType.ALL):
+            try:
+                self.close()
+            except Exception:
+                # The shutdown request already succeeded; the server may tear down the
+                # connection before the client can complete logout. Preserve the command
+                # result instead of masking it with a secondary close failure.
+                pass
         return result[ResultKey.META]
 
     def set_timeout(self, value: float):
