@@ -18,11 +18,14 @@ import numpy as np
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.dxo_filter import DXOFilter
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
 # Keep temporary SVT arrays bounded for large models.
 _SVT_CHUNK_SIZE = 1_000_000
+_SVT_PRIVACY_BUDGET = "svt_privacy_budget"
+_SVT_PRIVACY_ACCOUNTANT = "svt_privacy_accountant"
 
 
 def _sample_partition_counts(group_counts: List[int], total_to_sample: int, replace: bool) -> List[int]:
@@ -101,6 +104,26 @@ def _compute_epsilon_split(
     return epsilon_threshold, epsilon_query
 
 
+def _compute_release_epsilon(n_upload: int, noise_var: float, epsilon_release: float = None) -> float:
+    if n_upload <= 0:
+        raise ValueError("n_upload must be > 0.")
+
+    if epsilon_release is not None:
+        epsilon_release = float(epsilon_release)
+        if epsilon_release <= 0:
+            raise ValueError("epsilon_release must be > 0.")
+        return epsilon_release
+
+    noise_var = float(noise_var)
+    if noise_var <= 0:
+        raise ValueError("noise_var must be > 0 when epsilon_release is not specified.")
+
+    # Preserve the previous release noise scale:
+    # scale = 2 * gamma / noise_var = (2 * gamma * c) / (c * noise_var)
+    # which corresponds to a total release budget epsilon_release = c * noise_var.
+    return float(n_upload) * noise_var
+
+
 class SVTPrivacy(DXOFilter):
     def __init__(
         self,
@@ -113,6 +136,7 @@ class SVTPrivacy(DXOFilter):
         replace=True,
         epsilon_threshold: float = None,
         epsilon_query: float = None,
+        epsilon_release: float = None,
     ):
         """Implementation of the standard Sparse Vector Technique (SVT) differential privacy algorithm.
 
@@ -121,8 +145,11 @@ class SVTPrivacy(DXOFilter):
 
         Args:
             fraction (float, optional): used to determine dataset threshold. Defaults to 0.1.
-            epsilon (float, optional): Defaults to 0.1.
-            noise_var (float, optional): additive noise. Defaults to 0.1.
+            epsilon (float, optional): total privacy budget used for the threshold/query selection phase.
+                Defaults to 0.1.
+            noise_var (float, optional): legacy release-noise control retained for backward compatibility.
+                When epsilon_release is not specified, this implies a total release budget of
+                ``n_upload * noise_var`` and preserves the previous release noise scale. Defaults to 0.1.
             gamma (float, optional): Defaults to 1e-5.
             tau (float, optional): Defaults to 1e-6.
             data_kinds (str, optional): Defaults to None.
@@ -131,6 +158,8 @@ class SVTPrivacy(DXOFilter):
                 the standard SVT non-monotonic split is used.
             epsilon_query (float, optional): privacy budget used for query noise. When omitted,
                 the remainder of epsilon is assigned after applying the selected split.
+            epsilon_release (float, optional): total privacy budget used for the release-noise phase.
+                When omitted, the budget is derived from noise_var to preserve existing behavior.
         """
         if not data_kinds:
             data_kinds = [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]
@@ -141,12 +170,74 @@ class SVTPrivacy(DXOFilter):
         self.epsilon = epsilon
         self.eps_1 = None
         self.eps_2 = None
+        self.eps_3 = None
         self.noise_var = noise_var
         self.gamma = gamma
         self.tau = tau
         self.replace = replace
         self.epsilon_threshold = epsilon_threshold
         self.epsilon_query = epsilon_query
+        self.epsilon_release = epsilon_release
+        self._reset_accountant()
+
+    def _reset_accountant(self):
+        self._privacy_spent = 0.0
+        self._privacy_ledger = []
+
+    def get_privacy_spent(self) -> float:
+        return self._privacy_spent
+
+    def get_privacy_ledger(self) -> List[dict]:
+        return list(self._privacy_ledger)
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type in (EventType.START_RUN, EventType.END_RUN):
+            self._reset_accountant()
+
+    def _record_privacy_accounting(
+        self, dxo: DXO, shareable: Shareable, has_scalar_passthrough: bool, n_upload: int, fl_ctx: FLContext
+    ):
+        current_round = shareable.get_header(MetaKey.CURRENT_ROUND, dxo.get_meta_prop(MetaKey.CURRENT_ROUND, None))
+        epsilon_total = self.eps_1 + self.eps_2 + self.eps_3
+
+        per_call = {
+            "accountant": "pure_dp_sum",
+            "scope": "filter-level",
+            "delta": 0.0,
+            "round": current_round,
+            "epsilon_total": epsilon_total,
+            "epsilon_threshold": self.eps_1,
+            "epsilon_query": self.eps_2,
+            "epsilon_release": self.eps_3,
+            "n_upload": n_upload,
+            "has_scalar_passthrough": has_scalar_passthrough,
+        }
+        if has_scalar_passthrough:
+            per_call["note"] = "scalar passthrough is not noise-protected by the SVT accountant."
+
+        self._privacy_spent += epsilon_total
+        self._privacy_ledger.append(dict(per_call))
+
+        cumulative = {
+            "accountant": "pure_dp_sum",
+            "scope": "filter-level",
+            "delta": 0.0,
+            "epsilon_total": self._privacy_spent,
+            "calls": len(self._privacy_ledger),
+        }
+        if current_round is not None:
+            cumulative["latest_round"] = current_round
+        if has_scalar_passthrough:
+            cumulative["note"] = "scalar passthrough is not included in the SVT accountant guarantee."
+
+        dxo.set_meta_prop(_SVT_PRIVACY_BUDGET, per_call)
+        dxo.set_meta_prop(_SVT_PRIVACY_ACCOUNTANT, cumulative)
+
+        self.log_info(
+            fl_ctx,
+            "SVT privacy accountant: call epsilon %.6g, cumulative epsilon %.6g (delta=0, pure composition)."
+            % (epsilon_total, self._privacy_spent),
+        )
 
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Compute the differentially private SVT.
@@ -166,10 +257,12 @@ class SVTPrivacy(DXOFilter):
         total_params = 0
         max_abs = 0.0
         min_abs = None
+        has_scalar_passthrough = False
 
         for name in sorted(model_diff):
             value = np.asarray(model_diff[name])
             is_scalar = np.ndim(value) == 0
+            has_scalar_passthrough = has_scalar_passthrough or is_scalar
             flat_value = value.reshape(-1)
             total_params += flat_value.size
             param_items.append((name, value, is_scalar))
@@ -202,21 +295,28 @@ class SVTPrivacy(DXOFilter):
             epsilon_threshold=self.epsilon_threshold,
             epsilon_query=self.epsilon_query,
         )
+        self.eps_3 = _compute_release_epsilon(
+            n_upload,
+            self.noise_var,
+            epsilon_release=self.epsilon_release,
+        )
 
         # eps_1: threshold with noise
         lambda_rho = self.gamma / self.eps_1
         threshold = self.tau + np.random.laplace(scale=lambda_rho)
         # eps_2: query with noise
         lambda_nu = self.gamma * 2.0 * n_upload / self.eps_2
+        noise_scale = self.gamma * 2.0 * n_upload / self.eps_3
         self.logger.info(
             "total params: %s, epsilon: %s, "
-            "threshold epsilon: %s, query epsilon: %s, "
+            "threshold epsilon: %s, query epsilon: %s, release epsilon: %s, "
             "threshold tau: %s + f(eps_1) = %s, "
             "clip gamma: %s",
             total_params,
             self.epsilon,
             self.eps_1,
             self.eps_2,
+            self.eps_3,
             self.tau,
             threshold,
             self.gamma,
@@ -257,7 +357,6 @@ class SVTPrivacy(DXOFilter):
 
         selected_counts = _sample_partition_counts(accepted_counts, n_upload, self.replace)
 
-        noise_scale = self.gamma * 2.0 / self.noise_var
         noise_max = 0.0
         noise_medians = []
         dp_w = {}
@@ -324,4 +423,5 @@ class SVTPrivacy(DXOFilter):
         self.log_info(fl_ctx, "noise max: {}, median approx {}".format(noise_max, median_noise))
 
         dxo.data = dp_w
+        self._record_privacy_accounting(dxo, shareable, has_scalar_passthrough, n_upload, fl_ctx)
         return dxo
