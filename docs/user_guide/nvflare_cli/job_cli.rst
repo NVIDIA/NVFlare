@@ -49,9 +49,10 @@ Common Workflow
 
 .. note::
 
-   ``--startup-target`` and ``--startup_kit`` are accepted only by
-   ``nvflare job submit``. Other ``nvflare job`` subcommands use the configured
-   or default startup kit resolution and do not accept those flags.
+   ``--startup-target`` and ``--startup-kit`` are accepted by all
+   server-connected ``nvflare job`` commands, including ``submit``,
+   ``monitor``, ``list``, ``meta``, ``abort``, ``clone``, ``download``,
+   ``delete``, ``stats``, ``logs``, and ``log-config``.
 
 ****************
 Submit a Job
@@ -67,7 +68,7 @@ Submit options:
 
 - ``-j, --job_folder``: job folder path. Defaults to ``./current_job``.
 - ``--startup-target {poc,prod}``: choose the startup kit from ``~/.nvflare/config.conf``. See the startup kit resolution order below.
-- ``--startup_kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
+- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
 - ``--study``: submit into a named study when the server is configured for multi-study access. If omitted, the literal study name ``default`` is submitted.
 - ``-debug, --debug``: keep the temporary copied job folder for inspection.
 - ``--schema``: print the command schema as JSON and exit.
@@ -80,7 +81,7 @@ submission. Submit-time ``-f/--config_file`` overrides are not supported.
 
 Startup kit resolution order:
 
-1. ``--startup_kit``
+1. ``--startup-kit``
 2. ``NVFLARE_STARTUP_KIT_DIR``
 3. resolved target via config (explicit ``--startup-target`` value, otherwise default ``poc``):
    - ``poc`` -> ``poc.startup_kit``
@@ -92,9 +93,9 @@ Examples:
 
    nvflare job submit -j /tmp/nvflare/hello-pt --startup-target poc
    nvflare job submit -j /tmp/nvflare/hello-pt --startup-target prod
-   nvflare job submit -j /tmp/nvflare/hello-pt --startup_kit /tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com
+   nvflare job submit -j /tmp/nvflare/hello-pt --startup-kit /tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com
 
-``--startup_kit`` must point to the admin startup kit directory itself, not the
+``--startup-kit`` must point to the admin startup kit directory itself, not the
 broader ``prod_00`` root. For example, use
 ``/tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com`` rather than
 ``/tmp/nvflare/poc/example_project/prod_00``.
@@ -142,7 +143,7 @@ This enables CI/CD-style chaining:
 
 .. code-block:: shell
 
-   JOB=$(nvflare --out-format json job submit -j ./my_job | jq -r .data.job_id)
+   JOB=$(nvflare job submit -j ./my_job --format json | jq -r .data.job_id)
    nvflare job monitor $JOB && nvflare job download $JOB
 
 *********************
@@ -299,21 +300,23 @@ Current deprecation notes:
 JSON Output and Help
 *********************
 
-The top-level CLI supports ``--out-format json`` for machine-readable output:
+Add ``--format json`` anywhere after the subcommand for machine-readable output:
 
 .. code-block:: shell
 
-   nvflare --out-format json job meta <job_id>
+   nvflare job meta <job_id> --format json
 
-For normal command execution in JSON mode, stdout contains a single JSON
-envelope. Human-readable progress and diagnostics are written to stderr.
+``--format json`` may be placed anywhere in the command after the subcommand
+name. stdout contains a single JSON envelope; human-readable progress and
+diagnostics go to stderr.
 
-Use ``--schema`` for machine-readable command discovery:
+Use ``--schema`` for machine-readable command discovery. ``--schema`` always
+returns JSON regardless of ``--format``, so the flag is not needed with it:
 
 .. code-block:: shell
 
-   nvflare --out-format json job submit --schema
-   nvflare --out-format json job monitor --schema
+   nvflare job submit --schema
+   nvflare job monitor --schema
 
 Human-readable argument errors print command help first, followed by the
 specific error and hint. JSON mode prints only the JSON error envelope.

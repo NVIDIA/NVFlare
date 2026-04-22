@@ -519,24 +519,26 @@ class TestRecipeExecuteExportParamIsolation:
         assert server_app.app_config.additional_params == {}
 
 
-def test_recipe_spec_import_does_not_mutate_sys_argv(monkeypatch):
+def test_recipe_spec_import_strips_export_flags_from_sys_argv(monkeypatch):
     import sys
 
-    original_argv = ["python", "job.py", "--export", "--export-dir", "/tmp/out", "--other", "value"]
-    monkeypatch.setattr(sys, "argv", list(original_argv))
+    monkeypatch.setattr(sys, "argv", ["python", "job.py", "--export", "--export-dir", "/tmp/out", "--other", "value"])
 
     import nvflare.recipe.spec as spec_module
 
     importlib.reload(spec_module)
 
-    assert sys.argv == original_argv
+    assert sys.argv == ["python", "job.py", "--other", "value"]
 
 
-def test_peek_recipe_args_requires_export_dir_argument():
-    from nvflare.recipe.spec import _peek_recipe_args
+def test_consume_recipe_args_requires_export_dir_argument(monkeypatch):
+    import sys
 
+    import nvflare.recipe.spec as spec_module
+
+    monkeypatch.setattr(sys, "argv", ["python", "job.py", "--export", "--export-dir"])
     with pytest.raises(ValueError, match="--export-dir requires an argument"):
-        _peek_recipe_args(["--export", "--export-dir"])
+        spec_module._consume_recipe_args()
 
 
 def test_export_processes_falsy_env(tmp_path):

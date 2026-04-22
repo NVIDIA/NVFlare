@@ -160,7 +160,7 @@ The top-level CLI also supports JSON output mode:
 
 .. code-block:: shell
 
-   nvflare --out-format json cert init --project my-fl-project -o ./ca
+   nvflare cert init --project my-fl-project -o ./ca --format json
 
 Human-readable argument errors for ``cert init``, ``cert csr``, and
 ``cert sign`` print help first and then list the specific missing flags. JSON

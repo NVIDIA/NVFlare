@@ -103,3 +103,16 @@ class TestJobMeta:
         assert parser is not None
         args = parser.parse_args(["abc123"])
         assert args.job_id == "abc123"
+
+    def test_meta_parser_accepts_startup_target(self):
+        import argparse
+
+        from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        def_job_cli_parser(subs)
+
+        parser = job_sub_cmd_parser["meta"]
+        args = parser.parse_args(["abc123", "--startup-target", "prod"])
+        assert args.startup_target == "prod"

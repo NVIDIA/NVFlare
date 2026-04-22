@@ -29,4 +29,4 @@ CLIENT_SCRIPT = "nvflare.private.fed.app.client.client_train"
 PROVISION_SCRIPT = "nvflare.cli provision"
 
 # preflight check
-PREFLIGHT_CHECK_SCRIPT = "nvflare.cli preflight_check"
+PREFLIGHT_CHECK_SCRIPT = "nvflare.cli preflight-check"

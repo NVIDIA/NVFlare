@@ -8,6 +8,6 @@ Single scripted flow using **single-site** `site.yml` files.
 ```
 
 Notes:
-- Uses `--out-format json` for all CLI calls; JSON goes to stdout.
+- Uses `--format json` for all CLI calls; JSON goes to stdout.
 - Human-readable progress output (if any) goes to stderr.
 - `org` must match `^[A-Za-z0-9_]+$` (no hyphens or spaces).

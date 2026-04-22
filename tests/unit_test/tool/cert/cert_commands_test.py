@@ -336,6 +336,12 @@ class TestCertCsr:
         cn = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
         assert cn == "hospital-1"
 
+    def test_email_style_name_is_allowed(self, tmp_path):
+        rc = _run_csr(tmp_path, name="admin@nvidia.com")
+        assert rc == 0
+        assert (tmp_path / "admin@nvidia.com.key").exists()
+        assert (tmp_path / "admin@nvidia.com.csr").exists()
+
     def test_whitespace_only_name_is_rejected(self, tmp_path):
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_csr(_csr_args(name="   ", output_dir=str(tmp_path), cert_type="client"))

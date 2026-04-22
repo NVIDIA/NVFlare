@@ -33,6 +33,7 @@ from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 from nvflare.tool import cli_output
 from nvflare.tool.package.package_commands import (
+    _DUMMY_SERVER_NAME,
     PrebuiltCertBuilder,
     _discover_name_from_dir,
     _parse_endpoint,
@@ -1242,7 +1243,7 @@ class TestA4bNameCollisionGuard:
             handle_package(args)
         assert exc_info.value.code == 4
 
-    def test_dummy_server_name_rejected(self, cert_env, tmp_path):
+    def test_internal_dummy_server_name_rejected(self, cert_env, tmp_path):
         work = tmp_path / "work"
         work.mkdir()
         ca_key = cert_env["ca_key"]
@@ -1250,11 +1251,11 @@ class TestA4bNameCollisionGuard:
         rootca = cert_env["rootca_path"]
 
         key_path, cert_path = _make_signed_cert(
-            ca_key, ca_cert, "dummy-server", str(work), "dummy-server.crt", role="client"
+            ca_key, ca_cert, _DUMMY_SERVER_NAME, str(work), f"{_DUMMY_SERVER_NAME}.crt", role="client"
         )
         args = _make_args(
             kit_type="client",
-            name="dummy-server",
+            name=_DUMMY_SERVER_NAME,
             endpoint="grpc://fl-server:8002",
             cert=cert_path,
             key=key_path,
@@ -1264,6 +1265,29 @@ class TestA4bNameCollisionGuard:
         with pytest.raises(SystemExit) as exc_info:
             handle_package(args)
         assert exc_info.value.code == 4
+
+    def test_literal_dummy_server_name_is_allowed_for_real_participant(self, cert_env, tmp_path):
+        work = tmp_path / "work"
+        work.mkdir()
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        rootca = cert_env["rootca_path"]
+
+        key_path, cert_path = _make_signed_cert(
+            ca_key, ca_cert, "dummy-server", str(work), "dummy-server.crt", role="client"
+        )
+        ws = str(tmp_path / "ws")
+        args = _make_args(
+            kit_type="client",
+            name="dummy-server",
+            endpoint="grpc://fl-server:8002",
+            cert=cert_path,
+            key=key_path,
+            rootca=rootca,
+            workspace=ws,
+        )
+        handle_package(args)
+        assert os.path.isdir(os.path.join(ws, "testproject", "prod_00", "dummy-server"))
 
     def test_server_kit_name_equals_endpoint_host_is_allowed(self, cert_env, tmp_path):
         """For server kits, name == endpoint hostname is the expected normal case."""
@@ -1995,8 +2019,12 @@ class TestProvisionPackageParity:
 # ---------------------------------------------------------------------------
 
 
-def _write_project_yaml(path, participants, project_name="myproject"):
-    """Write a minimal api_version-3 project yaml to *path*."""
+def _write_project_yaml(path, participants, project_name="myproject", builders=None):
+    """Write a minimal api_version-3 project yaml to *path*.
+
+    ``builders`` is an optional list of dicts with ``path`` and optional ``args`` keys,
+    e.g. ``[{"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder"}]``.
+    """
     lines = [
         "api_version: 3",
         f"name: {project_name}",
@@ -2009,6 +2037,29 @@ def _write_project_yaml(path, participants, project_name="myproject"):
         lines.append(f"    org: {p.get('org', 'myorg')}")
         if "role" in p:
             lines.append(f"    role: {p['role']}")
+    if builders:
+        lines.append("builders:")
+        for b in builders:
+            lines.append(f"  - path: {b['path']}")
+            if b.get("args"):
+                lines.append("    args:")
+                for k, v in b["args"].items():
+                    value = f'"{v}"' if isinstance(v, str) else v
+                    lines.append(f"      {k}: {value}")
+    path.write_text("\n".join(lines) + "\n")
+
+
+def _write_single_site_yaml(path, data):
+    lines = []
+    for k, v in data.items():
+        if isinstance(v, dict):
+            lines.append(f"{k}:")
+            for dk, dv in v.items():
+                value = f'"{dv}"' if isinstance(dv, str) else dv
+                lines.append(f"  {dk}: {value}")
+        else:
+            value = f'"{v}"' if isinstance(v, str) else v
+            lines.append(f"{k}: {value}")
     path.write_text("\n".join(lines) + "\n")
 
 
@@ -2054,6 +2105,116 @@ class TestYamlMode:
         assert os.path.isdir(os.path.join(prod_dir, "hospital-2")), "hospital-2 not in prod_00"
         # Neither participant should appear in a separate prod_01
         assert not os.path.isdir(os.path.join(ws, "myproject", "prod_01")), "unexpected prod_01 created"
+
+    def test_single_site_yaml_preserves_listening_host_for_comm_config(self, cert_env, tmp_path):
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        cert_dir = tmp_path / "certs"
+        cert_dir.mkdir()
+        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
+        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
+
+        site_yaml = tmp_path / "site.yaml"
+        _write_single_site_yaml(
+            site_yaml,
+            {
+                "name": "hospital-1",
+                "type": "client",
+                "org": "myorg",
+                "listening_host": {
+                    "scheme": "grpc",
+                    "default_host": "hospital-1",
+                    "port": 9001,
+                    "connection_security": "mtls",
+                },
+            },
+        )
+
+        ws = str(tmp_path / "ws")
+        args = _make_args(
+            kit_type=None,
+            endpoint="grpc://fl-server:8002",
+            dir=str(cert_dir),
+            workspace=ws,
+            project_name="myproject",
+            project_file=str(site_yaml),
+        )
+        handle_package(args)
+
+        comm_config = os.path.join(ws, "myproject", "prod_00", "hospital-1", "local", "comm_config.json")
+        assert os.path.isfile(comm_config)
+        with open(comm_config) as f:
+            cfg = json.load(f)
+        assert cfg["internal"]["scheme"] == "grpc"
+        assert cfg["internal"]["resources"]["host"] == "hospital-1"
+        assert cfg["internal"]["resources"]["port"] == 9001
+        assert cfg["internal"]["resources"]["connection_security"] == "mtls"
+
+    def test_yaml_server_participant_preserves_listening_host_for_comm_config(self, cert_env, tmp_path):
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        cert_dir = tmp_path / "certs"
+        cert_dir.mkdir()
+        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
+        _make_signed_cert(ca_key, ca_cert, "fl-server", str(cert_dir), "fl-server.crt", role="server")
+
+        project_yaml = tmp_path / "project.yaml"
+        _write_project_yaml(
+            project_yaml,
+            [
+                {
+                    "name": "fl-server",
+                    "type": "server",
+                    "listening_host": {
+                        "scheme": "grpc",
+                        "default_host": "fl-server",
+                        "port": 8102,
+                        "connection_security": "mtls",
+                    },
+                }
+            ],
+        )
+
+        # _write_project_yaml only handles flat keys, so patch in nested listening_host.
+        project_yaml.write_text(
+            "\n".join(
+                [
+                    "api_version: 3",
+                    "name: myproject",
+                    'description: ""',
+                    "participants:",
+                    "  - name: fl-server",
+                    "    type: server",
+                    "    org: myorg",
+                    "    listening_host:",
+                    "      scheme: grpc",
+                    "      default_host: fl-server",
+                    "      port: 8102",
+                    "      connection_security: mtls",
+                ]
+            )
+            + "\n"
+        )
+
+        ws = str(tmp_path / "ws")
+        args = _make_args(
+            kit_type=None,
+            endpoint="grpc://fl-server:8002",
+            dir=str(cert_dir),
+            workspace=ws,
+            project_name="myproject",
+            project_file=str(project_yaml),
+        )
+        handle_package(args)
+
+        comm_config = os.path.join(ws, "myproject", "prod_00", "fl-server", "local", "comm_config.json")
+        assert os.path.isfile(comm_config)
+        with open(comm_config) as f:
+            cfg = json.load(f)
+        assert cfg["internal"]["scheme"] == "grpc"
+        assert cfg["internal"]["resources"]["host"] == "fl-server"
+        assert cfg["internal"]["resources"]["port"] == 8102
+        assert cfg["internal"]["resources"]["connection_security"] == "mtls"
 
     # ------------------------------------------------------------------
     # 2. -t client filter builds only clients
@@ -2637,3 +2798,121 @@ class TestKitTypeFromCert:
 
         out_dir = _kit_dir(ws, "testproject", "hospital-1")
         assert os.path.isfile(os.path.join(out_dir, "startup", "fed_client.json"))
+
+
+# ---------------------------------------------------------------------------
+# Builder pipeline assembly tests (yaml mode)
+# ---------------------------------------------------------------------------
+
+
+def _capture_builders(cert_env, tmp_path, yaml_builders=None):
+    """Run handle_package in YAML mode and return the builders list passed to Provisioner.
+
+    ``yaml_builders`` is the optional list of builder dicts to embed in the project YAML.
+    """
+    ca_key = cert_env["ca_key"]
+    ca_cert = cert_env["ca_cert"]
+    cert_dir = tmp_path / "certs"
+    cert_dir.mkdir()
+    shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
+    _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
+
+    project_yaml = tmp_path / "project.yaml"
+    _write_project_yaml(
+        project_yaml,
+        [{"name": "hospital-1", "type": "client"}],
+        builders=yaml_builders,
+    )
+
+    captured = []
+    original_init = Provisioner.__init__
+
+    def _capturing_init(self, root_dir, builders):
+        captured.extend(builders)
+        original_init(self, root_dir, builders)
+
+    with unittest.mock.patch.object(Provisioner, "__init__", _capturing_init):
+        args = _make_args(
+            kit_type=None,
+            endpoint="grpc://fl-server:8002",
+            dir=str(cert_dir),
+            workspace=str(tmp_path / "ws"),
+            project_name="myproject",
+            project_file=str(project_yaml),
+        )
+        handle_package(args)
+
+    return captured
+
+
+class TestYamlModeBuilderPipeline:
+    """Verify that the builder pipeline in yaml mode honors YAML-declared builders."""
+
+    @pytest.fixture
+    def cert_env(self, tmp_path):
+        ca_key, ca_cert, rootca_path = _make_ca(str(tmp_path))
+        return {"ca_key": ca_key, "ca_cert": ca_cert, "rootca_path": rootca_path}
+
+    def test_no_yaml_builders_injects_defaults(self, cert_env, tmp_path):
+        """No builders in YAML → WorkspaceBuilder, PrebuiltCertBuilder, StaticFileBuilder injected."""
+        builders = _capture_builders(cert_env, tmp_path, yaml_builders=None)
+        types_ = [type(b) for b in builders]
+        assert WorkspaceBuilder in types_
+        assert PrebuiltCertBuilder in types_
+        assert StaticFileBuilder in types_
+
+    def test_yaml_workspace_builder_not_duplicated(self, cert_env, tmp_path):
+        """WorkspaceBuilder in YAML is used; no second default WorkspaceBuilder added."""
+        builders = _capture_builders(
+            cert_env,
+            tmp_path,
+            yaml_builders=[{"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder"}],
+        )
+        assert sum(isinstance(b, WorkspaceBuilder) for b in builders) == 1
+
+    def test_yaml_static_file_builder_not_duplicated(self, cert_env, tmp_path):
+        """StaticFileBuilder in YAML is used; no second default StaticFileBuilder added."""
+        builders = _capture_builders(
+            cert_env,
+            tmp_path,
+            yaml_builders=[
+                {"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder"},
+                {"path": "nvflare.lighter.impl.static_file.StaticFileBuilder", "args": {"scheme": "grpc"}},
+            ],
+        )
+        assert sum(isinstance(b, StaticFileBuilder) for b in builders) == 1
+
+    def test_yaml_cert_builder_replaced_by_prebuilt(self, cert_env, tmp_path):
+        """CertBuilder in YAML is replaced by PrebuiltCertBuilder; no CertBuilder remains."""
+        builders = _capture_builders(
+            cert_env,
+            tmp_path,
+            yaml_builders=[
+                {"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder"},
+                {"path": "nvflare.lighter.impl.cert.CertBuilder"},
+                {"path": "nvflare.lighter.impl.static_file.StaticFileBuilder", "args": {"scheme": "grpc"}},
+            ],
+        )
+        assert not any(isinstance(b, CertBuilder) for b in builders), "CertBuilder must be replaced"
+        assert any(isinstance(b, PrebuiltCertBuilder) for b in builders)
+
+    def test_yaml_static_file_builder_custom_scheme_preserved(self, cert_env, tmp_path):
+        """StaticFileBuilder from YAML keeps its scheme arg, not overridden by --endpoint scheme."""
+        builders = _capture_builders(
+            cert_env,
+            tmp_path,
+            yaml_builders=[
+                {"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder"},
+                {"path": "nvflare.lighter.impl.static_file.StaticFileBuilder", "args": {"scheme": "tcp"}},
+            ],
+        )
+        static = next(b for b in builders if isinstance(b, StaticFileBuilder))
+        assert static.scheme == "tcp"
+
+    def test_prebuilt_cert_builder_positioned_after_workspace(self, cert_env, tmp_path):
+        """PrebuiltCertBuilder comes after WorkspaceBuilder in the assembled list."""
+        builders = _capture_builders(cert_env, tmp_path, yaml_builders=None)
+        types_ = [type(b) for b in builders]
+        ws_idx = types_.index(WorkspaceBuilder)
+        cert_idx = types_.index(PrebuiltCertBuilder)
+        assert ws_idx < cert_idx

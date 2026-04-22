@@ -136,11 +136,21 @@ class TestSystemRestart:
         mocked_output.assert_called_once()
         mocked_ok.assert_not_called()
 
-    def test_restart_parser_rejects_all_target(self):
+    def test_restart_parser_accepts_all_target(self):
         from nvflare.tool.system.system_cli import def_system_cli_parser
 
         parser = argparse.ArgumentParser(prog="nvflare system")
         def_system_cli_parser(parser)
 
-        with pytest.raises(SystemExit):
-            parser.parse_args(["restart", "all", "--force"])
+        args = parser.parse_args(["restart", "all", "--force"])
+        assert args.system_sub_cmd == "restart"
+        assert args.target == "all"
+        assert args.force is True
+
+    def test_restart_rejects_client_names_for_non_client_target(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_restart
+
+        args = self._make_args(target="server", client_names=["site-1"], force=True)
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_system_restart(args)
+        assert exc_info.value.code == 4
