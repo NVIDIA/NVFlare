@@ -32,6 +32,7 @@ import secrets
 import shutil
 import tempfile
 import threading
+import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import PurePosixPath
@@ -61,6 +62,8 @@ TOPIC_PUBLISH_RESULTS = "publish_results"
 
 DOWNLOAD_TIMEOUT = 600.0
 PER_REQUEST_TIMEOUT = 300.0
+BOOTSTRAP_CONNECT_TIMEOUT = 30.0
+BOOTSTRAP_CONNECT_POLL_INTERVAL = 0.1
 
 _BOOTSTRAP_CELL_PREFIX = "ws_transfer_"
 
@@ -248,9 +251,9 @@ class WorkspaceTransferManager:
             ref_id = add_file(downloader, tmp.name)
             bundle_sha = _hash_file(tmp.name)
             bundle_size = os.path.getsize(tmp.name)
-        except Exception:
+        except Exception as e:
             _cleanup_download(downloader.tx_id if downloader else "", tmp.name)
-            raise
+            return _make_error(f"failed to prepare workspace download for {job_id}: {e}")
 
         with self._lock:
             current = self.jobs.get(job_id)
@@ -450,7 +453,19 @@ def _create_bootstrap_cell(args, owner_fqcn: str, secure_mode: bool) -> tuple[Ce
     return cell, net_agent
 
 
+def _wait_for_bootstrap_ready(cell: Cell, owner_fqcn: str, timeout: float = BOOTSTRAP_CONNECT_TIMEOUT) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if cell.is_backbone_ready() and cell.is_cell_connected(owner_fqcn):
+            return
+        time.sleep(BOOTSTRAP_CONNECT_POLL_INTERVAL)
+    raise RuntimeError(
+        f"workspace transfer bootstrap cell failed to connect to parent {owner_fqcn} within {timeout} seconds"
+    )
+
+
 def _request_workspace_bundle(cell: Cell, owner_fqcn: str, job_id: str, transfer_token: str) -> dict:
+    _wait_for_bootstrap_ready(cell, owner_fqcn)
     request = new_cell_message({}, {"job_id": job_id, "transfer_token": transfer_token})
     reply = cell.send_request(
         channel=WORKSPACE_TRANSFER_CHANNEL,

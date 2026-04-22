@@ -287,7 +287,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         if params:
             parent_conn_sec = params.get(ConnPropKey.CONNECTION_SECURITY)
             if parent_conn_sec:
-                job_args[JobProcessArgs.PARENT_CONN_SEC] = ("-pcs", parent_conn_sec)
+                job_args[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", parent_conn_sec)
 
         fl_ctx.set_prop(key=FLContextKey.JOB_PROCESS_ARGS, value=job_args, private=True, sticky=False)
         job_handle = job_launcher.launch_job(job.meta, fl_ctx)
