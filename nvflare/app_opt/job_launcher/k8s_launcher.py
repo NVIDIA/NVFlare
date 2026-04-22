@@ -36,8 +36,8 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     WorkspaceTransferManager,
 )
 from nvflare.utils.job_launcher_utils import (
-    extract_job_image,
     get_client_job_args,
+    get_job_launcher_spec,
     get_launcher_resource_spec,
     get_server_job_args,
 )
@@ -450,7 +450,16 @@ class K8sJobLauncher(JobLauncherSpec):
         args = fl_ctx.get_prop(FLContextKey.ARGS)
         if args is None:
             raise RuntimeError(f"missing {FLContextKey.ARGS} in FLContext")
-        job_image = extract_job_image(job_meta, site_name)
+        k8s_spec = get_job_launcher_spec(job_meta, site_name, "k8s")
+        job_image = k8s_spec.get("image")
+        if not job_image:
+            raise RuntimeError(
+                f"K8sJobLauncher is configured for site '{site_name}' but no job image "
+                f"was specified in meta.json for this site. "
+                f"Set launcher_spec['{site_name}']['k8s']['image'] (preferred), "
+                f"launcher_spec['default']['k8s']['image'] (shared default), "
+                f"or resource_spec['{site_name}']['k8s']['image'] (legacy)."
+            )
         site_resources = get_launcher_resource_spec(job_meta, site_name, "k8s")
         study = job_meta.get(JobMetaKey.STUDY.value)
         job_resource = site_resources.get("num_of_gpus", None)
@@ -519,6 +528,10 @@ class K8sJobLauncher(JobLauncherSpec):
             "requests": {"ephemeral-storage": self.ephemeral_storage},
             "limits": {"ephemeral-storage": self.ephemeral_storage},
         }
+        for key in ("cpu", "memory"):
+            val = k8s_spec.get(key)
+            if val:
+                resources["limits"][key] = val
         if job_resource:
             resources["limits"]["nvidia.com/gpu"] = job_resource
         job_config["resources"] = resources
@@ -560,10 +573,7 @@ class K8sJobLauncher(JobLauncherSpec):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
-            job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
-            job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
-            if job_image:
-                add_launcher(self, fl_ctx)
+            add_launcher(self, fl_ctx)
 
     @abstractmethod
     def get_module_args(self, job_id, fl_ctx: FLContext):
