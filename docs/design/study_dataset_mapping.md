@@ -159,7 +159,7 @@ All validation runs before any file is written. A failed validation returns a st
 | `--data-path` | Accepted declaratively; no path-traversal or existence check at CLI time — `..`-containing paths are not rejected | — |
 | `--mode` | Must be exactly `ro` or `rw` | `INVALID_MODE` |
 | `--data-path` / `--pvc` | Exactly one must be provided | `MISSING_REQUIRED_FLAG` |
-| `--startup-kit` | Path must exist and be a valid startup-kit directory | exit 4 |
+| resolved startup-kit dir | The startup-kit directory resolved from `--startup-kit` or `NVFLARE_STARTUP_KIT_DIR` must exist and be a valid startup-kit directory | exit 4 |
 
 ## Error Codes
 

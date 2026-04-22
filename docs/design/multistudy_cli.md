@@ -66,9 +66,9 @@ The backend for all mutations is the same `study_registry.json` file that provis
 
 1. **Same file, same format** — mutations target `study_registry.json` with `format_version: 1.0`; no new file or format version is introduced.
 2. **Authoritative in-memory registry** — after a successful mutation the server hot-reloads the in-memory `StudyRegistry`; a server restart is not required.
-3. **Role-based lifecycle** — `remove` requires `project_admin`; `register`, `add-site`, `remove-site`, and user-role management are accessible to `project_admin` and `org_admin`, with `org_admin` callers scoped to studies where their own identity appears in the study's `admins` map.
+3. **Role-based lifecycle** — `remove` requires `project_admin`; `register`, `add-site`, `remove-site`, and user-role management are accessible to `project_admin` and `org_admin`, with `org_admin` visibility and authority scoped to studies where their site is enrolled. `register` is a create-or-merge operation executed atomically under the mutation lock — see Validation Rules for the precise per-role behavior.
 4. **Cert role for lifecycle operations** — study lifecycle commands check the certificate-baked role (from distributed provisioning), not the study-mapped role, consistent with the existing `must_be_project_admin` pattern for server-global operations.
-5. **Fail-closed on job association** — removing a study with any associated jobs (any state) is rejected unconditionally; jobs are the permanent audit trail.
+5. **Best-effort job-association guard** — `remove` queries the job store before applying the deletion and rejects with `STUDY_HAS_JOBS` if any associated jobs exist at that moment. This is a best-effort guard: the mutation lock prevents two concurrent `remove` calls from racing, but it does not gate job submission. A job submitted concurrently may arrive after the guard passes and before the registry is updated. Jobs are the permanent audit trail regardless of whether the study entry still exists.
 6. **Agent-usable by design** — all commands follow the same output, error, exit-code, and flag conventions as the rest of the NVFlare CLI.
 
 ---
@@ -92,15 +92,17 @@ The server can reliably know the caller's identity, role, and org from the prese
 This is not "no validation." The server validates:
 
 - caller cert role gates lifecycle and role-mutation authorization
-- `org_admin` visibility and mutation authority is scoped to studies where the caller's identity appears in the study's `admins` map
+- `org_admin` visibility and mutation authority is scoped to studies where the caller's **site is enrolled** — if the caller's site appears in the study's `sites` list, the study is visible and mutable by that org admin; explicit per-user assignment in the `admins` map is not required for visibility. **Phase 1 caveat:** site membership is accepted declaratively (the server has no independent participant registry to verify that a site name corresponds to a real connected participant). Visibility therefore reflects declared enrollment, not verified connectivity. A consequence is that if a site is removed or renamed, org-admin visibility changes implicitly — see the Phase 1 trust note below.
 - study names, site names, and role values are validated syntactically
 - both `project_admin` and `org_admin` must supply `--sites` for `register`, `add-site`, and `remove-site`; an empty list is rejected with `INVALID_SITE`
-- job-association guard remains strict for `remove`
+- job-association guard for `remove` is best-effort — see Core Principles for the race with concurrent job submission
 
 The following are intentionally not validated:
 
 - site org membership — site lists are accepted declaratively
 - target-user org membership — user strings are stored declaratively
+
+**Phase 1 trust note:** Because site membership is declarative, the trust strength of visibility derived from site enrollment is limited — an org_admin who can write a site name into a study gains visibility based on that claim, not on a verified participant registry. This is a known Phase 1 limitation. A future participant-registration design (`docs/design/participant_registration.md`) would back site membership with strong identity verification. Until then, the declarative model is accepted and must be documented explicitly in operator-facing documentation.
 
 ### Machine-readable output
 
@@ -124,7 +126,7 @@ In JSON mode, stdout contains exactly one JSON envelope. Human-readable progress
   "status": "error",
   "error_code": "STUDY_NOT_FOUND",
   "message": "Study 'cancer-research' not found.",
-  "hint": "Verify the study name. If the study exists and you expect access, contact a project_admin to be added to the study's admins map."
+  "hint": "Verify the study name. If the study exists and you expect access, contact a project_admin to have your site enrolled in the study."
 }
 ```
 
@@ -159,7 +161,7 @@ All server-backed `nvflare study` commands require a connection to the server. T
 
 `~/.nvflare/config.conf` is written by `nvflare config`. If `--startup-target` is given and no entry exists for that target, the command fails with exit code 4 and a hint pointing to `nvflare config`.
 
-`--startup-kit` and `--startup-target` are mutually exclusive. All server-backed study commands require one of the two; there is no silent default to `poc` because study management is a privileged operation.
+`--startup-kit` and `--startup-target` are mutually exclusive. All server-backed study commands require the startup kit to be resolved via one of the three sources above; there is no silent default to `poc` because study management is a privileged operation.
 
 ---
 
@@ -178,19 +180,19 @@ nvflare study remove-site <name> --sites <s1,s2,...> {--startup-kit <dir> | --st
 # project_admin only
 nvflare study remove      <name> {--startup-kit <dir> | --startup-target poc|prod} [--schema]
 
-# project_admin (all studies) or org_admin (studies where caller appears in admins map)
+# project_admin (all studies) or org_admin (studies where caller's site is enrolled)
 nvflare study list        {--startup-kit <dir> | --startup-target poc|prod} [--schema]
 nvflare study show        <name> {--startup-kit <dir> | --startup-target poc|prod} [--schema]
 ```
 
 | Command | Description | Required cert role |
 |---------|-------------|-------------------|
-| `register` | Create a new study. `--sites` required for both roles. The caller is always auto-inserted into the study's `admins` map with their cert role. For `org_admin`: if the study already exists **and the caller is already in `admins`**, the sites are added idempotently; if the study exists but the caller is **not** in `admins`, returns `STUDY_ALREADY_EXISTS`. | `project_admin` or `org_admin` |
-| `add-site` | Add sites to an existing study. `--sites` required for both roles. Idempotent — enrolling an already-enrolled site is a no-op. For `org_admin`: study must be visible (caller in `admins` map); otherwise `STUDY_NOT_FOUND`. | `project_admin` or `org_admin` |
-| `remove-site` | Remove sites from an existing study. `--sites` required for both roles. For `org_admin`: study must be visible (caller in `admins` map); otherwise `STUDY_NOT_FOUND`. | `project_admin` or `org_admin` |
+| `register` | Create-or-merge a study. `--sites` required for both roles. Caller is recorded in the study's `admins` field with their cert role if not already present. Supplied sites are merged — new sites are added, already-enrolled sites are skipped. For `org_admin`: if the study does not exist it is created; if the study exists and the caller's site is already enrolled, the supplied `--sites` are merged in; if the study exists but the caller's site is not enrolled, returns `STUDY_ALREADY_EXISTS`. | `project_admin` or `org_admin` |
+| `add-site` | Add sites to an existing study. `--sites` required for both roles. Idempotent — enrolling an already-enrolled site is a no-op. For `org_admin`: study must be visible (caller's site enrolled in `sites`); otherwise `STUDY_NOT_FOUND`. | `project_admin` or `org_admin` |
+| `remove-site` | Remove sites from an existing study. `--sites` required for both roles. For `org_admin`: study must be visible (caller's site enrolled in `sites`); otherwise `STUDY_NOT_FOUND`. | `project_admin` or `org_admin` |
 | `remove` | Remove a study and all its entries | `project_admin` only |
-| `list` | List studies; `project_admin` sees all, `org_admin` sees only studies where their own identity appears in the study's `admins` map | `project_admin` or `org_admin` |
-| `show` | Show sites and user-role assignments; `org_admin` restricted to studies where their own identity appears in the study's `admins` map | `project_admin` or `org_admin` |
+| `list` | List studies; `project_admin` sees all, `org_admin` sees only studies where their site is enrolled | `project_admin` or `org_admin` |
+| `show` | Show sites and user-role assignments; `org_admin` restricted to studies where their site is enrolled | `project_admin` or `org_admin` |
 
 #### Arguments — `register`
 
@@ -213,10 +215,10 @@ nvflare study show        <name> {--startup-kit <dir> | --startup-target poc|pro
 nvflare study register cancer-research --sites hospital-a --startup-target prod
 ```
 
-**org_admin re-registers an existing study they belong to (idempotent — adds a site)**
+**org_admin re-registers an existing study they belong to (merge — adds supplied sites not yet enrolled)**
 
 ```bash
-# logged in as org_admin@org_a.com; caller already in admins map
+# logged in as org_admin@org_a.com; caller's site is enrolled in the study
 nvflare study register cancer-research --sites hospital-b --startup-target prod
 ```
 
@@ -241,7 +243,7 @@ nvflare study register cancer-research --sites hospital-a,hospital-b,hospital-c 
 
 \* Exactly one of `--startup-kit` or `--startup-target` is required.
 
-`add-site` is idempotent — enrolling a site that is already in the study is a no-op. `remove-site` rejects sites not currently enrolled (`SITE_NOT_IN_STUDY`).
+Both commands return per-site outcome lists. `add-site`: already-enrolled sites are reported in `already_enrolled` and skipped; newly enrolled sites appear in `added`. `remove-site`: sites not currently enrolled are reported in `not_enrolled` and skipped; removed sites appear in `removed`. Neither command errors on partially overlapping input — the full outcome is always inspectable in the response.
 
 #### Arguments — `remove`
 
@@ -264,9 +266,9 @@ nvflare study update-user <study> <user> --role <role> {--startup-kit <dir> | --
 
 | Command | Description | Required cert role |
 |---------|-------------|-------------------|
-| `add-user` | Add a user with a role to a registered study | `project_admin` (any study) or `org_admin` (studies where caller appears in `admins` map) |
-| `remove-user` | Remove a user's role entry from a study | `project_admin` (any study) or `org_admin` (studies where caller appears in `admins` map) |
-| `update-user` | Change a user's role in a study | `project_admin` (any study) or `org_admin` (studies where caller appears in `admins` map) |
+| `add-user` | Add a user with a role to a registered study | `project_admin` (any study) or `org_admin` (studies where caller's site is enrolled) |
+| `remove-user` | Remove a user's role entry from a study | `project_admin` (any study) or `org_admin` (studies where caller's site is enrolled) |
+| `update-user` | Change a user's role in a study | `project_admin` (any study) or `org_admin` (studies where caller's site is enrolled) |
 
 #### Arguments — user role commands
 
@@ -285,7 +287,7 @@ nvflare study update-user <study> <user> --role <role> {--startup-kit <dir> | --
 
 **org_admin adds a user from their own org to a study**
 
-The org admin adds `trainer@org_a.com` as `lead` to a study where the caller appears in the `admins` map. The target user string is stored declaratively.
+The org admin adds `trainer@org_a.com` as `lead` to a study where the caller's site is enrolled. The target user string is stored declaratively.
 
 ```bash
 # logged in as org_admin@org_a.com
@@ -331,13 +333,13 @@ nvflare study remove-user cancer-research trainer@org_a.com --startup-target pro
 `set-dataset` and `unset-dataset` are local file operations — they do not connect to the server. On-disk format, launcher behavior, validation rules, migration guidance, and companion code changes are defined in `docs/design/study_dataset_mapping.md`.
 
 ```
-nvflare study set-dataset   <study> <dataset> --startup-kit <dir> {--data-path <path> | --pvc <name>} --mode ro|rw [--format json] [--schema]
-nvflare study unset-dataset <study> <dataset> --startup-kit <dir> [--format json] [--schema]
+nvflare study set-dataset   <study> <dataset> {--data-path <path> | --pvc <name>} --mode ro|rw [--startup-kit <dir>] [--format json] [--schema]
+nvflare study unset-dataset <study> <dataset> [--startup-kit <dir>] [--format json] [--schema]
 ```
 
 Dataset commands follow the same conventions as all other `nvflare study` commands:
 
-- **Local only** — no server connection; `--startup-kit` points to the site-local workspace
+- **Local only** — no server connection; writes directly to `local/study_data.json` in the resolved startup kit directory
 - **Same JSON envelope** — `--format json` produces `{"schema_version": "1", "status": "ok", "data": {...}}` or the structured error envelope
 - **Same exit codes** — 0 success, 1 error, 4 invalid arguments, 5 internal
 - **Same `--schema` flag** — machine-readable argument description, exits immediately
@@ -351,7 +353,7 @@ Dataset commands follow the same conventions as all other `nvflare study` comman
 |------|------|----------|-------------|
 | `<study>` | str | Yes | Study name; must match `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$`. The regex excludes `/`, `.`, and special characters to ensure the name is safe as a filesystem path component. |
 | `<dataset>` | str | Yes | Dataset name; must match `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$`. Same path-safety guarantee as the study name — used directly as a path component in `/data/<study>/<dataset>`. |
-| `--startup-kit` | str | Yes | Path to the local client workspace or startup-kit root; used to locate `local/study_data.json` |
+| `--startup-kit` | str | No | Path to the startup-kit root directory; used to locate `local/study_data.json`. If omitted, resolved from `NVFLARE_STARTUP_KIT_DIR` env var. |
 | `--data-path` | str | Yes* | Docker/subprocess deployment: stored as the `source` field. For Docker, provide the host-absolute path to the dataset directory (e.g. `/host/data/cancer-train`). For subprocess, use `/data/<study>/<dataset>` — the path where the operator will pre-place data on the host. Accepted declaratively; no path-traversal or existence check at CLI time. |
 | `--pvc` | str | Yes* | Kubernetes deployment: PVC claim name. Stored as the `source` field. Must satisfy Kubernetes resource name rules: `^[a-z0-9](?:[a-z0-9-]{0,251}[a-z0-9])?$`; rejected with `INVALID_DATASET` if malformed. |
 | `--mode` | `ro\|rw` | Yes | Access mode: `ro` for read-only input data; `rw` for read-write staging/output. Any other value is rejected with `INVALID_MODE`. |
@@ -364,9 +366,9 @@ Dataset commands follow the same conventions as all other `nvflare study` comman
 
 | Flag | Type | Required | Description |
 |------|------|----------|-------------|
-| `<study>` | str | Yes | Study name |
-| `<dataset>` | str | Yes | Dataset name |
-| `--startup-kit` | str | Yes | Path to the local client workspace or startup-kit root |
+| `<study>` | str | Yes | Study name; must match `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$` — path-safe, same rule as `set-dataset` |
+| `<dataset>` | str | Yes | Dataset name; must match `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$` — path-safe, same rule as `set-dataset` |
+| `--startup-kit` | str | No | Path to the startup-kit root directory; used to locate `local/study_data.json`. If omitted, resolved from `NVFLARE_STARTUP_KIT_DIR` env var. |
 | `--format` | `json` | No | Emit structured JSON envelope |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
@@ -375,27 +377,17 @@ Dataset commands follow the same conventions as all other `nvflare study` comman
 #### Usage Examples
 
 ```bash
-# Docker site — read-only input data
-nvflare study set-dataset cancer-research training \
-    --startup-kit /opt/nvflare/hospital-a \
-    --data-path /host/data/cancer-train \
-    --mode ro
+# Startup kit resolved from NVFLARE_STARTUP_KIT_DIR
+nvflare study set-dataset cancer-research training --data-path /host/data/cancer-train --mode ro
 
-# Kubernetes site — read-write staging/output
-nvflare study set-dataset cancer-research staging \
-    --startup-kit /opt/nvflare/hospital-a \
-    --pvc cancer-stage-pvc \
-    --mode rw
+# Explicit startup kit path
+nvflare study set-dataset cancer-research training --startup-kit /opt/nvflare/hospital-a --data-path /host/data/cancer-train --mode ro
 
-# Subprocess site — operator will pre-place data at /data/<study>/<dataset>
-nvflare study set-dataset cancer-research training \
-    --startup-kit /opt/nvflare/hospital-a \
-    --data-path /data/cancer-research/training \
-    --mode ro
+# Kubernetes site — PVC
+nvflare study set-dataset cancer-research staging --startup-kit /opt/nvflare/hospital-a --pvc cancer-stage-pvc --mode rw
 
 # Remove a dataset entry
-nvflare study unset-dataset cancer-research staging \
-    --startup-kit /opt/nvflare/hospital-a
+nvflare study unset-dataset cancer-research staging --startup-kit /opt/nvflare/hospital-a
 ```
 
 #### JSON Output Examples
@@ -563,7 +555,7 @@ The response reflects the full resulting state of the study. The `"users"` map i
 }
 ```
 
-**Idempotent call** — `org_admin` on an existing study they already belong to (site added, all pre-existing entries preserved):
+**Merge call** — `org_admin` on an existing study they already belong to (supplied sites merged in, all pre-existing entries preserved):
 
 ```json
 {
@@ -582,30 +574,46 @@ The response reflects the full resulting state of the study. The `"users"` map i
 
 ### `nvflare study add-site <study>`
 
-When the site is newly enrolled, the response reflects the updated site list. When the site is already enrolled (`add-site` is idempotent), the response is identical in shape but includes `"no_op": true` so agent/automation callers can distinguish a real enrollment from a skipped one.
+The response always returns per-site outcome lists so automation can distinguish newly enrolled sites from already-enrolled ones. `sites` is the complete resulting enrollment list for the study.
 
-**New enrollment:**
+**Single new enrollment:**
 ```json
 {
   "schema_version": "1",
   "status": "ok",
   "data": {
     "study": "cancer-research",
-    "site": "hospital-a",
-    "no_op": false
+    "added": ["hospital-b"],
+    "already_enrolled": [],
+    "sites": ["hospital-a", "hospital-b"]
   }
 }
 ```
 
-**Already enrolled (idempotent no-op):**
+**Multi-site call (mix of new and already-enrolled):**
 ```json
 {
   "schema_version": "1",
   "status": "ok",
   "data": {
     "study": "cancer-research",
-    "site": "hospital-a",
-    "no_op": true
+    "added": ["hospital-b", "hospital-c"],
+    "already_enrolled": ["hospital-a"],
+    "sites": ["hospital-a", "hospital-b", "hospital-c"]
+  }
+}
+```
+
+**All sites already enrolled (pure no-op):**
+```json
+{
+  "schema_version": "1",
+  "status": "ok",
+  "data": {
+    "study": "cancer-research",
+    "added": [],
+    "already_enrolled": ["hospital-a"],
+    "sites": ["hospital-a"]
   }
 }
 ```
@@ -666,16 +674,34 @@ When the site is newly enrolled, the response reflects the updated site list. Wh
 }
 ```
 
-### `nvflare study remove-site <study> --sites <site>`
+### `nvflare study remove-site <study> --sites <s1,s2,...>`
 
+The response returns per-site outcome lists. `sites` is the complete resulting enrollment list after removal.
+
+**Multi-site call (mix of removed and not enrolled):**
 ```json
 {
   "schema_version": "1",
   "status": "ok",
   "data": {
     "study": "cancer-research",
-    "site": "hospital-a",
-    "removed": true
+    "removed": ["hospital-b"],
+    "not_enrolled": ["hospital-c"],
+    "sites": ["hospital-a"]
+  }
+}
+```
+
+**Single site removed:**
+```json
+{
+  "schema_version": "1",
+  "status": "ok",
+  "data": {
+    "study": "cancer-research",
+    "removed": ["hospital-a"],
+    "not_enrolled": [],
+    "sites": []
   }
 }
 ```
@@ -710,13 +736,13 @@ When the site is newly enrolled, the response reflects the updated site list. Wh
 
 | Error code | Exit | Meaning |
 |------------|------|---------|
-| `STUDY_NOT_FOUND` | 1 | Study name does not exist in the registry, or exists but is not visible to the caller (`org_admin` not in the study's `admins` map) — the same code is used for both cases intentionally to avoid leaking existence. Exception: `register` does NOT use this code (see `STUDY_ALREADY_EXISTS`). |
-| `STUDY_ALREADY_EXISTS` | 1 | Study name already registered. Returned by `register` for both `project_admin` and `org_admin` (including when the study exists but the caller is not in `admins`). `register` is a create operation — returning `STUDY_NOT_FOUND` on a create would be semantically backwards and confusing. The caller already knows the name; learning "it is taken" reveals nothing actionable. |
+| `STUDY_NOT_FOUND` | 1 | Study name does not exist in the registry, or exists but is not visible to the caller (`org_admin`'s site not enrolled in the study's `sites` list) — the same code is used for both cases intentionally to avoid leaking existence. Exception: `register` does NOT use this code (see `STUDY_ALREADY_EXISTS`). |
+| `STUDY_ALREADY_EXISTS` | 1 | Study name already registered. Returned by `register` when the study exists but the caller's site is not enrolled. `register` is not a join path — returning `STUDY_NOT_FOUND` on a create would be semantically backwards and confusing. The caller already knows the name; learning "it is taken" reveals nothing actionable. |
 | `STUDY_HAS_JOBS` | 1 | Study has associated jobs; `remove` rejected |
 | `INVALID_STUDY_NAME` | 4 | Study name fails the name-validation regex or is `"default"` |
 | `INVALID_ROLE` | 4 | Role value is not one of the built-in roles |
 | `INVALID_SITE` | 4 | A site name in `--sites` is malformed (fails the site-name validator), or `--sites` is an empty list when it is required |
-| `SITE_NOT_IN_STUDY` | 1 | `remove-site` rejected: site not currently enrolled in the study |
+| `SITE_NOT_IN_STUDY` | — | Removed: `remove-site` no longer rejects on non-enrolled sites. Non-enrolled sites are reported in `not_enrolled` in the response and skipped. |
 | `ORG_NOT_FOUND` | 4 | Reserved for a future participant-registry-backed validation flow |
 | `USER_ALREADY_IN_STUDY` | 1 | `add-user` rejected: user already has a role in this study |
 | `USER_NOT_IN_STUDY` | 1 | `remove-user` / `update-user` rejected: user has no role in this study |
@@ -737,9 +763,9 @@ The CLI translates each user command into an admin console command sent over the
 
 | Admin command | Arguments | Handler |
 |---------------|-----------|---------|
-| `register_study` | `<name> --sites s1,s2,...` | `StudyCommandModule.cmd_register_study` — auto-inserts caller into `admins` with cert role. `--sites` required for both roles. For `org_admin`: three cases — (1) study does not exist → create and add caller to `admins`; (2) study exists and caller already in `admins` → add site idempotently; (3) study exists but caller NOT in `admins` → return `STUDY_ALREADY_EXISTS`. |
-| `add_study_site` | `<name> --sites s1,s2,...` | `StudyCommandModule.cmd_add_study_site`. `--sites` required for both roles. For `org_admin` callers: study must be visible (caller must appear in `admins` map); otherwise `STUDY_NOT_FOUND`. |
-| `remove_study_site` | `<name> --sites s1,s2,...` | `StudyCommandModule.cmd_remove_study_site`. `--sites` required for both roles. For `org_admin` callers: study must be visible; otherwise `STUDY_NOT_FOUND`. |
+| `register_study` | `<name> --sites s1,s2,...` | `StudyCommandModule.cmd_register_study` — records caller in `admins` with cert role if not already present; merges supplied sites (adds new, skips already-enrolled). `--sites` required for both roles. Three cases: (1) study does not exist → create, record caller in `admins`, add sites; (2) study exists and caller's site is enrolled → merge supplied sites in, succeed; (3) study exists but caller's site is not enrolled → `STUDY_ALREADY_EXISTS`. |
+| `add_study_site` | `<name> --sites s1,s2,...` | `StudyCommandModule.cmd_add_study_site`. `--sites` required for both roles. For `org_admin` callers: study must be visible (caller's site must be enrolled); otherwise `STUDY_NOT_FOUND`. |
+| `remove_study_site` | `<name> --sites s1,s2,...` | `StudyCommandModule.cmd_remove_study_site`. `--sites` required for both roles. For `org_admin` callers: study must be visible (caller's site must be enrolled); otherwise `STUDY_NOT_FOUND`. |
 | `remove_study` | `<name>` | `StudyCommandModule.cmd_remove_study` — rejected if any jobs are associated |
 | `list_studies` | _(none)_ | `StudyCommandModule.cmd_list_studies` |
 | `show_study` | `<name>` | `StudyCommandModule.cmd_show_study` |
@@ -769,16 +795,16 @@ register_study, add_study_site, remove_study_site
 
 list_studies, show_study
     → project_admin: unrestricted (all studies)
-    → org_admin: scoped to studies where caller identity appears in the study's admins map
+    → org_admin: scoped to studies where caller's site is enrolled in the study's `sites` list
 ```
 
 **Scoping for non-project-admin callers (`org_admin`):**
 
-- `register_study`: `--sites` required for both roles; caller is auto-inserted into `admins` with their cert role; sites accepted declaratively. For `org_admin`: if the study does not exist, it is created; if the study exists **and the caller is already in `admins`**, the sites are added idempotently; if the study exists but the caller is **not** in `admins`, returns `STUDY_ALREADY_EXISTS`.
-- `add_study_site`: `--sites` required for both roles; already-enrolled site is a no-op; sites accepted declaratively. For `org_admin`: the study must be visible (caller's identity must appear in study's `admins` map); if not, return `STUDY_NOT_FOUND` — do not reveal existence.
-- `remove_study_site`: `--sites` required for both roles. For `org_admin` callers: the study must be visible (caller's identity must appear in study's `admins` map; otherwise `STUDY_NOT_FOUND`). Sites accepted declaratively.
-- `list_studies`: returns only studies where the caller's identity appears in the study's `admins` map.
-- All other targeted commands (`show_study`, `add_study_site`, `remove_study_site`, `add_study_user`, `remove_study_user`, `update_study_user`): if the caller's identity does not appear in the target study's `admins` map, return `STUDY_NOT_FOUND` — do not reveal existence.
+- `register_study`: `--sites` required for both roles; caller is recorded in the `admins` field with their cert role if not already present; supplied sites merged in (new sites added, already-enrolled skipped). For `org_admin`: if the study does not exist, it is created; if the study exists and the caller's site is already enrolled, supplied sites are merged in and the call succeeds; if the study exists but the caller's site is not enrolled, returns `STUDY_ALREADY_EXISTS`.
+- `add_study_site`: `--sites` required for both roles; already-enrolled site is a no-op; sites accepted declaratively. For `org_admin`: the study must be visible (caller's site must appear in the study's `sites` list); if not, return `STUDY_NOT_FOUND` — do not reveal existence.
+- `remove_study_site`: `--sites` required for both roles. For `org_admin` callers: the study must be visible (caller's site must appear in the study's `sites` list; otherwise `STUDY_NOT_FOUND`). Sites accepted declaratively.
+- `list_studies`: returns only studies where the caller's site is enrolled in the study's `sites` list.
+- All other targeted commands (`show_study`, `add_study_site`, `remove_study_site`, `add_study_user`, `remove_study_user`, `update_study_user`): if the caller's site does not appear in the target study's `sites` list, return `STUDY_NOT_FOUND` — do not reveal existence.
 
 `project_admin` sees all studies and may operate on any study without restriction.
 
@@ -789,12 +815,12 @@ Any role not listed above is rejected with `NOT_AUTHORIZED`.
 User role commands apply a two-tier check:
 
 1. **`project_admin` (cert)** — may add, update, or remove any user in any study.
-2. **`org_admin` (cert)** — may add, update, or remove users only for studies where their own identity appears in the study's `admins` map. Target user strings are stored declaratively; robust target-user org validation is deferred to participant-registration support.
+2. **`org_admin` (cert)** — may add, update, or remove users only for studies where their site is enrolled in the study's `sites` list. Target user strings are stored declaratively; robust target-user org validation is deferred to participant-registration support.
 
 ```
 add_study_user, remove_study_user, update_study_user
     → cert role == "project_admin"       → allowed (any org)
-    → cert role == "org_admin"           → allowed for studies where caller appears in admins map
+    → cert role == "org_admin"           → allowed for studies where caller's site is enrolled
     → other roles                        → NOT_AUTHORIZED
 ```
 
@@ -807,7 +833,12 @@ Valid role values for user-role commands are the existing built-in roles:
 - `lead`
 - `member`
 
-These role values are stored as metadata in the study's `admins` map. They do **not** affect authorization — access to a study is determined solely by whether the caller's identity appears as a key in the `admins` map, regardless of what role value is stored. A user stored as `lead` or `member` in the map has the same study visibility and management access as one stored as `org_admin`; the stored value is for display and future tooling only.
+These role values are stored in the study's `admins` field and carry real weight — they are not cosmetic metadata. There are two distinct authorization layers, each consulting a different part of the study record:
+
+- **Named-study login** (an admin connecting to a study to submit or manage jobs) — gated by `admins`: the user must have an entry in that study's `admins` mapping or login is rejected. The stored role value becomes the effective role for all study-scoped authorization within that session. This is defined in `docs/design/multistudy.md` and is not changed by this CLI design.
+- **CLI management commands** (`register`, `add-site`, `remove-site`, `list`, `show`, and user-role mutations) — gated by **site enrollment**: an `org_admin` can run these commands for studies where their site appears in the `sites` list, regardless of whether they personally appear in `admins`.
+
+`add-user` and `update-user` are therefore not cosmetic: they determine who can open a named-study session and what effective role they carry inside it.
 
 Role values are distinct from the cert role baked into the admin certificate. Assigning any role value (including `project_admin` or `org_admin`) to a study user grants no server-global privileges; the cert role remains the sole gate for server-global and lifecycle operations. An `org_admin` may assign any of these role values to study users without restriction.
 
@@ -827,7 +858,7 @@ All mutating commands follow the same serialized pattern:
 2. **Validate** — check that the study name, user, role, and sites are syntactically valid before modifying state.
 3. **Acquire mutation lock** — a process-local lock serializes all registry mutations so concurrent admin commands cannot lose updates. The acquire call has a 30-second timeout; if the lock is not acquired within that window, the command returns immediately with `LOCK_TIMEOUT` (exit 2). The lock is always released in a `finally` block — a failure during steps 4–9 cannot leave the lock permanently held.
 4. **Load current state** — read `study_registry.json` from disk into a working copy while holding the lock.
-5. **Guard** — for `remove_study`, query the job store (while holding the lock) for any job tagged with the study name; reject with `STUDY_HAS_JOBS` if any exist. Running inside the lock eliminates the TOCTOU window between the check and the write.
+5. **Guard** — for `remove_study`, query the job store (while holding the lock) for any job tagged with the study name; reject with `STUDY_HAS_JOBS` if any exist. Running inside the lock eliminates the TOCTOU window between two concurrent `remove` calls, but does not prevent a job submission that races in after this check — see the design limitation note below.
 6. **Apply mutation** — modify the working copy in memory. Only `register_study` mutates the `admins` map (auto-insert caller with cert role if not already present; existing entries are preserved). `add_study_site` and `remove_study_site` mutate only the `sites` list and never touch `admins`.
 7. **Validate resulting config** — construct a new `StudyRegistry` from the updated working copy before touching the live registry pointer.
 8. **Write atomically** — write the validated config to a temp file in the same directory, then `os.replace()` to the final path.
@@ -865,11 +896,20 @@ Mutations only add, modify, or remove entries under `"studies"`. The format is i
 
 - Must match the existing runtime validator `name_check(..., "study")`: `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$`
 - The regex is chosen to guarantee safe use as a filesystem path component: it excludes `/`, `.`, `..`, spaces, and all shell-special characters, so names can be safely joined into paths such as `/data/<study>/<dataset>` without sanitization
+- Dataset names must satisfy the same regex for the same reason — both appear as path components in the data mount path
 - `default` is reserved and always rejected with `INVALID_STUDY_NAME`
-- Duplicate names on `register_study`:
-  - `project_admin` → rejected with `STUDY_ALREADY_EXISTS`
-  - `org_admin`, study exists, caller already in `admins` → idempotent (site added, caller already present)
-  - `org_admin`, study exists, caller NOT in `admins` → `STUDY_ALREADY_EXISTS` (the name is taken; `project_admin` must add the `org_admin` to the study first)
+- `register` is a **create-or-merge** operation, not a pure create. The entire check-then-mutate sequence runs under the mutation lock so two concurrent `register` calls on the same new study name cannot both pass the existence check and produce inconsistent state.
+
+  `register` always applies **merge semantics** on an existing study: supplied sites that are not yet enrolled are added; already-enrolled sites are silently skipped. The caller is recorded in `admins` with their cert role if not already present. `register` never removes sites or `admins` entries — removal requires explicit `remove-site` or `remove-user`.
+
+  **`org_admin` behavior:**
+  - Study does not exist → create, record caller in `admins`, add supplied sites. Self-assignment at creation is not a security bypass — the study did not exist before this call, so there is no pre-existing access list to circumvent.
+  - Study exists, caller's site already enrolled → merge supplied sites in; succeed.
+  - Study exists, caller's site NOT enrolled → `STUDY_ALREADY_EXISTS` (name is taken and caller has no access; `project_admin` must enroll the site first). `register` is not a join path.
+
+  **`project_admin` behavior on existing studies:**
+  - Same merge semantics: add supplied sites not yet enrolled; skip already-enrolled sites; record self in `admins` if not already present.
+
 - Unknown names rejected on `remove_study`, `show_study`, and all user-role commands with `STUDY_NOT_FOUND`
 
 ### Sites
@@ -892,7 +932,7 @@ Mutations only add, modify, or remove entries under `"studies"`. The format is i
 
 ### Dataset Inputs (`set-dataset` / `unset-dataset`)
 
-All validation rules and error codes are defined in `docs/design/study_dataset_mapping.md`.
+Both `<study>` and `<dataset>` are used directly as filesystem path components (e.g. `/data/<study>/<dataset>`). Both must match `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$` — the same path-safe regex as study names. Full validation rules and error codes are defined in `docs/design/study_dataset_mapping.md`.
 
 ---
 
@@ -900,7 +940,7 @@ All validation rules and error codes are defined in `docs/design/study_dataset_m
 
 ### Remove
 
-- **Rejected unconditionally if any job exists with that study tag**, regardless of job state. Returns `STUDY_HAS_JOBS` with exit code 1.
+- **Best-effort job-association guard** — `remove` queries the job store at guard time and returns `STUDY_HAS_JOBS` (exit 1) if any job tagged with the study name exists. This check is not atomic with job submission: a job submitted concurrently may arrive after the guard passes. See Core Principles for the full limitation.
 - Existing authenticated sessions continue to run with their session snapshot. New logins to the removed study are rejected immediately after the reload.
 - Session eviction is deferred unless a clean `SessionManager` integration is added; `remove` does not disconnect existing sessions.
 
@@ -913,7 +953,7 @@ After any successful mutation the in-memory `StudyRegistry` is replaced through 
 
 ### Admin Self-Removal
 
-`remove-user` does not guard against a caller removing themselves from the study's `admins` map. If an `org_admin` removes their own identity and no other `org_admin` remains in the map, the study becomes orphaned — invisible to all `org_admin` callers and manageable only by `project_admin`. Recovery requires `project_admin` to re-add the org admin via `add-user`. Operators should ensure at least one `org_admin` identity remains in the study's `admins` map before removing their own entry.
+`remove-user` does not guard against a caller removing themselves from the study's `admins` field. Note that `org_admin` visibility is derived from site enrollment, not from the `admins` field — removing one's own `admins` entry does not lose visibility as long as the site remains enrolled. However, it does remove any within-study role record for that user. Operators should take care when removing user entries that carry meaningful study-level roles.
 
 ### Reprovision Interaction
 
@@ -931,7 +971,7 @@ See `docs/design/study_dataset_mapping.md` for the full companion design: on-dis
 
 The distributed provisioning workflow (`docs/design/distributed_provisioning.md`) decentralizes the **identity layer**: each site generates its own private key, sends only a CSR to the Project Admin, and receives a signed certificate in return. Once the site packages its startup kit and connects to the server, it is a fully authenticated participant — without the Project Admin ever holding its private key, and without reprovisioning any other site.
 
-The multi-study CLI decentralizes the **authorization layer**: once a site is authenticated, its org admin can register studies, enroll sites, and assign user roles — all without reprovisioning and without Project Admin involvement.
+The multi-study CLI decentralizes the **authorization layer**: once a site is authenticated, its org admin can register studies, enroll sites, and assign user roles — all without reprovisioning and without Project Admin involvement. **Phase 1 caveat:** site enrollment is accepted declaratively; the server does not independently verify that a site name in `--sites` corresponds to an authenticated participant. The org admin's cert proves their identity and role; it does not independently validate the site list they supply.
 
 Together, the two capabilities make a **fully decentralized federation lifecycle** possible:
 
@@ -982,7 +1022,7 @@ The distributed provisioning design already establishes the trust chain for cert
 - The server reads this at login and uses it as the effective cert role
 - The multi-study CLI uses this same cert role to gate study lifecycle and user-role operations
 
-No additional trust infrastructure is needed. The cert is the single source of truth for who is allowed to register studies and manage user roles.
+The cert is the gate for **who can call** study lifecycle and user-role commands — it establishes identity and cert role at login. However, the cert alone does not determine **which studies** an `org_admin` can act on. That authority derives from site enrollment in `study_registry.json`, which is accepted declaratively (see Phase 1 trust note in the Key Design Decisions section). An `org_admin` who can write a site name into a study gains management authority over it based on that declared enrollment, not on a cryptographically verified participant registry. No additional trust infrastructure is added in Phase 1; strengthening this is deferred to the participant-registration design.
 
 ---
 
@@ -1007,7 +1047,9 @@ No additional trust infrastructure is needed. The cert is the single source of t
 
 ### Session API
 
-All CLI handlers use `new_secure_session()` for server connectivity, identical to `nvflare job` and `nvflare system`. New session methods are thin wrappers over `AdminAPI.do_command()`.
+Server-backed handlers (`register`, `add-site`, `remove-site`, `remove`, `list`, `show`, `add-user`, `remove-user`, `update-user`) use `new_secure_session()` for server connectivity, identical to `nvflare job` and `nvflare system`. New session methods are thin wrappers over `AdminAPI.do_command()`.
+
+`set-dataset` and `unset-dataset` are purely local file operations and do **not** use `new_secure_session()` or open any server connection. They resolve the startup-kit directory from `--startup-kit` (explicit path) or `NVFLARE_STARTUP_KIT_DIR` env var, then read and write `local/study_data.json` directly. `--startup-target` is not accepted — poc/prod environment selection is a server-connection concept and does not apply to local file operations.
 
 ---
 
@@ -1017,13 +1059,13 @@ All CLI handlers use `new_secure_session()` for server connectivity, identical t
 |------|--------|
 | Study lifecycle commands | `register`, `add-site`, `remove-site`, `remove`, `list`, `show` under `nvflare study` |
 | User role commands | `add-user`, `remove-user`, `update-user` under `nvflare study` |
-| Study lifecycle authorization | `remove`: `project_admin` only. `register`, `add-site`, `remove-site`: `project_admin` or `org_admin` (`--sites` required for both; `org_admin` scoped to visible studies). `list`/`show`: `project_admin` sees all; `org_admin` sees only studies where their identity is in the `admins` map |
-| User role authorization | `project_admin` (any study); `org_admin` (studies where caller appears in `admins` map) |
+| Study lifecycle authorization | `remove`: `project_admin` only. `register`, `add-site`, `remove-site`: `project_admin` or `org_admin` (`--sites` required for both; `org_admin` scoped to studies where their site is enrolled). `list`/`show`: `project_admin` sees all; `org_admin` sees only studies where their site is enrolled |
+| User role authorization | `project_admin` (any study); `org_admin` (studies where caller's site is enrolled) |
 | Backend file | `study_registry.json` with `format_version: 1.0` |
 | Dataset mapping | Included in the CLI surface; on-disk schema, launcher semantics, and CLI commands are specified in `docs/design/study_dataset_mapping.md` |
 | Persistence | Serialized mutation flow with lock, temp file, `os.replace()`, then registry publish |
 | In-memory reload | Hot-reload after each mutation; no server restart required |
-| Job-association guard | `remove` rejected unconditionally if any job is tagged with the study name, regardless of job state |
+| Job-association guard | Best-effort: `remove` queries the job store at guard time and rejects with `STUDY_HAS_JOBS` if any tagged job exists; not atomic with concurrent job submission |
 | Active-session behavior | Existing authenticated sessions unaffected; forced session eviction deferred until a clean session-manager integration is designed |
 | Output format | JSON envelope (`schema_version`, `status`, `data`) via `--format json`; human text by default |
 | Exit codes | 0 success, 1 server error, 2 connection failure, 3 timeout, 4 invalid args, 5 internal |
