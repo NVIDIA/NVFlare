@@ -93,6 +93,14 @@ Change runtime logging:
    nvflare system log-config --site server DEBUG
    nvflare system log-config --site site-1 msg_only
 
+.. note::
+
+   All server-connected ``nvflare system`` commands resolve the startup kit in
+   this order: ``--startup-kit``, ``NVFLARE_STARTUP_KIT_DIR``, then the
+   configured target selected by ``--startup-target`` (or the default config
+   target when no explicit selector is given). ``--startup-kit`` and
+   ``--startup-target`` are mutually exclusive explicit selectors.
+
 ****************
 Status and Resources
 ****************
@@ -108,8 +116,8 @@ Status arguments:
 
 - positional ``target``: optional. ``server`` or ``client``.
 - positional ``client_names``: optional list of client names when targeting clients.
-- ``--startup-target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
+- ``--startup-target {poc,prod}``: choose the configured admin startup target. Mutually exclusive with ``--startup-kit``.
+- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -137,8 +145,8 @@ Resource arguments:
 
 - positional ``target``: optional. ``server`` or ``client``.
 - positional ``client_names``: optional list of client names when targeting clients.
-- ``--startup-target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
+- ``--startup-target {poc,prod}``: choose the configured admin startup target. Mutually exclusive with ``--startup-kit``.
+- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -171,8 +179,8 @@ Control arguments:
 
 - positional ``target``: required. One of ``server``, ``client``, or ``all``.
 - positional ``client_names``: optional. One or more client names. Only meaningful when ``target`` is ``client``.
-- ``--startup-target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
+- ``--startup-target {poc,prod}``: choose the configured admin startup target. Mutually exclusive with ``--startup-kit``.
+- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
 - ``--force``: skip the confirmation prompt.
 - ``--schema``: print the command schema as JSON and exit.
 
@@ -203,8 +211,8 @@ federation (equivalent to the admin console ``remove_client`` command).
 Remove-client arguments:
 
 - positional ``client_name``: required. The name of the client to remove.
-- ``--startup-target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
+- ``--startup-target {poc,prod}``: choose the configured admin startup target. Mutually exclusive with ``--startup-kit``.
+- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
 - ``--force``: skip the confirmation prompt.
 - ``--schema``: print the command schema as JSON and exit.
 
@@ -224,8 +232,8 @@ sites.
 Version arguments:
 
 - ``--site``: ``server``, a client name, or ``all``. Default: ``all``.
-- ``--startup-target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
+- ``--startup-target {poc,prod}``: choose the configured admin startup target. Mutually exclusive with ``--startup-kit``.
+- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -255,8 +263,8 @@ Logging arguments:
 
 - positional ``level``: runtime-required log level or built-in log mode; omitting it returns a CLI error
 - ``--site``: ``server``, a client name, or ``all``. Default: ``all``.
-- ``--startup-target {poc,prod}``: choose the configured admin startup kit.
-- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. If provided, it takes precedence over ``--startup-target``.
+- ``--startup-target {poc,prod}``: choose the configured admin startup target. Mutually exclusive with ``--startup-kit``.
+- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Supported built-in values for positional ``level``:
