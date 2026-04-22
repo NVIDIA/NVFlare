@@ -1138,7 +1138,14 @@ def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optio
     _poc_sub_cmd_parsers[CMD_PREPARE_POC] = prepare_parser
 
     prepare_parser.add_argument(
-        "-n", "--number_of_clients", type=int, nargs="?", default=2, help="number of sites or clients, default to 2"
+        "-n",
+        "--number-of-clients",
+        "--number_of_clients",  # backward compat
+        dest="number_of_clients",
+        type=int,
+        nargs="?",
+        default=2,
+        help="number of sites or clients, default to 2",
     )
     prepare_parser.add_argument(
         "-c",
@@ -1157,7 +1164,9 @@ def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optio
 
     prepare_parser.add_argument(
         "-i",
-        "--project_input",
+        "--project-input",
+        "--project_input",  # backward compat
+        dest="project_input",
         type=str,
         nargs="?",
         default="",
@@ -1166,7 +1175,9 @@ def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optio
     )
     prepare_parser.add_argument(
         "-d",
-        "--docker_image",
+        "--docker-image",
+        "--docker_image",  # backward compat
+        dest="docker_image",
         nargs="?",
         default=None,
         const="nvflare/nvflare",
@@ -1182,7 +1193,16 @@ def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optio
 def define_prepare_jobs_parser(poc_parser):
     prepare_jobs_dir_parser = poc_parser.add_parser(CMD_PREPARE_JOBS_DIR, help="prepare jobs directory")
     _poc_sub_cmd_parsers[CMD_PREPARE_JOBS_DIR] = prepare_jobs_dir_parser
-    prepare_jobs_dir_parser.add_argument("-j", "--jobs_dir", type=str, nargs="?", default=None, help="jobs directory")
+    prepare_jobs_dir_parser.add_argument(
+        "-j",
+        "--jobs-dir",
+        "--jobs_dir",  # backward compat
+        dest="jobs_dir",
+        type=str,
+        nargs="?",
+        default=None,
+        help="jobs directory",
+    )
     prepare_jobs_dir_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     prepare_jobs_dir_parser.add_argument(
         "--force", action="store_true", help="overwrite existing jobs directory without prompting"

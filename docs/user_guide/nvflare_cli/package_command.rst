@@ -140,7 +140,7 @@ The top-level CLI also supports JSON output mode:
 
 .. code-block:: shell
 
-   nvflare --out-format json package -e grpc://fl-server:8002 --dir ./hospital-1-kit
+   nvflare package -e grpc://fl-server:8002 --dir ./hospital-1-kit --format json
 
 For end-to-end distributed provisioning workflow details, see
 :ref:`distributed_provisioning`.

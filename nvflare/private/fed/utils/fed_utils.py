@@ -49,12 +49,29 @@ from nvflare.security.study_registry import StudyRegistry, StudyRegistryService
 from ..simulator.simulator_const import SimulatorConstants
 from .app_authz import AppAuthzService
 
+# Distributed provisioning produces startup kits whose certs are signed by a site-local CA
+# rather than the project CA.  The server therefore cannot verify __nvfl_sig.json using its
+# own CA chain, so require_signed_jobs() lets an operator opt out of signature enforcement
+# via fed_server.json.  _warn_once suppresses repeated log noise for the same condition.
+_SIGNED_JOB_WARNINGS_EMITTED = set()
+
+
+def _warn_once(logger: logging.Logger, cache_key: str, message: str, *args) -> None:
+    # Suppress duplicate warnings emitted on every job submission (e.g. TOCTOU advisory).
+    if cache_key in _SIGNED_JOB_WARNINGS_EMITTED:
+        return
+    _SIGNED_JOB_WARNINGS_EMITTED.add(cache_key)
+    logger.warning(message, *args)
+
 
 def require_signed_jobs(workspace: Workspace) -> bool:
     """Return True if the server requires all submitted jobs to carry __nvfl_sig.json.
 
-    Reads fed_server.json at call time (not cached) to allow hot-reload: an operator can
-    change the policy without restarting the server.
+    In distributed provisioning each site generates its own private key and gets a cert
+    signed by the project CA, but the server's startup kit was provisioned independently
+    and may not share the same CA chain used to sign __nvfl_sig.json.  Operators who use
+    distributed provisioning can set ``require_signed_jobs: false`` in fed_server.json to
+    disable signature enforcement without restarting the server (hot-reload).
 
     Default: True when rootCA.pem is present (any PKI deployment); False otherwise.
     Explicit "require_signed_jobs" key in fed_server.json overrides the inferred default.
@@ -65,23 +82,32 @@ def require_signed_jobs(workspace: Workspace) -> bool:
 
     server_config_path = os.path.join(workspace.get_startup_kit_dir(), "fed_server.json")
     if os.path.exists(server_config_path):
-        st = os.stat(server_config_path)
-        if st.st_mode & (_stat.S_IWGRP | _stat.S_IWOTH):
-            logger.warning(
-                "fed_server.json is group/world-writable — require_signed_jobs policy "
-                "can be altered by other local users (TOCTOU risk)"
-            )
         try:
-            with open(server_config_path) as f:
+            fd = os.open(server_config_path, os.O_RDONLY)
+            with os.fdopen(fd) as f:
+                st = os.fstat(f.fileno())
+                if st.st_mode & (_stat.S_IWGRP | _stat.S_IWOTH):
+                    _warn_once(
+                        logger,
+                        f"writable:{server_config_path}",
+                        "fed_server.json is group/world-writable — require_signed_jobs policy "
+                        "can be altered by other local users (TOCTOU risk)",
+                    )
                 cfg = json.load(f)
             if "require_signed_jobs" in cfg:
                 value = bool(cfg["require_signed_jobs"])
                 logger.debug("require_signed_jobs=%s (explicit config)", value)
                 return value
+        except FileNotFoundError:
+            pass
         except Exception as e:
-            logger.warning(
-                "failed to parse fed_server.json for require_signed_jobs: %s — falling back to rootCA.pem heuristic", e
+            _warn_once(
+                logger,
+                f"parse:{server_config_path}",
+                "failed to parse fed_server.json for require_signed_jobs: %s — failing closed",
+                e,
             )
+            return True
 
     root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
     value = os.path.exists(root_ca_path)

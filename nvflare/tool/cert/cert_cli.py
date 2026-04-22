@@ -17,7 +17,7 @@
 import argparse
 from typing import Optional
 
-_VALID_CERT_TYPES = ["client", "server", "org_admin", "lead", "member"]
+from nvflare.tool.cert.cert_constants import VALID_CERT_TYPES
 
 # Module-level parser references — used by --schema in handlers and for help fallback
 _cert_init_parser: Optional[argparse.ArgumentParser] = None
@@ -160,7 +160,7 @@ def _def_cert_csr_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argum
         required=False,
         default=None,
         dest="cert_type",
-        choices=_VALID_CERT_TYPES,
+        choices=VALID_CERT_TYPES,
         help=(
             "Proposed certificate type. Required and embedded in the CSR as a hint for the Project Admin. "
             "The Project Admin may override this when running 'nvflare cert sign'. "
@@ -224,7 +224,7 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         required=False,
         default=None,
         dest="cert_type",
-        choices=_VALID_CERT_TYPES,
+        choices=VALID_CERT_TYPES,
         help="Cert type to issue. Authoritative — embedded in signed cert UNSTRUCTURED_NAME.",
     )
     p.add_argument(

@@ -86,7 +86,7 @@ For `flare_api.Session`, `ProdEnv`, and the admin console:
 
 Study names are syntactically validated with the regex:
 
-`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`
+`^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$`
 
 ### Job Metadata
 
