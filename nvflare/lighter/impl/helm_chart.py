@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 import shutil
 
@@ -24,6 +25,7 @@ from nvflare.lighter.spec import Builder, Project, ProvisionContext
 from nvflare.lighter.utils import update_storage_locations
 
 _HELM_TEMPLATES_DIR = os.path.join(os.path.dirname(prov.__file__), "templates", "helm")
+logger = logging.getLogger(__name__)
 
 
 def _split_image(docker_image: str):
@@ -351,5 +353,6 @@ class HelmChartBuilder(Builder):
         local_dir = os.path.join(ctx.get_ws_dir(participant), "local")
         default_resource = os.path.join(local_dir, "resources.json.default")
         if not os.path.exists(default_resource):
+            logger.warning("resources.json.default not found at %s; skipping storage relocation.", local_dir)
             return
         update_storage_locations(local_dir=local_dir, workspace=self.workspace_mount_path)

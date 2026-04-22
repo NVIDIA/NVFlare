@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import logging
 import os
 import tempfile
 
@@ -505,9 +506,30 @@ class TestServerChart:
             with open(resources_path) as f:
                 resources = json.load(f)
 
-        assert resources["snapshot_persistor"]["args"]["storage"]["args"]["root_dir"] == "/mnt/workspace/snapshot-storage"
+        assert (
+            resources["snapshot_persistor"]["args"]["storage"]["args"]["root_dir"] == "/mnt/workspace/snapshot-storage"
+        )
         job_manager = next(comp for comp in resources["components"] if comp["id"] == "job_manager")
         assert job_manager["args"]["uri_root"] == "/mnt/workspace/jobs-storage"
+
+    def test_server_resources_missing_default_logs_warning(self, caplog):
+        project = _make_project()
+        with tempfile.TemporaryDirectory() as root:
+            ctx = _make_ctx(root, project)
+            with caplog.at_level(logging.WARNING):
+                _run(
+                    HelmChartBuilder(
+                        docker_image="myregistry/nvflare:2.7.0",
+                        workspace_mount_path="/mnt/workspace",
+                    ),
+                    project,
+                    ctx,
+                )
+
+            resources_path = os.path.join(ctx.get_ws_dir(project.get_server()), "local", "resources.json")
+            assert not os.path.exists(resources_path)
+
+        assert "resources.json.default not found" in caplog.text
 
     def test_no_overseer_files_generated(self):
         """Overseer manifests must never be produced by the builder."""
