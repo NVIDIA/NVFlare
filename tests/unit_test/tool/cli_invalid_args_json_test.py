@@ -47,7 +47,7 @@ def test_invalid_subcommand_json_error(capsys, monkeypatch):
     monkeypatch.setattr(
         cli_mod.sys,
         "argv",
-        ["nvflare", "job", "lis", "--out-format", "json"],
+        ["nvflare", "job", "lis", "--format", "json"],
     )
 
     with pytest.raises(SystemExit) as exc_info:

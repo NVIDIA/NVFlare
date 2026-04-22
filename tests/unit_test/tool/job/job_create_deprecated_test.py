@@ -139,16 +139,16 @@ class TestJobCreateDeprecated:
         parser = def_job_cli_parser(subs)["job"]
 
         help_text = parser.format_help()
-        assert "list_templates" in help_text
-        assert "show_variables" in help_text
+        assert "list-templates" in help_text
+        assert "show-variables" in help_text
         assert "[DEPRECATED]" in help_text
 
     @pytest.mark.parametrize(
         ("handler_name", "parser_key", "expected_detail"),
         [
             ("create_job", "create", "bad create"),
-            ("show_variables", "show_variables", "required job folder is not specified."),
-            ("list_templates", "list_templates", "bad list"),
+            ("show_variables", "show-variables", "required job folder is not specified."),
+            ("list_templates", "list-templates", "bad list"),
         ],
     )
     def test_deprecated_handlers_use_their_own_parser_for_usage_errors(

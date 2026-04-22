@@ -52,6 +52,11 @@ def test_each_entry_has_message_and_hint(code):
     assert isinstance(entry["hint"], str)
 
 
+def test_error_registry_is_read_only():
+    with pytest.raises(TypeError):
+        ERROR_REGISTRY["NEW_CODE"] = {"message": "x", "hint": "y"}
+
+
 def test_job_not_found_format_substitution():
     entry = ERROR_REGISTRY["JOB_NOT_FOUND"]
     result = entry["message"].format_map({"job_id": "abc123"})
@@ -92,6 +97,11 @@ class TestGetError:
         message, hint = get_error("TOTALLY_UNKNOWN_CODE_XYZ")
         assert message == "Unknown error."
         assert hint == "Check logs for details."
+
+    def test_unknown_code_raises_in_dev_mode(self, monkeypatch):
+        monkeypatch.setenv("NVFLARE_DEV", "1")
+        with pytest.raises(KeyError):
+            get_error("TOTALLY_UNKNOWN_CODE_XYZ")
 
     def test_ca_already_exists(self):
         message, hint = get_error("CA_ALREADY_EXISTS", path="/tmp/ca")

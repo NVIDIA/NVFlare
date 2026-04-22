@@ -50,10 +50,10 @@ from nvflare.utils.cli_utils import (
 
 CMD_POC = "poc"
 CMD_PROVISION = "provision"
-CMD_PREFLIGHT_CHECK = "preflight_check"
+CMD_PREFLIGHT_CHECK = "preflight-check"
 CMD_SIMULATOR = "simulator"
 CMD_DASHBOARD = "dashboard"
-CMD_AUTHZ_PREVIEW = "authz_preview"
+CMD_AUTHZ_PREVIEW = "authz-preview"
 CMD_JOB = "job"
 CMD_RECIPE = "recipe"
 CMD_CONFIG = "config"
@@ -80,7 +80,7 @@ def def_preflight_check_parser(sub_cmd):
     cmd = CMD_PREFLIGHT_CHECK
     checker_parser = sub_cmd.add_parser(
         cmd,
-        aliases=["preflight"],
+        aliases=["preflight", "preflight_check"],
         help="check a provisioned package before deployment",
     )
     define_preflight_check_parser(checker_parser)
@@ -116,7 +116,9 @@ def handle_simulator_cmd(simulator_args):
 
 def def_authz_preview_parser(sub_cmd):
     cmd = CMD_AUTHZ_PREVIEW
-    authz_preview_parser = sub_cmd.add_parser(cmd, help="[deprecated] preview authorization policy")
+    authz_preview_parser = sub_cmd.add_parser(
+        cmd, aliases=["authz_preview"], help="[deprecated] preview authorization policy"
+    )
     define_authz_preview_parser(authz_preview_parser)
     authz_preview_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     return {cmd: authz_preview_parser}
@@ -128,13 +130,15 @@ def handle_authz_preview(args):
 
     handle_schema_flag(
         None,
-        "nvflare authz_preview",
-        ["nvflare authz_preview -p /path/to/policy.json"],
+        "nvflare authz-preview",
+        ["nvflare authz-preview -p /path/to/policy.json"],
         sys.argv[1:],
         deprecated=True,
         deprecated_message="This command is deprecated and will be removed in a future release.",
     )
-    print_human("WARNING: 'nvflare authz_preview' is deprecated and will be removed in a future release.")
+    if getattr(args, "_raw_sub_command", None) == "authz_preview":
+        print_human("WARNING: 'nvflare authz_preview' is deprecated; use 'nvflare authz-preview' instead.")
+    print_human("WARNING: 'nvflare authz-preview' is deprecated and will be removed in a future release.")
     run_command(args)
 
 
@@ -339,8 +343,8 @@ def _build_global_arg_parser():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
     parser.add_argument(
-        "--out-format",
-        dest="out_format",
+        "--format",
+        dest="format",
         choices=["txt", "json"],
         default="txt",
         help="output format: 'txt' (default, human-readable to stdout/stderr) or 'json' for machine-readable JSON envelope on stdout",
@@ -411,7 +415,11 @@ def parse_args(prog_name: str):
     def_system_cli_parser(system_parser)
 
     # Normalize CLI aliases so the handlers dict can use canonical names.
-    _CMD_ALIASES = {"preflight": CMD_PREFLIGHT_CHECK}
+    _CMD_ALIASES = {
+        "preflight": CMD_PREFLIGHT_CHECK,
+        "preflight_check": CMD_PREFLIGHT_CHECK,
+        "authz_preview": CMD_AUTHZ_PREVIEW,
+    }
 
     if "--schema" in sys.argv:
         # When --schema is present, bypass argparse entirely to avoid required-arg
@@ -431,13 +439,13 @@ def parse_args(prog_name: str):
         ns.system_sub_cmd = sub_sub
         ns.cert_sub_command = sub_sub
         ns.recipe_sub_cmd = sub_sub or "list"
-        ns.out_format = global_args.out_format
+        ns.format = global_args.format
         ns.connect_timeout = global_args.connect_timeout
         ns.version = global_args.version
         return _parser, ns, sub_cmd_parsers
 
     # Patch every parser so it prints full help before exiting on error.
-    _patch_help_on_error(_parser, json_mode=global_args.out_format == "json")
+    _patch_help_on_error(_parser, json_mode=global_args.format == "json")
 
     args, unknown = _parser.parse_known_args(normalized_argv)
     args._raw_sub_command = args.__dict__.get("sub_command")
@@ -447,7 +455,7 @@ def parse_args(prog_name: str):
     sub_cmd_parser = sub_cmd_parsers.get(cmd)
     if unknown:
         msg = f"unrecognized arguments: {' '.join(unknown)}"
-        if args.out_format == "json":
+        if args.format == "json":
             _emit_argparse_error_json(sub_cmd_parser or _parser, f"{prog_name} {cmd}: {msg}")
         else:
             _emit_argparse_error_human(sub_cmd_parser or _parser, msg, exit_code=4)
@@ -497,7 +505,7 @@ def run(prog_name):
 
     from nvflare.tool.cli_output import set_connect_timeout, set_output_format
 
-    set_output_format(getattr(prog_args, "out_format", "txt"))
+    set_output_format(getattr(prog_args, "format", "txt"))
     set_connect_timeout(getattr(prog_args, "connect_timeout", 5.0))
     _suppress_cli_connector_noise()
 

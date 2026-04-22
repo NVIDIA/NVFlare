@@ -12,18 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Shared cert/package constants for distributed provisioning CLI flows."""
 
-def test_global_args_after_subcommand(monkeypatch):
-    from nvflare import cli as cli_mod
+from nvflare.lighter.constants import AdminRole
 
-    monkeypatch.setattr(
-        cli_mod.sys,
-        "argv",
-        ["nvflare", "system", "version", "--format", "json", "--connect-timeout", "7"],
-    )
-
-    _, args, _ = cli_mod.parse_args("nvflare")
-    assert args.sub_command == "system"
-    assert args.system_sub_cmd == "version"
-    assert args.format == "json"
-    assert args.connect_timeout == 7.0
+VALID_CERT_TYPES = ("client", "server", "org_admin", "lead", "member")
+ADMIN_CERT_TYPES = (AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER)
+KIT_TYPE_TO_ROLE = {
+    "org_admin": AdminRole.ORG_ADMIN,
+    "lead": AdminRole.LEAD,
+    "member": AdminRole.MEMBER,
+}

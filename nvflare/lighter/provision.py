@@ -128,21 +128,65 @@ def define_provision_parser(parser):
     global _provision_parser
     _provision_parser = parser
     # Action flags — mutually exclusive but no longer required; default is -g behavior
-    parser.add_argument("-p", "--project_file", type=str, default=None, help="file to describe FL project")
+    parser.add_argument(
+        "-p",
+        "--project-file",
+        "--project_file",
+        dest="project_file",
+        type=str,
+        default=None,  # backward compat
+        help="file to describe FL project",
+    )
     parser.add_argument(
         "-g",
         "--generate",
         action="store_true",
         help="generate a sample project.yml and exit (default when no flag given)",
     )
-    parser.add_argument("-e", "--gen_edge", action="store_true", help="generate a sample edge project.yml and exit")
+    parser.add_argument(
+        "-e",
+        "--gen-edge",
+        "--gen_edge",
+        dest="gen_edge",
+        action="store_true",  # backward compat
+        help="generate a sample edge project.yml and exit",
+    )
 
     # Optional arguments
     parser.add_argument("-w", "--workspace", type=str, default="workspace", help="directory used by provision")
-    parser.add_argument("-c", "--custom_folder", type=str, default=".", help="additional folder to load python codes")
-    parser.add_argument("--add_user", type=str, default="", help="yaml file for added user")
-    parser.add_argument("--add_client", type=str, default="", help="yaml file for added client")
-    parser.add_argument("-s", "--gen_scripts", action="store_true", help="generate test scripts like start_all.sh")
+    parser.add_argument(
+        "-c",
+        "--custom-folder",
+        "--custom_folder",
+        dest="custom_folder",
+        type=str,
+        default=".",  # backward compat
+        help="additional folder to load python codes",
+    )
+    parser.add_argument(
+        "--add-user",
+        "--add_user",
+        dest="add_user",
+        type=str,
+        default="",  # backward compat
+        help="yaml file for added user",
+    )
+    parser.add_argument(
+        "--add-client",
+        "--add_client",
+        dest="add_client",
+        type=str,
+        default="",  # backward compat
+        help="yaml file for added client",
+    )
+    parser.add_argument(
+        "-s",
+        "--gen-scripts",
+        "--gen_scripts",
+        dest="gen_scripts",
+        action="store_true",  # backward compat
+        help="generate test scripts like start_all.sh",
+    )
     parser.add_argument("--force", action="store_true", help="skip Y/N confirmation prompts")
     parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
@@ -305,7 +349,7 @@ def handle_provision(args):
         print_human(f"\nProvisioning complete. Packages written to: {workspace_full_path}")
         if packages:
             print_human(f"  Packages: {', '.join(packages)}")
-            print_human("  Verify each package with: nvflare preflight -p <package_path>")
+            print_human("  Verify each package with: nvflare preflight-check -p <package_path>")
         print_human("  Distribute packages to each participant and run their start.sh")
     try:
         install_skills()

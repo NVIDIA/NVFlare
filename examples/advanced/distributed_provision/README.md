@@ -8,4 +8,4 @@ Two example modes are provided for the current CLI design:
 
 Key idea: CSR creation supports `--project-file <site.yml>` so both interactive and
 scripted flows can use the same single-site input file without extra arguments.
-For scripted flows, pass `--out-format json` so stdout remains machine-readable.
+For scripted flows, pass `--format json` so stdout remains machine-readable.

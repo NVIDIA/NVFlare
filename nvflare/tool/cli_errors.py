@@ -12,10 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Tuple
+import os
+from types import MappingProxyType
+from typing import Dict, Mapping, Optional, Tuple
 
-# Primary error registry — Phase 0+1 CLI commands use this via output_error().
-ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
+# _ERROR_REGISTRY is a plain mutable dict so entries can be added simply at module load time.
+# It is never exported; callers must use ERROR_REGISTRY (the frozen public view) or the
+# helper functions below.  The two-name pattern avoids accidental mutation from call sites
+# while keeping the definition readable.
+_ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     # --- General ---
     "CONNECTION_FAILED": {
         "message": "Could not connect to the FLARE server.",
@@ -191,7 +196,7 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     # --- Version ---
     "VERSION_MISMATCH": {
         "message": "Remote server and client sites are running different NVFlare versions.",
-        "hint": "Run 'nvflare system version' to see per-site versions. Run 'nvflare preflight' to verify compatibility.",
+        "hint": "Run 'nvflare system version' to see per-site versions. Run 'nvflare preflight-check' to verify compatibility.",
     },
     # --- Job lifecycle ---
     "JOB_FAILED": {
@@ -228,6 +233,17 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "hint": "Check the recipe class run() method for errors.",
     },
 }
+# Freeze the registry into an immutable MappingProxyType so callers cannot accidentally
+# add, remove, or overwrite entries at runtime.  Use get_error_entry() / get_error() to
+# look up codes; use _ERROR_REGISTRY directly only when adding new entries in this file.
+ERROR_REGISTRY: Mapping[str, Mapping[str, str]] = MappingProxyType(_ERROR_REGISTRY)
+
+
+def get_error_entry(code: str) -> Optional[Mapping[str, str]]:
+    entry = ERROR_REGISTRY.get(code)
+    if entry is None and os.getenv("NVFLARE_DEV") == "1":
+        raise KeyError(f"Unknown CLI error code: {code}")
+    return entry
 
 
 def get_error(code: str, **kwargs) -> Tuple[str, str]:
@@ -236,7 +252,7 @@ def get_error(code: str, **kwargs) -> Tuple[str, str]:
     Transitional helper for legacy cert/package call sites. New CLI code should prefer
     output_error()/output_error_message(). Falls back to a generic tuple for unknown codes.
     """
-    entry = ERROR_REGISTRY.get(code)
+    entry = get_error_entry(code)
     if entry is None:
         return "Unknown error.", "Check logs for details."
     template = entry["message"]

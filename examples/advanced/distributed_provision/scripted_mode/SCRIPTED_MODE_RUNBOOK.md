@@ -1,6 +1,6 @@
 # Distributed Provisioning — Scripted Mode (CLI + JSON)
 
-Minimal scripted flow. JSON on stdout via `--out-format json`.
+Minimal scripted flow. JSON on stdout via `--format json`.
 
 ## Inputs
 - One **single-site** `site.yml` per participant (server and clients).

@@ -17,7 +17,7 @@ import time
 from typing import List
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import AdminCommandNames, MachineStatus, ReservedTopic, SiteType
+from nvflare.apis.fl_constant import AdminCommandNames, ReservedTopic, SiteType
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, ReplyKeyword, make_meta
@@ -32,18 +32,11 @@ from nvflare.security.logging import secure_format_exception
 
 from .cmd_utils import CommandUtil
 from .server_engine import ServerEngine
-from .server_status import ServerStatus
 
 
 def _server_status_value(engine: ServerEngineInternalSpec) -> str:
-    server = getattr(engine, "server", None)
-    if server is not None:
-        status = getattr(server, "status", None)
-        if status == ServerStatus.STARTING:
-            return MachineStatus.STARTING.value
-        if status == ServerStatus.STARTED:
-            return MachineStatus.STARTED.value
-    return MachineStatus.STOPPED.value
+    engine_info = engine.get_engine_info()
+    return engine_info.status.value
 
 
 class TrainingCommandModule(CommandModule, CommandUtil):

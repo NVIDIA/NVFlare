@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 from nvflare.apis.utils.format_check import name_check
 from nvflare.lighter.constants import AdminRole, CtxKey, ParticipantType, PropKey
 from nvflare.lighter.entity import Project
+from nvflare.lighter.impl.cert import CertBuilder
 from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.prov_utils import prepare_builders
@@ -31,18 +32,15 @@ from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import load_crt, load_yaml, verify_cert
+from nvflare.tool.cert.cert_constants import ADMIN_CERT_TYPES, KIT_TYPE_TO_ROLE, VALID_CERT_TYPES
 from nvflare.tool.cli_output import is_json_mode, output_error, output_error_message, output_ok, output_usage_error
 from nvflare.tool.cli_schema import handle_schema_flag
 
 _VALID_SCHEMES = {"grpc", "tcp", "http"}
-_ADMIN_ROLES = {AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER}
-_VALID_CERT_TYPES = {"client", "server", "org_admin", "lead", "member"}
-_KIT_TYPE_TO_ROLE = {
-    "org_admin": AdminRole.ORG_ADMIN,
-    "lead": AdminRole.LEAD,
-    "member": AdminRole.MEMBER,
-}
-_DUMMY_SERVER_NAME = "dummy-server"
+_ADMIN_ROLES = set(ADMIN_CERT_TYPES)
+_VALID_CERT_TYPES = set(VALID_CERT_TYPES)
+_KIT_TYPE_TO_ROLE = KIT_TYPE_TO_ROLE
+_DUMMY_SERVER_NAME = "__nvflare_dummy_server__"
 _DUMMY_ORG = "myorg"
 
 
@@ -213,7 +211,8 @@ def _load_project_from_file(path: str) -> tuple:
                 None,
                 exit_code=1,
             )
-        participant = {"name": project_dict.get("name"), "org": project_dict.get("org")}
+        participant = {k: v for k, v in project_dict.items() if k not in {"name", "org", "type", "project_name"}}
+        participant.update({"name": project_dict.get("name"), "org": project_dict.get("org")})
         if p_type in _ADMIN_ROLES:
             participant.update({"type": "admin", "role": _KIT_TYPE_TO_ROLE[p_type]})
         else:
@@ -385,41 +384,47 @@ def _handle_package_yaml_mode(args, scheme, host, port):
     project = Project(name=project_name, description="")
     if has_server:
         server_participant = next(p for kt, p in all_participants if kt == "server")
-        project.set_server(server_participant.name, _DUMMY_ORG, server_props)
+        server_props_with_yaml = dict(server_participant.props)
+        server_props_with_yaml.update(server_props)
+        project.set_server(server_participant.name, server_participant.org, server_props_with_yaml)
     else:
         project.set_server(host, _DUMMY_ORG, server_props)
 
     for kit_type, participant in all_participants:
         if kit_type == "server":
             continue
+        participant_props = dict(participant.props)
         if kit_type == "client":
-            project.add_client(participant.name, _DUMMY_ORG, {})
+            project.add_client(participant.name, participant.org, participant_props)
         else:
-            project.add_admin(participant.name, _DUMMY_ORG, {PropKey.ROLE: _KIT_TYPE_TO_ROLE[kit_type]})
+            project.add_admin(participant.name, participant.org, participant_props)
 
     cert_builder = PrebuiltCertBuilder(rootca_path=rootca_path, cert_map=cert_map)
-    static_builder = StaticFileBuilder(scheme=scheme)
-    workspace_builder = WorkspaceBuilder()
-    # WorkspaceBuilder and StaticFileBuilder are always managed by nvflare package:
-    # StaticFileBuilder is constructed with the scheme derived from --endpoint, and
-    # WorkspaceBuilder is always default. Any YAML builder entries for these types are
-    # stripped to prevent double finalize() calls (BUILD_FAILED). Custom args such as
-    # config_folder or app_validator on YAML StaticFileBuilder entries are intentionally
-    # ignored — nvflare package enforces a fixed startup-kit layout.
-    _MANAGED_BUILDER_TYPES = (WorkspaceBuilder, StaticFileBuilder)
-    for b in custom_builders:
-        if isinstance(b, _MANAGED_BUILDER_TYPES):
-            import warnings
 
-            warnings.warn(
-                f"{type(b).__name__} in project YAML builders is ignored by 'nvflare package'. "
-                "WorkspaceBuilder and StaticFileBuilder are always provided by nvflare package "
-                "with settings derived from --endpoint. Custom args (e.g. config_folder) have no effect.",
-                UserWarning,
-                stacklevel=2,
-            )
-    filtered_custom = [b for b in custom_builders if not isinstance(b, _MANAGED_BUILDER_TYPES)]
-    all_builders = [workspace_builder, cert_builder, static_builder] + filtered_custom
+    # Build the builder list from site.yaml, replacing any CertBuilder with PrebuiltCertBuilder.
+    # WorkspaceBuilder and StaticFileBuilder from the YAML are honored as-is.
+    # Defaults are injected only when absent from the YAML.
+    has_cert = False
+    all_builders = []
+    for b in custom_builders:
+        if isinstance(b, CertBuilder):
+            all_builders.append(cert_builder)
+            has_cert = True
+        else:
+            all_builders.append(b)
+
+    if not has_cert:
+        # Inject after WorkspaceBuilder, or at the front if none.
+        ws_pos = next((i for i, b in enumerate(all_builders) if isinstance(b, WorkspaceBuilder)), -1)
+        all_builders.insert(ws_pos + 1, cert_builder)
+
+    if not any(isinstance(b, WorkspaceBuilder) for b in all_builders):
+        all_builders.insert(0, WorkspaceBuilder())
+
+    if not any(isinstance(b, StaticFileBuilder) for b in all_builders):
+        cert_pos = next((i for i, b in enumerate(all_builders) if isinstance(b, PrebuiltCertBuilder)), None)
+        assert cert_pos is not None, "PrebuiltCertBuilder missing from builder list; this is a bug"
+        all_builders.insert(cert_pos + 1, StaticFileBuilder(scheme=scheme))
 
     provisioner = Provisioner(root_dir=workspace, builders=all_builders)
     ctx = provisioner.provision(project)
