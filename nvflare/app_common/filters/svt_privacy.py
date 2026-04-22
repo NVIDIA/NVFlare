@@ -135,7 +135,7 @@ class SVTPrivacy(DXOFilter):
         self.log_info(
             fl_ctx,
             f"Delta_w: Max abs: {max_abs}, Min abs: {min_abs}, total params: {total_params}. "
-            "Median abs omitted in chunked mode to avoid a full-model temporary buffer.",
+            "Median abs omitted to avoid extra temporary allocations.",
         )
 
         n_upload = int(min(np.ceil(float(total_params) * self.fraction), float(total_params)))
