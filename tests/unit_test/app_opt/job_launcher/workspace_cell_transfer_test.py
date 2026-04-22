@@ -288,6 +288,35 @@ class TestWorkspaceTransferManager:
             finally:
                 manager.remove_job(JOB_ID)
 
+    def test_publish_results_returns_error_on_unexpected_os_error(self, monkeypatch):
+        with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
+            owner_cell = _FakeCell(fqcn="site-1.parent")
+            manager = WorkspaceTransferManager(owner_cell)
+            transfer_token = manager.add_job(JOB_ID, ws_root)
+
+            zip_path = os.path.join(tmp, "results.zip")
+            _make_zip(zip_path, {f"{JOB_ID}/result.txt": b"done"})
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer.download_file",
+                lambda **kwargs: (None, zip_path),
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer.os.makedirs",
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+            )
+
+            request = new_cell_message(
+                {},
+                {"job_id": JOB_ID, "ref_id": "ref-1", "transfer_token": transfer_token},
+            )
+            request.set_header(MessageHeaderKey.ORIGIN, make_workspace_transfer_fqcn(owner_cell.get_fqcn(), JOB_ID))
+            try:
+                reply = manager._handle_publish_results(request)
+                assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
+                assert "unexpected error processing results" in reply.get_header(MessageHeaderKey.ERROR)
+            finally:
+                manager.remove_job(JOB_ID)
+
     def test_publish_results_rejects_wrong_token(self, monkeypatch):
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
             owner_cell = _FakeCell(fqcn="site-1.parent")
@@ -493,3 +522,43 @@ class TestWorkspaceBootstrapHelpers:
             assert request.payload["ref_id"] == "ref-upload"
             assert request.payload["transfer_token"] == "token-1"
             fake_downloader.delete_transaction.assert_called_once_with()
+
+    def test_upload_results_cleans_temp_bundle_when_zip_creation_fails(self, monkeypatch):
+        with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
+            _write_file(os.path.join(ws_root, JOB_ID, "result.txt"), b"done")
+            created = {}
+
+            real_named_temporary_file = tempfile.NamedTemporaryFile
+
+            def _named_tmp(*args, **kwargs):
+                tmp_file = real_named_temporary_file(*args, dir=tmp, **kwargs)
+                created["path"] = tmp_file.name
+                return tmp_file
+
+            monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, "site-1.parent")
+            monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "token-1")
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer.tempfile.NamedTemporaryFile",
+                _named_tmp,
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer._zip_results_to_file",
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer._close_bootstrap_cell",
+                lambda: None,
+            )
+
+            args = SimpleNamespace(
+                workspace=ws_root,
+                job_id=JOB_ID,
+                parent_url="tcp://parent",
+                root_url="tcp://root",
+            )
+
+            with pytest.raises(OSError, match="disk full"):
+                upload_results(args, secure_mode=False)
+
+            assert created["path"]
+            assert not os.path.exists(created["path"])

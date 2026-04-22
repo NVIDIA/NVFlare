@@ -326,6 +326,8 @@ class WorkspaceTransferManager:
             return _make_error(str(e))
         except zipfile.BadZipFile as e:
             return _make_error(f"invalid results bundle for {job_id}: {e}")
+        except Exception as e:
+            return _make_error(f"unexpected error processing results for {job_id}: {e}")
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -531,17 +533,17 @@ def upload_results(args, secure_mode: bool) -> None:
 
     temp_bundle = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
     temp_bundle.close()
-    _zip_results_to_file(args.workspace, args.job_id, temp_bundle.name)
-    bundle_sha = _hash_file(temp_bundle.name)
-    bundle_size = os.path.getsize(temp_bundle.name)
-    logger.info(
-        "[ws-transfer] upload_results start job=%s bundle_size=%d target=%s",
-        args.job_id,
-        bundle_size,
-        owner_fqcn,
-    )
     downloader = None
     try:
+        _zip_results_to_file(args.workspace, args.job_id, temp_bundle.name)
+        bundle_sha = _hash_file(temp_bundle.name)
+        bundle_size = os.path.getsize(temp_bundle.name)
+        logger.info(
+            "[ws-transfer] upload_results start job=%s bundle_size=%d target=%s",
+            args.job_id,
+            bundle_size,
+            owner_fqcn,
+        )
         cell = _get_bootstrap_cell(args, owner_fqcn, secure_mode)
         downloader = ObjectDownloader(
             cell=cell,

@@ -1356,6 +1356,18 @@ class TestK8sJobLauncherLaunchJob:
         finally:
             _exit_patches(patches)
 
+    def test_startup_secret_failure_removes_transfer_record(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            with patch.object(launcher, "_ensure_startup_secret", side_effect=OSError("boom")):
+                with pytest.raises(OSError, match="boom"):
+                    launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            self.mock_transfer.remove_job.assert_called_once_with(_JOB_UUID)
+            mock_api.create_namespaced_pod.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
     # -- PVC file validation (lazy-loaded in launch_job) ----------------------
 
     def test_raises_on_empty_pvc_file(self):

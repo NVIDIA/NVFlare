@@ -492,76 +492,77 @@ class K8sJobLauncher(JobLauncherSpec):
 
         workspace_transfer = WorkspaceTransferManager.get_or_create(owner_cell)
         workspace_transfer_token = workspace_transfer.add_job(raw_job_id, workspace_root)
-
-        startup_secret_name = self._ensure_startup_secret(site_name, startup_dir)
-
-        env[ENV_WORKSPACE_OWNER_FQCN] = workspace_transfer.owner_fqcn
-        env[ENV_WORKSPACE_TRANSFER_TOKEN] = workspace_transfer_token
-
-        volume_list = [
-            {"name": "workspace-job", "emptyDir": {"sizeLimit": self.ephemeral_storage}},
-            {"name": "startup-kit", "secret": {"secretName": startup_secret_name}},
-        ]
-        volume_mount_list = [
-            {"name": "workspace-job", "mountPath": WORKSPACE_MOUNT_PATH},
-            {"name": "startup-kit", "mountPath": f"{WORKSPACE_MOUNT_PATH}/startup", "readOnly": True},
-        ]
-        if data_pvc:
-            volume_list.append({"name": DATA_PVC_VOLUME_NAME, "persistentVolumeClaim": {"claimName": data_pvc}})
-            volume_mount_list.append(
-                {"name": DATA_PVC_VOLUME_NAME, "mountPath": "/var/tmp/nvflare/data", "readOnly": True}
-            )
-
-        job_config = {
-            "name": job_id,
-            "image": job_image,
-            "container_name": f"container-{job_id}",
-            "command": job_cmd,
-            "volume_mount_list": volume_mount_list,
-            "volume_list": volume_list,
-            "module_args": self.get_module_args(job_id, fl_ctx),
-            "env": env,
-        }
-        if args is not None and getattr(args, "set", None) is not None:
-            job_config.update({"set_list": args.set})
-        resources = {
-            "requests": {"ephemeral-storage": self.ephemeral_storage},
-            "limits": {"ephemeral-storage": self.ephemeral_storage},
-        }
-        for key in ("cpu", "memory"):
-            val = k8s_spec.get(key)
-            if val:
-                resources["limits"][key] = val
-        if job_resource:
-            resources["limits"]["nvidia.com/gpu"] = job_resource
-        job_config["resources"] = resources
-        if self.security_context:
-            job_config["security_context"] = self.security_context
-        job_handle = K8sJobHandle(
-            job_id,
-            self.core_v1,
-            job_config,
-            namespace=self.namespace,
-            timeout=self.timeout,
-            pending_timeout=self.pending_timeout,
-            python_path=self.python_path,
-            workspace_transfer=workspace_transfer,
-            workspace_job_id=raw_job_id,
-        )
-        pod_manifest = job_handle.get_manifest()
-        self.logger.debug(
-            "launch job with k8s_launcher: pod_name=%s namespace=%s image=%s",
-            pod_manifest["metadata"]["name"],
-            self.namespace,
-            job_image,
-        )
         try:
+            startup_secret_name = self._ensure_startup_secret(site_name, startup_dir)
+
+            env[ENV_WORKSPACE_OWNER_FQCN] = workspace_transfer.owner_fqcn
+            env[ENV_WORKSPACE_TRANSFER_TOKEN] = workspace_transfer_token
+
+            volume_list = [
+                {"name": "workspace-job", "emptyDir": {"sizeLimit": self.ephemeral_storage}},
+                {"name": "startup-kit", "secret": {"secretName": startup_secret_name}},
+            ]
+            volume_mount_list = [
+                {"name": "workspace-job", "mountPath": WORKSPACE_MOUNT_PATH},
+                {"name": "startup-kit", "mountPath": f"{WORKSPACE_MOUNT_PATH}/startup", "readOnly": True},
+            ]
+            if data_pvc:
+                volume_list.append({"name": DATA_PVC_VOLUME_NAME, "persistentVolumeClaim": {"claimName": data_pvc}})
+                volume_mount_list.append(
+                    {"name": DATA_PVC_VOLUME_NAME, "mountPath": "/var/tmp/nvflare/data", "readOnly": True}
+                )
+
+            job_config = {
+                "name": job_id,
+                "image": job_image,
+                "container_name": f"container-{job_id}",
+                "command": job_cmd,
+                "volume_mount_list": volume_mount_list,
+                "volume_list": volume_list,
+                "module_args": self.get_module_args(job_id, fl_ctx),
+                "env": env,
+            }
+            if args is not None and getattr(args, "set", None) is not None:
+                job_config.update({"set_list": args.set})
+            resources = {
+                "requests": {"ephemeral-storage": self.ephemeral_storage},
+                "limits": {"ephemeral-storage": self.ephemeral_storage},
+            }
+            for key in ("cpu", "memory"):
+                val = k8s_spec.get(key)
+                if val:
+                    resources["limits"][key] = val
+            if job_resource:
+                resources["limits"]["nvidia.com/gpu"] = job_resource
+            job_config["resources"] = resources
+            if self.security_context:
+                job_config["security_context"] = self.security_context
+            job_handle = K8sJobHandle(
+                job_id,
+                self.core_v1,
+                job_config,
+                namespace=self.namespace,
+                timeout=self.timeout,
+                pending_timeout=self.pending_timeout,
+                python_path=self.python_path,
+                workspace_transfer=workspace_transfer,
+                workspace_job_id=raw_job_id,
+            )
+            pod_manifest = job_handle.get_manifest()
+            self.logger.debug(
+                "launch job with k8s_launcher: pod_name=%s namespace=%s image=%s",
+                pod_manifest["metadata"]["name"],
+                self.namespace,
+                job_image,
+            )
             self.core_v1.create_namespaced_pod(body=pod_manifest, namespace=self.namespace)
         except Exception as e:
-            self.logger.error(f"failed to launch job {job_id}: {e}")
-            job_handle.terminal_state = JobState.TERMINATED
             workspace_transfer.remove_job(raw_job_id)
-            return job_handle
+            if "job_handle" in locals():
+                self.logger.error(f"failed to launch job {job_id}: {e}")
+                job_handle.terminal_state = JobState.TERMINATED
+                return job_handle
+            raise
         try:
             entered_running = job_handle.enter_states([JobState.RUNNING])
         except BaseException:
