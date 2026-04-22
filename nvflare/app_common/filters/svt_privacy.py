@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from threading import Lock
 from typing import List, Tuple, Union
 
 import numpy as np
@@ -168,9 +169,6 @@ class SVTPrivacy(DXOFilter):
 
         self.fraction = fraction  # fraction of the model to upload
         self.epsilon = epsilon
-        self.eps_1 = None
-        self.eps_2 = None
-        self.eps_3 = None
         self.noise_var = noise_var
         self.gamma = gamma
         self.tau = tau
@@ -178,27 +176,40 @@ class SVTPrivacy(DXOFilter):
         self.epsilon_threshold = epsilon_threshold
         self.epsilon_query = epsilon_query
         self.epsilon_release = epsilon_release
+        self._accountant_lock = Lock()
         self._reset_accountant()
 
     def _reset_accountant(self):
-        self._privacy_spent = 0.0
-        self._privacy_ledger = []
+        with self._accountant_lock:
+            self._privacy_spent = 0.0
+            self._privacy_ledger = []
 
     def get_privacy_spent(self) -> float:
-        return self._privacy_spent
+        with self._accountant_lock:
+            return self._privacy_spent
 
     def get_privacy_ledger(self) -> List[dict]:
-        return list(self._privacy_ledger)
+        with self._accountant_lock:
+            return list(self._privacy_ledger)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type in (EventType.START_RUN, EventType.END_RUN):
+        super().handle_event(event_type, fl_ctx)
+        if event_type == EventType.START_RUN:
             self._reset_accountant()
 
     def _record_privacy_accounting(
-        self, dxo: DXO, shareable: Shareable, has_scalar_passthrough: bool, n_upload: int, fl_ctx: FLContext
+        self,
+        dxo: DXO,
+        shareable: Shareable,
+        has_scalar_passthrough: bool,
+        n_upload: int,
+        epsilon_threshold: float,
+        epsilon_query: float,
+        epsilon_release: float,
+        fl_ctx: FLContext,
     ):
         current_round = shareable.get_header(MetaKey.CURRENT_ROUND, dxo.get_meta_prop(MetaKey.CURRENT_ROUND, None))
-        epsilon_total = self.eps_1 + self.eps_2 + self.eps_3
+        epsilon_total = epsilon_threshold + epsilon_query + epsilon_release
 
         per_call = {
             "accountant": "pure_dp_sum",
@@ -206,24 +217,27 @@ class SVTPrivacy(DXOFilter):
             "delta": 0.0,
             "round": current_round,
             "epsilon_total": epsilon_total,
-            "epsilon_threshold": self.eps_1,
-            "epsilon_query": self.eps_2,
-            "epsilon_release": self.eps_3,
+            "epsilon_threshold": epsilon_threshold,
+            "epsilon_query": epsilon_query,
+            "epsilon_release": epsilon_release,
             "n_upload": n_upload,
             "has_scalar_passthrough": has_scalar_passthrough,
         }
         if has_scalar_passthrough:
             per_call["note"] = "scalar passthrough is not noise-protected by the SVT accountant."
 
-        self._privacy_spent += epsilon_total
-        self._privacy_ledger.append(dict(per_call))
+        with self._accountant_lock:
+            self._privacy_spent += epsilon_total
+            self._privacy_ledger.append(dict(per_call))
+            cumulative_epsilon = self._privacy_spent
+            cumulative_calls = len(self._privacy_ledger)
 
         cumulative = {
             "accountant": "pure_dp_sum",
             "scope": "filter-level",
             "delta": 0.0,
-            "epsilon_total": self._privacy_spent,
-            "calls": len(self._privacy_ledger),
+            "epsilon_total": cumulative_epsilon,
+            "calls": cumulative_calls,
         }
         if current_round is not None:
             cumulative["latest_round"] = current_round
@@ -236,7 +250,7 @@ class SVTPrivacy(DXOFilter):
         self.log_info(
             fl_ctx,
             "SVT privacy accountant: call epsilon %.6g, cumulative epsilon %.6g (delta=0, pure composition)."
-            % (epsilon_total, self._privacy_spent),
+            % (epsilon_total, cumulative_epsilon),
         )
 
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
@@ -289,24 +303,24 @@ class SVTPrivacy(DXOFilter):
             dxo.data = dp_w
             return dxo
 
-        self.eps_1, self.eps_2 = _compute_epsilon_split(
+        epsilon_threshold, epsilon_query = _compute_epsilon_split(
             self.epsilon,
             n_upload,
             epsilon_threshold=self.epsilon_threshold,
             epsilon_query=self.epsilon_query,
         )
-        self.eps_3 = _compute_release_epsilon(
+        epsilon_release = _compute_release_epsilon(
             n_upload,
             self.noise_var,
             epsilon_release=self.epsilon_release,
         )
 
         # eps_1: threshold with noise
-        lambda_rho = self.gamma / self.eps_1
+        lambda_rho = self.gamma / epsilon_threshold
         threshold = self.tau + np.random.laplace(scale=lambda_rho)
         # eps_2: query with noise
-        lambda_nu = self.gamma * 2.0 * n_upload / self.eps_2
-        noise_scale = self.gamma * 2.0 * n_upload / self.eps_3
+        lambda_nu = self.gamma * 2.0 * n_upload / epsilon_query
+        noise_scale = self.gamma * 2.0 * n_upload / epsilon_release
         self.logger.info(
             "total params: %s, epsilon: %s, "
             "threshold epsilon: %s, query epsilon: %s, release epsilon: %s, "
@@ -314,9 +328,9 @@ class SVTPrivacy(DXOFilter):
             "clip gamma: %s",
             total_params,
             self.epsilon,
-            self.eps_1,
-            self.eps_2,
-            self.eps_3,
+            epsilon_threshold,
+            epsilon_query,
+            epsilon_release,
             self.tau,
             threshold,
             self.gamma,
@@ -423,5 +437,14 @@ class SVTPrivacy(DXOFilter):
         self.log_info(fl_ctx, "noise max: {}, median approx {}".format(noise_max, median_noise))
 
         dxo.data = dp_w
-        self._record_privacy_accounting(dxo, shareable, has_scalar_passthrough, n_upload, fl_ctx)
+        self._record_privacy_accounting(
+            dxo,
+            shareable,
+            has_scalar_passthrough,
+            n_upload,
+            epsilon_threshold,
+            epsilon_query,
+            epsilon_release,
+            fl_ctx,
+        )
         return dxo

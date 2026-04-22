@@ -18,6 +18,7 @@ import pytest
 import nvflare.app_common.filters.svt_privacy as svt_privacy_module
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.filters import SVTPrivacy
 
@@ -309,6 +310,47 @@ def test_svt_privacy_accountant_resets_on_start_run():
     svt_filter.handle_event(EventType.START_RUN, FLContext())
     assert svt_filter.get_privacy_spent() == pytest.approx(0.0)
     assert svt_filter.get_privacy_ledger() == []
+
+
+def test_svt_privacy_accountant_preserves_totals_on_end_run():
+    svt_filter = SVTPrivacy(
+        fraction=0.5,
+        epsilon=2.0,
+        noise_var=1.0,
+        gamma=1.0,
+        tau=-1.0,
+        replace=False,
+        epsilon_threshold=0.5,
+        epsilon_query=1.5,
+        epsilon_release=3.0,
+    )
+
+    _run_filter(
+        {"layer": np.array([0.2, -0.3, 0.4, -0.5], dtype=np.float32)},
+        svt_filter=svt_filter,
+        meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1, MetaKey.CURRENT_ROUND: 1},
+    )
+    assert svt_filter.get_privacy_spent() == pytest.approx(5.0)
+
+    svt_filter.handle_event(EventType.END_RUN, FLContext())
+    assert svt_filter.get_privacy_spent() == pytest.approx(5.0)
+    assert len(svt_filter.get_privacy_ledger()) == 1
+
+
+def test_svt_privacy_handle_event_calls_super(monkeypatch):
+    called = []
+
+    def fake_handle_event(self, event_type, fl_ctx):
+        called.append((self, event_type, fl_ctx))
+
+    monkeypatch.setattr(FLComponent, "handle_event", fake_handle_event)
+
+    svt_filter = SVTPrivacy()
+    fl_ctx = FLContext()
+
+    svt_filter.handle_event(EventType.START_RUN, fl_ctx)
+
+    assert called == [(svt_filter, EventType.START_RUN, fl_ctx)]
 
 
 def test_svt_privacy_uses_chunked_path_without_mutating_input(monkeypatch):
