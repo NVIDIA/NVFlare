@@ -203,6 +203,7 @@ class SVTPrivacy(DXOFilter):
         shareable: Shareable,
         has_scalar_passthrough: bool,
         n_upload: int,
+        acceptance_passes: int,
         epsilon_threshold: float,
         epsilon_query: float,
         epsilon_release: float,
@@ -221,6 +222,7 @@ class SVTPrivacy(DXOFilter):
             "epsilon_query": epsilon_query,
             "epsilon_release": epsilon_release,
             "n_upload": n_upload,
+            "acceptance_passes": acceptance_passes,
             "has_scalar_passthrough": has_scalar_passthrough,
         }
         if has_scalar_passthrough:
@@ -339,8 +341,12 @@ class SVTPrivacy(DXOFilter):
         accepted_masks = [np.zeros(value.size, dtype=np.bool_) for _, value, _ in param_items]
         accepted_counts = [0] * len(param_items)
         total_accepted = 0
+        acceptance_passes = 0
 
         while total_accepted < n_upload:
+            acceptance_passes += 1
+            accepted_before_pass = total_accepted
+
             for idx, (_, value, _) in enumerate(param_items):
                 flat_value = value.reshape(-1)
                 accepted_mask = accepted_masks[idx]
@@ -367,7 +373,22 @@ class SVTPrivacy(DXOFilter):
                     accepted_counts[idx] += n_new
                     total_accepted += n_new
 
-            self.log_debug(fl_ctx, "selected {} responses, requested {}".format(total_accepted, n_upload))
+            self.log_debug(
+                fl_ctx,
+                "SVT acceptance pass {}: +{} responses (total {}/{})".format(
+                    acceptance_passes,
+                    total_accepted - accepted_before_pass,
+                    total_accepted,
+                    n_upload,
+                ),
+            )
+
+        self.log_info(
+            fl_ctx,
+            "SVT acceptance completed in {} passes to reach {}/{} accepted responses.".format(
+                acceptance_passes, total_accepted, n_upload
+            ),
+        )
 
         selected_counts = _sample_partition_counts(accepted_counts, n_upload, self.replace)
 
@@ -442,6 +463,7 @@ class SVTPrivacy(DXOFilter):
             shareable,
             has_scalar_passthrough,
             n_upload,
+            acceptance_passes,
             epsilon_threshold,
             epsilon_query,
             epsilon_release,

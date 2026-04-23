@@ -219,6 +219,34 @@ def test_svt_privacy_clips_before_release_noise(monkeypatch):
     assert result.data["layer"][0] == pytest.approx(1.5)
 
 
+def test_svt_privacy_records_acceptance_passes(monkeypatch):
+    laplace_outputs = [0.0, np.array([-1.0]), np.array([1.0]), np.array([0.0])]
+
+    def fake_laplace(scale, size=None):
+        result = laplace_outputs.pop(0)
+        if size is None:
+            return result
+        return result
+
+    monkeypatch.setattr(np.random, "laplace", fake_laplace)
+    monkeypatch.setattr(np.random, "choice", lambda a, size, replace: np.zeros(size, dtype=np.int64))
+
+    result = _run_filter(
+        {"layer": np.array([0.2], dtype=np.float32)},
+        fraction=1.0,
+        epsilon=2.0,
+        noise_var=1.0,
+        gamma=1.0,
+        tau=0.5,
+        replace=False,
+        epsilon_threshold=1.0,
+        epsilon_query=1.0,
+    )
+
+    per_call = result.get_meta_prop("svt_privacy_budget")
+    assert per_call["acceptance_passes"] == 2
+
+
 def test_svt_privacy_accountant_tracks_cumulative_budget_across_calls():
     svt_filter = SVTPrivacy(
         fraction=0.5,
@@ -253,6 +281,7 @@ def test_svt_privacy_accountant_tracks_cumulative_budget_across_calls():
     assert per_call["epsilon_query"] == pytest.approx(1.5)
     assert per_call["epsilon_release"] == pytest.approx(3.0)
     assert per_call["round"] == 2
+    assert per_call["acceptance_passes"] >= 1
     assert cumulative["epsilon_total"] == pytest.approx(10.0)
     assert cumulative["calls"] == 2
     assert cumulative["latest_round"] == 2
