@@ -29,10 +29,10 @@ except ImportError:
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import get_job_meta_study
+from nvflare.apis.job_def import JobMetaKey, get_job_meta_study
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
-from nvflare.utils.job_launcher_utils import get_client_job_args, get_launcher_resource_spec, get_server_job_args
+from nvflare.utils.job_launcher_utils import get_client_job_args, get_job_launcher_spec, get_server_job_args
 
 
 # Docker container status strings
@@ -329,13 +329,15 @@ class DockerJobLauncher(JobLauncherSpec):
         _, exe_module = exe_module_entry
 
         site_name = fl_ctx.get_identity_name()
-        job_image = get_launcher_resource_spec(job_meta, site_name, "docker").get("image")
+        job_image = get_job_launcher_spec(job_meta, site_name, "docker").get("image")
         container_name = _sanitize_container_name(f"{site_name}-{job_id}")
         if not job_image:
             raise RuntimeError(
                 f"DockerJobLauncher is configured for site '{site_name}' but no job image "
                 f"was specified in meta.json for this site. "
-                f"Add an 'image' field to resource_spec['{site_name}']['docker']."
+                f"Set launcher_spec['{site_name}']['docker']['image'] (preferred), "
+                f"launcher_spec['default']['docker']['image'] (shared default), "
+                f"or resource_spec['{site_name}']['docker']['image'] (legacy)."
             )
 
         workspace = self.workspace
@@ -393,18 +395,20 @@ class DockerJobLauncher(JobLauncherSpec):
             if python_paths:
                 environment["PYTHONPATH"] = os.pathsep.join(python_paths)
 
-        # Docker resource spec: all per-job Docker resource requirements live in
-        # resource_spec[site][docker] = {num_of_gpus, shm_size, ipc_mode, ...}.
-        # Legacy flat resource_spec[site] = {num_of_gpus} is treated as process mode — docker gets nothing.
+        # Docker launcher spec: per-job Docker settings (image, shm_size, ipc_mode, ...) live in
+        # launcher_spec[site][docker]. Falls back to nested resource_spec[site][docker] for
+        # backward compatibility. num_of_gpus falls back to flat resource_spec[site] (Option 4).
         # Site-level defaults (default_job_container_kwargs) are merged in; job-level takes precedence on conflict.
-        docker_spec = get_launcher_resource_spec(job_meta, site_name, "docker")
-        num_gpus = docker_spec.get("num_of_gpus", 0)
+        docker_spec = get_job_launcher_spec(job_meta, site_name, "docker")
+        _site_rs = (job_meta.get(JobMetaKey.RESOURCE_SPEC.value) or {}).get(site_name) or {}
+        _flat_gpus = 0 if any(k in _site_rs for k in ("process", "docker", "k8s")) else _site_rs.get("num_of_gpus", 0)
+        num_gpus = docker_spec["num_of_gpus"] if "num_of_gpus" in docker_spec else _flat_gpus
         _RESERVED_KWARGS = {"volumes", "network", "environment", "command", "name", "detach", "user", "working_dir"}
         _NON_CONTAINER_KEYS = {"num_of_gpus", "image"} | _RESERVED_KWARGS
         reserved_in_spec = _RESERVED_KWARGS & set(docker_spec.keys())
         if reserved_in_spec:
             self.logger.warning(
-                f"job {job_id}: resource_spec['{site_name}']['docker'] contains reserved keys "
+                f"job {job_id}: launcher_spec['{site_name}']['docker'] contains reserved keys "
                 f"{sorted(reserved_in_spec)} — ignored (controlled by the launcher)"
             )
         job_container_kwargs = {k: v for k, v in docker_spec.items() if k not in _NON_CONTAINER_KEYS}

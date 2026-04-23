@@ -24,14 +24,15 @@ so large bundles move in chunks instead of being buffered into a single message.
 """
 from __future__ import annotations
 
-import atexit
 import hashlib
 import logging
 import os
 import secrets
 import shutil
+import stat
 import tempfile
 import threading
+import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import PurePosixPath
@@ -61,6 +62,8 @@ TOPIC_PUBLISH_RESULTS = "publish_results"
 
 DOWNLOAD_TIMEOUT = 600.0
 PER_REQUEST_TIMEOUT = 300.0
+BOOTSTRAP_CONNECT_TIMEOUT = 30.0
+BOOTSTRAP_CONNECT_POLL_INTERVAL = 0.1
 
 _BOOTSTRAP_CELL_PREFIX = "ws_transfer_"
 
@@ -104,6 +107,8 @@ def _validate_relative_zip_members(zf: zipfile.ZipFile) -> None:
 def _validate_job_zip_members(zf: zipfile.ZipFile, job_id: str) -> None:
     _validate_relative_zip_members(zf)
     for info in zf.infolist():
+        if stat.S_ISLNK(info.external_attr >> 16):
+            raise ValueError(f"symlink not allowed in results archive: {info.filename}")
         parts = PurePosixPath(info.filename).parts
         if not parts or parts[0] != job_id:
             raise ValueError(f"zip member outside job workspace: {info.filename}")
@@ -248,9 +253,9 @@ class WorkspaceTransferManager:
             ref_id = add_file(downloader, tmp.name)
             bundle_sha = _hash_file(tmp.name)
             bundle_size = os.path.getsize(tmp.name)
-        except Exception:
+        except Exception as e:
             _cleanup_download(downloader.tx_id if downloader else "", tmp.name)
-            raise
+            return _make_error(f"failed to prepare workspace download for {job_id}: {e}")
 
         with self._lock:
             current = self.jobs.get(job_id)
@@ -321,6 +326,8 @@ class WorkspaceTransferManager:
             return _make_error(str(e))
         except zipfile.BadZipFile as e:
             return _make_error(f"invalid results bundle for {job_id}: {e}")
+        except Exception as e:
+            return _make_error(f"unexpected error processing results for {job_id}: {e}")
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -346,7 +353,6 @@ def _get_bootstrap_cell(args, owner_fqcn: str, secure_mode: bool) -> Cell:
             _bootstrap_cell, _bootstrap_net_agent = _create_bootstrap_cell(
                 args=args, owner_fqcn=owner_fqcn, secure_mode=secure_mode
             )
-            atexit.register(_close_bootstrap_cell)
         return _bootstrap_cell
 
 
@@ -450,7 +456,19 @@ def _create_bootstrap_cell(args, owner_fqcn: str, secure_mode: bool) -> tuple[Ce
     return cell, net_agent
 
 
+def _wait_for_bootstrap_ready(cell: Cell, owner_fqcn: str, timeout: float = BOOTSTRAP_CONNECT_TIMEOUT) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if cell.is_backbone_ready() and cell.is_cell_connected(owner_fqcn):
+            return
+        time.sleep(BOOTSTRAP_CONNECT_POLL_INTERVAL)
+    raise RuntimeError(
+        f"workspace transfer bootstrap cell failed to connect to parent {owner_fqcn} within {timeout} seconds"
+    )
+
+
 def _request_workspace_bundle(cell: Cell, owner_fqcn: str, job_id: str, transfer_token: str) -> dict:
+    _wait_for_bootstrap_ready(cell, owner_fqcn)
     request = new_cell_message({}, {"job_id": job_id, "transfer_token": transfer_token})
     reply = cell.send_request(
         channel=WORKSPACE_TRANSFER_CHANNEL,
@@ -515,18 +533,19 @@ def upload_results(args, secure_mode: bool) -> None:
 
     temp_bundle = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
     temp_bundle.close()
-    _zip_results_to_file(args.workspace, args.job_id, temp_bundle.name)
-    bundle_sha = _hash_file(temp_bundle.name)
-    bundle_size = os.path.getsize(temp_bundle.name)
-    logger.info(
-        "[ws-transfer] upload_results start job=%s bundle_size=%d target=%s",
-        args.job_id,
-        bundle_size,
-        owner_fqcn,
-    )
     downloader = None
     try:
+        _zip_results_to_file(args.workspace, args.job_id, temp_bundle.name)
+        bundle_sha = _hash_file(temp_bundle.name)
+        bundle_size = os.path.getsize(temp_bundle.name)
+        logger.info(
+            "[ws-transfer] upload_results start job=%s bundle_size=%d target=%s",
+            args.job_id,
+            bundle_size,
+            owner_fqcn,
+        )
         cell = _get_bootstrap_cell(args, owner_fqcn, secure_mode)
+        _wait_for_bootstrap_ready(cell, owner_fqcn)
         downloader = ObjectDownloader(
             cell=cell,
             timeout=DOWNLOAD_TIMEOUT,

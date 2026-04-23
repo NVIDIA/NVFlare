@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import stat
 import tempfile
 import zipfile
 from types import SimpleNamespace
@@ -21,10 +22,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
+    BOOTSTRAP_CONNECT_TIMEOUT,
     ENV_WORKSPACE_OWNER_FQCN,
     ENV_WORKSPACE_TRANSFER_TOKEN,
     WorkspaceTransferManager,
     _hash_file,
+    _wait_for_bootstrap_ready,
     download_workspace,
     make_workspace_transfer_fqcn,
     upload_results,
@@ -52,12 +55,24 @@ def _make_zip(path: str, entries: dict[str, bytes]) -> None:
             zf.writestr(name, content)
 
 
+def _make_zip_with_symlink(path: str, link_name: str, link_target: str, file_entries: dict[str, bytes]) -> None:
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        info = zipfile.ZipInfo(link_name)
+        info.create_system = 3
+        info.external_attr = (stat.S_IFLNK | 0o777) << 16
+        zf.writestr(info, link_target)
+        for name, content in file_entries.items():
+            zf.writestr(name, content)
+
+
 class _FakeCell:
-    def __init__(self, fqcn="owner.cell", reply=None):
+    def __init__(self, fqcn="owner.cell", reply=None, backbone_ready=True, connected=True):
         self._fqcn = fqcn
         self.reply = reply
         self.callbacks = {}
         self.requests = []
+        self.backbone_ready = backbone_ready
+        self.connected = connected
 
     def get_fqcn(self):
         return self._fqcn
@@ -70,6 +85,16 @@ class _FakeCell:
         if callable(self.reply):
             return self.reply(kwargs)
         return self.reply
+
+    def is_backbone_ready(self):
+        if callable(self.backbone_ready):
+            return self.backbone_ready()
+        return self.backbone_ready
+
+    def is_cell_connected(self, _target_fqcn):
+        if callable(self.connected):
+            return self.connected()
+        return self.connected
 
     def stop(self):
         pass
@@ -156,6 +181,29 @@ class TestWorkspaceTransferManager:
             finally:
                 manager.remove_job(JOB_ID)
 
+    def test_prepare_download_returns_error_when_bundle_creation_fails(self, monkeypatch):
+        with tempfile.TemporaryDirectory() as ws_root:
+            owner_cell = _FakeCell(fqcn="site-1.parent")
+            manager = WorkspaceTransferManager(owner_cell)
+            transfer_token = manager.add_job(JOB_ID, ws_root)
+
+            def _boom(*_args, **_kwargs):
+                raise OSError("disk full")
+
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer._zip_workspace_to_file",
+                _boom,
+            )
+
+            request = new_cell_message({}, {"job_id": JOB_ID, "transfer_token": transfer_token})
+            request.set_header(MessageHeaderKey.ORIGIN, make_workspace_transfer_fqcn(owner_cell.get_fqcn(), JOB_ID))
+            try:
+                reply = manager._handle_prepare_download(request)
+                assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
+                assert "failed to prepare workspace download" in reply.get_header(MessageHeaderKey.ERROR)
+            finally:
+                manager.remove_job(JOB_ID)
+
     def test_publish_results_extracts_job_dir_only(self, monkeypatch):
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
             owner_cell = _FakeCell(fqcn="site-1.parent")
@@ -207,6 +255,65 @@ class TestWorkspaceTransferManager:
                 reply = manager._handle_publish_results(request)
                 assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
                 assert not os.path.exists(os.path.join(ws_root, "other-job", "result.txt"))
+            finally:
+                manager.remove_job(JOB_ID)
+
+    def test_publish_results_rejects_symlink_entries(self, monkeypatch):
+        with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
+            owner_cell = _FakeCell(fqcn="site-1.parent")
+            manager = WorkspaceTransferManager(owner_cell)
+            transfer_token = manager.add_job(JOB_ID, ws_root)
+
+            zip_path = os.path.join(tmp, "results-symlink.zip")
+            _make_zip_with_symlink(
+                zip_path,
+                f"{JOB_ID}/link",
+                "../../startup",
+                {f"{JOB_ID}/link/result.txt": b"oops"},
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer.download_file",
+                lambda **kwargs: (None, zip_path),
+            )
+
+            request = new_cell_message(
+                {},
+                {"job_id": JOB_ID, "ref_id": "ref-1", "transfer_token": transfer_token},
+            )
+            request.set_header(MessageHeaderKey.ORIGIN, make_workspace_transfer_fqcn(owner_cell.get_fqcn(), JOB_ID))
+            try:
+                reply = manager._handle_publish_results(request)
+                assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
+                assert "symlink not allowed" in reply.get_header(MessageHeaderKey.ERROR)
+            finally:
+                manager.remove_job(JOB_ID)
+
+    def test_publish_results_returns_error_on_unexpected_os_error(self, monkeypatch):
+        with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
+            owner_cell = _FakeCell(fqcn="site-1.parent")
+            manager = WorkspaceTransferManager(owner_cell)
+            transfer_token = manager.add_job(JOB_ID, ws_root)
+
+            zip_path = os.path.join(tmp, "results.zip")
+            _make_zip(zip_path, {f"{JOB_ID}/result.txt": b"done"})
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer.download_file",
+                lambda **kwargs: (None, zip_path),
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer.os.makedirs",
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+            )
+
+            request = new_cell_message(
+                {},
+                {"job_id": JOB_ID, "ref_id": "ref-1", "transfer_token": transfer_token},
+            )
+            request.set_header(MessageHeaderKey.ORIGIN, make_workspace_transfer_fqcn(owner_cell.get_fqcn(), JOB_ID))
+            try:
+                reply = manager._handle_publish_results(request)
+                assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
+                assert "unexpected error processing results" in reply.get_header(MessageHeaderKey.ERROR)
             finally:
                 manager.remove_job(JOB_ID)
 
@@ -285,6 +392,27 @@ class TestWorkspaceTransferManager:
 
 
 class TestWorkspaceBootstrapHelpers:
+    def test_wait_for_bootstrap_ready_succeeds_after_connection(self, monkeypatch):
+        readiness = iter([False, False, True])
+        fake_cell = _FakeCell(
+            fqcn="site-1.parent",
+            backbone_ready=lambda: next(readiness),
+            connected=True,
+        )
+        monkeypatch.setattr("nvflare.app_opt.job_launcher.workspace_cell_transfer.time.sleep", lambda _: None)
+        _wait_for_bootstrap_ready(fake_cell, "site-1.parent", timeout=BOOTSTRAP_CONNECT_TIMEOUT)
+
+    def test_wait_for_bootstrap_ready_times_out(self, monkeypatch):
+        fake_cell = _FakeCell(fqcn="site-1.parent", backbone_ready=False, connected=False)
+        ticks = iter([0.0, 0.05, 0.11])
+        monkeypatch.setattr("nvflare.app_opt.job_launcher.workspace_cell_transfer.time.sleep", lambda _: None)
+        monkeypatch.setattr(
+            "nvflare.app_opt.job_launcher.workspace_cell_transfer.time.monotonic",
+            lambda: next(ticks),
+        )
+        with pytest.raises(RuntimeError, match="failed to connect to parent"):
+            _wait_for_bootstrap_ready(fake_cell, "site-1.parent", timeout=0.1)
+
     def test_download_workspace_noop_when_env_not_set(self, monkeypatch):
         monkeypatch.delenv(ENV_WORKSPACE_OWNER_FQCN, raising=False)
         monkeypatch.delenv(ENV_WORKSPACE_TRANSFER_TOKEN, raising=False)
@@ -394,3 +522,84 @@ class TestWorkspaceBootstrapHelpers:
             assert request.payload["ref_id"] == "ref-upload"
             assert request.payload["transfer_token"] == "token-1"
             fake_downloader.delete_transaction.assert_called_once_with()
+
+    def test_upload_results_waits_for_bootstrap_ready(self, monkeypatch):
+        with tempfile.TemporaryDirectory() as ws_root:
+            _write_file(os.path.join(ws_root, JOB_ID, "result.txt"), b"done")
+            fake_cell = _FakeCell(fqcn="site-1.parent", reply=make_reply(ReturnCode.OK, body={"job_id": JOB_ID}))
+            fake_downloader = MagicMock()
+            wait_calls = []
+
+            monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, "site-1.parent")
+            monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "token-1")
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer._get_bootstrap_cell",
+                lambda *a, **kw: fake_cell,
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer._wait_for_bootstrap_ready",
+                lambda cell, owner_fqcn: wait_calls.append((cell, owner_fqcn)),
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer._close_bootstrap_cell",
+                lambda: None,
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer.ObjectDownloader",
+                lambda *args, **kwargs: fake_downloader,
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer.add_file",
+                lambda downloader, file_name: "ref-upload",
+            )
+
+            args = SimpleNamespace(
+                workspace=ws_root,
+                job_id=JOB_ID,
+                parent_url="tcp://parent",
+                root_url="tcp://root",
+            )
+
+            upload_results(args, secure_mode=False)
+
+            assert wait_calls == [(fake_cell, "site-1.parent")]
+
+    def test_upload_results_cleans_temp_bundle_when_zip_creation_fails(self, monkeypatch):
+        with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
+            _write_file(os.path.join(ws_root, JOB_ID, "result.txt"), b"done")
+            created = {}
+
+            real_named_temporary_file = tempfile.NamedTemporaryFile
+
+            def _named_tmp(*args, **kwargs):
+                tmp_file = real_named_temporary_file(*args, dir=tmp, **kwargs)
+                created["path"] = tmp_file.name
+                return tmp_file
+
+            monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, "site-1.parent")
+            monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "token-1")
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer.tempfile.NamedTemporaryFile",
+                _named_tmp,
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer._zip_results_to_file",
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer._close_bootstrap_cell",
+                lambda: None,
+            )
+
+            args = SimpleNamespace(
+                workspace=ws_root,
+                job_id=JOB_ID,
+                parent_url="tcp://parent",
+                root_url="tcp://root",
+            )
+
+            with pytest.raises(OSError, match="disk full"):
+                upload_results(args, secure_mode=False)
+
+            assert created["path"]
+            assert not os.path.exists(created["path"])
