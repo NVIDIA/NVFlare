@@ -701,10 +701,14 @@ class SessionSpec(ABC):
     ) -> dict:
         """Create or merge a study in the server registry.
 
+        Exactly one of sites or site_orgs must be provided; passing both raises
+        InvalidArgumentError. Use sites for org_admin callers (own-org sites only)
+        and site_orgs for project_admin callers (cross-org enrollment).
+
         Args:
             study: study name
-            sites: flat site list for org_admin callers
-            site_orgs: repeatable org:s1,s2,... groups for project_admin callers
+            sites: flat site list for org_admin callers; mutually exclusive with site_orgs
+            site_orgs: repeatable "org:s1,s2,..." groups for project_admin callers; mutually exclusive with sites
 
         Returns: study payload dict
         """
@@ -716,10 +720,13 @@ class SessionSpec(ABC):
     ) -> dict:
         """Add sites to an existing study.
 
+        Exactly one of sites or site_orgs must be provided; passing both raises
+        InvalidArgumentError.
+
         Args:
             study: study name
-            sites: flat site list for org_admin callers
-            site_orgs: repeatable org:s1,s2,... groups for project_admin callers
+            sites: flat site list for org_admin callers; mutually exclusive with site_orgs
+            site_orgs: repeatable "org:s1,s2,..." groups for project_admin callers; mutually exclusive with sites
 
         Returns: study payload dict with added/already_enrolled lists
         """
@@ -731,10 +738,13 @@ class SessionSpec(ABC):
     ) -> dict:
         """Remove sites from an existing study.
 
+        Exactly one of sites or site_orgs must be provided; passing both raises
+        InvalidArgumentError.
+
         Args:
             study: study name
-            sites: flat site list for org_admin callers
-            site_orgs: repeatable org:s1,s2,... groups for project_admin callers
+            sites: flat site list for org_admin callers; mutually exclusive with site_orgs
+            site_orgs: repeatable "org:s1,s2,..." groups for project_admin callers; mutually exclusive with sites
 
         Returns: study payload dict with removed/not_enrolled lists
         """

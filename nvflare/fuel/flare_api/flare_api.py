@@ -840,6 +840,8 @@ class Session(SessionSpec):
         self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
     ) -> dict:
         self._validate_study_name(study)
+        if sites and site_orgs:
+            raise InvalidArgumentError("sites and site_orgs are mutually exclusive; provide only one")
         parts = [AdminCommandNames.REGISTER_STUDY, study]
         if site_orgs:
             self._validate_study_site_orgs(site_orgs)
@@ -855,6 +857,8 @@ class Session(SessionSpec):
         self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
     ) -> dict:
         self._validate_study_name(study)
+        if sites and site_orgs:
+            raise InvalidArgumentError("sites and site_orgs are mutually exclusive; provide only one")
         parts = [AdminCommandNames.ADD_STUDY_SITE, study]
         if site_orgs:
             self._validate_study_site_orgs(site_orgs)
@@ -870,6 +874,8 @@ class Session(SessionSpec):
         self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
     ) -> dict:
         self._validate_study_name(study)
+        if sites and site_orgs:
+            raise InvalidArgumentError("sites and site_orgs are mutually exclusive; provide only one")
         parts = [AdminCommandNames.REMOVE_STUDY_SITE, study]
         if site_orgs:
             self._validate_study_site_orgs(site_orgs)
