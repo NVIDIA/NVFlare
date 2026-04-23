@@ -22,6 +22,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels
 from nvflare.app_common.streamers.log_streamer import LogStreamer
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.widget import Widget
 
 _LOG_STREAMER_PATH = "nvflare.app_common.logging.job_log_streamer.JobLogStreamer"
@@ -96,8 +97,11 @@ class SystemLogStreamer(Widget):
         try:
             with open(config_path) as f:
                 cfg = json.load(f)
-        except Exception:
-            self.log_warning(fl_ctx, f"Failed to read {config_path}; skipping log streamer injection")
+        except Exception as ex:
+            self.log_exception(
+                fl_ctx,
+                f"Failed to read {config_path}; skipping log streamer injection: {secure_format_exception(ex)}",
+            )
             return
 
         components = cfg.get("components")
@@ -130,8 +134,11 @@ class SystemLogStreamer(Widget):
         try:
             with open(config_path, "w") as f:
                 json.dump(cfg, f, indent=2)
-        except Exception:
-            self.log_exception(fl_ctx, f"Failed to write {config_path}; log streamer not injected")
+        except Exception as ex:
+            self.log_exception(
+                fl_ctx,
+                f"Failed to write {config_path}; log streamer not injected: {secure_format_exception(ex)}",
+            )
             return
 
         self.log_info(fl_ctx, f"Injected JobLogStreamer into job {job_id}")
@@ -155,8 +162,12 @@ class SystemLogStreamer(Widget):
                 poll_interval=self._poll_interval,
                 liveness_interval=self._liveness_interval,
             )
-        except Exception:
-            self.log_exception(fl_ctx, f"Failed to upload completed log '{self._log_file_name}' for job {job_id}")
+        except Exception as ex:
+            self.log_exception(
+                fl_ctx,
+                f"Failed to upload completed log '{self._log_file_name}' for job {job_id}: "
+                f"{secure_format_exception(ex)}",
+            )
 
     def _on_job_completed(self, event_type: str, fl_ctx: FLContext):
         if self._log_file_name != WorkspaceConstants.ERROR_LOG_FILE_NAME:
@@ -176,9 +187,13 @@ class SystemLogStreamer(Widget):
             self.log_info(fl_ctx, f"No error log file found for {client_name} job {job_id}")
             return
 
+        # The event FLContext can be reused after the handler returns, so hand
+        # the background uploader its own fresh context.
+        engine = fl_ctx.get_engine()
+        stream_fl_ctx = engine.new_context() if engine else fl_ctx
         threading.Thread(
             target=self._stream_completed_log,
-            args=(fl_ctx, log_path, client_name, job_id),
+            args=(stream_fl_ctx, log_path, client_name, job_id),
             daemon=True,
         ).start()
         self.log_info(fl_ctx, f"Started completed error log upload for {client_name} job {job_id}: {log_path}")

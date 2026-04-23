@@ -41,9 +41,9 @@ LogStreamer differs from FileStreamer in three fundamental ways:
    concludes the sender is unreachable, closes the stream via the engine's
    ``END_STREAM`` hook, and fires ``stream_done_cb`` with
    ``StreamContextKey.RC = ReturnCode.TIMEOUT``.  To avoid spurious timeouts,
-   ``liveness_interval`` must be strictly less than ``idle_timeout``.  These
-   values are configured on different sites so this cannot be enforced at
-   call time — ensure they are consistent at deployment.
+   ``liveness_interval`` must be strictly less than ``idle_timeout``.  This
+   can be validated only when the caller knows both values; otherwise ensure
+   they are consistent at deployment.
 
 Relationship between the two parameters
 ----------------------------------------
@@ -62,7 +62,7 @@ from typing import List, Tuple
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, StreamableEngine, StreamContext, StreamContextKey
-from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
+from nvflare.fuel.utils.validation_utils import check_non_negative_number, check_positive_int, check_positive_number
 
 from .streamer_base import (  # noqa: F401
     KEY_DATA,
@@ -126,11 +126,11 @@ class _LogChunkConsumer(BaseChunkConsumer):
             if elapsed >= self._idle_timeout:
                 self.logger.warning(f"log stream idle for {elapsed:.1f}s (threshold {self._idle_timeout}s) — closing")
                 self._done.set()
-                if self._fl_ctx is None:
-                    self.logger.error("no fl_ctx available — cannot call end_stream")
-                    return
                 end_stream = self._stream_ctx.get(StreamContextKey.END_STREAM)
                 if callable(end_stream):
+                    # Use the latest FLContext we have seen. It may still be None if
+                    # the sender dies immediately after opening the stream, but ending
+                    # the transport still lets stream_runner clean up its tx_table.
                     end_stream(ReturnCode.TIMEOUT, self._fl_ctx)
                 else:
                     self.logger.error("missing end_stream hook in stream context")
@@ -381,6 +381,7 @@ class LogStreamer(StreamerBase):
         stop_event: threading.Event = None,
         poll_interval: float = 0.5,
         liveness_interval: float = 10.0,
+        idle_timeout: float = None,
         chunk_size: int = None,
         chunk_timeout: float = None,
         optional: bool = False,
@@ -421,6 +422,9 @@ class LogStreamer(StreamerBase):
                 (default 0.5)
             liveness_interval: seconds of log silence before sending a heartbeat to
                 receivers (default 10.0)
+            idle_timeout: optional receiver idle-timeout value used only for local
+                validation. When provided and greater than zero,
+                ``liveness_interval`` must be strictly less than ``idle_timeout``.
             chunk_size: bytes per chunk; defaults to 64 KB
             chunk_timeout: per-chunk send timeout in seconds; defaults to 5.0
             optional: whether the stream is optional
@@ -439,6 +443,12 @@ class LogStreamer(StreamerBase):
 
         check_positive_number("poll_interval", poll_interval)
         check_positive_number("liveness_interval", liveness_interval)
+        if idle_timeout is not None:
+            check_non_negative_number("idle_timeout", idle_timeout)
+            if idle_timeout > 0 and liveness_interval >= idle_timeout:
+                raise ValueError(
+                    f"liveness_interval ({liveness_interval}s) must be less than idle_timeout ({idle_timeout}s)"
+                )
 
         if stop_event is None:
             stop_event = threading.Event()

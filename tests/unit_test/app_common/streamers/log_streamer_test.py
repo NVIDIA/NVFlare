@@ -15,6 +15,8 @@
 import threading
 from unittest.mock import Mock
 
+import pytest
+
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import StreamContextKey
@@ -25,6 +27,7 @@ from nvflare.app_common.streamers.log_streamer import (
     KEY_FILE_NAME,
     KEY_HEARTBEAT,
     LogChunkConsumerFactory,
+    LogStreamer,
     dispatch_stream_done,
 )
 
@@ -122,3 +125,49 @@ def test_idle_timeout_ends_each_stream_independently():
         ("one.log", "TIMEOUT"),
         ("two.log", "TIMEOUT"),
     ]
+
+
+def test_idle_timeout_cleans_up_stream_even_without_fl_ctx():
+    ended = []
+
+    def stream_done_cb(stream_ctx, fl_ctx, **kwargs):
+        ended.append((stream_ctx[KEY_FILE_NAME], stream_ctx[StreamContextKey.RC], fl_ctx))
+
+    factory = LogChunkConsumerFactory(
+        chunk_received_cb=None,
+        idle_timeout=0.2,
+        stream_done_cb=stream_done_cb,
+        cb_kwargs={},
+    )
+
+    stream_ctx = {KEY_FILE_NAME: "orphaned.log"}
+    stream_done_event = threading.Event()
+
+    def end_stream(rc, callback_fl_ctx):
+        stream_ctx[StreamContextKey.RC] = rc
+        dispatch_stream_done(stream_ctx, callback_fl_ctx)
+        stream_done_event.set()
+
+    stream_ctx[StreamContextKey.END_STREAM] = end_stream
+    factory.get_consumer(stream_ctx, None)
+
+    assert stream_done_event.wait(timeout=2.0)
+    assert ended == [("orphaned.log", "TIMEOUT", None)]
+
+
+def test_stream_log_rejects_liveness_interval_not_less_than_idle_timeout():
+    fl_ctx = Mock(spec=FLContext)
+    fl_ctx.get_engine.return_value = Mock()
+
+    with pytest.raises(ValueError, match="liveness_interval"):
+        LogStreamer.stream_log(
+            channel="channel",
+            topic="topic",
+            stream_ctx={},
+            targets=["server"],
+            file_name="/tmp/test.log",
+            fl_ctx=fl_ctx,
+            stop_event=threading.Event(),
+            liveness_interval=10.0,
+            idle_timeout=10.0,
+        )
