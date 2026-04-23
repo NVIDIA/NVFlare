@@ -65,11 +65,11 @@ def _normalize_and_validate_studies(project_dict: dict, participant_defs: list, 
     if not isinstance(studies, dict):
         raise ValueError(f"studies must be a mapping but got {type(studies)}")
 
-    client_names = {p.get("name") for p in participant_defs if p.get("type") == ParticipantType.CLIENT}
+    client_defs = {p.get("name"): p for p in participant_defs if p.get("type") == ParticipantType.CLIENT}
     admin_names = {p.get("name") for p in participant_defs if p.get("type") == ParticipantType.ADMIN}
+    org_names = {p.get("org") for p in participant_defs if p.get("org")}
 
     normalized = {}
-    valid_roles = {AdminRole.PROJECT_ADMIN, AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER}
     for study_name, study_def in studies.items():
         if study_name == "default":
             raise ValueError("study name 'default' is reserved")
@@ -85,29 +85,52 @@ def _normalize_and_validate_studies(project_dict: dict, participant_defs: list, 
         if not isinstance(study_def, dict):
             raise ValueError(f"study '{study_name}' must be a mapping")
 
-        sites = study_def.get("sites", [])
-        admins = study_def.get("admins", {})
-        if sites is None:
-            sites = []
+        site_orgs = study_def.get("site_orgs", {})
+        admins = study_def.get("admins", [])
         if admins is None:
-            admins = {}
+            admins = []
 
-        if not isinstance(sites, list):
-            raise ValueError(f"study '{study_name}' sites must be a list")
-        if not isinstance(admins, dict):
-            raise ValueError(f"study '{study_name}' admins must be a mapping")
+        if site_orgs is None:
+            site_orgs = {}
+        if not isinstance(site_orgs, dict):
+            raise ValueError(f"study '{study_name}' site_orgs must be a mapping")
+        if not isinstance(admins, list):
+            raise ValueError(f"study '{study_name}' admins must be a list")
 
-        for site in sites:
-            if site not in client_names:
-                raise ValueError(f"study '{study_name}' references unknown client '{site}'")
+        seen_sites = set()
+        normalized_site_orgs = {}
+        for org_name, sites in site_orgs.items():
+            if org_name not in org_names:
+                raise ValueError(f"study '{study_name}' references unknown org '{org_name}'")
+            if not isinstance(sites, list):
+                raise ValueError(f"study '{study_name}' site_orgs for org '{org_name}' must be a list")
+            normalized_sites = []
+            for site in sites:
+                client_def = client_defs.get(site)
+                if not client_def:
+                    raise ValueError(f"study '{study_name}' references unknown client '{site}'")
+                if client_def.get("org") != org_name:
+                    raise ValueError(f"study '{study_name}' lists client '{site}' under wrong org '{org_name}'")
+                if site in seen_sites:
+                    raise ValueError(f"study '{study_name}' references duplicate client '{site}' across org groups")
+                seen_sites.add(site)
+                normalized_sites.append(site)
+            normalized_site_orgs[org_name] = normalized_sites
 
-        for admin_name, role in admins.items():
+        normalized_admins = []
+        seen_admins = set()
+        for admin_name in admins:
             if admin_name not in admin_names:
                 raise ValueError(f"study '{study_name}' references unknown admin '{admin_name}'")
-            if role not in valid_roles:
-                raise ValueError(f"study '{study_name}' assigns unknown role '{role}' to '{admin_name}'")
+            if admin_name in seen_admins:
+                continue
+            seen_admins.add(admin_name)
+            normalized_admins.append(admin_name)
 
-        normalized[study_name] = dict(study_def)
+        normalized[study_name] = {
+            "site_orgs": normalized_site_orgs,
+            "admins": normalized_admins,
+        }
 
     return normalized
 

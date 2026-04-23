@@ -32,6 +32,7 @@ Command groups
 - ``provision``: centralized provisioning workflow
 - ``cert`` / ``package``: distributed (manual) provisioning workflow
 - ``job``: submit and manage jobs
+- ``study``: manage multi-study lifecycle (register, enroll sites, manage users)
 - ``system``: inspect and operate a running FL system
 - ``config``: store local CLI settings such as the startup kit path
 - ``recipe``: list built-in recipe families for exported jobs
@@ -51,6 +52,7 @@ workflows unless you are maintaining an older setup.
    provision_command
    distributed_provisioning
    job_cli
+   study_command
    system_command
    config_command
    cert_command

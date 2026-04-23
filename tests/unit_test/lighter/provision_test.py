@@ -62,14 +62,14 @@ class TestProvision:
         assert [p.name for p in project.get_admins()] == ["admin1@org.com"]
 
     def test_prepare_project_requires_api_version_4_for_studies(self):
-        project_config = self._base_project(api_version=3, studies={"study-a": {"sites": ["client1"], "admins": {}}})
+        project_config = self._base_project(api_version=3, studies={"study-a": {"site_orgs": {"org": ["client1"]}, "admins": []}})
 
         with pytest.raises(ValueError, match="studies: requires api_version: 4"):
             prepare_project(project_dict=project_config)
 
     def test_prepare_project_rejects_reserved_default_study_name(self):
         project_config = self._base_project(
-            studies={"default": {"sites": ["client1"], "admins": {"admin1@org.com": "project_admin"}}}
+            studies={"default": {"site_orgs": {"org": ["client1"]}, "admins": ["admin1@org.com"]}}
         )
 
         with pytest.raises(ValueError, match="study name 'default' is reserved"):
@@ -77,7 +77,7 @@ class TestProvision:
 
     def test_prepare_project_rejects_invalid_study_name(self):
         project_config = self._base_project(
-            studies={"Study_A": {"sites": ["client1"], "admins": {"admin1@org.com": "project_admin"}}}
+            studies={"Study_A": {"site_orgs": {"org": ["client1"]}, "admins": ["admin1@org.com"]}}
         )
 
         with pytest.raises(ValueError, match="invalid study name 'Study_A'"):
@@ -85,7 +85,7 @@ class TestProvision:
 
     def test_prepare_project_accepts_underscore_in_study_name(self):
         project_config = self._base_project(
-            studies={"study_a": {"sites": ["client1"], "admins": {"admin1@org.com": "project_admin"}}}
+            studies={"study_a": {"site_orgs": {"org": ["client1"]}, "admins": ["admin1@org.com"]}}
         )
 
         project = prepare_project(project_dict=project_config)
@@ -107,7 +107,7 @@ class TestProvision:
 
     def test_prepare_project_rejects_unknown_client_reference(self):
         project_config = self._base_project(
-            studies={"study-a": {"sites": ["client2"], "admins": {"admin1@org.com": "project_admin"}}}
+            studies={"study-a": {"site_orgs": {"org": ["client2"]}, "admins": ["admin1@org.com"]}}
         )
 
         with pytest.raises(ValueError, match="study 'study-a' references unknown client 'client2'"):
@@ -115,18 +115,18 @@ class TestProvision:
 
     def test_prepare_project_rejects_unknown_admin_reference(self):
         project_config = self._base_project(
-            studies={"study-a": {"sites": ["client1"], "admins": {"admin2@org.com": "project_admin"}}}
+            studies={"study-a": {"site_orgs": {"org": ["client1"]}, "admins": ["admin2@org.com"]}}
         )
 
         with pytest.raises(ValueError, match="study 'study-a' references unknown admin 'admin2@org.com'"):
             prepare_project(project_dict=project_config)
 
-    def test_prepare_project_rejects_invalid_role_in_study_mapping(self):
+    def test_prepare_project_rejects_site_under_wrong_org(self):
         project_config = self._base_project(
-            studies={"study-a": {"sites": ["client1"], "admins": {"admin1@org.com": "captain"}}}
+            studies={"study-a": {"site_orgs": {"other_org": ["client1"]}, "admins": ["admin1@org.com"]}}
         )
 
-        with pytest.raises(ValueError, match="study 'study-a' assigns unknown role 'captain' to 'admin1@org.com'"):
+        with pytest.raises(ValueError, match="study 'study-a' references unknown org 'other_org'"):
             prepare_project(project_dict=project_config)
 
     def test_prepare_project_requires_project_name(self):

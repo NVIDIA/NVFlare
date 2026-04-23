@@ -41,6 +41,7 @@ from .api_spec import (
     AuthorizationError,
     ClientInfo,
     ClientsStillRunning,
+    CommandError,
     InternalError,
     InvalidArgumentError,
     InvalidJobDefinition,
@@ -785,6 +786,120 @@ class Session(SessionSpec):
                 if it.get(ProtoKey.TYPE) == ProtoKey.DICT:
                     return it.get(ProtoKey.DATA, {})
         return result
+
+    @staticmethod
+    def _get_study_payload(reply: dict) -> dict:
+        payload = Session._get_dict_data(reply)
+        if not isinstance(payload, dict):
+            raise InternalError(f"study payload must be dict but got {type(payload)}")
+        error_code = payload.get("error_code")
+        if error_code:
+            raise CommandError(
+                error_code=error_code,
+                message=payload.get("message", error_code),
+                hint=payload.get("hint", ""),
+                exit_code=payload.get("exit_code", 1),
+            )
+        return payload
+
+    @staticmethod
+    def _validate_study_name(study: str):
+        if not isinstance(study, str):
+            raise InvalidArgumentError(f"study must be str but got {type(study)}")
+        if not study:
+            raise InvalidArgumentError("study is required but not specified.")
+
+    @staticmethod
+    def _validate_study_sites(sites: List[str]):
+        if not isinstance(sites, list):
+            raise InvalidArgumentError(f"sites must be list but got {type(sites)}")
+        if not sites:
+            raise InvalidArgumentError("sites are required but not specified.")
+        for site in sites:
+            if not isinstance(site, str) or not site:
+                raise InvalidArgumentError(f"invalid site value: {site}")
+
+    @staticmethod
+    def _validate_study_user(user: str):
+        if not isinstance(user, str):
+            raise InvalidArgumentError(f"user must be str but got {type(user)}")
+        if not user:
+            raise InvalidArgumentError("user is required but not specified.")
+
+    @staticmethod
+    def _validate_study_site_orgs(site_orgs: List[str]):
+        if not isinstance(site_orgs, list):
+            raise InvalidArgumentError(f"site_orgs must be list but got {type(site_orgs)}")
+        if not site_orgs:
+            raise InvalidArgumentError("site_orgs are required but not specified.")
+        for item in site_orgs:
+            if not isinstance(item, str) or not item:
+                raise InvalidArgumentError(f"invalid site_org value: {item}")
+
+    def register_study(self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None) -> dict:
+        self._validate_study_name(study)
+        parts = [AdminCommandNames.REGISTER_STUDY, study]
+        if site_orgs:
+            self._validate_study_site_orgs(site_orgs)
+            for item in site_orgs:
+                parts.extend(["--site-org", item])
+        else:
+            self._validate_study_sites(sites)
+            parts.extend(["--sites", ",".join(sites)])
+        reply = self._do_command(join_args(parts))
+        return self._get_study_payload(reply)
+
+    def add_study_site(self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None) -> dict:
+        self._validate_study_name(study)
+        parts = [AdminCommandNames.ADD_STUDY_SITE, study]
+        if site_orgs:
+            self._validate_study_site_orgs(site_orgs)
+            for item in site_orgs:
+                parts.extend(["--site-org", item])
+        else:
+            self._validate_study_sites(sites)
+            parts.extend(["--sites", ",".join(sites)])
+        reply = self._do_command(join_args(parts))
+        return self._get_study_payload(reply)
+
+    def remove_study_site(self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None) -> dict:
+        self._validate_study_name(study)
+        parts = [AdminCommandNames.REMOVE_STUDY_SITE, study]
+        if site_orgs:
+            self._validate_study_site_orgs(site_orgs)
+            for item in site_orgs:
+                parts.extend(["--site-org", item])
+        else:
+            self._validate_study_sites(sites)
+            parts.extend(["--sites", ",".join(sites)])
+        reply = self._do_command(join_args(parts))
+        return self._get_study_payload(reply)
+
+    def remove_study(self, study: str) -> dict:
+        self._validate_study_name(study)
+        reply = self._do_command(join_args([AdminCommandNames.REMOVE_STUDY, study]))
+        return self._get_study_payload(reply)
+
+    def list_studies(self) -> dict:
+        reply = self._do_command(AdminCommandNames.LIST_STUDIES)
+        return self._get_study_payload(reply)
+
+    def show_study(self, study: str) -> dict:
+        self._validate_study_name(study)
+        reply = self._do_command(join_args([AdminCommandNames.SHOW_STUDY, study]))
+        return self._get_study_payload(reply)
+
+    def add_study_user(self, study: str, user: str) -> dict:
+        self._validate_study_name(study)
+        self._validate_study_user(user)
+        reply = self._do_command(join_args([AdminCommandNames.ADD_STUDY_USER, study, user]))
+        return self._get_study_payload(reply)
+
+    def remove_study_user(self, study: str, user: str) -> dict:
+        self._validate_study_name(study)
+        self._validate_study_user(user)
+        reply = self._do_command(join_args([AdminCommandNames.REMOVE_STUDY_USER, study, user]))
+        return self._get_study_payload(reply)
 
     def show_stats(self, job_id: str, target_type: str, targets: Optional[List[str]] = None) -> dict:
         """Show processing stats of specified job on specified targets.

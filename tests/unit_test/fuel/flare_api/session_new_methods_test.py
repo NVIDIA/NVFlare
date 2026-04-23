@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.apis.fl_constant import AdminCommandNames
-from nvflare.fuel.flare_api.api_spec import MonitorReturnCode, TargetType
+from nvflare.fuel.flare_api.api_spec import CommandError, MonitorReturnCode, TargetType
 from nvflare.fuel.hci.client.api import ResultKey
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
@@ -248,6 +248,56 @@ class TestRemoveClient:
         session = _make_session()
         with pytest.raises(ValueError):
             session.remove_client("")
+
+
+class TestStudyCommands:
+    def test_register_study_sends_expected_command(self):
+        session = _make_session()
+        reply = _ok_meta_result()
+        reply["data"] = [{"type": "dict", "data": {"name": "cancer-research", "sites": ["hospital-a"], "users": []}}]
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            result = session.register_study("cancer-research", ["hospital-a"])
+        assert result["name"] == "cancer-research"
+        assert split_to_args(mock_cmd.call_args[0][0]) == [
+            AdminCommandNames.REGISTER_STUDY,
+            "cancer-research",
+            "--sites",
+            "hospital-a",
+        ]
+
+    def test_register_study_accepts_project_admin_site_org_groups(self):
+        session = _make_session()
+        reply = _ok_meta_result()
+        reply["data"] = [{"type": "dict", "data": {"name": "cancer-research", "site_orgs": {}, "users": []}}]
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            session.register_study("cancer-research", site_orgs=["org_a:hospital-a", "org_b:hospital-b"])
+
+        assert split_to_args(mock_cmd.call_args[0][0]) == [
+            AdminCommandNames.REGISTER_STUDY,
+            "cancer-research",
+            "--site-org",
+            "org_a:hospital-a",
+            "--site-org",
+            "org_b:hospital-b",
+        ]
+
+    def test_show_study_raises_command_error_from_payload(self):
+        session = _make_session()
+        reply = _ok_meta_result()
+        reply["data"] = [
+            {
+                "type": "dict",
+                "data": {
+                    "error_code": "STUDY_NOT_FOUND",
+                    "message": "Study 'ghost-study' not found.",
+                    "hint": "Verify the study name.",
+                    "exit_code": 1,
+                },
+            }
+        ]
+        with patch.object(session, "_do_command", return_value=reply):
+            with pytest.raises(CommandError, match="ghost-study"):
+                session.show_study("ghost-study")
 
 
 class TestShowStats:
