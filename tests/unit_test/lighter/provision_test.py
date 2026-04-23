@@ -62,7 +62,9 @@ class TestProvision:
         assert [p.name for p in project.get_admins()] == ["admin1@org.com"]
 
     def test_prepare_project_requires_api_version_4_for_studies(self):
-        project_config = self._base_project(api_version=3, studies={"study-a": {"site_orgs": {"org": ["client1"]}, "admins": []}})
+        project_config = self._base_project(
+            api_version=3, studies={"study-a": {"site_orgs": {"org": ["client1"]}, "admins": []}}
+        )
 
         with pytest.raises(ValueError, match="studies: requires api_version: 4"):
             prepare_project(project_dict=project_config)

@@ -836,7 +836,9 @@ class Session(SessionSpec):
             if not isinstance(item, str) or not item:
                 raise InvalidArgumentError(f"invalid site_org value: {item}")
 
-    def register_study(self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None) -> dict:
+    def register_study(
+        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
+    ) -> dict:
         self._validate_study_name(study)
         parts = [AdminCommandNames.REGISTER_STUDY, study]
         if site_orgs:
@@ -849,7 +851,9 @@ class Session(SessionSpec):
         reply = self._do_command(join_args(parts))
         return self._get_study_payload(reply)
 
-    def add_study_site(self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None) -> dict:
+    def add_study_site(
+        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
+    ) -> dict:
         self._validate_study_name(study)
         parts = [AdminCommandNames.ADD_STUDY_SITE, study]
         if site_orgs:
@@ -862,7 +866,9 @@ class Session(SessionSpec):
         reply = self._do_command(join_args(parts))
         return self._get_study_payload(reply)
 
-    def remove_study_site(self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None) -> dict:
+    def remove_study_site(
+        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
+    ) -> dict:
         self._validate_study_name(study)
         parts = [AdminCommandNames.REMOVE_STUDY_SITE, study]
         if site_orgs:
