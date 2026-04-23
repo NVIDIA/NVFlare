@@ -19,6 +19,9 @@ The Azure deployment uses the following storage layout:
   - storage class: `managed-csi`
   - access mode: `ReadWriteOnce`
   - purpose: per-site workspace PVC
+  - storage class: `managed-csi`
+  - access mode: `ReadWriteOnce`
+  - purpose: per-site workspace PVC
 - `nvfldata`
   - storage class: `managed-csi`
   - access mode: `ReadWriteOnce`

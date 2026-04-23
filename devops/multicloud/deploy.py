@@ -348,14 +348,19 @@ def namespace_exists(kubeconfig: str, ns: str) -> bool:
     return kubectl_check(kubeconfig, "get", "ns", ns)
 
 
-def helm_release_exists(kubeconfig: str, name: str, ns: str) -> bool:
+def helm_release_status(kubeconfig: str, name: str, ns: str) -> str | None:
     r = run_quiet(["helm", "--kubeconfig", kubeconfig, "status", name, "-n", ns, "--output", "json"])
     if r.returncode != 0:
-        return False
+        return None
     try:
-        return json.loads(r.stdout).get("info", {}).get("status") == "deployed"
+        status = json.loads(r.stdout).get("info", {}).get("status")
     except (json.JSONDecodeError, AttributeError):
-        return False
+        return None
+    return status if isinstance(status, str) else None
+
+
+def helm_release_exists(kubeconfig: str, name: str, ns: str) -> bool:
+    return helm_release_status(kubeconfig, name, ns) is not None
 
 
 def pod_exists(kubeconfig: str, ns: str, name: str) -> bool:
@@ -440,6 +445,16 @@ def _reserve_ip_aws(region: str) -> tuple[str, str]:
 
 
 def _reserve_ip_azure(resource_group: str, location: str) -> tuple[str, str]:
+    if not isinstance(resource_group, str) or not resource_group.strip():
+        raise ValueError(
+            "Azure static IP reservation requires a non-empty resource_group. "
+            "Set clouds.azure.resource_group in the deploy config or repair the saved state."
+        )
+    if not isinstance(location, str) or not location.strip():
+        raise ValueError(
+            "Azure static IP reservation requires a non-empty location. "
+            "Set clouds.azure.location in the deploy config or repair the saved state."
+        )
     ip_name = _ip_tag()
     print(f"Reserving Azure Public IP {ip_name} ...")
     run(
@@ -570,11 +585,25 @@ def release_ip(
 
 
 def _release_ip_azure(ip_name: str, resource_group: str):
+    if not isinstance(resource_group, str) or not resource_group.strip():
+        raise ValueError(
+            "Azure static IP release requires a non-empty resource_group. "
+            "Repair the saved state or pass a config that includes clouds.azure.resource_group."
+        )
     print(f"Releasing Azure Public IP {ip_name} ...")
-    run(
+    r = run(
         ["az", "network", "public-ip", "delete", "--resource-group", resource_group, "--name", ip_name, "--yes"],
         check=False,
     )
+    if r.returncode != 0:
+        detail = ""
+        stderr = getattr(r, "stderr", "") or ""
+        if stderr.strip():
+            detail = f": {stderr.strip()}"
+        print(
+            f"  Warning: failed to delete Azure Public IP {ip_name} in resource group {resource_group}{detail}. "
+            "The IP may still be allocated and require manual cleanup."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -691,6 +720,7 @@ def deploy_participant(
     print(f"{'=' * 60}")
 
     check_auth_for(p.cloud)
+    helm_status = helm_release_status(p.kubeconfig, p.name, p.namespace)
 
     # 1. Namespace (idempotent)
     if not namespace_exists(p.kubeconfig, p.namespace):
@@ -720,10 +750,12 @@ def deploy_participant(
         else:
             print(f"    PVC {pvc_name} exists")
 
-    # 3. Stage kit files (skip if helm release already exists)
-    if helm_release_exists(p.kubeconfig, p.name, p.namespace):
+    # 3. Stage kit files (skip only when the release is healthy and deployed)
+    if helm_status == "deployed":
         print(f"  Helm release {p.name} already deployed — skipping kit staging")
     else:
+        if helm_status:
+            print(f"  Helm release {p.name} is in state '{helm_status}' — restaging kit files")
         print("  Staging kit files via temp pod ...")
         pod_name = f"kit-copy-{p.name}"
 
@@ -773,9 +805,9 @@ def deploy_participant(
         kubectl(p.kubeconfig, "-n", p.namespace, "cp", str(kit_dir / "local"), f"{pod_name}:/ws/local")
         kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name, "--timeout=60s")
 
-        # 4. Helm install
-        print(f"  Helm installing {p.name} ...")
-        helm_args = ["install", p.name, str(chart_dir), "-n", p.namespace]
+        # 4. Helm install/upgrade
+        print(f"  Helm upgrading/installing {p.name} ...")
+        helm_args = ["upgrade", "--install", p.name, str(chart_dir), "-n", p.namespace]
         helm_args += p.helm_overrides
 
         if p.role == "server" and server_ip:
