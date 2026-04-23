@@ -22,7 +22,7 @@ import sys
 from typing import Optional
 
 from nvflare.apis.utils.format_check import name_check
-from nvflare.lighter.constants import AdminRole, CtxKey, ParticipantType, PropKey
+from nvflare.lighter.constants import CtxKey, ParticipantType, PropKey
 from nvflare.lighter.entity import participant_from_dict
 from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
 from nvflare.lighter.provisioner import Provisioner
