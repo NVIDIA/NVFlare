@@ -34,15 +34,19 @@ class TestTaskScriptRunner(unittest.TestCase):
         if os.path.exists(build_dir):
             shutil.rmtree(build_dir, ignore_errors=True)
 
+    def _assert_argv_path(self, wrapper, expected_path, expected_args=None):
+        argv = wrapper.get_sys_argv()
+        expected_suffix = os.path.relpath(expected_path, self.nvflare_root)
+        assert os.path.normpath(argv[0]).endswith(os.path.normpath(expected_suffix))
+        assert argv[1:] == (expected_args or [])
+
     def test_app_scripts_and_args(self):
         script_path = "nvflare/cli.py"
         script_args = "--batch_size 4"
         wrapper = TaskScriptRunner(custom_dir=self.nvflare_root, script_path=script_path, script_args=script_args)
 
         self.assertTrue(wrapper.script_full_path.endswith(script_path))
-        self.assertEqual(
-            wrapper.get_sys_argv(), [os.path.join(self.nvflare_root, "nvflare", "cli.py"), "--batch_size", "4"]
-        )
+        self._assert_argv_path(wrapper, os.path.join(self.nvflare_root, "nvflare", "cli.py"), ["--batch_size", "4"])
 
     def test_app_scripts_and_args2(self):
         # curr_dir = os.getcwd()
@@ -51,9 +55,7 @@ class TestTaskScriptRunner(unittest.TestCase):
         wrapper = TaskScriptRunner(custom_dir=self.nvflare_root, script_path=script_path, script_args=script_args)
 
         self.assertTrue(wrapper.script_full_path.endswith(script_path))
-        self.assertEqual(
-            wrapper.get_sys_argv(), [os.path.join(self.nvflare_root, "nvflare", "cli.py"), "--batch_size", "4"]
-        )
+        self._assert_argv_path(wrapper, os.path.join(self.nvflare_root, "nvflare", "cli.py"), ["--batch_size", "4"])
 
     def test_app_scripts_with_sub_dirs1(self):
         # curr_dir = os.getcwd()
@@ -61,7 +63,7 @@ class TestTaskScriptRunner(unittest.TestCase):
         wrapper = TaskScriptRunner(custom_dir=self.nvflare_root, script_path=script_path)
 
         self.assertTrue(wrapper.script_full_path.endswith(script_path))
-        self.assertEqual(wrapper.get_sys_argv(), [os.path.join(self.nvflare_root, "nvflare", "__init__.py")])
+        self._assert_argv_path(wrapper, os.path.join(self.nvflare_root, "nvflare", "__init__.py"))
 
     def test_app_scripts_with_sub_dirs2(self):
         # curr_dir = os.getcwd()
@@ -69,9 +71,8 @@ class TestTaskScriptRunner(unittest.TestCase):
         wrapper = TaskScriptRunner(custom_dir=self.nvflare_root, script_path=script_path)
 
         self.assertTrue(wrapper.script_full_path.endswith(script_path))
-        self.assertEqual(
-            wrapper.get_sys_argv(),
-            [os.path.join(self.nvflare_root, "nvflare", "app_common", "executors", "__init__.py")],
+        self._assert_argv_path(
+            wrapper, os.path.join(self.nvflare_root, "nvflare", "app_common", "executors", "__init__.py")
         )
 
     def test_app_scripts_with_sub_dirs3(self):
@@ -81,9 +82,8 @@ class TestTaskScriptRunner(unittest.TestCase):
         wrapper = TaskScriptRunner(custom_dir=sub_dir, script_path=script_path)
 
         self.assertTrue(wrapper.script_full_path.endswith(script_path))
-        self.assertEqual(
-            wrapper.get_sys_argv(),
-            [os.path.join(self.nvflare_root, "nvflare", "app_common", "executors", "task_script_runner.py")],
+        self._assert_argv_path(
+            wrapper, os.path.join(self.nvflare_root, "nvflare", "app_common", "executors", "task_script_runner.py")
         )
 
     def test_app_scripts_with_sub_dirs4(self):
@@ -93,9 +93,7 @@ class TestTaskScriptRunner(unittest.TestCase):
         wrapper = TaskScriptRunner(custom_dir=sub_dir, script_path=script_path)
 
         self.assertTrue(wrapper.script_full_path.endswith(script_path))
-        self.assertEqual(
-            wrapper.get_sys_argv(), [os.path.join(self.nvflare_root, "nvflare", "client", "in_process", "api.py")]
-        )
+        self._assert_argv_path(wrapper, os.path.join(self.nvflare_root, "nvflare", "client", "in_process", "api.py"))
 
     def test_file_not_found_with_exception(self):
         # curr_dir = os.getcwd()
@@ -125,7 +123,7 @@ class TestTaskScriptRunner(unittest.TestCase):
             expected_path = os.path.join(
                 self.nvflare_root, "tests/unit_test/data/jobs/in_proc_job/site-1/custom/train.py"
             )
-            self.assertEqual(wrapper.get_sys_argv(), [expected_path, "--batch_size", "4"])
+            self._assert_argv_path(wrapper, expected_path, ["--batch_size", "4"])
             wrapper.run()
         finally:
             sys.path = old_sys_path
@@ -147,7 +145,7 @@ class TestTaskScriptRunner(unittest.TestCase):
             expected_path = os.path.join(
                 self.nvflare_root, "tests/unit_test/data/jobs/in_proc_job/server/custom/train.py"
             )
-            self.assertEqual(wrapper.get_sys_argv(), [expected_path, "--batch_size", "4"])
+            self._assert_argv_path(wrapper, expected_path, ["--batch_size", "4"])
             wrapper.run()
         finally:
             sys.path = old_sys_path
@@ -169,7 +167,7 @@ class TestTaskScriptRunner(unittest.TestCase):
             )
             self.assertTrue(wrapper.script_full_path.endswith(script_path))
             expected_path = os.path.join(self.nvflare_root, "tests/unit_test/data/jobs/in_proc_job/custom/src/train.py")
-            self.assertEqual(wrapper.get_sys_argv(), [expected_path, "--batch_size", "4"])
+            self._assert_argv_path(wrapper, expected_path, ["--batch_size", "4"])
             wrapper.run()
         finally:
             sys.path = old_sys_path

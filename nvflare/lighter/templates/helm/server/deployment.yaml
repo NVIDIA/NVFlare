@@ -6,6 +6,8 @@ metadata:
     {{- include "nvflare-server.labels" . | nindent 4 }}
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "nvflare-server.selectorLabels" . | nindent 6 }}
@@ -14,6 +16,13 @@ spec:
       labels:
         {{- include "nvflare-server.labels" . | nindent 8 }}
     spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ include "nvflare-server.name" . }}
+      {{- end }}
+      {{- with .Values.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: {{ .Values.persistence.etc.friendlyName }}
           persistentVolumeClaim:
@@ -30,6 +39,10 @@ spec:
               mountPath: {{ .Values.persistence.etc.mountPath }}
             - name: {{ .Values.persistence.workspace.friendlyName }}
               mountPath: {{ .Values.persistence.workspace.mountPath }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           command:
             {{- toYaml .Values.command | nindent 12 }}
           args:

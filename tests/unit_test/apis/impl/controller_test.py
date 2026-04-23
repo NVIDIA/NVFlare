@@ -1320,6 +1320,9 @@ class TestBroadcastBehavior(TestController):
             },
         )
         get_ready(launch_thread)
+        deadline = time.time() + 5.0
+        while controller.get_num_standing_tasks() == 0 and time.time() < deadline:
+            time.sleep(0.01)
         assert controller.get_num_standing_tasks() == 1
 
         client_task_ids = []

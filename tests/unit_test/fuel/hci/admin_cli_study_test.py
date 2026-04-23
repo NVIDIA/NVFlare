@@ -125,6 +125,36 @@ def test_admin_main_passes_launch_study_to_admin_client():
     assert captured == {"study": "cancer-research", "ran": True}
 
 
+def test_admin_main_accepts_underscore_study():
+    captured = {}
+    fake_conf = SimpleNamespace(
+        get_admin_config=lambda: {AdminConfigKey.USERNAME: "admin@nvidia.com"},
+        handlers=[],
+    )
+
+    class _FakeAdminClient:
+        def __init__(self, **kwargs):
+            captured["study"] = kwargs["study"]
+
+        @staticmethod
+        def run():
+            captured["ran"] = True
+
+    with (
+        patch(
+            "sys.argv",
+            ["admin.py", "-m", "/tmp/admin", "-s", "fed_admin.json", "--study", "cancer_research"],
+        ),
+        patch("os.chdir"),
+        patch("nvflare.fuel.hci.tools.admin.Workspace"),
+        patch("nvflare.fuel.hci.tools.admin.secure_load_admin_config", return_value=fake_conf),
+        patch("nvflare.fuel.hci.tools.admin.AdminClient", _FakeAdminClient),
+    ):
+        admin.main()
+
+    assert captured == {"study": "cancer_research", "ran": True}
+
+
 def test_admin_main_exits_non_zero_for_invalid_study():
     with (
         patch("sys.argv", ["admin.py", "-m", "/tmp/admin", "-s", "fed_admin.json", "--study", "Bad Study"]),

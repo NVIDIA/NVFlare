@@ -18,7 +18,9 @@ import datetime
 import ipaddress
 import json
 import os
+import re
 import shutil
+import sys
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -34,8 +36,46 @@ from nvflare.lighter.utils import (
     serialize_pri_key,
     x509_name,
 )
-from nvflare.tool.cli_errors import get_error
-from nvflare.tool.cli_output import output, output_error
+from nvflare.tool import cli_output
+from nvflare.tool.cert.cert_constants import ADMIN_CERT_TYPES, VALID_CERT_TYPES
+
+_VALID_CERT_TYPES = set(VALID_CERT_TYPES)
+from nvflare.tool.cli_output import (
+    output_error,
+    output_error_message,
+    output_ok,
+    output_usage_error,
+    print_human,
+    prompt_yn,
+)
+from nvflare.tool.cli_schema import handle_schema_flag
+
+_USAGE_HINT = "Run the command with -h for usage."
+_SAFE_CERT_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@-]*")
+
+
+def _validate_safe_cert_name(name: str, *, field_label: str) -> None:
+    if not name or not name.strip():
+        output_error(
+            "INVALID_NAME", exit_code=4, name=name, reason=f"{field_label} must not be empty or whitespace only."
+        )
+    if len(name) > 64:
+        output_error("INVALID_NAME", exit_code=4, name=name, reason=f"{field_label} must be 64 characters or fewer.")
+    if os.sep in name or (os.altsep and os.altsep in name) or name.startswith("."):
+        output_error(
+            "INVALID_NAME",
+            exit_code=4,
+            name=name,
+            reason=f"{field_label} must not contain path separators or start with '.'.",
+        )
+    if not _SAFE_CERT_NAME_PATTERN.fullmatch(name):
+        output_error(
+            "INVALID_NAME",
+            exit_code=4,
+            name=name,
+            reason=f"{field_label} must match [A-Za-z0-9][A-Za-z0-9._@-]*.",
+        )
+
 
 # ---------------------------------------------------------------------------
 # cert init
@@ -57,63 +97,57 @@ def _backup_existing_ca(output_dir: str) -> None:
 
 def handle_cert_init(args):
     # 1. --schema: handled before any I/O
-    if getattr(args, "schema", False):
-        import nvflare.tool.cert.cert_cli as _cert_cli
-        from nvflare.tool.cli_schema import parser_to_schema
+    import nvflare.tool.cert.cert_cli as _cert_cli
 
-        _cert_cli._ensure_parsers_initialized()
-
-        schema = parser_to_schema(
-            _cert_cli._cert_init_parser,
-            command="nvflare cert init",
-            examples=[
-                "nvflare cert init --project MyProject -o ./ca",
-                "nvflare cert init --project MyProject -o ./ca --output json",
-                "nvflare cert init --project MyProject -o ./ca --org NVIDIA --force",
-            ],
-        )
-        print(json.dumps(schema, indent=2))
-        return 0
+    _cert_cli._ensure_parsers_initialized()
+    handle_schema_flag(
+        _cert_cli._cert_init_parser,
+        "nvflare cert init",
+        [
+            "nvflare cert init --project MyProject -o ./ca",
+            "nvflare cert init --project MyProject -o ./ca --org NVIDIA --force",
+        ],
+        sys.argv[1:],
+    )
 
     # 2. Validate required args
-    output_fmt = getattr(args, "output_fmt", None)
-    for flag, attr in (("--project", "project"), ("-o/--output-dir", "output_dir")):
-        if not getattr(args, attr, None):
-            message, hint = get_error("INVALID_ARGS", detail=f"{flag} is required")
-            output_error("INVALID_ARGS", message, hint, output_fmt, exit_code=2)
+    missing_flags = [
+        flag
+        for flag, attr in (("--project", "project"), ("-o/--output-dir", "output_dir"))
+        if not getattr(args, attr, None)
+    ]
+    if missing_flags:
+        output_usage_error(
+            _cert_cli._cert_init_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
+        )
 
-    # 3. --output json implies --force
-    json_mode = output_fmt == "json"
-    force = args.force or json_mode
+    # 3. Resolve force
+    force = args.force
 
     # 4. Resolve and create output dir
     output_dir = os.path.abspath(args.output_dir)
     try:
-        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(output_dir, mode=0o700, exist_ok=True)
     except OSError as e:
-        message, hint = get_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
-        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
+        output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
 
     # 5. Check write permission
     if not os.access(output_dir, os.W_OK):
-        message, hint = get_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail="directory is not writable")
-        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
+        output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail="directory is not writable")
 
     # 6. Check for existing rootCA.key
     ca_key_path = os.path.join(output_dir, "rootCA.key")
     if os.path.exists(ca_key_path):
         if not force:
-            message, hint = get_error("CA_ALREADY_EXISTS", path=output_dir)
-            output_error("CA_ALREADY_EXISTS", message, hint, output_fmt)
-        # --force or json mode: back up existing files
+            output_error("CA_ALREADY_EXISTS", path=output_dir)
+        # --force: back up existing files
         _backup_existing_ca(output_dir)
 
     # 7. Generate key pair
     try:
         pri_key, pub_key = generate_keys()
     except Exception as e:
-        message, hint = get_error("CERT_GENERATION_FAILED", detail=str(e))
-        output_error("CERT_GENERATION_FAILED", message, hint, output_fmt)
+        output_error("CERT_GENERATION_FAILED", detail=str(e))
 
     # 8. Generate self-signed CA certificate
     try:
@@ -123,12 +157,11 @@ def handle_cert_init(args):
             issuer=args.project,  # self-signed: issuer == subject
             signing_pri_key=pri_key,
             subject_pub_key=pub_key,
-            valid_days=3650,
+            valid_days=getattr(args, "valid_days", 3650) or 3650,
             ca=True,
         )
     except Exception as e:
-        message, hint = get_error("CERT_GENERATION_FAILED", detail=str(e))
-        output_error("CERT_GENERATION_FAILED", message, hint, output_fmt)
+        output_error("CERT_GENERATION_FAILED", detail=str(e))
 
     # 9. Serialize
     pem_cert = serialize_cert(cert)
@@ -137,37 +170,43 @@ def handle_cert_init(args):
     # 10. Write files
     rootca_path = os.path.join(output_dir, "rootCA.pem")
     ca_json_path = os.path.join(output_dir, "ca.json")
+    written_paths = []
     try:
-        with open(rootca_path, "wb") as f:
-            f.write(pem_cert)
+        written_paths.append(rootca_path)
+        _write_file_nofollow(rootca_path, pem_cert)
 
+        written_paths.append(ca_key_path)
         _write_private_key(ca_key_path, pem_key)
 
         created_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         ca_meta = {
             "project": args.project,
             "created_at": created_at,
-            "next_serial": 2,
         }
-        with open(ca_json_path, "w") as f:
-            json.dump(ca_meta, f, indent=2)
+        written_paths.append(ca_json_path)
+        _write_json_file(ca_json_path, ca_meta)
     except OSError as e:
-        message, hint = get_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
-        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
+        for path in written_paths:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
+        output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
 
     # 11. Compute valid_until for output
-    valid_until_dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=3650)
+    valid_days_actual = getattr(args, "valid_days", 3650) or 3650
+    valid_until_dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=valid_days_actual)
     valid_until_str = valid_until_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # 12. Output result
     result = {
         "ca_cert": rootca_path,
-        "ca_key": ca_key_path,
         "project": args.project,
         "subject_cn": args.project,
         "valid_until": valid_until_str,
     }
-    output(result, output_fmt)
+    output_ok(result)
     return 0
 
 
@@ -179,9 +218,9 @@ def handle_cert_init(args):
 def _generate_csr(name: str, org: str = None, role: str = None):
     """Generate RSA private key and CSR.
 
-    The optional ``role`` is embedded in the CSR's UNSTRUCTURED_NAME field as a
-    hint to the Project Admin.  The Project Admin's ``cert sign -t`` is always
-    authoritative and may override whatever is in the CSR.
+    The ``role`` is embedded in the CSR's UNSTRUCTURED_NAME field as the
+    site-admin-proposed type for the Project Admin to either accept explicitly
+    or override explicitly when signing.
 
     Returns:
         (pem_private_key: bytes, pem_csr: bytes)
@@ -211,9 +250,24 @@ def _write_file(path: str, pem_bytes: bytes) -> None:
         f.write(pem_bytes)
 
 
+def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags, mode)
+    with os.fdopen(fd, "wb") as f:
+        f.write(content)
+
+
+def _write_json_file(path: str, data: dict) -> None:
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2)
+
+
 def _backup_existing_csr(out_dir: str, name: str) -> None:
     """Move existing <name>.key and <name>.csr to .bak/<timestamp>/ before overwrite."""
-    timestamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S")
     bak_dir = os.path.join(out_dir, ".bak", timestamp)
     os.makedirs(bak_dir, mode=0o700, exist_ok=True)
     for ext in ("key", "csr"):
@@ -222,59 +276,112 @@ def _backup_existing_csr(out_dir: str, name: str) -> None:
             shutil.move(src, os.path.join(bak_dir, f"{name}.{ext}"))
 
 
+def _load_single_site_yaml(path: str) -> dict:
+    import yaml
+
+    if not os.path.isfile(path):
+        output_error("PROJECT_FILE_NOT_FOUND", path=path)
+    try:
+        with open(path, "r") as f:
+            data = yaml.safe_load(f)
+    except Exception as e:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"failed to parse site yaml {path}: {e}",
+        )
+    if not isinstance(data, dict):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"site yaml must be a mapping: {path}",
+        )
+    name = data.get("name")
+    org = data.get("org")
+    cert_type = data.get("type")
+    if not name or not org or not cert_type:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="site yaml must contain: name, org, type",
+        )
+    if cert_type not in _VALID_CERT_TYPES:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
+        )
+    return {"name": name, "org": org, "cert_type": cert_type}
+
+
 def handle_cert_csr(args):
     # 1. --schema
-    if getattr(args, "schema", False):
-        import nvflare.tool.cert.cert_cli as _cert_cli
-        from nvflare.tool.cli_schema import parser_to_schema
+    import nvflare.tool.cert.cert_cli as _cert_cli
 
-        _cert_cli._ensure_parsers_initialized()
+    _cert_cli._ensure_parsers_initialized()
+    handle_schema_flag(
+        _cert_cli._cert_csr_parser,
+        "nvflare cert csr",
+        [
+            "nvflare cert csr -n hospital-1 -t client -o ./csr",
+            "nvflare cert csr -n fl-server -t server -o ./server-csr --org ACME --force",
+            "nvflare cert csr --project-file site.yml -o ./csr",
+        ],
+        sys.argv[1:],
+    )
 
-        schema = parser_to_schema(
-            _cert_cli._cert_csr_parser,
-            command="nvflare cert csr",
-            examples=[
-                "nvflare cert csr -n hospital-1 -o ./csr",
-                "nvflare cert csr -n researcher-alice -o ./alice-csr --output json",
-                "nvflare cert csr -n fl-server -o ./server-csr --org ACME --force",
-            ],
+    # 2. Resolve inputs (either --project-file or explicit args)
+    site = None
+    if getattr(args, "project_file", None):
+        # Mutual exclusivity check before touching the filesystem
+        if getattr(args, "name", None) or getattr(args, "org", None) or getattr(args, "cert_type", None):
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail="use either --project-file or --name/--org/--type",
+            )
+        site = _load_single_site_yaml(args.project_file)
+
+    # 3. Validate required args (-o is required in all modes; -n/-t only without --project-file)
+    missing_flags = []
+    if not getattr(args, "output_dir", None):
+        missing_flags.append("-o/--output-dir")
+    if site is None and not getattr(args, "name", None):
+        missing_flags.append("-n/--name")
+    if site is None and not getattr(args, "cert_type", None):
+        missing_flags.append("-t/--type")
+    if missing_flags:
+        output_usage_error(
+            _cert_cli._cert_csr_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
         )
-        print(json.dumps(schema, indent=2))
-        return 0
-
-    # 2. Validate required args
-    output_fmt = getattr(args, "output_fmt", None)
-    for flag, attr in (("-n/--name", "name"), ("-o/--output-dir", "output_dir")):
-        if not getattr(args, attr, None):
-            message, hint = get_error("INVALID_ARGS", detail=f"{flag} is required")
-            output_error("INVALID_ARGS", message, hint, output_fmt, exit_code=2)
 
     # 3. Normalize and validate name
-    name = args.name.strip()
-    if len(name) > 64:
-        message, hint = get_error("INVALID_NAME", name=name, reason="Name must be 64 characters or fewer.")
-        output_error("INVALID_NAME", message, hint, output_fmt, exit_code=4)
-    if os.sep in name or (os.altsep and os.altsep in name) or name.startswith("."):
-        message, hint = get_error(
-            "INVALID_NAME", name=name, reason="Name must not contain path separators or start with '.'."
-        )
-        output_error("INVALID_NAME", message, hint, output_fmt, exit_code=4)
+    name = (site["name"] if site else args.name).strip()
+    _validate_safe_cert_name(name, field_label="Name")
 
-    # 4. --output json implies --force
-    force = args.force or (output_fmt == "json")
+    # 4. Resolve force
+    force = args.force
 
     # 5. Resolve output dir; create if needed
     out_dir = os.path.abspath(args.output_dir)
     try:
-        os.makedirs(out_dir, exist_ok=True)
+        os.makedirs(out_dir, mode=0o700, exist_ok=True)
     except OSError as e:
-        message, hint = get_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail=str(e))
-        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
+        output_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail=str(e))
 
     # 6. Check write permission
     if not os.access(out_dir, os.W_OK):
-        message, hint = get_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail="directory is not writable")
-        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
+        output_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail="directory is not writable")
 
     # 7. Resolve output file paths
     key_path = os.path.join(out_dir, f"{name}.key")
@@ -282,8 +389,7 @@ def handle_cert_csr(args):
 
     # 8. Check for existing key file
     if os.path.exists(key_path) and not force:
-        message, hint = get_error("KEY_ALREADY_EXISTS", path=key_path)
-        output_error("KEY_ALREADY_EXISTS", message, hint, output_fmt)
+        output_error("KEY_ALREADY_EXISTS", path=key_path)
 
     # 9. Back up existing files if --force and they exist
     if force and (os.path.exists(key_path) or os.path.exists(csr_path)):
@@ -291,18 +397,18 @@ def handle_cert_csr(args):
 
     # 10. Generate key and CSR
     try:
-        pem_key, pem_csr = _generate_csr(name, getattr(args, "org", None), getattr(args, "cert_type", None))
+        org = site["org"] if site else getattr(args, "org", None)
+        cert_type = site["cert_type"] if site else getattr(args, "cert_type", None)
+        pem_key, pem_csr = _generate_csr(name, org, cert_type)
     except Exception as e:
-        message, hint = get_error("CSR_GENERATION_FAILED", detail=str(e))
-        output_error("CSR_GENERATION_FAILED", message, hint, output_fmt)
+        output_error("CSR_GENERATION_FAILED", detail=str(e))
 
     # 11. Write files
     try:
         _write_private_key(key_path, pem_key)
         _write_file(csr_path, pem_csr)
     except OSError as e:
-        message, hint = get_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail=str(e))
-        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
+        output_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail=str(e))
 
     # 12. Emit output
     result = {
@@ -311,7 +417,7 @@ def handle_cert_csr(args):
         "csr": csr_path,
         "next_step": f"Send {name}.csr to your Project Admin for signing.",
     }
-    output(result, output_fmt)
+    output_ok(result)
     return 0
 
 
@@ -328,33 +434,42 @@ def _get_cn(name: x509.Name) -> str:
     return ""
 
 
-def _claim_serial(ca_json_path: str) -> int:
-    """Atomically claim the next serial number from ca.json and return it.
+def _get_csr_role(csr: x509.CertificateSigningRequest) -> str:
+    role_attrs = csr.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
+    if not role_attrs:
+        return ""
+    return role_attrs[0].value
 
-    Uses an exclusive file lock so concurrent ``nvflare cert sign`` invocations
-    cannot claim the same serial number. Falls back gracefully on platforms where
-    fcntl is unavailable (e.g. Windows).
-    """
+
+def _get_cert_not_valid_after(cert: x509.Certificate) -> datetime.datetime:
     try:
-        import fcntl
+        return cert.not_valid_after_utc
+    except AttributeError:
+        not_after = cert.not_valid_after
+        return (
+            not_after.replace(tzinfo=datetime.timezone.utc)
+            if not_after.tzinfo is None
+            else not_after.astimezone(datetime.timezone.utc)
+        )
 
-        def _lock(f):
-            fcntl.flock(f, fcntl.LOCK_EX)
 
-    except ImportError:
+def _validate_signing_ca(ca_cert: x509.Certificate, now: datetime.datetime) -> datetime.datetime:
+    try:
+        basic_constraints = ca_cert.extensions.get_extension_for_class(x509.BasicConstraints).value
+    except x509.ExtensionNotFound:
+        output_error("CERT_SIGNING_FAILED", reason="CA certificate is missing BasicConstraints")
 
-        def _lock(f):
-            pass
+    if not basic_constraints.ca:
+        output_error("CERT_SIGNING_FAILED", reason="CA certificate is not a CA certificate")
 
-    with open(ca_json_path, "r+") as f:
-        _lock(f)
-        meta = json.load(f)
-        serial = meta.get("next_serial", 2)
-        meta["next_serial"] = serial + 1
-        f.seek(0)
-        json.dump(meta, f, indent=2)
-        f.truncate()
-    return serial
+    ca_not_valid_after = _get_cert_not_valid_after(ca_cert)
+    if ca_not_valid_after <= now:
+        output_error(
+            "CERT_SIGNING_FAILED",
+            reason=f"CA certificate expired at {ca_not_valid_after.strftime('%Y-%m-%dT%H:%M:%SZ')}",
+        )
+
+    return ca_not_valid_after
 
 
 def _build_signed_cert(
@@ -362,19 +477,17 @@ def _build_signed_cert(
     ca_cert: x509.Certificate,
     ca_key,
     cert_type: str,
-    valid_days: int,
-    serial: int,
+    now: datetime.datetime,
+    not_valid_after: datetime.datetime,
 ) -> x509.Certificate:
     """Build and sign a certificate from a CSR using the CA key.
 
     The subject is rebuilt from safe CSR fields only; UNSTRUCTURED_NAME (role) is always
     set from cert_type (the Project Admin's authoritative -t argument), never from the CSR.
     """
-    now = datetime.datetime.now(datetime.timezone.utc)
     subject_cn = _get_cn(csr.subject)
 
-    _ADMIN_ROLES = {"org_admin", "lead", "member"}
-    if cert_type in _ADMIN_ROLES:
+    if cert_type in ADMIN_CERT_TYPES:
         key_usage_kwargs = dict(
             digital_signature=True,
             content_commitment=True,
@@ -386,6 +499,7 @@ def _build_signed_cert(
             encipher_only=False,
             decipher_only=False,
         )
+        eku_oids = [x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH]
     else:
         # client and server
         key_usage_kwargs = dict(
@@ -399,6 +513,13 @@ def _build_signed_cert(
             encipher_only=False,
             decipher_only=False,
         )
+        eku_oids = [
+            (
+                x509.oid.ExtendedKeyUsageOID.SERVER_AUTH
+                if cert_type == "server"
+                else x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH
+            )
+        ]
 
     # Rebuild subject from safe OIDs only — do NOT copy CSR subject verbatim.
     _SAFE_OIDS = {
@@ -408,26 +529,44 @@ def _build_signed_cert(
         NameOID.STATE_OR_PROVINCE_NAME,
         NameOID.LOCALITY_NAME,
     }
-    safe_attrs = [attr for attr in csr.subject if attr.oid in _SAFE_OIDS]
+    safe_attrs = []
+    seen_oids = set()
+    for attr in csr.subject:
+        if attr.oid not in _SAFE_OIDS:
+            continue
+        if attr.oid in seen_oids:
+            raise ValueError(f"CSR contains duplicate subject attribute for OID '{attr.oid._name}'")
+        seen_oids.add(attr.oid)
+        safe_attrs.append(attr)
     safe_attrs.append(x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, cert_type))
     safe_subject = x509.Name(safe_attrs)
+    try:
+        issuer_ski = ca_cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value.digest
+        authority_key_identifier = x509.AuthorityKeyIdentifier(
+            key_identifier=issuer_ski,
+            authority_cert_issuer=None,
+            authority_cert_serial_number=None,
+        )
+    except x509.ExtensionNotFound:
+        authority_key_identifier = x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key())
 
     builder = (
         x509.CertificateBuilder()
         .subject_name(safe_subject)
         .issuer_name(ca_cert.subject)
         .public_key(csr.public_key())
-        .serial_number(serial)
+        .serial_number(x509.random_serial_number())
         .not_valid_before(now)
-        .not_valid_after(now + datetime.timedelta(days=valid_days))
+        .not_valid_after(not_valid_after)
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-        .add_extension(x509.KeyUsage(**key_usage_kwargs), critical=False)
+        .add_extension(x509.KeyUsage(**key_usage_kwargs), critical=True)
+        .add_extension(x509.ExtendedKeyUsage(eku_oids), critical=False)
         .add_extension(
             x509.SubjectKeyIdentifier.from_public_key(csr.public_key()),
             critical=False,
         )
         .add_extension(
-            x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()),
+            authority_key_identifier,
             critical=False,
         )
     )
@@ -446,148 +585,178 @@ def _build_signed_cert(
 
 def handle_cert_sign(args):
     # 1. --schema
-    if getattr(args, "schema", False):
-        import nvflare.tool.cert.cert_cli as _cert_cli
-        from nvflare.tool.cli_schema import parser_to_schema
+    import nvflare.tool.cert.cert_cli as _cert_cli
 
-        _cert_cli._ensure_parsers_initialized()
+    _cert_cli._ensure_parsers_initialized()
+    handle_schema_flag(
+        _cert_cli._cert_sign_parser,
+        "nvflare cert sign",
+        [
+            "nvflare cert sign -r ./hospital-1.csr -c ./ca -o ./signed --accept-csr-role",
+            "nvflare cert sign -r ./alice.csr -c ./ca -o ./alice-signed -t lead",
+        ],
+        sys.argv[1:],
+    )
 
-        schema = parser_to_schema(
-            _cert_cli._cert_sign_parser,
-            command="nvflare cert sign",
-            examples=[
-                "nvflare cert sign -r ./hospital-1.csr -c ./ca -o ./signed -t client",
-                "nvflare cert sign -r ./alice.csr -c ./ca -o ./alice-signed -t lead --output json",
-            ],
+    # 2. Validate required args and signer decision mode
+    missing_flags = [
+        flag
+        for flag, attr in (
+            ("-r/--csr", "csr_path"),
+            ("-c/--ca-dir", "ca_dir"),
+            ("-o/--output-dir", "output_dir"),
         )
-        print(json.dumps(schema, indent=2))
-        return 0
+        if not getattr(args, attr, None)
+    ]
+    if missing_flags:
+        output_usage_error(
+            _cert_cli._cert_sign_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
+        )
+    if getattr(args, "cert_type", None) and getattr(args, "accept_csr_role", False):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="use either -t/--type or --accept-csr-role, not both",
+        )
 
-    # 2. Validate required args (-t/--type is optional; read from CSR if omitted)
-    output_fmt = getattr(args, "output_fmt", None)
-    for flag, attr in (
-        ("-r/--csr", "csr_path"),
-        ("-c/--ca-dir", "ca_dir"),
-        ("-o/--output-dir", "output_dir"),
-    ):
-        if not getattr(args, attr, None):
-            message, hint = get_error("INVALID_ARGS", detail=f"{flag} is required")
-            output_error("INVALID_ARGS", message, hint, output_fmt, exit_code=2)
-
-    # 3. --output json implies --force
-    if output_fmt == "json":
-        args.force = True
-
-    # 4. Validate CSR file exists
-
+    # 3. Validate CSR file exists
     csr_path = args.csr_path
     if not os.path.exists(csr_path):
-        message, hint = get_error("CSR_NOT_FOUND", path=csr_path)
-        output_error("CSR_NOT_FOUND", message, hint, output_fmt)
+        output_error("CSR_NOT_FOUND", path=csr_path)
+    if not os.path.isfile(csr_path):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"-r/--csr must be a file path, not a directory: {csr_path}",
+        )
 
-    # 5. Validate CA dir
+    # 4. Validate CA dir
     ca_dir = args.ca_dir
     ca_key_path = os.path.join(ca_dir, "rootCA.key")
     ca_cert_path = os.path.join(ca_dir, "rootCA.pem")
     ca_json_path = os.path.join(ca_dir, "ca.json")
     for path in (ca_key_path, ca_cert_path, ca_json_path):
         if not os.path.exists(path):
-            message, hint = get_error("CA_NOT_FOUND", ca_dir=ca_dir)
-            output_error("CA_NOT_FOUND", message, hint, output_fmt)
+            output_error("CA_NOT_FOUND", ca_dir=ca_dir)
 
-    # 6. Load and validate CSR
+    # 5. Load and validate CSR
     with open(csr_path, "rb") as f:
         csr_data = f.read()
     try:
         csr = x509.load_pem_x509_csr(csr_data, default_backend())
     except Exception as e:
-        message, hint = get_error("INVALID_CSR", path=csr_path)
-        output_error("INVALID_CSR", message, hint, output_fmt)
+        output_error("INVALID_CSR", path=csr_path, detail=str(e))
 
     if not csr.is_signature_valid:
-        message, hint = get_error("INVALID_CSR", path=csr_path)
-        output_error("INVALID_CSR", message, hint, output_fmt)
+        output_error("INVALID_CSR", path=csr_path)
 
-    # 7. Resolve cert type: -t is authoritative when given; otherwise read from CSR UNSTRUCTURED_NAME.
-    _VALID_CERT_TYPES = {"client", "server", "org_admin", "lead", "member"}
+    # 6. Resolve cert type explicitly: signer either overrides with -t or accepts the CSR role.
     cert_type = getattr(args, "cert_type", None)
-    if not cert_type:
-        # Read proposed role from CSR subject UNSTRUCTURED_NAME (set by 'cert csr -t')
-        _csr_role_attrs = csr.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
-        if _csr_role_attrs:
-            cert_type = _csr_role_attrs[0].value
-    if not cert_type or cert_type not in _VALID_CERT_TYPES:
-        message, hint = get_error(
-            "INVALID_ARGS", detail="-t/--type is required (or embed role in CSR with 'cert csr -t')"
+    if getattr(args, "accept_csr_role", False):
+        cert_type = _get_csr_role(csr)
+        if not cert_type:
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail="CSR does not contain a proposed role; re-run with -t/--type or generate the CSR with 'cert csr -t'",
+            )
+    elif not cert_type:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="specify either -t/--type to override the role or --accept-csr-role to trust the CSR role",
         )
-        output_error("INVALID_ARGS", message, hint, output_fmt, exit_code=2)
+    if cert_type not in _VALID_CERT_TYPES:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
+        )
     subject_cn = _get_cn(csr.subject)
-    if os.sep in subject_cn or (os.altsep and os.altsep in subject_cn) or subject_cn.startswith("."):
-        message, hint = get_error(
-            "INVALID_NAME", name=subject_cn, reason="CSR subject CN must not contain path separators or start with '.'."
-        )
-        output_error("INVALID_NAME", message, hint, output_fmt, exit_code=4)
+    if getattr(args, "accept_csr_role", False) and not cli_output.is_json_mode() and sys.stdin.isatty():
+        if not prompt_yn(f"CSR for '{subject_cn}' proposes role '{cert_type}'. Sign using this CSR role?"):
+            print_human("Cancelled.")
+            return 1
+    _validate_safe_cert_name(subject_cn, field_label="CSR subject CN")
     output_filename = f"{subject_cn}.crt"
 
-    # 8. Resolve output paths; check for existing cert
+    # 7. Resolve output paths; check for existing cert
     output_dir = os.path.abspath(args.output_dir)
     try:
-        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(output_dir, mode=0o700, exist_ok=True)
     except OSError as e:
-        message, hint = get_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
-        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
+        output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
 
     if not os.access(output_dir, os.W_OK):
-        message, hint = get_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail="directory is not writable")
-        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
+        output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail="directory is not writable")
 
     cert_out_path = os.path.join(output_dir, output_filename)
     rootca_out_path = os.path.join(output_dir, "rootCA.pem")
 
     if os.path.exists(cert_out_path) and not args.force:
-        message, hint = get_error("CERT_ALREADY_EXISTS", path=cert_out_path)
-        output_error("CERT_ALREADY_EXISTS", message, hint, output_fmt)
+        output_error("CERT_ALREADY_EXISTS", path=cert_out_path)
+    if os.path.exists(rootca_out_path) and not args.force:
+        output_error("ROOTCA_ALREADY_EXISTS", path=rootca_out_path)
 
-    # 9. Load CA material
+    # 8. Load CA material
     try:
         ca_cert = load_crt(ca_cert_path)
         ca_key = load_private_key_file(ca_key_path)
     except Exception as e:
-        message, hint = get_error("CA_NOT_FOUND", ca_dir=ca_dir)
-        output_error("CA_NOT_FOUND", message, hint, output_fmt)
+        output_error("CA_LOAD_FAILED", ca_dir=ca_dir, detail=str(e))
 
-    # 10. Atomically claim serial from ca.json (read + increment under exclusive lock)
-    audit_serial = _claim_serial(ca_json_path)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    ca_not_valid_after = _validate_signing_ca(ca_cert, now)
 
-    # 11. Build and sign the certificate
+    # 9. Build and sign the certificate
     valid_days = getattr(args, "valid_days", 1095) or 1095
+    requested_not_valid_after = now + datetime.timedelta(days=valid_days)
+    leaf_not_valid_after = min(requested_not_valid_after, ca_not_valid_after)
     try:
         signed_cert = _build_signed_cert(
             csr=csr,
             ca_cert=ca_cert,
             ca_key=ca_key,
             cert_type=cert_type,
-            valid_days=valid_days,
-            serial=audit_serial,
+            now=now,
+            not_valid_after=leaf_not_valid_after,
         )
     except Exception as e:
-        message, hint = get_error("CERT_SIGNING_FAILED", reason=str(e))
-        output_error("CERT_SIGNING_FAILED", message, hint, output_fmt)
+        output_error("CERT_SIGNING_FAILED", reason=str(e))
 
-    # 12. Write signed cert and copy rootCA.pem
-    with open(cert_out_path, "wb") as f:
-        f.write(serialize_cert(signed_cert))
-    shutil.copy2(ca_cert_path, rootca_out_path)
+    # 10. Write signed cert and copy rootCA.pem
+    try:
+        _write_file_nofollow(cert_out_path, serialize_cert(signed_cert))
+        with open(ca_cert_path, "rb") as f:
+            rootca_bytes = f.read()
+        _write_file_nofollow(rootca_out_path, rootca_bytes)
+    except OSError as e:
+        for path in (cert_out_path, rootca_out_path):
+            try:
+                if os.path.exists(path) and not os.path.islink(path):
+                    os.remove(path)
+            except OSError:
+                pass
+        output_error("CERT_OUTPUT_WRITE_FAILED", path=output_dir, detail=str(e))
 
-    # 13. Compute valid_until for output
+    # 11. Compute valid_until for output
     try:
         _valid_until_dt = signed_cert.not_valid_after_utc
     except AttributeError:
         _valid_until_dt = signed_cert.not_valid_after  # cryptography < 42.0
     valid_until = _valid_until_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # 14. Output result
-
+    # 12. Output result
     next_step = (
         f"Send {output_filename} and rootCA.pem to the site admin.\n"
         f"They place those files in the same directory as their {subject_cn}.key, then run:\n"
@@ -598,21 +767,9 @@ def handle_cert_sign(args):
         "rootca": rootca_out_path,
         "subject_cn": subject_cn,
         "cert_type": cert_type,
-        "serial": audit_serial,
+        "serial": hex(signed_cert.serial_number),
         "valid_until": valid_until,
         "next_step": next_step,
     }
-    if not output_fmt:
-        print("CSR signed successfully.")
-        print(f"  Signed cert:  {cert_out_path}")
-        print(f"  Root CA:      {rootca_out_path}  (also included for convenience)")
-        print(f"  Subject:      {subject_cn} ({cert_type})")
-        print(f"  Serial:       {audit_serial}")
-        print(f"  Valid until:  {_valid_until_dt.strftime('%Y-%m-%d')}")
-        print()
-        print(f"Next step: Send {output_filename} and rootCA.pem to the site admin.")
-        print(f"They place those files in the same directory as their {subject_cn}.key, then run:")
-        print("  nvflare package -e grpc://<server>:<port> --dir <that-dir>")
-    else:
-        output(result, output_fmt)
+    output_ok(result)
     return 0

@@ -1,0 +1,27 @@
+name: aws-server
+
+clouds:
+  gcp:
+    kubeconfig: ../../.tmp/kubeconfigs/gcp.yaml
+    image: us-central1-docker.pkg.dev/nv-nvflare-20260312202153/nvflare/nvflare:pcnudde-dev
+    pull_policy: Always
+    helm_overrides: []
+    pvc_config:
+      nvfletc:  { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
+      nvflws:   { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
+      nvfldata: { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
+  aws:
+    kubeconfig: ../../.tmp/kubeconfigs/aws.yaml
+    image: 637528030358.dkr.ecr.us-west-2.amazonaws.com/nvflare/nvflare:pcnudde-dev
+    pull_policy: Always
+    helm_overrides: []
+    security_context: { seLinuxOptions: { type: spc_t } }
+    pvc_config:
+      nvfletc:  { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }
+      nvflws:   { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }
+      nvfldata: { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }
+
+participants:
+  - { name: aws-server,   cloud: aws, namespace: nvflare-server,   role: server }
+  - { name: gcp-client-1, cloud: gcp, namespace: nvflare-client-1, role: client }
+  - { name: aws-client-2, cloud: aws, namespace: nvflare-client-2, role: client }

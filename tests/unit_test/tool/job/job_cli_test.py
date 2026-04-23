@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
+import json
+import sys
+
 import pytest
 
 from nvflare.tool.job import job_cli
@@ -31,3 +35,29 @@ class TestJobCLI:
     def test_is_sub_dir(self, path, directory, expected):
         print(f"{input=}, {directory=}, {expected=}")
         assert expected == job_cli.is_subdir(path, directory)
+
+    def test_log_config_parser_accepts_alias_and_canonical_name(self):
+        parser = argparse.ArgumentParser(prog="nvflare")
+        subparsers = parser.add_subparsers(dest="command")
+        job_cli.def_job_cli_parser(subparsers)
+
+        args = parser.parse_args(["job", "log-config", "job-1", "DEBUG"])
+        assert args.job_sub_cmd == "log-config"
+
+        args = parser.parse_args(["job", "log", "job-1", "DEBUG"])
+        assert args.job_sub_cmd == "log"
+
+    def test_job_log_schema_uses_invoked_alias_name(self, monkeypatch, capsys):
+        parser = argparse.ArgumentParser(prog="nvflare")
+        subparsers = parser.add_subparsers(dest="command")
+        job_cli.def_job_cli_parser(subparsers)
+
+        cmd_args = argparse.Namespace(job_id="job-1", level=None, config=None, site="all")
+        monkeypatch.setattr(sys, "argv", ["nvflare", "job", "log", "job-1", "--schema"])
+
+        with pytest.raises(SystemExit) as exc_info:
+            job_cli.cmd_job_log(cmd_args)
+
+        assert exc_info.value.code == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["command"] == "nvflare job log"

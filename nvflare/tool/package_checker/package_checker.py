@@ -56,14 +56,16 @@ class PackageChecker(ABC):
         return None
 
     def stop_dry_run(self, force: bool = True):
+        from nvflare.tool.cli_output import print_human
+
         # todo: add gracefully shutdown command
-        print("killing dry run process")
+        print_human("killing dry run process")
         command = self.get_dry_run_command()
         cmd = f"pkill -9 -f '{command}'"
         process = run_command_in_subprocess(cmd)
         out, err = process.communicate()
-        print(f"killed dry run process output: {out}")
-        print(f"killed dry run process err: {err}")
+        print_human(f"killed dry run process output: {out}")
+        print_human(f"killed dry run process err: {err}")
 
     def check(self) -> int:
         """Checks if the package is runnable on the current system.
@@ -163,10 +165,14 @@ class PackageChecker(ABC):
         self.fix_len = max(self.fix_len, len(fix_text))
 
     def _print_line(self):
-        print("|" + "-" * (self.check_len + self.problem_len + self.fix_len + 8) + "|")
+        from nvflare.tool.cli_output import print_human
+
+        print_human("|" + "-" * (self.check_len + self.problem_len + self.fix_len + 8) + "|")
 
     def _print_row(self, check, problem, fix):
-        print(
+        from nvflare.tool.cli_output import print_human
+
+        print_human(
             "| {check:<{width1}s} | {problems:<{width2}s} | {fix:<{width3}s} |".format(
                 check=check,
                 problems=problem,
@@ -178,19 +184,21 @@ class PackageChecker(ABC):
         )
 
     def print_report(self):
+        from nvflare.tool.cli_output import print_human
+
         total_width = self.check_len + self.problem_len + self.fix_len + 10
         for package_path, results in self.report.items():
-            print("Checking Package: " + package_path)
-            print("-" * total_width)
+            print_human("Checking Package: " + package_path)
+            print_human("-" * total_width)
             if results:
                 self._print_row("Checks", "Problems", "How to fix")
             else:
-                print("| {:{}s} |".format("Passed", total_width - 4))
+                print_human("| {:{}s} |".format("Passed", total_width - 4))
             for row in results:
                 self._print_line()
                 lines = split_by_len(row[1], max_len=self.problem_len)
                 self._print_row(row[0], lines[0], row[2])
                 for line in lines[1:]:
                     self._print_row("", line, "")
-            print("-" * total_width)
-            print()
+            print_human("-" * total_width)
+            print_human()

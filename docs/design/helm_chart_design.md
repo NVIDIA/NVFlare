@@ -170,7 +170,7 @@ Requires `microk8s enable ingress`. The ingress controller DaemonSet must also b
 ├── values.yaml
 └── templates/
     ├── _helpers.tpl
-    ├── client-pod.yaml
+    ├── client-deployment.yaml
     └── service.yaml
 ```
 
@@ -195,7 +195,7 @@ Requires `microk8s enable ingress`. The ingress controller DaemonSet must also b
 
 ### Template Details
 
-**`client/pod.yaml`** — `uid=` is appended by the template, not stored in `values.yaml`:
+**`client/deployment.yaml`** — `uid=` is appended by the template, not stored in `values.yaml`:
 
 ```yaml
 args:
@@ -229,7 +229,7 @@ Consistency requirements across chart and `comm_config.json`:
 
 | Source | Field | Value |
 |--------|-------|-------|
-| `values.yaml` / `client-pod.yaml` | `containerPort` | `parent_port` |
+| `values.yaml` / `client-deployment.yaml` | `containerPort` | `parent_port` |
 | `service.yaml` | `port` / `targetPort` | `parent_port` |
 | `service.yaml` | `metadata.name` | `<client.name>` |
 | `comm_config.json` | `internal.resources.port` | `parent_port` |
@@ -237,28 +237,30 @@ Consistency requirements across chart and `comm_config.json`:
 
 ### K8sJobLauncher
 
-`ClientK8sJobLauncher.launch_job()` runs each FL job's executor in a dynamically-created Pod. The job image is read from `deploy_map` in `meta.json`:
+`ClientK8sJobLauncher.launch_job()` runs each FL job's executor in a dynamically-created Pod. The job image is read from `launcher_spec` in `meta.json`:
 
 ```json
 {
-  "deploy_map": {
-    "app": [
-      { "sites": ["server"], "image": "myregistry/nvflare-server:2.7.0" },
-      { "sites": ["site-1"], "image": "myregistry/nvflare-client:2.7.0" },
-      "site-2"
-    ]
+  "launcher_spec": {
+    "site-1": {
+      "k8s": { "image": "myregistry/nvflare-client:2.7.0" }
+    },
+    "default": {
+      "k8s": { "image": "myregistry/nvflare-job:2.7.0" }
+    }
   }
 }
 ```
 
-Plain strings receive no image override (`extract_job_image` returns `None`) and fall back to the launcher's default.
+If no site-specific `launcher_spec[site]["k8s"]` entry exists, the launcher can
+use `launcher_spec["default"]["k8s"]` when present.
 
 **`K8sJobLauncher`** responsibilities:
 - Loads `kubeconfig` from a file path provided at construction time.
 - Builds a Pod manifest with PVCs: `nvflws`, `nvfldata`, `nvfletc`.
 - Attaches `nvidia.com/gpu` resource limits when specified in job metadata.
 - Converts the UUID job ID to an RFC 1123-compliant pod name via `uuid4_to_rfc1123()`.
-- Registers itself as launcher on `BEFORE_JOB_LAUNCH` only when the job has an image for this site.
+- Registers itself as launcher on `BEFORE_JOB_LAUNCH` unconditionally (launcher type is site policy, not job config); `launch_job` raises `RuntimeError` if no image is found for this site.
 
 **`K8sJobHandle`** responsibilities:
 - Submits the pod via `core_v1_api.create_namespaced_pod()`.
@@ -310,7 +312,7 @@ prod_NN/
 │       ├── values.yaml
 │       └── templates/
 │           ├── _helpers.tpl
-│           ├── client-pod.yaml
+│           ├── client-deployment.yaml
 │           └── service.yaml
 └── site-2/
     └── helm_chart/  ...
@@ -357,11 +359,11 @@ python3 -u -m nvflare.private.fed.app.client.client_train
 Server submits job → ClientEngine.fire_event(BEFORE_JOB_LAUNCH)
     │
     ▼
-ClientK8sJobLauncher.handle_event()  — registers if job has image for this site
+ClientK8sJobLauncher.handle_event()  — registers unconditionally (site policy)
     │
     ▼
 ClientK8sJobLauncher.launch_job(job_meta, fl_ctx)
-    ├─ Pod manifest: name=rfc1123(job_id), image from deploy_map, volumes: nvflws/nvfldata/nvfletc
+    ├─ Pod manifest: name=rfc1123(job_id), image from launcher_spec, volumes: nvflws/nvfldata/nvfletc
     ├─ core_v1_api.create_namespaced_pod()
     ├─ K8sJobHandle.enter_states([RUNNING])  — polls every 1s, terminates if stuck in Pending
     └─ returns K8sJobHandle  →  poll() / wait() / terminate()

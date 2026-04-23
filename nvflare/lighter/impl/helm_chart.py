@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 import shutil
 
@@ -21,8 +22,10 @@ import nvflare.lighter as prov
 from nvflare.lighter.constants import CommConfigArg, ConnSecurity, CtxKey, PropKey, ProvFileName
 from nvflare.lighter.entity import Participant
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
+from nvflare.lighter.utils import update_storage_locations
 
 _HELM_TEMPLATES_DIR = os.path.join(os.path.dirname(prov.__file__), "templates", "helm")
+logger = logging.getLogger(__name__)
 
 
 def _split_image(docker_image: str):
@@ -131,6 +134,11 @@ class HelmChartBuilder(Builder):
         self._write_server_values_yaml(chart_dir, server, fed_learn_port, admin_port)
         self._write_server_template_files(templates_dir)
 
+        # Repoint job-store and snapshot-storage at the workspace PVC mount.
+        # Defaults in master_template.yml put them under /tmp/nvflare/... which
+        # is the container's ephemeral root FS and disappears on pod restart.
+        self._relocate_storage_to_workspace_pvc(ctx, server)
+
     def _write_server_chart_yaml(self, chart_dir: str, server: Participant):
         _, tag = _split_image(self.docker_image)
         chart = {
@@ -168,6 +176,14 @@ class HelmChartBuilder(Builder):
                 "tag": tag,
                 "pullPolicy": "IfNotPresent",
             },
+            "serviceAccount": {
+                "create": True,
+                "annotations": {},
+                "automountServiceAccountToken": True,
+            },
+            "rbac": {
+                "create": True,
+            },
             "persistence": {
                 "etc": {
                     "claimName": self.etc_pvc,
@@ -183,11 +199,19 @@ class HelmChartBuilder(Builder):
             "fedLearnPort": fed_learn_port,
             "adminPort": admin_port if admin_port != fed_learn_port else None,
             "parentPort": self.parent_port,
-            "hostPortEnabled": True,
-            "tcpConfigMapEnabled": True,
+            "resources": {
+                "requests": {
+                    "cpu": "2",
+                    "memory": "8Gi",
+                },
+            },
+            "securityContext": {},
+            "hostPortEnabled": False,
+            "tcpConfigMapEnabled": False,
             "service": {
-                "type": False,
-                "loadBalancerIP": False,
+                "type": "ClusterIP",
+                "loadBalancerIP": None,
+                "annotations": {},
             },
             "command": ["/usr/local/bin/python3"],
             "args": args,
@@ -201,6 +225,8 @@ class HelmChartBuilder(Builder):
             (_helm_src("server", "deployment.yaml"), "server-deployment.yaml"),
             (_helm_src("server", "service.yaml"), "server-service.yaml"),
             (_helm_src("server", "tcp-services.yaml"), "server-tcp-services.yaml"),
+            (_helm_src("server", "serviceaccount.yaml"), "serviceaccount.yaml"),
+            (_helm_src("server", "role.yaml"), "role.yaml"),
         ]:
             shutil.copy(src, os.path.join(templates_dir, dst))
 
@@ -243,7 +269,7 @@ class HelmChartBuilder(Builder):
         chart = {
             "apiVersion": "v2",
             "name": "nvflare-client",
-            "description": f"NVFlare federated learning client pod and service for {client.name}",
+            "description": f"NVFlare federated learning client deployment and service for {client.name}",
             "type": "application",
             "version": "0.1.0",
             "appVersion": tag or "latest",
@@ -275,6 +301,14 @@ class HelmChartBuilder(Builder):
                 "tag": tag,
                 "pullPolicy": "Always",
             },
+            "serviceAccount": {
+                "create": True,
+                "annotations": {},
+                "automountServiceAccountToken": True,
+            },
+            "rbac": {
+                "create": True,
+            },
             "persistence": {
                 "etc": {
                     "claimName": self.etc_pvc,
@@ -288,9 +322,18 @@ class HelmChartBuilder(Builder):
                 },
             },
             "port": self.parent_port,
+            "service": {
+                "annotations": {},
+            },
+            "securityContext": {},
+            "resources": {
+                "requests": {
+                    "cpu": "2",
+                    "memory": "8Gi",
+                },
+            },
             "command": ["/usr/local/bin/python3"],
             "args": args,
-            "restartPolicy": "Never",
         }
         with open(os.path.join(chart_dir, ProvFileName.VALUES_YAML), "wt") as f:
             yaml.dump(values, f, default_flow_style=False)
@@ -298,7 +341,18 @@ class HelmChartBuilder(Builder):
     def _write_client_template_files(self, templates_dir: str):
         for src, dst in [
             (_helm_src("client", "_helpers.tpl"), "_helpers.tpl"),
-            (_helm_src("client", "pod.yaml"), "client-pod.yaml"),
+            (_helm_src("client", "deployment.yaml"), "client-deployment.yaml"),
             (_helm_src("client", "service.yaml"), "service.yaml"),
+            (_helm_src("client", "serviceaccount.yaml"), "serviceaccount.yaml"),
+            (_helm_src("client", "role.yaml"), "role.yaml"),
         ]:
             shutil.copy(src, os.path.join(templates_dir, dst))
+
+    def _relocate_storage_to_workspace_pvc(self, ctx: ProvisionContext, participant: Participant):
+        """Rewrite server resources so job and snapshot state live on the workspace PVC."""
+        local_dir = os.path.join(ctx.get_ws_dir(participant), "local")
+        default_resource = os.path.join(local_dir, "resources.json.default")
+        if not os.path.exists(default_resource):
+            logger.warning("resources.json.default not found at %s; skipping storage relocation.", local_dir)
+            return
+        update_storage_locations(local_dir=local_dir, workspace=self.workspace_mount_path)

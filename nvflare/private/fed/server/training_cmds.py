@@ -34,6 +34,11 @@ from .cmd_utils import CommandUtil
 from .server_engine import ServerEngine
 
 
+def _server_status_value(engine: ServerEngineInternalSpec) -> str:
+    engine_info = engine.get_engine_info()
+    return engine_info.status.value
+
+
 class TrainingCommandModule(CommandModule, CommandUtil):
     def __init__(self):
         """A class for training commands."""
@@ -255,12 +260,13 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
         if dst in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             engine_info = engine.get_engine_info()
+            server_status = _server_status_value(engine)
             conn.append_string(
-                f"Engine status: {engine_info.status.value}",
+                f"Engine status: {server_status}",
                 meta=make_meta(
                     MetaStatusValue.OK,
                     extra={
-                        MetaKey.SERVER_STATUS: engine_info.status.value,
+                        MetaKey.SERVER_STATUS: server_status,
                         MetaKey.SERVER_START_TIME: engine_info.start_time,
                     },
                 ),

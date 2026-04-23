@@ -6,18 +6,39 @@ Running ``nvflare provision -h`` shows all available options.
 
 .. code-block:: shell
 
-    usage: nvflare provision [-h] [-p PROJECT_FILE] [-w WORKSPACE] [-c CUSTOM_FOLDER] [--add_user ADD_USER] [--add_client ADD_CLIENT]
+    usage: nvflare provision [-h] [-p PROJECT_FILE] [-g] [-e] [-w WORKSPACE]
+                             [-c CUSTOM_FOLDER] [--add_user ADD_USER]
+                             [--add_client ADD_CLIENT] [-s] [--force] [--schema]
 
-    optional arguments:
+    options:
     -h, --help                                               show this help message and exit
     -p PROJECT_FILE, --project_file PROJECT_FILE                 file to describe FL project
+    -g, --generate                                             generate a sample project.yml and exit
+    -e, --gen_edge                                             generate a sample edge project.yml and exit
     -w WORKSPACE, --workspace WORKSPACE                          directory used by provision
     -c CUSTOM_FOLDER, --custom_folder CUSTOM_FOLDER    additional folder to load python code
     --add_user ADD_USER                                             yaml file for added user
     --add_client ADD_CLIENT                                       yaml file for added client
+    -s, --gen_scripts                                            generate helper scripts such as start_all.sh
+    --force                                                      skip Y/N confirmation prompts
+    --schema                                                     print command schema as JSON and exit
 
 Running ``provision`` without any options and without a project.yml file in the current working directory will prompt
 to copy a default project.yml to the current working directory.
+
+JSON mode
+=========
+
+``nvflare provision --format json`` returns only a JSON envelope on
+stdout. When the command generates a sample project file, the JSON ``data``
+section includes structured guidance such as:
+
+- ``message``
+- ``next_step``
+- ``suggested_command``
+
+This keeps JSON output machine-readable while still carrying follow-up
+instructions.
 
 .. _dynamic_provisioning_cli:
 
