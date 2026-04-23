@@ -16,7 +16,7 @@ import shutil
 import tempfile
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ReturnCode, StreamCtxKey, SystemComponents, WorkspaceConstants
+from nvflare.apis.fl_constant import ReturnCode, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.storage import DataTypes
 from nvflare.apis.streaming import StreamContext
