@@ -164,7 +164,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
     @staticmethod
     def _parse_sites(sites_arg: str) -> List[str]:
         if sites_arg is None:
-            raise ValueError("--sites is required")
+            raise _InvalidArgsError("--sites is required")
         sites = []
         seen = set()
         for site in sites_arg.split(","):
@@ -174,19 +174,19 @@ class StudyCommandModule(CommandModule, CommandUtil):
             seen.add(site)
             sites.append(site)
         if not sites:
-            raise ValueError("--sites must contain at least one site")
+            raise _InvalidArgsError("--sites must contain at least one site")
         return sites
 
     @staticmethod
     def _parse_site_orgs(site_org_args: List[str]) -> Dict[str, List[str]]:
         if not site_org_args:
-            raise ValueError("--site-org is required")
+            raise _InvalidArgsError("--site-org is required")
         result = {}
         seen_sites = set()
         for item in site_org_args:
             org, sep, raw_sites = item.partition(":")
             if not sep:
-                raise ValueError(f"invalid --site-org value '{item}'")
+                raise _InvalidArgsError(f"invalid --site-org value '{item}'")
             org = org.strip()
             sites = []
             for site in raw_sites.split(","):
@@ -194,11 +194,11 @@ class StudyCommandModule(CommandModule, CommandUtil):
                 if not site:
                     continue
                 if site in seen_sites:
-                    raise ValueError(f"site '{site}' appears in more than one org group")
+                    raise _InvalidArgsError(f"site '{site}' appears in more than one org group")
                 seen_sites.add(site)
                 sites.append(site)
             if not sites:
-                raise ValueError(f"--site-org '{item}' must contain at least one site")
+                raise _InvalidArgsError(f"--site-org '{item}' must contain at least one site")
             result.setdefault(org, [])
             result[org].extend(sites)
         return result
