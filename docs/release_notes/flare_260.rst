@@ -205,3 +205,23 @@ With FLARE 2.6.0, we now support:
 3. Native PyTorch tensor transmission
 
 The new `server_expected_format` parameter specifically controls the format used in server-client communication. When set to "pytorch", the entire pipeline - from server to client to script - can operate using PyTorch tensors without any format conversion.
+
+
+FileStreamer Wire-Protocol Key Namespace Change
+-----------------------------------------------
+
+As part of sharing the chunk-protocol between ``FileStreamer`` and the new ``LogStreamer``,
+the Shareable keys for ``KEY_DATA``, ``KEY_DATA_SIZE``, ``KEY_EOF``, and ``KEY_FILE_NAME``
+have been renamed from the ``"FileStreamer.*"`` namespace to the shared ``"Streamer.*"``
+namespace.
+
+This is a breaking change on the wire: a sender and receiver running different NVFlare
+versions will not interoperate for file streaming, because the receiver will not find the
+expected keys in the incoming Shareable. NVFlare deployments must use the same version on
+both server and clients, so this does not affect supported configurations, but anyone
+performing a staged rollout must upgrade server and clients together.
+
+Code that uses the public ``FileStreamer`` API (``stream_file``, ``get_file_name``,
+etc.) is unaffected. Only code that reads the raw ``stream_ctx`` keys by their string
+values needs to be updated to use the new ``"Streamer.*"`` names (or, preferably, import
+the ``KEY_*`` constants from ``nvflare.app_common.streamers.streamer_base``).
