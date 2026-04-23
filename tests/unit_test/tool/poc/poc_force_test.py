@@ -40,6 +40,72 @@ class TestPocForce:
         # force=True means no prompt; result should be True (not False)
         assert result is True
 
+    def test_force_prepare_stops_running_poc_before_delete(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import _prepare_poc
+
+        workspace = str(tmp_path / "poc_ws_running")
+        os.makedirs(workspace)
+
+        calls = []
+
+        def fake_stop(_workspace, *_args, **_kwargs):
+            calls.append("stop")
+
+        def fake_rmtree(path, ignore_errors=False):
+            assert path == workspace
+            assert ignore_errors is True
+            calls.append("rmtree")
+
+        with (
+            patch(
+                "nvflare.tool.poc.poc_commands.setup_service_config",
+                return_value=(
+                    {"name": "example_project"},
+                    {SC.FLARE_SERVER: "server", SC.FLARE_PROJ_ADMIN: "admin@nvidia.com"},
+                ),
+            ),
+            patch("nvflare.tool.poc.poc_commands.is_poc_ready", return_value=True),
+            patch("nvflare.tool.poc.poc_commands.is_poc_running", side_effect=[True, False]),
+            patch("nvflare.tool.poc.poc_commands._stop_poc", side_effect=fake_stop) as mock_stop,
+            patch("nvflare.tool.poc.poc_commands.shutil.rmtree", side_effect=fake_rmtree),
+            patch("nvflare.tool.poc.poc_commands.prepare_poc_provision", return_value={"name": "example_project"}),
+            patch("nvflare.tool.poc.poc_commands.save_startup_kit_dir_config"),
+        ):
+            result = _prepare_poc([], 2, workspace, force=True)
+
+        assert result is True
+        assert mock_stop.call_count == 1
+        assert calls == ["stop", "rmtree"]
+
+    def test_force_prepare_preserves_workspace_when_running_system_does_not_stop(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import _prepare_poc
+
+        workspace = tmp_path / "poc_ws_stuck"
+        workspace.mkdir()
+        sentinel = workspace / "keep.txt"
+        sentinel.write_text("keep me")
+
+        with (
+            patch(
+                "nvflare.tool.poc.poc_commands.setup_service_config",
+                return_value=(
+                    {"name": "example_project"},
+                    {SC.FLARE_SERVER: "server", SC.FLARE_PROJ_ADMIN: "admin@nvidia.com"},
+                ),
+            ),
+            patch("nvflare.tool.poc.poc_commands.is_poc_ready", return_value=True),
+            patch("nvflare.tool.poc.poc_commands.is_poc_running", return_value=True),
+            patch("nvflare.tool.poc.poc_commands._stop_poc"),
+            patch("nvflare.tool.poc.poc_commands.time.time", side_effect=[0, 31]),
+            patch("nvflare.tool.poc.poc_commands.prepare_poc_provision") as mock_prov,
+        ):
+            with pytest.raises(CLIException, match="system is still running after shutdown was requested"):
+                _prepare_poc([], 2, str(workspace), force=True)
+
+        mock_prov.assert_not_called()
+        assert workspace.exists()
+        assert sentinel.exists()
+
     def test_no_force_non_interactive_exits_4(self, tmp_path):
         """Non-interactive mode without --force should output INVALID_ARGS exit 4."""
         from nvflare.tool.poc.poc_commands import prepare_poc

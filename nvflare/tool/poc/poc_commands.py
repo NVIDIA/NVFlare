@@ -597,6 +597,7 @@ def _prepare_poc(
                 f"Please copy {project_conf_path} to different location before running this command."
             )
 
+        _stop_running_poc_before_prepare(workspace)
         shutil.rmtree(workspace, ignore_errors=True)
 
     project_config = prepare_poc_provision(
@@ -606,6 +607,35 @@ def _prepare_poc(
     project_name = project_config.get("name") if project_config else None
     save_startup_kit_dir_config(workspace, project_name)
     return True
+
+
+def _stop_running_poc_before_prepare(workspace: str, timeout_in_sec: int = 30, poll_interval: float = 1.0):
+    try:
+        project_config, service_config = setup_service_config(workspace)
+    except CLIException:
+        return
+
+    if not project_config or not service_config:
+        return
+
+    if not is_poc_ready(workspace, service_config, project_config):
+        return
+
+    if not is_poc_running(workspace, service_config, project_config):
+        return
+
+    from nvflare.tool.cli_output import print_human
+
+    print_human("Existing POC system is still running; stopping it before recreating the workspace.")
+    _stop_poc(workspace)
+
+    deadline = time.time() + timeout_in_sec
+    while time.time() < deadline:
+        if not is_poc_running(workspace, service_config, project_config):
+            return
+        time.sleep(poll_interval)
+
+    raise CLIException("system is still running after shutdown was requested; please run 'nvflare poc stop' first.")
 
 
 def prepare_poc_provision(
