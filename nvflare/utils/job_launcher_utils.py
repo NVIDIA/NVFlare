@@ -128,6 +128,8 @@ def get_launcher_resource_spec(job_meta, site_name, mode):
     """Extract the launcher-mode resource spec for a site from full job meta."""
     resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
     return get_site_launcher_spec(resource_spec.get(site_name), mode)
+
+
 _LAUNCHER_SPEC_DEFAULT_KEY = "default"
 
 # "default" is the only reserved top-level key in launcher_spec. Every other

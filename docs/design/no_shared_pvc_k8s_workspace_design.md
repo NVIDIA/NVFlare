@@ -30,6 +30,11 @@ The launched job pod uses this layout under the normal NVFlare workspace root:
   <job_id>/         downloaded as part of the workspace bundle
 ```
 
+`startup/` is not expected to already exist inside the job pod's `emptyDir`.
+Before launching the pod, the launcher creates or updates a per-site Kubernetes
+Secret from that participant site's startup-kit directory and mounts that
+Secret at `/var/tmp/nvflare/workspace/startup`.
+
 `startup/` and `local/` are handled differently:
 
 | Path | Delivery | Notes |
@@ -51,7 +56,8 @@ For each launched job pod, the launcher creates a pod manifest with:
 
 The launcher also creates or updates a startup Secret for the participant site.
 That Secret contains the startup-kit files needed by the launched process, such
-as certificates, keys, and JSON config files.
+as certificates, keys, and JSON config files, and those files appear in the
+pod under `/var/tmp/nvflare/workspace/startup` via the Secret mount.
 
 ## Transfer Architecture
 

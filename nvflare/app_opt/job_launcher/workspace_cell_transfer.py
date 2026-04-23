@@ -545,6 +545,7 @@ def upload_results(args, secure_mode: bool) -> None:
             owner_fqcn,
         )
         cell = _get_bootstrap_cell(args, owner_fqcn, secure_mode)
+        _wait_for_bootstrap_ready(cell, owner_fqcn)
         downloader = ObjectDownloader(
             cell=cell,
             timeout=DOWNLOAD_TIMEOUT,

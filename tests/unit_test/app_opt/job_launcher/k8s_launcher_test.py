@@ -1368,6 +1368,22 @@ class TestK8sJobLauncherLaunchJob:
         finally:
             _exit_patches(patches)
 
+    def test_ensure_startup_secret_replaces_when_create_conflicts(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            launcher.core_v1 = mock_api
+            mock_api.create_namespaced_secret.side_effect = _FakeApiException(status=409, reason="Conflict")
+
+            secret_name = launcher._ensure_startup_secret("site-1", "/fake/startup")
+
+            assert secret_name == f"nvflare-startup-{site_name_to_rfc1123('site-1')}"
+            mock_api.create_namespaced_secret.assert_called_once()
+            mock_api.replace_namespaced_secret.assert_called_once()
+            mock_api.read_namespaced_secret.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
     # -- PVC file validation (lazy-loaded in launch_job) ----------------------
 
     def test_raises_on_empty_pvc_file(self):

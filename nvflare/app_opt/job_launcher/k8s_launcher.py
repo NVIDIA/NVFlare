@@ -386,13 +386,12 @@ class K8sJobLauncher(JobLauncherSpec):
             "data": data,
         }
         try:
-            self.core_v1.read_namespaced_secret(name=secret_name, namespace=self.namespace)
-            self.core_v1.replace_namespaced_secret(name=secret_name, namespace=self.namespace, body=secret_body)
-            self.logger.debug("Updated startup Secret %s", secret_name)
+            self.core_v1.create_namespaced_secret(namespace=self.namespace, body=secret_body)
+            self.logger.debug("Created startup Secret %s", secret_name)
         except ApiException as e:
-            if getattr(e, "status", None) == 404:
-                self.core_v1.create_namespaced_secret(namespace=self.namespace, body=secret_body)
-                self.logger.debug("Created startup Secret %s", secret_name)
+            if getattr(e, "status", None) == 409:
+                self.core_v1.replace_namespaced_secret(name=secret_name, namespace=self.namespace, body=secret_body)
+                self.logger.debug("Updated startup Secret %s", secret_name)
             else:
                 raise
         return secret_name

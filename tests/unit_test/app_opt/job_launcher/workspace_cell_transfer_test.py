@@ -523,6 +523,47 @@ class TestWorkspaceBootstrapHelpers:
             assert request.payload["transfer_token"] == "token-1"
             fake_downloader.delete_transaction.assert_called_once_with()
 
+    def test_upload_results_waits_for_bootstrap_ready(self, monkeypatch):
+        with tempfile.TemporaryDirectory() as ws_root:
+            _write_file(os.path.join(ws_root, JOB_ID, "result.txt"), b"done")
+            fake_cell = _FakeCell(fqcn="site-1.parent", reply=make_reply(ReturnCode.OK, body={"job_id": JOB_ID}))
+            fake_downloader = MagicMock()
+            wait_calls = []
+
+            monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, "site-1.parent")
+            monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "token-1")
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer._get_bootstrap_cell",
+                lambda *a, **kw: fake_cell,
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer._wait_for_bootstrap_ready",
+                lambda cell, owner_fqcn: wait_calls.append((cell, owner_fqcn)),
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer._close_bootstrap_cell",
+                lambda: None,
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer.ObjectDownloader",
+                lambda *args, **kwargs: fake_downloader,
+            )
+            monkeypatch.setattr(
+                "nvflare.app_opt.job_launcher.workspace_cell_transfer.add_file",
+                lambda downloader, file_name: "ref-upload",
+            )
+
+            args = SimpleNamespace(
+                workspace=ws_root,
+                job_id=JOB_ID,
+                parent_url="tcp://parent",
+                root_url="tcp://root",
+            )
+
+            upload_results(args, secure_mode=False)
+
+            assert wait_calls == [(fake_cell, "site-1.parent")]
+
     def test_upload_results_cleans_temp_bundle_when_zip_creation_fails(self, monkeypatch):
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
             _write_file(os.path.join(ws_root, JOB_ID, "result.txt"), b"done")
