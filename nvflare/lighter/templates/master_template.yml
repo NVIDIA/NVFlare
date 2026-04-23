@@ -76,7 +76,8 @@ local_client_resources: |
         "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
         "args": {
           "num_of_gpus": {~~num_gpus~~},
-          "mem_per_gpu_in_GiB": {~~gpu_mem~~}
+          "mem_per_gpu_in_GiB": {~~gpu_mem~~},
+          "expiration_period": 300
         }
       },
       {

@@ -66,6 +66,9 @@ class Participant:
     security_context: dict | None = None
     pending_timeout: int | None = None
     pvc_config: dict = field(default_factory=dict)
+    # Kubernetes imagePullPolicy override. `None` keeps whatever the helm chart
+    # defaults to (typically IfNotPresent). Set to "Always" on mutable dev tags.
+    pull_policy: str | None = None
 
 
 @dataclass
@@ -168,6 +171,7 @@ def load_config(config_path: Path) -> DeployConfig:
                 security_context=merged.get("security_context"),
                 pending_timeout=merged.get("pending_timeout"),
                 pvc_config=merged.get("pvc_config") or {},
+                pull_policy=merged.get("pull_policy"),
             )
         )
 
@@ -562,7 +566,6 @@ def patch_resources_json(
         if "process_launcher" in c.get("id", "") or "ProcessJobLauncher" in c.get("path", ""):
             args = {
                 "config_file_path": None,
-                "workspace_pvc": "nvflws",
                 "study_data_pvc_file_path": "/var/tmp/nvflare/etc/study_data_pvc.yaml",
                 "namespace": namespace,
                 "python_path": "/usr/local/bin/python3",
@@ -725,6 +728,9 @@ def deploy_participant(
             helm_args += ["--set", f"image.repository={repo}", "--set", f"image.tag={tag}"]
         else:
             helm_args += ["--set", f"image.repository={p.image}"]
+
+        if p.pull_policy:
+            helm_args += ["--set", f"image.pullPolicy={p.pull_policy}"]
 
         helm(p.kubeconfig, *helm_args)
 
