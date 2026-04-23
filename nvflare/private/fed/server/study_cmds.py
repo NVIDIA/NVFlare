@@ -220,7 +220,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
         for org, sites in site_orgs.items():
             invalid, _ = name_check(org, "org")
             if invalid:
-                raise ValueError(f"invalid org '{org}'")
+                raise _InvalidArgsError(f"invalid org '{org}'")
             self._validate_site_names(sites)
 
     @staticmethod
