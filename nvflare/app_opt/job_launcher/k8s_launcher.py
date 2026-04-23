@@ -528,11 +528,18 @@ class K8sJobLauncher(JobLauncherSpec):
                 "limits": {"ephemeral-storage": self.ephemeral_storage},
             }
             for key in ("cpu", "memory"):
-                val = k8s_spec.get(key)
-                if val:
-                    resources["limits"][key] = val
+                limit_val = k8s_spec.get(key)
+                # cpu_request / memory_request allow request < limit; when absent,
+                # request mirrors the limit so admission webhooks that require
+                # explicit cpu/memory requests (e.g. AKS deployment safeguards) pass.
+                request_val = k8s_spec.get(f"{key}_request", limit_val)
+                if limit_val:
+                    resources["limits"][key] = limit_val
+                if request_val:
+                    resources["requests"][key] = request_val
             if job_resource:
                 resources["limits"]["nvidia.com/gpu"] = job_resource
+                resources["requests"]["nvidia.com/gpu"] = job_resource
             job_config["resources"] = resources
             if self.security_context:
                 job_config["security_context"] = self.security_context
