@@ -17,7 +17,6 @@
 - [CLI Commands](#cli-commands)
   - [Study Lifecycle](#study-lifecycle)
 - [User Membership Management](#user-membership-management)
-  - [Dataset Mapping](#dataset-mapping)
 - [JSON Output Examples](#json-output-examples)
 - [Error Codes](#error-codes)
 - [Admin Console Commands](#admin-console-commands)
@@ -34,13 +33,11 @@
   - [Study Name](#study-name)
   - [Sites](#sites)
   - [Users](#users)
-  - [Dataset Inputs (`set-dataset` / `unset-dataset`)](#dataset-inputs-set-dataset--unset-dataset)
 - [Behavioral Constraints](#behavioral-constraints)
   - [Remove](#remove)
   - [Hot-Reload](#hot-reload)
   - [Admin Self-Removal](#admin-self-removal)
   - [Provisioning Boundary](#provisioning-boundary)
-- [Dataset Mapping Companion Design](#dataset-mapping-companion-design)
 - [Relationship to Distributed Provisioning](#relationship-to-distributed-provisioning)
   - [End-to-End Workflow](#end-to-end-workflow)
   - [Trust Chain](#trust-chain)
@@ -342,178 +339,6 @@ nvflare study add-user cancer-research analyst@org_c.com --startup-kit /opt/nvfl
 nvflare study remove-user cancer-research trainer@org_a.com --startup-target prod
 ```
 
-### Dataset Mapping
-
-`set-dataset` and `unset-dataset` are local file operations — they do not connect to the server. On-disk format, launcher behavior, validation rules, migration guidance, and companion code changes are defined in `docs/design/study_dataset_mapping.md`.
-
-```
-nvflare study set-dataset   <study> <dataset> {--data-path <path> | --pvc <name>} --mode ro|rw [--startup-kit <dir>] [--format json] [--schema]
-nvflare study unset-dataset <study> <dataset> [--startup-kit <dir>] [--format json] [--schema]
-```
-
-Dataset commands follow the same conventions as all other `nvflare study` commands:
-
-- **Local only** — no server connection; writes directly to `local/study_data.json` in the resolved startup kit directory
-- **Same JSON envelope** — `--format json` produces `{"schema_version": "1", "status": "ok", "data": {...}}` or the structured error envelope
-- **Same exit codes** — 0 success, 1 error, 4 invalid arguments, 5 internal
-- **Same `--schema` flag** — machine-readable argument description, exits immediately
-- **Fail-closed on validation** — no file is written until all inputs are validated
-- **Idempotent writes** — `set-dataset` is an upsert; calling it twice with the same args is a no-op from the operator's perspective
-- **Atomic file writes** — both `set-dataset` and `unset-dataset` write to a temp file in the same directory as `study_data.json`, then rename via `os.replace()`; an interrupted write never leaves a partial or corrupted JSON file
-
-#### Arguments — `set-dataset`
-
-| Flag | Type | Required | Description |
-|------|------|----------|-------------|
-| `<study>` | str | Yes | Study name; must match `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$`. The regex excludes `/`, `.`, and special characters to ensure the name is safe as a filesystem path component. |
-| `<dataset>` | str | Yes | Dataset name; must match `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$`. Same path-safety guarantee as the study name — used directly as a path component in `/data/<study>/<dataset>`. |
-| `--startup-kit` | str | No | Path to the startup-kit root directory; used to locate `local/study_data.json`. If omitted, resolved from `NVFLARE_STARTUP_KIT_DIR` env var. If neither source provides a path, the command fails with `STARTUP_KIT_REQUIRED` (exit 4). |
-| `--data-path` | str | Yes* | Docker/subprocess deployment: stored as the `source` field. For Docker, provide the host-absolute path to the dataset directory (e.g. `/host/data/cancer-train`). For subprocess, use `/data/<study>/<dataset>` — the path where the operator will pre-place data on the host. Accepted declaratively; no path-traversal or existence check at CLI time. |
-| `--pvc` | str | Yes* | Kubernetes deployment: PVC claim name. Stored as the `source` field. Must satisfy Kubernetes resource name rules: `^[a-z0-9](?:[a-z0-9-]{0,251}[a-z0-9])?$`; rejected with `INVALID_DATASET` if malformed. |
-| `--mode` | `ro\|rw` | Yes | Access mode: `ro` for read-only input data; `rw` for read-write staging/output. Any other value is rejected with `INVALID_MODE`. |
-| `--format` | `json` | No | Emit structured JSON envelope instead of human-readable output |
-| `--schema` | flag | No | Print command schema as JSON and exit |
-
-\* Exactly one of `--data-path` or `--pvc` is required. Both write to the same `source` field in `study_data.json`; the launcher interprets the value based on its own deployment context.
-
-#### Arguments — `unset-dataset`
-
-| Flag | Type | Required | Description |
-|------|------|----------|-------------|
-| `<study>` | str | Yes | Study name; must match `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$` — path-safe, same rule as `set-dataset` |
-| `<dataset>` | str | Yes | Dataset name; must match `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$` — path-safe, same rule as `set-dataset` |
-| `--startup-kit` | str | No | Path to the startup-kit root directory; used to locate `local/study_data.json`. If omitted, resolved from `NVFLARE_STARTUP_KIT_DIR` env var. If neither source provides a path, the command fails with `STARTUP_KIT_REQUIRED` (exit 4). |
-| `--format` | `json` | No | Emit structured JSON envelope |
-| `--schema` | flag | No | Print command schema as JSON and exit |
-
-`unset-dataset` does not accept `--data-path`, `--pvc`, or `--mode`. It removes the named dataset entry regardless of its current contents. `unset-dataset` is idempotent: if `study_data.json` does not exist, the study key is absent, or the dataset key is absent, the command succeeds with exit 0 and returns `"removed": false` in the response envelope — no error is raised for missing state.
-
-#### Usage Examples
-
-```bash
-# Startup kit resolved from NVFLARE_STARTUP_KIT_DIR
-nvflare study set-dataset cancer-research training --data-path /host/data/cancer-train --mode ro
-
-# Explicit startup kit path
-nvflare study set-dataset cancer-research training --startup-kit /opt/nvflare/hospital-a --data-path /host/data/cancer-train --mode ro
-
-# Kubernetes site — PVC
-nvflare study set-dataset cancer-research staging --startup-kit /opt/nvflare/hospital-a --pvc cancer-stage-pvc --mode rw
-
-# Remove a dataset entry
-nvflare study unset-dataset cancer-research staging --startup-kit /opt/nvflare/hospital-a
-```
-
-#### JSON Output Examples
-
-**`set-dataset` — new entry created:**
-
-```json
-{
-  "schema_version": "1",
-  "status": "ok",
-  "data": {
-    "study": "cancer-research",
-    "dataset": "training",
-    "created": true,
-    "entry": {
-      "source": "/host/data/cancer-train",
-      "mode": "ro"
-    }
-  }
-}
-```
-
-**`set-dataset` — existing entry updated (upsert):**
-
-```json
-{
-  "schema_version": "1",
-  "status": "ok",
-  "data": {
-    "study": "cancer-research",
-    "dataset": "training",
-    "created": false,
-    "entry": {
-      "source": "/host/data/cancer-train",
-      "mode": "ro"
-    }
-  }
-}
-```
-
-**`set-dataset` — Kubernetes site (PVC name as `source`):**
-
-```json
-{
-  "schema_version": "1",
-  "status": "ok",
-  "data": {
-    "study": "cancer-research",
-    "dataset": "staging",
-    "created": true,
-    "entry": {
-      "source": "cancer-stage-pvc",
-      "mode": "rw"
-    }
-  }
-}
-```
-
-**`unset-dataset` — success (entry existed and was removed):**
-
-```json
-{
-  "schema_version": "1",
-  "status": "ok",
-  "data": {
-    "study": "cancer-research",
-    "dataset": "staging",
-    "removed": true
-  }
-}
-```
-
-**`unset-dataset` — success (entry was already absent; idempotent):**
-
-```json
-{
-  "schema_version": "1",
-  "status": "ok",
-  "data": {
-    "study": "cancer-research",
-    "dataset": "staging",
-    "removed": false
-  }
-}
-```
-
-**Error — invalid mode:**
-
-```json
-{
-  "schema_version": "1",
-  "status": "error",
-  "error_code": "INVALID_MODE",
-  "message": "--mode must be 'ro' or 'rw'; got 'readonly'.",
-  "hint": "Use --mode ro for read-only input data or --mode rw for read-write staging/output."
-}
-```
-
-#### Schema Gate
-
-Until the companion launcher change is merged, `set-dataset` and `unset-dataset` handlers return a structured error rather than writing any file. This ensures the CLI surface is available for `--schema` and `--help` discovery without writing a format the launchers cannot yet consume.
-
-```json
-{
-  "schema_version": "1",
-  "status": "error",
-  "error_code": "NOT_YET_IMPLEMENTED",
-  "message": "Dataset commands are pending the companion launcher change.",
-  "hint": "This command will be enabled once the unified study_data.json launcher support is merged."
-}
-```
-
 ---
 
 ## JSON Output Examples
@@ -765,8 +590,6 @@ The response returns per-site outcome lists. `site_orgs` is the authoritative gr
 | `LOCK_TIMEOUT` | 3 | Mutation lock could not be acquired within 30 seconds — another mutation is in progress |
 | `CONNECTION_FAILED` | 2 | Cannot connect to or authenticate with the server |
 
-All dataset-command error codes (`INVALID_DATASET`, `INVALID_MODE`, `MISSING_REQUIRED_FLAG`, `STARTUP_KIT_REQUIRED`, `INVALID_STARTUP_KIT`, `DATA_PATH_NOT_FOUND`, `BACKEND_FIELD_MISSING`, `NOT_YET_IMPLEMENTED`, and the dataset-context `STUDY_NOT_FOUND`) are defined in `docs/design/study_dataset_mapping.md`.
-
 ---
 
 ## Admin Console Commands
@@ -939,10 +762,6 @@ Mutations only add, modify, or remove entries under `"studies"`. The format is i
 - `add_study_user` rejects a user already present in the study's `admins` list with `USER_ALREADY_IN_STUDY`
 - `remove_study_user` rejects a user not present in the study's `admins` list with `USER_NOT_IN_STUDY`
 
-### Dataset Inputs (`set-dataset` / `unset-dataset`)
-
-Both `<study>` and `<dataset>` are used directly as filesystem path components (e.g. `/data/<study>/<dataset>`). Both must match `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$` — the same path-safe regex as study names. Full validation rules and error codes are defined in `docs/design/study_dataset_mapping.md`.
-
 ---
 
 ## Behavioral Constraints
@@ -972,12 +791,6 @@ These commands mutate runtime study state only.
 - dynamic provisioning manages participants and certificates only
 - dynamic provisioning does not create, update, or remove studies
 - ongoing study changes are made through `nvflare study ...`, not through provisioning
-
----
-
-## Dataset Mapping Companion Design
-
-See `docs/design/study_dataset_mapping.md` for the full companion design: on-disk format, launcher behavior, validation, migration, and required code changes.
 
 ---
 
@@ -1048,7 +861,7 @@ The cert is the gate for **who can call** study lifecycle and study-user members
 | File | Purpose |
 |------|---------|
 | `nvflare/tool/study/__init__.py` | Package |
-| `nvflare/tool/study/study_cli.py` | `nvflare study` subcommand handlers, including local dataset-mapping commands |
+| `nvflare/tool/study/study_cli.py` | `nvflare study` subcommand handlers |
 | `nvflare/private/fed/server/study_cmds.py` | `StudyCommandModule` server-side handlers |
 
 ### Modified Files
@@ -1062,9 +875,7 @@ The cert is the gate for **who can call** study lifecycle and study-user members
 
 ### Session API
 
-Server-backed handlers (`register`, `add-site`, `remove-site`, `remove`, `list`, `show`, `add-user`, `remove-user`) use `new_secure_session()` for server connectivity, identical to `nvflare job` and `nvflare system`. New session methods are thin wrappers over `AdminAPI.do_command()`.
-
-`set-dataset` and `unset-dataset` are purely local file operations and do **not** use `new_secure_session()` or open any server connection. They resolve the startup-kit directory from `--startup-kit` (explicit path) or `NVFLARE_STARTUP_KIT_DIR` env var, then read and write `local/study_data.json` directly. `--startup-target` is not accepted — poc/prod environment selection is a server-connection concept and does not apply to local file operations.
+All handlers (`register`, `add-site`, `remove-site`, `remove`, `list`, `show`, `add-user`, `remove-user`) use `new_secure_session()` for server connectivity, identical to `nvflare job` and `nvflare system`. New session methods are thin wrappers over `AdminAPI.do_command()`.
 
 ---
 
@@ -1077,7 +888,7 @@ Server-backed handlers (`register`, `add-site`, `remove-site`, `remove`, `list`,
 | Study lifecycle authorization | `remove`: `project_admin` only. `register`, `add-site`, `remove-site`: `project_admin` or `org_admin` (`org_admin` uses `--sites`; `project_admin` uses `--site-org`; `org_admin` scoped to studies where their org is enrolled). `list`/`show`: `project_admin` sees all; `org_admin` sees only studies where their org is enrolled |
 | User membership authorization | `project_admin` (any study); `org_admin` (studies where caller's org is enrolled) |
 | Backend file | `study_registry.json` with `site_orgs` plus `admins` |
-| Dataset mapping | Included in the CLI surface; on-disk schema, launcher semantics, and CLI commands are specified in `docs/design/study_dataset_mapping.md` |
+| Dataset mapping | Out of scope for this design; deferred to a future iteration |
 | Persistence | Serialized mutation flow with lock, temp file, `os.replace()`, then registry publish |
 | In-memory reload | Hot-reload after each mutation; no server restart required |
 | Job-association guard | Best-effort: `remove` queries the job store at guard time and rejects with `STUDY_HAS_JOBS` if any tagged job exists; not atomic with concurrent job submission |
