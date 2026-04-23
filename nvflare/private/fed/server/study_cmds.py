@@ -37,6 +37,18 @@ from .cmd_utils import CommandUtil
 _LOCK_TIMEOUT_SECS = 30.0
 
 
+class _InvalidArgsError(ValueError):
+    pass
+
+
+class _InvalidSiteError(ValueError):
+    pass
+
+
+class _InvalidStudyNameError(ValueError):
+    pass
+
+
 def _study_parser(
     cmd_name: str,
     include_sites: bool = False,
@@ -194,15 +206,15 @@ class StudyCommandModule(CommandModule, CommandUtil):
     def _validate_study_name(self, study: str):
         invalid, _ = name_check(study, "study")
         if invalid or study == "default":
-            raise ValueError(f"invalid study name '{study}'")
+            raise _InvalidStudyNameError(f"invalid study name '{study}'")
 
     def _validate_site_names(self, sites: List[str]):
         if not sites:
-            raise ValueError("sites are required")
+            raise _InvalidSiteError("sites are required")
         for site in sites:
             invalid, _ = name_check(site, "site")
             if invalid:
-                raise ValueError(f"invalid site '{site}'")
+                raise _InvalidSiteError(f"invalid site '{site}'")
 
     def _validate_site_orgs(self, site_orgs: Dict[str, List[str]]):
         for org, sites in site_orgs.items():
@@ -307,18 +319,18 @@ class StudyCommandModule(CommandModule, CommandUtil):
         has_site_org = bool(getattr(parsed, "site_orgs", []))
 
         if has_sites and has_site_org:
-            raise ValueError("INVALID_ARGS: --sites and --site-org are mutually exclusive; provide only one")
+            raise _InvalidArgsError("--sites and --site-org are mutually exclusive; provide only one")
         if caller_role == "org_admin" and has_site_org:
-            raise ValueError("INVALID_ARGS: org_admin must use --sites, not --site-org")
+            raise _InvalidArgsError("org_admin must use --sites, not --site-org")
         if caller_role == "project_admin" and has_sites:
-            raise ValueError("INVALID_ARGS: project_admin must use --site-org, not --sites")
+            raise _InvalidArgsError("project_admin must use --site-org, not --sites")
 
         if caller_role == "project_admin":
             site_orgs = self._parse_site_orgs(getattr(parsed, "site_orgs", []))
         else:
             caller_org = self._caller_org(conn)
             if not caller_org:
-                raise ValueError("INVALID_ARGS: caller org is empty — misconfigured certificate")
+                raise _InvalidArgsError("caller org is empty — misconfigured certificate")
             sites = self._parse_sites(getattr(parsed, "sites", None))
             site_orgs = {caller_org: sites}
         self._validate_site_orgs(site_orgs)
@@ -361,6 +373,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
             working = deepcopy(config)
             payload = mutation_cb(engine, working)
             if payload is None:
+                self._error(conn, "INTERNAL_ERROR", "mutation callback returned no result", exit_code=5)
                 return
             if isinstance(payload, dict) and payload.get("error_code"):
                 self._reply(conn, payload)
@@ -388,17 +401,14 @@ class StudyCommandModule(CommandModule, CommandUtil):
             parsed = parser.parse_args(args[1:])
             self._validate_study_name(parsed.study)
             requested = self._requested_site_orgs(conn, parsed)
-        except Exception as e:
-            self._error(
-                conn,
-                (
-                    "INVALID_ARGS"
-                    if str(e).startswith("INVALID_ARGS:")
-                    else ("INVALID_SITE" if "site" in str(e) or "org" in str(e) else "INVALID_STUDY_NAME")
-                ),
-                str(e),
-                exit_code=4,
-            )
+        except _InvalidArgsError as e:
+            self._error(conn, "INVALID_ARGS", str(e), exit_code=4)
+            return
+        except _InvalidSiteError as e:
+            self._error(conn, "INVALID_SITE", str(e), exit_code=4)
+            return
+        except _InvalidStudyNameError as e:
+            self._error(conn, "INVALID_STUDY_NAME", str(e), exit_code=4)
             return
 
         def _mutate(_engine, working):
@@ -449,17 +459,14 @@ class StudyCommandModule(CommandModule, CommandUtil):
             parsed = parser.parse_args(args[1:])
             self._validate_study_name(parsed.study)
             requested = self._requested_site_orgs(conn, parsed)
-        except Exception as e:
-            self._error(
-                conn,
-                (
-                    "INVALID_ARGS"
-                    if str(e).startswith("INVALID_ARGS:")
-                    else ("INVALID_SITE" if "site" in str(e) or "org" in str(e) else "INVALID_STUDY_NAME")
-                ),
-                str(e),
-                exit_code=4,
-            )
+        except _InvalidArgsError as e:
+            self._error(conn, "INVALID_ARGS", str(e), exit_code=4)
+            return
+        except _InvalidSiteError as e:
+            self._error(conn, "INVALID_SITE", str(e), exit_code=4)
+            return
+        except _InvalidStudyNameError as e:
+            self._error(conn, "INVALID_STUDY_NAME", str(e), exit_code=4)
             return
 
         def _mutate(_engine, working):
@@ -503,17 +510,14 @@ class StudyCommandModule(CommandModule, CommandUtil):
             parsed = parser.parse_args(args[1:])
             self._validate_study_name(parsed.study)
             requested = self._requested_site_orgs(conn, parsed)
-        except Exception as e:
-            self._error(
-                conn,
-                (
-                    "INVALID_ARGS"
-                    if str(e).startswith("INVALID_ARGS:")
-                    else ("INVALID_SITE" if "site" in str(e) or "org" in str(e) else "INVALID_STUDY_NAME")
-                ),
-                str(e),
-                exit_code=4,
-            )
+        except _InvalidArgsError as e:
+            self._error(conn, "INVALID_ARGS", str(e), exit_code=4)
+            return
+        except _InvalidSiteError as e:
+            self._error(conn, "INVALID_SITE", str(e), exit_code=4)
+            return
+        except _InvalidStudyNameError as e:
+            self._error(conn, "INVALID_STUDY_NAME", str(e), exit_code=4)
             return
 
         def _mutate(_engine, working):

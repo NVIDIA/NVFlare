@@ -29,7 +29,7 @@ type_pattern_mapping = {
     "org": r"^[A-Za-z0-9_]+$",
     "simple_name": r"^[A-Za-z0-9_]+$",
     "study": r"^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$",
-    "site": r"^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$",
+    "site": r"^[A-Za-z0-9-_]+$",
 }
 
 
