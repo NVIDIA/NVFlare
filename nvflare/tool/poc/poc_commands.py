@@ -627,7 +627,7 @@ def _stop_running_poc_before_prepare(workspace: str, timeout_in_sec: int = 30, p
     from nvflare.tool.cli_output import print_human
 
     print_human("Existing POC system is still running; stopping it before recreating the workspace.")
-    _stop_poc(workspace)
+    _stop_poc(workspace, project_config=project_config, service_config=service_config)
 
     deadline = time.time() + timeout_in_sec
     while time.time() < deadline:
@@ -912,8 +912,9 @@ def stop_poc(cmd_args):
     output_ok({"status": "stopped"})
 
 
-def _stop_poc(poc_workspace: str, excluded=None, services_list=None):
-    project_config, service_config = setup_service_config(poc_workspace)
+def _stop_poc(poc_workspace: str, excluded=None, services_list=None, project_config=None, service_config=None):
+    if project_config is None or service_config is None:
+        project_config, service_config = setup_service_config(poc_workspace)
 
     if services_list is None:
         services_list = []

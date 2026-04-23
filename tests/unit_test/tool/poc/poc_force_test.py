@@ -70,6 +70,7 @@ class TestPocForce:
             patch("nvflare.tool.poc.poc_commands.shutil.rmtree", side_effect=fake_rmtree),
             patch("nvflare.tool.poc.poc_commands.prepare_poc_provision", return_value={"name": "example_project"}),
             patch("nvflare.tool.poc.poc_commands.save_startup_kit_dir_config"),
+            patch("nvflare.tool.cli_output.print_human"),
         ):
             result = _prepare_poc([], 2, workspace, force=True)
 
