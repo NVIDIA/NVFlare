@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import functools
 import json
 import os
 import shlex
@@ -35,6 +36,7 @@ FLOWER_SUPERNODE = "flower-supernode"
 FLOWER_CLI = "flwr"
 FLOWER_CONFIG_FILE = "config.toml"
 FLOWER_SUPERLINK_CONNECTION = "nvflare"
+MIN_FLWR_VERSION_FOR_RUNTIME_DEPS = "1.29.0"
 
 
 def get_partition_id(fl_ctx: FLContext):
@@ -89,24 +91,25 @@ def _validate_flower_executable(executable_name: str, executable_path: str):
         raise RuntimeError(error_msg)
 
 
+@functools.lru_cache()
 def _check_runtime_dependency_installation_support(logger):
-    """Check if Flower version is >= 1.29.0 to support runtime dependency installation."""
+    """Check if Flower version is >= MIN_FLWR_VERSION_FOR_RUNTIME_DEPS to support runtime dependency installation."""
     try:
         import flwr
         from packaging.version import parse
 
         version_str = flwr.__version__
 
-        if parse(version_str) >= parse("1.29.0"):
+        if parse(version_str) >= parse(MIN_FLWR_VERSION_FOR_RUNTIME_DEPS):
             return True
         else:
             logger.warning(
-                f"Flower version {version_str} is lower than 1.29.0. "
+                f"Flower version {version_str} is lower than {MIN_FLWR_VERSION_FOR_RUNTIME_DEPS}. "
                 "The '--allow-runtime-dependency-installation' option is not supported and will be ignored."
             )
             return False
 
-    except Exception as e:
+    except (ImportError, AttributeError) as e:
         logger.warning(f"Could not verify Flower version for runtime dependency installation support: {e}")
         return False
 
