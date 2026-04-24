@@ -580,8 +580,14 @@ def _prepare_poc(
     else:
         print_human(f"Preparing POC workspace at {workspace} using {project_conf_path}...")
 
-    project_config = None
     if os.path.exists(workspace):
+        running_poc = _get_running_poc_context(workspace)
+        if running_poc:
+            if force:
+                _ensure_poc_stopped(workspace, project_config=running_poc[0], service_config=running_poc[1])
+            else:
+                raise CLIException("system is still running, please stop the system first.")
+
         if not force:
             if not prompt_yn(
                 f"This will delete poc workspace directory: '{workspace}' and create a new one. Is it OK to proceed?"
@@ -597,7 +603,6 @@ def _prepare_poc(
                 f"Please copy {project_conf_path} to different location before running this command."
             )
 
-        _ensure_poc_stopped(workspace)
         shutil.rmtree(workspace, ignore_errors=True)
 
     project_config = prepare_poc_provision(
@@ -609,20 +614,32 @@ def _prepare_poc(
     return True
 
 
-def _ensure_poc_stopped(workspace: str, timeout_in_sec: int = 30, poll_interval: float = 1.0):
+def _get_running_poc_context(workspace: str):
     try:
         project_config, service_config = setup_service_config(workspace)
     except CLIException:
-        return
+        return None
 
     if not project_config or not service_config:
-        return
+        return None
 
     if not is_poc_ready(workspace, service_config, project_config):
-        return
+        return None
 
     if not is_poc_running(workspace, service_config, project_config):
-        return
+        return None
+
+    return project_config, service_config
+
+
+def _ensure_poc_stopped(
+    workspace: str, timeout_in_sec: int = 30, poll_interval: float = 1.0, project_config=None, service_config=None
+):
+    if project_config is None or service_config is None:
+        running_poc = _get_running_poc_context(workspace)
+        if not running_poc:
+            return
+        project_config, service_config = running_poc
 
     from nvflare.tool.cli_output import print_human
 

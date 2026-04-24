@@ -107,6 +107,33 @@ class TestPocForce:
         assert workspace.exists()
         assert sentinel.exists()
 
+    def test_prepare_without_force_raises_for_running_poc_before_prompt(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import _prepare_poc
+
+        workspace = str(tmp_path / "poc_ws_running_no_force")
+        os.makedirs(workspace)
+
+        with (
+            patch(
+                "nvflare.tool.poc.poc_commands.setup_service_config",
+                return_value=(
+                    {"name": "example_project"},
+                    {SC.FLARE_SERVER: "server", SC.FLARE_PROJ_ADMIN: "admin@nvidia.com"},
+                ),
+            ),
+            patch("nvflare.tool.poc.poc_commands.is_poc_ready", return_value=True),
+            patch("nvflare.tool.poc.poc_commands.is_poc_running", return_value=True),
+            patch("nvflare.tool.cli_output.prompt_yn") as mock_prompt,
+            patch("nvflare.tool.poc.poc_commands._stop_poc") as mock_stop,
+            patch("nvflare.tool.poc.poc_commands.prepare_poc_provision") as mock_prov,
+        ):
+            with pytest.raises(CLIException, match="system is still running, please stop the system first."):
+                _prepare_poc([], 2, workspace, force=False)
+
+        mock_prompt.assert_not_called()
+        mock_stop.assert_not_called()
+        mock_prov.assert_not_called()
+
     def test_no_force_non_interactive_exits_4(self, tmp_path):
         """Non-interactive mode without --force should output INVALID_ARGS exit 4."""
         from nvflare.tool.poc.poc_commands import prepare_poc
