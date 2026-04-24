@@ -1093,30 +1093,8 @@ def _run_poc(
 
 
 def clean_poc(cmd_args):
-    from nvflare.tool.cli_output import output_error, output_ok
-    from nvflare.tool.cli_schema import handle_schema_flag
-
-    handle_schema_flag(
-        _poc_sub_cmd_parsers.get(CMD_CLEAN_POC),
-        "nvflare poc clean",
-        ["nvflare poc clean"],
-        sys.argv[1:],
-    )
     poc_workspace = get_poc_workspace()
-    force = getattr(cmd_args, "force", False)
-
-    try:
-        result = _clean_poc(poc_workspace, force=force)
-    except CLIException as e:
-        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
-        raise SystemExit(4)
-    except Exception as e:
-        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
-        raise SystemExit(5)
-    if result is False:
-        return
-
-    output_ok({"status": "cleaned"})
+    _clean_poc(poc_workspace)
 
 
 def is_poc_running(poc_workspace, service_config, project_config):
@@ -1147,20 +1125,15 @@ def _is_live_pid_file(pid_file: str) -> bool:
         return False
 
 
-def _clean_poc(poc_workspace: str, force: bool = False) -> bool:
+def _clean_poc(poc_workspace: str):
     if os.path.isdir(poc_workspace):
         project_config, service_config = setup_service_config(poc_workspace)
         if project_config is None:
             raise CLIException(f"{poc_workspace} is not valid poc directory")
         if is_poc_ready(poc_workspace, service_config, project_config):
             if not is_poc_running(poc_workspace, service_config, project_config):
-                from nvflare.tool.cli_output import print_human, prompt_yn
+                from nvflare.tool.cli_output import print_human
 
-                if not force:
-                    if not sys.stdin.isatty():
-                        raise CLIException("workspace exists; use --force to clean in non-interactive mode")
-                    if not prompt_yn(f"POC workspace already exists: {poc_workspace}. Remove it?"):
-                        return False
                 shutil.rmtree(poc_workspace, ignore_errors=True)
 
                 print_human(f"{poc_workspace} is removed")
@@ -1282,10 +1255,7 @@ def define_prepare_jobs_parser(poc_parser):
 
 def define_clean_parser(poc_parser):
     clean_parser = poc_parser.add_parser(CMD_CLEAN_POC, help="clean up poc workspace")
-    _poc_sub_cmd_parsers[CMD_CLEAN_POC] = clean_parser
     clean_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
-    clean_parser.add_argument("--force", action="store_true", help="remove workspace without prompting")
-    clean_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
 def define_start_parser(poc_parser):

@@ -34,6 +34,7 @@ from nvflare.tool.package.package_cli import def_package_cli_parser, handle_pack
 from nvflare.tool.poc.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
 from nvflare.tool.recipe.recipe_cli import def_recipe_parser, handle_recipe_cmd
+from nvflare.tool.study.study_cli import def_study_cli_parser, handle_study_cmd
 from nvflare.tool.system.system_cli import def_system_cli_parser, handle_system_cmd
 from nvflare.utils.cli_utils import (
     TARGET_POC,
@@ -60,6 +61,7 @@ CMD_CONFIG = "config"
 CMD_CERT = "cert"
 CMD_PACKAGE = "package"
 CMD_SYSTEM = "system"
+CMD_STUDY = "study"
 
 
 def def_provision_parser(sub_cmd):
@@ -410,6 +412,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_config_parser(sub_cmd))
     sub_cmd_parsers.update(def_cert_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_package_cli_parser(sub_cmd))
+    sub_cmd_parsers.update(def_study_cli_parser(sub_cmd))
     system_parser = sub_cmd.add_parser(CMD_SYSTEM, help="FL system operations (status, shutdown, version, ...)")
     sub_cmd_parsers.update({CMD_SYSTEM: system_parser})
     def_system_cli_parser(system_parser)
@@ -437,6 +440,7 @@ def parse_args(prog_name: str):
         ns.job_sub_cmd = sub_sub
         ns.poc_sub_cmd = sub_sub
         ns.system_sub_cmd = sub_sub
+        ns.study_sub_cmd = sub_sub
         ns.cert_sub_command = sub_sub
         ns.recipe_sub_cmd = sub_sub or "list"
         ns.format = global_args.format
@@ -474,25 +478,26 @@ handlers = {
     CMD_CONFIG: handle_config_cmd,
     CMD_CERT: handle_cert_cmd,
     CMD_PACKAGE: handle_package_cmd,
+    CMD_STUDY: handle_study_cmd,
     CMD_SYSTEM: handle_system_cmd,
 }
 
 
 def _auth_hint_from_detail(detail: str, auth_code: str = None) -> str:
     if auth_code == "AUTH_UNKNOWN_STUDY" or auth_code == "AUTH_STUDY_NOT_CONFIGURED":
-        return "Add the study under 'studies:' in project.yml with api_version: 4, reprovision, redeploy or restart the server, then try again."
+        return "Verify the study name or create the study with 'nvflare study register', then try again."
     if auth_code == "AUTH_STUDY_USER_NOT_MAPPED":
-        return "Add this user under the study's admins mapping in project.yml, reprovision, redeploy or restart the server, then try again."
+        return "Add this user to the study's admins list with 'nvflare study add-user', then try again."
     if auth_code in {"AUTH_INVALID_STUDY_NAME", "AUTH_INVALID_STUDY"}:
-        return "Use a valid study name in project.yml, reprovision, redeploy or restart the server, then try again."
+        return "Use a valid study name and try again."
 
     detail = (detail or "").lower()
     if "unknown study" in detail or "not configured on the server" in detail:
-        return "Add the study under 'studies:' in project.yml with api_version: 4, reprovision, redeploy or restart the server, then try again."
+        return "Verify the study name or create the study with 'nvflare study register', then try again."
     if "not mapped to study" in detail:
-        return "Add this user under the study's admins mapping in project.yml, reprovision, redeploy or restart the server, then try again."
+        return "Add this user to the study's admins list with 'nvflare study add-user', then try again."
     if "invalid study name" in detail:
-        return "Use a valid study name in project.yml, reprovision, redeploy or restart the server, then try again."
+        return "Use a valid study name and try again."
     if "certificate validation failed" in detail:
         return "Check that the startup kit certificate, key, and root CA match the server trust chain."
     return "Check startup kit credentials."

@@ -16,6 +16,7 @@ from nvflare.fuel.hci.reg import CommandModule
 from nvflare.private.fed.server.info_coll_cmd import InfoCollectorCommandModule
 from nvflare.private.fed.server.job_cmds import JobCommandModule
 from nvflare.private.fed.server.shell_cmd import ShellCommandModule
+from nvflare.private.fed.server.study_cmds import StudyCommandModule
 from nvflare.private.fed.server.sys_cmd import SystemCommandModule
 from nvflare.private.fed.server.training_cmds import TrainingCommandModule
 
@@ -26,6 +27,7 @@ class ServerCommandModules:
         SystemCommandModule(),
         TrainingCommandModule(),
         JobCommandModule(),
+        StudyCommandModule(),
         InfoCollectorCommandModule(),
     ]
 

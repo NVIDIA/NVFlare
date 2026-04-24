@@ -52,7 +52,9 @@ Common Workflow
    ``--startup-target`` and ``--startup-kit`` are accepted by all
    server-connected ``nvflare job`` commands, including ``submit``,
    ``monitor``, ``list``, ``meta``, ``abort``, ``clone``, ``download``,
-   ``delete``, ``stats``, ``logs``, and ``log-config``.
+   ``delete``, ``stats``, ``logs``, and ``log-config``. They are mutually
+   exclusive explicit selectors; startup kit resolution also supports
+   ``NVFLARE_STARTUP_KIT_DIR`` and config fallback as described below.
 
 ****************
 Submit a Job
@@ -67,7 +69,7 @@ Use ``nvflare job submit`` to submit a pre-built NVFlare job folder:
 Submit options:
 
 - ``-j, --job_folder``: job folder path. Defaults to ``./current_job``.
-- ``--startup-target {poc,prod}``: choose the startup kit from ``~/.nvflare/config.conf``. See the startup kit resolution order below.
+- ``--startup-target {poc,prod}``: choose the configured startup target from ``~/.nvflare/config.conf``. Mutually exclusive with ``--startup-kit``. See the startup kit resolution order below.
 - ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
 - ``--study``: submit into a named study when the server is configured for multi-study access. If omitted, the literal study name ``default`` is submitted.
 - ``-debug, --debug``: keep the temporary copied job folder for inspection.

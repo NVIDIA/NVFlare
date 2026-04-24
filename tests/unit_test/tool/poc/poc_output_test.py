@@ -273,12 +273,11 @@ class TestPocOutput:
         captured = capsys.readouterr()
         assert captured.out.strip() == ""
 
-    def test_clean_poc_running_system_exits_4(self, capsys, tmp_path):
-        """clean_poc should exit 4 instead of reporting cleaned when the system is still running."""
+    def test_clean_poc_running_system_raises(self, tmp_path):
+        """clean_poc should propagate CLIException when the system is still running."""
         from nvflare.tool.poc.poc_commands import clean_poc
 
         args = MagicMock()
-        args.force = True
 
         with (
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
@@ -287,69 +286,23 @@ class TestPocOutput:
                 side_effect=CLIException("system is still running, please stop the system first."),
             ),
         ):
-            with pytest.raises(SystemExit) as exc_info:
+            with pytest.raises(CLIException):
                 clean_poc(args)
 
-        assert exc_info.value.code == 4
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert data["status"] == "error"
-        assert data["error_code"] == "INVALID_ARGS"
-
-    def test_clean_poc_invalid_loaded_project_exits_4(self, capsys, tmp_path):
-        """clean_poc should not emit cleaned when setup_service_config yields no project config."""
+    def test_clean_poc_invalid_loaded_project_raises(self, tmp_path):
+        """clean_poc should raise CLIException when setup_service_config yields no project config."""
+        from nvflare.cli_exception import CLIException
         from nvflare.tool.poc.poc_commands import clean_poc
 
         args = MagicMock()
-        args.force = True
 
         with (
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
             patch("nvflare.tool.poc.poc_commands.os.path.isdir", return_value=True),
             patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(None, None)),
         ):
-            with pytest.raises(SystemExit) as exc_info:
+            with pytest.raises(CLIException):
                 clean_poc(args)
-
-        assert exc_info.value.code == 4
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert data["status"] == "error"
-        assert data["error_code"] == "INVALID_ARGS"
-
-    def test_clean_poc_non_interactive_without_force_exits_4(self, capsys, tmp_path):
-        from nvflare.tool.poc.poc_commands import clean_poc
-
-        args = MagicMock()
-        args.force = False
-
-        with (
-            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
-            patch("sys.stdin") as mock_stdin,
-            patch("nvflare.tool.poc.poc_commands.os.path.isdir", return_value=True),
-            patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=({"name": "proj"}, {})),
-            patch("nvflare.tool.poc.poc_commands.is_poc_ready", return_value=True),
-            patch("nvflare.tool.poc.poc_commands.is_poc_running", return_value=False),
-        ):
-            mock_stdin.isatty.return_value = False
-            with pytest.raises(SystemExit) as exc_info:
-                clean_poc(args)
-
-        assert exc_info.value.code == 4
-        data = json.loads(capsys.readouterr().out)
-        assert data["error_code"] == "INVALID_ARGS"
-
-    def test_clean_poc_parser_has_force_flag(self):
-        import argparse
-
-        from nvflare.tool.poc.poc_commands import def_poc_parser
-
-        root = argparse.ArgumentParser()
-        subs = root.add_subparsers()
-        def_poc_parser(subs)
-
-        args = root.parse_args(["poc", "clean", "--force"])
-        assert args.force is True
 
     def test_start_poc_reports_configured_server_port(self, capsys, tmp_path):
         """start_poc should use the configured fed-learn port, not a hard-coded default."""

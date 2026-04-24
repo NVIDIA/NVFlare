@@ -70,8 +70,8 @@ class TestStaticFileBuilder:
                 "api_version": 4,
                 "studies": {
                     "study_a": {
-                        "sites": ["client1"],
-                        "admins": {"admin1@org.com": "project_admin"},
+                        "site_orgs": {"org": ["client1"]},
+                        "admins": ["admin1@org.com"],
                     }
                 },
             },

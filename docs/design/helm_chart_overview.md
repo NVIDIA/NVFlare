@@ -1,6 +1,6 @@
 # NVFlare Helm Chart — Overview
 
-**Version:** 2.7.x / Helm chart 0.1.0
+**Version:** Helm chart 0.1.0
 **Date:** 2026-04-10
 
 ---

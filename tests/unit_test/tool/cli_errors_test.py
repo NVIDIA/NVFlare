@@ -73,6 +73,13 @@ def test_internal_error_hint_does_not_reference_verbose():
     assert "--verbose" not in ERROR_REGISTRY["INTERNAL_ERROR"]["hint"]
 
 
+def test_startup_kit_missing_hint_names_current_resolution_sources():
+    hint = ERROR_REGISTRY["STARTUP_KIT_MISSING"]["hint"]
+    assert "--startup-kit" in hint
+    assert "NVFLARE_STARTUP_KIT_DIR" in hint
+    assert "--startup or" not in hint
+
+
 def test_missing_substitution_key_falls_back_to_template():
     entry = ERROR_REGISTRY["JOB_NOT_FOUND"]
     try:
