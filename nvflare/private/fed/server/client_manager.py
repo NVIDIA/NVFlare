@@ -164,9 +164,9 @@ class ClientManager:
 
         secure_mode = fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
         client_org = ""
+        asserter_cert_data = shareable.get(IdentityChallengeKey.CERT)
         if secure_mode:
             # verify client identity
-            asserter_cert_data = shareable.get(IdentityChallengeKey.CERT)
             if not asserter_cert_data:
                 self.logger.error("missing client cert in register request")
                 return None
@@ -200,6 +200,12 @@ class ClientManager:
 
             self.logger.debug(f"identity verified for client '{client_name}'")
             client_org = get_org_from_cert(asserter_cert)
+        elif asserter_cert_data:
+            try:
+                asserter_cert = load_crt_bytes(asserter_cert_data)
+                client_org = get_org_from_cert(asserter_cert)
+            except Exception:
+                pass
 
         with self.lock:
             clients_to_be_removed = [token for token, client in self.clients.items() if client.name == client_name]
