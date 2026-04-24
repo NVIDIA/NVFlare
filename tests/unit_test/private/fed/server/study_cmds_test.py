@@ -321,19 +321,24 @@ class TestRemoveStudySiteOrgValidation:
         assert "error_code" not in conn.last_reply
         assert "site-existing" in conn.last_reply.get("removed", [])
 
-    def test_org_admin_wrong_org_returns_invalid_site(self):
+    def test_org_admin_site_in_different_engine_org_still_succeeds(self):
+        # Engine reports site-existing under org_b, but the study registry has it under org_a.
+        # For removal the registry is the source of truth; engine org is irrelevant.
         engine = _make_engine({"site-existing": "org_b"})
         conn = _FakeConnection(role="org_admin", org="org_a", engine=engine)
         with _mutation_ctx(_REGISTRY_WITH_STUDY):
             self._module().cmd_remove_study_site(conn, ["remove_study_site", "study1", "--sites", "site-existing"])
-        assert conn.last_reply["error_code"] == "INVALID_SITE"
+        assert "error_code" not in conn.last_reply
+        assert "site-existing" in conn.last_reply.get("removed", [])
 
-    def test_org_admin_disconnected_site_returns_invalid_site(self):
+    def test_org_admin_disconnected_site_succeeds(self):
+        # Site is offline (not in engine) but is enrolled in the study — removal must still work.
         engine = _make_engine({})
         conn = _FakeConnection(role="org_admin", org="org_a", engine=engine)
         with _mutation_ctx(_REGISTRY_WITH_STUDY):
             self._module().cmd_remove_study_site(conn, ["remove_study_site", "study1", "--sites", "site-existing"])
-        assert conn.last_reply["error_code"] == "INVALID_SITE"
+        assert "error_code" not in conn.last_reply
+        assert "site-existing" in conn.last_reply.get("removed", [])
 
     def test_project_admin_valid_site_org_succeeds(self):
         engine = _make_engine({"site-existing": "org_a"})
@@ -344,25 +349,32 @@ class TestRemoveStudySiteOrgValidation:
             )
         assert "error_code" not in conn.last_reply
 
-    def test_project_admin_wrong_org_returns_invalid_site(self):
+    def test_project_admin_site_in_different_engine_org_still_succeeds(self):
+        # Engine reports site-existing under org_b, but admin requests removal from org_a.
+        # Study registry has it under org_a; engine org is irrelevant for removal.
         engine = _make_engine({"site-existing": "org_b"})
         conn = _FakeConnection(role="project_admin", org="project", engine=engine)
         with _mutation_ctx(_REGISTRY_WITH_STUDY):
             self._module().cmd_remove_study_site(
                 conn, ["remove_study_site", "study1", "--site-org", "org_a:site-existing"]
             )
-        assert conn.last_reply["error_code"] == "INVALID_SITE"
+        assert "error_code" not in conn.last_reply
+        assert "site-existing" in conn.last_reply.get("removed", [])
 
-    def test_project_admin_disconnected_site_returns_invalid_site(self):
+    def test_project_admin_disconnected_site_succeeds(self):
+        # Site is offline but enrolled — removal must succeed.
         engine = _make_engine({})
         conn = _FakeConnection(role="project_admin", org="project", engine=engine)
         with _mutation_ctx(_REGISTRY_WITH_STUDY):
             self._module().cmd_remove_study_site(
                 conn, ["remove_study_site", "study1", "--site-org", "org_a:site-existing"]
             )
-        assert conn.last_reply["error_code"] == "INVALID_SITE"
+        assert "error_code" not in conn.last_reply
+        assert "site-existing" in conn.last_reply.get("removed", [])
 
-    def test_project_admin_mixed_org_groups_one_bad_returns_invalid_site(self):
+    def test_project_admin_mixed_sites_enrolled_and_not_enrolled(self):
+        # site-existing is enrolled under org_a; site-b is specified under org_b but not enrolled.
+        # Enrolled site is removed; unenrolled site lands in not_enrolled (no error).
         engine = _make_engine({"site-existing": "org_a", "site-b": "org_c"})
         conn = _FakeConnection(role="project_admin", org="project", engine=engine)
         with _mutation_ctx(_REGISTRY_WITH_STUDY):
@@ -377,7 +389,9 @@ class TestRemoveStudySiteOrgValidation:
                     "org_b:site-b",
                 ],
             )
-        assert conn.last_reply["error_code"] == "INVALID_SITE"
+        assert "error_code" not in conn.last_reply
+        assert "site-existing" in conn.last_reply.get("removed", [])
+        assert "site-b" in conn.last_reply.get("not_enrolled", [])
 
 
 # ---------------------------------------------------------------------------

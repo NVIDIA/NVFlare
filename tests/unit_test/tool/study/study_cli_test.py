@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+from argparse import Namespace
 from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
 
@@ -62,17 +63,113 @@ class TestStudyCli:
         payload = json.loads(capsys.readouterr().out)
         assert payload["error_code"] == "STUDY_NOT_FOUND"
 
-    def test_study_session_requires_explicit_resolution_source(self, capsys, monkeypatch):
-        from nvflare.tool.study.study_cli import _study_session
+    def test_missing_study_subcommand_prints_help_without_usage_error(self, capsys, monkeypatch):
+        from nvflare.tool.study.study_cli import handle_study_cmd
 
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+
+        handle_study_cmd(Namespace(study_sub_cmd=None))
+
+        captured = capsys.readouterr()
+        assert "usage: nvflare study" in captured.out
+        assert "study subcommands" in captured.out
+        assert "Invalid arguments" not in captured.out
+        assert captured.err == ""
+
+    def _make_startup_args(self, startup_kit=None, startup_target=None):
         args = MagicMock()
-        args.startup_target = None
-        args.startup_kit = None
+        args.startup_kit = startup_kit
+        args.startup_target = startup_target
+        return args
+
+    def test_resolve_session_inputs_prefers_explicit_startup_kit_over_env_and_config(self, tmp_path, monkeypatch):
+        from nvflare.tool.study.study_cli import _resolve_session_inputs
+
+        explicit_dir = tmp_path / "explicit-admin"
+        env_dir = tmp_path / "env-admin"
+        explicit_dir.mkdir()
+        env_dir.mkdir()
+        args = self._make_startup_args(startup_kit=str(explicit_dir), startup_target=None)
+        monkeypatch.setenv("NVFLARE_STARTUP_KIT_DIR", str(env_dir))
+
+        with patch("nvflare.utils.cli_utils.find_startup_kit_location") as find_startup:
+            with patch(
+                "nvflare.tool.study.study_cli._resolve_admin_user_and_dir_from_startup_kit",
+                return_value=("admin@nvidia.com", str(explicit_dir)),
+            ) as resolve_admin:
+                assert _resolve_session_inputs(args) == ("admin@nvidia.com", str(explicit_dir))
+
+        find_startup.assert_not_called()
+        resolve_admin.assert_called_once_with(str(explicit_dir))
+
+    def test_resolve_session_inputs_uses_env_before_config(self, tmp_path, monkeypatch):
+        from nvflare.tool.study.study_cli import _resolve_session_inputs
+
+        env_dir = tmp_path / "env-admin"
+        env_dir.mkdir()
+        args = self._make_startup_args(startup_kit=None, startup_target="prod")
+        monkeypatch.setenv("NVFLARE_STARTUP_KIT_DIR", str(env_dir))
+
+        with patch("nvflare.utils.cli_utils.find_startup_kit_location") as find_startup:
+            with patch(
+                "nvflare.tool.study.study_cli._resolve_admin_user_and_dir_from_startup_kit",
+                return_value=("admin@nvidia.com", str(env_dir)),
+            ) as resolve_admin:
+                assert _resolve_session_inputs(args) == ("admin@nvidia.com", str(env_dir))
+
+        find_startup.assert_not_called()
+        resolve_admin.assert_called_once_with(str(env_dir))
+
+    @pytest.mark.parametrize("startup_target", [None, "prod"])
+    def test_resolve_session_inputs_uses_config_fallback(self, tmp_path, monkeypatch, startup_target):
+        from nvflare.tool.study.study_cli import _resolve_session_inputs
+
+        configured_dir = tmp_path / "configured-admin"
+        configured_dir.mkdir()
+        args = self._make_startup_args(startup_kit=None, startup_target=startup_target)
         monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
 
-        with pytest.raises(SystemExit) as exc_info:
-            with _study_session(args):
-                pass
+        with patch(
+            "nvflare.utils.cli_utils.find_startup_kit_location", return_value=str(configured_dir)
+        ) as find_startup:
+            with patch(
+                "nvflare.tool.study.study_cli._resolve_admin_user_and_dir_from_startup_kit",
+                return_value=("admin@nvidia.com", str(configured_dir)),
+            ) as resolve_admin:
+                assert _resolve_session_inputs(args) == ("admin@nvidia.com", str(configured_dir))
+
+        find_startup.assert_called_once_with(target=startup_target)
+        resolve_admin.assert_called_once_with(str(configured_dir))
+
+    def test_get_caller_role_from_startup_kit_reads_cert_role(self, tmp_path):
+        from nvflare.fuel.hci.client.api_spec import AdminConfigKey
+        from nvflare.tool.study.study_cli import _get_caller_role_from_startup_kit
+
+        cert_path = tmp_path / "client.crt"
+        cert_path.write_text("cert", encoding="utf-8")
+        (tmp_path / "startup").mkdir()
+        (tmp_path / "local").mkdir()
+        fake_conf = MagicMock()
+        fake_conf.get_admin_config.return_value = {AdminConfigKey.CLIENT_CERT: str(cert_path)}
+
+        with patch("nvflare.fuel.hci.client.config.secure_load_admin_config", return_value=fake_conf):
+            with patch("nvflare.private.fed.utils.identity_utils.load_cert_file", return_value=object()):
+                with patch(
+                    "nvflare.lighter.utils.cert_to_dict",
+                    return_value={"subject": {"unstructuredName": "project_admin"}},
+                ):
+                    assert _get_caller_role_from_startup_kit(str(tmp_path)) == "project_admin"
+
+    def test_study_session_missing_startup_kit_when_no_source_resolves(self, capsys, monkeypatch):
+        from nvflare.tool.study.study_cli import _study_session
+
+        args = self._make_startup_args()
+        monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
+
+        with patch("nvflare.utils.cli_utils.find_startup_kit_location", return_value=None):
+            with pytest.raises(SystemExit) as exc_info:
+                with _study_session(args):
+                    pass
 
         assert exc_info.value.code == 4
         payload = json.loads(capsys.readouterr().out)
@@ -84,6 +181,7 @@ class TestStudyCli:
         args = MagicMock()
         args.name = "cancer-research"
         args.sites = None
+        args.site_org = []
 
         with pytest.raises(SystemExit) as exc_info:
             cmd_register(args)
@@ -91,6 +189,29 @@ class TestStudyCli:
         assert exc_info.value.code == 4
         payload = json.loads(capsys.readouterr().out)
         assert payload["error_code"] == "INVALID_ARGS"
+        assert payload["message"].endswith("provide --sites for org_admin or --site-org for project_admin")
+
+    def test_register_project_admin_missing_input_requires_site_org_before_connecting(self, capsys):
+        from nvflare.tool.study.study_cli import cmd_register
+
+        args = MagicMock()
+        args.name = "cancer-research"
+        args.sites = None
+        args.site_org = []
+
+        with patch("nvflare.tool.study.study_cli._try_get_caller_role", return_value="project_admin"):
+            with patch("nvflare.tool.study.study_cli._study_session") as study_session:
+                with pytest.raises(SystemExit) as exc_info:
+                    cmd_register(args)
+
+        assert exc_info.value.code == 4
+        study_session.assert_not_called()
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["error_code"] == "INVALID_ARGS"
+        assert "project_admin must provide --site-org" in payload["message"]
+        assert "nvidia:site-1,site-2" in payload["hint"]
+        assert "POC default org: nvidia" in payload["hint"]
+        assert "--sites is required" not in payload["message"]
 
     # ------------------------------------------------------------------
     # INVALID_ARGS — CLI-side fast-fail (before any server connection)
@@ -115,10 +236,12 @@ class TestStudyCli:
         args.site_org = ["org_a:hospital-b"]
 
         with patch("nvflare.tool.study.study_cli._try_get_caller_role", return_value=""):
-            with pytest.raises(SystemExit) as exc_info:
-                cmd_fn(args)
+            with patch("nvflare.tool.study.study_cli._study_session") as study_session:
+                with pytest.raises(SystemExit) as exc_info:
+                    cmd_fn(args)
 
         assert exc_info.value.code == 4
+        study_session.assert_not_called()
         payload = json.loads(capsys.readouterr().out)
         assert payload["error_code"] == "INVALID_ARGS"
 
@@ -134,10 +257,12 @@ class TestStudyCli:
         args.site_org = ["org_a:hospital-a"]
 
         with patch("nvflare.tool.study.study_cli._try_get_caller_role", return_value="org_admin"):
-            with pytest.raises(SystemExit) as exc_info:
-                cmd_fn(args)
+            with patch("nvflare.tool.study.study_cli._study_session") as study_session:
+                with pytest.raises(SystemExit) as exc_info:
+                    cmd_fn(args)
 
         assert exc_info.value.code == 4
+        study_session.assert_not_called()
         payload = json.loads(capsys.readouterr().out)
         assert payload["error_code"] == "INVALID_ARGS"
 
@@ -153,12 +278,16 @@ class TestStudyCli:
         args.site_org = []
 
         with patch("nvflare.tool.study.study_cli._try_get_caller_role", return_value="project_admin"):
-            with pytest.raises(SystemExit) as exc_info:
-                cmd_fn(args)
+            with patch("nvflare.tool.study.study_cli._study_session") as study_session:
+                with pytest.raises(SystemExit) as exc_info:
+                    cmd_fn(args)
 
         assert exc_info.value.code == 4
+        study_session.assert_not_called()
         payload = json.loads(capsys.readouterr().out)
         assert payload["error_code"] == "INVALID_ARGS"
+        assert "nvidia:site-1,site-2" in payload["hint"]
+        assert "POC default org: nvidia" in payload["hint"]
 
     # ------------------------------------------------------------------
     # Remaining command golden-path and error-mapping coverage

@@ -178,21 +178,21 @@ All server-backed `nvflare study` commands require a connection to the server. S
 
 ```
 # org_admin input
-nvflare study register    <name> --sites <s1,s2,...> {--startup-kit <dir> | --startup-target poc|prod} [--schema]
-nvflare study add-site    <name> --sites <s1,s2,...> {--startup-kit <dir> | --startup-target poc|prod} [--schema]
-nvflare study remove-site <name> --sites <s1,s2,...> {--startup-kit <dir> | --startup-target poc|prod} [--schema]
+nvflare study register    <name> --sites <s1,s2,...> [--startup-kit <dir> | --startup-target poc|prod] [--schema]
+nvflare study add-site    <name> --sites <s1,s2,...> [--startup-kit <dir> | --startup-target poc|prod] [--schema]
+nvflare study remove-site <name> --sites <s1,s2,...> [--startup-kit <dir> | --startup-target poc|prod] [--schema]
 
 # project_admin input
-nvflare study register    <name> --site-org <org:s1,s2,...> [--site-org <org:s3,...> ...] {--startup-kit <dir> | --startup-target poc|prod} [--schema]
-nvflare study add-site    <name> --site-org <org:s1,s2,...> [--site-org <org:s3,...> ...] {--startup-kit <dir> | --startup-target poc|prod} [--schema]
-nvflare study remove-site <name> --site-org <org:s1,s2,...> [--site-org <org:s3,...> ...] {--startup-kit <dir> | --startup-target poc|prod} [--schema]
+nvflare study register    <name> --site-org <org:s1,s2,...> [--site-org <org:s3,...> ...] [--startup-kit <dir> | --startup-target poc|prod] [--schema]
+nvflare study add-site    <name> --site-org <org:s1,s2,...> [--site-org <org:s3,...> ...] [--startup-kit <dir> | --startup-target poc|prod] [--schema]
+nvflare study remove-site <name> --site-org <org:s1,s2,...> [--site-org <org:s3,...> ...] [--startup-kit <dir> | --startup-target poc|prod] [--schema]
 
 # project_admin only
-nvflare study remove      <name> {--startup-kit <dir> | --startup-target poc|prod} [--schema]
+nvflare study remove      <name> [--startup-kit <dir> | --startup-target poc|prod] [--schema]
 
 # project_admin (all studies) or org_admin (studies where caller's org is enrolled)
-nvflare study list        {--startup-kit <dir> | --startup-target poc|prod} [--schema]
-nvflare study show        <name> {--startup-kit <dir> | --startup-target poc|prod} [--schema]
+nvflare study list        [--startup-kit <dir> | --startup-target poc|prod] [--schema]
+nvflare study show        <name> [--startup-kit <dir> | --startup-target poc|prod] [--schema]
 ```
 
 | Command | Description | Required cert role |
@@ -215,7 +215,7 @@ nvflare study show        <name> {--startup-kit <dir> | --startup-target poc|pro
 | `--startup-target` | `poc\|prod` | No* | Resolves startup kit path from `~/.nvflare/config.conf` |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
-\* `--startup-kit` and `--startup-target` are mutually exclusive. The startup kit must be resolvable — via `--startup-kit`, `--startup-target`, or `NVFLARE_STARTUP_KIT_DIR` — see [Connection Flags](#connection-flags). No silent default: if no source resolves, the command fails.
+\* `--startup-kit` and `--startup-target` are mutually exclusive optional selectors. The startup kit must be resolvable via `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or `~/.nvflare/config.conf` using the explicit `--startup-target` or the default `poc` target — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
 
 `--sites` and `--site-org` are mutually exclusive on the same invocation. If both are provided, the command fails with `INVALID_ARGS`.
 
@@ -258,7 +258,7 @@ nvflare study register cancer-research \
 | `--startup-target` | `poc\|prod` | No* | Resolves startup kit path from `~/.nvflare/config.conf` |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
-\* `--startup-kit` and `--startup-target` are mutually exclusive. The startup kit must be resolvable — via `--startup-kit`, `--startup-target`, or `NVFLARE_STARTUP_KIT_DIR` — see [Connection Flags](#connection-flags). No silent default: if no source resolves, the command fails.
+\* `--startup-kit` and `--startup-target` are mutually exclusive optional selectors. The startup kit must be resolvable via `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or `~/.nvflare/config.conf` using the explicit `--startup-target` or the default `poc` target — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
 
 `--sites` and `--site-org` are mutually exclusive on the same invocation. If both are provided, the command fails with `INVALID_ARGS`.
 
@@ -275,13 +275,13 @@ Both commands return per-site outcome lists. `add-site`: already-enrolled sites 
 | `--startup-target` | `poc\|prod` | No* | Resolves startup kit path from `~/.nvflare/config.conf` |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
-\* `--startup-kit` and `--startup-target` are mutually exclusive. The startup kit must be resolvable — via `--startup-kit`, `--startup-target`, or `NVFLARE_STARTUP_KIT_DIR` — see [Connection Flags](#connection-flags). No silent default: if no source resolves, the command fails.
+\* `--startup-kit` and `--startup-target` are mutually exclusive optional selectors. The startup kit must be resolvable via `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or `~/.nvflare/config.conf` using the explicit `--startup-target` or the default `poc` target — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
 
 ### User Membership Management
 
 ```
-nvflare study add-user    <study> <user> {--startup-kit <dir> | --startup-target poc|prod} [--schema]
-nvflare study remove-user <study> <user> {--startup-kit <dir> | --startup-target poc|prod} [--schema]
+nvflare study add-user    <study> <user> [--startup-kit <dir> | --startup-target poc|prod] [--schema]
+nvflare study remove-user <study> <user> [--startup-kit <dir> | --startup-target poc|prod] [--schema]
 ```
 
 | Command | Description | Required cert role |
@@ -299,7 +299,7 @@ nvflare study remove-user <study> <user> {--startup-kit <dir> | --startup-target
 | `--startup-target` | `poc\|prod` | No* | Resolves startup kit path from `~/.nvflare/config.conf` |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
-\* `--startup-kit` and `--startup-target` are mutually exclusive. The startup kit must be resolvable — via `--startup-kit`, `--startup-target`, or `NVFLARE_STARTUP_KIT_DIR` — see [Connection Flags](#connection-flags). No silent default: if no source resolves, the command fails.
+\* `--startup-kit` and `--startup-target` are mutually exclusive optional selectors. The startup kit must be resolvable via `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or `~/.nvflare/config.conf` using the explicit `--startup-target` or the default `poc` target — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
 
 #### Usage Examples — user membership commands
 

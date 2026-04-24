@@ -38,17 +38,20 @@ CMD_STUDY_LIST = "list"
 CMD_STUDY_SHOW = "show"
 CMD_STUDY_ADD_USER = "add-user"
 CMD_STUDY_REMOVE_USER = "remove-user"
+POC_DEFAULT_ORG = "nvidia"
 
 _study_sub_cmd_parsers = {}
 _study_handlers = {}
+_study_root_parser = None
 
 
 def _ensure_study_parsers():
-    if _study_sub_cmd_parsers:
+    global _study_root_parser
+    if _study_sub_cmd_parsers and _study_root_parser is not None:
         return
     root = argparse.ArgumentParser(prog="nvflare study")
-    sub = root.add_subparsers(dest="study_sub_cmd")
-    def_study_cli_parser(sub)
+    _define_study_subcommands(root)
+    _study_root_parser = root
 
 
 def _add_connection_args(parser):
@@ -69,11 +72,10 @@ def _add_connection_args(parser):
 
 
 def _resolve_session_inputs(args):
-    startup_target = getattr(args, "startup_target", None)
-    startup_override = getattr(args, "startup_kit", None)
-    if not startup_override and not startup_target and not os.environ.get("NVFLARE_STARTUP_KIT_DIR"):
-        raise ValueError("startup kit must be resolved via --startup-kit, --startup-target, or NVFLARE_STARTUP_KIT_DIR")
-    startup = get_startup_kit_dir_for_target(startup_kit_dir=startup_override, target=startup_target)
+    startup = get_startup_kit_dir_for_target(
+        startup_kit_dir=getattr(args, "startup_kit", None),
+        target=getattr(args, "startup_target", None),
+    )
     return _resolve_admin_user_and_dir_from_startup_kit(startup)
 
 
@@ -124,11 +126,11 @@ def _handle_command_error(e: Exception):
 
 
 def _get_caller_role_from_startup_kit(admin_user_dir: str) -> str:
+    from nvflare.apis.workspace import Workspace
     from nvflare.fuel.hci.client.api_spec import AdminConfigKey
     from nvflare.fuel.hci.client.config import secure_load_admin_config
-    from nvflare.fuel.hci.security import IdentityKey, get_identity_from_cert
+    from nvflare.fuel.hci.security import IdentityKey, get_identity_info
     from nvflare.lighter.utils import cert_to_dict
-    from nvflare.private.common.workspace import Workspace
     from nvflare.private.fed.utils.identity_utils import load_cert_file
 
     workspace = Workspace(root_dir=admin_user_dir)
@@ -140,7 +142,7 @@ def _get_caller_role_from_startup_kit(admin_user_dir: str) -> str:
     if not cert_path or not os.path.isfile(cert_path):
         return ""
     cert = load_cert_file(cert_path)
-    identity = get_identity_from_cert(cert_to_dict(cert))
+    identity = get_identity_info(cert_to_dict(cert))
     return (identity or {}).get(IdentityKey.ROLE) or ""
 
 
@@ -175,6 +177,63 @@ def _parse_site_org_args(site_org_args):
     return values
 
 
+def _output_invalid_lifecycle_args(detail: str, hint: str = "Run with -h for usage."):
+    output_error_message("INVALID_ARGS", "Invalid arguments.", hint=hint, exit_code=4, detail=detail)
+
+
+def _project_admin_site_org_hint(command_label: str, study_name: str) -> str:
+    return (
+        f"Use: nvflare study {command_label} {study_name} --site-org {POC_DEFAULT_ORG}:site-1,site-2 "
+        f"(POC default org: {POC_DEFAULT_ORG})"
+    )
+
+
+def _resolve_lifecycle_inputs(args, command_label: str):
+    if args.sites and args.site_org:
+        _output_invalid_lifecycle_args("--sites and --site-org are mutually exclusive; provide only one")
+
+    caller_role = _try_get_caller_role(args)
+    if caller_role == "org_admin":
+        if args.site_org:
+            _output_invalid_lifecycle_args(
+                "org_admin must use --sites, not --site-org",
+                hint=f"Use: nvflare study {command_label} {args.name} --sites site-1,site-2",
+            )
+        try:
+            sites = _parse_sites_arg(args.sites)
+        except ValueError:
+            _output_invalid_lifecycle_args(
+                "org_admin must provide --sites",
+                hint=f"Use: nvflare study {command_label} {args.name} --sites site-1,site-2",
+            )
+        return sites, None
+
+    if caller_role == "project_admin":
+        if args.sites:
+            _output_invalid_lifecycle_args(
+                "project_admin must use --site-org, not --sites",
+                hint=_project_admin_site_org_hint(command_label, args.name),
+            )
+        try:
+            site_orgs = _parse_site_org_args(args.site_org)
+        except ValueError:
+            _output_invalid_lifecycle_args(
+                "project_admin must provide --site-org",
+                hint=_project_admin_site_org_hint(command_label, args.name),
+            )
+        return None, site_orgs
+
+    try:
+        if args.site_org:
+            return None, _parse_site_org_args(args.site_org)
+        if args.sites:
+            return _parse_sites_arg(args.sites), None
+    except ValueError as e:
+        _output_invalid_lifecycle_args(str(e))
+
+    _output_invalid_lifecycle_args("provide --sites for org_admin or --site-org for project_admin")
+
+
 def _run_with_payload(args, func, *func_args, parser=None):
     try:
         with _study_session(args) as sess:
@@ -197,31 +256,14 @@ def cmd_register(args):
         sys.argv[1:],
     )
     parser = _study_sub_cmd_parsers[CMD_STUDY_REGISTER]
-    if args.sites and args.site_org:
-        output_usage_error(parser, detail="--sites and --site-org are mutually exclusive; provide only one")
-        return
-    caller_role = _try_get_caller_role(args)
-    if caller_role == "org_admin" and args.site_org:
-        output_usage_error(parser, detail="org_admin must use --sites, not --site-org")
-        return
-    if caller_role == "project_admin" and args.sites:
-        output_usage_error(parser, detail="project_admin must use --site-org, not --sites")
-        return
-    try:
-        if args.site_org:
-            _parse_site_org_args(args.site_org)
-        else:
-            _parse_sites_arg(args.sites)
-    except ValueError as e:
-        output_usage_error(parser, detail=str(e), exit_code=4)
-        return
+    sites, site_orgs = _resolve_lifecycle_inputs(args, CMD_STUDY_REGISTER)
     _run_with_payload(
         args,
         lambda s, name, sites, site_orgs: s.register_study(name, sites=sites, site_orgs=site_orgs),
         args.name,
-        [s.strip() for s in args.sites.split(",") if s.strip()] if args.sites else None,
-        args.site_org or None,
-        parser=_study_sub_cmd_parsers[CMD_STUDY_REGISTER],
+        sites,
+        site_orgs,
+        parser=parser,
     )
 
 
@@ -236,31 +278,14 @@ def cmd_add_site(args):
         sys.argv[1:],
     )
     parser = _study_sub_cmd_parsers[CMD_STUDY_ADD_SITE]
-    if args.sites and args.site_org:
-        output_usage_error(parser, detail="--sites and --site-org are mutually exclusive; provide only one")
-        return
-    caller_role = _try_get_caller_role(args)
-    if caller_role == "org_admin" and args.site_org:
-        output_usage_error(parser, detail="org_admin must use --sites, not --site-org")
-        return
-    if caller_role == "project_admin" and args.sites:
-        output_usage_error(parser, detail="project_admin must use --site-org, not --sites")
-        return
-    try:
-        if args.site_org:
-            _parse_site_org_args(args.site_org)
-        else:
-            _parse_sites_arg(args.sites)
-    except ValueError as e:
-        output_usage_error(parser, detail=str(e), exit_code=4)
-        return
+    sites, site_orgs = _resolve_lifecycle_inputs(args, CMD_STUDY_ADD_SITE)
     _run_with_payload(
         args,
         lambda s, name, sites, site_orgs: s.add_study_site(name, sites=sites, site_orgs=site_orgs),
         args.name,
-        [s.strip() for s in args.sites.split(",") if s.strip()] if args.sites else None,
-        args.site_org or None,
-        parser=_study_sub_cmd_parsers[CMD_STUDY_ADD_SITE],
+        sites,
+        site_orgs,
+        parser=parser,
     )
 
 
@@ -275,31 +300,14 @@ def cmd_remove_site(args):
         sys.argv[1:],
     )
     parser = _study_sub_cmd_parsers[CMD_STUDY_REMOVE_SITE]
-    if args.sites and args.site_org:
-        output_usage_error(parser, detail="--sites and --site-org are mutually exclusive; provide only one")
-        return
-    caller_role = _try_get_caller_role(args)
-    if caller_role == "org_admin" and args.site_org:
-        output_usage_error(parser, detail="org_admin must use --sites, not --site-org")
-        return
-    if caller_role == "project_admin" and args.sites:
-        output_usage_error(parser, detail="project_admin must use --site-org, not --sites")
-        return
-    try:
-        if args.site_org:
-            _parse_site_org_args(args.site_org)
-        else:
-            _parse_sites_arg(args.sites)
-    except ValueError as e:
-        output_usage_error(parser, detail=str(e), exit_code=4)
-        return
+    sites, site_orgs = _resolve_lifecycle_inputs(args, CMD_STUDY_REMOVE_SITE)
     _run_with_payload(
         args,
         lambda s, name, sites, site_orgs: s.remove_study_site(name, sites=sites, site_orgs=site_orgs),
         args.name,
-        [s.strip() for s in args.sites.split(",") if s.strip()] if args.sites else None,
-        args.site_org or None,
-        parser=_study_sub_cmd_parsers[CMD_STUDY_REMOVE_SITE],
+        sites,
+        site_orgs,
+        parser=parser,
     )
 
 
@@ -384,8 +392,7 @@ def cmd_remove_user(args):
     )
 
 
-def def_study_cli_parser(sub_cmd):
-    parser = sub_cmd.add_parser("study", help="manage study registry entries and study-scoped users")
+def _define_study_subcommands(parser):
     sub = parser.add_subparsers(title="study subcommands", metavar="", dest="study_sub_cmd")
 
     p = sub.add_parser(CMD_STUDY_REGISTER, help="create or merge a study")
@@ -450,13 +457,22 @@ def def_study_cli_parser(sub_cmd):
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_REMOVE_USER] = p
     _study_handlers[CMD_STUDY_REMOVE_USER] = cmd_remove_user
+
+
+def def_study_cli_parser(sub_cmd):
+    global _study_root_parser
+    parser = sub_cmd.add_parser("study", help="manage study registry entries and study-scoped users")
+    _study_root_parser = parser
+    _define_study_subcommands(parser)
     return {"study": parser}
 
 
 def handle_study_cmd(args):
     sub_cmd = getattr(args, "study_sub_cmd", None)
     if sub_cmd is None:
-        raise CLIUnknownCmdException("study subcommand required")
+        _ensure_study_parsers()
+        _study_root_parser.print_help()
+        return
     handler = _study_handlers.get(sub_cmd)
     if handler is None:
         raise CLIUnknownCmdException(f"Unknown study subcommand: {sub_cmd}")

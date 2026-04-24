@@ -529,15 +529,9 @@ class StudyCommandModule(CommandModule, CommandUtil):
                     "hint": "Verify the study name or contact a project_admin.",
                     "exit_code": 1,
                 }
-            for org, sites in requested.items():
-                bad_sites = self._validate_sites_for_org(_engine, sites, org)
-                if bad_sites:
-                    return {
-                        "error_code": "INVALID_SITE",
-                        "message": f"Sites {bad_sites} are unknown or do not belong to org '{org}'.",
-                        "hint": "Each site must be currently connected to the server and provisioned under the specified org.",
-                        "exit_code": 4,
-                    }
+            # No connectivity check: the site may be offline or decommissioned.
+            # The operator is explicitly requesting removal, so current connection
+            # status is irrelevant.
             site_orgs = self._normalize_site_orgs(study_def)
             removed = []
             not_enrolled = []

@@ -40,7 +40,7 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "STARTUP_KIT_MISSING": {
         "message": "Startup kit not found.",
-        "hint": "Set --startup or configure via 'nvflare config'.",
+        "hint": "Use --startup-kit, set NVFLARE_STARTUP_KIT_DIR, or configure a startup kit with 'nvflare config'.",
     },
     "SITE_NOT_FOUND": {
         "message": "Site '{site}' is not connected.",
