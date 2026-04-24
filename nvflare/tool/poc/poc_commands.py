@@ -597,7 +597,7 @@ def _prepare_poc(
                 f"Please copy {project_conf_path} to different location before running this command."
             )
 
-        _stop_running_poc_before_prepare(workspace)
+        _ensure_poc_stopped(workspace)
         shutil.rmtree(workspace, ignore_errors=True)
 
     project_config = prepare_poc_provision(
@@ -609,7 +609,7 @@ def _prepare_poc(
     return True
 
 
-def _stop_running_poc_before_prepare(workspace: str, timeout_in_sec: int = 30, poll_interval: float = 1.0):
+def _ensure_poc_stopped(workspace: str, timeout_in_sec: int = 30, poll_interval: float = 1.0):
     try:
         project_config, service_config = setup_service_config(workspace)
     except CLIException:
