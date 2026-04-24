@@ -474,7 +474,11 @@ def _define_study_subcommands(parser):
 
 def def_study_cli_parser(sub_cmd):
     global _study_root_parser
-    parser = sub_cmd.add_parser("study", help="manage study registry entries and study-scoped users")
+    parser = sub_cmd.add_parser(
+        "study",
+        help="manage study registry entries and study-scoped users",
+        formatter_class=_WideSubcmdFormatter,
+    )
     _study_root_parser = parser
     _define_study_subcommands(parser)
     return {"study": parser}
