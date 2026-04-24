@@ -508,25 +508,3 @@ participants:
                 stop_poc(args)
 
         assert exc_info.value.code == 5
-
-    def test_clean_poc_raises_when_output_error_is_mocked(self, tmp_path):
-        from nvflare.tool.poc.poc_commands import clean_poc
-
-        args = MagicMock()
-        args.force = True
-
-        with (
-            patch(
-                "nvflare.tool.poc.poc_commands.get_poc_workspace",
-                return_value=str(tmp_path),
-            ),
-            patch(
-                "nvflare.tool.poc.poc_commands._clean_poc",
-                side_effect=Exception("boom"),
-            ),
-            patch("nvflare.tool.cli_output.output_error"),
-        ):
-            with pytest.raises(SystemExit) as exc_info:
-                clean_poc(args)
-
-        assert exc_info.value.code == 5

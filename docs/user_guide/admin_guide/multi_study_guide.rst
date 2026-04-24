@@ -142,5 +142,9 @@ radius — use separate NVFlare deployments.
 Updating Studies
 ================
 
-Changing study definitions requires reprovisioning and a server restart. There is no live reload
-mechanism.
+Study site enrollment and user membership can be updated at runtime using the ``nvflare study``
+command family without reprovisioning or restarting the server. See :ref:`study_command` for the
+full command reference.
+
+Changing the core study definition (adding new studies or altering the base provisioned
+configuration) requires reprovisioning and a server restart.

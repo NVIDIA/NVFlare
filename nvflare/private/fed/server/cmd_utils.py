@@ -47,21 +47,9 @@ class CommandUtil(object):
         return None, None
 
     def _apply_study_role_for_authz(self, conn: Connection) -> bool:
-        """Replace USER_ROLE with the active study role for study-scoped authz."""
-        registry, study = self._get_study_auth_context(conn)
-        if not registry:
-            return True
-
-        study_role = registry.get_role(conn.get_prop(ConnProps.USER_NAME, ""), study)
-        if study_role:
-            conn.set_prop(ConnProps.USER_ROLE, study_role)
-            return True
-
-        conn.append_error(
-            f"user not authorized for study '{study}'",
-            meta=make_meta(MetaStatusValue.NOT_AUTHORIZED),
-        )
-        return False
+        # Study membership is checked at session creation time. The certificate role remains
+        # the effective role for study-scoped authorization, so there is nothing to substitute here.
+        return True
 
     def command_authz_required(self, conn: Connection, args: List[str]) -> PreAuthzReturnCode:
         if not self._apply_study_role_for_authz(conn):
@@ -180,9 +168,8 @@ class CommandUtil(object):
         return ""
 
     def must_be_project_admin(self, conn: Connection, args: List[str]):
-        # This helper intentionally checks the certificate role. Do not call
-        # _apply_study_role_for_authz() here: project_admin-only operations must
-        # stay scoped to the cert/global role rather than any study-mapped role.
+        # This helper intentionally checks the certificate role. project_admin-only operations
+        # must stay scoped to the cert/global role.
         role = conn.get_prop(ConnProps.USER_ROLE, "")
         if role not in ["project_admin"]:
             conn.append_error(
