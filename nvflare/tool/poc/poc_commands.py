@@ -617,7 +617,8 @@ def _prepare_poc(
 def _get_running_poc_context(workspace: str):
     try:
         project_config, service_config = setup_service_config(workspace)
-    except CLIException:
+    except Exception:
+        # Best-effort detection only: unreadable workspace metadata should not block force recreation.
         return None
 
     if not project_config or not service_config:

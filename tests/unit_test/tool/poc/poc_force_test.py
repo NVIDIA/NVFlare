@@ -134,6 +134,24 @@ class TestPocForce:
         mock_stop.assert_not_called()
         mock_prov.assert_not_called()
 
+    def test_force_prepare_ignores_unreadable_workspace_config(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import _prepare_poc
+
+        workspace = str(tmp_path / "poc_ws_bad_yaml")
+        os.makedirs(workspace)
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.setup_service_config", side_effect=Exception("bad yaml")),
+            patch("nvflare.tool.poc.poc_commands.shutil.rmtree") as mock_rmtree,
+            patch("nvflare.tool.poc.poc_commands.prepare_poc_provision", return_value={"name": "example_project"}) as mock_prov,
+            patch("nvflare.tool.poc.poc_commands.save_startup_kit_dir_config"),
+        ):
+            result = _prepare_poc([], 2, workspace, force=True)
+
+        assert result is True
+        mock_rmtree.assert_called_once_with(workspace, ignore_errors=True)
+        mock_prov.assert_called_once()
+
     def test_no_force_non_interactive_exits_4(self, tmp_path):
         """Non-interactive mode without --force should output INVALID_ARGS exit 4."""
         from nvflare.tool.poc.poc_commands import prepare_poc
