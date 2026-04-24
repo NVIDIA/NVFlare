@@ -37,16 +37,24 @@ Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this 
     requires = ["hatchling"]
     build-backend = "hatchling.build"
 
+    # Tested with:
+    #   flwr==1.27.0
+    #   nvflare==2.7.2
+    #   torch==2.11.0
+    #   torchvision==0.26.0
+    #   tensorboard==2.20.0
+
     [project]
-    name = "flwr_pt"
+    name = "flwr-pt"
     version = "1.0.0"
     description = ""
     license = "Apache-2.0"
     dependencies = [
         "flwr>=1.26",
-        "nvflare~=2.5.0rc",
-        "torch==2.2.1",
-        "torchvision==0.17.1",
+        "nvflare>=~=2.6.0rc",
+        "torch",
+        "torchvision",
+        "tensorboard"
     ]
 
     [tool.hatch.build.targets.wheel]
@@ -61,6 +69,8 @@ Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this 
 
     [tool.flwr.app.config]
     num-server-rounds = 3
+    learning-rate = 0.001
+    momentum = 0.9
 
 
 .. note:: Note that the information defined in pyproject.toml must match the code in the project folder!
