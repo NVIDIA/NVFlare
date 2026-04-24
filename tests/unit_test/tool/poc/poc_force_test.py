@@ -61,14 +61,27 @@ class TestPocForce:
                 "nvflare.tool.poc.poc_commands.setup_service_config",
                 return_value=(
                     {"name": "example_project"},
-                    {SC.FLARE_SERVER: "server", SC.FLARE_PROJ_ADMIN: "admin@nvidia.com"},
+                    {
+                        SC.FLARE_SERVER: "server",
+                        SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+                    },
                 ),
             ),
             patch("nvflare.tool.poc.poc_commands.is_poc_ready", return_value=True),
-            patch("nvflare.tool.poc.poc_commands.is_poc_running", side_effect=[True, False]),
-            patch("nvflare.tool.poc.poc_commands._stop_poc", side_effect=fake_stop) as mock_stop,
-            patch("nvflare.tool.poc.poc_commands.shutil.rmtree", side_effect=fake_rmtree),
-            patch("nvflare.tool.poc.poc_commands.prepare_poc_provision", return_value={"name": "example_project"}),
+            patch(
+                "nvflare.tool.poc.poc_commands.is_poc_running",
+                side_effect=[True, False],
+            ),
+            patch(
+                "nvflare.tool.poc.poc_commands._stop_poc", side_effect=fake_stop
+            ) as mock_stop,
+            patch(
+                "nvflare.tool.poc.poc_commands.shutil.rmtree", side_effect=fake_rmtree
+            ),
+            patch(
+                "nvflare.tool.poc.poc_commands.prepare_poc_provision",
+                return_value={"name": "example_project"},
+            ),
             patch("nvflare.tool.poc.poc_commands.save_startup_kit_dir_config"),
             patch("nvflare.tool.cli_output.print_human"),
         ):
@@ -78,7 +91,9 @@ class TestPocForce:
         assert mock_stop.call_count == 1
         assert calls == ["stop", "rmtree"]
 
-    def test_force_prepare_preserves_workspace_when_running_system_does_not_stop(self, tmp_path):
+    def test_force_prepare_preserves_workspace_when_running_system_does_not_stop(
+        self, tmp_path
+    ):
         from nvflare.tool.poc.poc_commands import _prepare_poc
 
         workspace = tmp_path / "poc_ws_stuck"
@@ -91,7 +106,10 @@ class TestPocForce:
                 "nvflare.tool.poc.poc_commands.setup_service_config",
                 return_value=(
                     {"name": "example_project"},
-                    {SC.FLARE_SERVER: "server", SC.FLARE_PROJ_ADMIN: "admin@nvidia.com"},
+                    {
+                        SC.FLARE_SERVER: "server",
+                        SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+                    },
                 ),
             ),
             patch("nvflare.tool.poc.poc_commands.is_poc_ready", return_value=True),
@@ -100,7 +118,10 @@ class TestPocForce:
             patch("nvflare.tool.poc.poc_commands.time.time", side_effect=[0, 31]),
             patch("nvflare.tool.poc.poc_commands.prepare_poc_provision") as mock_prov,
         ):
-            with pytest.raises(CLIException, match="system is still running after shutdown was requested"):
+            with pytest.raises(
+                CLIException,
+                match="system is still running after shutdown was requested",
+            ):
                 _prepare_poc([], 2, str(workspace), force=True)
 
         mock_prov.assert_not_called()
@@ -118,7 +139,10 @@ class TestPocForce:
                 "nvflare.tool.poc.poc_commands.setup_service_config",
                 return_value=(
                     {"name": "example_project"},
-                    {SC.FLARE_SERVER: "server", SC.FLARE_PROJ_ADMIN: "admin@nvidia.com"},
+                    {
+                        SC.FLARE_SERVER: "server",
+                        SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+                    },
                 ),
             ),
             patch("nvflare.tool.poc.poc_commands.is_poc_ready", return_value=True),
@@ -127,7 +151,10 @@ class TestPocForce:
             patch("nvflare.tool.poc.poc_commands._stop_poc") as mock_stop,
             patch("nvflare.tool.poc.poc_commands.prepare_poc_provision") as mock_prov,
         ):
-            with pytest.raises(CLIException, match="system is still running, please stop the system first."):
+            with pytest.raises(
+                CLIException,
+                match="system is still running, please stop the system first.",
+            ):
                 _prepare_poc([], 2, workspace, force=False)
 
         mock_prompt.assert_not_called()
@@ -141,9 +168,15 @@ class TestPocForce:
         os.makedirs(workspace)
 
         with (
-            patch("nvflare.tool.poc.poc_commands.setup_service_config", side_effect=Exception("bad yaml")),
+            patch(
+                "nvflare.tool.poc.poc_commands.setup_service_config",
+                side_effect=Exception("bad yaml"),
+            ),
             patch("nvflare.tool.poc.poc_commands.shutil.rmtree") as mock_rmtree,
-            patch("nvflare.tool.poc.poc_commands.prepare_poc_provision", return_value={"name": "example_project"}) as mock_prov,
+            patch(
+                "nvflare.tool.poc.poc_commands.prepare_poc_provision",
+                return_value={"name": "example_project"},
+            ) as mock_prov,
             patch("nvflare.tool.poc.poc_commands.save_startup_kit_dir_config"),
         ):
             result = _prepare_poc([], 2, workspace, force=True)
@@ -168,7 +201,9 @@ class TestPocForce:
         cmd_args.he = False
         cmd_args.project_input = ""
 
-        with patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=workspace):
+        with patch(
+            "nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=workspace
+        ):
             with patch("sys.stdin") as mock_stdin:
                 mock_stdin.isatty.return_value = False
                 with pytest.raises(SystemExit) as exc_info:
@@ -214,7 +249,10 @@ class TestPocForce:
         assert result is False
 
     def test_save_startup_kit_dir_config_uses_poc_admin_dir(self, tmp_path):
-        from nvflare.tool.poc.poc_commands import get_poc_workspace, save_startup_kit_dir_config
+        from nvflare.tool.poc.poc_commands import (
+            get_poc_workspace,
+            save_startup_kit_dir_config,
+        )
 
         workspace = str(tmp_path / "poc_ws")
         os.makedirs(workspace, exist_ok=True)
@@ -232,16 +270,30 @@ participants:
             )
 
         dst = str(tmp_path / "config.conf")
-        with patch("nvflare.tool.poc.poc_commands.get_or_create_hidden_nvflare_dir", return_value=str(tmp_path)):
-            with patch("nvflare.tool.poc.poc_commands.get_hidden_nvflare_config_path", return_value=dst):
+        with patch(
+            "nvflare.tool.poc.poc_commands.get_or_create_hidden_nvflare_dir",
+            return_value=str(tmp_path),
+        ):
+            with patch(
+                "nvflare.tool.poc.poc_commands.get_hidden_nvflare_config_path",
+                return_value=dst,
+            ):
                 save_startup_kit_dir_config(workspace, "example_project")
 
         config = CF.parse_file(dst)
-        assert config.get("poc.startup_kit").endswith("/example_project/prod_00/admin@nvidia.com")
+        assert config.get("poc.startup_kit").endswith(
+            "/example_project/prod_00/admin@nvidia.com"
+        )
         assert config.get("poc.workspace") == workspace
 
-        with patch("nvflare.tool.poc.poc_commands.get_or_create_hidden_nvflare_dir", return_value=str(tmp_path)):
-            with patch("nvflare.tool.poc.poc_commands.get_hidden_nvflare_config_path", return_value=dst):
+        with patch(
+            "nvflare.tool.poc.poc_commands.get_or_create_hidden_nvflare_dir",
+            return_value=str(tmp_path),
+        ):
+            with patch(
+                "nvflare.tool.poc.poc_commands.get_hidden_nvflare_config_path",
+                return_value=dst,
+            ):
                 with patch.dict(os.environ, {}, clear=True):
                     assert get_poc_workspace() == workspace
 
@@ -256,7 +308,9 @@ participants:
         with pytest.raises(CLIException, match="invalid or unreadable project config"):
             save_startup_kit_dir_config(workspace, "example_project")
 
-    def test_force_does_not_delete_workspace_before_rejecting_project_file_inside_workspace(self, tmp_path):
+    def test_force_does_not_delete_workspace_before_rejecting_project_file_inside_workspace(
+        self, tmp_path
+    ):
         from nvflare.tool.poc.poc_commands import prepare_poc
 
         workspace = tmp_path / "poc_ws"
@@ -275,7 +329,10 @@ participants:
         cmd_args.he = False
         cmd_args.project_input = str(project_file)
 
-        with patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(workspace)):
+        with patch(
+            "nvflare.tool.poc.poc_commands.get_poc_workspace",
+            return_value=str(workspace),
+        ):
             with pytest.raises(SystemExit) as exc_info:
                 prepare_poc(cmd_args)
 
@@ -291,8 +348,14 @@ participants:
         args.force = False
 
         with (
-            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
-            patch("nvflare.tool.poc.poc_commands._prepare_jobs_dir", side_effect=Exception("boom")),
+            patch(
+                "nvflare.tool.poc.poc_commands.get_poc_workspace",
+                return_value=str(tmp_path),
+            ),
+            patch(
+                "nvflare.tool.poc.poc_commands._prepare_jobs_dir",
+                side_effect=Exception("boom"),
+            ),
             patch("nvflare.tool.cli_output.output_error"),
         ):
             with pytest.raises(SystemExit) as exc_info:
@@ -320,16 +383,23 @@ participants:
         project_config = {"name": "proj"}
         service_config = {SC.FLARE_PROJ_ADMIN: admin_name}
 
-        with patch("nvflare.tool.poc.poc_commands.get_upload_dir", return_value=transfer_name):
+        with patch(
+            "nvflare.tool.poc.poc_commands.get_upload_dir", return_value=transfer_name
+        ):
             result = _prepare_jobs_dir(
-                str(jobs_src), str(workspace), config_packages=(project_config, service_config), force=True
+                str(jobs_src),
+                str(workspace),
+                config_packages=(project_config, service_config),
+                force=True,
             )
 
         assert result is True
         assert os.path.islink(dst)
         assert os.readlink(dst) == str(jobs_src)
 
-    def test_prepare_poc_raises_when_output_error_is_mocked_for_noninteractive_conflict(self, tmp_path):
+    def test_prepare_poc_raises_when_output_error_is_mocked_for_noninteractive_conflict(
+        self, tmp_path
+    ):
         from nvflare.tool.poc.poc_commands import prepare_poc
 
         workspace = str(tmp_path / "poc_ws")
@@ -345,7 +415,10 @@ participants:
         cmd_args.project_input = ""
 
         with (
-            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=workspace),
+            patch(
+                "nvflare.tool.poc.poc_commands.get_poc_workspace",
+                return_value=workspace,
+            ),
             patch("sys.stdin") as mock_stdin,
             patch("nvflare.tool.cli_output.output_error"),
         ):
@@ -365,11 +438,17 @@ participants:
         args.study = None
 
         with (
-            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch(
+                "nvflare.tool.poc.poc_commands.get_poc_workspace",
+                return_value=str(tmp_path),
+            ),
             patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
             patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
             patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
-            patch("nvflare.tool.poc.poc_commands._start_poc", side_effect=Exception("boom")),
+            patch(
+                "nvflare.tool.poc.poc_commands._start_poc",
+                side_effect=Exception("boom"),
+            ),
             patch("nvflare.tool.cli_output.output_error"),
         ):
             with pytest.raises(SystemExit) as exc_info:
@@ -385,10 +464,15 @@ participants:
         args.ex = None
 
         with (
-            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch(
+                "nvflare.tool.poc.poc_commands.get_poc_workspace",
+                return_value=str(tmp_path),
+            ),
             patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
             patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
-            patch("nvflare.tool.poc.poc_commands._stop_poc", side_effect=Exception("boom")),
+            patch(
+                "nvflare.tool.poc.poc_commands._stop_poc", side_effect=Exception("boom")
+            ),
             patch("nvflare.tool.cli_output.output_error"),
         ):
             with pytest.raises(SystemExit) as exc_info:
@@ -403,8 +487,14 @@ participants:
         args.force = True
 
         with (
-            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
-            patch("nvflare.tool.poc.poc_commands._clean_poc", side_effect=Exception("boom")),
+            patch(
+                "nvflare.tool.poc.poc_commands.get_poc_workspace",
+                return_value=str(tmp_path),
+            ),
+            patch(
+                "nvflare.tool.poc.poc_commands._clean_poc",
+                side_effect=Exception("boom"),
+            ),
             patch("nvflare.tool.cli_output.output_error"),
         ):
             with pytest.raises(SystemExit) as exc_info:
