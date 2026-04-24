@@ -19,8 +19,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 
 
-class BEResourceManager(ResourceManagerSpec, FLComponent):
-    """Best-effort resource manager that optimistically approves all resource requests.
+class PassthroughResourceManager(ResourceManagerSpec, FLComponent):
+    """Passthrough resource manager that optimistically approves all resource requests.
 
     This implementation accepts every resource allocation request unconditionally,
     deferring actual resource availability checks to runtime. If the requested
@@ -32,7 +32,7 @@ class BEResourceManager(ResourceManagerSpec, FLComponent):
     """
 
     def __init__(self):
-        """Initializes BEResourceManager."""
+        """Initializes PassthroughResourceManager."""
         super().__init__()
 
     def check_resources(self, resource_requirement: dict, fl_ctx: FLContext):
@@ -57,7 +57,7 @@ class BEResourceManager(ResourceManagerSpec, FLComponent):
     def cancel_resources(self, resource_requirement: dict, token: str, fl_ctx: FLContext):
         """Cancels a previously reserved resource allocation.
 
-        This is a no-op since BEResourceManager does not actually reserve resources.
+        This is a no-op since PassthroughResourceManager does not actually reserve resources.
 
         Args:
             resource_requirement: a dict specifying the requested resources.
@@ -84,7 +84,7 @@ class BEResourceManager(ResourceManagerSpec, FLComponent):
     def free_resources(self, resources: dict, token: str, fl_ctx: FLContext):
         """Frees previously allocated resources.
 
-        This is a no-op since BEResourceManager does not track allocated resources.
+        This is a no-op since PassthroughResourceManager does not track allocated resources.
 
         Args:
             resources: a dict of resources to free.

@@ -28,11 +28,12 @@ class DataTypes(Enum):
 
     In addition to data, meta, and workspace, this enum defines the valid components by
     allowing for components with a name of an items in this enum and then an underscore
-    (for example ERRORLOG_site-1).
+    (for example ERRORLOG_site-1 or LOG_log.txt_site-1).
 
     """
 
     ERRORLOG = "ERRORLOG"
+    LOG = "LOG"
 
 
 VALID_COMPONENT_PREFIXES = [prefix.value for prefix in DataTypes]

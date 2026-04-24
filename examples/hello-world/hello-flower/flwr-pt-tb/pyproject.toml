@@ -10,7 +10,7 @@ build-backend = "hatchling.build"
 #   tensorboard==2.20.0
 
 [project]
-name = "flwr_pt_tb"
+name = "flwr-pt-tb"
 version = "1.0.0"
 description = ""
 license = "Apache-2.0"

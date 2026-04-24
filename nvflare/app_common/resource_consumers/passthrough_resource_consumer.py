@@ -15,8 +15,8 @@
 from nvflare.apis.resource_manager_spec import ResourceConsumerSpec
 
 
-class BEResourceConsumer(ResourceConsumerSpec):
-    """A best-effort resource consumer that accepts any resource allocation without action.
+class PassthroughResourceConsumer(ResourceConsumerSpec):
+    """A passthrough resource consumer that accepts any resource allocation without action.
 
     This implementation of ResourceConsumerSpec is a no-op consumer intended for use
     in environments where resource consumption tracking is not required or is handled

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 LOG_STREAM_EVENT_TYPE = "stream_log"
+LIVE_LOG_TOPIC = "live_log"
 
 
 class Channels(object):
