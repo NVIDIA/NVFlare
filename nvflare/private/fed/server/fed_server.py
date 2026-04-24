@@ -58,6 +58,7 @@ from nvflare.private.defs import (
     CellChannel,
     CellChannelTopic,
     CellMessageHeaderKeys,
+    ClientRegMsgKey,
     ClientRegSession,
     ClientType,
     InternalFLContextKey,
@@ -69,6 +70,7 @@ from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.private.fed.utils.identity_utils import TokenVerifier
+from nvflare.private.fed.utils.site_config import validate_site_config
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.fed_event import ServerFedEventRunner
 
@@ -643,6 +645,18 @@ class FederatedServer(BaseServer):
             self.logger.debug(f"challenge ok: {reply=}")
             return make_cellnet_reply(rc=F3ReturnCode.OK, body=reply)
 
+    def _get_validated_site_config(self, shareable: Shareable, client_name: str):
+        site_config = shareable.get(ClientRegMsgKey.SITE_CONFIG)
+        if site_config is None:
+            return None
+
+        site_config, error = validate_site_config(site_config)
+        if error:
+            self.logger.warning(f"dropping site config from client {client_name}: {error}")
+            return None
+
+        return site_config
+
     def register_client(self, request: Message) -> Message:
         """Register a new client.
         Each client must be registered before being able to run jobs.
@@ -676,6 +690,12 @@ class FederatedServer(BaseServer):
                 if client_type:
                     fl_ctx.set_prop(key=FLContextKey.CLIENT_TYPE, value=client_type, private=False, sticky=False)
 
+                client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+                site_config = self._get_validated_site_config(data, client_name)
+                if site_config is not None and client_type != ClientType.REGULAR:
+                    self.logger.warning(f"dropping site config from non-regular client {client_name}: {client_type}")
+                    site_config = None
+
                 self.engine.fire_event(EventType.CLIENT_REGISTER_RECEIVED, fl_ctx=fl_ctx)
 
                 exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
@@ -683,6 +703,11 @@ class FederatedServer(BaseServer):
                     for _, exception in exceptions.items():
                         if isinstance(exception, NotAuthenticated):
                             raise exception
+
+                if site_config is not None:
+                    fl_ctx.set_prop(
+                        key=FLContextKey.CLIENT_SITE_CONFIG, value=site_config, private=True, sticky=False
+                    )
 
                 client = self.client_manager.authenticate(request, fl_ctx)
                 if client and client.token:

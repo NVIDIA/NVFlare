@@ -199,6 +199,7 @@ class FLContextKey(object):
     NOT_READY_TO_END_RUN = "not_ready_to_end_run__"  # component sets this to indicate it's not ready to end run yet
     CLIENT_CONFIG = "__client_config__"
     SERVER_CONFIG = "__server_config__"
+    CLIENT_SITE_CONFIG = "__client_site_config__"
     SERVER_HOST_NAME = "__server_host_name__"
     PROCESS_TYPE = ReservedKey.PROCESS_TYPE
     JOB_PROCESS_ARGS = ReservedKey.JOB_PROCESS_ARGS
@@ -451,6 +452,7 @@ class WorkspaceConstants:
     DEFAULT_AUTHORIZATION_CONFIG = AUTHORIZATION_CONFIG + ".default"
     RESOURCES_CONFIG = "resources.json"
     DEFAULT_RESOURCES_CONFIG = RESOURCES_CONFIG + ".default"
+    SITE_CONFIG = "site_config.json"
     PRIVACY_CONFIG = "privacy.json"
     SAMPLE_PRIVACY_CONFIG = PRIVACY_CONFIG + ".sample"
     JOB_RESOURCES_CONFIG = "job_resources.json"

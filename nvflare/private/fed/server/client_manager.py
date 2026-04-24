@@ -421,6 +421,9 @@ class ClientManager:
         if peer_ctx:
             client.set_fqsn(peer_ctx.get_prop(ReservedKey.FQSN, "?"))
             client.set_is_leaf(peer_ctx.get_prop(ReservedKey.IS_LEAF, "?"))
+        site_config = fl_ctx.get_prop(FLContextKey.CLIENT_SITE_CONFIG)
+        if site_config is not None:
+            client.set_site_config(site_config)
 
     def get_clients(self):
         """Get the list of registered clients.

@@ -43,6 +43,7 @@ from nvflare.private.defs import (
 )
 from nvflare.private.fed.authenticator import Authenticator
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
+from nvflare.private.fed.utils.site_config import load_site_config_from_workspace
 from nvflare.security.logging import secure_format_exception
 
 from .utils import determine_parent_fqcn
@@ -229,6 +230,13 @@ class Communicator:
 
         return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, Shareable())
 
+    def _load_site_config_for_registration(self, fl_ctx: FLContext):
+        workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        site_config, error = load_site_config_from_workspace(workspace)
+        if error:
+            self.logger.warning(f"site config will not be sent to server: {error}")
+        return site_config
+
     def client_registration(self, client_name, project_name, fl_ctx: FLContext):
         """Register the client with the FLARE Server.
 
@@ -309,6 +317,8 @@ class Communicator:
             cert_file = client_config.get(SecureTrainConst.SSL_CERT)
             root_cert_file = client_config.get(SecureTrainConst.SSL_ROOT_CERT)
 
+        site_config = self._load_site_config_for_registration(fl_ctx)
+
         authenticator = Authenticator(
             cell=self.cell,
             project_name=project_name,
@@ -321,6 +331,7 @@ class Communicator:
             cert_file=cert_file,
             msg_timeout=self.maint_msg_timeout,
             retry_interval=self.client_register_interval,
+            site_config=site_config,
         )
 
         token, signature, ssid, token_verifier = authenticator.authenticate(shared_fl_ctx, self.abort_signal)

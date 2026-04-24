@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import time
 
 
@@ -20,6 +21,7 @@ class ClientPropKey:
     FQSN = "fqsn"  # Fully Qualified Site Name: position in client hierarchy
     IS_LEAF = "is_leaf"  # Whether the client is a leaf node in client hierarchy
     ORG = "org"  # Organization extracted from the client's TLS certificate
+    SITE_CONFIG = "site_config"
 
 
 class ClientDictKey:
@@ -27,6 +29,7 @@ class ClientDictKey:
     FQCN = "fqcn"
     FQSN = "fqsn"
     IS_LEAF = "is_leaf"
+    SITE_CONFIG = "site_config"
 
 
 class Client:
@@ -75,6 +78,12 @@ class Client:
     def get_is_leaf(self):
         return self.get_prop(ClientPropKey.IS_LEAF)
 
+    def set_site_config(self, value):
+        self.set_prop(ClientPropKey.SITE_CONFIG, copy.deepcopy(value))
+
+    def get_site_config(self):
+        return self.get_prop(ClientPropKey.SITE_CONFIG)
+
     def to_dict(self) -> dict:
         """Convert the Client object to a dict representation.
         This dict could be used included into a job's metadata.
@@ -97,6 +106,10 @@ class Client:
         is_leaf = self.get_is_leaf()
         if not is_leaf:
             r[ClientDictKey.IS_LEAF] = False
+
+        site_config = self.get_site_config()
+        if site_config is not None:
+            r[ClientDictKey.SITE_CONFIG] = copy.deepcopy(site_config)
 
         return r
 
@@ -130,5 +143,9 @@ def from_dict(d: dict) -> Client:
     # If IS_LEAF is missing, default to True
     is_leaf = d.get(ClientDictKey.IS_LEAF, True)
     c.set_is_leaf(is_leaf)
+
+    site_config = d.get(ClientDictKey.SITE_CONFIG)
+    if site_config is not None:
+        c.set_site_config(site_config)
 
     return c
