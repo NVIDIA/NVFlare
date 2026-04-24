@@ -158,15 +158,15 @@ Every `nvflare study` subcommand accepts `--schema` to print a machine-readable 
 
 ## Connection Flags
 
-All server-backed `nvflare study` commands require a connection to the server. The startup kit location is resolved in the following priority order:
+All server-backed `nvflare study` commands require a connection to the server. Startup kit resolution is identical to all other server-connected `nvflare` commands (`job`, `system`, etc.) and follows this priority order:
 
 1. `--startup-kit <dir>` — explicit path to the startup kit directory (or its `startup/` subdirectory)
 2. `NVFLARE_STARTUP_KIT_DIR` environment variable
-3. `--startup-target poc|prod` — looks up `poc.startup_kit` or `prod.startup_kit` from `~/.nvflare/config.conf`
+3. `~/.nvflare/config.conf` — reads `poc.startup_kit` by default, or `prod.startup_kit` when `--startup-target prod` is given
 
-`~/.nvflare/config.conf` is written by `nvflare config`. If `--startup-target` is given and no entry exists for that target, the command fails with exit code 4 and a hint pointing to `nvflare config`.
+`~/.nvflare/config.conf` is written by `nvflare config`. When no explicit source is provided the config file is consulted automatically and defaults to the `poc` target, so a user who has run `nvflare config` once does not need to pass any flag on every command.
 
-`--startup-kit` and `--startup-target` are mutually exclusive. All server-backed study commands require the startup kit to be resolved via one of the three sources above; there is no silent default to `poc` because study management is a privileged operation.
+`--startup-kit` and `--startup-target` are mutually exclusive. If all three sources fail to resolve a valid directory, the command exits with code 4 and `STARTUP_KIT_MISSING`.
 
 ---
 

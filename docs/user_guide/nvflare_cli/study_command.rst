@@ -32,13 +32,16 @@ Startup Kit Resolution
 *****************************
 
 All ``nvflare study`` commands connect to the server through an admin startup kit. Resolution
-order (first match wins):
+is identical to all other server-connected ``nvflare`` commands (``job``, ``system``, etc.):
 
 1. ``--startup-kit <path>`` — explicit path to the startup kit directory or its ``startup/``
    subdirectory.
-2. ``--startup-target {poc,prod}`` — named target from ``~/.nvflare/config.conf``.
-3. ``NVFLARE_STARTUP_KIT_DIR`` environment variable.
-4. Configured startup kit path from ``nvflare config``.
+2. ``NVFLARE_STARTUP_KIT_DIR`` environment variable.
+3. ``~/.nvflare/config.conf`` — reads the ``poc`` target by default; reads ``prod`` when
+   ``--startup-target prod`` is given. Written by ``nvflare config``.
+
+A user who has run ``nvflare config`` once does not need to pass any flag — the config file
+is consulted automatically. ``--startup-kit`` and ``--startup-target`` are mutually exclusive.
 
 If no source resolves, the command exits with error code 4 and ``"error_code": "STARTUP_KIT_MISSING"``.
 
