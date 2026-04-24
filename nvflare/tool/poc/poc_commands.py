@@ -1154,13 +1154,8 @@ def _clean_poc(poc_workspace: str, force: bool = False) -> bool:
             raise CLIException(f"{poc_workspace} is not valid poc directory")
         if is_poc_ready(poc_workspace, service_config, project_config):
             if not is_poc_running(poc_workspace, service_config, project_config):
-                from nvflare.tool.cli_output import print_human, prompt_yn
+                from nvflare.tool.cli_output import print_human
 
-                if not force:
-                    if not sys.stdin.isatty():
-                        raise CLIException("workspace exists; use --force to clean in non-interactive mode")
-                    if not prompt_yn(f"POC workspace already exists: {poc_workspace}. Remove it?"):
-                        return False
                 shutil.rmtree(poc_workspace, ignore_errors=True)
 
                 print_human(f"{poc_workspace} is removed")
