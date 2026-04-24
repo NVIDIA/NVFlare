@@ -393,6 +393,27 @@ class TestRemoveStudySiteOrgValidation:
         assert "site-existing" in conn.last_reply.get("removed", [])
         assert "site-b" in conn.last_reply.get("not_enrolled", [])
 
+    def test_unenrolled_org_does_not_get_phantom_registry_entry(self):
+        # org_b has no sites in study1. Requesting removal of org_b:site-b must not
+        # create a phantom {"org_b": []} entry that would grant org_b visibility.
+        engine = _make_engine({})
+        conn = _FakeConnection(role="project_admin", org="project", engine=engine)
+        written = {}
+
+        def capture_write(_path, config):
+            written.update(config)
+
+        with _mutation_ctx(_REGISTRY_WITH_STUDY):
+            import nvflare.private.fed.server.study_cmds as sc_mod
+
+            with __import__("unittest.mock", fromlist=["patch"]).patch.object(
+                sc_mod.StudyCommandModule, "_write_registry_config", side_effect=capture_write
+            ):
+                self._module().cmd_remove_study_site(
+                    conn, ["remove_study_site", "study1", "--site-org", "org_b:site-b"]
+                )
+        assert "org_b" not in written.get("studies", {}).get("study1", {}).get("site_orgs", {})
+
 
 # ---------------------------------------------------------------------------
 # Section 5: INVALID_ARGS — input-shape enforcement (server-side authoritative)

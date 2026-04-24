@@ -536,7 +536,10 @@ class StudyCommandModule(CommandModule, CommandUtil):
             removed = []
             not_enrolled = []
             for org, sites in requested.items():
-                current = site_orgs.setdefault(org, [])
+                if org not in site_orgs:
+                    not_enrolled.extend(sites)
+                    continue
+                current = site_orgs[org]
                 current_set = set(current)
                 new_current = []
                 for site in current:
