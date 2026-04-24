@@ -45,11 +45,24 @@ _study_handlers = {}
 _study_root_parser = None
 
 
+class _WideSubcmdFormatter(argparse.HelpFormatter):
+    """Ensures subcommand help text starts on the same line as the longest name."""
+
+    def add_arguments(self, actions):
+        super().add_arguments(actions)
+        # "remove-site"/"remove-user" (11 chars) at indent-4 needs _action_max_length >= 15
+        # so that help_position = 17 and action_width = 17-4-2 = 11 >= 11.
+        self._action_max_length = max(self._action_max_length, 15)
+
+
 def _ensure_study_parsers():
     global _study_root_parser
     if _study_sub_cmd_parsers and _study_root_parser is not None:
         return
-    root = argparse.ArgumentParser(prog="nvflare study")
+    root = argparse.ArgumentParser(
+        prog="nvflare study",
+        formatter_class=_WideSubcmdFormatter,
+    )
     _define_study_subcommands(root)
     _study_root_parser = root
 
