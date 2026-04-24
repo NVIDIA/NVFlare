@@ -42,11 +42,11 @@ to `/etc/hosts` so the admin CLI can reach the server container by name:
 127.0.0.1  server
 ```
 
-## Step 4: Configure BEResourceManager (required for all Docker-mode sites)
+## Step 4: Configure PassthroughResourceManager (required for all Docker-mode sites)
 
 In Docker mode, the SP/CP process does not hold GPU resources — job containers handle
 GPUs directly. The default `GPUResourceManager` will reject all jobs. Replace it with
-`BEResourceManager` in `local/resources.json` for every site running in Docker mode,
+`PassthroughResourceManager` in `local/resources.json` for every site running in Docker mode,
 **before starting the SP/CP container**. In this example that is site-1:
 
 ```json
@@ -55,7 +55,7 @@ GPUs directly. The default `GPUResourceManager` will reject all jobs. Replace it
   "components": [
     {
       "id": "resource_manager",
-      "path": "nvflare.app_common.resource_managers.list_resource_manager.BEResourceManager",
+      "path": "nvflare.app_common.resource_managers.passthrough_resource_manager.PassthroughResourceManager",
       "args": {}
     }
   ]

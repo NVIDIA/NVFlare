@@ -432,7 +432,7 @@ JobLauncherSpec (FLComponent, ABC)
 | **Data access** | Direct filesystem | Optional bind mount from `study_data.json` | PVC resolved per-study from YAML file |
 | **PARENT_URL** | `tcp://localhost:port` | Derived at runtime: `tcp://<site_name>:<port>` (Docker DNS) | Baked into comm_config at provision time |
 | **GPU config** | `GPUResourceManager` → `CUDA_VISIBLE_DEVICES` | `device_requests` via `launcher_spec` or flat `resource_spec` | `nvidia.com/gpu` limit via `resource_spec[site][num_of_gpus]` |
-| **Resource manager** | `GPUResourceManager` | `BEResourceManager` | `BEResourceManager` |
+| **Resource manager** | `GPUResourceManager` | `PassthroughResourceManager` | `PassthroughResourceManager` |
 | **Start verification** | None | `enter_states(["running"])` with timeout | `enter_states([RUNNING])` with stuck detection |
 | **Terminate** | `SIGTERM`/`SIGKILL` | `container.stop()` + `container.remove()` | `delete_namespaced_pod(grace_period=0)` |
 | **Command format** | Shell string (`sys.executable -m ...`) | `[python, "-u", "-m", module] + args` list | `command: [python]` + `args` list in pod spec |
@@ -441,11 +441,11 @@ JobLauncherSpec (FLComponent, ABC)
 
 ---
 
-## 7. Backend (BE) Resource Management
+## 7. Resource Management
 
-### 7.1 BEResourceManager
+### 7.1 PassthroughResourceManager
 
-`BEResourceManager` (Best Effort) always approves resource requests and performs no local tracking. Use with Docker or K8s launchers where the container runtime handles actual resource allocation.
+`PassthroughResourceManager` always approves resource requests and performs no local tracking. Use with Docker or K8s launchers where the container runtime handles actual resource allocation.
 
 | Method | Behavior |
 |--------|----------|
