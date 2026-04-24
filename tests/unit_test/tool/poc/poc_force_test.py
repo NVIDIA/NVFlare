@@ -185,6 +185,38 @@ class TestPocForce:
         mock_rmtree.assert_called_once_with(workspace, ignore_errors=True)
         mock_prov.assert_called_once()
 
+    def test_is_poc_running_true_when_only_daemon_pid_is_alive(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import is_poc_running
+
+        workspace = tmp_path / "poc_ws_daemon_only"
+        server_dir = workspace / "example_project" / "prod_00" / "server"
+        server_dir.mkdir(parents=True)
+        (server_dir / "daemon_pid.fl").write_text("12345")
+
+        with patch("os.kill") as mock_kill:
+            assert is_poc_running(
+                str(workspace),
+                {SC.FLARE_SERVER: "server"},
+                {"name": "example_project"},
+            )
+
+        mock_kill.assert_called_once_with(12345, 0)
+
+    def test_is_poc_running_false_for_stale_daemon_pid(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import is_poc_running
+
+        workspace = tmp_path / "poc_ws_stale_daemon"
+        server_dir = workspace / "example_project" / "prod_00" / "server"
+        server_dir.mkdir(parents=True)
+        (server_dir / "daemon_pid.fl").write_text("12345")
+
+        with patch("os.kill", side_effect=OSError):
+            assert not is_poc_running(
+                str(workspace),
+                {SC.FLARE_SERVER: "server"},
+                {"name": "example_project"},
+            )
+
     def test_no_force_non_interactive_exits_4(self, tmp_path):
         """Non-interactive mode without --force should output INVALID_ARGS exit 4."""
         from nvflare.tool.poc.poc_commands import prepare_poc

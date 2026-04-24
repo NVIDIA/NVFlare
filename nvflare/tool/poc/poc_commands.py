@@ -1123,7 +1123,25 @@ def is_poc_running(poc_workspace, service_config, project_config):
     prod_dir = get_prod_dir(poc_workspace, project_name)
     server_dir = os.path.join(prod_dir, service_config[SC.FLARE_SERVER])
     pid_file = os.path.join(server_dir, "pid.fl")
-    return os.path.exists(pid_file)
+    daemon_pid_file = os.path.join(server_dir, "daemon_pid.fl")
+    return _is_live_pid_file(pid_file) or _is_live_pid_file(daemon_pid_file)
+
+
+def _is_live_pid_file(pid_file: str) -> bool:
+    if not os.path.exists(pid_file):
+        return False
+
+    try:
+        with open(pid_file, "r") as f:
+            pid = int(f.read().strip())
+    except (OSError, ValueError):
+        return False
+
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
 
 
 def _clean_poc(poc_workspace: str, force: bool = False) -> bool:
