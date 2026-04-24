@@ -66,6 +66,7 @@ BOOTSTRAP_CONNECT_TIMEOUT = 30.0
 BOOTSTRAP_CONNECT_POLL_INTERVAL = 0.1
 
 _BOOTSTRAP_CELL_PREFIX = "ws_transfer_"
+_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data_pvc.yaml"})
 
 
 @dataclass
@@ -77,18 +78,21 @@ class _JobTransferRecord:
     download_bundle_path: str = ""
 
 
-def _write_dir_to_zip(zf: zipfile.ZipFile, src: str, root: str) -> None:
+def _write_dir_to_zip(zf: zipfile.ZipFile, src: str, root: str, excluded_paths: frozenset[str] = frozenset()) -> None:
     if not os.path.isdir(src):
         return
     for dirpath, _dirs, files in os.walk(src):
         for fname in files:
             abs_path = os.path.join(dirpath, fname)
-            zf.write(abs_path, os.path.relpath(abs_path, root))
+            rel_path = os.path.relpath(abs_path, root).replace(os.sep, "/")
+            if rel_path in excluded_paths:
+                continue
+            zf.write(abs_path, rel_path)
 
 
 def _zip_workspace_to_file(workspace_root: str, job_id: str, file_path: str) -> None:
     with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        _write_dir_to_zip(zf, os.path.join(workspace_root, "local"), workspace_root)
+        _write_dir_to_zip(zf, os.path.join(workspace_root, "local"), workspace_root, _WORKSPACE_DOWNLOAD_EXCLUDES)
         _write_dir_to_zip(zf, os.path.join(workspace_root, job_id), workspace_root)
 
 
