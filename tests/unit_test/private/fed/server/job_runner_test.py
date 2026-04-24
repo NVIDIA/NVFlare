@@ -12,10 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.fed.server.job_runner import JobRunner
@@ -217,6 +220,39 @@ def test_start_run_sets_job_clients_meta_before_start_client_job(mock_get_bool, 
     runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
 
     assert seen_job_clients_meta["value"] == [{"name": "site-1"}, {"name": "site-2"}]
+
+
+def test_job_complete_process_uses_fresh_context_for_completion_events():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.fire_event = MagicMock()
+    runner.log_debug = MagicMock()
+    runner.ask_to_stop = False
+
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
+
+    job_manager = MagicMock()
+    engine.get_component.return_value = job_manager
+
+    completion_ctx = MagicMock()
+    engine.new_context.return_value = nullcontext(completion_ctx)
+
+    job = MagicMock()
+    job.job_id = "job-1"
+    job.run_aborted = True
+    runner.running_jobs = {"job-1": job}
+
+    def _stop_after_first_pass(_):
+        runner.ask_to_stop = True
+
+    with patch("nvflare.private.fed.server.job_runner.time.sleep", side_effect=_stop_after_first_pass):
+        runner._job_complete_process(engine)
+
+    completion_ctx.set_prop.assert_called_once_with(FLContextKey.CURRENT_JOB_ID, "job-1")
+    runner.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, completion_ctx)
+    engine.remove_exception_process.assert_called_once_with("job-1")
+    assert "job-1" not in runner.running_jobs
 
 
 @patch("nvflare.private.fed.server.job_runner.check_client_replies")
