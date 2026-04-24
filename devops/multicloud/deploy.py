@@ -558,7 +558,7 @@ def patch_resources_json(
         if pending_timeout is not None:
             preview["pending_timeout"] = pending_timeout
         print(f"  Would patch {dst}: {json.dumps(preview)}")
-        print(f"  Would write {kit_dir / 'etc' / 'study_data_pvc.yaml'}: default: nvfldata")
+        print(f"  Would write {kit_dir / 'local' / 'study_data_pvc.yaml'}: default: nvfldata")
         return
     r = json.loads(src.read_text())
     replaced = False
@@ -566,7 +566,7 @@ def patch_resources_json(
         if "process_launcher" in c.get("id", "") or "ProcessJobLauncher" in c.get("path", ""):
             args = {
                 "config_file_path": None,
-                "study_data_pvc_file_path": "/var/tmp/nvflare/etc/study_data_pvc.yaml",
+                "study_data_pvc_file_path": "/var/tmp/nvflare/workspace/local/study_data_pvc.yaml",
                 "namespace": namespace,
                 "python_path": "/usr/local/bin/python3",
             }
@@ -580,9 +580,9 @@ def patch_resources_json(
         raise RuntimeError(f"No ProcessJobLauncher component found in {src}; cannot inject K8sJobLauncher.")
     dst.write_text(json.dumps(r, indent=4))
 
-    etc_dir = kit_dir / "etc"
-    etc_dir.mkdir(exist_ok=True)
-    (etc_dir / "study_data_pvc.yaml").write_text("default: nvfldata\n")
+    local_dir = kit_dir / "local"
+    local_dir.mkdir(exist_ok=True)
+    (local_dir / "study_data_pvc.yaml").write_text("default: nvfldata\n")
 
 
 # ---------------------------------------------------------------------------
@@ -647,19 +647,13 @@ def deploy_participant(
         pod_spec = {
             "spec": {
                 **sec_ctx,
-                "volumes": [
-                    {"name": "ws", "persistentVolumeClaim": {"claimName": "nvflws"}},
-                    {"name": "etc", "persistentVolumeClaim": {"claimName": "nvfletc"}},
-                ],
+                "volumes": [{"name": "ws", "persistentVolumeClaim": {"claimName": "nvflws"}}],
                 "containers": [
                     {
                         "name": "copy",
                         "image": "busybox",
                         "command": ["sleep", "600"],
-                        "volumeMounts": [
-                            {"name": "ws", "mountPath": "/ws"},
-                            {"name": "etc", "mountPath": "/etc-vol"},
-                        ],
+                        "volumeMounts": [{"name": "ws", "mountPath": "/ws"}],
                     }
                 ],
             }
@@ -684,14 +678,6 @@ def deploy_participant(
 
         kubectl(p.kubeconfig, "-n", p.namespace, "cp", str(kit_dir / "startup"), f"{pod_name}:/ws/startup")
         kubectl(p.kubeconfig, "-n", p.namespace, "cp", str(kit_dir / "local"), f"{pod_name}:/ws/local")
-        kubectl(
-            p.kubeconfig,
-            "-n",
-            p.namespace,
-            "cp",
-            str(kit_dir / "etc" / "study_data_pvc.yaml"),
-            f"{pod_name}:/etc-vol/study_data_pvc.yaml",
-        )
         kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name, "--timeout=60s")
 
         # 4. Helm install

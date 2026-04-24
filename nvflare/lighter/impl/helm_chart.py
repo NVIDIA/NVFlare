@@ -47,9 +47,7 @@ class HelmChartBuilder(Builder):
         docker_image: str,
         parent_port: int = 8102,
         workspace_pvc: str = "nvflws",
-        etc_pvc: str = "nvfletc",
         workspace_mount_path: str = "/var/tmp/nvflare/workspace",
-        etc_mount_path: str = "/var/tmp/nvflare/etc",
     ):
         """Build Helm charts for the FL server and all FL clients.
 
@@ -81,16 +79,12 @@ class HelmChartBuilder(Builder):
                 (default 8102).  Exposed as ``containerPort`` in the Pod and
                 as ``port``/``targetPort`` in the client Service.
             workspace_pvc: PVC claim name for the runtime workspace volume.
-            etc_pvc: PVC claim name for the startup-kit/etc volume.
             workspace_mount_path: in-container mount path for the workspace PVC.
-            etc_mount_path: in-container mount path for the etc PVC.
         """
         self.docker_image = docker_image
         self.parent_port = parent_port
         self.workspace_pvc = workspace_pvc
-        self.etc_pvc = etc_pvc
         self.workspace_mount_path = workspace_mount_path
-        self.etc_mount_path = etc_mount_path
 
     # ------------------------------------------------------------------
     # Builder lifecycle
@@ -185,11 +179,6 @@ class HelmChartBuilder(Builder):
                 "create": True,
             },
             "persistence": {
-                "etc": {
-                    "claimName": self.etc_pvc,
-                    "friendlyName": self.etc_pvc,
-                    "mountPath": self.etc_mount_path,
-                },
                 "workspace": {
                     "claimName": self.workspace_pvc,
                     "friendlyName": self.workspace_pvc,
@@ -310,11 +299,6 @@ class HelmChartBuilder(Builder):
                 "create": True,
             },
             "persistence": {
-                "etc": {
-                    "claimName": self.etc_pvc,
-                    "friendlyName": self.etc_pvc,
-                    "mountPath": self.etc_mount_path,
-                },
                 "workspace": {
                     "claimName": self.workspace_pvc,
                     "friendlyName": self.workspace_pvc,
