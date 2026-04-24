@@ -23,6 +23,7 @@ class StreamContextKey:
     CHANNEL = "__channel__"
     TOPIC = "__topic__"
     RC = "__RC__"
+    END_STREAM = "__end_stream__"
 
 
 class ObjectProducer(ABC):

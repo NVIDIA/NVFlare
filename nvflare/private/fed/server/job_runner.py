@@ -394,21 +394,21 @@ class JobRunner(FLComponent):
         if err:
             self.log_error(fl_ctx, f"Failed to delete_run the server for run: {job_id}")
 
-    def _job_complete_process(self, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
+    def _job_complete_process(self, engine):
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         while not self.ask_to_stop:
             for job_id in list(self.running_jobs.keys()):
                 if job_id not in engine.run_processes.keys():
                     job = self.running_jobs.get(job_id)
                     if job:
-                        if not job.run_aborted:
-                            self._update_job_status(engine, job, job_manager, fl_ctx)
-                        with self.lock:
-                            del self.running_jobs[job_id]
-                        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
-                        self.fire_event(EventType.JOB_COMPLETED, fl_ctx)
-                        self.log_debug(fl_ctx, f"Finished running job:{job.job_id}")
+                        with engine.new_context() as completion_ctx:
+                            if not job.run_aborted:
+                                self._update_job_status(engine, job, job_manager, completion_ctx)
+                            with self.lock:
+                                del self.running_jobs[job_id]
+                            completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
+                            self.fire_event(EventType.JOB_COMPLETED, completion_ctx)
+                            self.log_debug(completion_ctx, f"Finished running job:{job.job_id}")
                     engine.remove_exception_process(job_id)
             time.sleep(1.0)
 
@@ -476,7 +476,7 @@ class JobRunner(FLComponent):
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         if job_manager:
-            thread = threading.Thread(target=self._job_complete_process, args=[fl_ctx])
+            thread = threading.Thread(target=self._job_complete_process, args=[engine])
             thread.start()
 
             while not self.ask_to_stop:
