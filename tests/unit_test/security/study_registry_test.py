@@ -23,20 +23,20 @@ def _make_registry_config(studies):
     return {"format_version": "1.0", "studies": studies}
 
 
-def test_study_registry_returns_role_for_user_in_study():
+def test_study_registry_tracks_user_membership_for_study():
     study_registry = _registry_module()
     registry = study_registry.StudyRegistry(
         _make_registry_config(
             {
                 "cancer-research": {
-                    "sites": ["site-a", "site-b"],
-                    "admins": {"admin@nvidia.com": "lead"},
+                    "site_orgs": {"org_a": ["site-a", "site-b"]},
+                    "admins": ["admin@nvidia.com"],
                 }
             }
         )
     )
 
-    assert registry.get_role("admin@nvidia.com", "cancer-research") == "lead"
+    assert registry.has_user("admin@nvidia.com", "cancer-research") is True
 
 
 def test_study_registry_rejects_missing_or_invalid_format_version():
@@ -65,21 +65,21 @@ def test_study_registry_rejects_missing_studies_mapping():
         assert "studies" in str(e)
 
 
-def test_study_registry_returns_none_for_missing_user_or_study():
+def test_study_registry_returns_false_for_missing_user_or_study():
     study_registry = _registry_module()
     registry = study_registry.StudyRegistry(
         _make_registry_config(
             {
                 "cancer-research": {
-                    "sites": ["site-a"],
-                    "admins": {"admin@nvidia.com": "lead"},
+                    "site_orgs": {"org_a": ["site-a"]},
+                    "admins": ["admin@nvidia.com"],
                 }
             }
         )
     )
 
-    assert registry.get_role("other@nvidia.com", "cancer-research") is None
-    assert registry.get_role("admin@nvidia.com", "unknown-study") is None
+    assert registry.has_user("other@nvidia.com", "cancer-research") is False
+    assert registry.has_user("admin@nvidia.com", "unknown-study") is False
     assert registry.get_sites("unknown-study") is None
     assert registry.has_study("unknown-study") is False
 
@@ -90,8 +90,8 @@ def test_study_registry_returns_enrolled_sites_as_a_set():
         _make_registry_config(
             {
                 "cancer-research": {
-                    "sites": ["site-a", "site-b"],
-                    "admins": {"admin@nvidia.com": "lead"},
+                    "site_orgs": {"org_a": ["site-a"], "org_b": ["site-b"]},
+                    "admins": ["admin@nvidia.com"],
                 }
             }
         )
@@ -107,8 +107,8 @@ def test_study_registry_service_returns_initialized_registry():
         _make_registry_config(
             {
                 "cancer-research": {
-                    "sites": ["site-a"],
-                    "admins": {"admin@nvidia.com": "lead"},
+                    "site_orgs": {"org_a": ["site-a"]},
+                    "admins": ["admin@nvidia.com"],
                 }
             }
         )
@@ -126,3 +126,67 @@ def test_study_registry_service_reset_clears_registry():
     study_registry.StudyRegistryService.reset()
 
     assert study_registry.StudyRegistryService.get_registry() is None
+
+
+def test_study_registry_rejects_duplicate_site_across_org_groups():
+    study_registry = _registry_module()
+
+    try:
+        study_registry.StudyRegistry(
+            _make_registry_config(
+                {
+                    "cancer-research": {
+                        "site_orgs": {
+                            "org_a": ["site-shared"],
+                            "org_b": ["site-shared"],  # duplicate
+                        },
+                        "admins": [],
+                    }
+                }
+            )
+        )
+        assert False, "expected ValueError for duplicate site across org groups"
+    except ValueError as e:
+        assert "duplicate" in str(e).lower()
+
+
+def test_study_registry_derived_flat_sites_union_of_all_org_groups():
+    study_registry = _registry_module()
+    registry = study_registry.StudyRegistry(
+        _make_registry_config(
+            {
+                "cancer-research": {
+                    "site_orgs": {
+                        "org_a": ["site-a", "site-b"],
+                        "org_b": ["site-c"],
+                    },
+                    "admins": [],
+                }
+            }
+        )
+    )
+
+    sites = registry.get_sites("cancer-research")
+    assert sites == {"site-a", "site-b", "site-c"}
+
+
+def test_study_registry_flat_sites_excludes_sites_from_removed_org():
+    study_registry = _registry_module()
+    # Simulate what happens after remove-site removes all sites from org_b:
+    # the flat sites set must not contain org_b's former sites.
+    registry = study_registry.StudyRegistry(
+        _make_registry_config(
+            {
+                "cancer-research": {
+                    "site_orgs": {
+                        "org_a": ["site-a"],
+                        "org_b": [],  # org_b enrolled but no sites left
+                    },
+                    "admins": [],
+                }
+            }
+        )
+    )
+
+    sites = registry.get_sites("cancer-research")
+    assert sites == {"site-a"}

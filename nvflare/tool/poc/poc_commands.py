@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import errno
 import json
 import os
 import random
@@ -580,8 +581,14 @@ def _prepare_poc(
     else:
         print_human(f"Preparing POC workspace at {workspace} using {project_conf_path}...")
 
-    project_config = None
     if os.path.exists(workspace):
+        running_poc = _get_running_poc_context(workspace)
+        if running_poc:
+            if force:
+                _ensure_poc_stopped(workspace, project_config=running_poc[0], service_config=running_poc[1])
+            else:
+                raise CLIException("system is still running, please stop the system first.")
+
         if not force:
             if not prompt_yn(
                 f"This will delete poc workspace directory: '{workspace}' and create a new one. Is it OK to proceed?"
@@ -606,6 +613,48 @@ def _prepare_poc(
     project_name = project_config.get("name") if project_config else None
     save_startup_kit_dir_config(workspace, project_name)
     return True
+
+
+def _get_running_poc_context(workspace: str):
+    try:
+        project_config, service_config = setup_service_config(workspace)
+    except Exception:
+        # Best-effort detection only: unreadable workspace metadata should not block force recreation.
+        return None
+
+    if not project_config or not service_config:
+        return None
+
+    if not is_poc_ready(workspace, service_config, project_config):
+        return None
+
+    if not is_poc_running(workspace, service_config, project_config):
+        return None
+
+    return project_config, service_config
+
+
+def _ensure_poc_stopped(
+    workspace: str, timeout_in_sec: int = 30, poll_interval: float = 1.0, project_config=None, service_config=None
+):
+    if project_config is None or service_config is None:
+        running_poc = _get_running_poc_context(workspace)
+        if not running_poc:
+            return
+        project_config, service_config = running_poc
+
+    from nvflare.tool.cli_output import print_human
+
+    print_human("Existing POC system is still running; stopping it before recreating the workspace.")
+    _stop_poc(workspace, project_config=project_config, service_config=service_config)
+
+    deadline = time.time() + timeout_in_sec
+    while time.time() < deadline:
+        if not is_poc_running(workspace, service_config, project_config):
+            return
+        time.sleep(poll_interval)
+
+    raise CLIException("system is still running after shutdown was requested; please run 'nvflare poc stop' first.")
 
 
 def prepare_poc_provision(
@@ -882,8 +931,9 @@ def stop_poc(cmd_args):
     output_ok({"status": "stopped"})
 
 
-def _stop_poc(poc_workspace: str, excluded=None, services_list=None):
-    project_config, service_config = setup_service_config(poc_workspace)
+def _stop_poc(poc_workspace: str, excluded=None, services_list=None, project_config=None, service_config=None):
+    if project_config is None or service_config is None:
+        project_config, service_config = setup_service_config(poc_workspace)
 
     if services_list is None:
         services_list = []
@@ -1043,30 +1093,8 @@ def _run_poc(
 
 
 def clean_poc(cmd_args):
-    from nvflare.tool.cli_output import output_error, output_ok
-    from nvflare.tool.cli_schema import handle_schema_flag
-
-    handle_schema_flag(
-        _poc_sub_cmd_parsers.get(CMD_CLEAN_POC),
-        "nvflare poc clean",
-        ["nvflare poc clean"],
-        sys.argv[1:],
-    )
     poc_workspace = get_poc_workspace()
-    force = getattr(cmd_args, "force", False)
-
-    try:
-        result = _clean_poc(poc_workspace, force=force)
-    except CLIException as e:
-        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
-        raise SystemExit(4)
-    except Exception as e:
-        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
-        raise SystemExit(5)
-    if result is False:
-        return
-
-    output_ok({"status": "cleaned"})
+    _clean_poc(poc_workspace)
 
 
 def is_poc_running(poc_workspace, service_config, project_config):
@@ -1074,23 +1102,38 @@ def is_poc_running(poc_workspace, service_config, project_config):
     prod_dir = get_prod_dir(poc_workspace, project_name)
     server_dir = os.path.join(prod_dir, service_config[SC.FLARE_SERVER])
     pid_file = os.path.join(server_dir, "pid.fl")
-    return os.path.exists(pid_file)
+    daemon_pid_file = os.path.join(server_dir, "daemon_pid.fl")
+    return _is_live_pid_file(pid_file) or _is_live_pid_file(daemon_pid_file)
 
 
-def _clean_poc(poc_workspace: str, force: bool = False) -> bool:
+def _is_live_pid_file(pid_file: str) -> bool:
+    if not os.path.exists(pid_file):
+        return False
+
+    try:
+        with open(pid_file, "r") as f:
+            pid = int(f.read().strip())
+    except (OSError, ValueError):
+        return False
+
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError as e:
+        if e.errno == errno.EPERM:
+            return True
+        return False
+
+
+def _clean_poc(poc_workspace: str):
     if os.path.isdir(poc_workspace):
         project_config, service_config = setup_service_config(poc_workspace)
         if project_config is None:
             raise CLIException(f"{poc_workspace} is not valid poc directory")
         if is_poc_ready(poc_workspace, service_config, project_config):
             if not is_poc_running(poc_workspace, service_config, project_config):
-                from nvflare.tool.cli_output import print_human, prompt_yn
+                from nvflare.tool.cli_output import print_human
 
-                if not force:
-                    if not sys.stdin.isatty():
-                        raise CLIException("workspace exists; use --force to clean in non-interactive mode")
-                    if not prompt_yn(f"POC workspace already exists: {poc_workspace}. Remove it?"):
-                        return False
                 shutil.rmtree(poc_workspace, ignore_errors=True)
 
                 print_human(f"{poc_workspace} is removed")
@@ -1212,10 +1255,7 @@ def define_prepare_jobs_parser(poc_parser):
 
 def define_clean_parser(poc_parser):
     clean_parser = poc_parser.add_parser(CMD_CLEAN_POC, help="clean up poc workspace")
-    _poc_sub_cmd_parsers[CMD_CLEAN_POC] = clean_parser
     clean_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
-    clean_parser.add_argument("--force", action="store_true", help="remove workspace without prompting")
-    clean_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
 def define_start_parser(poc_parser):

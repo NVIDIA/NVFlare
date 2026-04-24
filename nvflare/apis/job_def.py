@@ -78,6 +78,7 @@ class JobMetaKey(str, Enum):
     EDGE_METHOD = "edge_method"
     JOB_CLIENTS = "job_clients"  # clients that participated the job
     STUDY = "study"
+    JOB_LAUNCHER_SPEC = "launcher_spec"
 
     def __repr__(self):
         return self.value

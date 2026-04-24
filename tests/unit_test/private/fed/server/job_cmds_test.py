@@ -227,15 +227,11 @@ class _FakeClient:
 
 
 class _FakeStudyRegistry:
-    def __init__(self, roles=None, sites=None):
-        self.roles = roles or {}
+    def __init__(self, sites=None):
         self.sites = sites or {}
 
     def has_study(self, study):
-        return study in self.roles or study in self.sites
-
-    def get_role(self, user_name, study):
-        return self.roles.get(study, {}).get(user_name)
+        return study in self.sites
 
     def get_sites(self, study):
         return self.sites.get(study)
@@ -572,9 +568,7 @@ def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):
     monkeypatch.setattr(
         _FakeStudyRegistryService,
         "registry",
-        _FakeStudyRegistry(
-            roles={"cancer-research": {"submitter": "study_lead"}}, sites={"cancer-research": {"site1"}}
-        ),
+        _FakeStudyRegistry(sites={"cancer-research": {"site1"}}),
         raising=False,
     )
 
@@ -586,7 +580,7 @@ def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):
             JobMetaKey.STUDY.value: "cancer-research",
             JobMetaKey.SUBMITTER_NAME.value: "submitter",
             JobMetaKey.SUBMITTER_ORG.value: "org",
-            JobMetaKey.SUBMITTER_ROLE.value: "study_lead",
+            JobMetaKey.SUBMITTER_ROLE.value: "cert_admin",
         }
     )
     conn = _MockConnection(
@@ -615,7 +609,7 @@ def test_authorize_job_id_hides_non_default_jobs_from_default_session_without_re
             JobMetaKey.STUDY.value: "legacy-study",
             JobMetaKey.SUBMITTER_NAME.value: "submitter",
             JobMetaKey.SUBMITTER_ORG.value: "org",
-            JobMetaKey.SUBMITTER_ROLE.value: "study_lead",
+            JobMetaKey.SUBMITTER_ROLE.value: "cert_admin",
         }
     )
     conn = _MockConnection(
@@ -631,16 +625,14 @@ def test_authorize_job_id_hides_non_default_jobs_from_default_session_without_re
     assert conn.get_prop(ConnProps.SUBMITTER_ROLE) is None
 
 
-def test_authorize_job_id_resolves_study_role_before_authz(monkeypatch):
+def test_authorize_job_id_keeps_cert_role_before_authz(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     monkeypatch.setattr(job_cmds_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
     monkeypatch.setattr(cmd_utils_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
     monkeypatch.setattr(
         _FakeStudyRegistryService,
         "registry",
-        _FakeStudyRegistry(
-            roles={"cancer-research": {"admin@nvidia.com": "study_lead"}}, sites={"cancer-research": {"site1"}}
-        ),
+        _FakeStudyRegistry(sites={"cancer-research": {"site1"}}),
         raising=False,
     )
 
@@ -652,7 +644,7 @@ def test_authorize_job_id_resolves_study_role_before_authz(monkeypatch):
             JobMetaKey.STUDY.value: "cancer-research",
             JobMetaKey.SUBMITTER_NAME.value: "submitter",
             JobMetaKey.SUBMITTER_ORG.value: "org",
-            JobMetaKey.SUBMITTER_ROLE.value: "study_lead",
+            JobMetaKey.SUBMITTER_ROLE.value: "project_admin",
         }
     )
     conn = _MockConnection(
@@ -667,7 +659,7 @@ def test_authorize_job_id_resolves_study_role_before_authz(monkeypatch):
     rc = JobCommandModule().authorize_job_id(conn, ["authorize_job_id", job_id])
 
     assert rc == PreAuthzReturnCode.REQUIRE_AUTHZ
-    assert conn.get_prop(ConnProps.USER_ROLE) == "study_lead"
+    assert conn.get_prop(ConnProps.USER_ROLE) == "project_admin"
 
 
 def test_abort_job_marks_submitted_job_finished_aborted(monkeypatch):
@@ -707,16 +699,14 @@ def test_abort_job_handles_missing_status_without_attribute_error(monkeypatch):
     assert engine.job_runner.stop_run.call_args[0][0] == "job-123"
 
 
-def test_submit_job_persists_effective_study_submitter_role(monkeypatch):
+def test_submit_job_persists_cert_submitter_role(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     monkeypatch.setattr(job_cmds_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
     monkeypatch.setattr(cmd_utils_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
     monkeypatch.setattr(
         _FakeStudyRegistryService,
         "registry",
-        _FakeStudyRegistry(
-            roles={"cancer-research": {"submitter": "study_lead"}}, sites={"cancer-research": {"site1"}}
-        ),
+        _FakeStudyRegistry(sites={"cancer-research": {"site1"}}),
         raising=False,
     )
     monkeypatch.setattr(
@@ -749,7 +739,7 @@ def test_submit_job_persists_effective_study_submitter_role(monkeypatch):
 
     assert conn.errors == []
     assert len(conn.successes) == 1
-    assert engine.job_def_manager.created_meta[JobMetaKey.SUBMITTER_ROLE.value] == "study_lead"
+    assert engine.job_def_manager.created_meta[JobMetaKey.SUBMITTER_ROLE.value] == "cert_admin"
 
 
 def test_submit_job_rejects_deploy_map_sites_outside_study(monkeypatch):

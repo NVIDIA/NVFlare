@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import errno
 import os
 from unittest.mock import MagicMock, patch
 
@@ -39,6 +40,194 @@ class TestPocForce:
                 result = _prepare_poc([], 2, workspace, force=True)
         # force=True means no prompt; result should be True (not False)
         assert result is True
+
+    def test_force_prepare_stops_running_poc_before_delete(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import _prepare_poc
+
+        workspace = str(tmp_path / "poc_ws_running")
+        os.makedirs(workspace)
+
+        calls = []
+
+        def fake_stop(_workspace, *_args, **_kwargs):
+            calls.append("stop")
+
+        def fake_rmtree(path, ignore_errors=False):
+            assert path == workspace
+            assert ignore_errors is True
+            calls.append("rmtree")
+
+        with (
+            patch(
+                "nvflare.tool.poc.poc_commands.setup_service_config",
+                return_value=(
+                    {"name": "example_project"},
+                    {
+                        SC.FLARE_SERVER: "server",
+                        SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+                    },
+                ),
+            ),
+            patch("nvflare.tool.poc.poc_commands.is_poc_ready", return_value=True),
+            patch(
+                "nvflare.tool.poc.poc_commands.is_poc_running",
+                side_effect=[True, False],
+            ),
+            patch("nvflare.tool.poc.poc_commands._stop_poc", side_effect=fake_stop) as mock_stop,
+            patch("nvflare.tool.poc.poc_commands.shutil.rmtree", side_effect=fake_rmtree),
+            patch(
+                "nvflare.tool.poc.poc_commands.prepare_poc_provision",
+                return_value={"name": "example_project"},
+            ),
+            patch("nvflare.tool.poc.poc_commands.save_startup_kit_dir_config"),
+            patch("nvflare.tool.cli_output.print_human"),
+        ):
+            result = _prepare_poc([], 2, workspace, force=True)
+
+        assert result is True
+        assert mock_stop.call_count == 1
+        assert calls == ["stop", "rmtree"]
+
+    def test_force_prepare_preserves_workspace_when_running_system_does_not_stop(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import _prepare_poc
+
+        workspace = tmp_path / "poc_ws_stuck"
+        workspace.mkdir()
+        sentinel = workspace / "keep.txt"
+        sentinel.write_text("keep me")
+
+        with (
+            patch(
+                "nvflare.tool.poc.poc_commands.setup_service_config",
+                return_value=(
+                    {"name": "example_project"},
+                    {
+                        SC.FLARE_SERVER: "server",
+                        SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+                    },
+                ),
+            ),
+            patch("nvflare.tool.poc.poc_commands.is_poc_ready", return_value=True),
+            patch("nvflare.tool.poc.poc_commands.is_poc_running", return_value=True),
+            patch("nvflare.tool.poc.poc_commands._stop_poc"),
+            patch("nvflare.tool.poc.poc_commands.time.time", side_effect=[0, 31]),
+            patch("nvflare.tool.poc.poc_commands.prepare_poc_provision") as mock_prov,
+        ):
+            with pytest.raises(
+                CLIException,
+                match="system is still running after shutdown was requested",
+            ):
+                _prepare_poc([], 2, str(workspace), force=True)
+
+        mock_prov.assert_not_called()
+        assert workspace.exists()
+        assert sentinel.exists()
+
+    def test_prepare_without_force_raises_for_running_poc_before_prompt(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import _prepare_poc
+
+        workspace = str(tmp_path / "poc_ws_running_no_force")
+        os.makedirs(workspace)
+
+        with (
+            patch(
+                "nvflare.tool.poc.poc_commands.setup_service_config",
+                return_value=(
+                    {"name": "example_project"},
+                    {
+                        SC.FLARE_SERVER: "server",
+                        SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+                    },
+                ),
+            ),
+            patch("nvflare.tool.poc.poc_commands.is_poc_ready", return_value=True),
+            patch("nvflare.tool.poc.poc_commands.is_poc_running", return_value=True),
+            patch("nvflare.tool.cli_output.prompt_yn") as mock_prompt,
+            patch("nvflare.tool.poc.poc_commands._stop_poc") as mock_stop,
+            patch("nvflare.tool.poc.poc_commands.prepare_poc_provision") as mock_prov,
+        ):
+            with pytest.raises(
+                CLIException,
+                match="system is still running, please stop the system first.",
+            ):
+                _prepare_poc([], 2, workspace, force=False)
+
+        mock_prompt.assert_not_called()
+        mock_stop.assert_not_called()
+        mock_prov.assert_not_called()
+
+    def test_force_prepare_ignores_unreadable_workspace_config(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import _prepare_poc
+
+        workspace = str(tmp_path / "poc_ws_bad_yaml")
+        os.makedirs(workspace)
+
+        with (
+            patch(
+                "nvflare.tool.poc.poc_commands.setup_service_config",
+                side_effect=Exception("bad yaml"),
+            ),
+            patch("nvflare.tool.poc.poc_commands.shutil.rmtree") as mock_rmtree,
+            patch(
+                "nvflare.tool.poc.poc_commands.prepare_poc_provision",
+                return_value={"name": "example_project"},
+            ) as mock_prov,
+            patch("nvflare.tool.poc.poc_commands.save_startup_kit_dir_config"),
+        ):
+            result = _prepare_poc([], 2, workspace, force=True)
+
+        assert result is True
+        mock_rmtree.assert_called_once_with(workspace, ignore_errors=True)
+        mock_prov.assert_called_once()
+
+    def test_is_poc_running_true_when_only_daemon_pid_is_alive(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import is_poc_running
+
+        workspace = tmp_path / "poc_ws_daemon_only"
+        server_dir = workspace / "example_project" / "prod_00" / "server"
+        server_dir.mkdir(parents=True)
+        (server_dir / "daemon_pid.fl").write_text("12345")
+
+        with patch("os.kill") as mock_kill:
+            assert is_poc_running(
+                str(workspace),
+                {SC.FLARE_SERVER: "server"},
+                {"name": "example_project"},
+            )
+
+        mock_kill.assert_called_once_with(12345, 0)
+
+    def test_is_poc_running_false_for_stale_daemon_pid(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import is_poc_running
+
+        workspace = tmp_path / "poc_ws_stale_daemon"
+        server_dir = workspace / "example_project" / "prod_00" / "server"
+        server_dir.mkdir(parents=True)
+        (server_dir / "daemon_pid.fl").write_text("12345")
+
+        with patch("os.kill", side_effect=OSError):
+            assert not is_poc_running(
+                str(workspace),
+                {SC.FLARE_SERVER: "server"},
+                {"name": "example_project"},
+            )
+
+    def test_is_poc_running_true_for_eperm_pid(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import is_poc_running
+
+        workspace = tmp_path / "poc_ws_eperm_pid"
+        server_dir = workspace / "example_project" / "prod_00" / "server"
+        server_dir.mkdir(parents=True)
+        (server_dir / "daemon_pid.fl").write_text("12345")
+
+        with patch("os.kill", side_effect=OSError(errno.EPERM, "permission denied")) as mock_kill:
+            assert is_poc_running(
+                str(workspace),
+                {SC.FLARE_SERVER: "server"},
+                {"name": "example_project"},
+            )
+
+        mock_kill.assert_called_once_with(12345, 0)
 
     def test_no_force_non_interactive_exits_4(self, tmp_path):
         """Non-interactive mode without --force should output INVALID_ARGS exit 4."""
@@ -120,16 +309,28 @@ participants:
             )
 
         dst = str(tmp_path / "config.conf")
-        with patch("nvflare.tool.poc.poc_commands.get_or_create_hidden_nvflare_dir", return_value=str(tmp_path)):
-            with patch("nvflare.tool.poc.poc_commands.get_hidden_nvflare_config_path", return_value=dst):
+        with patch(
+            "nvflare.tool.poc.poc_commands.get_or_create_hidden_nvflare_dir",
+            return_value=str(tmp_path),
+        ):
+            with patch(
+                "nvflare.tool.poc.poc_commands.get_hidden_nvflare_config_path",
+                return_value=dst,
+            ):
                 save_startup_kit_dir_config(workspace, "example_project")
 
         config = CF.parse_file(dst)
         assert config.get("poc.startup_kit").endswith("/example_project/prod_00/admin@nvidia.com")
         assert config.get("poc.workspace") == workspace
 
-        with patch("nvflare.tool.poc.poc_commands.get_or_create_hidden_nvflare_dir", return_value=str(tmp_path)):
-            with patch("nvflare.tool.poc.poc_commands.get_hidden_nvflare_config_path", return_value=dst):
+        with patch(
+            "nvflare.tool.poc.poc_commands.get_or_create_hidden_nvflare_dir",
+            return_value=str(tmp_path),
+        ):
+            with patch(
+                "nvflare.tool.poc.poc_commands.get_hidden_nvflare_config_path",
+                return_value=dst,
+            ):
                 with patch.dict(os.environ, {}, clear=True):
                     assert get_poc_workspace() == workspace
 
@@ -163,7 +364,10 @@ participants:
         cmd_args.he = False
         cmd_args.project_input = str(project_file)
 
-        with patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(workspace)):
+        with patch(
+            "nvflare.tool.poc.poc_commands.get_poc_workspace",
+            return_value=str(workspace),
+        ):
             with pytest.raises(SystemExit) as exc_info:
                 prepare_poc(cmd_args)
 
@@ -179,8 +383,14 @@ participants:
         args.force = False
 
         with (
-            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
-            patch("nvflare.tool.poc.poc_commands._prepare_jobs_dir", side_effect=Exception("boom")),
+            patch(
+                "nvflare.tool.poc.poc_commands.get_poc_workspace",
+                return_value=str(tmp_path),
+            ),
+            patch(
+                "nvflare.tool.poc.poc_commands._prepare_jobs_dir",
+                side_effect=Exception("boom"),
+            ),
             patch("nvflare.tool.cli_output.output_error"),
         ):
             with pytest.raises(SystemExit) as exc_info:
@@ -210,7 +420,10 @@ participants:
 
         with patch("nvflare.tool.poc.poc_commands.get_upload_dir", return_value=transfer_name):
             result = _prepare_jobs_dir(
-                str(jobs_src), str(workspace), config_packages=(project_config, service_config), force=True
+                str(jobs_src),
+                str(workspace),
+                config_packages=(project_config, service_config),
+                force=True,
             )
 
         assert result is True
@@ -233,7 +446,10 @@ participants:
         cmd_args.project_input = ""
 
         with (
-            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=workspace),
+            patch(
+                "nvflare.tool.poc.poc_commands.get_poc_workspace",
+                return_value=workspace,
+            ),
             patch("sys.stdin") as mock_stdin,
             patch("nvflare.tool.cli_output.output_error"),
         ):
@@ -253,11 +469,17 @@ participants:
         args.study = None
 
         with (
-            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch(
+                "nvflare.tool.poc.poc_commands.get_poc_workspace",
+                return_value=str(tmp_path),
+            ),
             patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
             patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
             patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
-            patch("nvflare.tool.poc.poc_commands._start_poc", side_effect=Exception("boom")),
+            patch(
+                "nvflare.tool.poc.poc_commands._start_poc",
+                side_effect=Exception("boom"),
+            ),
             patch("nvflare.tool.cli_output.output_error"),
         ):
             with pytest.raises(SystemExit) as exc_info:
@@ -273,7 +495,10 @@ participants:
         args.ex = None
 
         with (
-            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch(
+                "nvflare.tool.poc.poc_commands.get_poc_workspace",
+                return_value=str(tmp_path),
+            ),
             patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
             patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
             patch("nvflare.tool.poc.poc_commands._stop_poc", side_effect=Exception("boom")),
@@ -281,21 +506,5 @@ participants:
         ):
             with pytest.raises(SystemExit) as exc_info:
                 stop_poc(args)
-
-        assert exc_info.value.code == 5
-
-    def test_clean_poc_raises_when_output_error_is_mocked(self, tmp_path):
-        from nvflare.tool.poc.poc_commands import clean_poc
-
-        args = MagicMock()
-        args.force = True
-
-        with (
-            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
-            patch("nvflare.tool.poc.poc_commands._clean_poc", side_effect=Exception("boom")),
-            patch("nvflare.tool.cli_output.output_error"),
-        ):
-            with pytest.raises(SystemExit) as exc_info:
-                clean_poc(args)
 
         assert exc_info.value.code == 5

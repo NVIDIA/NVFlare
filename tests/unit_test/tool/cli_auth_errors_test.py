@@ -25,20 +25,18 @@ from nvflare.tool import cli_output
 
 def test_auth_hint_for_unknown_study():
     assert cli_mod._auth_hint_from_detail("unknown study 'cancer_research'") == (
-        "Add the study under 'studies:' in project.yml with api_version: 4, reprovision, redeploy or restart the server, then try again."
+        "Verify the study name or create the study with 'nvflare study register', then try again."
     )
 
 
 def test_auth_hint_for_missing_study_mapping():
     assert cli_mod._auth_hint_from_detail("user 'admin@nvidia.com' is not mapped to study 'cancer_research'") == (
-        "Add this user under the study's admins mapping in project.yml, reprovision, redeploy or restart the server, then try again."
+        "Add this user to the study's admins list with 'nvflare study add-user', then try again."
     )
 
 
 def test_auth_hint_for_invalid_study_name():
-    assert cli_mod._auth_hint_from_detail("invalid study name 'bad study'") == (
-        "Use a valid study name in project.yml, reprovision, redeploy or restart the server, then try again."
-    )
+    assert cli_mod._auth_hint_from_detail("invalid study name 'bad study'") == ("Use a valid study name and try again.")
 
 
 def test_auth_hint_defaults_to_credentials():
@@ -54,9 +52,7 @@ def test_auth_hint_uses_cert_specific_guidance_for_cert_error():
 def test_auth_hint_uses_structured_auth_code():
     assert cli_mod._auth_hint_from_detail(
         "Incorrect user name or password", auth_code="AUTH_STUDY_USER_NOT_MAPPED"
-    ) == (
-        "Add this user under the study's admins mapping in project.yml, reprovision, redeploy or restart the server, then try again."
-    )
+    ) == ("Add this user to the study's admins list with 'nvflare study add-user', then try again.")
 
 
 def test_run_uses_study_specific_auth_hint_in_json_mode(capsys):
@@ -82,7 +78,7 @@ def test_run_uses_study_specific_auth_hint_in_json_mode(capsys):
     assert exc_info.value.code == 2
     payload = json.loads(capsys.readouterr().out)
     assert payload["error_code"] == "AUTH_FAILED"
-    assert payload["hint"].startswith("Add the study under 'studies:'")
+    assert payload["hint"].startswith("Verify the study name or create the study")
 
 
 def test_run_uses_cert_specific_hint_for_error_cert_in_json_mode(capsys):

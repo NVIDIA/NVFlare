@@ -22,6 +22,7 @@ import threading
 from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, JobConstants, SiteType, SystemConfigs
 from nvflare.apis.overseer_spec import SP
 from nvflare.apis.workspace import Workspace
+from nvflare.app_opt.job_launcher.workspace_cell_transfer import download_workspace, upload_results_safely
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
@@ -56,6 +57,7 @@ def main(args):
         args.client_config = os.path.join(config_folder, JobConstants.CLIENT_JOB_CONFIG)
     args.config_folder = config_folder
     args.env = os.path.join("config", "environment.json")
+    download_workspace(args, secure_train)
     workspace = Workspace(args.workspace, args.client_name, config_folder)
     set_stats_pool_config_for_job(workspace, args.job_id)
 
@@ -137,7 +139,9 @@ def main(args):
         security_close()
         err = create_stats_pool_files_for_job(workspace, args.job_id)
         if err:
-            logger.warning(err)
+            if logger:
+                logger.warning(err)
+        upload_results_safely(args, secure_train, log=logger)
 
 
 def parse_arguments():
@@ -156,7 +160,6 @@ def parse_arguments():
     parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
     parser.add_argument(
         "--parent_conn_sec",
-        "-pcs",
         type=str,
         help="parent conn security",
         required=False,

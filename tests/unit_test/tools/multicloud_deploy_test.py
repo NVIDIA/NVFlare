@@ -27,7 +27,7 @@ SPEC.loader.exec_module(DEPLOY_MODULE)
 
 
 class TestPatchResourcesJson:
-    def test_replaces_process_launcher_and_writes_study_pvc_file(self, tmp_path):
+    def test_replaces_process_launcher_and_writes_study_pvc_file_to_local_workspace(self, tmp_path):
         kit_dir = tmp_path
         local_dir = kit_dir / "local"
         local_dir.mkdir()
@@ -54,9 +54,10 @@ class TestPatchResourcesJson:
         assert component["id"] == "k8s_launcher"
         assert component["path"] == "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
         assert component["args"]["namespace"] == "nvflare-client-1"
-        assert component["args"]["workspace_pvc"] == "nvflws"
+        assert "workspace_pvc" not in component["args"]
+        assert component["args"]["study_data_pvc_file_path"] == "/var/tmp/nvflare/workspace/local/study_data_pvc.yaml"
         assert component["args"]["security_context"] == {"seLinuxOptions": {"type": "spc_t"}}
-        assert (kit_dir / "etc" / "study_data_pvc.yaml").read_text() == "default: nvfldata\n"
+        assert (kit_dir / "local" / "study_data_pvc.yaml").read_text() == "default: nvfldata\n"
 
     def test_raises_when_process_launcher_component_is_missing(self, tmp_path):
         kit_dir = tmp_path

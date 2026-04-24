@@ -18,96 +18,96 @@ import pytest
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
-from nvflare.app_common.resource_managers.be_resource_manager import BEResourceManager
+from nvflare.app_common.resource_managers.passthrough_resource_manager import PassthroughResourceManager
 
 
 def _fl_ctx():
     return FLContext()
 
 
-class TestBEResourceManagerIsSpec:
+class TestPassthroughResourceManagerIsSpec:
     def test_is_subclass_of_resource_manager_spec(self):
-        assert issubclass(BEResourceManager, ResourceManagerSpec)
+        assert issubclass(PassthroughResourceManager, ResourceManagerSpec)
 
     def test_instance_is_resource_manager_spec(self):
-        assert isinstance(BEResourceManager(), ResourceManagerSpec)
+        assert isinstance(PassthroughResourceManager(), ResourceManagerSpec)
 
 
-class TestBEResourceManagerCheckResources:
+class TestPassthroughResourceManagerCheckResources:
     def test_returns_true(self):
-        ok, _ = BEResourceManager().check_resources({"num_of_gpus": 1}, _fl_ctx())
+        ok, _ = PassthroughResourceManager().check_resources({"num_of_gpus": 1}, _fl_ctx())
         assert ok is True
 
     def test_returns_string_token(self):
-        _, token = BEResourceManager().check_resources({}, _fl_ctx())
+        _, token = PassthroughResourceManager().check_resources({}, _fl_ctx())
         assert isinstance(token, str)
 
     def test_token_is_valid_uuid(self):
-        _, token = BEResourceManager().check_resources({}, _fl_ctx())
+        _, token = PassthroughResourceManager().check_resources({}, _fl_ctx())
         uuid.UUID(token)  # raises if invalid
 
     def test_tokens_are_unique_per_call(self):
-        mgr = BEResourceManager()
+        mgr = PassthroughResourceManager()
         _, t1 = mgr.check_resources({}, _fl_ctx())
         _, t2 = mgr.check_resources({}, _fl_ctx())
         assert t1 != t2
 
     def test_empty_requirement_approved(self):
-        ok, _ = BEResourceManager().check_resources({}, _fl_ctx())
+        ok, _ = PassthroughResourceManager().check_resources({}, _fl_ctx())
         assert ok is True
 
     def test_non_dict_raises_type_error(self):
         with pytest.raises(TypeError):
-            BEResourceManager().check_resources("not-a-dict", _fl_ctx())
+            PassthroughResourceManager().check_resources("not-a-dict", _fl_ctx())
 
     def test_list_raises_type_error(self):
         with pytest.raises(TypeError):
-            BEResourceManager().check_resources([1, 2], _fl_ctx())
+            PassthroughResourceManager().check_resources([1, 2], _fl_ctx())
 
     def test_none_raises_type_error(self):
         with pytest.raises(TypeError):
-            BEResourceManager().check_resources(None, _fl_ctx())
+            PassthroughResourceManager().check_resources(None, _fl_ctx())
 
 
-class TestBEResourceManagerCancelResources:
+class TestPassthroughResourceManagerCancelResources:
     def test_returns_none(self):
-        result = BEResourceManager().cancel_resources({"num_of_gpus": 1}, "tok", _fl_ctx())
+        result = PassthroughResourceManager().cancel_resources({"num_of_gpus": 1}, "tok", _fl_ctx())
         assert result is None
 
     def test_does_not_raise(self):
-        BEResourceManager().cancel_resources({}, "tok", _fl_ctx())
+        PassthroughResourceManager().cancel_resources({}, "tok", _fl_ctx())
 
 
-class TestBEResourceManagerAllocateResources:
+class TestPassthroughResourceManagerAllocateResources:
     def test_returns_empty_dict(self):
-        result = BEResourceManager().allocate_resources({"num_of_gpus": 2}, "tok", _fl_ctx())
+        result = PassthroughResourceManager().allocate_resources({"num_of_gpus": 2}, "tok", _fl_ctx())
         assert result == {}
 
     def test_returns_dict_type(self):
-        result = BEResourceManager().allocate_resources({}, "tok", _fl_ctx())
+        result = PassthroughResourceManager().allocate_resources({}, "tok", _fl_ctx())
         assert isinstance(result, dict)
 
 
-class TestBEResourceManagerFreeResources:
+class TestPassthroughResourceManagerFreeResources:
     def test_returns_none(self):
-        result = BEResourceManager().free_resources({"num_of_gpus": 1}, "tok", _fl_ctx())
+        result = PassthroughResourceManager().free_resources({"num_of_gpus": 1}, "tok", _fl_ctx())
         assert result is None
 
     def test_does_not_raise(self):
-        BEResourceManager().free_resources({}, "tok", _fl_ctx())
+        PassthroughResourceManager().free_resources({}, "tok", _fl_ctx())
 
 
-class TestBEResourceManagerReportResources:
+class TestPassthroughResourceManagerReportResources:
     def test_returns_empty_dict(self):
-        assert BEResourceManager().report_resources(_fl_ctx()) == {}
+        assert PassthroughResourceManager().report_resources(_fl_ctx()) == {}
 
     def test_returns_dict_type(self):
-        assert isinstance(BEResourceManager().report_resources(_fl_ctx()), dict)
+        assert isinstance(PassthroughResourceManager().report_resources(_fl_ctx()), dict)
 
 
-class TestBEResourceManagerLifecycle:
+class TestPassthroughResourceManagerLifecycle:
     def test_check_allocate_free_cycle(self):
-        mgr = BEResourceManager()
+        mgr = PassthroughResourceManager()
         ctx = _fl_ctx()
         req = {"num_of_gpus": 4}
 
@@ -120,7 +120,7 @@ class TestBEResourceManagerLifecycle:
         mgr.free_resources(allocated, token, ctx)
 
     def test_check_cancel_cycle(self):
-        mgr = BEResourceManager()
+        mgr = PassthroughResourceManager()
         ctx = _fl_ctx()
         ok, token = mgr.check_resources({"num_of_gpus": 2}, ctx)
         assert ok is True

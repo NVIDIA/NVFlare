@@ -574,7 +574,7 @@ Retain with stderr warning. Underscore alias `authz_preview` accepted for backwa
 
 Add missing operations to the existing `nvflare job` subcommand:
 
-All server-connected `nvflare job` commands require a startup kit. Each accepts `[--startup-target poc|prod | --startup-kit <dir>]`; see §Startup Kit Resolution for the full lookup order.
+All server-connected `nvflare job` commands require a startup kit to be resolvable. They accept `--startup-target poc|prod` and `--startup-kit <dir>` as mutually exclusive explicit selectors; see §Startup Kit Resolution for the full lookup order, including env/config fallback.
 
 ```text
 # Job lifecycle (server must be running)
@@ -601,7 +601,7 @@ nvflare recipe list [--framework <framework>]
 
 ### Add `nvflare network`
 
-All `nvflare network` commands query the server's cell network topology over an admin session and require a startup kit. Each accepts `[--startup-target poc|prod | --startup-kit <dir>]`; see §Startup Kit Resolution for the full lookup order.
+All `nvflare network` commands query the server's cell network topology over an admin session and require a startup kit to be resolvable. They accept `--startup-target poc|prod` and `--startup-kit <dir>` as mutually exclusive explicit selectors; see §Startup Kit Resolution for the full lookup order, including env/config fallback.
 
 ```text
 nvflare network cells        [--startup-target poc|prod | --startup-kit <dir>]
@@ -649,7 +649,7 @@ All `nvflare network` commands support `--schema`. User-supplied arguments are v
 
 ## Add `nvflare system`
 
-All `nvflare system` commands connect to the server and require a startup kit. Each accepts `[--startup-target poc|prod | --startup-kit <dir>]`; see §Startup Kit Resolution for the full lookup order.
+All `nvflare system` commands connect to the server and require a startup kit to be resolvable. They accept `--startup-target poc|prod` and `--startup-kit <dir>` as mutually exclusive explicit selectors; see §Startup Kit Resolution for the full lookup order, including env/config fallback.
 
 ```text
 nvflare system status        [server|client] [client_names...] [--startup-target poc|prod | --startup-kit <dir>]
