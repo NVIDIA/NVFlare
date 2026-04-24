@@ -65,16 +65,3 @@ class TestWorkspace:
                 os.environ.pop(n, None)
 
             assert result == expected
-
-    def test_get_site_config_file_path(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root_dir = os.path.join(tmp_dir, "config")
-            os.makedirs(root_dir, exist_ok=True)
-            os.makedirs(os.path.join(root_dir, "startup"), exist_ok=True)
-            os.makedirs(os.path.join(root_dir, "local"), exist_ok=True)
-
-            ws = Workspace(root_dir)
-
-            assert ws.get_site_config_file_path() == os.path.join(
-                root_dir, WorkspaceConstants.SITE_FOLDER_NAME, WorkspaceConstants.SITE_CONFIG
-            )

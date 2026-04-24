@@ -452,7 +452,6 @@ class WorkspaceConstants:
     DEFAULT_AUTHORIZATION_CONFIG = AUTHORIZATION_CONFIG + ".default"
     RESOURCES_CONFIG = "resources.json"
     DEFAULT_RESOURCES_CONFIG = RESOURCES_CONFIG + ".default"
-    SITE_CONFIG = "site_config.json"
     PRIVACY_CONFIG = "privacy.json"
     SAMPLE_PRIVACY_CONFIG = PRIVACY_CONFIG + ".sample"
     JOB_RESOURCES_CONFIG = "job_resources.json"

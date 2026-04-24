@@ -37,13 +37,13 @@ from nvflare.private.defs import (
     CellChannel,
     CellChannelTopic,
     CellMessageHeaderKeys,
+    ClientRegMsgKey,
     ClientType,
     SpecialTaskName,
     new_cell_message,
 )
 from nvflare.private.fed.authenticator import Authenticator
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-from nvflare.private.fed.utils.site_config import load_site_config_from_workspace
 from nvflare.security.logging import secure_format_exception
 
 from .utils import determine_parent_fqcn
@@ -230,11 +230,17 @@ class Communicator:
 
         return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, Shareable())
 
-    def _load_site_config_for_registration(self, fl_ctx: FLContext):
-        workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        site_config, error = load_site_config_from_workspace(workspace)
-        if error:
-            self.logger.warning(f"site config will not be sent to server: {error}")
+    def _get_site_config_for_registration(self, fl_ctx: FLContext):
+        client_config = fl_ctx.get_prop(FLContextKey.CLIENT_CONFIG, self.client_config)
+        if not isinstance(client_config, dict):
+            return None
+
+        site_config = client_config.get(ClientRegMsgKey.SITE_CONFIG)
+        if site_config is not None and not isinstance(site_config, dict):
+            self.logger.warning(
+                f"site config will not be sent to server: expected dict but got {type(site_config)}"
+            )
+            return None
         return site_config
 
     def client_registration(self, client_name, project_name, fl_ctx: FLContext):
@@ -317,7 +323,7 @@ class Communicator:
             cert_file = client_config.get(SecureTrainConst.SSL_CERT)
             root_cert_file = client_config.get(SecureTrainConst.SSL_ROOT_CERT)
 
-        site_config = self._load_site_config_for_registration(fl_ctx)
+        site_config = self._get_site_config_for_registration(fl_ctx)
 
         authenticator = Authenticator(
             cell=self.cell,

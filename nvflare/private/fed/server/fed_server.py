@@ -70,7 +70,6 @@ from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.private.fed.utils.identity_utils import TokenVerifier
-from nvflare.private.fed.utils.site_config import validate_site_config
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.fed_event import ServerFedEventRunner
 
@@ -650,9 +649,10 @@ class FederatedServer(BaseServer):
         if site_config is None:
             return None
 
-        site_config, error = validate_site_config(site_config)
-        if error:
-            self.logger.warning(f"dropping site config from client {client_name}: {error}")
+        if not isinstance(site_config, dict):
+            self.logger.warning(
+                f"dropping site config from client {client_name}: expected dict but got {type(site_config)}"
+            )
             return None
 
         return site_config
