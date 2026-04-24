@@ -68,17 +68,17 @@ Register a new study and enroll its initial set of sites.
 .. code-block:: shell
 
    # project_admin: register with per-org site groupings
-   nvflare study register --name cancer-research \
+   nvflare study register cancer-research \
        --site-org org_a:hospital-1 \
        --site-org org_a:hospital-2 \
        --site-org org_b:clinic-1
 
    # org_admin: register and enroll own org's sites
-   nvflare study register --name cancer-research --sites hospital-1,hospital-2
+   nvflare study register cancer-research --sites hospital-1,hospital-2
 
 Options:
 
-- ``--name <study>`` (required): name of the study to create.
+- ``<name>`` (required positional): name of the study to create.
 - ``--site-org <org>:<site>`` (project_admin): one or more ``org:site`` pairs; repeat the flag
   for multiple entries.
 - ``--sites <site>[,<site>...]`` (org_admin): comma-separated list of sites in the caller's
@@ -93,7 +93,7 @@ Display the current definition of a study, including enrolled sites and admin us
 
 .. code-block:: shell
 
-   nvflare study show --name cancer-research
+   nvflare study show cancer-research
 
 Returns the site-org mapping and the list of admins for the study.
 
@@ -119,7 +119,7 @@ running under the study.
 
 .. code-block:: shell
 
-   nvflare study remove --name cancer-research
+   nvflare study remove cancer-research
 
 ***********************
 Add Sites to a Study
@@ -130,11 +130,11 @@ Enroll additional sites in an existing study.
 .. code-block:: shell
 
    # project_admin
-   nvflare study add-site --name cancer-research \
+   nvflare study add-site cancer-research \
        --site-org org_b:clinic-2
 
    # org_admin
-   nvflare study add-site --name cancer-research --sites clinic-2
+   nvflare study add-site cancer-research --sites clinic-2
 
 Options match ``register`` for ``--site-org`` / ``--sites``.
 
@@ -147,11 +147,11 @@ Remove sites from a study. The study itself is not deleted.
 .. code-block:: shell
 
    # project_admin
-   nvflare study remove-site --name cancer-research \
+   nvflare study remove-site cancer-research \
        --site-org org_b:clinic-2
 
    # org_admin
-   nvflare study remove-site --name cancer-research --sites clinic-2
+   nvflare study remove-site cancer-research --sites clinic-2
 
 ****************************
 Add a User to a Study
@@ -161,10 +161,10 @@ Add an existing admin user to a study's admin list.
 
 .. code-block:: shell
 
-   nvflare study add-user --study cancer-research --user trainer@org_a.com
+   nvflare study add-user cancer-research trainer@org_a.com
 
-- ``--study <study>`` (required): the study to update.
-- ``--user <email>`` (required): the admin user to add.
+- ``<study>`` (required positional): the study to update.
+- ``<user>`` (required positional): the admin user to add.
 
 *******************************
 Remove a User from a Study
@@ -174,7 +174,7 @@ Remove a user from a study's admin list. The user is not deleted from the deploy
 
 .. code-block:: shell
 
-   nvflare study remove-user --study cancer-research --user trainer@org_a.com
+   nvflare study remove-user cancer-research trainer@org_a.com
 
 *****************************
 Output Format
