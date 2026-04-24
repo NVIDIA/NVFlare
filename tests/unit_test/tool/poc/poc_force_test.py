@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import errno
 import os
 from unittest.mock import MagicMock, patch
 
@@ -210,6 +211,23 @@ class TestPocForce:
                 {SC.FLARE_SERVER: "server"},
                 {"name": "example_project"},
             )
+
+    def test_is_poc_running_true_for_eperm_pid(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import is_poc_running
+
+        workspace = tmp_path / "poc_ws_eperm_pid"
+        server_dir = workspace / "example_project" / "prod_00" / "server"
+        server_dir.mkdir(parents=True)
+        (server_dir / "daemon_pid.fl").write_text("12345")
+
+        with patch("os.kill", side_effect=OSError(errno.EPERM, "permission denied")) as mock_kill:
+            assert is_poc_running(
+                str(workspace),
+                {SC.FLARE_SERVER: "server"},
+                {"name": "example_project"},
+            )
+
+        mock_kill.assert_called_once_with(12345, 0)
 
     def test_no_force_non_interactive_exits_4(self, tmp_path):
         """Non-interactive mode without --force should output INVALID_ARGS exit 4."""

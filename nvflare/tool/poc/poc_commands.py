@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import errno
 import json
 import os
 import random
@@ -1140,7 +1141,9 @@ def _is_live_pid_file(pid_file: str) -> bool:
     try:
         os.kill(pid, 0)
         return True
-    except OSError:
+    except OSError as e:
+        if e.errno == errno.EPERM:
+            return True
         return False
 
 
