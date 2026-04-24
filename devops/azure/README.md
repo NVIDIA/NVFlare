@@ -53,6 +53,14 @@ python3 -m pip install pyyaml
 You also need an NVFlare container image pushed to Azure Container
 Registry or another registry that AKS can pull from.
 
+Quick ACR example:
+
+```bash
+az acr login --name <acr-name>
+docker tag nvflare-job:latest <acr>.azurecr.io/<repo>:<tag>
+docker push <acr>.azurecr.io/<repo>:<tag>
+```
+
 ### 2. Create the AKS cluster
 
 ```bash
@@ -116,12 +124,52 @@ Optional dry run:
 python3 devops/multicloud/deploy.py --config devops/multicloud/azure-server.yaml --dry-run up
 ```
 
+## Common Ops
+
+Check parent pod status:
+
+```bash
+kubectl get pods -n nvflare-server
+kubectl get pods -n nvflare-client-1
+kubectl describe pod <pod-name> -n nvflare-server
+kubectl logs <pod-name> -n nvflare-server
+```
+
+Example `meta.json` launcher settings for AKS job pods:
+
+```json
+{
+  "name": "hello-numpy-k8s",
+  "min_clients": 1,
+  "deploy_map": {
+    "app": ["@ALL"]
+  },
+  "resource_spec": {},
+  "launcher_spec": {
+    "default": {
+      "k8s": {
+        "image": "mynvflareregistry.azurecr.io/nvflare/nvflare:2.7.2",
+        "cpu": "1000m",
+        "memory": "4Gi"
+      }
+    }
+  }
+}
+```
+
+Use `cpu` and `memory` alone for the common case. NVFlare treats them as
+the limit values and, when `cpu_request` or `memory_request` is omitted,
+mirrors the same values into the pod requests. Only add
+`cpu_request`/`memory_request` when you explicitly want requests smaller
+than limits.
+
 ## Notes
 
 - The server is exposed through an Azure `LoadBalancer` service backed by
   a reserved Azure Public IP.
 - `managed-csi` is used for both the site workspace PVC and the study
   data PVC in the current Azure deployment path.
+- K8s-launched job pods must specify `launcher_spec.<site>.k8s.image`.
 - For AKS Automatic job pods launched via `K8sJobLauncher`, specify
   `launcher_spec.<site>.k8s.cpu` and `launcher_spec.<site>.k8s.memory`
   for predictable scheduling. If `cpu_request` or `memory_request` is

@@ -592,7 +592,7 @@ def _release_ip_azure(ip_name: str, resource_group: str):
         )
     print(f"Releasing Azure Public IP {ip_name} ...")
     r = run(
-        ["az", "network", "public-ip", "delete", "--resource-group", resource_group, "--name", ip_name, "--yes"],
+        ["az", "network", "public-ip", "delete", "--resource-group", resource_group, "--name", ip_name],
         check=False,
     )
     if r.returncode != 0:
