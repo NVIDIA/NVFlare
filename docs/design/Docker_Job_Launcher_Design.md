@@ -109,7 +109,7 @@ SJ/CJ containers do not receive the Docker socket, which limits lateral movement
 
 ### Resource Management
 
-Docker mode should use **`BEResourceManager` (Best-Effort)** — it approves every resource request unconditionally; no pre-scheduling check is done at scheduling time. If a requested resource (e.g. GPU) is unavailable, the job container fails at startup.
+Docker mode should use **`PassthroughResourceManager` — it approves every resource request unconditionally; no pre-scheduling check is done at scheduling time. If a requested resource (e.g. GPU) is unavailable, the job container fails at startup.
 
 `GPUResourceManager` is not suitable for Docker mode: it would require the SP/CP container itself to have GPU passthrough just to count available GPUs, but SP/CP never uses GPUs — it only manages the federation.
 
@@ -120,7 +120,7 @@ The default provisioning injects `GPUResourceManager`. If a site is **exclusivel
   "components": [
     {
       "id": "resource_manager",
-      "path": "nvflare.app_common.resource_managers.be_resource_manager.BEResourceManager",
+      "path": "nvflare.app_common.resource_managers.passthrough_resource_manager.PassthroughResourceManager",
       "args": {}
     }
   ]
@@ -129,7 +129,7 @@ The default provisioning injects `GPUResourceManager`. If a site is **exclusivel
 
 Remove the `resource_consumer` component (`GPUResourceConsumer`) as well — it is only needed alongside `GPUResourceManager`.
 
-If a job package is intended to be portable across deployments and carries both Docker- and process-related resource entries, the site's configured launcher still determines which mode is active at runtime. On a Docker-configured site, prefer `BEResourceManager` because the Docker launcher bypasses the process-mode GPU scheduler and passes GPU settings directly via `device_requests`.
+If a job package is intended to be portable across deployments and carries both Docker- and process-related resource entries, the site's configured launcher still determines which mode is active at runtime. On a Docker-configured site, prefer `PassthroughResourceManager` because the Docker launcher bypasses the process-mode GPU scheduler and passes GPU settings directly via `device_requests`.
 
 **Future:** A `DockerResourceManager` that queries the host GPU inventory without needing SP/CP GPU passthrough is a natural follow-up.
 
@@ -639,13 +639,12 @@ single flag sets everything needed for that mode:
 | `mode` | Launcher | Resource manager | Resource consumer | Start script |
 |---|---|---|---|---|
 | `process` | `ProcessJobLauncher` | `GPUResourceManager` | `GPUResourceConsumer` | `start.sh` (unchanged) |
-| `docker` | `DockerJobLauncher` | `BEResourceManager` | none | `start_docker.sh` |
-| `k8s` | `K8sJobLauncher` | `BEResourceManager` | none | Helm charts |
+| `docker` | `DockerJobLauncher` | `PassthroughResourceManager` | none | `start_docker.sh` |
+| `k8s` | `K8sJobLauncher` | `PassthroughResourceManager` | none | Helm charts |
 
 The tool removes **both** `GPUResourceManager` and `GPUResourceConsumer` for Docker/K8s mode
-and replaces them with `BEResourceManager` (to be renamed `PassThroughResourceManager` in a
-follow-up PR). This
-is important: `GPUResourceConsumer` sets `CUDA_VISIBLE_DEVICES` in the SP/CP process
+and replaces them with `PassthroughResourceManager`. This is important: `GPUResourceConsumer` sets
+`CUDA_VISIBLE_DEVICES` in the SP/CP process
 environment, which is correct for process mode (subprocess inherits it) but wrong for
 Docker/K8s mode (SJ/CJ runs in a separate container/pod with its own environment — GPU
 assignment is handled by `device_requests` / pod resource limits instead). Site admin cannot
@@ -679,7 +678,7 @@ Neither is universally better — the right choice depends on the deployment con
 | Job isolation | Per-job container; each job gets its own image | Shared SP/CP environment; all jobs see the same Python packages |
 | Custom environments | Different image (Python version, CUDA, ML framework) per job | Must match SP/CP environment |
 | Startup overhead | Container launch (~seconds, longer with image pull) | Subprocess (~instant) |
-| GPU access | Via Docker `device_requests`; requires `BEResourceManager` | Direct; `GPUResourceManager` + `GPUResourceConsumer` assign `CUDA_VISIBLE_DEVICES` |
+| GPU access | Via Docker `device_requests`; requires `PassthroughResourceManager` | Direct; `GPUResourceManager` + `GPUResourceConsumer` assign `CUDA_VISIBLE_DEVICES` |
 | File permissions | Requires `--user` alignment between SP/CP and SJ/CJ | Native; no extra setup |
 | Operational complexity | Higher (Docker network, socket mount, image management, container lifecycle) | Lower |
 | Security posture | Elevated (socket access is root-equivalent with standard Docker) | Least privilege (normal OS user) |
