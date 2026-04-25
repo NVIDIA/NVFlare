@@ -234,14 +234,15 @@ Use ``nvflare poc clean`` to remove the POC workspace:
 Options:
 
 - ``-debug, --debug``: debug mode.
-- ``--force``: remove the workspace without an interactive confirmation prompt.
+- ``--force``: stop a running local POC system before removing the workspace.
 - ``--schema``: print command schema as JSON and exit.
 
 Behavior notes:
 
-- The workspace is removed only when it is a valid POC directory and the system
-  is not still running.
-- If the POC system is still running, stop it first with ``nvflare poc stop``.
+- The workspace is removed only when it is a valid POC directory.
+- If the POC system is still running, ``nvflare poc clean`` fails with a hint to
+  stop it first. Use ``nvflare poc clean --force`` to stop the local POC system
+  and then remove the workspace in one command.
 
 *********************
 Workspace Configuration

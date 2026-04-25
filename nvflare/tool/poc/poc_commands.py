@@ -989,7 +989,12 @@ def _get_running_poc_context(workspace: str):
 
 
 def _ensure_poc_stopped(
-    workspace: str, timeout_in_sec: int = 30, poll_interval: float = 1.0, project_config=None, service_config=None
+    workspace: str,
+    timeout_in_sec: int = 30,
+    poll_interval: float = 1.0,
+    project_config=None,
+    service_config=None,
+    reason: str = "recreating the workspace",
 ):
     if project_config is None or service_config is None:
         running_poc = _get_running_poc_context(workspace)
@@ -999,7 +1004,7 @@ def _ensure_poc_stopped(
 
     from nvflare.tool.cli_output import print_human
 
-    print_human("Existing POC system is still running; stopping it before recreating the workspace.")
+    print_human(f"Existing POC system is still running; stopping it before {reason}.")
     _stop_poc(workspace, project_config=project_config, service_config=service_config)
 
     deadline = time.time() + timeout_in_sec
@@ -1447,8 +1452,16 @@ def _run_poc(
 
 
 def clean_poc(cmd_args):
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        _poc_sub_cmd_parsers.get(CMD_CLEAN_POC),
+        "nvflare poc clean",
+        ["nvflare poc clean", "nvflare poc clean --force"],
+        sys.argv[1:],
+    )
     poc_workspace = get_poc_workspace()
-    _clean_poc(poc_workspace)
+    _clean_poc(poc_workspace, force=getattr(cmd_args, "force", False))
 
 
 def _clean_poc_config(poc_workspace: str):
@@ -1495,24 +1508,35 @@ def _is_live_pid_file(pid_file: str) -> bool:
         return False
 
 
-def _clean_poc(poc_workspace: str):
+def _clean_poc(poc_workspace: str, force: bool = False):
     if os.path.isdir(poc_workspace):
         project_config, service_config = setup_service_config(poc_workspace)
         if project_config is None:
             raise CLIException(f"{poc_workspace} is not valid poc directory")
         if is_poc_ready(poc_workspace, service_config, project_config):
-            if not is_poc_running(poc_workspace, service_config, project_config):
-                from nvflare.tool.cli_output import print_human
+            if is_poc_running(poc_workspace, service_config, project_config):
+                if force:
+                    _ensure_poc_stopped(
+                        poc_workspace,
+                        project_config=project_config,
+                        service_config=service_config,
+                        reason="cleaning the workspace",
+                    )
+                else:
+                    raise CLIException("system is still running, please stop the system first.")
 
-                try:
-                    shutil.rmtree(poc_workspace)
-                finally:
-                    _clean_poc_config(poc_workspace)
-
-                print_human(f"{poc_workspace} is removed")
-                return True
-            else:
+            if is_poc_running(poc_workspace, service_config, project_config):
                 raise CLIException("system is still running, please stop the system first.")
+
+            from nvflare.tool.cli_output import print_human
+
+            try:
+                shutil.rmtree(poc_workspace)
+            finally:
+                _clean_poc_config(poc_workspace)
+
+            print_human(f"{poc_workspace} is removed")
+            return True
         else:
             raise CLIException(f"{poc_workspace} is not valid poc directory")
     else:
@@ -1657,7 +1681,10 @@ def define_add_parser(poc_parser):
 
 def define_clean_parser(poc_parser):
     clean_parser = poc_parser.add_parser(CMD_CLEAN_POC, help="clean up poc workspace")
+    _poc_sub_cmd_parsers[CMD_CLEAN_POC] = clean_parser
     clean_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    clean_parser.add_argument("--force", action="store_true", help="stop a running POC system before cleanup")
+    clean_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
 def define_start_parser(poc_parser):

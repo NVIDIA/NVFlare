@@ -286,6 +286,9 @@ class TestPocForce:
         args = root.parse_args(["poc", "prepare", "--force"])
         assert args.force is True
 
+        args = root.parse_args(["poc", "clean", "--force"])
+        assert args.force is True
+
     def test_prepare_jobs_dir_force_flag(self):
         """poc prepare-jobs-dir parser should accept --force flag."""
         import argparse
@@ -974,6 +977,37 @@ poc {{
         assert config["startup_kits"]["entries"] == {}
         assert "poc" not in config or "workspace" not in config["poc"]
         print_human.assert_not_called()
+
+    def test_clean_poc_force_stops_running_system_before_removal(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import _clean_poc
+
+        workspace = tmp_path / "poc"
+        workspace.mkdir()
+        project_config = {"name": "example_project"}
+        service_config = {SC.FLARE_SERVER: "server"}
+
+        with (
+            patch(
+                "nvflare.tool.poc.poc_commands.setup_service_config",
+                return_value=(project_config, service_config),
+            ),
+            patch("nvflare.tool.poc.poc_commands.is_poc_ready", return_value=True),
+            patch("nvflare.tool.poc.poc_commands.is_poc_running", side_effect=[True, False]),
+            patch("nvflare.tool.poc.poc_commands._ensure_poc_stopped") as ensure_stopped,
+            patch("nvflare.tool.poc.poc_commands.shutil.rmtree") as rmtree,
+            patch("nvflare.tool.poc.poc_commands._clean_poc_config") as clean_config,
+            patch("nvflare.tool.cli_output.print_human"),
+        ):
+            assert _clean_poc(str(workspace), force=True) is True
+
+        ensure_stopped.assert_called_once_with(
+            str(workspace),
+            project_config=project_config,
+            service_config=service_config,
+            reason="cleaning the workspace",
+        )
+        rmtree.assert_called_once_with(str(workspace))
+        clean_config.assert_called_once_with(str(workspace))
 
     def test_save_startup_kit_dir_config_rejects_invalid_project_yaml(self, tmp_path):
         from nvflare.tool.poc.poc_commands import save_startup_kit_dir_config

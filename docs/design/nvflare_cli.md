@@ -133,7 +133,7 @@ The JSON output shape and error codes defined here become the MCP tool schemas i
 | Command | Subcommands | Agent Readiness Status |
 | --- | --- | --- |
 | `nvflare simulator` | — | Deprecated — retain with stderr warning; use Job Recipe SimEnv directly (`python job.py`) |
-| `nvflare poc` | `prepare`, `start`, `stop`, `clean`, `add user`, `add site` | Add JSON output, exit codes, `--schema`; add `--force` to `prepare` for workspace deletion prompt bypass; register generated user and site kits in the shared startup kit registry |
+| `nvflare poc` | `prepare`, `start`, `stop`, `clean`, `add user`, `add site` | Add JSON output, exit codes, `--schema`; add `--force` to `prepare` for workspace deletion prompt bypass and to `clean` for stop-before-cleanup; register generated user and site kits in the shared startup kit registry |
 | `nvflare kit` | `add`, `use`, `show`, `list`, `remove` | New local startup kit registry; no server connection |
 | `nvflare study` | `register`, `show`, `list`, `remove`, `add-site`, `remove-site`, `add-user`, `remove-user` | Add multi-study lifecycle CLI using the active startup kit |
 | `nvflare provision` | — | Add JSON output, `--schema`, `--force` for Y/N prompts; restore pre-2.7.0 default: no args = generate `project.yml` |
@@ -740,7 +740,8 @@ restarted.
 
 Behavior:
 
-1. Stop if the POC system is still running, as today.
+1. If the POC system is still running, fail unless `--force` is provided. With `--force`,
+   stop the local POC system before cleanup.
 2. Remove the POC workspace.
 3. Remove startup kit entries whose canonical paths are under the canonical POC workspace
    path.
@@ -936,6 +937,7 @@ Must emit `server_url` in the JSON data field when server accepts connections.
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `-debug`, `--debug` | flag | No | — | Debug mode |
+| `--force` | flag | No | — | Stop a running POC system before cleanup |
 | `--schema` | flag | No | — | Print command schema and exit |
 
 #### `nvflare poc add user`
@@ -1106,7 +1108,7 @@ Retain with stderr warning. Underscore alias `authz_preview` accepted for backwa
 | `poc add site` | Add | Add | Add | Add POC site startup kit, register it in `startup_kits.entries`, and update POC service metadata |
 | `poc start` | Add | Add | Add | `server_url` in JSON data field when ready |
 | `poc stop` | Add | Add | Add | — |
-| `poc clean` | Add | Add | Add | — |
+| `poc clean` | Add | Add | Add | Add `--force` to stop a running local POC system before cleanup |
 | `kit add/use/show/list/remove` | Add | Add | Add | Manage local startup kit registry; no server connection |
 | `job create` | — | — | — | Deprecated |
 | `job submit` | Add | Add | Add | Returns `job_id` immediately |
