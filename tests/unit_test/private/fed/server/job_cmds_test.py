@@ -24,7 +24,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode, ServerCommandKey, WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.shareable import Shareable
-from nvflare.fuel.hci.proto import MetaKey
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.private.fed.server import cmd_utils as cmd_utils_module
@@ -538,6 +538,27 @@ def test_get_job_log_reads_server_log_from_stored_workspace_when_live_log_is_gon
     engine.job_def_manager.get_storage_component.assert_called_once()
 
 
+def test_get_job_log_reads_nested_server_log_from_stored_workspace(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager.get_storage_component.return_value = _zip_bytes(
+        {"server/log.txt": "stored server log\n", "site-1/log.txt": "stored client log\n"}
+    )
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "server"])
+
+    payload, _meta = conn.dicts[0]
+    assert payload["logs"]["server"] == "stored server log\n"
+
+
+def test_find_server_log_member_does_not_use_client_log():
+    assert JobCommandModule._find_server_log_member(["site-1/log.txt"]) is None
+    assert JobCommandModule._find_server_log_member(["workspace/server/log.txt"]) == "workspace/server/log.txt"
+
+
 def test_get_job_log_client_target_truncates_large_log(tmp_path, monkeypatch):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
@@ -553,6 +574,38 @@ def test_get_job_log_client_target_truncates_large_log(tmp_path, monkeypatch):
     payload, _meta = conn.dicts[0]
     assert payload["logs"]["site-1"].startswith("a" * 16)
     assert "truncated after 16 bytes" in payload["logs"]["site-1"]
+
+
+def test_get_job_log_client_target_returns_structured_error_for_invalid_job_def_manager(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", type("ExpectedJobDefManager", (), {}))
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "site-1"])
+
+    assert conn.dicts == []
+    assert len(conn.errors) == 1
+    message, meta = conn.errors[0]
+    assert "job_def_manager in engine is not of type JobDefManagerSpec" in message
+    assert meta[MetaKey.STATUS] == MetaStatusValue.INTERNAL_ERROR
+
+
+def test_get_job_log_all_returns_structured_error_for_invalid_job_def_manager(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", type("ExpectedJobDefManager", (), {}))
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "all"])
+
+    assert conn.dicts == []
+    assert len(conn.errors) == 1
+    message, meta = conn.errors[0]
+    assert "job_def_manager in engine is not of type JobDefManagerSpec" in message
+    assert meta[MetaKey.STATUS] == MetaStatusValue.INTERNAL_ERROR
 
 
 def test_get_job_log_all_returns_available_client_logs_and_unavailable_sites(tmp_path, monkeypatch):

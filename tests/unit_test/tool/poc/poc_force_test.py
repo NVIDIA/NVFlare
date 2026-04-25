@@ -394,6 +394,61 @@ class TestPocForce:
         assert "Not authorized" in captured.err
         assert "lead@nvidia.com" in captured.err
 
+    def test_poc_add_user_preserves_startup_kit_resolution_hint(self, capsys):
+        from nvflare.tool.kit.kit_config import StartupKitConfigError
+        from nvflare.tool.poc.poc_commands import add_poc_user
+
+        args = MagicMock()
+        args.cert_role = "lead"
+        args.email = "bob@nvidia.com"
+        args.org = "nvidia"
+        args.force = False
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value="/tmp/poc"),
+            patch(
+                "nvflare.tool.poc.poc_commands._require_poc_project_admin",
+                side_effect=StartupKitConfigError(
+                    "active startup kit is stale", hint="Run 'nvflare kit use admin@nvidia.com'"
+                ),
+            ),
+            patch("nvflare.tool.poc.poc_commands._add_poc_user") as add_user,
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                add_poc_user(args)
+
+        assert exc_info.value.code == 4
+        add_user.assert_not_called()
+        captured = capsys.readouterr()
+        assert "active startup kit is stale" in captured.err
+        assert "Run 'nvflare kit use admin@nvidia.com'" in captured.err
+
+    def test_poc_add_site_preserves_startup_kit_resolution_hint(self, capsys):
+        from nvflare.tool.kit.kit_config import StartupKitConfigError
+        from nvflare.tool.poc.poc_commands import add_poc_site
+
+        args = MagicMock()
+        args.name = "site-3"
+        args.org = "nvidia"
+        args.force = False
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value="/tmp/poc"),
+            patch(
+                "nvflare.tool.poc.poc_commands._require_poc_project_admin",
+                side_effect=StartupKitConfigError(
+                    "active startup kit is stale", hint="Run 'nvflare kit use admin@nvidia.com'"
+                ),
+            ),
+            patch("nvflare.tool.poc.poc_commands._add_poc_site") as add_site,
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                add_poc_site(args)
+
+        assert exc_info.value.code == 4
+        add_site.assert_not_called()
+        captured = capsys.readouterr()
+        assert "active startup kit is stale" in captured.err
+        assert "Run 'nvflare kit use admin@nvidia.com'" in captured.err
+
     def test_interactive_without_force_prompts(self, tmp_path):
         """In interactive mode without --force, should ask for confirmation."""
         from nvflare.tool.poc.poc_commands import _prepare_poc
@@ -868,6 +923,57 @@ prod {{
         assert entries["cancer_lead"] == str(prod_admin)
         assert config["poc"] == {"mode": "keep"}
         assert config["prod"] == {"mode": "keep"}
+
+    def test_clean_poc_updates_config_when_workspace_remove_fails(self, tmp_path, monkeypatch):
+        from nvflare.tool.poc.poc_commands import _clean_poc
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        workspace = tmp_path / "poc"
+        workspace.mkdir()
+        poc_admin = workspace / "example_project" / "prod_00" / "admin@nvidia.com"
+        dst = tmp_path / ".nvflare" / "config.conf"
+        dst.parent.mkdir()
+        dst.write_text(
+            f"""
+version = 2
+startup_kits {{
+  active = "admin@nvidia.com"
+  entries {{
+    "admin@nvidia.com" = "{poc_admin}"
+  }}
+}}
+poc {{
+  workspace = "{workspace}"
+}}
+"""
+        )
+
+        with (
+            patch(
+                "nvflare.tool.poc.poc_commands.get_or_create_hidden_nvflare_dir",
+                return_value=str(tmp_path),
+            ),
+            patch(
+                "nvflare.tool.poc.poc_commands.get_hidden_nvflare_config_path",
+                return_value=str(dst),
+            ),
+            patch(
+                "nvflare.tool.poc.poc_commands.setup_service_config",
+                return_value=({"name": "example_project"}, {SC.FLARE_SERVER: "server"}),
+            ),
+            patch("nvflare.tool.poc.poc_commands.is_poc_ready", return_value=True),
+            patch("nvflare.tool.poc.poc_commands.is_poc_running", return_value=False),
+            patch("nvflare.tool.poc.poc_commands.shutil.rmtree", side_effect=OSError("boom")),
+            patch("nvflare.tool.cli_output.print_human") as print_human,
+        ):
+            with pytest.raises(OSError, match="boom"):
+                _clean_poc(str(workspace))
+
+        config = _load_config_dict(dst)
+        assert "active" not in config.get("startup_kits", {})
+        assert config["startup_kits"]["entries"] == {}
+        assert "poc" not in config or "workspace" not in config["poc"]
+        print_human.assert_not_called()
 
     def test_save_startup_kit_dir_config_rejects_invalid_project_yaml(self, tmp_path):
         from nvflare.tool.poc.poc_commands import save_startup_kit_dir_config

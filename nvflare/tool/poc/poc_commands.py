@@ -40,6 +40,7 @@ from nvflare.lighter.utils import (
 )
 from nvflare.tool.api_utils import shutdown_system
 from nvflare.tool.kit.kit_config import (
+    StartupKitConfigError,
     add_startup_kit_entry,
     get_active_startup_kit_id,
     get_startup_kit_entries,
@@ -761,6 +762,9 @@ def add_poc_user(cmd_args):
             cmd_args.org,
             force=getattr(cmd_args, "force", False),
         )
+    except StartupKitConfigError as e:
+        output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e), hint=getattr(e, "hint", ""))
+        raise SystemExit(4)
     except ValueError as e:
         output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e))
         raise SystemExit(4)
@@ -802,6 +806,9 @@ def add_poc_site(cmd_args):
             cmd_args.org,
             force=getattr(cmd_args, "force", False),
         )
+    except StartupKitConfigError as e:
+        output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e), hint=getattr(e, "hint", ""))
+        raise SystemExit(4)
     except ValueError as e:
         output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e))
         raise SystemExit(4)
@@ -1497,8 +1504,10 @@ def _clean_poc(poc_workspace: str):
             if not is_poc_running(poc_workspace, service_config, project_config):
                 from nvflare.tool.cli_output import print_human
 
-                shutil.rmtree(poc_workspace)
-                _clean_poc_config(poc_workspace)
+                try:
+                    shutil.rmtree(poc_workspace)
+                finally:
+                    _clean_poc_config(poc_workspace)
 
                 print_human(f"{poc_workspace} is removed")
                 return True

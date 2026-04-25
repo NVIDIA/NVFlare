@@ -511,10 +511,15 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             else:
                 payload.setdefault("unavailable", {})[SERVER_SITE_NAME] = "server log not available for this job"
 
-        if target_lower not in {SERVER_SITE_NAME, *all_targets}:
-            self._add_client_job_log(conn, payload, job_id, target)
-        elif target_lower in all_targets:
-            self._add_all_client_job_logs(conn, payload, job_id)
+        try:
+            if target_lower not in {SERVER_SITE_NAME, *all_targets}:
+                self._add_client_job_log(conn, payload, job_id, target)
+            elif target_lower in all_targets:
+                self._add_all_client_job_logs(conn, payload, job_id)
+        except TypeError as e:
+            error = secure_format_exception(e)
+            conn.append_error(error, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, error))
+            return
 
         conn.append_dict(payload, meta=make_meta(MetaStatusValue.OK))
 
@@ -573,6 +578,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         log_file_name = WorkspaceConstants.LOG_FILE_NAME
         if log_file_name in member_names:
             return log_file_name
+        server_log_name = f"{SERVER_SITE_NAME}/{log_file_name}"
+        if server_log_name in member_names:
+            return server_log_name
+        suffix = f"/{server_log_name}"
+        for member_name in member_names:
+            if not member_name.endswith("/") and member_name.endswith(suffix):
+                return member_name
         return None
 
     def _add_client_job_log(self, conn: Connection, payload: dict, job_id: str, client_name: str):
@@ -719,7 +731,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             if member_name.endswith("/") or not member_name.endswith(f"/{log_file_name}"):
                 continue
             parts = member_name.split("/")
-            if len(parts) >= 2 and parts[-2]:
+            if len(parts) >= 2 and parts[-2] and parts[-2] != SERVER_SITE_NAME:
                 sites.add(parts[-2])
         return sites
 

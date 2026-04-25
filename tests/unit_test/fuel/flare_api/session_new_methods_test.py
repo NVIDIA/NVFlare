@@ -532,6 +532,62 @@ class TestGetJobLogs:
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "all"]
 
+    def test_accepts_legacy_tail_and_grep_keywords_without_changing_command(self):
+        session = _make_session()
+        from nvflare.fuel.hci.client.api import APIStatus
+
+        reply = {
+            ResultKey.STATUS: APIStatus.SUCCESS,
+            ResultKey.META: None,
+            "data": [
+                {
+                    "type": "dict",
+                    "data": {
+                        "logs": {
+                            "server": "INFO first\nERROR second\nINFO third\nERROR fourth\n",
+                            "site-1": "INFO site\nERROR site\n",
+                        }
+                    },
+                }
+            ],
+        }
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            result = session.get_job_logs("job1", tail_lines=1, grep_pattern="ERROR")
+
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "server"]
+        assert result == {
+            "logs": {
+                "server": "ERROR fourth\n",
+                "site-1": "ERROR site\n",
+            }
+        }
+
+    def test_accepts_legacy_positional_tail_and_grep_arguments(self):
+        session = _make_session()
+        from nvflare.fuel.hci.client.api import APIStatus
+
+        reply = {
+            ResultKey.STATUS: APIStatus.SUCCESS,
+            ResultKey.META: None,
+            "data": [
+                {
+                    "type": "dict",
+                    "data": {
+                        "logs": {
+                            "site-1": "ERROR first\nINFO second\nERROR third\n",
+                        }
+                    },
+                }
+            ],
+        }
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            result = session.get_job_logs("job1", "site-1", 2, "ERROR")
+
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "site-1"]
+        assert result == {"logs": {"site-1": "ERROR third\n"}}
+
     def test_rejects_empty_target(self):
         session = _make_session()
 

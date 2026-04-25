@@ -1083,12 +1083,56 @@ class Session(SessionSpec):
 
         self._do_command(join_args([AdminCommandNames.REMOVE_CLIENT, client_name]))
 
-    def get_job_logs(self, job_id: str, target: str = "server") -> dict:
+    @staticmethod
+    def _filter_job_log_text(log_text: str, tail_lines: Optional[int], grep_pattern: Optional[str]) -> str:
+        lines = log_text.splitlines(keepends=True)
+        if tail_lines is not None:
+            try:
+                line_count = int(tail_lines)
+            except (TypeError, ValueError) as e:
+                raise ValueError("tail_lines must be an integer") from e
+            if line_count < 0:
+                raise ValueError("tail_lines must be greater than or equal to 0")
+            lines = lines[-line_count:] if line_count else []
+        if grep_pattern:
+            pattern = str(grep_pattern)
+            lines = [line for line in lines if pattern in line]
+        return "".join(lines)
+
+    @classmethod
+    def _filter_job_logs_payload(cls, result: dict, tail_lines: Optional[int], grep_pattern: Optional[str]) -> dict:
+        if tail_lines is None and not grep_pattern:
+            return result
+
+        logs = result.get("logs")
+        if not isinstance(logs, dict):
+            return result
+
+        filtered_logs = {}
+        for site_name, log_text in logs.items():
+            if isinstance(log_text, str):
+                filtered_logs[site_name] = cls._filter_job_log_text(log_text, tail_lines, grep_pattern)
+            else:
+                filtered_logs[site_name] = log_text
+
+        filtered_result = dict(result)
+        filtered_result["logs"] = filtered_logs
+        return filtered_result
+
+    def get_job_logs(
+        self,
+        job_id: str,
+        target: str = "server",
+        tail_lines: Optional[int] = None,
+        grep_pattern: Optional[str] = None,
+    ) -> dict:
         """Retrieve job logs from the server-side log store.
 
         Args:
             job_id (str): ID of the job
             target (str): "server", "all", or a client site name
+            tail_lines (int, optional): deprecated compatibility filter that returns only the last N lines
+            grep_pattern (str, optional): deprecated compatibility filter that returns matching lines
 
         Returns: dict with "logs" mapping site name to log text, and optional
             "unavailable" mapping site names to reasons.
@@ -1106,8 +1150,8 @@ class Session(SessionSpec):
             result = {"logs": payload.get("logs", {})}
             if "unavailable" in payload:
                 result["unavailable"] = payload.get("unavailable", {})
-            return result
-        return {"logs": payload}
+            return self._filter_job_logs_payload(result, tail_lines, grep_pattern)
+        return self._filter_job_logs_payload({"logs": payload}, tail_lines, grep_pattern)
 
     def configure_job_log(self, job_id: str, config, target: str = "all") -> None:
         """Configure logging for a running job.
