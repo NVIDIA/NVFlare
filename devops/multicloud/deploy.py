@@ -79,6 +79,8 @@ class DeployConfig:
     gcp_region: str | None
     aws_region: str | None
     aws_eks_cluster_name: str | None
+    azure_resource_group: str | None
+    azure_location: str | None
 
 
 def _parse_kubeconfig(kc_path: Path, cloud: str) -> dict:
@@ -111,7 +113,8 @@ def _parse_kubeconfig(kc_path: Path, cloud: str) -> dict:
         if len(parts) < 6:
             raise ValueError(f"{kc_path}: malformed EKS ARN {cluster_name!r}")
         return {"region": parts[3], "eks_cluster_name": parts[5].split("/", 1)[1]}
-    # No autoderive for other clouds (e.g. azure); not needed for current operations.
+    # Azure kubeconfig context names are just the cluster name; resource_group and
+    # location are read directly from the deployment YAML instead.
     return {}
 
 
@@ -181,6 +184,7 @@ def load_config(config_path: Path) -> DeployConfig:
 
     gcp = cloud_derived.get("gcp", {})
     aws = cloud_derived.get("aws", {})
+    azure = (clouds.get("azure") or {})
     return DeployConfig(
         participants=participants,
         server_cloud=server_cloud,
@@ -188,6 +192,8 @@ def load_config(config_path: Path) -> DeployConfig:
         gcp_region=gcp.get("region"),
         aws_region=aws.get("region"),
         aws_eks_cluster_name=aws.get("eks_cluster_name"),
+        azure_resource_group=azure.get("resource_group"),
+        azure_location=azure.get("location"),
     )
 
 
@@ -212,6 +218,8 @@ def _dry_run_stdout(cmd: list[str]) -> str:
         return "<vpc-id>\n"
     if cmd[:3] == ["aws", "ec2", "describe-subnets"]:
         return "<subnet-id>\n"
+    if cmd[:4] == ["az", "network", "public-ip", "show"]:
+        return "<server-ip>\n"
     return ""
 
 
@@ -241,7 +249,11 @@ def run_quiet(cmd: list[str]) -> subprocess.CompletedProcess:
     if DRY_RUN:
         _print_cmd(cmd, tag="?")
         # Auth checks pass; existence checks miss so the "create from scratch" path runs.
-        if (cmd[0] == "gcloud" and "auth" in cmd) or (cmd[0] == "aws" and "sts" in cmd):
+        if (
+            (cmd[0] == "gcloud" and "auth" in cmd)
+            or (cmd[0] == "aws" and "sts" in cmd)
+            or (cmd[0] == "az" and "account" in cmd)
+        ):
             return FakeProc(0)
         return FakeProc(1)
     return subprocess.run(cmd, capture_output=True, text=True)
@@ -270,6 +282,10 @@ def check_auth(clouds_used: set):
         r = run_quiet(["aws", "sts", "get-caller-identity"])
         if r.returncode != 0:
             sys.exit("AWS auth failed. Run: aws sso login")
+    if "azure" in clouds_used:
+        r = run_quiet(["az", "account", "show"])
+        if r.returncode != 0:
+            sys.exit("Azure auth failed. Run: az login")
     print("  Auth OK")
 
 
@@ -283,6 +299,10 @@ def check_auth_for(cloud: str):
         r = run_quiet(["gcloud", "auth", "print-access-token"])
         if r.returncode != 0:
             sys.exit("GCP auth expired. Run: gcloud auth login")
+    elif cloud == "azure":
+        r = run_quiet(["az", "account", "show"])
+        if r.returncode != 0:
+            sys.exit("Azure session expired. Run: az login")
 
 
 def load_state() -> dict:
@@ -310,6 +330,10 @@ def _synthetic_state(config: DeployConfig) -> dict:
     if config.server_cloud == "aws":
         state["aws_eip_allocation_id"] = "<alloc-id>"
         state["aws_nlb_subnet_id"] = "<subnet-id>"
+    if config.server_cloud == "azure":
+        state["azure_resource_group"] = config.azure_resource_group or "<resource-group>"
+        state["azure_location"] = config.azure_location or "<location>"
+        state["azure_pip_name"] = ip_name
     return state
 
 
@@ -324,9 +348,19 @@ def namespace_exists(kubeconfig: str, ns: str) -> bool:
     return kubectl_check(kubeconfig, "get", "ns", ns)
 
 
+def helm_release_status(kubeconfig: str, name: str, ns: str) -> str | None:
+    r = run_quiet(["helm", "--kubeconfig", kubeconfig, "status", name, "-n", ns, "--output", "json"])
+    if r.returncode != 0:
+        return None
+    try:
+        status = json.loads(r.stdout).get("info", {}).get("status")
+    except (json.JSONDecodeError, AttributeError):
+        return None
+    return status if isinstance(status, str) else None
+
+
 def helm_release_exists(kubeconfig: str, name: str, ns: str) -> bool:
-    r = run_quiet(["helm", "--kubeconfig", kubeconfig, "status", name, "-n", ns])
-    return r.returncode == 0
+    return helm_release_status(kubeconfig, name, ns) is not None
 
 
 def pod_exists(kubeconfig: str, ns: str, name: str) -> bool:
@@ -348,13 +382,15 @@ def reserve_ip(
     gcp_project: str | None = None,
     gcp_region: str | None = None,
     aws_region: str | None = None,
+    azure_resource_group: str | None = None,
+    azure_location: str | None = None,
 ) -> tuple[str, str]:
     if server_cloud == "gcp":
         return _reserve_ip_gcp(gcp_project, gcp_region)
     if server_cloud == "aws":
         return _reserve_ip_aws(aws_region)
     if server_cloud == "azure":
-        raise NotImplementedError("Azure server IP reservation not yet supported")
+        return _reserve_ip_azure(azure_resource_group, azure_location)
     raise ValueError(f"unknown server cloud: {server_cloud}")
 
 
@@ -406,6 +442,61 @@ def _reserve_ip_aws(region: str) -> tuple[str, str]:
         raise RuntimeError(f"allocate-address returned unexpected response: {r.stdout!r}")
     print(f"  Reserved: {ip} ({alloc_id})")
     return ip, alloc_id
+
+
+def _reserve_ip_azure(resource_group: str, location: str) -> tuple[str, str]:
+    if not isinstance(resource_group, str) or not resource_group.strip():
+        raise ValueError(
+            "Azure static IP reservation requires a non-empty resource_group. "
+            "Set clouds.azure.resource_group in the deploy config or repair the saved state."
+        )
+    if not isinstance(location, str) or not location.strip():
+        raise ValueError(
+            "Azure static IP reservation requires a non-empty location. "
+            "Set clouds.azure.location in the deploy config or repair the saved state."
+        )
+    ip_name = _ip_tag()
+    print(f"Reserving Azure Public IP {ip_name} ...")
+    run(
+        [
+            "az",
+            "network",
+            "public-ip",
+            "create",
+            "--resource-group",
+            resource_group,
+            "--name",
+            ip_name,
+            "--sku",
+            "Standard",
+            "--allocation-method",
+            "Static",
+            "--location",
+            location,
+        ]
+    )
+    r = run(
+        [
+            "az",
+            "network",
+            "public-ip",
+            "show",
+            "--resource-group",
+            resource_group,
+            "--name",
+            ip_name,
+            "--query",
+            "ipAddress",
+            "--output",
+            "tsv",
+        ],
+        capture=True,
+    )
+    ip = r.stdout.strip()
+    if not ip:
+        raise RuntimeError(f"az network public-ip show returned no IP for {ip_name}")
+    print(f"  Reserved: {ip} ({ip_name})")
+    return ip, ip_name
 
 
 def _discover_aws_public_subnet(cluster_name: str, region: str) -> str:
@@ -460,6 +551,7 @@ def release_ip(
     gcp_project: str | None = None,
     gcp_region: str | None = None,
     aws_region: str | None = None,
+    azure_resource_group: str | None = None,
 ):
     if not ip_name:
         return
@@ -487,8 +579,31 @@ def release_ip(
         )
         return
     if server_cloud == "azure":
-        raise NotImplementedError("Azure server IP release not yet supported")
+        _release_ip_azure(ip_name, azure_resource_group)
+        return
     raise ValueError(f"unknown server cloud: {server_cloud}")
+
+
+def _release_ip_azure(ip_name: str, resource_group: str):
+    if not isinstance(resource_group, str) or not resource_group.strip():
+        raise ValueError(
+            "Azure static IP release requires a non-empty resource_group. "
+            "Repair the saved state or pass a config that includes clouds.azure.resource_group."
+        )
+    print(f"Releasing Azure Public IP {ip_name} ...")
+    r = run(
+        ["az", "network", "public-ip", "delete", "--resource-group", resource_group, "--name", ip_name],
+        check=False,
+    )
+    if r.returncode != 0:
+        detail = ""
+        stderr = getattr(r, "stderr", "") or ""
+        if stderr.strip():
+            detail = f": {stderr.strip()}"
+        print(
+            f"  Warning: failed to delete Azure Public IP {ip_name} in resource group {resource_group}{detail}. "
+            "The IP may still be allocated and require manual cleanup."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -594,6 +709,8 @@ def deploy_participant(
     server_ip: str | None = None,
     aws_server_alloc_id: str | None = None,
     aws_server_subnet: str | None = None,
+    azure_pip_name: str | None = None,
+    azure_resource_group: str | None = None,
 ):
     kit_dir = prod_dir / p.name
     chart_dir = kit_dir / "helm_chart"
@@ -603,6 +720,7 @@ def deploy_participant(
     print(f"{'=' * 60}")
 
     check_auth_for(p.cloud)
+    helm_status = helm_release_status(p.kubeconfig, p.name, p.namespace)
 
     # 1. Namespace (idempotent)
     if not namespace_exists(p.kubeconfig, p.namespace):
@@ -632,10 +750,12 @@ def deploy_participant(
         else:
             print(f"    PVC {pvc_name} exists")
 
-    # 3. Stage kit files (skip if helm release already exists)
-    if helm_release_exists(p.kubeconfig, p.name, p.namespace):
+    # 3. Stage kit files (skip only when the release is healthy and deployed)
+    if helm_status == "deployed":
         print(f"  Helm release {p.name} already deployed — skipping kit staging")
     else:
+        if helm_status:
+            print(f"  Helm release {p.name} is in state '{helm_status}' — restaging kit files")
         print("  Staging kit files via temp pod ...")
         pod_name = f"kit-copy-{p.name}"
 
@@ -644,6 +764,7 @@ def deploy_participant(
         if p.security_context:
             sec_ctx = {"securityContext": p.security_context}
 
+        copy_image = "busybox:1.36"
         pod_spec = {
             "spec": {
                 **sec_ctx,
@@ -651,9 +772,13 @@ def deploy_participant(
                 "containers": [
                     {
                         "name": "copy",
-                        "image": "busybox",
+                        "image": copy_image,
                         "command": ["sleep", "600"],
                         "volumeMounts": [{"name": "ws", "mountPath": "/ws"}],
+                        "resources": {
+                            "requests": {"cpu": "10m", "memory": "64Mi"},
+                            "limits": {"cpu": "100m", "memory": "128Mi"},
+                        },
                     }
                 ],
             }
@@ -668,7 +793,7 @@ def deploy_participant(
             p.namespace,
             "run",
             pod_name,
-            "--image=busybox",
+            f"--image={copy_image}",
             "--restart=Never",
             f"--overrides={json.dumps(pod_spec)}",
         )
@@ -680,9 +805,9 @@ def deploy_participant(
         kubectl(p.kubeconfig, "-n", p.namespace, "cp", str(kit_dir / "local"), f"{pod_name}:/ws/local")
         kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name, "--timeout=60s")
 
-        # 4. Helm install
-        print(f"  Helm installing {p.name} ...")
-        helm_args = ["install", p.name, str(chart_dir), "-n", p.namespace]
+        # 4. Helm install/upgrade
+        print(f"  Helm upgrading/installing {p.name} ...")
+        helm_args = ["upgrade", "--install", p.name, str(chart_dir), "-n", p.namespace]
         helm_args += p.helm_overrides
 
         if p.role == "server" and server_ip:
@@ -698,6 +823,16 @@ def deploy_participant(
                     "service.beta.kubernetes.io/aws-load-balancer-subnets": aws_server_subnet,
                     # Single-AZ NLB (one subnet annotation) needs cross-zone to reach pods in other AZs.
                     "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled": "true",
+                }
+                for k, v in annotations.items():
+                    escaped = k.replace(".", r"\.")
+                    helm_args += ["--set-string", f"service.annotations.{escaped}={v}"]
+            elif p.cloud == "azure":
+                if not azure_pip_name or not azure_resource_group:
+                    raise RuntimeError("Azure server requires azure_pip_name and azure_resource_group")
+                annotations = {
+                    "service.beta.kubernetes.io/azure-pip-name": azure_pip_name,
+                    "service.beta.kubernetes.io/azure-load-balancer-resource-group": azure_resource_group,
                 }
                 for k, v in annotations.items():
                     escaped = k.replace(".", r"\.")
@@ -759,6 +894,10 @@ def cmd_up(args):
 
     if config.server_cloud == "aws" and not config.aws_eks_cluster_name:
         sys.exit("clouds.aws.eks_cluster_name is required when the server is in AWS")
+    if config.server_cloud == "azure" and not config.azure_resource_group:
+        sys.exit("clouds.azure.resource_group is required when the server is in Azure")
+    if config.server_cloud == "azure" and not config.azure_location:
+        sys.exit("clouds.azure.location is required when the server is in Azure")
 
     gcp_project = None
     if "gcp" in clouds_used:
@@ -781,6 +920,8 @@ def cmd_up(args):
             gcp_project=gcp_project,
             gcp_region=gcp_region,
             aws_region=aws_region,
+            azure_resource_group=config.azure_resource_group,
+            azure_location=config.azure_location,
         )
 
     # Discover AWS NLB subnet when server is in AWS
@@ -800,6 +941,9 @@ def cmd_up(args):
             "gcp_region": gcp_region,
             "aws_region": aws_region,
             "server_cloud": config.server_cloud,
+            "azure_resource_group": config.azure_resource_group,
+            "azure_location": config.azure_location,
+            "azure_pip_name": ip_name if config.server_cloud == "azure" else None,
             "participants": {
                 p.name: {"kubeconfig": p.kubeconfig, "namespace": p.namespace, "cloud": p.cloud} for p in participants
             },
@@ -823,6 +967,8 @@ def cmd_up(args):
     # Deploy each participant
     aws_alloc_id = state.get("aws_eip_allocation_id")
     aws_subnet = state.get("aws_nlb_subnet_id")
+    azure_pip = state.get("azure_pip_name")
+    azure_rg = state.get("azure_resource_group")
     for p in participants:
         deploy_participant(
             p,
@@ -830,6 +976,8 @@ def cmd_up(args):
             server_ip=server_ip,
             aws_server_alloc_id=aws_alloc_id,
             aws_server_subnet=aws_subnet,
+            azure_pip_name=azure_pip,
+            azure_resource_group=azure_rg,
         )
 
     print(f"\n{'=' * 60}")
@@ -878,6 +1026,7 @@ def cmd_down(args):
             gcp_project=state.get("gcp_project", ""),
             gcp_region=state.get("gcp_region", "us-central1"),
             aws_region=state.get("aws_region"),
+            azure_resource_group=state.get("azure_resource_group"),
         )
 
     STATE_FILE.unlink(missing_ok=True)

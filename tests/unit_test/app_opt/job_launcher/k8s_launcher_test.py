@@ -1233,6 +1233,72 @@ class TestK8sJobLauncherLaunchJob:
         finally:
             _exit_patches(patches)
 
+    def test_pod_manifest_cpu_memory_mirrored_to_requests(self):
+        # AKS deployment safeguards require explicit cpu/memory requests.
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"].update({"cpu": "500m", "memory": "2Gi"})
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            resources = manifest["spec"]["containers"][0]["resources"]
+            assert resources["requests"]["cpu"] == "500m"
+            assert resources["requests"]["memory"] == "2Gi"
+            assert resources["limits"]["cpu"] == "500m"
+            assert resources["limits"]["memory"] == "2Gi"
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_cpu_request_override(self):
+        # cpu_request / memory_request allow request < limit (burstable QoS).
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"].update(
+                {"cpu": "2000m", "cpu_request": "500m", "memory": "8Gi", "memory_request": "2Gi"}
+            )
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            resources = manifest["spec"]["containers"][0]["resources"]
+            assert resources["limits"]["cpu"] == "2000m"
+            assert resources["requests"]["cpu"] == "500m"
+            assert resources["limits"]["memory"] == "8Gi"
+            assert resources["requests"]["memory"] == "2Gi"
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_gpu_mirrored_to_requests(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(gpu=2), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            resources = manifest["spec"]["containers"][0]["resources"]
+            assert resources["requests"]["nvidia.com/gpu"] == 2
+            assert resources["limits"]["nvidia.com/gpu"] == 2
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_no_cpu_memory_requests_when_not_specified(self):
+        # When cpu/memory are absent from launcher_spec, requests has only ephemeral-storage.
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            requests = manifest["spec"]["containers"][0]["resources"]["requests"]
+            assert "cpu" not in requests
+            assert "memory" not in requests
+            assert "ephemeral-storage" in requests
+        finally:
+            _exit_patches(patches)
+
     # -- workspace object guard -----------------------------------------------
 
     def test_raises_when_workspace_object_missing(self):

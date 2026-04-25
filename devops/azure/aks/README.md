@@ -1,8 +1,9 @@
 # Azure AKS Automatic
 
-Cluster lifecycle. **NVFlare deployment on AKS is not yet supported** by
-`devops/multicloud/deploy.py` (Azure IP reservation raises
-`NotImplementedError`).
+Cluster lifecycle for the Azure multicloud NVFlare path.
+
+For the end-to-end Azure deployment flow, config shape, and required
+NVFlare values, start with [../README.md](../README.md).
 
 ## Prereqs
 
@@ -20,6 +21,12 @@ az aks install-cli           # if kubectl missing
 ```
 
 Defaults: `RESOURCE_GROUP=myResourceGroup`, `CLUSTER_NAME=myAKSAutomaticCluster`, `LOCATION=westus2`. Override via env vars (use the same ones on `delete_cluster.sh`).
+
+This script:
+- creates the AKS Automatic cluster
+- saves kubeconfig to `.tmp/kubeconfigs/azure.yaml`
+
+NVFlare uses the AKS default class `managed-csi` for its RWO PVCs.
 
 ## Verify + smoke test
 
@@ -40,3 +47,4 @@ kubectl delete -f inflate.yaml
 - AKS Automatic is Azure's closest equivalent to EKS Auto Mode.
 - First workload can take a few minutes while node auto-provisioning
   allocates VMs. Subscription D-series quota can block provisioning.
+- NVFlare deploy and teardown commands live in [../README.md](../README.md).
