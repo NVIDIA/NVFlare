@@ -41,7 +41,6 @@ from nvflare.utils.cli_utils import (
     CONFIG_VERSION,
     CURRENT_CONFIG_VERSION,
     backup_hidden_config_file,
-    create_job_template_config,
     create_poc_workspace_config,
     find_startup_kit_config_keys,
     load_hidden_config_state,
@@ -58,7 +57,6 @@ CMD_AUTHZ_PREVIEW = "authz-preview"
 CMD_JOB = "job"
 CMD_RECIPE = "recipe"
 CMD_CONFIG = "config"
-CMD_KIT = "kit"
 CMD_CERT = "cert"
 CMD_PACKAGE = "package"
 CMD_SYSTEM = "system"
@@ -151,7 +149,7 @@ _config_parser = None
 def def_config_parser(sub_cmd):
     global _config_parser
     cmd = "config"
-    config_parser = sub_cmd.add_parser(cmd, help="configure local NVFlare settings (POC workspace, job templates)")
+    config_parser = sub_cmd.add_parser(cmd, help="configure local NVFlare settings")
     _config_parser = config_parser
     config_parser.add_argument(
         "-pw",
@@ -162,11 +160,10 @@ def def_config_parser(sub_cmd):
         default=None,
         help="POC workspace location",
     )
-    config_parser.add_argument(
-        "-jt", "--job_templates_dir", type=str, nargs="?", default=None, help="job templates location"
-    )
     config_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     config_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    config_subparser = config_parser.add_subparsers(title="config subcommands", metavar="", dest="config_sub_cmd")
+    def_kit_cli_parser(config_subparser)
     return {cmd: config_parser}
 
 
@@ -174,14 +171,17 @@ def handle_config_cmd(args):
     from nvflare.tool.cli_output import output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
+    if getattr(args, "config_sub_cmd", None) == "kit":
+        handle_kit_cmd(args)
+        return
+
     handle_schema_flag(
         _config_parser,
         "nvflare config",
         [
             "nvflare config --poc.workspace /path/to/poc_workspace",
-            "nvflare config --job_templates_dir /path/to/job_templates",
-            "nvflare kit add project_admin /path/to/startup-kit",
-            "nvflare kit use project_admin",
+            "nvflare config kit add project_admin /path/to/startup-kit",
+            "nvflare config kit use project_admin",
         ],
         sys.argv[1:],
     )
@@ -190,22 +190,21 @@ def handle_config_cmd(args):
     nvflare_config = loaded_config or CF.parse_string("{}")
     requested_poc_workspace = args.poc_workspace_dir
 
-    if requested_poc_workspace is None and args.job_templates_dir is None:
+    if requested_poc_workspace is None:
         # Read-only: print existing config
         poc_workspace_dir = nvflare_config.get("poc.workspace", None) if nvflare_config else None
-        job_templates_dir = nvflare_config.get("job_template.path", None) if nvflare_config else None
+        active_startup_kit = nvflare_config.get("startup_kits.active", None) if nvflare_config else None
         output_ok(
             {
                 "config_file": config_file_path,
                 "poc_workspace_dir": poc_workspace_dir,
-                "job_templates_dir": job_templates_dir,
+                "active_startup_kit": active_startup_kit,
             }
         )
         return
 
     try:
         nvflare_config = create_poc_workspace_config(nvflare_config, requested_poc_workspace)
-        nvflare_config = create_job_template_config(nvflare_config, args.job_templates_dir)
         removed_startup_kit_keys = find_startup_kit_config_keys(nvflare_config)
         nvflare_config = remove_startup_kit_config_keys(nvflare_config)
     except ValueError as e:
@@ -216,7 +215,7 @@ def handle_config_cmd(args):
     backup_path = backup_hidden_config_file(config_file_path) if removed_startup_kit_keys else None
     save_config(nvflare_config, config_file_path)
     if removed_startup_kit_keys:
-        message = "Warning: removed startup kit config keys now managed by 'nvflare kit': " + ", ".join(
+        message = "Warning: removed startup kit config keys now managed by 'nvflare config kit': " + ", ".join(
             removed_startup_kit_keys
         )
         if backup_path:
@@ -224,13 +223,13 @@ def handle_config_cmd(args):
         print_human(message)
 
     poc_workspace_dir = nvflare_config.get("poc.workspace", None) if nvflare_config else requested_poc_workspace
-    job_templates_dir = nvflare_config.get("job_template.path", None) if nvflare_config else args.job_templates_dir
+    active_startup_kit = nvflare_config.get("startup_kits.active", None) if nvflare_config else None
 
     output_ok(
         {
             "config_file": config_file_path,
             "poc_workspace_dir": poc_workspace_dir,
-            "job_templates_dir": job_templates_dir,
+            "active_startup_kit": active_startup_kit,
         }
     )
 
@@ -357,7 +356,6 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_dashboard_parser(sub_cmd))
     sub_cmd_parsers.update(def_authz_preview_parser(sub_cmd))
     sub_cmd_parsers.update(def_job_cli_parser(sub_cmd))
-    sub_cmd_parsers.update(def_kit_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_recipe_parser(sub_cmd))
     sub_cmd_parsers.update(def_config_parser(sub_cmd))
     sub_cmd_parsers.update(def_cert_cli_parser(sub_cmd))
@@ -391,7 +389,11 @@ def parse_args(prog_name: str):
         ns.poc_sub_cmd = sub_sub
         ns.system_sub_cmd = sub_sub
         ns.study_sub_cmd = sub_sub
-        ns.kit_sub_cmd = sub_sub
+        ns.config_sub_cmd = sub_sub
+        if raw_cmd == CMD_CONFIG and sub_sub == "kit":
+            ns.kit_sub_cmd = positionals[2] if len(positionals) > 2 else None
+        else:
+            ns.kit_sub_cmd = sub_sub
         ns.cert_sub_command = sub_sub
         ns.recipe_sub_cmd = sub_sub or "list"
         ns.format = global_args.format
@@ -425,7 +427,6 @@ handlers = {
     CMD_DASHBOARD: handle_dashboard,
     CMD_AUTHZ_PREVIEW: handle_authz_preview,
     CMD_JOB: handle_job_cli_cmd,
-    CMD_KIT: handle_kit_cmd,
     CMD_RECIPE: handle_recipe_cmd,
     CMD_CONFIG: handle_config_cmd,
     CMD_CERT: handle_cert_cmd,

@@ -12,8 +12,8 @@ or activate a registered startup kit with :ref:`kit_command`:
 
 .. code-block:: shell
 
-   nvflare kit add project_admin /path/to/admin@nvidia.com
-   nvflare kit use project_admin
+   nvflare config kit add project_admin /path/to/admin@nvidia.com
+   nvflare config kit use project_admin
 
 ***********************
 Command Usage
@@ -84,7 +84,7 @@ Examples:
 
 .. code-block:: shell
 
-   nvflare kit use project_admin
+   nvflare config kit use project_admin
    nvflare job submit -j /tmp/nvflare/hello-pt
 
 Registered startup kit paths must point to the admin startup kit directory

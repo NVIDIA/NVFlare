@@ -42,8 +42,8 @@ A user can register and activate a startup kit once with :ref:`kit_command`:
 
 .. code-block:: shell
 
-   nvflare kit add project_admin /path/to/admin@nvidia.com
-   nvflare kit use project_admin
+   nvflare config kit add project_admin /path/to/admin@nvidia.com
+   nvflare config kit use project_admin
 
 If no source resolves, the command exits with error code 4 and ``"error_code": "STARTUP_KIT_MISSING"``.
 

@@ -521,7 +521,7 @@ def _register_poc_startup_kits(config: Dict[str, Any], workspace: str, kit_entri
         if existing_path:
             raise CLIException(
                 f"startup kit id '{kit_id}' already exists outside POC workspace; "
-                f"run 'nvflare kit remove {kit_id}' or replace it explicitly"
+                f"run 'nvflare config kit remove {kit_id}' or replace it explicitly"
             )
         add_startup_kit_entry(config, kit_id, kit_path, force=True)
 
@@ -541,7 +541,7 @@ def _write_poc_startup_kit_registry(workspace: str, project_name: str, project_c
 
         print_human(
             "No generated Project Admin startup kit was found; "
-            "run 'nvflare kit use <id>' after registering an admin startup kit."
+            "run 'nvflare config kit use <id>' after registering an admin startup kit."
         )
 
     config.put(f"{POC_KEY}.{WORKSPACE_KEY}", workspace)
@@ -683,7 +683,7 @@ def _add_poc_user(poc_workspace: str, cert_role: str, email: str, org: str, forc
     if preferred_active:
         result["active"] = email
     else:
-        result["next_step"] = f"nvflare kit use {email}"
+        result["next_step"] = f"nvflare config kit use {email}"
     return result
 
 

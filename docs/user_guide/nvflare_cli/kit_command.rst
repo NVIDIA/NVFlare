@@ -1,13 +1,13 @@
 .. _kit_command:
 
-#########################
-Startup Kit Command
-#########################
+################################
+Startup Kit Config Subcommands
+################################
 
-Use ``nvflare kit`` to register local startup kit paths and choose the active
+Use ``nvflare config kit`` to register local startup kit paths and choose the active
 admin startup kit used by server-connected CLI commands.
 
-The registry is local to the current machine. ``nvflare kit`` does not contact
+The registry is local to the current machine. ``nvflare config kit`` does not contact
 the server. It updates ``~/.nvflare/config.conf`` so commands such as
 ``nvflare job list``, ``nvflare study list``, and ``nvflare system status`` can
 connect without repeated startup-kit arguments.
@@ -18,7 +18,7 @@ Command Usage
 
 .. code-block:: none
 
-   usage: nvflare kit [-h]  ...
+   usage: nvflare config kit [-h]  ...
 
    kit subcommands:
      add       register a startup kit path
@@ -27,7 +27,7 @@ Command Usage
      list      list registered startup kits
      remove    remove a local startup kit registration
 
-Running ``nvflare kit`` without a subcommand prints this help text.
+Running ``nvflare config kit`` without a subcommand prints this help text.
 
 *****************
 Common Workflow
@@ -45,16 +45,16 @@ For a production or manually copied startup kit, register and activate it once:
 
 .. code-block:: shell
 
-   nvflare kit add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com
-   nvflare kit use cancer_lead
+   nvflare config kit add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com
+   nvflare config kit use cancer_lead
    nvflare job list
 
 To switch local identity, activate another registered ID:
 
 .. code-block:: shell
 
-   nvflare kit add fraud_org_admin /secure/startup_kits/fraud/org_admin@nvidia.com
-   nvflare kit use fraud_org_admin
+   nvflare config kit add fraud_org_admin /secure/startup_kits/fraud/org_admin@nvidia.com
+   nvflare config kit use fraud_org_admin
    nvflare system status
 
 ************************
@@ -69,8 +69,8 @@ Server-connected commands resolve the startup kit in this order:
    connecting.
 
 The environment variable is intended for automation. For normal interactive
-use, register startup kits with ``nvflare kit add`` and switch with
-``nvflare kit use``.
+use, register startup kits with ``nvflare config kit add`` and switch with
+``nvflare config kit use``.
 
 *********************
 Register a Startup Kit
@@ -78,7 +78,7 @@ Register a Startup Kit
 
 .. code-block:: shell
 
-   nvflare kit add <id> <startup-kit-dir>
+   nvflare config kit add <id> <startup-kit-dir>
 
 Arguments and options:
 
@@ -105,7 +105,7 @@ Example:
 
 .. code-block:: shell
 
-   nvflare kit add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com
+   nvflare config kit add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com
 
 Example output:
 
@@ -113,7 +113,7 @@ Example output:
 
    registered_startup_kit: cancer_lead
    path: /secure/startup_kits/cancer/lead@nvidia.com
-   next_step: nvflare kit use cancer_lead
+   next_step: nvflare config kit use cancer_lead
 
 ``kit add`` registers the path only. It does not make the kit active.
 
@@ -123,7 +123,7 @@ Activate a Startup Kit
 
 .. code-block:: shell
 
-   nvflare kit use <id>
+   nvflare config kit use <id>
 
 ``kit use`` validates that the registered path is an admin/user startup kit and
 then sets ``startup_kits.active``.
@@ -132,7 +132,7 @@ Example:
 
 .. code-block:: shell
 
-   nvflare kit use cancer_lead
+   nvflare config kit use cancer_lead
 
 Example output:
 
@@ -149,7 +149,7 @@ Show Active Startup Kit
 
 .. code-block:: shell
 
-   nvflare kit show
+   nvflare config kit show
 
 Example output:
 
@@ -172,7 +172,7 @@ List Registered Kits
 
 .. code-block:: shell
 
-   nvflare kit list
+   nvflare config kit list
 
 Example output:
 
@@ -201,7 +201,7 @@ Remove a Registration
 
 .. code-block:: shell
 
-   nvflare kit remove <id>
+   nvflare config kit remove <id>
 
 This removes the local registry entry only. It does not delete the startup kit
 directory.
@@ -213,7 +213,7 @@ activate another kit before running server-connected commands.
 Config File
 *********************
 
-``nvflare kit`` stores startup kit registrations in
+``nvflare config kit`` stores startup kit registrations in
 ``~/.nvflare/config.conf``:
 
 .. code-block:: none
@@ -230,6 +230,6 @@ Config File
      }
    }
 
-Startup kit paths are managed by ``nvflare kit``, not ``nvflare config``.
-``nvflare config`` remains responsible for other local settings such as
-``poc.workspace`` and job template paths.
+Startup kit paths are managed by the ``kit`` subcommands under
+``nvflare config``. The root ``nvflare config`` command remains responsible for
+the POC workspace path.

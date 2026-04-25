@@ -39,15 +39,15 @@ def _make_invalid_startup_kit(parent: Path, name: str = "invalid@nvidia.com") ->
 
 
 def _run_kit_command(argv, monkeypatch):
-    from nvflare.tool.kit.kit_cli import def_kit_cli_parser, handle_kit_cmd
+    from nvflare.cli import def_config_parser, handle_config_cmd
 
     root = argparse.ArgumentParser(prog="nvflare")
     subparsers = root.add_subparsers(dest="sub_command")
-    def_kit_cli_parser(subparsers)
+    def_config_parser(subparsers)
     argv = [str(arg) for arg in argv]
-    monkeypatch.setattr(sys, "argv", ["nvflare", "kit", *argv])
-    args = root.parse_args(["kit", *argv])
-    handle_kit_cmd(args)
+    monkeypatch.setattr(sys, "argv", ["nvflare", "config", "kit", *argv])
+    args = root.parse_args(["config", "kit", *argv])
+    handle_config_cmd(args)
     return args
 
 
@@ -83,24 +83,24 @@ def _isolated_cli(monkeypatch, tmp_path):
 
 class TestKitCli:
     def test_parser_accepts_all_kit_subcommands_and_schema(self):
-        from nvflare.tool.kit.kit_cli import def_kit_cli_parser
+        from nvflare.cli import def_config_parser
 
         root = argparse.ArgumentParser(prog="nvflare")
         subparsers = root.add_subparsers(dest="sub_command")
-        def_kit_cli_parser(subparsers)
+        def_config_parser(subparsers)
 
-        assert root.parse_args(["kit", "add", "admin", "/tmp/startup", "--force"]).force is True
-        assert root.parse_args(["kit", "use", "admin"]).kit_sub_cmd == "use"
-        assert root.parse_args(["kit", "show"]).kit_sub_cmd == "show"
-        assert root.parse_args(["kit", "list"]).kit_sub_cmd == "list"
-        assert root.parse_args(["kit", "remove", "admin"]).kit_sub_cmd == "remove"
-        assert root.parse_args(["kit", "show", "--schema"]).schema is True
+        assert root.parse_args(["config", "kit", "add", "admin", "/tmp/startup", "--force"]).force is True
+        assert root.parse_args(["config", "kit", "use", "admin"]).kit_sub_cmd == "use"
+        assert root.parse_args(["config", "kit", "show"]).kit_sub_cmd == "show"
+        assert root.parse_args(["config", "kit", "list"]).kit_sub_cmd == "list"
+        assert root.parse_args(["config", "kit", "remove", "admin"]).kit_sub_cmd == "remove"
+        assert root.parse_args(["config", "kit", "show", "--schema"]).schema is True
 
     def test_root_kit_command_prints_help_without_usage_error(self, monkeypatch, capsys):
         _run_kit_command([], monkeypatch)
 
         out = capsys.readouterr().out
-        assert "usage: nvflare kit" in out
+        assert "usage: nvflare config kit" in out
         assert "kit subcommands" in out
         assert "Invalid arguments" not in out
 
@@ -111,7 +111,7 @@ class TestKitCli:
         _run_kit_command(["add", "admin@nvidia.com", kit_dir], monkeypatch)
         out = capsys.readouterr().out
         assert "registered startup kit: admin@nvidia.com" in out or "registered_startup_kit: admin@nvidia.com" in out
-        assert "next_step: nvflare kit use admin@nvidia.com" in out
+        assert "next_step: nvflare config kit use admin@nvidia.com" in out
 
         config = _read_config(home)
         assert _entry(config, "admin@nvidia.com") == kit_dir.resolve()
@@ -120,7 +120,7 @@ class TestKitCli:
         _run_kit_command(["show"], monkeypatch)
         out = capsys.readouterr().out
         assert "No active startup kit" in out
-        assert "nvflare kit use <id>" in out
+        assert "nvflare config kit use <id>" in out
 
         _run_kit_command(["use", "admin@nvidia.com"], monkeypatch)
         out = capsys.readouterr().out
@@ -138,7 +138,7 @@ class TestKitCli:
         out = capsys.readouterr().out
         assert "removed startup kit: admin@nvidia.com" in out or "removed_startup_kit: admin@nvidia.com" in out
         assert "no active startup kit" in out.lower()
-        assert "nvflare kit use <id>" in out
+        assert "nvflare config kit use <id>" in out
 
         config = _read_config(home)
         assert config.get("startup_kits.active", None) is None

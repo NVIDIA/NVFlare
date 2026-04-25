@@ -236,7 +236,7 @@ class TestStartupKitResolution:
         with pytest.raises(Exception) as exc_info:
             resolve_startup_kit_dir()
 
-        _assert_error_contains(exc_info, "active startup kit", "nvflare kit use")
+        _assert_error_contains(exc_info, "active startup kit", "nvflare config kit use")
 
     def test_active_id_absent_reports_kit_list_and_use_hint(self, tmp_path, monkeypatch):
         from nvflare.tool.kit.kit_config import resolve_startup_kit_dir
@@ -258,7 +258,7 @@ class TestStartupKitResolution:
         with pytest.raises(Exception) as exc_info:
             resolve_startup_kit_dir()
 
-        _assert_error_contains(exc_info, "cancer_lead", "nvflare kit list", "nvflare kit use")
+        _assert_error_contains(exc_info, "cancer_lead", "nvflare config kit list", "nvflare config kit use")
 
     def test_active_path_missing_reports_registered_id_and_path(self, tmp_path, monkeypatch):
         from nvflare.tool.kit.kit_config import resolve_startup_kit_dir
@@ -283,7 +283,7 @@ class TestStartupKitResolution:
         with pytest.raises(Exception) as exc_info:
             resolve_startup_kit_dir()
 
-        _assert_error_contains(exc_info, "cancer_lead", str(missing_path), "nvflare kit use")
+        _assert_error_contains(exc_info, "cancer_lead", str(missing_path), "nvflare config kit use")
         assert "missing" in str(exc_info.value).lower() or "does not exist" in str(exc_info.value).lower()
 
     def test_active_path_invalid_reports_registered_id_and_path(self, tmp_path, monkeypatch):
@@ -351,4 +351,4 @@ class TestStartupKitResolution:
         with pytest.raises(Exception) as exc_info:
             resolve_startup_kit_dir()
 
-        _assert_error_contains(exc_info, "active startup kit", "nvflare kit use")
+        _assert_error_contains(exc_info, "active startup kit", "nvflare config kit use")

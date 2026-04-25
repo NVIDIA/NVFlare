@@ -125,7 +125,7 @@ user or site:
 Behavior notes:
 
 - ``poc add user`` and ``poc add site`` require the active startup kit to have
-  the ``project_admin`` certificate role. Use ``nvflare kit use <id>`` to switch
+  the ``project_admin`` certificate role. Use ``nvflare config kit use <id>`` to switch
   back to the POC Project Admin kit before adding users or sites.
 - ``poc add user`` adds an admin participant to the persisted POC
   ``project.yml``, runs the existing POC provisioning pipeline, and registers
@@ -145,10 +145,10 @@ Examples:
 .. code-block:: shell
 
    nvflare poc add user lead bob@nvidia.com --org nvidia
-   nvflare kit use bob@nvidia.com
+   nvflare config kit use bob@nvidia.com
 
    nvflare poc add site site-3 --org nvidia
-   nvflare kit list
+   nvflare config kit list
    nvflare poc start -p site-3
 
 **************

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""nvflare kit command parser and handlers."""
+"""nvflare config kit command parser and handlers."""
 
 import os
 import sys
@@ -41,6 +41,7 @@ CMD_KIT_USE = "use"
 CMD_KIT_SHOW = "show"
 CMD_KIT_LIST = "list"
 CMD_KIT_REMOVE = "remove"
+KIT_COMMAND = "nvflare config kit"
 
 _kit_root_parser = None
 _kit_sub_cmd_parsers = {}
@@ -61,8 +62,8 @@ def _metadata_for_output(path: str) -> Dict[str, str]:
 def cmd_kit_add(args):
     handle_schema_flag(
         _kit_sub_cmd_parsers[CMD_KIT_ADD],
-        "nvflare kit add",
-        ["nvflare kit add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com"],
+        f"{KIT_COMMAND} add",
+        [f"{KIT_COMMAND} add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com"],
         sys.argv[1:],
     )
 
@@ -78,7 +79,7 @@ def cmd_kit_add(args):
         {
             "registered_startup_kit": kit_id,
             "path": get_startup_kit_entries(config)[kit_id],
-            "next_step": f"nvflare kit use {kit_id}",
+            "next_step": f"{KIT_COMMAND} use {kit_id}",
         }
     )
 
@@ -86,8 +87,8 @@ def cmd_kit_add(args):
 def cmd_kit_use(args):
     handle_schema_flag(
         _kit_sub_cmd_parsers[CMD_KIT_USE],
-        "nvflare kit use",
-        ["nvflare kit use cancer_lead"],
+        f"{KIT_COMMAND} use",
+        [f"{KIT_COMMAND} use cancer_lead"],
         sys.argv[1:],
     )
 
@@ -122,8 +123,8 @@ def _print_env_warning():
 def cmd_kit_show(args):
     handle_schema_flag(
         _kit_sub_cmd_parsers[CMD_KIT_SHOW],
-        "nvflare kit show",
-        ["nvflare kit show"],
+        f"{KIT_COMMAND} show",
+        [f"{KIT_COMMAND} show"],
         sys.argv[1:],
     )
 
@@ -141,13 +142,13 @@ def cmd_kit_show(args):
             output_ok({"active": None, "config_file": str(get_cli_config_path())})
         else:
             print_human("No active startup kit.")
-            print_human("Hint: Run nvflare kit use <id>.")
+            print_human(f"Hint: Run {KIT_COMMAND} use <id>.")
         return
 
     path = entries.get(active)
     data = {"active": active, "path": path or "-", "config_file": str(get_cli_config_path())}
     if path is None:
-        data.update({"status": "unregistered", "hint": "run nvflare kit list, then nvflare kit use <id>"})
+        data.update({"status": "unregistered", "hint": f"run {KIT_COMMAND} list, then {KIT_COMMAND} use <id>"})
     else:
         status, normalized_path, metadata = get_startup_kit_status(path)
         data["status"] = status
@@ -159,7 +160,7 @@ def cmd_kit_show(args):
         else:
             data["identity"] = "-"
             data["cert_role"] = "-"
-            data["hint"] = f"run nvflare kit use <id> or nvflare kit remove {active}"
+            data["hint"] = f"run {KIT_COMMAND} use <id> or {KIT_COMMAND} remove {active}"
 
     _print_env_warning()
     output_ok(data)
@@ -168,8 +169,8 @@ def cmd_kit_show(args):
 def cmd_kit_list(args):
     handle_schema_flag(
         _kit_sub_cmd_parsers[CMD_KIT_LIST],
-        "nvflare kit list",
-        ["nvflare kit list"],
+        f"{KIT_COMMAND} list",
+        [f"{KIT_COMMAND} list"],
         sys.argv[1:],
     )
 
@@ -202,8 +203,8 @@ def cmd_kit_list(args):
 def cmd_kit_remove(args):
     handle_schema_flag(
         _kit_sub_cmd_parsers[CMD_KIT_REMOVE],
-        "nvflare kit remove",
-        ["nvflare kit remove cancer_lead"],
+        f"{KIT_COMMAND} remove",
+        [f"{KIT_COMMAND} remove cancer_lead"],
         sys.argv[1:],
     )
 
@@ -219,7 +220,7 @@ def cmd_kit_remove(args):
     data = {"removed_startup_kit": kit_id}
     if was_active:
         data["warning"] = "no active startup kit is configured"
-        data["next_step"] = "nvflare kit use <id>"
+        data["next_step"] = f"{KIT_COMMAND} use <id>"
     output_ok(data)
 
 
@@ -271,11 +272,11 @@ def handle_kit_cmd(args):
     if "--schema" in getattr(args, "_argv", []) and sub_cmd is None:
         handle_schema_flag(
             _kit_root_parser,
-            "nvflare kit",
+            KIT_COMMAND,
             [
-                "nvflare kit add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com",
-                "nvflare kit use cancer_lead",
-                "nvflare kit list",
+                f"{KIT_COMMAND} add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com",
+                f"{KIT_COMMAND} use cancer_lead",
+                f"{KIT_COMMAND} list",
             ],
             sys.argv[1:],
         )
