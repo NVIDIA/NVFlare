@@ -221,7 +221,7 @@ class TestKitCli:
 
         assert "project_admin" in out
         assert "ok" in out
-        assert "site-1" not in out
+        assert "site-1" in out
         assert "missing_admin" in out
         assert "missing" in out
         assert "invalid_admin" in out

@@ -23,7 +23,6 @@ from nvflare.tool.cli_output import is_json_mode, output_error_message, output_o
 from nvflare.tool.cli_schema import handle_schema_flag
 from nvflare.tool.kit.kit_config import (
     NVFLARE_STARTUP_KIT_DIR,
-    STARTUP_KIT_KIND_ADMIN,
     StartupKitConfigError,
     add_startup_kit_entry,
     get_active_startup_kit_id,
@@ -42,6 +41,7 @@ CMD_KIT_USE = "use"
 CMD_KIT_SHOW = "show"
 CMD_KIT_LIST = "list"
 CMD_KIT_REMOVE = "remove"
+# The kit parser is registered under the config subparser in nvflare/cli.py.
 KIT_COMMAND = "nvflare config kit"
 
 _kit_root_parser = None
@@ -75,6 +75,7 @@ def cmd_kit_add(args):
         save_cli_config(config)
     except StartupKitConfigError as e:
         _emit_kit_error(e)
+        return
 
     output_ok(
         {
@@ -101,6 +102,7 @@ def cmd_kit_use(args):
         save_cli_config(config)
     except StartupKitConfigError as e:
         _emit_kit_error(e)
+        return
 
     path = entries[kit_id]
     metadata = _metadata_for_output(path)
@@ -133,6 +135,7 @@ def cmd_kit_show(args):
         config = load_cli_config()
     except StartupKitConfigError as e:
         _emit_kit_error(e)
+        return
 
     active = get_active_startup_kit_id(config)
     entries = get_startup_kit_entries(config)
@@ -179,16 +182,13 @@ def cmd_kit_list(args):
         config = load_cli_config()
     except StartupKitConfigError as e:
         _emit_kit_error(e)
+        return
 
     active = get_active_startup_kit_id(config)
     entries = get_startup_kit_entries(config)
     rows = []
     for kit_id, path in sorted(entries.items()):
         status, normalized_path, metadata = get_startup_kit_status(path)
-        # Valid site/server kits are service identities, not CLI user identities.
-        # Keep missing/invalid rows visible so users can clean stale registrations.
-        if metadata.get("kind") != STARTUP_KIT_KIND_ADMIN and status == "ok":
-            continue
         rows.append(
             {
                 "active": "*" if kit_id == active else "",
@@ -221,6 +221,7 @@ def cmd_kit_remove(args):
         save_cli_config(config)
     except StartupKitConfigError as e:
         _emit_kit_error(e)
+        return
 
     data = {"removed_startup_kit": kit_id}
     if was_active:
@@ -246,7 +247,7 @@ def def_kit_cli_parser(sub_cmd):
 
     add_parser = kit_subparser.add_parser(CMD_KIT_ADD, help="register a startup kit path")
     add_parser.add_argument("kit_id", help="local startup kit ID")
-    add_parser.add_argument("startup_kit_dir", help="admin startup kit directory")
+    add_parser.add_argument("startup_kit_dir", help="admin/user startup kit directory")
     add_parser.add_argument("--force", action="store_true", help="replace an existing local registration")
     add_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _kit_sub_cmd_parsers[CMD_KIT_ADD] = add_parser

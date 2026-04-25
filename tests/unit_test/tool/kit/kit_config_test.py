@@ -104,6 +104,28 @@ class TestStartupKitRegistryConfig:
         assert Path(loaded.get('startup_kits.entries."lead@nvidia.com"')).resolve() == kit_dir.resolve()
         assert loaded.get("startup_kits.active", None) is None
 
+    def test_simple_id_is_saved_unquoted_and_email_id_is_saved_quoted(self, tmp_path, monkeypatch):
+        from nvflare.tool.kit import kit_config
+
+        home = tmp_path / "home"
+        monkeypatch.setenv("HOME", str(home))
+        simple_kit = _make_admin_startup_kit(tmp_path / "simple", "simple@nvidia.com")
+        email_kit = _make_admin_startup_kit(tmp_path / "email", "lead@nvidia.com")
+
+        config = CF.parse_string("version = 2")
+        config = kit_config.add_startup_kit_entry(config, "cancer_lead", str(simple_kit))
+        config = kit_config.add_startup_kit_entry(config, "lead@nvidia.com", str(email_kit))
+        kit_config.save_cli_config(config)
+
+        persisted = (home / ".nvflare" / "config.conf").read_text()
+        assert "cancer_lead = " in persisted
+        assert '"cancer_lead"' not in persisted
+        assert '"lead@nvidia.com" = ' in persisted
+
+        loaded_entries = kit_config.get_startup_kit_entries(kit_config.load_cli_config())
+        assert Path(loaded_entries["cancer_lead"]).resolve() == simple_kit.resolve()
+        assert Path(loaded_entries["lead@nvidia.com"]).resolve() == email_kit.resolve()
+
     def test_duplicate_id_requires_force_and_force_replaces_only_registration(self, tmp_path):
         from nvflare.tool.kit import kit_config
 
@@ -175,6 +197,43 @@ class TestStartupKitRegistryConfig:
         assert Path(normalized_path) == site_kit.resolve()
         assert metadata["identity"] == "site-1"
         assert metadata["kind"] == "site"
+
+    def test_remove_entries_under_workspace_matches_symlink_and_real_paths(self, tmp_path):
+        from nvflare.tool.kit import kit_config
+
+        real_workspace = tmp_path / "real-poc"
+        real_workspace.mkdir()
+        link_workspace = tmp_path / "poc-link"
+        try:
+            link_workspace.symlink_to(real_workspace, target_is_directory=True)
+        except (NotImplementedError, OSError):
+            pytest.skip("symlink creation is not supported")
+
+        real_admin = real_workspace / "example_project" / "prod_00" / "admin@nvidia.com"
+        link_lead = link_workspace / "example_project" / "prod_00" / "lead@nvidia.com"
+        external_admin = tmp_path / "external" / "prod_00" / "admin@nvidia.com"
+        for kit_dir in (real_admin, link_lead, external_admin):
+            kit_dir.mkdir(parents=True, exist_ok=True)
+
+        config = CF.parse_string(
+            f"""
+            version = 2
+            startup_kits {{
+              active = "admin@nvidia.com"
+              entries {{
+                "admin@nvidia.com" = "{real_admin}"
+                "lead@nvidia.com" = "{link_lead}"
+                external_admin = "{external_admin}"
+              }}
+            }}
+            """
+        )
+
+        updated, removed = kit_config.remove_entries_under_workspace(config, str(real_workspace))
+
+        assert removed == {"admin@nvidia.com", "lead@nvidia.com"}
+        assert kit_config.get_startup_kit_entries(updated) == {"external_admin": str(external_admin)}
+        assert updated.get("startup_kits.active", None) is None
 
 
 class TestStartupKitResolution:

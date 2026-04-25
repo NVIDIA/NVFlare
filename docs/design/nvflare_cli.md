@@ -134,11 +134,11 @@ The JSON output shape and error codes defined here become the MCP tool schemas i
 | --- | --- | --- |
 | `nvflare simulator` | — | Deprecated — retain with stderr warning; use Job Recipe SimEnv directly (`python job.py`) |
 | `nvflare poc` | `prepare`, `start`, `stop`, `clean`, `add user`, `add site` | Add JSON output, exit codes, `--schema`; add `--force` to `prepare` for workspace deletion prompt bypass and to `clean` for stop-before-cleanup; register generated user/admin kits in the shared startup kit registry |
-| `nvflare config kit` | `add`, `use`, `show`, `list`, `remove` | New local startup kit registry; no server connection |
+| `nvflare config kit` | `add`, `use`, `show`, `list`, `remove` | User-facing startup kit registry commands; no server connection |
 | `nvflare study` | `register`, `show`, `list`, `remove`, `add-site`, `remove-site`, `add-user`, `remove-user` | Add multi-study lifecycle CLI using the active startup kit |
 | `nvflare provision` | — | Add JSON output, `--schema`, `--force` for Y/N prompts; restore pre-2.7.0 default: no args = generate `project.yml` |
 | `nvflare preflight-check` | — | Add JSON output, `--schema`; exit 0=pass, 1=fail. Underscore alias `preflight_check` accepted for backward compatibility. |
-| `nvflare config` | — | Add JSON output, `--schema` |
+| `nvflare config` | `kit` | Parent command namespace for local CLI settings. The user-facing workflow in this design is `nvflare config kit`. |
 | `nvflare dashboard` | — | No changes; excluded from this plan |
 | `nvflare authz-preview` | — | Deprecated — retain with stderr warning. Underscore alias `authz_preview` accepted for backward compatibility. |
 
@@ -434,9 +434,11 @@ nvflare config kit show
 
 Activation is local config mutation only. It does not contact the server.
 
-### Config Model
+### Startup Kit Registry Storage
 
-`~/.nvflare/config.conf` stores a startup kit ID-to-path registry plus one active ID:
+`~/.nvflare/config.conf` is the local storage file for the startup kit registry. The
+user-facing command is `nvflare config kit`; the stored `startup_kits` data is an
+implementation detail, not a separate customer-facing concept.
 
 ```hocon
 version = 2
@@ -452,11 +454,6 @@ startup_kits {
     fraud_org_admin = "/secure/startup_kits/fraud/org_admin@nvidia.com"
   }
 }
-
-poc {
-  workspace = "/tmp/nvflare/poc"
-}
-
 ```
 
 The registry key is a local ID. It is not a server-side object, not a certificate role,
@@ -470,8 +467,8 @@ role is inspected from the startup kit when needed by commands such as `nvflare 
 it is not duplicated in `config.conf`. Fields that are not reliably derivable from the
 startup kit are omitted from normal output.
 
-`poc.workspace` is retained because POC service management needs a workspace root. POC
-startup kit locations are not duplicated under `poc`.
+Other CLI state may also be stored in `~/.nvflare/config.conf`, but it is outside the
+startup kit registry and should not be part of the normal user workflow.
 
 ### `nvflare config kit`
 
@@ -647,20 +644,26 @@ Behavior:
 4. If the identity does not exist, append one admin participant with the requested
    identity, organization, and certificate role. With `--force`, update an existing
    participant entry in place instead of appending a duplicate.
-5. Persist the updated project YAML on disk before provisioning.
-6. Invoke the existing POC provisioning/build pipeline with the updated project YAML, the
-   same as a full-project provision. This is the local POC form of dynamic provisioning:
-   the existing provision state is reused, so the root CA is not changed, and generated
-   startup kits from the new `prod_NN` output are used.
-7. Register the generated admin/user kit under startup kit ID `<email>`.
-8. If there is no active startup kit, make the new kit active.
-9. In the normal POC flow, leave the current active kit unchanged and print the activation
+5. Locate the current POC output directory, normally `prod_00`, and the existing POC CA
+   state/rootCA created by `poc prepare`.
+6. Build a reduced dynamic provisioning project from the persisted POC project metadata.
+   The reduced project contains the existing server and only the new admin participant.
+   Existing clients, admins, and their startup kits are not regenerated.
+7. Run the existing POC provisioning/build pipeline on that reduced project, using the
+   existing CA state so the root CA is unchanged.
+8. Move only the new participant startup kit into the current POC output directory and
+   remove the temporary provisioning output. Existing participant directories in `prod_00`
+   must remain untouched.
+9. Persist the updated project YAML on disk.
+10. Register the generated admin/user kit under startup kit ID `<email>`.
+11. If there is no active startup kit, make the new kit active.
+12. In the normal POC flow, leave the current active kit unchanged and print the activation
    command.
 
 Example output when an active kit already exists:
 
 ```text
-startup_kit: /tmp/nvflare/poc/example_project/prod_01/bob@nvidia.com
+startup_kit: /tmp/nvflare/poc/example_project/prod_00/bob@nvidia.com
 id: bob@nvidia.com
 identity: bob@nvidia.com
 cert_role: lead
@@ -670,7 +673,7 @@ next_step: nvflare config kit use bob@nvidia.com
 Example output when no active kit exists:
 
 ```text
-startup_kit: /tmp/nvflare/poc/example_project/prod_01/bob@nvidia.com
+startup_kit: /tmp/nvflare/poc/example_project/prod_00/bob@nvidia.com
 id: bob@nvidia.com
 identity: bob@nvidia.com
 cert_role: lead
@@ -678,10 +681,9 @@ active: bob@nvidia.com
 ```
 
 After the first `poc prepare`, the initial output is normally `prod_00`. A later
-`poc add user` runs the provisioning pipeline again and normally creates the next output
-directory, such as `prod_01`. Existing participant certificates are loaded from the POC
-provision state and reused. The CLI should point registrations at the latest generated
-startup kits.
+`poc add user` is dynamic provisioning: it uses a temporary reduced build to generate only
+the new user kit, then places that kit under the existing `prod_00`. The command must not
+replace existing participant startup kits or repoint their registry entries.
 
 If the user identity already exists, the command fails unless `--force` is provided. With
 `--force`, update the existing project metadata entry in place, create a new startup kit,
@@ -706,13 +708,20 @@ Behavior:
 5. If the site does not exist, append one client participant with the requested site name
    and organization. With `--force`, update an existing site participant entry in place
    instead of appending a duplicate.
-6. Persist the updated project YAML on disk before provisioning.
-7. Invoke the existing POC provisioning/build pipeline with the updated project YAML, the
-   same as a full-project provision. The existing provision state is reused, so the root CA
-   is not changed, and generated startup kits from the new `prod_NN` output are used.
-8. Update the POC service config so commands such as `nvflare poc start -p site-3` know the
+6. Locate the current POC output directory, normally `prod_00`, and the existing POC CA
+   state/rootCA created by `poc prepare`.
+7. Build a reduced dynamic provisioning project from the persisted POC project metadata.
+   The reduced project contains the existing server and only the new client participant.
+   Existing participants are not regenerated.
+8. Run the existing POC provisioning/build pipeline on that reduced project, using the
+   existing CA state so the root CA is unchanged.
+9. Move only the new site startup kit into the current POC output directory and remove the
+   temporary provisioning output. Existing participant directories in `prod_00` must remain
+   untouched.
+10. Persist the updated project YAML on disk.
+11. Update the POC service config so commands such as `nvflare poc start -p site-3` know the
    new site exists.
-9. Print the generated startup kit path and start instructions.
+12. Print the generated startup kit path and start instructions.
 
 `poc add site` does not take a separate workspace argument. It is scoped to the active
 local POC workspace. Adding a site does not switch the active startup kit because site
@@ -733,7 +742,7 @@ Behavior:
 2. Remove the POC workspace.
 3. Remove startup kit entries whose canonical paths are under the canonical POC workspace
    path.
-4. Remove the `poc.workspace` key from `~/.nvflare/config.conf`.
+4. Remove local POC workspace state from `~/.nvflare/config.conf`.
 5. If the active startup kit was removed, clear `startup_kits.active`.
 6. Leave manually registered production startup kits untouched.
 
@@ -849,20 +858,19 @@ Both `poc add user` and `poc add site` require the active startup kit to have th
 must fail before project metadata is changed.
 
 `poc clean` removes only startup kit entries whose canonical paths are under the canonical
-`poc.workspace` path. If the active startup kit is removed, clear `startup_kits.active`.
+POC workspace path. If the active startup kit is removed, clear `startup_kits.active`.
 Manual production registrations remain untouched.
 
 ### Startup Kit Behavior Guarantees
 
 - `poc prepare` activates the default POC Project Admin startup kit automatically.
 - `poc prepare` writes POC admin/user startup kits into `startup_kits.entries`.
-- `poc.startup_kit` and `prod.startup_kit` are not read or written.
 - Normal server-connected commands do not expose `--startup-target` or `--startup-kit`.
 - Commands resolve the startup kit through `NVFLARE_STARTUP_KIT_DIR` first, then
   `startup_kits.active`.
 - `nvflare config kit` is the user-facing startup kit management interface.
-- `nvflare config` manages local CLI configuration. The root command manages
-  `poc.workspace`; `nvflare config kit` manages startup kit locations.
+- `nvflare config` is the parent command namespace; the normal user workflow in this
+  design is `nvflare config kit`.
 - `poc add user` registers generated user kits in `startup_kits.entries`.
 - `poc add site` generates site kits and updates POC workspace metadata, but it does not
   register site kits in `startup_kits.entries`.
@@ -873,7 +881,7 @@ Manual production registrations remain untouched.
 - For `nvflare config kit add` and `nvflare poc add user`, `--force` replaces the config
   registration for an existing ID without deleting old startup kit directories.
 - For `nvflare poc prepare`, `--force` means recreate the POC workspace; it does not
-  override unrelated startup kit registrations outside `poc.workspace`.
+  override unrelated startup kit registrations outside the POC workspace.
 - Persona commands are not needed. The common switching command is `nvflare config kit use <id>`.
 
 
@@ -935,8 +943,8 @@ nvflare poc add user <cert-role> <email> --org <org> [--force] [--schema]
 ```
 
 Creates or refreshes a local POC admin/user participant from the default POC project YAML,
-generates the corresponding startup kit through the existing POC provisioning pipeline,
-and registers that user kit under startup kit ID `<email>`.
+dynamically generates only that participant's startup kit with the existing POC CA, and
+registers that user kit under startup kit ID `<email>`.
 
 #### `nvflare poc add site`
 
@@ -945,8 +953,8 @@ nvflare poc add site <name> --org <org> [--force] [--schema]
 ```
 
 Creates or refreshes a local POC client participant from the default POC project YAML,
-generates the site startup kit through the existing POC provisioning pipeline, and updates POC service metadata so
-`nvflare poc start -p <name>` can manage the new site.
+dynamically generates only that participant's startup kit with the existing POC CA, and
+updates POC service metadata so `nvflare poc start -p <name>` can manage the new site.
 
 ### `nvflare job`
 
@@ -1035,18 +1043,16 @@ Exit code must be 0 on all checks pass, 1 on any failure.
 
 ### `nvflare config`
 
-Manages local CLI settings in `~/.nvflare/config.conf`. The root `nvflare config`
-command manages `poc.workspace`; startup kit locations are managed by
-`nvflare config kit` and stored in `startup_kits.entries`. `nvflare config` should
-not expose or write `poc.startup_kit` or `prod.startup_kit`.
+`nvflare config` is the parent command namespace for local CLI settings. The startup kit
+workflow is exposed through `nvflare config kit`; users should not need to edit or reason
+about the underlying storage layout.
 
 Persistence rules:
 
 1. `version = 2` is always the first line in the saved config.
 2. Once a config is loaded and re-saved by the CLI, it is normalized to the v2 layout in
-   §Config Model.
+   §Startup Kit Registry Storage.
 3. Startup kit entries are preserved when unrelated config fields are updated.
-4. `poc.workspace` is preserved unless `nvflare poc clean` removes the POC workspace.
 
 ### Admin username and `@` in directory names
 
@@ -1065,12 +1071,9 @@ Admin startup kit directories and startup kit IDs are often email addresses such
 
 ---
 
-| Argument | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `--poc.workspace` | str | No | — | POC workspace path |
-| `-debug`, `--debug` | flag | No | — | Debug mode |
-| `--describe` | flag | No | — | Print config file path, current contents, and format description |
-| `--schema` | flag | No | — | Print command schema and exit |
+The root `nvflare config` command is a parent namespace in this design. The documented
+user-facing workflow is `nvflare config kit`; other local config storage is implementation
+state and should not be part of normal user workflows.
 
 ### `nvflare dashboard` — deprecated (under review)
 
@@ -1098,7 +1101,7 @@ Retain with stderr warning. Underscore alias `authz_preview` accepted for backwa
 | `study register/show/list/remove/add-site/remove-site/add-user/remove-user` | Add | Add | Add | Manage multi-study lifecycle through active startup kit |
 | `provision` | Add | Add | Add | Restore pre-2.7.0 default; add `--force` |
 | `preflight-check` | Add | Add | Fix | 0=pass, 1=fail; alias `preflight_check` kept |
-| `config` | Add | Add | Add | Manage POC workspace and nested startup kit registry commands |
+| `config` | Add | Add | Add | Parent namespace for `config kit`; no normal server connection |
 | `job list-templates` | — | — | — | Deprecated; alias `list_templates` kept |
 | `job show-variables` | — | — | — | Deprecated; alias `show_variables` kept |
 | `simulator` | — | — | — | Deprecated |

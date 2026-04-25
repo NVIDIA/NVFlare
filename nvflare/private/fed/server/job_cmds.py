@@ -504,8 +504,16 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         # Accept the protocol token "@ALL" and the CLI/API spelling "all".
         all_targets = {ALL_SITES.lower(), "all"}
+        workspace_zip = None
+        workspace_zip_loaded = False
+        if target_lower in all_targets:
+            workspace_zip = self._read_stored_workspace_zip(conn, job_id)
+            workspace_zip_loaded = True
+
         if target_lower in {SERVER_SITE_NAME, *all_targets}:
-            server_log = self._read_server_job_log(conn, job_id)
+            server_log = self._read_server_job_log(
+                conn, job_id, workspace_zip=workspace_zip, workspace_zip_loaded=workspace_zip_loaded
+            )
             if server_log is not None or target_lower == SERVER_SITE_NAME:
                 payload["logs"][SERVER_SITE_NAME] = server_log or ""
             else:
@@ -515,7 +523,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             if target_lower not in {SERVER_SITE_NAME, *all_targets}:
                 self._add_client_job_log(conn, payload, job_id, target)
             elif target_lower in all_targets:
-                self._add_all_client_job_logs(conn, payload, job_id)
+                self._add_all_client_job_logs(
+                    conn, payload, job_id, workspace_zip=workspace_zip, workspace_zip_loaded=workspace_zip_loaded
+                )
         except TypeError as e:
             error = secure_format_exception(e)
             conn.append_error(error, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, error))
@@ -523,11 +533,15 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         conn.append_dict(payload, meta=make_meta(MetaStatusValue.OK))
 
-    def _read_server_job_log(self, conn: Connection, job_id: str) -> Optional[str]:
+    def _read_server_job_log(
+        self, conn: Connection, job_id: str, workspace_zip: bytes = None, workspace_zip_loaded: bool = False
+    ) -> Optional[str]:
         engine = conn.app_ctx
         log_text = self._read_live_server_job_log(engine, job_id)
         if log_text is not None:
             return log_text
+        if workspace_zip_loaded:
+            return self._extract_server_log_from_workspace_zip(workspace_zip)
         return self._read_stored_server_job_log(conn, job_id)
 
     def _read_live_server_job_log(self, engine, job_id: str) -> Optional[str]:
@@ -544,6 +558,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         return None
 
     def _read_stored_server_job_log(self, conn: Connection, job_id: str) -> Optional[str]:
+        workspace_zip = self._read_stored_workspace_zip(conn, job_id)
+        return self._extract_server_log_from_workspace_zip(workspace_zip)
+
+    def _read_stored_workspace_zip(self, conn: Connection, job_id: str) -> Optional[bytes]:
         engine = conn.app_ctx
         job_def_manager = engine.job_def_manager
         if not isinstance(job_def_manager, JobDefManagerSpec):
@@ -555,7 +573,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             except StorageException:
                 return None
 
-        return self._extract_server_log_from_workspace_zip(workspace_zip)
+        return workspace_zip
 
     def _extract_server_log_from_workspace_zip(self, workspace_zip: bytes) -> Optional[str]:
         if not workspace_zip:
@@ -594,7 +612,14 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         else:
             payload["logs"][client_name] = text
 
-    def _add_all_client_job_logs(self, conn: Connection, payload: dict, job_id: str):
+    def _add_all_client_job_logs(
+        self,
+        conn: Connection,
+        payload: dict,
+        job_id: str,
+        workspace_zip: bytes = None,
+        workspace_zip_loaded: bool = False,
+    ):
         engine = conn.app_ctx
         job_def_manager = engine.job_def_manager
         if not isinstance(job_def_manager, JobDefManagerSpec):
@@ -604,11 +629,28 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         with engine.new_context() as fl_ctx:
             available_sites = self._get_available_client_log_sites(job_def_manager, job_id, fl_ctx)
-            available_sites.update(self._get_available_workspace_client_log_sites(job_def_manager, job_id, fl_ctx))
+            if workspace_zip_loaded:
+                workspace_client_logs = self._extract_client_logs_from_workspace_zip(workspace_zip)
+            else:
+                # Defensive path for direct helper calls. get_job_log preloads the workspace
+                # ZIP before calling this for --site all.
+                workspace_client_logs = self._read_workspace_client_job_logs(job_def_manager, job_id, fl_ctx)
+            available_sites.update(workspace_client_logs.keys())
 
         known_sites = self._get_job_client_targets(conn.get_prop(self.JOB))
         for client_name in sorted(known_sites | available_sites):
-            text = self._read_client_job_log(conn, job_id, client_name)
+            text = self._read_live_client_job_log(engine, job_id, client_name)
+            if text is None:
+                text = workspace_client_logs.get(client_name)
+            if text is None:
+                with engine.new_context() as fl_ctx:
+                    data = job_def_manager.get_client_data(
+                        jid=job_id,
+                        client_name=client_name,
+                        data_type=self._client_log_data_type(),
+                        fl_ctx=fl_ctx,
+                    )
+                text = self._decode_job_log_data(data)
             if text is not None:
                 payload["logs"][client_name] = text
 
@@ -708,32 +750,57 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             if component.startswith(component_prefix) and component[len(component_prefix) :]
         }
 
-    def _get_available_workspace_client_log_sites(self, job_def_manager, job_id: str, fl_ctx) -> Set[str]:
+    def _read_workspace_client_job_logs(self, job_def_manager, job_id: str, fl_ctx) -> Dict[str, str]:
         try:
             workspace_zip = job_def_manager.get_storage_component(jid=job_id, component=WORKSPACE, fl_ctx=fl_ctx)
         except StorageException:
-            return set()
+            return {}
 
+        return self._extract_client_logs_from_workspace_zip(workspace_zip)
+
+    def _extract_client_logs_from_workspace_zip(self, workspace_zip: bytes) -> Dict[str, str]:
         if not workspace_zip:
-            return set()
+            return {}
 
         try:
             with ZipFile(io.BytesIO(workspace_zip), "r") as zip_file:
-                return self._find_workspace_client_log_sites(zip_file.namelist())
+                log_members = self._find_workspace_client_log_members(zip_file.namelist())
+                logs = {}
+                for client_name, log_name in log_members.items():
+                    try:
+                        with zip_file.open(log_name, "r") as log_file:
+                            data = log_file.read(self.MAX_RETURNED_JOB_LOG_BYTES + 1)
+                    except (KeyError, OSError):
+                        continue
+                    text = self._decode_job_log_data(data)
+                    if text is not None:
+                        logs[client_name] = text
+                return logs
         except (BadZipFile, OSError, TypeError):
-            return set()
+            return {}
 
     @staticmethod
     def _find_workspace_client_log_sites(member_names: List[str]) -> Set[str]:
-        sites = set()
+        return set(JobCommandModule._find_workspace_client_log_members(member_names))
+
+    @staticmethod
+    def _find_workspace_client_log_members(member_names: List[str]) -> Dict[str, str]:
+        members = {}
+        exact_members = {}
         log_file_name = WorkspaceConstants.LOG_FILE_NAME
         for member_name in member_names:
             if member_name.endswith("/") or not member_name.endswith(f"/{log_file_name}"):
                 continue
             parts = member_name.split("/")
             if len(parts) >= 2 and parts[-2] and parts[-2] != SERVER_SITE_NAME:
-                sites.add(parts[-2])
-        return sites
+                if len(parts) == 2:
+                    exact_members[parts[-2]] = member_name
+                elif parts[-2] not in members:
+                    members[parts[-2]] = member_name
+        # Prefer exact two-part paths (client_name/fl.log) over deeper paths
+        # (run_1/client_name/fl.log) by letting exact_members overwrite members.
+        members.update(exact_members)
+        return members
 
     @staticmethod
     def _get_job_client_targets(job) -> Set[str]:

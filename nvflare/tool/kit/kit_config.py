@@ -16,6 +16,7 @@
 
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Dict, Optional, Set, Tuple
@@ -25,6 +26,15 @@ from pyhocon import ConfigTree, HOCONConverter
 
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.tool.job.job_client_const import CONFIG_CONF
+
+try:
+    from cryptography import x509
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.x509.oid import NameOID
+except ImportError:
+    x509 = None
+    default_backend = None
+    NameOID = None
 
 CONFIG_VERSION = "version"
 CURRENT_CONFIG_VERSION = 2
@@ -42,6 +52,7 @@ SERVER_STARTUP_KIT_REQUIRED_FILES = (os.path.join("startup", "fed_server.json"),
 STARTUP_KIT_KIND_ADMIN = "admin"
 STARTUP_KIT_KIND_SITE = "site"
 STARTUP_KIT_KIND_SERVER = "server"
+_HOCON_SIMPLE_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 class StartupKitConfigError(ValueError):
@@ -100,7 +111,7 @@ def save_cli_config(config: ConfigTree) -> None:
     """Atomically write ~/.nvflare/config.conf as config schema version 2."""
     config_path = get_cli_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    _remove_legacy_startup_kit_keys(_ensure_v2_config(config))
+    config = _remove_legacy_startup_kit_keys(_ensure_v2_config(config))
 
     config_text = HOCONConverter.to_hocon(config=config, level=1)
     temp_path = None
@@ -116,7 +127,12 @@ def save_cli_config(config: ConfigTree) -> None:
             os.remove(temp_path)
 
 
-def _quote_hocon_key(key: str) -> str:
+def _hocon_path_key(key: str) -> str:
+    """Return a ConfigTree.put path segment that preserves the registry ID literally."""
+    if _HOCON_SIMPLE_KEY_PATTERN.match(key):
+        return key
+    # ConfigTree.put treats dots as path separators. Quote emails and other complex IDs so
+    # values like lead@nvidia.com remain one registry key instead of nested HOCON paths.
     return json.dumps(key)
 
 
@@ -262,7 +278,7 @@ def add_startup_kit_entry(config: ConfigTree, kit_id: str, path: str, force: boo
     if raw_existing_key is not None:
         entries.pop(raw_existing_key, None)
 
-    config.put(f"{STARTUP_KITS_ENTRIES_KEY}.{_quote_hocon_key(kit_id)}", normalized_path)
+    config.put(f"{STARTUP_KITS_ENTRIES_KEY}.{_hocon_path_key(kit_id)}", normalized_path)
     return _ensure_v2_config(config)
 
 
@@ -304,26 +320,38 @@ def _canonical_path(path: str) -> Path:
     return Path(path).expanduser().resolve(strict=False)
 
 
+def _absolute_path(path: str) -> Path:
+    return Path(path).expanduser().absolute()
+
+
+def _path_match_candidates(path: str) -> Tuple[Path, ...]:
+    """Return real-path and spelling-preserving variants for workspace containment checks."""
+    canonical_path = _canonical_path(path)
+    absolute_path = _absolute_path(path)
+    if canonical_path == absolute_path:
+        return (canonical_path,)
+    return canonical_path, absolute_path
+
+
 def _is_relative_to(path: Path, base: Path) -> bool:
-    try:
-        return path == base or path.is_relative_to(base)
-    except AttributeError:
-        try:
-            return os.path.commonpath([str(path), str(base)]) == str(base)
-        except ValueError:
-            return False
+    return path == base or path.is_relative_to(base)
 
 
 def remove_entries_under_workspace(config: ConfigTree, workspace: str) -> Tuple[ConfigTree, Set[str]]:
-    """Remove entries whose canonical paths are under canonical workspace path."""
-    workspace_path = _canonical_path(workspace)
+    """Remove entries whose canonical or lexical paths are under the workspace path."""
+    workspace_paths = _path_match_candidates(workspace)
     entries = _get_entries_tree(config)
     removed = set()
 
     for raw_key, path in list(entries.items()):
         if not isinstance(path, str):
             continue
-        if _is_relative_to(_canonical_path(path), workspace_path):
+        path_candidates = _path_match_candidates(path)
+        if any(
+            _is_relative_to(path_candidate, workspace_path)
+            for path_candidate in path_candidates
+            for workspace_path in workspace_paths
+        ):
             removed.add(_decode_hocon_key(raw_key))
             entries.pop(raw_key, None)
 
@@ -350,22 +378,19 @@ def inspect_startup_kit_metadata(path: str) -> Dict[str, Optional[str]]:
         except Exception:
             pass
 
-        try:
-            from cryptography import x509
-            from cryptography.hazmat.backends import default_backend
-            from cryptography.x509.oid import NameOID
-
-            cert_path = os.path.join(startup_dir, "client.crt")
-            with open(cert_path, "rb") as f:
-                cert = x509.load_pem_x509_certificate(f.read(), default_backend())
-            role_attrs = cert.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
-            if role_attrs:
-                metadata["cert_role"] = role_attrs[0].value
-            cn_attrs = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
-            if cn_attrs and not metadata["identity"]:
-                metadata["identity"] = cn_attrs[0].value
-        except Exception:
-            pass
+        if x509 and default_backend and NameOID:
+            try:
+                cert_path = os.path.join(startup_dir, "client.crt")
+                with open(cert_path, "rb") as f:
+                    cert = x509.load_pem_x509_certificate(f.read(), default_backend())
+                role_attrs = cert.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
+                if role_attrs:
+                    metadata["cert_role"] = role_attrs[0].value
+                cn_attrs = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+                if cn_attrs and not metadata["identity"]:
+                    metadata["identity"] = cn_attrs[0].value
+            except Exception:
+                pass
 
     if not metadata["identity"]:
         metadata["identity"] = os.path.basename(startup_kit_dir)

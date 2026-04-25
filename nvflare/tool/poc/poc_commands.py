@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 import errno
 import json
 import os
@@ -28,7 +29,7 @@ import yaml
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
-from nvflare.lighter.constants import PropKey, ProvisionMode
+from nvflare.lighter.constants import CtxKey, PropKey, ProvisionMode
 from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
 from nvflare.lighter.provision import gen_default_project_config, prepare_project
 from nvflare.lighter.provisioner import Provisioner
@@ -40,8 +41,11 @@ from nvflare.lighter.utils import (
 )
 from nvflare.tool.api_utils import shutdown_system
 from nvflare.tool.kit.kit_config import (
+    STARTUP_KIT_KIND_ADMIN,
+    STARTUP_KIT_KIND_SITE,
     StartupKitConfigError,
     add_startup_kit_entry,
+    classify_startup_kit,
     get_active_startup_kit_id,
     get_startup_kit_entries,
     inspect_startup_kit_metadata,
@@ -71,6 +75,10 @@ POC_ADD_REQUIRED_CERT_ROLE = "project_admin"
 POC_KEY = "poc"
 STARTUP_KIT_KEY = "startup_kit"
 WORKSPACE_KEY = "workspace"
+
+
+class AuthorizationError(PermissionError):
+    """The current CLI identity is not authorized for the command."""
 
 
 def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, List[int]]:
@@ -475,15 +483,12 @@ def prepare_clients(clients, number_of_clients):
     return clients
 
 
-def _is_admin_startup_kit_dir(kit_dir: str) -> bool:
-    return all(
-        os.path.isfile(os.path.join(kit_dir, SC.STARTUP, required_file))
-        for required_file in ("fed_admin.json", "client.crt", "rootCA.pem")
-    )
-
-
-def _is_site_startup_kit_dir(kit_dir: str) -> bool:
-    return os.path.isfile(os.path.join(kit_dir, SC.STARTUP, "fed_client.json"))
+def _is_startup_kit_kind(kit_dir: str, expected_kind: str) -> bool:
+    try:
+        kind, _ = classify_startup_kit(kit_dir)
+    except StartupKitConfigError:
+        return False
+    return kind == expected_kind
 
 
 def _get_generated_poc_startup_kits(project_config: Dict, prod_dir: str) -> Tuple[Dict[str, str], Optional[str]]:
@@ -502,7 +507,7 @@ def _get_generated_poc_startup_kits(project_config: Dict, prod_dir: str) -> Tupl
 
         kit_dir = os.path.abspath(os.path.join(prod_dir, identity))
         participant_type = participant.get("type")
-        if participant_type == "admin" and _is_admin_startup_kit_dir(kit_dir):
+        if participant_type == "admin" and _is_startup_kit_kind(kit_dir, STARTUP_KIT_KIND_ADMIN):
             entries[identity] = kit_dir
             if active_id is None and participant.get("role") == "project_admin":
                 active_id = identity
@@ -521,7 +526,7 @@ def _register_poc_startup_kits(config: Dict[str, Any], workspace: str, kit_entri
                 f"startup kit id '{kit_id}' already exists outside POC workspace; "
                 f"run 'nvflare config kit remove {kit_id}' or replace it explicitly"
             )
-        add_startup_kit_entry(config, kit_id, kit_path, force=True)
+        config = add_startup_kit_entry(config, kit_id, kit_path, force=True)
 
     return removed_ids
 
@@ -628,27 +633,134 @@ def _restore_poc_active_kit(previous_active: Optional[str], preferred_active: Op
         save_cli_config(config)
 
 
+def _get_existing_poc_prod_dir(poc_workspace: str, project_name: str) -> str:
+    prod_dirs = _get_prod_dirs(poc_workspace, project_name)
+    if not prod_dirs:
+        raise CLIException("POC workspace has no existing provisioned output; run 'nvflare poc prepare' first")
+    return prod_dirs[-1]
+
+
+def _remove_path(path: str):
+    if os.path.isdir(path):
+        shutil.rmtree(path)
+    elif os.path.exists(path):
+        os.remove(path)
+
+
+class _PocDynamicProvisionLogger:
+    def debug(self, msg: str):
+        pass
+
+    def info(self, msg: str):
+        pass
+
+    def warning(self, msg: str):
+        pass
+
+    def error(self, msg: str):
+        pass
+
+
+def _dynamic_poc_project_config(project_config: Dict, participant: Dict) -> Dict:
+    dynamic_config = copy.deepcopy(project_config)
+    participants = project_config.get("participants", [])
+    servers = [p for p in participants if isinstance(p, dict) and p.get("type") == "server"]
+    if len(servers) != 1:
+        raise CLIException(f"project should only have one server, but {len(servers)} are provided")
+
+    dynamic_config["participants"] = [copy.deepcopy(servers[0]), copy.deepcopy(participant)]
+    # Dynamic POC provisioning only builds the new participant kit. Study registry updates
+    # belong to the running server metadata, not to this short-lived reduced project.
+    dynamic_config.pop("studies", None)
+    return dynamic_config
+
+
+def _ensure_dynamic_poc_ca_available(poc_workspace: str, project_name: str, prod_dir: str, project_config: Dict) -> str:
+    state_file = os.path.join(poc_workspace, project_name, "state", "cert.json")
+    if not os.path.isfile(state_file):
+        raise CLIException(
+            "existing POC CA state was not found; run 'nvflare poc prepare' before using 'nvflare poc add'"
+        )
+
+    server_name = get_fl_server_name(project_config)
+    root_ca_path = os.path.join(prod_dir, server_name, SC.STARTUP, "rootCA.pem")
+    if not os.path.isfile(root_ca_path):
+        raise CLIException(
+            "existing POC rootCA.pem was not found; run 'nvflare poc prepare' before using 'nvflare poc add'"
+        )
+    return root_ca_path
+
+
+def _provision_poc_participant_only(
+    poc_workspace: str,
+    project_config: Dict,
+    participant: Dict,
+    target_prod_dir: str,
+    force: bool = False,
+) -> str:
+    project_name = project_config.get("name") or DEFAULT_PROJECT_NAME
+    _ensure_dynamic_poc_ca_available(poc_workspace, project_name, target_prod_dir, project_config)
+    dynamic_config = _dynamic_poc_project_config(project_config, participant)
+
+    project = prepare_project(dynamic_config)
+    builders = prepare_builders(dynamic_config)
+    packager = prepare_packager(dynamic_config)
+    provisioner = Provisioner(poc_workspace, builders, packager)
+
+    temp_prod_dir = None
+    try:
+        ctx = provisioner.provision(project, mode=ProvisionMode.POC, logger=_PocDynamicProvisionLogger())
+        if ctx.get(CtxKey.BUILD_ERROR):
+            raise CLIException("dynamic POC provisioning failed; see provisioning output for details")
+
+        temp_prod_dir = ctx.get(CtxKey.CURRENT_PROD_DIR)
+        if not temp_prod_dir:
+            raise CLIException("dynamic POC provisioning did not produce an output directory")
+
+        participant_name = participant["name"]
+        generated_kit = os.path.join(temp_prod_dir, participant_name)
+        if not os.path.isdir(generated_kit):
+            raise CLIException(f"startup kit was not generated for participant '{participant_name}'")
+
+        target_kit = os.path.join(target_prod_dir, participant_name)
+        if os.path.exists(target_kit):
+            if not force:
+                raise CLIException(f"startup kit already exists for participant '{participant_name}'")
+            _remove_path(target_kit)
+
+        shutil.move(generated_kit, target_kit)
+        return target_kit
+    finally:
+        if temp_prod_dir and os.path.isdir(temp_prod_dir):
+            shutil.rmtree(temp_prod_dir, ignore_errors=True)
+
+
 def _dynamic_poc_provision(
     poc_workspace: str,
     project_file: str,
     project_config: Dict,
+    participant: Dict,
+    expected_kit_kind: str,
     previous_active: Optional[str],
     preferred_active: Optional[str] = None,
+    force: bool = False,
 ) -> Tuple[Dict, str]:
-    save_project_config(project_config, project_file)
-    project_config = prepare_poc_provision(
-        [],
-        0,
-        poc_workspace,
-        docker_image=None,
-        use_he=False,
-        project_conf_path=project_file,
-        examples_dir=None,
-    )
     project_name = project_config.get("name") if project_config else DEFAULT_PROJECT_NAME
+    prod_dir = _get_existing_poc_prod_dir(poc_workspace, project_name)
+    startup_kit = _provision_poc_participant_only(
+        poc_workspace,
+        project_config,
+        participant,
+        prod_dir,
+        force=force,
+    )
+    if not _is_startup_kit_kind(startup_kit, expected_kit_kind):
+        raise CLIException(f"startup kit was not generated for participant '{participant['name']}'")
+
+    save_project_config(project_config, project_file)
     save_startup_kit_dir_config(poc_workspace, project_name)
     _restore_poc_active_kit(previous_active, preferred_active)
-    return project_config, get_prod_dir(poc_workspace, project_name)
+    return project_config, prod_dir
 
 
 def _add_poc_user(poc_workspace: str, cert_role: str, email: str, org: str, force: bool = False) -> Dict:
@@ -661,11 +773,14 @@ def _add_poc_user(poc_workspace: str, cert_role: str, email: str, org: str, forc
         poc_workspace,
         project_file,
         project_config,
+        participant,
+        STARTUP_KIT_KIND_ADMIN,
         previous_active,
         preferred_active=preferred_active,
+        force=force,
     )
     startup_kit = os.path.join(prod_dir, email)
-    if not _is_admin_startup_kit_dir(startup_kit):
+    if not _is_startup_kit_kind(startup_kit, STARTUP_KIT_KIND_ADMIN):
         raise CLIException(f"startup kit was not generated for user '{email}'")
 
     result = {
@@ -694,10 +809,13 @@ def _add_poc_site(poc_workspace: str, name: str, org: str, force: bool = False) 
         poc_workspace,
         project_file,
         project_config,
+        participant,
+        STARTUP_KIT_KIND_SITE,
         previous_active,
+        force=force,
     )
     startup_kit = os.path.join(prod_dir, name)
-    if not _is_site_startup_kit_dir(startup_kit):
+    if not _is_startup_kit_kind(startup_kit, STARTUP_KIT_KIND_SITE):
         raise CLIException(f"startup kit was not generated for site '{name}'")
 
     return {
@@ -717,7 +835,7 @@ def _require_poc_project_admin():
     cert_role = metadata.get("cert_role")
     identity = metadata.get("identity") or "<unknown>"
     if cert_role != POC_ADD_REQUIRED_CERT_ROLE:
-        raise PermissionError(
+        raise AuthorizationError(
             f"nvflare poc add requires an active startup kit with role '{POC_ADD_REQUIRED_CERT_ROLE}'; "
             f"active identity '{identity}' has role '{cert_role or 'unknown'}'"
         )
@@ -766,7 +884,7 @@ def add_poc_user(cmd_args):
     except ValueError as e:
         output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e))
         raise SystemExit(4)
-    except PermissionError as e:
+    except AuthorizationError as e:
         output_error("NOT_AUTHORIZED", exit_code=1, detail=str(e))
         raise SystemExit(1)
     except CLIException as e:
@@ -810,7 +928,7 @@ def add_poc_site(cmd_args):
     except ValueError as e:
         output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e))
         raise SystemExit(4)
-    except PermissionError as e:
+    except AuthorizationError as e:
         output_error("NOT_AUTHORIZED", exit_code=1, detail=str(e))
         raise SystemExit(1)
     except CLIException as e:
@@ -1528,10 +1646,8 @@ def _clean_poc(poc_workspace: str, force: bool = False):
 
             from nvflare.tool.cli_output import print_human
 
-            try:
-                shutil.rmtree(poc_workspace)
-            finally:
-                _clean_poc_config(poc_workspace)
+            _clean_poc_config(poc_workspace)
+            shutil.rmtree(poc_workspace)
 
             print_human(f"{poc_workspace} is removed")
             return True

@@ -14,6 +14,7 @@
 
 import errno
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -336,7 +337,7 @@ class TestPocForce:
             _require_poc_project_admin()
 
     def test_poc_add_project_admin_guard_rejects_non_project_admin(self):
-        from nvflare.tool.poc.poc_commands import _require_poc_project_admin
+        from nvflare.tool.poc.poc_commands import AuthorizationError, _require_poc_project_admin
 
         with (
             patch("nvflare.tool.poc.poc_commands.resolve_startup_kit_dir", return_value="/startup-kit"),
@@ -345,11 +346,11 @@ class TestPocForce:
                 return_value={"identity": "lead@nvidia.com", "cert_role": "lead"},
             ),
         ):
-            with pytest.raises(PermissionError, match="project_admin"):
+            with pytest.raises(AuthorizationError, match="project_admin"):
                 _require_poc_project_admin()
 
     def test_poc_add_user_rejects_non_project_admin_before_mutation(self, capsys):
-        from nvflare.tool.poc.poc_commands import add_poc_user
+        from nvflare.tool.poc.poc_commands import AuthorizationError, add_poc_user
 
         args = MagicMock()
         args.cert_role = "lead"
@@ -360,7 +361,7 @@ class TestPocForce:
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value="/tmp/poc"),
             patch(
                 "nvflare.tool.poc.poc_commands._require_poc_project_admin",
-                side_effect=PermissionError("active identity 'lead@nvidia.com' has role 'lead'"),
+                side_effect=AuthorizationError("active identity 'lead@nvidia.com' has role 'lead'"),
             ),
             patch("nvflare.tool.poc.poc_commands._add_poc_user") as add_user,
         ):
@@ -374,7 +375,7 @@ class TestPocForce:
         assert "lead@nvidia.com" in captured.err
 
     def test_poc_add_site_rejects_non_project_admin_before_mutation(self, capsys):
-        from nvflare.tool.poc.poc_commands import add_poc_site
+        from nvflare.tool.poc.poc_commands import AuthorizationError, add_poc_site
 
         args = MagicMock()
         args.name = "site-3"
@@ -384,7 +385,7 @@ class TestPocForce:
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value="/tmp/poc"),
             patch(
                 "nvflare.tool.poc.poc_commands._require_poc_project_admin",
-                side_effect=PermissionError("active identity 'lead@nvidia.com' has role 'lead'"),
+                side_effect=AuthorizationError("active identity 'lead@nvidia.com' has role 'lead'"),
             ),
             patch("nvflare.tool.poc.poc_commands._add_poc_site") as add_site,
         ):
@@ -538,6 +539,93 @@ participants:
         assert "startup_kit" not in config["poc"]
         assert "prod" not in config or "startup_kit" not in config["prod"]
 
+    def test_dynamic_poc_project_config_contains_only_server_and_new_participant(self):
+        from nvflare.tool.poc.poc_commands import _dynamic_poc_project_config
+
+        project_config = {
+            "api_version": 4,
+            "name": "example_project",
+            "participants": [
+                {"name": "server", "type": "server", "org": "nvidia"},
+                {"name": "site-1", "type": "client", "org": "nvidia"},
+                {"name": "admin@nvidia.com", "type": "admin", "role": "project_admin", "org": "nvidia"},
+            ],
+            "studies": {"study-a": {"site_orgs": {"nvidia": ["site-1"]}}},
+        }
+        participant = {"name": "site-3", "type": "client", "org": "nvidia"}
+
+        dynamic_config = _dynamic_poc_project_config(project_config, participant)
+
+        assert dynamic_config["participants"] == [
+            {"name": "server", "type": "server", "org": "nvidia"},
+            {"name": "site-3", "type": "client", "org": "nvidia"},
+        ]
+        assert "studies" not in dynamic_config
+        assert project_config["participants"][1]["name"] == "site-1"
+
+    def test_provision_poc_participant_only_moves_new_kit_into_existing_prod_dir(self, tmp_path, monkeypatch):
+        from nvflare.lighter.constants import CtxKey
+        from nvflare.tool.poc import poc_commands
+
+        workspace = tmp_path / "poc_ws"
+        project_name = "example_project"
+        prod_00 = workspace / project_name / "prod_00"
+        state_dir = workspace / project_name / "state"
+        state_dir.mkdir(parents=True)
+        (state_dir / "cert.json").write_text("{}")
+        server_startup = prod_00 / "server" / SC.STARTUP
+        server_startup.mkdir(parents=True)
+        (server_startup / "rootCA.pem").write_text("root ca")
+        _make_admin_startup_kit(prod_00, "admin@nvidia.com")
+        _make_site_startup_kit(prod_00, "site-1")
+        existing_admin_marker = prod_00 / "admin@nvidia.com" / "marker.txt"
+        existing_admin_marker.write_text("unchanged")
+
+        project_config = {
+            "api_version": 3,
+            "name": project_name,
+            "participants": [
+                {"name": "server", "type": "server", "org": "nvidia"},
+                {"name": "site-1", "type": "client", "org": "nvidia"},
+                {"name": "admin@nvidia.com", "type": "admin", "role": "project_admin", "org": "nvidia"},
+                {"name": "site-3", "type": "client", "org": "nvidia"},
+            ],
+        }
+        participant = {"name": "site-3", "type": "client", "org": "nvidia"}
+        captured_dynamic_config = {}
+
+        def fake_prepare_project(dynamic_config):
+            captured_dynamic_config.update(dynamic_config)
+            return object()
+
+        class FakeProvisioner:
+            def __init__(self, root_dir, builders, packager):
+                assert root_dir == str(workspace)
+                assert builders == ["builder"]
+                assert packager == "packager"
+
+            def provision(self, project, mode=None, logger=None):
+                prod_01 = workspace / project_name / "prod_01"
+                _make_site_startup_kit(prod_01, "site-3")
+                (prod_01 / "server").mkdir(parents=True)
+                return {CtxKey.CURRENT_PROD_DIR: str(prod_01)}
+
+        monkeypatch.setattr(poc_commands, "prepare_project", fake_prepare_project)
+        monkeypatch.setattr(poc_commands, "prepare_builders", lambda dynamic_config: ["builder"])
+        monkeypatch.setattr(poc_commands, "prepare_packager", lambda dynamic_config: "packager")
+        monkeypatch.setattr(poc_commands, "Provisioner", FakeProvisioner)
+
+        result = poc_commands._provision_poc_participant_only(str(workspace), project_config, participant, str(prod_00))
+
+        assert result == str(prod_00 / "site-3")
+        assert (prod_00 / "site-3" / SC.STARTUP / "fed_client.json").is_file()
+        assert not (workspace / project_name / "prod_01").exists()
+        assert existing_admin_marker.read_text() == "unchanged"
+        assert captured_dynamic_config["participants"] == [
+            {"name": "server", "type": "server", "org": "nvidia"},
+            {"name": "site-3", "type": "client", "org": "nvidia"},
+        ]
+
     def test_poc_add_user_persists_project_and_registers_new_admin_kit(self, tmp_path, monkeypatch):
         from nvflare.tool.poc.poc_commands import _add_poc_user
 
@@ -581,43 +669,35 @@ poc {{
 """
         )
 
-        def fake_prepare_poc_provision(
-            clients, number_of_clients, workspace_arg, docker_image, use_he, project_conf_path, examples_dir
-        ):
-            assert clients == []
-            assert number_of_clients == 0
+        def fake_provision_participant_only(workspace_arg, project_config_arg, participant, target_prod_dir, force):
             assert workspace_arg == str(workspace)
-            assert docker_image is None
-            assert use_he is False
-            assert project_conf_path == str(project_file)
-            assert examples_dir is None
-            project_config = yaml.safe_load(project_file.read_text())
-            prod_01 = workspace / project_name / "prod_01"
-            for participant in project_config["participants"]:
-                if participant["type"] == "admin":
-                    _make_admin_startup_kit(prod_01, participant["name"])
-                elif participant["type"] == "client":
-                    _make_site_startup_kit(prod_01, participant["name"])
-                else:
-                    (prod_01 / participant["name"]).mkdir(parents=True, exist_ok=True)
-            return project_config
+            assert target_prod_dir == str(prod_00)
+            assert participant == {"name": "bob@nvidia.com", "type": "admin", "org": "nvidia", "role": "lead"}
+            assert {"name": "site-1", "type": "client", "org": "nvidia"} in project_config_arg["participants"]
+            assert force is False
+            _make_admin_startup_kit(Path(target_prod_dir), participant["name"])
+            return os.path.join(target_prod_dir, participant["name"])
 
-        with patch("nvflare.tool.poc.poc_commands.prepare_poc_provision", side_effect=fake_prepare_poc_provision):
+        with patch(
+            "nvflare.tool.poc.poc_commands._provision_poc_participant_only",
+            side_effect=fake_provision_participant_only,
+        ):
             result = _add_poc_user(str(workspace), "lead", "bob@nvidia.com", "nvidia")
 
         persisted = yaml.safe_load(project_file.read_text())
         assert {"name": "bob@nvidia.com", "type": "admin", "role": "lead", "org": "nvidia"} in persisted["participants"]
         assert result["status"] == "added"
         assert result["id"] == "bob@nvidia.com"
-        assert result["startup_kit"] == str(workspace / project_name / "prod_01" / "bob@nvidia.com")
+        assert result["startup_kit"] == str(workspace / project_name / "prod_00" / "bob@nvidia.com")
         assert result["next_step"] == "nvflare config kit use bob@nvidia.com"
         assert "active" not in result
+        assert not (workspace / project_name / "prod_01").exists()
 
         config = _load_config_dict(config_path)
         entries = config["startup_kits"]["entries"]
         assert config["startup_kits"]["active"] == "admin@nvidia.com"
-        assert entries["admin@nvidia.com"] == str(workspace / project_name / "prod_01" / "admin@nvidia.com")
-        assert entries["bob@nvidia.com"] == str(workspace / project_name / "prod_01" / "bob@nvidia.com")
+        assert entries["admin@nvidia.com"] == str(workspace / project_name / "prod_00" / "admin@nvidia.com")
+        assert entries["bob@nvidia.com"] == str(workspace / project_name / "prod_00" / "bob@nvidia.com")
         assert "site-1" not in entries
 
     def test_poc_add_user_auto_activates_when_no_active_kit_exists(self, tmp_path, monkeypatch):
@@ -626,6 +706,8 @@ poc {{
         monkeypatch.setenv("HOME", str(tmp_path))
         workspace = tmp_path / "poc_ws"
         project_name = "example_project"
+        prod_00 = workspace / project_name / "prod_00"
+        _make_admin_startup_kit(prod_00, "admin@nvidia.com")
         workspace.mkdir(parents=True, exist_ok=True)
         project_file = workspace / "project.yml"
         project_file.write_text(
@@ -641,26 +723,18 @@ participants:
 """
         )
 
-        def fake_prepare_poc_provision(
-            clients, number_of_clients, workspace_arg, docker_image, use_he, project_conf_path, examples_dir
-        ):
-            assert clients == []
-            assert number_of_clients == 0
+        def fake_provision_participant_only(workspace_arg, project_config_arg, participant, target_prod_dir, force):
             assert workspace_arg == str(workspace)
-            assert docker_image is None
-            assert use_he is False
-            assert project_conf_path == str(project_file)
-            assert examples_dir is None
-            project_config = yaml.safe_load(project_file.read_text())
-            prod_00 = workspace / project_name / "prod_00"
-            for participant in project_config["participants"]:
-                if participant["type"] == "admin":
-                    _make_admin_startup_kit(prod_00, participant["name"])
-                else:
-                    (prod_00 / participant["name"]).mkdir(parents=True, exist_ok=True)
-            return project_config
+            assert target_prod_dir == str(prod_00)
+            assert participant == {"name": "bob@nvidia.com", "type": "admin", "org": "nvidia", "role": "lead"}
+            assert force is False
+            _make_admin_startup_kit(Path(target_prod_dir), participant["name"])
+            return os.path.join(target_prod_dir, participant["name"])
 
-        with patch("nvflare.tool.poc.poc_commands.prepare_poc_provision", side_effect=fake_prepare_poc_provision):
+        with patch(
+            "nvflare.tool.poc.poc_commands._provision_poc_participant_only",
+            side_effect=fake_provision_participant_only,
+        ):
             result = _add_poc_user(str(workspace), "lead", "bob@nvidia.com", "nvidia")
 
         config_path = tmp_path / ".nvflare" / "config.conf"
@@ -716,38 +790,38 @@ poc {{
 """
         )
 
-        def fake_prepare_poc_provision(
-            clients, number_of_clients, workspace_arg, docker_image, use_he, project_conf_path, examples_dir
-        ):
-            assert clients == []
-            assert number_of_clients == 0
+        def fake_provision_participant_only(workspace_arg, project_config_arg, participant, target_prod_dir, force):
             assert workspace_arg == str(workspace)
-            assert project_conf_path == str(project_file)
-            project_config = yaml.safe_load(project_file.read_text())
-            prod_01 = workspace / project_name / "prod_01"
-            for participant in project_config["participants"]:
-                if participant["type"] == "admin":
-                    _make_admin_startup_kit(prod_01, participant["name"])
-                elif participant["type"] == "client":
-                    _make_site_startup_kit(prod_01, participant["name"])
-                else:
-                    (prod_01 / participant["name"]).mkdir(parents=True, exist_ok=True)
-            return project_config
+            assert target_prod_dir == str(prod_00)
+            assert participant == {"name": "site-3", "type": "client", "org": "nvidia"}
+            assert {
+                "name": "admin@nvidia.com",
+                "type": "admin",
+                "role": "project_admin",
+                "org": "nvidia",
+            } in project_config_arg["participants"]
+            assert force is False
+            _make_site_startup_kit(Path(target_prod_dir), participant["name"])
+            return os.path.join(target_prod_dir, participant["name"])
 
-        with patch("nvflare.tool.poc.poc_commands.prepare_poc_provision", side_effect=fake_prepare_poc_provision):
+        with patch(
+            "nvflare.tool.poc.poc_commands._provision_poc_participant_only",
+            side_effect=fake_provision_participant_only,
+        ):
             result = _add_poc_site(str(workspace), "site-3", "nvidia")
 
         persisted = yaml.safe_load(project_file.read_text())
         assert {"name": "site-3", "type": "client", "org": "nvidia"} in persisted["participants"]
         assert result["status"] == "added"
         assert result["id"] == "site-3"
-        assert result["startup_kit"] == str(workspace / project_name / "prod_01" / "site-3")
+        assert result["startup_kit"] == str(workspace / project_name / "prod_00" / "site-3")
+        assert not (workspace / project_name / "prod_01").exists()
 
         config = _load_config_dict(config_path)
         entries = config["startup_kits"]["entries"]
         assert config["startup_kits"]["active"] == "admin@nvidia.com"
         assert entries == {
-            "admin@nvidia.com": str(workspace / project_name / "prod_01" / "admin@nvidia.com"),
+            "admin@nvidia.com": str(workspace / project_name / "prod_00" / "admin@nvidia.com"),
         }
 
     def test_poc_add_rejects_duplicate_without_force(self, tmp_path, monkeypatch):
@@ -766,7 +840,7 @@ participants:
 """
         )
 
-        with patch("nvflare.tool.poc.poc_commands.prepare_poc_provision") as mock_prepare:
+        with patch("nvflare.tool.poc.poc_commands._provision_poc_participant_only") as mock_prepare:
             with pytest.raises(CLIException, match="already exists"):
                 _add_poc_site(str(workspace), "site-1", "nvidia")
 
@@ -790,7 +864,7 @@ participants:
 """
         )
 
-        with patch("nvflare.tool.poc.poc_commands.prepare_poc_provision") as mock_prepare:
+        with patch("nvflare.tool.poc.poc_commands._provision_poc_participant_only") as mock_prepare:
             with pytest.raises(CLIException, match="changing a POC user's certificate role"):
                 _add_poc_user(str(workspace), "org_admin", "bob@nvidia.com", "nvidia", force=True)
 

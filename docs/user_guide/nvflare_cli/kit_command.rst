@@ -228,5 +228,5 @@ Config File
    }
 
 Startup kit paths are managed by the ``kit`` subcommands under
-``nvflare config``. The root ``nvflare config`` command remains responsible for
-the POC workspace path.
+``nvflare config``. Other local CLI state in ``~/.nvflare/config.conf`` is an
+implementation detail and is not part of the normal startup kit workflow.

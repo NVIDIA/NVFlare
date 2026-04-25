@@ -129,14 +129,16 @@ Behavior notes:
   the ``project_admin`` certificate role. Use ``nvflare config kit use <id>`` to switch
   back to the POC Project Admin kit before adding users or sites.
 - ``poc add user`` adds an admin participant to the persisted POC
-  ``project.yml``, runs the existing POC provisioning pipeline, and registers
-  the generated user startup kit in the shared startup kit registry.
+  ``project.yml``, dynamically provisions only that new user with the existing
+  POC CA, and registers the generated user startup kit in the shared startup
+  kit registry.
 - ``poc add site`` adds a client participant to the persisted POC
-  ``project.yml`` and generates the site startup kit in the latest POC output
-  directory. The generated site kit is not registered in ``~/.nvflare/config.conf``
-  because only admin/user kits are CLI identities.
-- POC add uses the existing provision state, so the root CA is reused across
-  provision runs.
+  ``project.yml`` and dynamically provisions only that new site with the
+  existing POC CA. The generated site kit is placed in the current POC output
+  directory, normally ``prod_00``, and is not registered in
+  ``~/.nvflare/config.conf`` because only admin/user kits are CLI identities.
+- POC add uses the existing provision state/rootCA and does not regenerate
+  existing participant startup kits.
 - Use ``--force`` only to replace an existing participant entry in the local
   POC project metadata.
 

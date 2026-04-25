@@ -15,7 +15,7 @@
 import io
 from argparse import Namespace
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from zipfile import ZipFile
 
 import pytest
@@ -655,6 +655,75 @@ def test_get_job_log_all_returns_workspace_client_logs(tmp_path, monkeypatch):
             "site-2": "site-2 line\n",
         }
     }
+    engine.job_def_manager.get_storage_component.assert_called_once()
+
+
+def test_get_job_log_all_reads_workspace_zip_once_for_client_logs(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    server_log = Path(workspace.get_log_root("job-1")) / WorkspaceConstants.LOG_FILE_NAME
+    server_log.write_text("server line\n", encoding="utf-8")
+    engine.job_def_manager.list_components.return_value = []
+    engine.job_def_manager.get_storage_component.return_value = _zip_bytes(
+        {
+            "site-1/log.txt": "site-1 line\n",
+            "site-2/log.txt": "site-2 line\n",
+            "site-3/log.txt": "site-3 line\n",
+        }
+    )
+    job = _FakeListedJob({JobMetaKey.DEPLOY_MAP.value: {"app": ["server", "site-1", "site-2", "site-3"]}})
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1", JobCommandModule.JOB: job})
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "all"])
+
+    payload, _meta = conn.dicts[0]
+    assert payload == {
+        "logs": {
+            "server": "server line\n",
+            "site-1": "site-1 line\n",
+            "site-2": "site-2 line\n",
+            "site-3": "site-3 line\n",
+        }
+    }
+    engine.job_def_manager.get_storage_component.assert_called_once()
+    engine.job_def_manager.get_client_data.assert_not_called()
+
+
+def test_get_job_log_all_does_not_read_workspace_zip_per_client(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager.list_components.return_value = []
+    engine.job_def_manager.get_storage_component.return_value = _zip_bytes(
+        {
+            "site-1/log.txt": "site-1 line\n",
+            "site-2/log.txt": "site-2 line\n",
+            "site-3/log.txt": "site-3 line\n",
+        }
+    )
+    job = _FakeListedJob({JobMetaKey.DEPLOY_MAP.value: {"app": ["server", "site-1", "site-2", "site-3"]}})
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1", JobCommandModule.JOB: job})
+
+    with patch.object(
+        JobCommandModule,
+        "_read_stored_client_job_log",
+        side_effect=AssertionError("all-sites log retrieval should not read the workspace ZIP per client"),
+    ):
+        JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "all"])
+
+    payload, _meta = conn.dicts[0]
+    assert payload == {
+        "logs": {
+            "site-1": "site-1 line\n",
+            "site-2": "site-2 line\n",
+            "site-3": "site-3 line\n",
+        },
+        "unavailable": {"server": "server log not available for this job"},
+    }
+    engine.job_def_manager.get_storage_component.assert_called_once()
 
 
 def test_get_job_log_all_marks_missing_server_log_unavailable(tmp_path, monkeypatch):
