@@ -96,10 +96,9 @@ Change runtime logging:
 .. note::
 
    All server-connected ``nvflare system`` commands resolve the startup kit in
-   this order: ``--startup-kit``, ``NVFLARE_STARTUP_KIT_DIR``, then the
-   configured target selected by ``--startup-target`` (or the default config
-   target when no explicit selector is given). ``--startup-kit`` and
-   ``--startup-target`` are mutually exclusive explicit selectors.
+   this order: ``NVFLARE_STARTUP_KIT_DIR``, then ``startup_kits.active`` from
+   ``~/.nvflare/config.conf``. Use ``nvflare kit add`` and ``nvflare kit use``
+   to manage the active startup kit. See :ref:`kit_command`.
 
 ****************
 Status and Resources
@@ -107,17 +106,13 @@ Status and Resources
 
 ``nvflare system status`` reports server and client connectivity.
 
-This command uses the word ``target`` in two different places:
-
-- positional ``target``: ``server`` or ``client``. This tells NVFlare what to query.
-- ``--startup-target {poc,prod}``: this tells the CLI which startup kit to use.
+The positional ``target`` argument means ``server`` or ``client``. It tells
+NVFlare what to query.
 
 Status arguments:
 
 - positional ``target``: optional. ``server`` or ``client``.
 - positional ``client_names``: optional list of client names when targeting clients.
-- ``--startup-target {poc,prod}``: choose the configured admin startup target. Mutually exclusive with ``--startup-kit``.
-- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -127,26 +122,19 @@ Examples:
    nvflare system status
    nvflare system status server
    nvflare system status client site-1 site-2
-   nvflare system status client site-1 --startup-target prod
 
-In ``nvflare system status client site-1 --startup-target prod``:
-
-- ``client site-1`` means query client ``site-1``.
-- ``--startup-target prod`` means use the ``prod`` startup kit.
+In ``nvflare system status client site-1``, ``client site-1`` means query
+client ``site-1``.
 
 ``nvflare system resources`` reports server and client resource usage.
 
-This command uses the word ``target`` in two different places:
-
-- positional ``target``: ``server`` or ``client``. This tells NVFlare what to query.
-- ``--startup-target {poc,prod}``: this tells the CLI which startup kit to use.
+The positional ``target`` argument means ``server`` or ``client``. It tells
+NVFlare what to query.
 
 Resource arguments:
 
 - positional ``target``: optional. ``server`` or ``client``.
 - positional ``client_names``: optional list of client names when targeting clients.
-- ``--startup-target {poc,prod}``: choose the configured admin startup target. Mutually exclusive with ``--startup-kit``.
-- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -155,12 +143,10 @@ Examples:
 
    nvflare system resources
    nvflare system resources client
-   nvflare system resources client site-1 --startup-target prod
+   nvflare system resources client site-1
 
-In ``nvflare system resources client site-1 --startup-target prod``:
-
-- ``client site-1`` means query client ``site-1``.
-- ``--startup-target prod`` means use the ``prod`` startup kit.
+In ``nvflare system resources client site-1``, ``client site-1`` means query
+client ``site-1``.
 
 **********************
 Shutdown and Restart
@@ -179,8 +165,6 @@ Control arguments:
 
 - positional ``target``: required. One of ``server``, ``client``, or ``all``.
 - positional ``client_names``: optional. One or more client names. Only meaningful when ``target`` is ``client``.
-- ``--startup-target {poc,prod}``: choose the configured admin startup target. Mutually exclusive with ``--startup-kit``.
-- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
 - ``--force``: skip the confirmation prompt.
 - ``--schema``: print the command schema as JSON and exit.
 
@@ -211,8 +195,6 @@ federation (equivalent to the admin console ``remove_client`` command).
 Remove-client arguments:
 
 - positional ``client_name``: required. The name of the client to remove.
-- ``--startup-target {poc,prod}``: choose the configured admin startup target. Mutually exclusive with ``--startup-kit``.
-- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
 - ``--force``: skip the confirmation prompt.
 - ``--schema``: print the command schema as JSON and exit.
 
@@ -232,8 +214,6 @@ sites.
 Version arguments:
 
 - ``--site``: ``server``, a client name, or ``all``. Default: ``all``.
-- ``--startup-target {poc,prod}``: choose the configured admin startup target. Mutually exclusive with ``--startup-kit``.
-- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -263,8 +243,6 @@ Logging arguments:
 
 - positional ``level``: runtime-required log level or built-in log mode; omitting it returns a CLI error
 - ``--site``: ``server``, a client name, or ``all``. Default: ``all``.
-- ``--startup-target {poc,prod}``: choose the configured admin startup target. Mutually exclusive with ``--startup-kit``.
-- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Supported built-in values for positional ``level``:

@@ -46,19 +46,19 @@ the general system admin API.
 CLI Startup Kit Resolution Change
 ---------------------------------
 
-On the current ``main`` branch, the ``NVFLARE_STARTUP_KIT_DIR`` environment
-variable now takes precedence over the persisted CLI config when resolving the
-startup kit for server-connected CLI commands.
+On the current ``main`` branch, server-connected CLI commands use a shared
+active startup kit registry in ``~/.nvflare/config.conf``.
 
 Impact:
 
-- If both ``NVFLARE_STARTUP_KIT_DIR`` and the CLI config specify startup kit
-  paths, the environment variable wins.
-- Shell profiles that export ``NVFLARE_STARTUP_KIT_DIR`` may override
-  ``poc.startup_kit`` or ``prod.startup_kit`` from ``~/.nvflare/config.conf``.
+- Use ``nvflare kit add <id> <startup-kit-dir>`` and ``nvflare kit use <id>``
+  to register and activate a startup kit.
+- ``NVFLARE_STARTUP_KIT_DIR`` remains an automation override and takes
+  precedence over the active registry entry when set.
+- ``nvflare config`` no longer manages startup kit paths.
 
-If you rely on the persisted CLI config, review your shell environment before
-upgrading to the next release built from ``main``.
+If you use shell profiles or CI settings that export ``NVFLARE_STARTUP_KIT_DIR``,
+review them before upgrading because they override the active registry entry.
 
 CLI Config Flag Clarification
 -----------------------------

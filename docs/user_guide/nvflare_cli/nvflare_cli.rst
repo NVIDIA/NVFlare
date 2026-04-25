@@ -31,10 +31,11 @@ Command groups
 - ``poc``: manage a local proof-of-concept deployment
 - ``provision``: centralized provisioning workflow
 - ``cert`` / ``package``: distributed (manual) provisioning workflow
+- ``kit``: register local admin startup kits and choose the active startup kit
 - ``job``: submit and manage jobs
 - ``study``: manage multi-study lifecycle (register, enroll sites, manage users)
 - ``system``: inspect and operate a running FL system
-- ``config``: store local CLI settings such as the startup kit path
+- ``config``: store non-startup-kit local CLI settings
 - ``recipe``: list built-in recipe families for exported jobs
 - ``preflight_check`` / ``preflight``: validate a provisioned startup kit
   before deployment (``preflight`` is the preferred alias)
@@ -49,6 +50,7 @@ workflows unless you are maintaining an older setup.
 
    fl_simulator
    poc_command
+   kit_command
    provision_command
    distributed_provisioning
    job_cli

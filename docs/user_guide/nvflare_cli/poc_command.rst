@@ -14,13 +14,13 @@ Command Usage
 ***********************
 
 The POC command provides the subcommands ``prepare``, ``prepare-jobs-dir``,
-``start``, ``stop``, and ``clean``.
+``add``, ``start``, ``stop``, and ``clean``.
 
 .. code-block:: none
 
    nvflare poc -h
 
-   usage: nvflare poc [-h] {prepare,prepare-jobs-dir,start,stop,clean} ...
+   usage: nvflare poc [-h] {prepare,prepare-jobs-dir,add,start,stop,clean} ...
 
 *****************
 Common Workflow
@@ -29,10 +29,12 @@ Common Workflow
 1. Run ``nvflare poc prepare`` to create the local workspace and startup kits.
 2. Optionally run ``nvflare poc prepare-jobs-dir`` to link a jobs folder into
    the admin transfer area.
-3. Run ``nvflare poc start`` to start the server and clients.
-4. Start an admin console explicitly only when you need one.
-5. Run ``nvflare poc stop`` to stop the system.
-6. Run ``nvflare poc clean`` after the system is stopped.
+3. Optionally run ``nvflare poc add user`` or ``nvflare poc add site`` to add a
+   local participant startup kit.
+4. Run ``nvflare poc start`` to start the server and clients.
+5. Start an admin console explicitly only when you need one.
+6. Run ``nvflare poc stop`` to stop the system.
+7. Run ``nvflare poc clean`` after the system is stopped.
 
 *******************
 Prepare Workspace
@@ -65,7 +67,8 @@ Behavior notes:
 - If the workspace already exists and stdin is non-interactive, ``--force`` is
   required.
 - ``nvflare poc prepare`` updates ``~/.nvflare/config.conf`` with the POC
-  workspace and startup kit locations.
+  workspace, registers generated admin/user and site startup kits, and activates the
+  default Project Admin kit.
 - On success, the command prints a JSON result containing the workspace path and
   discovered client list.
 
@@ -104,6 +107,49 @@ Example:
 .. code-block:: shell
 
    nvflare poc prepare-jobs-dir -j /path/to/jobs --force
+
+***************
+Add Participant
+***************
+
+Use ``nvflare poc add`` to extend the prepared local POC workspace with another
+user or site:
+
+.. code-block:: none
+
+   nvflare poc add user [-h] [--org ORG] [--force] [--schema]
+                        {project_admin,org_admin,lead,member} email
+
+   nvflare poc add site [-h] [--org ORG] [--force] [--schema] name
+
+Behavior notes:
+
+- ``poc add user`` and ``poc add site`` require the active startup kit to have
+  the ``project_admin`` certificate role. Use ``nvflare kit use <id>`` to switch
+  back to the POC Project Admin kit before adding users or sites.
+- ``poc add user`` adds an admin participant to the persisted POC
+  ``project.yml``, runs the existing POC provisioning pipeline, and registers
+  the generated user startup kit in the shared startup kit registry.
+- ``poc add site`` adds a client participant to the persisted POC
+  ``project.yml`` and generates the site startup kit in the latest POC output
+  directory. The generated site kit is registered in ``~/.nvflare/config.conf``
+  for local discovery and cleanup, but it is not made active because only
+  admin/user kits can be active CLI startup kits.
+- POC add uses the existing provision state, so the root CA is reused across
+  provision runs.
+- Use ``--force`` only to replace an existing participant entry in the local
+  POC project metadata.
+
+Examples:
+
+.. code-block:: shell
+
+   nvflare poc add user lead bob@nvidia.com --org nvidia
+   nvflare kit use bob@nvidia.com
+
+   nvflare poc add site site-3 --org nvidia
+   nvflare kit list
+   nvflare poc start -p site-3
 
 **************
 Start Services
@@ -208,11 +254,16 @@ The workspace can also be controlled by:
 - ``NVFLARE_POC_WORKSPACE``
 - ``~/.nvflare/config.conf`` via ``nvflare config --poc.workspace <poc_workspace>``
 
-``nvflare poc prepare`` writes the POC workspace and startup kit location into
-the local NVFlare config automatically.
+``nvflare poc prepare`` writes the POC workspace into the local NVFlare config
+and registers generated admin/user and site startup kits in the shared startup kit
+registry automatically.
 
-The saved ``poc.startup_kit`` value is the POC admin startup kit directory,
-for example ``.../prod_00/admin@nvidia.com``, not the broader ``prod_00`` root.
+The default Project Admin startup kit becomes active, so server-connected
+commands such as ``nvflare job list`` and ``nvflare system status`` work
+without extra startup-kit flags.
+
+Use :ref:`kit_command` to inspect generated POC startup kit registrations or
+switch between POC-generated user startup kits.
 
 *********************
 JSON Output and Help

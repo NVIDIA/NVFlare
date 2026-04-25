@@ -1,7 +1,7 @@
 # NVFLARE CLI Design: Enhance NVFLARE CLI Commands
 
 Created Date: 2026-03-26
-Updated Date: 2026-04-14
+Updated Date: 2026-04-24
 
 
 ## Problem Statement
@@ -11,6 +11,10 @@ NVFlare's admin operations are currently accessible only through an interactive 
 - Not scriptable: automating FL workflows (submit job, wait, download results) requires fragile stdin piping or the deprecated FLAdminAPI.
 - Not CI/CD friendly: pipeline systems (GitHub Actions, Airflow, Kubernetes Jobs) cannot drive an interactive console.
 - Incomplete `nvflare job`: submit exists but list, abort, delete, download, clone do not.
+- Startup kit selection is too visible in normal workflows: repeated `--startup-target`,
+  `--startup-kit`, and environment-only state force users to think about local
+  implementation details instead of running commands such as `nvflare job list`,
+  `nvflare study list`, and `nvflare system status`.
 
 Goal: make the full NVFlare admin command surface accessible non-interactively — scriptable from CI/CD pipelines, automation tools, and AI agents. This covers:
 
@@ -20,6 +24,8 @@ Goal: make the full NVFlare admin command surface accessible non-interactively �
 - `nvflare network` — cellnet diagnostics for advanced troubleshooting
 - `nvflare agent` — bootstrap and context management for agentic workflows
 - `nvflare install-skills` — installs skill files into agent framework discovery paths
+- `nvflare kit` — local startup kit registry and active-kit selection for all
+  server-connected commands
 
 
 ## Design Principles
@@ -127,7 +133,9 @@ The JSON output shape and error codes defined here become the MCP tool schemas i
 | Command | Subcommands | Agent Readiness Status |
 | --- | --- | --- |
 | `nvflare simulator` | — | Deprecated — retain with stderr warning; use Job Recipe SimEnv directly (`python job.py`) |
-| `nvflare poc` | `prepare`, `start`, `stop`, `clean` | Add JSON output, exit codes, `--schema`; add `--force` to `prepare` for workspace deletion prompt bypass |
+| `nvflare poc` | `prepare`, `start`, `stop`, `clean`, `add user`, `add site` | Add JSON output, exit codes, `--schema`; add `--force` to `prepare` for workspace deletion prompt bypass; register generated user and site kits in the shared startup kit registry |
+| `nvflare kit` | `add`, `use`, `show`, `list`, `remove` | New local startup kit registry; no server connection |
+| `nvflare study` | `register`, `show`, `list`, `remove`, `add-site`, `remove-site`, `add-user`, `remove-user` | Add multi-study lifecycle CLI using the active startup kit |
 | `nvflare provision` | — | Add JSON output, `--schema`, `--force` for Y/N prompts; restore pre-2.7.0 default: no args = generate `project.yml` |
 | `nvflare preflight-check` | — | Add JSON output, `--schema`; exit 0=pass, 1=fail. Underscore alias `preflight_check` accepted for backward compatibility. |
 | `nvflare config` | — | Add JSON output, `--schema` |
@@ -186,15 +194,42 @@ Only commands that serve common end-user or admin tasks are exposed. Diagnostic,
 - `job logs` (plural) = read log content
 - `job log-config` = write logging configuration
 
-Current state: there is no proper API to retrieve or parse job logs. Users have been using interactive console shell commands (`cat`, `tail`, `grep` via `tail_target_log` / `grep_target` on `Session`) to find errors. These commands are unstructured, security-sensitive, and not agent-usable. The commands below replace this with a proper log API.
+Current state: users have been using interactive console shell commands (`cat`, `tail`, `grep` via `tail_target_log` / `grep_target` on `Session`) to find errors. These commands are unstructured, security-sensitive, and not agent-usable. The commands below replace this with a proper log API.
+
+When client-side log streaming to the server is enabled, client logs are treated as server-side stored job logs. `nvflare job logs` does not connect to client sites directly and does not execute shell commands on client machines. It asks the server for the job log content that the server has locally for the requested site target.
+
+Client log streaming is enabled by the job, not by `nvflare job logs`. The portable job-level pattern is:
+
+```python
+from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
+from nvflare.app_common.logging.job_log_streamer import JobLogStreamer
+
+recipe.job.to_clients(JobLogStreamer())
+recipe.job.to_server(JobLogReceiver())
+```
+
+`JobLogStreamer` runs in each client job process, tails the job `log.txt`, and streams bytes to the server. `JobLogReceiver` runs on the server side for that job, writes incoming chunks into the server job workspace as `<client_name>/log.txt`, and hands the file to the job manager so it is included in the archived job `workspace` artifact. Server-side resource configuration may also provide a global `JobLogReceiver`, but jobs that include both components are self-contained across POC and production deployments.
 
 ### `nvflare job logs`
 
 ```text
-nvflare job logs <job_id> [--site server|<client_name>|all] [--tail N] [--grep PATTERN]
+nvflare job logs <job_id> [--site server|<client_name>|all]
 ```
 
-`--site` defaults to `all`. `--tail N` limits to last N lines per site. `--grep PATTERN` filters lines server-side before returning.
+`--site` defaults to `server` for bounded output and backward-compatible behavior.
+
+Site target behavior:
+
+- `--site server`: return the server-side job log.
+- `--site <client_name>`: return that client's job log as streamed to and stored by the server.
+- `--site all`: return the server log plus all client logs available in the server-side job log store.
+
+The command never applies local filtering such as `tail` or `grep`; users can pipe or post-process the returned log content if needed.
+
+Human output prints log text directly. For a single `--site server` or
+`--site <client_name>` target, no JSON envelope or dict wrapper is printed. For
+`--site all`, each site is separated by a short header. `--format json` keeps the
+structured response shown below.
 
 Example:
 
@@ -204,7 +239,7 @@ Example:
   "status": "ok",
   "data": {
     "job_id": "abc123",
-    "log_source": "workspace",
+    "target": "all",
     "logs": {
       "server": "2026-03-27 10:01:00 INFO ...\n...",
       "site-1": "2026-03-27 10:01:05 ERROR ...\n...",
@@ -214,9 +249,37 @@ Example:
 }
 ```
 
-Server-side change needed: add a new admin command that returns job log content as structured data. `tail_target_log` / `grep_target` are insufficient.
+If `--site all` is requested and some known job sites do not have stored log content, the command should still return the logs that are available and report missing sites separately. A zero-byte log file is still returned as an available empty string; a missing log file is reported under `unavailable`.
 
-Session API change needed: add `get_job_logs(job_id, target, tail_lines, grep_pattern)` to `Session` in `flare_api.py`.
+```json
+{
+  "schema_version": "1",
+  "status": "ok",
+  "data": {
+    "job_id": "abc123",
+    "target": "all",
+    "logs": {
+      "server": "2026-03-27 10:01:00 INFO ...\n...",
+      "site-1": "2026-03-27 10:01:05 ERROR ...\n..."
+    },
+    "unavailable": {
+      "site-2": "client log stream not available for this job"
+    }
+  }
+}
+```
+
+For a specific requested site, missing log content is an error instead of a partial success:
+
+```text
+Error: job logs are not available for site 'site-2'
+Hint: Verify that client log streaming is enabled and that the site has run this job.
+Code: LOG_NOT_FOUND (exit 1)
+```
+
+Server-side behavior: `get_job_log <job_id> [server|all|client_name]` returns structured data from server-side stored artifacts. Server logs are read from the live server workspace when available, then from the saved job-store `workspace` component after the run workspace has been archived. Client logs are read from the server's live job workspace at `<job_id>/<client_name>/log.txt` when available, then from the saved job-store `workspace` component member `<client_name>/log.txt`. For compatibility with existing stored receiver outputs, the command can also fall back to client-data components such as `LOG_log.txt_<client_name>`. `tail_target_log` / `grep_target` are insufficient and are not used for this command.
+
+Session API: `Session.get_job_logs(job_id, target)` sends the structured server command and returns `logs` plus optional `unavailable`.
 
 ### `nvflare job log-config`
 
@@ -260,10 +323,10 @@ Session API change needed: add `configure_job_log(job_id, config, target)` and `
 
 | Command | Description |
 | --- | --- |
-| `nvflare job logs <job_id>` | Download job log content from server store |
+| `nvflare job logs <job_id>` | Download job log content from the server-side log store, including streamed client logs when available |
 
 ```text
-nvflare job logs     <job_id> [--site server|<client_name>|all] [--tail N] [--grep PATTERN]
+nvflare job logs     <job_id> [--site server|<client_name>|all]
 ```
 
 
@@ -316,7 +379,7 @@ Exit code 0 on `FINISHED_OK`, exit code 1 on `FAILED` / `ABORTED`.
 
 ## Shell Commands
 
-Commands like `pwd`, `ls`, `cat`, `head`, `tail`, and `grep` are not exposed in the CLI. Client targets were removed per FLARE-2808; server targets remain in the interactive console only for controlled debug use.
+Commands like `pwd`, `ls`, `cat`, `head`, `tail`, and `grep` are not exposed in the CLI. Direct client shell targets were removed per FLARE-2808; `nvflare job logs --site <client_name>` is not a shell target and only reads client logs already streamed to the server-side log store. Server shell targets remain in the interactive console only for controlled debug use.
 
 
 ## Hidden Admin Console Commands
@@ -334,6 +397,495 @@ These do not appear in help and should not be exposed in the CLI.
 | `_commands` | `builtin.py` | Return full command registry | No |
 | `pull_binary_file` | `file_transfer.py` | Internal binary file pull | No |
 | `push_folder` | `file_transfer.py` | Internal folder push | No |
+
+
+## Startup Kit Registry and Active Kit
+
+Normal server-connected commands use one active local startup kit. Users should not need
+to pass `--startup-target`, `--startup-kit`, or a startup-kit path on every command.
+
+Common POC flow:
+
+```bash
+nvflare poc prepare
+nvflare poc start
+nvflare job list
+nvflare job submit -j ./job
+```
+
+`poc prepare` registers the generated Project Admin startup kit and makes it active.
+
+Production flow:
+
+```bash
+nvflare kit add alice_example_project /secure/startup_kits/example_project/alice@nvidia.com
+nvflare kit use alice_example_project
+nvflare job list
+```
+
+Multiple local identities are handled by activating a different registered ID:
+
+```bash
+nvflare kit add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com
+nvflare kit add fraud_org_admin /secure/startup_kits/fraud/org_admin@nvidia.com
+nvflare kit use cancer_lead
+nvflare kit show
+```
+
+Activation is local config mutation only. It does not contact the server.
+
+### Config Model
+
+`~/.nvflare/config.conf` stores a startup kit ID-to-path registry plus one active ID:
+
+```hocon
+version = 2
+
+startup_kits {
+  active = "admin@nvidia.com"
+
+  entries {
+    "admin@nvidia.com" = "/tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com"
+    "lead@nvidia.com" = "/tmp/nvflare/poc/example_project/prod_00/lead@nvidia.com"
+    "org-admin@nvidia.com" = "/tmp/nvflare/poc/example_project/prod_00/org-admin@nvidia.com"
+    "site-1" = "/tmp/nvflare/poc/example_project/prod_00/site-1"
+    cancer_lead = "/secure/startup_kits/cancer/lead@nvidia.com"
+    fraud_org_admin = "/secure/startup_kits/fraud/org_admin@nvidia.com"
+  }
+}
+
+poc {
+  workspace = "/tmp/nvflare/poc"
+}
+
+job_template {
+  path = "/path/to/job_templates"
+}
+
+agent {
+  poll_interval = 10
+  job_timeout = 3600
+}
+```
+
+The registry key is a local ID. It is not a server-side object, not a certificate role,
+and not a study role. For POC-generated user startup kits, the default ID is the user
+identity, such as `admin@nvidia.com` or `lead@nvidia.com`. For POC-generated site
+startup kits, the default ID is the site name, such as `site-1`. For production kits,
+users choose meaningful local IDs such as `cancer_lead`.
+
+The entry value is only the startup kit path. Metadata such as identity and certificate
+role is inspected from the startup kit when needed by commands such as `nvflare kit show`;
+it is not duplicated in `config.conf`. Fields that are not reliably derivable from the
+startup kit are omitted from normal output.
+
+`poc.workspace` is retained because POC service management needs a workspace root. POC
+startup kit locations are not duplicated under `poc`.
+
+### `nvflare kit`
+
+`nvflare kit` manages local startup kit registrations. It is not a server-side resource.
+Running `nvflare kit` without a subcommand should print help and exit without an
+`INVALID_ARGS` error.
+
+#### `nvflare kit add <id> <path>`
+
+Registers a startup kit location under a local ID.
+
+Behavior:
+
+1. Read `~/.nvflare/config.conf`.
+2. Validate that `<path>` is a valid participant startup kit directory. A valid admin/user
+   startup kit must contain all three of:
+   - `startup/fed_admin.json`
+   - `startup/client.crt`
+   - `startup/rootCA.pem`
+   A valid site startup kit must contain `startup/fed_client.json`.
+3. Fail if `<id>` already exists unless `--force` is provided.
+4. Create or replace `startup_kits.entries.<id> = "<path>"`.
+5. Do not change `startup_kits.active`. Registration and activation are separate.
+6. Write config atomically.
+
+Example output:
+
+```text
+registered startup kit: alice_example_project
+path: /secure/startup_kits/example_project/alice@nvidia.com
+next_step: nvflare kit use alice_example_project
+```
+
+#### `nvflare kit use <id>`
+
+Makes a registered startup kit active.
+
+Behavior:
+
+1. Read `~/.nvflare/config.conf`.
+2. Resolve `<id>` to a path from `startup_kits.entries`.
+3. Validate that the path still passes the admin/user startup kit check.
+4. Set `startup_kits.active = "<id>"`.
+5. Write config atomically.
+6. Print the active ID and path. Identity and role can be displayed when they can be
+   inspected from the startup kit.
+
+No server call is made. The next server-connected command creates a session using the
+selected startup kit.
+
+#### `nvflare kit show`
+
+Shows the configured active startup kit:
+
+```text
+active: cancer_lead
+identity: lead@nvidia.com
+cert_role: lead
+path: /secure/startup_kits/cancer/lead@nvidia.com
+```
+
+`kit show` reports `startup_kits.active`. It does not replace that value with
+`NVFLARE_STARTUP_KIT_DIR`, but it should warn when the environment variable is set:
+
+```text
+warning: NVFLARE_STARTUP_KIT_DIR is set (/secure/startup_kits/cancer/lead@nvidia.com)
+         normal commands will use this path instead of the active kit above
+```
+
+If the active path is missing or invalid, show the stale registration and suggest
+`nvflare kit use <id>` or `nvflare kit remove <id>`.
+
+#### `nvflare kit list`
+
+Lists registered startup kits. The command checks each registered path locally and flags
+stale entries without contacting the server:
+
+```text
+* cancer_lead       ok       lead@nvidia.com        lead          /secure/startup_kits/cancer/lead@nvidia.com
+  site-1            ok       site-1                 -             /tmp/nvflare/poc/example_project/prod_00/site-1
+  fraud_org_admin   missing  -                      -             /secure/startup_kits/fraud/org_admin@nvidia.com
+  old_lab_admin     invalid  -                      -             /archive/old_lab/admin@nvidia.com
+```
+
+The active startup kit is marked with `*`. Missing or invalid paths are shown as
+`missing` or `invalid`. Site kits can be registered and listed, but they cannot be
+activated for server-connected admin commands.
+
+#### `nvflare kit remove <id>`
+
+Removes a local config registration. It does not delete the startup kit directory. If the
+removed ID is active, clear `startup_kits.active` and print:
+
+```text
+removed startup kit: cancer_lead
+warning: no active startup kit is configured
+next_step: nvflare kit use <id>
+```
+
+### Resolution Model
+
+All server-connected commands, including `nvflare job`, `nvflare study`, `nvflare system`,
+and `nvflare network`, resolve the startup kit using this ordered lookup:
+
+1. If `NVFLARE_STARTUP_KIT_DIR` is set, validate it with the same three-file admin startup
+   kit check and use it.
+2. Otherwise, use `startup_kits.active` from `~/.nvflare/config.conf`.
+3. If neither source resolves to a valid admin/user startup kit, fail before any server
+   connection attempt.
+
+The common user documentation should teach the active startup kit model. The environment
+variable is an automation override, not the primary user workflow.
+
+### POC Integration
+
+`poc prepare` continues to create the default POC workspace and provision the POC project.
+It also registers generated admin/user and site startup kits in the shared registry.
+
+Behavior:
+
+1. Provision the POC project as today.
+2. Find generated admin/user and site startup kits in the POC prod directory, normally
+   `prod_00` after the first `poc prepare`.
+3. Keep generated site startup kits in the POC workspace for local service management and
+   register their local paths for discovery and cleanup.
+4. Read participant identity, org, type, and role from the POC project metadata.
+5. Register the Project Admin kit by identity, such as `admin@nvidia.com`.
+6. Register each additional admin/user kit by identity, such as `lead@nvidia.com`.
+7. Register each site kit by site name, such as `site-1`; site kits are never made active.
+8. Set `startup_kits.active` to the identity of the first `project_admin` participant
+   found in the project metadata.
+9. If no `project_admin` participant exists, do not set `startup_kits.active`; print a
+   hint to create or register an admin startup kit before running admin CLI commands.
+
+`poc prepare --force` keeps its existing meaning: recreate the local POC workspace and
+rerun provisioning. It does not mean "override any startup kit registration with the same
+ID." During registration, `poc prepare` may replace entries whose paths are under the POC
+workspace being recreated. If an ID already points outside the POC workspace, fail with a
+hint to remove or replace that kit explicitly.
+
+On the `cli_enhancement2` branch, `dummy_project.yml` includes these local POC user
+identities:
+
+```text
+admin@nvidia.com     role=project_admin
+org-admin@nvidia.com role=org_admin
+lead@nvidia.com      role=lead
+```
+
+Example result:
+
+```text
+startup_kits.active                         -> admin@nvidia.com
+startup_kits.entries."admin@nvidia.com"     -> .../prod_00/admin@nvidia.com
+startup_kits.entries."org-admin@nvidia.com" -> .../prod_00/org-admin@nvidia.com
+startup_kits.entries."lead@nvidia.com"      -> .../prod_00/lead@nvidia.com
+startup_kits.entries."site-1"               -> .../prod_00/site-1
+```
+
+#### `nvflare poc add user <cert-role> <email> --org <org>`
+
+Creates a new local POC user startup kit and registers it in the shared registry. Valid
+`<cert-role>` values are `project_admin`, `org_admin`, `lead`, and `member`. These are
+certificate roles, not study-specific roles.
+
+Behavior:
+
+1. Resolve the default POC workspace the same way existing POC commands do.
+2. Resolve the active startup kit and require its certificate role to be `project_admin`.
+   If `NVFLARE_STARTUP_KIT_DIR` is set, it participates in normal startup-kit resolution
+   and must also point to a `project_admin` kit. Otherwise fail with `NOT_AUTHORIZED`
+   before mutating project metadata.
+3. Read the persisted POC `project.yml` from that workspace. This file is originally
+   generated from the default POC `dummy_project.yml` baseline, then becomes the local
+   source of truth for later POC additions.
+4. If the identity does not exist, append one admin participant with the requested
+   identity, organization, and certificate role. With `--force`, update an existing
+   participant entry in place instead of appending a duplicate.
+5. Persist the updated project YAML on disk before provisioning.
+6. Invoke the existing POC provisioning/build pipeline with the updated project YAML, the
+   same as a full-project provision. This is the local POC form of dynamic provisioning:
+   the existing provision state is reused, so the root CA is not changed, and generated
+   startup kits from the new `prod_NN` output are used.
+7. Register the generated admin/user kit under startup kit ID `<email>`.
+8. If there is no active startup kit, make the new kit active.
+9. In the normal POC flow, leave the current active kit unchanged and print the activation
+   command.
+
+Example output when an active kit already exists:
+
+```text
+startup_kit: /tmp/nvflare/poc/example_project/prod_01/bob@nvidia.com
+id: bob@nvidia.com
+identity: bob@nvidia.com
+cert_role: lead
+next_step: nvflare kit use bob@nvidia.com
+```
+
+Example output when no active kit exists:
+
+```text
+startup_kit: /tmp/nvflare/poc/example_project/prod_01/bob@nvidia.com
+id: bob@nvidia.com
+identity: bob@nvidia.com
+cert_role: lead
+active: bob@nvidia.com
+```
+
+After the first `poc prepare`, the initial output is normally `prod_00`. A later
+`poc add user` runs the provisioning pipeline again and normally creates the next output
+directory, such as `prod_01`. Existing participant certificates are loaded from the POC
+provision state and reused. The CLI should point registrations at the latest generated
+startup kits.
+
+If the user identity already exists, the command fails unless `--force` is provided. With
+`--force`, update the existing project metadata entry in place, create a new startup kit,
+and replace only the config registration for that ID. If that ID is active, the active ID
+remains the same and now points to the new path.
+
+#### `nvflare poc add site <name> --org <org>`
+
+Creates a new local POC site startup kit and records it in the POC workspace and startup
+kit registry.
+
+Behavior:
+
+1. Resolve the default POC workspace the same way existing POC commands do.
+2. Resolve the active startup kit and require its certificate role to be `project_admin`.
+   If `NVFLARE_STARTUP_KIT_DIR` is set, it participates in normal startup-kit resolution
+   and must also point to a `project_admin` kit. Otherwise fail with `NOT_AUTHORIZED`
+   before mutating project metadata.
+3. Read the persisted POC `project.yml` from that workspace.
+4. Read the service metadata from that POC workspace.
+5. If the site does not exist, append one client participant with the requested site name
+   and organization. With `--force`, update an existing site participant entry in place
+   instead of appending a duplicate.
+6. Persist the updated project YAML on disk before provisioning.
+7. Invoke the existing POC provisioning/build pipeline with the updated project YAML, the
+   same as a full-project provision. The existing provision state is reused, so the root CA
+   is not changed, and generated startup kits from the new `prod_NN` output are used.
+8. Register the generated site kit under startup kit ID `<name>`.
+9. Update the POC service config so commands such as `nvflare poc start -p site-3` know the
+   new site exists.
+10. Print the generated startup kit path and start instructions.
+
+`poc add site` does not take a separate workspace argument. It is scoped to the active
+local POC workspace. Adding a site does not switch the active startup kit because site
+kits are service identities, not interactive admin identities.
+
+If the POC system is running, `poc add site` should still be allowed. Existing running
+services are not stopped; the new startup kit is used when the site is started or
+restarted.
+
+#### `nvflare poc clean`
+
+`poc clean` removes the local POC workspace and clears POC-generated config entries.
+
+Behavior:
+
+1. Stop if the POC system is still running, as today.
+2. Remove the POC workspace.
+3. Remove startup kit entries whose canonical paths are under the canonical POC workspace
+   path.
+4. Remove the `poc.workspace` key from `~/.nvflare/config.conf`.
+5. If the active startup kit was removed, clear `startup_kits.active`.
+6. Leave manually registered production startup kits untouched.
+
+The "under the POC workspace" check must use canonical path comparison, such as
+`Path.resolve()` plus `Path.is_relative_to()` or `os.path.commonpath()`. It must not use a
+raw string prefix check because `/tmp/nvflare/poc-backup` is not under `/tmp/nvflare/poc`.
+
+### Startup Kit and POC Error Handling
+
+General rules:
+
+- Validate before mutating `~/.nvflare/config.conf`.
+- Write config atomically so a failed command does not leave a partially written config.
+- Do not contact the server for `nvflare kit` registration, activation, listing, or
+  removal errors.
+- Treat identity, role, org, and project inspection as best effort. Failure to inspect
+  metadata should not break `kit add` or `kit use` when the startup kit path itself is
+  valid.
+
+If `~/.nvflare/config.conf` does not exist:
+
+- `nvflare kit list` prints an empty list.
+- `nvflare kit show` reports that no active startup kit is configured.
+- Normal server-connected commands fail before connecting:
+
+```text
+Error: no active startup kit is configured
+Hint: Run nvflare poc prepare, or run nvflare kit add <id> <startup-kit-dir> then nvflare kit use <id>.
+```
+
+If config parsing fails, commands stop without modifying the file:
+
+```text
+Error: cannot parse ~/.nvflare/config.conf
+Hint: Fix the config file, or move it aside and run nvflare poc prepare.
+```
+
+If `startup_kits.active` points to an ID that is not in `startup_kits.entries`:
+
+```text
+Error: active startup kit 'cancer_lead' is not registered
+Hint: Run nvflare kit list, then nvflare kit use <id>.
+```
+
+`kit add` error cases:
+
+```text
+Error: startup kit path does not exist: /secure/startup_kits/cancer/lead@nvidia.com
+```
+
+```text
+Error: path is not a valid startup kit: /secure/startup_kits/cancer/lead@nvidia.com
+Hint: Use the participant startup directory produced by provisioning.
+```
+
+```text
+Error: startup kit id 'cancer_lead' already exists
+Hint: Use --force to replace this local registration.
+```
+
+IDs may contain characters such as `@`, `.`, and `-`. Empty IDs are invalid. If the same
+path is registered under more than one ID, allow it; that is local aliasing and does not
+affect server behavior.
+
+`kit use` error cases:
+
+```text
+Error: startup kit id 'cancer_lead' is not registered
+Hint: Run nvflare kit list.
+```
+
+```text
+Error: startup kit path for 'cancer_lead' does not exist: /secure/startup_kits/cancer/lead@nvidia.com
+Hint: Restore the startup kit, remove the registration, or activate another kit.
+```
+
+```text
+Error: registered path for 'cancer_lead' is not a valid startup kit
+Hint: Run nvflare kit remove cancer_lead, or replace it with nvflare kit add cancer_lead <startup-kit-dir> --force.
+```
+
+`kit use` must not change `startup_kits.active` until the selected ID resolves to a valid
+startup kit path.
+
+`kit list` should not fail just because one registered path is stale. It marks each entry
+independently as `ok`, `missing`, or `invalid`. If the active entry is stale, keep the `*`
+marker and show the stale status.
+
+`poc prepare` registers POC-generated user kits by identity. `--force` is reserved for
+recreating the POC workspace and rerunning provisioning; it is not a general startup kit
+registry override. If a target ID already exists:
+
+- If the existing path is under the current POC workspace, replace it.
+- If the existing path is outside the current POC workspace, fail and require an explicit
+  registry action such as `nvflare kit remove <id>` or
+  `nvflare kit add <id> <path> --force`.
+
+```text
+Error: startup kit id 'lead@nvidia.com' already points outside the POC workspace
+Hint: Run nvflare kit remove lead@nvidia.com, or replace it explicitly with nvflare kit add lead@nvidia.com <startup-kit-dir> --force.
+```
+
+`poc add user` fails before creating or registering a new kit when the requested identity
+already exists in the POC project, unless `--force` is provided. With `--force`, update
+the existing participant metadata in place and persist it to disk; do not append a
+duplicate participant.
+
+`poc add site` follows the same duplicate rule for sites. If services are running, the
+command may add the new site kit but must not restart existing services automatically.
+
+Both `poc add user` and `poc add site` require the active startup kit to have the
+`project_admin` certificate role. A lead, org admin, member, missing role, or stale kit
+must fail before project metadata is changed.
+
+`poc clean` removes only startup kit entries whose canonical paths are under the canonical
+`poc.workspace` path. If the active startup kit is removed, clear `startup_kits.active`.
+Manual production registrations remain untouched.
+
+### Startup Kit Behavior Guarantees
+
+- `poc prepare` activates the default POC Project Admin startup kit automatically.
+- `poc prepare` writes POC admin/user and site startup kits into `startup_kits.entries`.
+- `poc.startup_kit` and `prod.startup_kit` are not read or written.
+- Normal server-connected commands do not expose `--startup-target` or `--startup-kit`.
+- Commands resolve the startup kit through `NVFLARE_STARTUP_KIT_DIR` first, then
+  `startup_kits.active`.
+- `nvflare kit` is the user-facing startup kit management interface.
+- `nvflare config` keeps non-startup-kit settings such as `poc.workspace` and job template
+  config, but it does not manage startup kit locations.
+- `poc add user` registers generated user kits in `startup_kits.entries`.
+- `poc add site` registers generated site kits in `startup_kits.entries` and updates POC
+  workspace metadata.
+- `poc add user` and `poc add site` do not switch away from the active kit in the normal
+  POC flow.
+- `poc add site` is allowed while POC services are running and does not stop existing
+  services.
+- For `nvflare kit add` and `nvflare poc add user`, `--force` replaces the config
+  registration for an existing ID without deleting old startup kit directories.
+- For `nvflare poc prepare`, `--force` means recreate the POC workspace; it does not
+  override unrelated startup kit registrations outside `poc.workspace`.
+- Persona commands are not needed. The common switching command is `nvflare kit use <id>`.
 
 
 ## Existing Command Reference
@@ -355,6 +907,8 @@ All commands need `--schema` and always emit a JSON envelope unless marked other
 | `--schema` | flag | No | — | Print command schema and exit |
 
 On success, auto-invoke `install_skills()`; exit 0 on failure because skills are optional.
+It also registers generated admin/user and site startup kits in `startup_kits.entries` and
+activates the first Project Admin kit.
 
 #### `nvflare poc start`
 
@@ -384,6 +938,27 @@ Must emit `server_url` in the JSON data field when server accepts connections.
 | `-debug`, `--debug` | flag | No | — | Debug mode |
 | `--schema` | flag | No | — | Print command schema and exit |
 
+#### `nvflare poc add user`
+
+```text
+nvflare poc add user <cert-role> <email> --org <org> [--force] [--schema]
+```
+
+Creates or refreshes a local POC admin/user participant from the default POC project YAML,
+generates the corresponding startup kit through the existing POC provisioning pipeline,
+and registers that user kit under startup kit ID `<email>`.
+
+#### `nvflare poc add site`
+
+```text
+nvflare poc add site <name> --org <org> [--force] [--schema]
+```
+
+Creates or refreshes a local POC client participant from the default POC project YAML,
+generates the site startup kit through the existing POC provisioning pipeline, registers
+the site kit under startup kit ID `<name>`, and updates POC service metadata so
+`nvflare poc start -p <name>` can manage the new site.
+
 ### `nvflare job`
 
 #### `nvflare job create` — deprecated
@@ -402,13 +977,14 @@ Retain with stderr deprecation warning. Migrate to `python job.py --export --exp
 
 #### `nvflare job submit`
 
-Submits a pre-built job config folder to a running server. Returns `job_id` immediately — no waiting. The job artifact is unchanged at submit time; `--startup-target` only selects which startup kit to use for server connection. If neither `--startup-target` nor `--startup-kit` is supplied, submit defaults to the POC startup kit from `~/.nvflare/config.conf`. Use `nvflare job monitor` to wait for results.
+Submits a pre-built job config folder to a running server. Returns `job_id` immediately
+with no waiting. The job artifact is unchanged at submit time. Server connection uses the
+active startup kit described in §Resolution Model. Use `nvflare job monitor` to wait
+for results.
 
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `-j`, `--job-folder` | str | No | `"./current_job"` | Pre-built job config folder |
-| `--startup-target` | `poc|prod` | No | `poc` | Select startup kit from config; mutually exclusive with `--startup-kit` |
-| `--startup-kit` | str | No | — | Explicit admin startup kit directory, or its `startup/` subdirectory; mutually exclusive with `--startup-target` |
 | `-debug`, `--debug` | flag | No | — | Debug mode |
 | `--study` | str | No | `"default"` | Study to submit the job to |
 | `--schema` | flag | No | — | Print command schema and exit |
@@ -428,8 +1004,6 @@ Polls a running job until it reaches a terminal state. Prints status updates to 
 | `job_id` | str | Yes | — | Job ID to monitor |
 | `--timeout` | int | No | 0 | Max seconds to wait |
 | `--interval` | int | No | 2 | Poll interval in seconds |
-| `--startup-target` | `poc\|prod` | No | `poc` | Select startup kit from config; mutually exclusive with `--startup-kit` |
-| `--startup-kit` | str | No | — | Explicit admin startup kit directory; mutually exclusive with `--startup-target` |
 | `--schema` | flag | No | — | Print command schema and exit |
 
 Exit code 0 on `FINISHED_OK`, exit code 1 on `FAILED` / `ABORTED`.
@@ -472,63 +1046,39 @@ Exit code must be 0 on all checks pass, 1 on any failure.
 
 ### `nvflare config`
 
-Manages `~/.nvflare/config.conf`.
-
-Config file keys use underscores (`startup_kit`, `poll_interval`, `job_timeout`) — this is the HOCON file convention and is distinct from CLI flag naming. CLI flags use dashes (`--startup-kit`, `--startup-target`); the config file is not a CLI surface.
-
-Config file format:
-
-```hocon
-version = 2
-
-poc {
-    startup_kit = "/tmp/nvflare/poc/workspace/example_project/prod_00/admin@nvidia.com"
-    workspace   = "/tmp/nvflare/poc/workspace"
-}
-prod {
-    startup_kit = "/path/to/prod/admin_startup_kit"
-}
-job_template {
-    path = "/path/to/job_templates"
-}
-agent {
-    poll_interval = 10
-    job_timeout   = 3600
-}
-claude {
-    skills_dir = "~/.claude/skills/nvflare"
-}
-openclaw {
-    skills_dir = "~/.openclaw/plugins/nvflare"
-}
-```
+Manages non-startup-kit settings in `~/.nvflare/config.conf`, such as `poc.workspace`,
+job template paths, and agent defaults. Startup kit locations are managed by `nvflare kit`
+and stored in `startup_kits.entries`; `nvflare config` should not expose or write
+`poc.startup_kit` or `prod.startup_kit`.
 
 Persistence rules:
 
 1. `version = 2` is always the first line in the saved config.
-2. Once a config is loaded and re-saved by the CLI, it is normalized to the v2 layout above.
-3. Legacy v1 keys such as `startup_kit.path` and `poc_workspace.path` are still read for backward compatibility, but they must not be written back alongside the v2 sections.
-4. The compatibility alias `nvflare config --startup_kit_dir <path>` updates `poc.startup_kit` only. It does not populate `prod.startup_kit`.
+2. Once a config is loaded and re-saved by the CLI, it is normalized to the v2 layout in
+   §Config Model.
+3. Startup kit entries are preserved when unrelated config fields are updated.
+4. `poc.workspace` is preserved unless `nvflare poc clean` removes the POC workspace.
 
 ### Admin username and `@` in directory names
 
-Admin startup kit directories are named after the admin user, typically an email address such as `admin@nvidia.com`. Two issues arise from the `@` character:
+Admin startup kit directories and startup kit IDs are often email addresses such as
+`admin@nvidia.com`. Two issues arise from the `@` character:
 
 1. **Cert name validation** — `_validate_safe_cert_name` currently uses the regex `[A-Za-z0-9][A-Za-z0-9._-]*`, which rejects `@`. The regex must be updated to `[A-Za-z0-9][A-Za-z0-9._@-]*` to allow email-format admin names. Both call sites must be updated: the `--name` argument handler in `cert_commands.py` and the CSR subject CN validator.
 
-2. **Path argument with `@`** — When an admin startup kit path containing `@` is passed on the command line (e.g. `--startup-kit /tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com`), most shells pass it through unchanged. Some shell configurations (notably zsh with certain glob options) may attempt expansion on `@`. NVFlare cannot control shell parsing — if a shell expands `@` in the path, the user must quote the argument: `--startup-kit '/path/to/admin@nvidia.com'`. The NVFlare-side fix is limited to the cert name validator: once `@` is permitted there, the extracted directory basename passes NVFlare's own validation. Shell quoting is the user's responsibility for shells that treat `@` specially.
+2. **Startup kit IDs and paths with `@`** — When an ID or path containing `@` is passed
+   on the command line, most shells pass it through unchanged. Some shell configurations
+   may attempt expansion on `@`. NVFlare cannot control shell parsing; if a shell expands
+   `@`, the user must quote the argument. The config writer must quote IDs when HOCON
+   requires quoting.
 
 **Implementation requirement:** update `_SAFE_CERT_NAME_PATTERN` in `nvflare/tool/cert/cert_commands.py` from `[A-Za-z0-9][A-Za-z0-9._-]*` to `[A-Za-z0-9][A-Za-z0-9._@-]*`. No change is needed in argparse or path resolution — `@` is valid at the filesystem level and passes through argparse unchanged.
 
 ---
 
-For startup kit resolution order, see §Startup Kit Resolution under Implementation.
-
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--poc.startup_kit` | str | No | — | POC startup kit path |
 | `--poc.workspace` | str | No | — | POC workspace path |
-| `--prod.startup_kit` | str | No | — | Production startup kit path |
 | `-jt`, `--job_templates_dir` | str | No | — | Job templates path |
 | `--agent.poll_interval` | int | No | — | Job monitor poll interval |
 | `--agent.job_timeout` | int | No | — | Job monitor timeout |
@@ -552,15 +1102,19 @@ Retain with stderr warning. Underscore alias `authz_preview` accepted for backwa
 | Command | JSON default | `--schema` | Exit Codes | Other |
 | --- | --- | --- | --- | --- |
 | `poc prepare` | Add | Add | Add | Add `--force`; auto-invoke `install_skills()` on success |
+| `poc add user` | Add | Add | Add | Add POC user startup kit and register it in `startup_kits.entries` |
+| `poc add site` | Add | Add | Add | Add POC site startup kit, register it in `startup_kits.entries`, and update POC service metadata |
 | `poc start` | Add | Add | Add | `server_url` in JSON data field when ready |
 | `poc stop` | Add | Add | Add | — |
 | `poc clean` | Add | Add | Add | — |
+| `kit add/use/show/list/remove` | Add | Add | Add | Manage local startup kit registry; no server connection |
 | `job create` | — | — | — | Deprecated |
 | `job submit` | Add | Add | Add | Returns `job_id` immediately |
 | `job monitor` | Add | Add | Add | Standalone wait/poll |
+| `study register/show/list/remove/add-site/remove-site/add-user/remove-user` | Add | Add | Add | Manage multi-study lifecycle through active startup kit |
 | `provision` | Add | Add | Add | Restore pre-2.7.0 default; add `--force` |
 | `preflight-check` | Add | Add | Fix | 0=pass, 1=fail; alias `preflight_check` kept |
-| `config` | Add | Add | Add | — |
+| `config` | Add | Add | Add | Manage non-startup-kit config; startup kits are managed by `nvflare kit` |
 | `job list-templates` | — | — | — | Deprecated; alias `list_templates` kept |
 | `job show-variables` | — | — | — | Deprecated; alias `show_variables` kept |
 | `simulator` | — | — | — | Deprecated |
@@ -574,24 +1128,48 @@ Retain with stderr warning. Underscore alias `authz_preview` accepted for backwa
 
 Add missing operations to the existing `nvflare job` subcommand:
 
-All server-connected `nvflare job` commands require a startup kit to be resolvable. They accept `--startup-target poc|prod` and `--startup-kit <dir>` as mutually exclusive explicit selectors; see §Startup Kit Resolution for the full lookup order, including env/config fallback.
+All server-connected `nvflare job` commands require a startup kit to be resolvable through
+the active-kit registry or `NVFLARE_STARTUP_KIT_DIR`.
 
 ```text
 # Job lifecycle (server must be running)
-nvflare job submit    -j <job_folder> [--startup-target poc|prod | --startup-kit <dir>]
-nvflare job monitor   <job_id> [--timeout N] [--interval N] [--startup-target poc|prod | --startup-kit <dir>]
-nvflare job list      [-n prefix] [-i id_prefix] [-r] [-m num] [--study name|all] [--startup-target poc|prod | --startup-kit <dir>]
-nvflare job meta      <job_id> [--startup-target poc|prod | --startup-kit <dir>]
-nvflare job abort     <job_id> [--force] [--startup-target poc|prod | --startup-kit <dir>]
-nvflare job clone     <job_id> [--startup-target poc|prod | --startup-kit <dir>]
-nvflare job download  <job_id> [-o destination] [--startup-target poc|prod | --startup-kit <dir>]
-nvflare job delete    <job_id> [--force] [--startup-target poc|prod | --startup-kit <dir>]
+nvflare job submit    -j <job_folder>
+nvflare job monitor   <job_id> [--timeout N] [--interval N]
+nvflare job list      [-n prefix] [-i id_prefix] [-r] [-m num] [--study name|all]
+nvflare job meta      <job_id>
+nvflare job abort     <job_id> [--force]
+nvflare job clone     <job_id>
+nvflare job download  <job_id> [-o destination]
+nvflare job delete    <job_id> [--force]
 
 # Observability (server must be running)
-nvflare job stats     <job_id> [--site server|<name>|all] [--startup-target poc|prod | --startup-kit <dir>]
-nvflare job logs      <job_id> [--site server|<name>|all] [--tail N] [--grep PATTERN] [--startup-target poc|prod | --startup-kit <dir>]
-nvflare job log-config <job_id> [--site server|<name>|all] <level> [--startup-target poc|prod | --startup-kit <dir>]
+nvflare job stats     <job_id> [--site server|<name>|all]
+nvflare job logs      <job_id> [--site server|<name>|all]
+nvflare job log-config <job_id> [--site server|<name>|all] <level>
 ```
+
+### Add `nvflare study`
+
+All `nvflare study` commands connect to the server and require a startup kit to be
+resolvable through the active-kit registry or `NVFLARE_STARTUP_KIT_DIR`.
+
+```text
+nvflare study register    <name> [--sites <site> [<site> ...] | --site-org <org>:<site>[,<site>...]]
+nvflare study show        <name>
+nvflare study list
+nvflare study remove      <name>
+nvflare study add-site    <name> [--sites <site> [<site> ...] | --site-org <org>:<site>[,<site>...]]
+nvflare study remove-site <name> [--sites <site> [<site> ...] | --site-org <org>:<site>[,<site>...]]
+nvflare study add-user    <name> <user>
+nvflare study remove-user <name> <user>
+```
+
+Site enrollment is role-sensitive:
+
+- `project_admin` uses `--site-org <org>:<site>[,<site>...]`.
+- `org_admin` uses `--sites <site> [<site> ...]`.
+- `--sites` accepts either space-delimited or comma-delimited input.
+- `--sites` and `--site-org` are mutually exclusive.
 
 ### Add `nvflare recipe`
 
@@ -601,19 +1179,21 @@ nvflare recipe list [--framework <framework>]
 
 ### Add `nvflare network`
 
-All `nvflare network` commands query the server's cell network topology over an admin session and require a startup kit to be resolvable. They accept `--startup-target poc|prod` and `--startup-kit <dir>` as mutually exclusive explicit selectors; see §Startup Kit Resolution for the full lookup order, including env/config fallback.
+All `nvflare network` commands query the server's cell network topology over an admin
+session and require a startup kit to be resolvable through the active-kit registry or
+`NVFLARE_STARTUP_KIT_DIR`.
 
 ```text
-nvflare network cells        [--startup-target poc|prod | --startup-kit <dir>]
-nvflare network peers        <target_cell> [--startup-target poc|prod | --startup-kit <dir>]
-nvflare network conns        <target_cell> [--startup-target poc|prod | --startup-kit <dir>]
-nvflare network route        <to_cell> [--from <from_cell>] [--startup-target poc|prod | --startup-kit <dir>]
-nvflare network msg-stats    <target> [--mode mode] [--startup-target poc|prod | --startup-kit <dir>]
-nvflare network list-pools   <target> [--startup-target poc|prod | --startup-kit <dir>]
-nvflare network show-pool    <target> <pool_name> [--mode mode] [--startup-target poc|prod | --startup-kit <dir>]
-nvflare network comm-config  <target> [--startup-target poc|prod | --startup-kit <dir>]
-nvflare network config-vars  <target> [--startup-target poc|prod | --startup-kit <dir>]
-nvflare network process-info <target> [--startup-target poc|prod | --startup-kit <dir>]
+nvflare network cells
+nvflare network peers        <target_cell>
+nvflare network conns        <target_cell>
+nvflare network route        <to_cell> [--from <from_cell>]
+nvflare network msg-stats    <target> [--mode mode]
+nvflare network list-pools   <target>
+nvflare network show-pool    <target> <pool_name> [--mode mode]
+nvflare network comm-config  <target>
+nvflare network config-vars  <target>
+nvflare network process-info <target>
 ```
 
 All `nvflare network` commands support `--schema`. User-supplied arguments are validated against strict patterns before interpolation into `do_command()` strings.
@@ -649,16 +1229,17 @@ All `nvflare network` commands support `--schema`. User-supplied arguments are v
 
 ## Add `nvflare system`
 
-All `nvflare system` commands connect to the server and require a startup kit to be resolvable. They accept `--startup-target poc|prod` and `--startup-kit <dir>` as mutually exclusive explicit selectors; see §Startup Kit Resolution for the full lookup order, including env/config fallback.
+All `nvflare system` commands connect to the server and require a startup kit to be
+resolvable through the active-kit registry or `NVFLARE_STARTUP_KIT_DIR`.
 
 ```text
-nvflare system status        [server|client] [client_names...] [--startup-target poc|prod | --startup-kit <dir>]
-nvflare system resources     [server|client] [clients...] [--startup-target poc|prod | --startup-kit <dir>]
-nvflare system shutdown      <server|client|all> [client_names...] [--force] [--startup-target poc|prod | --startup-kit <dir>]
-nvflare system restart       <server|client|all> [client_names...] [--force] [--startup-target poc|prod | --startup-kit <dir>]
-nvflare system remove-client <client_name> [--startup-target poc|prod | --startup-kit <dir>]
-nvflare system log-config    [--site server|<client_name>|all] <level> [--startup-target poc|prod | --startup-kit <dir>]
-nvflare system version       [--site server|<name>|all] [--startup-target poc|prod | --startup-kit <dir>]
+nvflare system status        [server|client] [client_names...]
+nvflare system resources     [server|client] [clients...]
+nvflare system shutdown      <server|client|all> [client_names...] [--force]
+nvflare system restart       <server|client|all> [client_names...] [--force]
+nvflare system remove-client <client_name>
+nvflare system log-config    [--site server|<client_name>|all] <level>
+nvflare system version       [--site server|<name>|all]
 ```
 
 
@@ -702,21 +1283,48 @@ Example:
 
 ## Implementation
 
-### Startup Kit Resolution
+### Startup Kit Resolution Implementation
 
-All server-connected commands (`nvflare job`, `nvflare system`, `nvflare network`) resolve the startup kit using the same ordered lookup:
+All server-connected commands (`nvflare job`, `nvflare study`, `nvflare system`,
+`nvflare network`) resolve the startup kit using the same ordered lookup:
 
-1. `--startup-kit <dir>` — explicit path on the command line
-2. `NVFLARE_STARTUP_KIT_DIR` — environment variable
-3. `--startup-target poc|prod` — config v2 key lookup (`poc.startup_kit` or `prod.startup_kit`)
-4. default target `poc` — uses `poc.startup_kit` from config when `--startup-target` is absent
-5. config v1 fallback — legacy keys read for backward compatibility; normalized to v2 on save
+1. `NVFLARE_STARTUP_KIT_DIR` — automation override. If set, validate it with the
+   three-file admin startup kit check and use it.
+2. `startup_kits.active` — resolve the active ID from `~/.nvflare/config.conf`, then
+   validate the registered path.
+3. If neither source resolves to a valid admin/user startup kit, fail before any server
+   connection attempt.
 
 This resolution order applies uniformly. Command-level descriptions that say "same resolution order as `nvflare job`" refer to this list.
 
+Normal commands do not expose `--startup-target` or `--startup-kit`. Users switch local
+identity with `nvflare kit use <id>`. Automation can use `NVFLARE_STARTUP_KIT_DIR` when
+mutating local config is undesirable.
+
+Resolution error examples:
+
+```text
+Error: no active startup kit is configured
+Hint: Run nvflare kit use <id>.
+```
+
+```text
+Error: NVFLARE_STARTUP_KIT_DIR does not point to a valid startup kit for admin use
+Path: /secure/startup_kits/cancer/lead@nvidia.com
+Hint: Unset NVFLARE_STARTUP_KIT_DIR, or set it to a valid admin startup kit directory.
+```
+
+```text
+Error: active startup kit 'cancer_lead' points to a missing path
+Path: /secure/startup_kits/cancer/lead@nvidia.com
+Hint: Run nvflare kit use <id> or nvflare kit remove cancer_lead.
+```
+
 ### Session Reuse
 
-`nvflare job submit` already uses `new_secure_session()` with startup kit discovery. All new server-connected commands follow the same session pattern once the startup kit location is resolved.
+`nvflare job submit` already uses `new_secure_session()` with startup kit discovery. All
+server-connected commands follow the same session pattern once the startup kit location is
+resolved.
 
 ### Session API Coverage
 
@@ -741,7 +1349,7 @@ Needs adding:
 - `list_jobs`
 - `get_job_meta`
 - `delete_job`
-- `get_job_logs(job_id, target, tail_lines, grep_pattern)`
+- `get_job_logs(job_id, target)`
 - `configure_job_log(job_id, config, target)`
 
 New methods are thin wrappers over `AdminAPI.do_command()`.
@@ -756,6 +1364,9 @@ New methods are thin wrappers over `AdminAPI.do_command()`.
 | `nvflare/tool/recipe/recipe_cli.py` | `nvflare recipe list` |
 | `nvflare/tool/network/__init__.py` | Package |
 | `nvflare/tool/network/network_cli.py` | All `nvflare network` handlers |
+| `nvflare/tool/kit/__init__.py` | Package |
+| `nvflare/tool/kit/kit_cli.py` | `nvflare kit` command handlers |
+| `nvflare/tool/kit/kit_config.py` | Startup kit registry config and metadata helpers |
 | `nvflare/tool/agent/__init__.py` | Package |
 | `nvflare/tool/agent/agent_cli.py` | `nvflare agent` subcommands |
 | `nvflare/agent/__init__.py` | Agent package |
@@ -773,9 +1384,11 @@ New methods are thin wrappers over `AdminAPI.do_command()`.
 | File | Change |
 | --- | --- |
 | `nvflare/tool/job/job_cli.py` | Add job lifecycle and observability subcommands |
+| `nvflare/tool/study/study_cli.py` | Add multi-study lifecycle commands and active startup kit resolution |
 | `nvflare/fuel/flare_api/flare_api.py` | Add missing session methods |
 | `nvflare/cli.py` | Register new top-level commands |
-| `nvflare/tool/poc/poc_commands.py` | Call `install_skills()` on successful `poc prepare` |
+| `nvflare/tool/cli_session.py` | Resolve `NVFLARE_STARTUP_KIT_DIR` or the active startup kit registry entry |
+| `nvflare/tool/poc/poc_commands.py` | Call `install_skills()` on successful `poc prepare`; register generated POC user kits; support `poc add user/site` |
 | `nvflare/lighter/provision.py` | Call `install_skills()` on successful `provision` |
 
 

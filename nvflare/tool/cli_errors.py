@@ -40,7 +40,7 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "STARTUP_KIT_MISSING": {
         "message": "Startup kit not found.",
-        "hint": "Use --startup-kit, set NVFLARE_STARTUP_KIT_DIR, or configure a startup kit with 'nvflare config'.",
+        "hint": "Run 'nvflare kit list' and 'nvflare kit use <id>', or set NVFLARE_STARTUP_KIT_DIR for automation.",
     },
     "SITE_NOT_FOUND": {
         "message": "Site '{site}' is not connected.",
@@ -91,8 +91,8 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "hint": "Use 'nvflare study add-user' to add the user first.",
     },
     "STARTUP_KIT_NOT_CONFIGURED": {
-        "message": "Startup kit is not configured for target '{target}'.",
-        "hint": "Run 'nvflare config --{target}.startup_kit <dir>' or use --startup-kit.",
+        "message": "No active startup kit is configured.",
+        "hint": "Run 'nvflare kit list' and 'nvflare kit use <id>', or set NVFLARE_STARTUP_KIT_DIR for automation.",
     },
     "LOCK_TIMEOUT": {
         "message": "Study registry is busy.",
@@ -114,6 +114,10 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     "JOB_INVALID": {
         "message": "Job folder is not a valid NVFlare job.",
         "hint": "Check meta.json and config_fed_server.json.",
+    },
+    "LOG_NOT_FOUND": {
+        "message": "Job logs are not available for site '{site}'.",
+        "hint": "Verify that client log streaming is enabled and that the site has run this job.",
     },
     # --- Cert commands ---
     "OUTPUT_DIR_NOT_WRITABLE": {

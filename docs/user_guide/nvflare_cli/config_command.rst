@@ -13,10 +13,7 @@ Command Usage
 
 .. code-block:: none
 
-   usage: nvflare config [-h] [-d [STARTUP_KIT_DIR]]
-                         [--poc.startup_kit [POC_STARTUP_KIT_DIR]]
-                         [--prod.startup_kit [PROD_STARTUP_KIT_DIR]]
-                         [--poc.workspace [POC_WORKSPACE_DIR]]
+   usage: nvflare config [-h] [--poc.workspace [POC_WORKSPACE_DIR]]
                          [-jt [JOB_TEMPLATES_DIR]]
                          [--job_templates_dir [JOB_TEMPLATES_DIR]] [-debug] [--schema]
 
@@ -24,18 +21,12 @@ Command Usage
 Common Examples
 *****************
 
-Set the default POC admin startup kit directory used by ``nvflare job`` and
-``nvflare system``:
+Startup kit paths are managed by :ref:`kit_command`, not ``nvflare config``:
 
 .. code-block:: shell
 
-   nvflare config --poc.startup_kit /tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com
-
-Set the production admin startup kit directory:
-
-.. code-block:: shell
-
-   nvflare config --prod.startup_kit /path/to/prod/admin_startup_kit
+   nvflare kit add project_admin /tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com
+   nvflare kit use project_admin
 
 Set the default POC workspace:
 
@@ -57,10 +48,9 @@ Set the job template directory for deprecated ``nvflare job list_templates``:
 Configuration notes:
 
 - The saved config format is normalized to v2 with ``version = 2`` as the first line.
-- ``poc.startup_kit`` and ``prod.startup_kit`` should point to admin startup kit
-  directories such as ``.../admin@nvidia.com``.
-- The legacy compatibility alias ``--startup_kit_dir`` updates ``poc.startup_kit``
-  only. It does not set ``prod.startup_kit``. Note: this flag is hidden from
-  ``--help`` because it is a legacy compatibility alias.
+- ``startup_kits.active`` and ``startup_kits.entries`` are managed by ``nvflare kit``.
+- ``poc.startup_kit`` and ``prod.startup_kit`` are not read or written.
 - The legacy compatibility alias ``-pw`` is still accepted for ``--poc.workspace``,
   but it is hidden from help and docs.
+
+For startup kit registration and switching, see :ref:`kit_command`.

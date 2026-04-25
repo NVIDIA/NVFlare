@@ -1083,40 +1083,30 @@ class Session(SessionSpec):
 
         self._do_command(join_args([AdminCommandNames.REMOVE_CLIENT, client_name]))
 
-    def get_job_logs(
-        self, job_id: str, target: str = "server", tail_lines: int = None, grep_pattern: str = None
-    ) -> dict:
-        """Retrieve job logs from server workspace.
+    def get_job_logs(self, job_id: str, target: str = "server") -> dict:
+        """Retrieve job logs from the server-side log store.
 
         Args:
             job_id (str): ID of the job
-            target (str): target site name. Only "server" is currently supported.
-            tail_lines (int): optional number of tail lines to retrieve
-            grep_pattern (str): optional grep pattern to filter log lines
+            target (str): "server", "all", or a client site name
 
-        Returns: dict with "logs" keys mapping site name to log text.
+        Returns: dict with "logs" mapping site name to log text, and optional
+            "unavailable" mapping site names to reasons.
 
         """
         self._validate_job_id(job_id)
-        if target != "server":
-            raise ValueError("get_job_logs currently only supports target='server'")
-        if tail_lines is not None:
-            if not isinstance(tail_lines, int):
-                raise ValueError(f"tail_lines must be int but got {type(tail_lines)}")
-            if tail_lines <= 0:
-                raise ValueError("tail_lines must be greater than 0")
+        if not isinstance(target, str) or not target:
+            raise ValueError("target must be a non-empty str")
 
-        parts = [AdminCommandNames.GET_JOB_LOG, job_id]
-        if tail_lines is not None:
-            parts.extend(["-n", str(tail_lines)])
-        if grep_pattern:
-            parts.extend(["-g", grep_pattern])
-
+        parts = [AdminCommandNames.GET_JOB_LOG, job_id, target]
         command = join_args(parts)
         reply = self._do_command(command, enforce_meta=False)
         payload = self._get_dict_data(reply)
         if isinstance(payload, dict) and "logs" in payload:
-            return {"logs": payload.get("logs", {})}
+            result = {"logs": payload.get("logs", {})}
+            if "unavailable" in payload:
+                result["unavailable"] = payload.get("unavailable", {})
+            return result
         return {"logs": payload}
 
     def configure_job_log(self, job_id: str, config, target: str = "all") -> None:
