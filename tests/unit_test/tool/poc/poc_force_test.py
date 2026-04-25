@@ -945,6 +945,65 @@ participants:
                 with patch.dict(os.environ, {}, clear=True):
                     assert get_poc_workspace() == str(workspace)
 
+    def test_register_poc_startup_kits_replaces_previous_poc_workspace_entries(self, tmp_path):
+        from nvflare.tool.kit.kit_config import get_startup_kit_entries
+        from nvflare.tool.poc.poc_commands import _register_poc_startup_kits
+
+        old_workspace = tmp_path / "old_poc"
+        new_workspace = tmp_path / "new_poc"
+        old_admin = old_workspace / "example_project" / "prod_00" / "admin@nvidia.com"
+        new_prod_dir = new_workspace / "example_project" / "prod_00"
+        new_admin = _make_admin_startup_kit(new_prod_dir, "admin@nvidia.com")
+        manual_admin = tmp_path / "prod" / "cancer" / "lead@nvidia.com"
+
+        config = CF.parse_string(
+            f"""
+version = 2
+startup_kits {{
+  active = "admin@nvidia.com"
+  entries {{
+    "admin@nvidia.com" = "{old_admin}"
+    cancer_lead = "{manual_admin}"
+  }}
+}}
+poc {{
+  workspace = "{old_workspace}"
+}}
+"""
+        )
+
+        updated, removed_ids = _register_poc_startup_kits(
+            config,
+            str(new_workspace),
+            {"admin@nvidia.com": str(new_admin)},
+        )
+
+        entries = get_startup_kit_entries(updated)
+        assert removed_ids == {"admin@nvidia.com"}
+        assert entries["admin@nvidia.com"] == str(new_admin.resolve())
+        assert entries["cancer_lead"] == str(manual_admin)
+
+    def test_register_poc_startup_kits_rejects_manual_id_conflict(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import _register_poc_startup_kits
+
+        workspace = tmp_path / "poc"
+        new_admin = _make_admin_startup_kit(workspace / "example_project" / "prod_00", "admin@nvidia.com")
+        manual_admin = tmp_path / "prod" / "admin@nvidia.com"
+
+        config = CF.parse_string(
+            f"""
+version = 2
+startup_kits {{
+  entries {{
+    "admin@nvidia.com" = "{manual_admin}"
+  }}
+}}
+"""
+        )
+
+        with pytest.raises(CLIException, match="already exists outside POC workspace"):
+            _register_poc_startup_kits(config, str(workspace), {"admin@nvidia.com": str(new_admin)})
+
     def test_clean_poc_removes_workspace_and_only_canonical_workspace_entries(self, tmp_path, monkeypatch):
         from nvflare.tool.poc.poc_commands import _clean_poc
 

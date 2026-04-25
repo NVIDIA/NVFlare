@@ -515,10 +515,23 @@ def _get_generated_poc_startup_kits(project_config: Dict, prod_dir: str) -> Tupl
     return entries, active_id
 
 
+def _get_configured_poc_workspace(config: Dict[str, Any]) -> Optional[str]:
+    try:
+        workspace = config.get(f"{POC_KEY}.{WORKSPACE_KEY}", None)
+    except Exception:
+        return None
+    return workspace.strip() if isinstance(workspace, str) and workspace.strip() else None
+
+
 def _register_poc_startup_kits(
     config: Dict[str, Any], workspace: str, kit_entries: Dict[str, str]
 ) -> Tuple[Dict[str, Any], set]:
-    config, removed_ids = remove_entries_under_workspace(config, workspace)
+    removed_ids = set()
+    previous_workspace = _get_configured_poc_workspace(config)
+    if previous_workspace:
+        config, removed_ids = remove_entries_under_workspace(config, previous_workspace)
+    config, current_removed_ids = remove_entries_under_workspace(config, workspace)
+    removed_ids.update(current_removed_ids)
     entries = get_startup_kit_entries(config)
 
     for kit_id, kit_path in kit_entries.items():
