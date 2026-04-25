@@ -67,8 +67,9 @@ Behavior notes:
 - If the workspace already exists and stdin is non-interactive, ``--force`` is
   required.
 - ``nvflare poc prepare`` updates ``~/.nvflare/config.conf`` with the POC
-  workspace, registers generated admin/user and site startup kits, and activates the
-  default Project Admin kit.
+  workspace, registers generated admin/user startup kits, and activates the
+  default Project Admin kit. Site startup kits stay in the POC workspace and are
+  not registered as CLI identities.
 - On success, the command prints a JSON result containing the workspace path and
   discovered client list.
 
@@ -132,9 +133,8 @@ Behavior notes:
   the generated user startup kit in the shared startup kit registry.
 - ``poc add site`` adds a client participant to the persisted POC
   ``project.yml`` and generates the site startup kit in the latest POC output
-  directory. The generated site kit is registered in ``~/.nvflare/config.conf``
-  for local discovery and cleanup, but it is not made active because only
-  admin/user kits can be active CLI startup kits.
+  directory. The generated site kit is not registered in ``~/.nvflare/config.conf``
+  because only admin/user kits are CLI identities.
 - POC add uses the existing provision state, so the root CA is reused across
   provision runs.
 - Use ``--force`` only to replace an existing participant entry in the local
@@ -256,8 +256,9 @@ The workspace can also be controlled by:
 - ``~/.nvflare/config.conf`` via ``nvflare config --poc.workspace <poc_workspace>``
 
 ``nvflare poc prepare`` writes the POC workspace into the local NVFlare config
-and registers generated admin/user and site startup kits in the shared startup kit
-registry automatically.
+and registers generated admin/user startup kits in the shared startup kit
+registry automatically. Site startup kits remain in the POC workspace for local
+service management.
 
 The default Project Admin startup kit becomes active, so server-connected
 commands such as ``nvflare job list`` and ``nvflare system status`` work

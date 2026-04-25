@@ -38,6 +38,14 @@ def _make_invalid_startup_kit(parent: Path, name: str = "invalid@nvidia.com") ->
     return kit_dir
 
 
+def _make_site_startup_kit(parent: Path, name: str = "site-1") -> Path:
+    kit_dir = parent / name
+    startup_dir = kit_dir / "startup"
+    startup_dir.mkdir(parents=True)
+    (startup_dir / "fed_client.json").write_text("{}\n")
+    return kit_dir
+
+
 def _run_kit_command(argv, monkeypatch):
     from nvflare.cli import def_config_parser, handle_config_cmd
 
@@ -189,6 +197,7 @@ class TestKitCli:
     def test_list_marks_stale_entries_without_failing(self, tmp_path, monkeypatch, capsys):
         home = Path.home()
         valid_kit = _make_admin_startup_kit(tmp_path, "admin@nvidia.com")
+        site_kit = _make_site_startup_kit(tmp_path, "site-1")
         missing_kit = tmp_path / "missing_admin"
         invalid_kit = _make_invalid_startup_kit(tmp_path, "invalid_admin@nvidia.com")
         _write_config(
@@ -199,6 +208,7 @@ class TestKitCli:
               active = "missing_admin"
               entries {{
                 project_admin = "{valid_kit}"
+                "site-1" = "{site_kit}"
                 missing_admin = "{missing_kit}"
                 invalid_admin = "{invalid_kit}"
               }}
@@ -211,6 +221,7 @@ class TestKitCli:
 
         assert "project_admin" in out
         assert "ok" in out
+        assert "site-1" not in out
         assert "missing_admin" in out
         assert "missing" in out
         assert "invalid_admin" in out

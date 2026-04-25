@@ -23,6 +23,7 @@ from nvflare.tool.cli_output import is_json_mode, output_error_message, output_o
 from nvflare.tool.cli_schema import handle_schema_flag
 from nvflare.tool.kit.kit_config import (
     NVFLARE_STARTUP_KIT_DIR,
+    STARTUP_KIT_KIND_ADMIN,
     StartupKitConfigError,
     add_startup_kit_entry,
     get_active_startup_kit_id,
@@ -184,6 +185,10 @@ def cmd_kit_list(args):
     rows = []
     for kit_id, path in sorted(entries.items()):
         status, normalized_path, metadata = get_startup_kit_status(path)
+        # Valid site/server kits are service identities, not CLI user identities.
+        # Keep missing/invalid rows visible so users can clean stale registrations.
+        if metadata.get("kind") != STARTUP_KIT_KIND_ADMIN and status == "ok":
+            continue
         rows.append(
             {
                 "active": "*" if kit_id == active else "",

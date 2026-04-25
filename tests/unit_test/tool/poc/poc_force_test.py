@@ -533,7 +533,6 @@ participants:
             "admin@nvidia.com": str(prod_dir / "admin@nvidia.com"),
             "org-admin@nvidia.com": str(prod_dir / "org-admin@nvidia.com"),
             "lead@nvidia.com": str(prod_dir / "lead@nvidia.com"),
-            "site-1": str(prod_dir / "site-1"),
         }
         assert config["poc"]["workspace"] == str(workspace)
         assert "startup_kit" not in config["poc"]
@@ -619,7 +618,7 @@ poc {{
         assert config["startup_kits"]["active"] == "admin@nvidia.com"
         assert entries["admin@nvidia.com"] == str(workspace / project_name / "prod_01" / "admin@nvidia.com")
         assert entries["bob@nvidia.com"] == str(workspace / project_name / "prod_01" / "bob@nvidia.com")
-        assert entries["site-1"] == str(workspace / project_name / "prod_01" / "site-1")
+        assert "site-1" not in entries
 
     def test_poc_add_user_auto_activates_when_no_active_kit_exists(self, tmp_path, monkeypatch):
         from nvflare.tool.poc.poc_commands import _add_poc_user
@@ -674,7 +673,7 @@ participants:
         assert result["active"] == "bob@nvidia.com"
         assert "next_step" not in result
 
-    def test_poc_add_site_persists_project_and_registers_site_kit(self, tmp_path, monkeypatch):
+    def test_poc_add_site_persists_project_without_registering_site_kit(self, tmp_path, monkeypatch):
         from nvflare.tool.poc.poc_commands import _add_poc_site
 
         monkeypatch.setenv("HOME", str(tmp_path))
@@ -749,8 +748,6 @@ poc {{
         assert config["startup_kits"]["active"] == "admin@nvidia.com"
         assert entries == {
             "admin@nvidia.com": str(workspace / project_name / "prod_01" / "admin@nvidia.com"),
-            "site-1": str(workspace / project_name / "prod_01" / "site-1"),
-            "site-3": str(workspace / project_name / "prod_01" / "site-3"),
         }
 
     def test_poc_add_rejects_duplicate_without_force(self, tmp_path, monkeypatch):

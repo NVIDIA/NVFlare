@@ -159,26 +159,22 @@ class TestStartupKitRegistryConfig:
         _assert_error_contains(exc_info, "missing_admin")
         assert config.get("startup_kits.active") == "project_admin"
 
-    def test_site_startup_kit_can_be_registered_but_not_activated(self, tmp_path):
+    def test_site_startup_kit_cannot_be_registered(self, tmp_path):
         from nvflare.tool.kit import kit_config
 
         site_kit = _make_site_startup_kit(tmp_path, "site-1")
         config = CF.parse_string("version = 2")
 
-        updated = kit_config.add_startup_kit_entry(config, "site-1", str(site_kit))
+        with pytest.raises(Exception) as exc_info:
+            kit_config.add_startup_kit_entry(config, "site-1", str(site_kit))
 
-        assert _entry_path(updated, "site-1") == site_kit.resolve()
+        _assert_error_contains(exc_info, "admin startup kit")
+        assert _entry_path(config, "site-1") is None
         status, normalized_path, metadata = kit_config.get_startup_kit_status(str(site_kit))
         assert status == "ok"
         assert Path(normalized_path) == site_kit.resolve()
         assert metadata["identity"] == "site-1"
         assert metadata["kind"] == "site"
-
-        with pytest.raises(Exception) as exc_info:
-            kit_config.set_active_startup_kit(updated, "site-1")
-
-        _assert_error_contains(exc_info, "admin use")
-        assert updated.get("startup_kits.active", None) is None
 
 
 class TestStartupKitResolution:

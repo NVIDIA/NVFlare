@@ -248,9 +248,9 @@ def _validate_registered_path(kit_id: str, path: str) -> str:
 
 
 def add_startup_kit_entry(config: ConfigTree, kit_id: str, path: str, force: bool = False) -> ConfigTree:
-    """Register ID -> path for any startup kit. Never changes active."""
+    """Register ID -> path for an admin/user startup kit. Never changes active."""
     kit_id = _normalize_kit_id(kit_id)
-    normalized_path = validate_startup_kit(path)
+    normalized_path = validate_admin_startup_kit(path)
     entries = _get_entries_tree(config)
 
     raw_existing_key = _find_raw_entry_key(entries, kit_id)

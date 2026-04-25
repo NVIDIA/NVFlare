@@ -506,8 +506,6 @@ def _get_generated_poc_startup_kits(project_config: Dict, prod_dir: str) -> Tupl
             entries[identity] = kit_dir
             if active_id is None and participant.get("role") == "project_admin":
                 active_id = identity
-        elif participant_type == "client" and _is_site_startup_kit_dir(kit_dir):
-            entries[identity] = kit_dir
 
     return entries, active_id
 

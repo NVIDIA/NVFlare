@@ -33,8 +33,8 @@ Running ``nvflare config kit`` without a subcommand prints this help text.
 Common Workflow
 *****************
 
-For POC, ``nvflare poc prepare`` registers generated admin/user and site
-startup kits and activates the default Project Admin kit automatically:
+For POC, ``nvflare poc prepare`` registers generated admin/user startup kits
+and activates the default Project Admin kit automatically:
 
 .. code-block:: shell
 
@@ -84,8 +84,8 @@ Arguments and options:
 
 - ``<id>``: local ID used to refer to the startup kit. IDs can be meaningful
   names such as ``cancer_lead`` or identities such as ``lead@nvidia.com``.
-- ``<startup-kit-dir>``: participant startup kit directory, such as
-  ``.../prod_00/admin@nvidia.com`` or ``.../prod_00/site-1``. Passing the
+- ``<startup-kit-dir>``: admin/user startup kit directory, such as
+  ``.../prod_00/admin@nvidia.com``. Passing the
   ``startup`` subdirectory is also accepted and normalized to the participant
   startup kit directory.
 - ``--force``: replace an existing local registration for the same ID.
@@ -97,9 +97,8 @@ For an admin/user startup kit, the path must contain:
 - ``startup/client.crt``
 - ``startup/rootCA.pem``
 
-For a site startup kit, ``startup/fed_client.json`` is enough for local
-registration. Site kits can be listed and removed from the registry, but they
-cannot be activated for server-connected admin commands.
+Site startup kits are not valid here because they are service identities, not
+interactive admin/user identities for CLI sessions.
 
 Example:
 
@@ -181,7 +180,6 @@ Example output:
    active  id               status   identity         cert_role  path
    -------------------------------------------------------------------------------
    *       cancer_lead      ok       lead@nvidia.com  lead       /secure/startup_kits/cancer/lead@nvidia.com
-           site-1           ok       site-1           -          /tmp/nvflare/poc/example_project/prod_00/site-1
            fraud_org_admin  missing  -                -          /secure/startup_kits/fraud/org_admin@nvidia.com
            old_lab_admin    invalid  -                -          /archive/old_lab/admin@nvidia.com
 
@@ -226,7 +224,6 @@ Config File
      entries {
        cancer_lead = "/secure/startup_kits/cancer/lead@nvidia.com"
        fraud_org_admin = "/secure/startup_kits/fraud/org_admin@nvidia.com"
-       "site-1" = "/tmp/nvflare/poc/example_project/prod_00/site-1"
      }
    }
 
