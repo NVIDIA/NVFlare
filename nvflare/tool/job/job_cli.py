@@ -992,7 +992,9 @@ def _get_arg_value(args, name, default=None):
 
 
 def _job_session_for_args(cmd_args=None, study="default"):
-    return _session(args=cmd_args, study=study)
+    if study != "default":
+        return _session(study=study)
+    return _session()
 
 
 def cmd_job_list(cmd_args):

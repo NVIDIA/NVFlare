@@ -51,11 +51,13 @@ active startup kit registry in ``~/.nvflare/config.conf``.
 
 Impact:
 
-- Use ``nvflare kit add <id> <startup-kit-dir>`` and ``nvflare kit use <id>``
-  to register and activate a startup kit.
+- Use ``nvflare config kit add <id> <startup-kit-dir>`` and
+  ``nvflare config kit use <id>`` to register and activate a startup kit.
 - ``NVFLARE_STARTUP_KIT_DIR`` remains an automation override and takes
   precedence over the active registry entry when set.
-- ``nvflare config`` no longer manages startup kit paths.
+- Root ``nvflare config`` continues to manage local settings such as the POC
+  workspace. Startup kit paths are managed by the ``nvflare config kit``
+  subcommands.
 
 If you use shell profiles or CI settings that export ``NVFLARE_STARTUP_KIT_DIR``,
 review them before upgrading because they override the active registry entry.
