@@ -1653,8 +1653,8 @@ def _clean_poc(poc_workspace: str, force: bool = False):
 
             from nvflare.tool.cli_output import print_human
 
-            _clean_poc_config(poc_workspace)
             shutil.rmtree(poc_workspace)
+            _clean_poc_config(poc_workspace)
 
             print_human(f"{poc_workspace} is removed")
             return True

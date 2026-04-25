@@ -1011,7 +1011,7 @@ prod {{
         assert config["poc"] == {"mode": "keep"}
         assert config["prod"] == {"mode": "keep"}
 
-    def test_clean_poc_updates_config_when_workspace_remove_fails(self, tmp_path, monkeypatch):
+    def test_clean_poc_keeps_config_when_workspace_remove_fails(self, tmp_path, monkeypatch):
         from nvflare.tool.poc.poc_commands import _clean_poc
 
         monkeypatch.setenv("HOME", str(tmp_path))
@@ -1057,9 +1057,9 @@ poc {{
                 _clean_poc(str(workspace))
 
         config = _load_config_dict(dst)
-        assert "active" not in config.get("startup_kits", {})
-        assert config["startup_kits"]["entries"] == {}
-        assert "poc" not in config or "workspace" not in config["poc"]
+        assert config["startup_kits"]["active"] == "admin@nvidia.com"
+        assert config["startup_kits"]["entries"] == {"admin@nvidia.com": str(poc_admin)}
+        assert config["poc"]["workspace"] == str(workspace)
         print_human.assert_not_called()
 
     def test_clean_poc_force_stops_running_system_before_removal(self, tmp_path):
