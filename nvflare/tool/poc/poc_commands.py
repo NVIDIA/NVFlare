@@ -515,7 +515,9 @@ def _get_generated_poc_startup_kits(project_config: Dict, prod_dir: str) -> Tupl
     return entries, active_id
 
 
-def _register_poc_startup_kits(config: Dict[str, Any], workspace: str, kit_entries: Dict[str, str]) -> set:
+def _register_poc_startup_kits(
+    config: Dict[str, Any], workspace: str, kit_entries: Dict[str, str]
+) -> Tuple[Dict[str, Any], set]:
     config, removed_ids = remove_entries_under_workspace(config, workspace)
     entries = get_startup_kit_entries(config)
 
@@ -528,14 +530,14 @@ def _register_poc_startup_kits(config: Dict[str, Any], workspace: str, kit_entri
             )
         config = add_startup_kit_entry(config, kit_id, kit_path, force=True)
 
-    return removed_ids
+    return config, removed_ids
 
 
 def _write_poc_startup_kit_registry(workspace: str, project_name: str, project_config: Dict):
     config = load_cli_config()
     prod_dir = get_prod_dir(workspace, project_name)
     kit_entries, active_id = _get_generated_poc_startup_kits(project_config, prod_dir)
-    _register_poc_startup_kits(config, workspace, kit_entries)
+    config, _removed_ids = _register_poc_startup_kits(config, workspace, kit_entries)
 
     if active_id:
         config.put("startup_kits.active", active_id)
@@ -834,10 +836,15 @@ def _require_poc_project_admin():
     metadata = inspect_startup_kit_metadata(startup_kit_dir)
     cert_role = metadata.get("cert_role")
     identity = metadata.get("identity") or "<unknown>"
+    if not cert_role:
+        raise AuthorizationError(
+            f"nvflare poc add requires an active startup kit with role '{POC_ADD_REQUIRED_CERT_ROLE}'; "
+            f"could not determine the certificate role for active identity '{identity}'"
+        )
     if cert_role != POC_ADD_REQUIRED_CERT_ROLE:
         raise AuthorizationError(
             f"nvflare poc add requires an active startup kit with role '{POC_ADD_REQUIRED_CERT_ROLE}'; "
-            f"active identity '{identity}' has role '{cert_role or 'unknown'}'"
+            f"active identity '{identity}' has role '{cert_role}'"
         )
 
 

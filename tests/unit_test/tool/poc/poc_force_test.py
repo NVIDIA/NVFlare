@@ -349,6 +349,19 @@ class TestPocForce:
             with pytest.raises(AuthorizationError, match="project_admin"):
                 _require_poc_project_admin()
 
+    def test_poc_add_project_admin_guard_rejects_missing_cert_role(self):
+        from nvflare.tool.poc.poc_commands import AuthorizationError, _require_poc_project_admin
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.resolve_startup_kit_dir", return_value="/startup-kit"),
+            patch(
+                "nvflare.tool.poc.poc_commands.inspect_startup_kit_metadata",
+                return_value={"identity": "admin@nvidia.com", "cert_role": None},
+            ),
+        ):
+            with pytest.raises(AuthorizationError, match="could not determine the certificate role"):
+                _require_poc_project_admin()
+
     def test_poc_add_user_rejects_non_project_admin_before_mutation(self, capsys):
         from nvflare.tool.poc.poc_commands import AuthorizationError, add_poc_user
 
