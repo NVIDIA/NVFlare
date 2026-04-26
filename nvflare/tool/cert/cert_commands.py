@@ -441,6 +441,10 @@ def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
             os.fchmod(fd, mode)
     except Exception:
         os.close(fd)
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
         raise
     with os.fdopen(fd, "wb") as f:
         f.write(content)

@@ -41,6 +41,8 @@ from nvflare.tool.package.package_commands import (
     PrebuiltCertBuilder,
     _discover_name_from_dir,
     _parse_endpoint,
+    _read_zip_json,
+    _safe_zip_names,
     _validate_cert_material,
     _validate_signed_public_key_hash,
     _write_file_nofollow,
@@ -286,6 +288,34 @@ class TestPrebuiltCertBuilder:
     def test_port_min_valid(self):
         _, _, port = _parse_endpoint("grpc://server:1")
         assert port == 1
+
+
+class TestSignedZipHelpers:
+    def test_safe_zip_names_does_not_append_directory_when_error_is_mocked(self, tmp_path):
+        zip_path = tmp_path / "signed.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("nested/", b"")
+            zf.writestr("signed.json", "{}")
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+                names = _safe_zip_names(zf, str(zip_path))
+
+        error.assert_called_once()
+        assert "nested/" not in names
+        assert names == ["signed.json"]
+
+    def test_read_zip_json_raises_after_error_when_error_is_mocked(self, tmp_path):
+        zip_path = tmp_path / "signed.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("signed.json", "not json")
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+                with pytest.raises(json.JSONDecodeError):
+                    _read_zip_json(zf, "signed.json", str(zip_path))
+
+        error.assert_called_once()
 
 
 def test_missing_endpoint_human_mode_no_help_dump(capsys, monkeypatch, tmp_path):
@@ -3601,7 +3631,7 @@ class TestSignedZipPackageMode:
 
         assert exc_info.value.code == 4
         captured = capsys.readouterr()
-        assert "REQUEST_METADATA_MISMATCH" in captured.err
+        assert "REQUEST_DIR_MISMATCH" in captured.err
         for name in ("signed.json", "site-3.crt", "rootCA.pem"):
             assert not (request_dir / name).exists()
 

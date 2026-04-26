@@ -222,6 +222,10 @@ def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
             os.fchmod(fd, mode)
     except Exception:
         os.close(fd)
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
         raise
     with os.fdopen(fd, "wb") as f:
         f.write(content)
@@ -904,6 +908,7 @@ def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
             or norm.startswith("..")
             or posixpath.basename(name) != name
             or name in seen
+            or info.is_dir()
             or info.file_size > _MAX_ZIP_MEMBER_SIZE
             or stat.S_IFMT(mode) == stat.S_IFLNK
         ):
@@ -914,14 +919,7 @@ def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
                 None,
                 exit_code=4,
             )
-        if info.is_dir():
-            output_error_message(
-                "INVALID_SIGNED_ZIP",
-                f"Unexpected directory in signed zip {zip_path}: {name!r}.",
-                "Signed zips must contain signed.json, site.yaml, rootCA.pem, and one certificate.",
-                None,
-                exit_code=4,
-            )
+            continue
         if name.lower().endswith(".key"):
             output_error_message(
                 "INVALID_SIGNED_ZIP",
@@ -930,6 +928,7 @@ def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
                 None,
                 exit_code=4,
             )
+            continue
         seen.add(name)
         names.append(name)
     return names
@@ -960,9 +959,9 @@ def _read_zip_member_limited(zf: zipfile.ZipFile, name: str, zip_path: str) -> b
     return content
 
 
-def _read_zip_json(zf: zipfile.ZipFile, name: str, zip_path: str):
+def _decode_zip_json(content: bytes, name: str, zip_path: str):
     try:
-        return json.loads(_read_zip_member_limited(zf, name, zip_path).decode("utf-8"))
+        return json.loads(content.decode("utf-8"))
     except Exception as e:
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -971,12 +970,17 @@ def _read_zip_json(zf: zipfile.ZipFile, name: str, zip_path: str):
             None,
             exit_code=4,
         )
+        raise
 
 
-def _read_zip_yaml(zf: zipfile.ZipFile, name: str, zip_path: str):
+def _read_zip_json(zf: zipfile.ZipFile, name: str, zip_path: str):
+    return _decode_zip_json(_read_zip_member_limited(zf, name, zip_path), name, zip_path)
+
+
+def _decode_zip_yaml(content: bytes, name: str, zip_path: str):
     data = None
     try:
-        data = yaml.safe_load(_read_zip_member_limited(zf, name, zip_path).decode("utf-8"))
+        data = yaml.safe_load(content.decode("utf-8"))
     except Exception as e:
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -985,6 +989,7 @@ def _read_zip_yaml(zf: zipfile.ZipFile, name: str, zip_path: str):
             None,
             exit_code=4,
         )
+        raise
     if not isinstance(data, dict):
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -993,7 +998,12 @@ def _read_zip_yaml(zf: zipfile.ZipFile, name: str, zip_path: str):
             None,
             exit_code=4,
         )
+        raise ValueError(f"{name} in signed zip must be a mapping")
     return data
+
+
+def _read_zip_yaml(zf: zipfile.ZipFile, name: str, zip_path: str):
+    return _decode_zip_yaml(_read_zip_member_limited(zf, name, zip_path), name, zip_path)
 
 
 def _hash_bytes(content: bytes) -> str:
@@ -1204,10 +1214,10 @@ def _signed_identity_from_metadata(signed_meta: dict, site_meta: dict, cert):
 
 
 def _load_signed_zip(input_path: str):
-    signed_meta = {}
-    site_meta = {}
+    signed_meta = None
+    site_meta = None
     cert_name = ""
-    file_contents = {}
+    file_contents = None
     try:
         with zipfile.ZipFile(input_path, "r") as zf:
             names = set(_safe_zip_names(zf, input_path))
@@ -1221,9 +1231,6 @@ def _load_signed_zip(input_path: str):
                     None,
                     exit_code=4,
                 )
-            signed_meta = _read_zip_json(zf, "signed.json", input_path)
-            site_meta = _read_zip_yaml(zf, "site.yaml", input_path)
-
             cert_names = sorted(n for n in names if n.endswith(".crt"))
             if len(cert_names) != 1:
                 output_error_message(
@@ -1250,6 +1257,8 @@ def _load_signed_zip(input_path: str):
                 "rootCA.pem": _read_zip_member_limited(zf, "rootCA.pem", input_path),
                 "cert": _read_zip_member_limited(zf, cert_name, input_path),
             }
+            signed_meta = _decode_zip_json(file_contents["signed.json"], "signed.json", input_path)
+            site_meta = _decode_zip_yaml(file_contents["site.yaml"], "site.yaml", input_path)
             _validate_signed_metadata(signed_meta, site_meta, cert_name)
     except zipfile.BadZipFile:
         output_error_message(
@@ -1334,7 +1343,21 @@ def _has_request_material(request_dir: str, name: str) -> bool:
 
 def _resolve_request_dir(args, signed_zip_path: str, identity: dict):
     if getattr(args, "request_dir", None):
-        return os.path.abspath(args.request_dir)
+        candidate = os.path.abspath(args.request_dir)
+        request_id = identity.get("request_id")
+        if request_id:
+            validated = _validated_audit_request_dir(candidate, request_id)
+            if not validated:
+                output_error_message(
+                    "REQUEST_DIR_MISMATCH",
+                    "The specified --request-dir does not match the signed zip request_id.",
+                    "Use the directory created by 'nvflare cert request' for this signed zip.",
+                    None,
+                    exit_code=4,
+                )
+                return None
+            return validated
+        return candidate
 
     audit_dir = _audit_request_dir(identity.get("request_id"))
     if audit_dir and _has_request_material(audit_dir, identity["name"]):
