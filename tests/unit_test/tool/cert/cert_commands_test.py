@@ -41,12 +41,14 @@ from nvflare.tool.cert.cert_commands import (
     _generate_csr,
     _load_and_validate_csr,
     _load_single_site_yaml,
+    _load_yaml_file,
     _read_request_zip,
     _resolve_request_identity,
     _resolve_sign_cert_type,
     _safe_zip_names,
     _validate_request_kind_cert_type,
     _validate_request_metadata,
+    _validate_request_project_matches_ca,
     _validate_safe_cert_name,
     _validate_safe_project_name,
     _write_file_nofollow,
@@ -323,6 +325,50 @@ class TestCertValidationHelpers:
 
         assert exc_info.value.code == 1
         assert not (tmp_path / "site-3.key").exists()
+
+    def test_load_csr_returns_after_read_error_when_error_is_mocked(self, tmp_path):
+        csr_path = tmp_path / "site-3.csr"
+        csr_path.write_text("placeholder")
+
+        with patch("nvflare.tool.cert.cert_commands._read_file_nofollow", side_effect=OSError("blocked")):
+            with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+                csr = _load_and_validate_csr(str(csr_path))
+
+        assert csr is None
+        output_error.assert_called_once()
+        assert "failed to read CSR" in output_error.call_args.kwargs["detail"]
+
+    def test_load_yaml_file_returns_none_after_non_dict_when_error_is_mocked(self, tmp_path):
+        site_yaml = tmp_path / "site.yaml"
+        site_yaml.write_text("- not\n- a\n- mapping\n")
+
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            data = _load_yaml_file(str(site_yaml))
+
+        assert data is None
+        output_error.assert_called_once()
+        assert "yaml must be a mapping" in output_error.call_args.kwargs["detail"]
+
+    def test_generate_csr_returns_empty_after_invalid_type_when_error_is_mocked(self, tmp_path):
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            with patch("nvflare.tool.cert.cert_commands._generate_csr") as generate_csr:
+                result = generate_csr_files("site-3", "nvidia", "bad_type", str(tmp_path))
+
+        assert result == {}
+        output_error.assert_called_once()
+        generate_csr.assert_not_called()
+
+    def test_request_project_ca_load_failure_returns_none_when_error_is_mocked(self, tmp_path):
+        ca_dir = tmp_path / "ca"
+        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+
+        with patch("nvflare.tool.cert.cert_commands.load_crt", side_effect=ValueError("bad ca")):
+            with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
+                ca_meta = _validate_request_project_matches_ca(str(ca_dir), "example_project")
+
+        assert ca_meta is None
+        output_error.assert_called_once()
+        assert output_error.call_args.args[0] == "CA_LOAD_FAILED"
 
 
 class TestCertInit:

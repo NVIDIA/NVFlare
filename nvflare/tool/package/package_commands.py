@@ -108,7 +108,7 @@ def _validate_request_id(request_id: str, *, code: str = "INVALID_SIGNED_ZIP") -
         )
 
 
-def _validate_org_name(org: str, *, code: str = "INVALID_SIGNED_ZIP") -> None:
+def _validate_org_name(org: str, *, code: str = "INVALID_SIGNED_ZIP") -> bool:
     if not isinstance(org, str):
         invalid, reason = True, "org must be a string"
     else:
@@ -121,6 +121,8 @@ def _validate_org_name(org: str, *, code: str = "INVALID_SIGNED_ZIP") -> None:
             None,
             exit_code=4,
         )
+        return False
+    return True
 
 
 def _validate_signed_kind_cert_type(kind: str, cert_type: str) -> None:
@@ -1053,7 +1055,8 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
         return
     _validate_request_id(signed_meta["request_id"])
     _validate_safe_project_name(signed_meta["project"], code="INVALID_SIGNED_ZIP")
-    _validate_org_name(signed_meta["org"], code="INVALID_SIGNED_ZIP")
+    if not _validate_org_name(signed_meta["org"], code="INVALID_SIGNED_ZIP"):
+        return
     cert_type = signed_meta["cert_type"]
     if cert_type not in _VALID_CERT_TYPES:
         output_error_message(
@@ -1074,6 +1077,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             None,
             exit_code=4,
         )
+        return
 
     for meta_field, site_field in (("name", "name"), ("org", "org"), ("cert_type", "type"), ("project", "project")):
         if site_meta.get(site_field) != signed_meta.get(meta_field):
@@ -1084,6 +1088,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
                 None,
                 exit_code=4,
             )
+            return
     if site_meta.get("kind") != signed_meta.get("kind"):
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -1092,6 +1097,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             None,
             exit_code=4,
         )
+        return
     if (site_meta.get("cert_role") or None) != (signed_meta.get("cert_role") or None):
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -1100,6 +1106,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             None,
             exit_code=4,
         )
+        return
 
     hashes = signed_meta.get("hashes")
     required_hashes = ("csr_sha256", "site_yaml_sha256", "certificate_sha256", "rootca_sha256", "public_key_sha256")
@@ -1431,18 +1438,22 @@ def _validate_local_request_metadata(request_meta: dict, signed_meta: dict) -> N
     missing = [field for field in required if not request_meta.get(field)]
     if missing:
         _request_metadata_mismatch(f"request.json missing required field(s): {', '.join(missing)}")
+        return
 
     for field in ("request_id", "project", "name", "org", "kind", "cert_type", "cert_role"):
         if (request_meta.get(field) or None) != (signed_meta.get(field) or None):
             _request_metadata_mismatch(f"field {field!r} differs")
+            return
 
     signed_public_key_hash = _expected_hash(signed_meta, "public_key")
     if _normalize_hash(request_meta["public_key_sha256"]) != signed_public_key_hash:
         _request_metadata_mismatch("public_key_sha256 differs")
+        return
 
     signed_csr_hash = _expected_hash(signed_meta, "csr")
     if signed_csr_hash and _normalize_hash(request_meta["csr_sha256"]) != signed_csr_hash:
         _request_metadata_mismatch("csr_sha256 differs")
+        return
 
 
 def _write_materialized_signed_files(
@@ -1558,7 +1569,8 @@ def _handle_signed_zip_package(args, scheme, host, port):
         _validate_request_id(identity.get("request_id"))
         _validate_safe_project_name(identity.get("project_name"), code="INVALID_SIGNED_ZIP")
         if identity.get("org"):
-            _validate_org_name(identity["org"], code="INVALID_SIGNED_ZIP")
+            if not _validate_org_name(identity["org"], code="INVALID_SIGNED_ZIP"):
+                return 1
 
         cert_kit_type = _read_cert_type_from_cert(cert)
         if not cert_kit_type or cert_kit_type not in _VALID_CERT_TYPES:

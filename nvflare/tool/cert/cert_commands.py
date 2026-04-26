@@ -147,7 +147,7 @@ def _validate_safe_project_name(project: str, *, field_label: str = "Project") -
         return
 
 
-def _validate_org_name(org: str) -> None:
+def _validate_org_name(org: str) -> bool:
     if not isinstance(org, str):
         invalid, reason = True, "org must be a string"
     else:
@@ -160,6 +160,8 @@ def _validate_org_name(org: str) -> None:
             exit_code=4,
             detail=reason,
         )
+        return False
+    return True
 
 
 def _validate_request_kind(kind: str) -> bool:
@@ -567,6 +569,7 @@ def _load_yaml_file(path: str) -> dict:
             exit_code=4,
             detail=f"yaml must be a mapping: {path}",
         )
+        return None
     return data
 
 
@@ -837,6 +840,7 @@ def generate_csr_files(name: str, org: str, cert_type: str, output_dir: str, for
             exit_code=4,
             detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
         )
+        return {}
 
     out_dir = os.path.abspath(output_dir)
     try:
@@ -1123,7 +1127,9 @@ def _load_and_validate_csr(csr_path: str) -> x509.CertificateSigningRequest:
             exit_code=4,
             detail=f"-r/--csr must be a file path, not a directory: {csr_path}",
         )
+        return None
 
+    csr_data = None
     try:
         csr_data = _read_file_nofollow(csr_path)
     except Exception as e:
@@ -1134,13 +1140,17 @@ def _load_and_validate_csr(csr_path: str) -> x509.CertificateSigningRequest:
             exit_code=4,
             detail=f"failed to read CSR {csr_path}: {e}",
         )
+        return None
+    csr = None
     try:
         csr = x509.load_pem_x509_csr(csr_data, default_backend())
     except Exception as e:
         output_error("INVALID_CSR", path=csr_path, detail=str(e))
+        return None
 
     if not csr.is_signature_valid:
         output_error("INVALID_CSR", path=csr_path)
+        return None
     return csr
 
 
@@ -1208,6 +1218,8 @@ def sign_csr_files(
 
     if csr is None:
         csr = _load_and_validate_csr(csr_path)
+    if csr is None:
+        return None
     cert_type = _resolve_sign_cert_type(csr, cert_type, accept_csr_role)
     if cert_type is None:
         return None
@@ -1321,6 +1333,8 @@ def handle_cert_sign(args):
             _cert_cli._cert_sign_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
         )
     csr = _load_and_validate_csr(args.csr_path)
+    if csr is None:
+        return 1
     cert_type = _resolve_sign_cert_type(csr, getattr(args, "cert_type", None), getattr(args, "accept_csr_role", False))
     if cert_type is None:
         return 1
@@ -1464,7 +1478,8 @@ def handle_cert_request(args):
     if not _validate_request_kind(getattr(args, "kind", None)):
         return 1
     _validate_safe_project_name(args.project)
-    _validate_org_name(args.org)
+    if not _validate_org_name(args.org):
+        return 1
 
     identity = _resolve_request_identity(args)
     if identity is None:
@@ -1496,6 +1511,8 @@ def handle_cert_request(args):
         output_dir=request_dir,
         force=getattr(args, "force", False),
     )
+    if not csr_result:
+        return 1
 
     request_id = uuid.uuid4().hex
     created_at = _utc_ts()
@@ -1665,7 +1682,8 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
     _validate_safe_project_name(request_meta["project"])
     name = request_meta["name"]
     _validate_safe_cert_name(name, field_label="Name")
-    _validate_org_name(request_meta["org"])
+    if not _validate_org_name(request_meta["org"]):
+        return None
     cert_type = request_meta["cert_type"]
     if cert_type not in _VALID_CERT_TYPES:
         output_error_message(
@@ -1782,10 +1800,12 @@ def _validate_request_project_matches_ca(ca_dir: str, project: str) -> dict:
             exit_code=4,
         )
 
+    ca_cert = None
     try:
         ca_cert = load_crt(ca_cert_path)
     except Exception as e:
         output_error("CA_LOAD_FAILED", ca_dir=ca_dir, detail=str(e))
+        return None
     ca_subject = _get_cn(ca_cert.subject)
     if ca_subject != project:
         output_error_message(
@@ -1836,10 +1856,14 @@ def handle_cert_approve(args):
         site_yaml_path = os.path.join(request_dir, "site.yaml")
         csr_path = os.path.join(request_dir, f"{name}.csr")
         site_meta = _load_yaml_file(site_yaml_path)
+        if site_meta is None:
+            return 1
         csr = _validate_request_metadata(request_meta, site_meta, csr_path)
         if csr is None:
             return 1
         ca_meta = _validate_request_project_matches_ca(args.ca_dir, request_meta["project"])
+        if ca_meta is None:
+            return 1
 
         sign_result = sign_csr_files(
             csr_path=csr_path,

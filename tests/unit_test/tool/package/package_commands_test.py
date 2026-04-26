@@ -48,6 +48,7 @@ from nvflare.tool.package.package_commands import (
     _resolve_request_dir,
     _safe_zip_names,
     _validate_cert_material,
+    _validate_local_request_metadata,
     _validate_signed_hashes,
     _validate_signed_metadata,
     _validate_signed_public_key_hash,
@@ -378,6 +379,67 @@ class TestSignedZipHelpers:
 
         error.assert_called_once()
         assert "missing required field" in error.call_args.args[1]
+
+    def test_validate_signed_metadata_returns_after_file_mismatch_when_error_is_mocked(self):
+        signed_meta = {
+            "artifact_type": "nvflare.cert.signed",
+            "schema_version": "1",
+            "request_id": "1" * 32,
+            "project": "example_project",
+            "name": "site-3",
+            "org": "nvidia",
+            "kind": "site",
+            "cert_type": "client",
+            "cert_file": "other.crt",
+            "rootca_file": "rootCA.pem",
+            "hashes": {
+                "csr_sha256": "1" * 64,
+                "site_yaml_sha256": "1" * 64,
+                "certificate_sha256": "1" * 64,
+                "rootca_sha256": "1" * 64,
+                "public_key_sha256": "1" * 64,
+            },
+        }
+        site_meta = {
+            "project": "example_project",
+            "name": "site-3",
+            "org": "nvidia",
+            "kind": "site",
+            "type": "client",
+        }
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+            _validate_signed_metadata(signed_meta, site_meta, "site-3.crt")
+
+        error.assert_called_once()
+        assert "file names do not match" in error.call_args.args[1]
+
+    def test_validate_signed_metadata_returns_after_invalid_org_when_error_is_mocked(self):
+        signed_meta = {
+            "artifact_type": "nvflare.cert.signed",
+            "schema_version": "1",
+            "request_id": "1" * 32,
+            "project": "example_project",
+            "name": "site-3",
+            "org": "bad-org",
+            "kind": "site",
+            "cert_type": "client",
+            "cert_file": "site-3.crt",
+            "rootca_file": "rootCA.pem",
+            "hashes": {
+                "csr_sha256": "1" * 64,
+                "site_yaml_sha256": "1" * 64,
+                "certificate_sha256": "1" * 64,
+                "rootca_sha256": "1" * 64,
+                "public_key_sha256": "1" * 64,
+            },
+        }
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+            _validate_signed_metadata(signed_meta, {}, "site-3.crt")
+
+        error.assert_called_once()
+        assert "Invalid org name" in error.call_args.args[1]
 
     def test_validate_signed_metadata_returns_after_invalid_cert_type_when_error_is_mocked(self):
         signed_meta = {
@@ -3698,6 +3760,36 @@ class TestSignedZipPackageMode:
         assert request_meta is None
         output_error.assert_called_once()
         assert output_error.call_args.args[0] == "REQUEST_METADATA_INVALID"
+
+    def test_validate_local_request_metadata_returns_after_missing_hash_when_error_is_mocked(self):
+        request_meta = {
+            "request_id": "1" * 32,
+            "project": "example_project",
+            "name": "site-3",
+            "org": "nvidia",
+            "kind": "site",
+            "cert_type": "client",
+            "csr_sha256": "1" * 64,
+        }
+        signed_meta = {
+            "request_id": "1" * 32,
+            "project": "example_project",
+            "name": "site-3",
+            "org": "nvidia",
+            "kind": "site",
+            "cert_type": "client",
+            "cert_role": None,
+            "hashes": {
+                "csr_sha256": "1" * 64,
+                "public_key_sha256": "1" * 64,
+            },
+        }
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands._request_metadata_mismatch") as mismatch:
+            _validate_local_request_metadata(request_meta, signed_meta)
+
+        mismatch.assert_called_once()
+        assert "public_key_sha256" in mismatch.call_args.args[0]
 
     def test_signed_public_key_hash_helper_requires_hash(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
