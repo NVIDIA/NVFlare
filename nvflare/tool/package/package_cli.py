@@ -97,6 +97,24 @@ def def_package_cli_parser(sub_cmd) -> dict:
         help=argparse.SUPPRESS,
     )
     p.add_argument(
+        "--cert",
+        required=False,
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    p.add_argument(
+        "--key",
+        required=False,
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    p.add_argument(
+        "--rootca",
+        required=False,
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    p.add_argument(
         "-w",
         "--workspace",
         required=False,

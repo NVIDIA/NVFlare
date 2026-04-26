@@ -1663,6 +1663,7 @@ def _handle_signed_zip_package(args, scheme, host, port):
         cert_kit_type = _read_cert_type_from_cert(cert)
         if not cert_kit_type or cert_kit_type not in _VALID_CERT_TYPES:
             output_error("CERT_TYPE_UNKNOWN", exit_code=1, cert=cert_name)
+            return 1
         if not _validate_participant_name(identity["name"], cert_kit_type, code="INVALID_SIGNED_ZIP"):
             return 1
         if identity.get("cert_type") and identity["cert_type"] != cert_kit_type:
@@ -1745,6 +1746,7 @@ def _handle_signed_zip_package(args, scheme, host, port):
                 None,
                 exit_code=1,
             )
+            return 1
         identity["org"] = identity.get("org") or _read_cert_org(cert) or _DUMMY_ORG
         participant, custom_builders, project_name = _selected_project_context(args, identity, cert_kit_type)
         if participant is None and custom_builders is None and project_name is None:

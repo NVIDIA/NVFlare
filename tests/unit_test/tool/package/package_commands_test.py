@@ -571,6 +571,36 @@ def test_package_help_includes_working_examples():
     assert "--rootca ./signed/hospital-1/rootCA.pem" not in help_text
 
 
+def test_package_parser_accepts_hidden_explicit_cert_mode():
+    import argparse
+
+    from nvflare.tool.package.package_cli import def_package_cli_parser
+
+    root = argparse.ArgumentParser(prog="nvflare")
+    subs = root.add_subparsers(dest="sub_command")
+    def_package_cli_parser(subs)
+
+    args = root.parse_args(
+        [
+            "package",
+            "-e",
+            "grpc://fl-server:8002",
+            "-n",
+            "hospital-1",
+            "--cert",
+            "hospital-1.crt",
+            "--key",
+            "hospital-1.key",
+            "--rootca",
+            "rootCA.pem",
+        ]
+    )
+
+    assert args.cert == "hospital-1.crt"
+    assert args.key == "hospital-1.key"
+    assert args.rootca == "rootCA.pem"
+
+
 def test_package_schema_uses_shared_examples(capsys):
     import argparse
 
@@ -4075,6 +4105,41 @@ class TestSignedZipPackageMode:
         assert existing_site_yaml.read_text() == "existing local request site.yaml"
         for name in ("signed.json", "site-3.crt", "rootCA.pem"):
             assert not (request_dir / name).exists()
+
+    def test_signed_zip_unknown_cert_type_returns_after_error_when_error_is_mocked(self, tmp_path):
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands._read_cert_type_from_cert", return_value=""):
+            with unittest.mock.patch("nvflare.tool.package.package_commands.output_error") as output_error:
+                with unittest.mock.patch(
+                    "nvflare.tool.package.package_commands.output_error_message"
+                ) as output_error_message:
+                    rc = handle_package(args)
+
+        assert rc == 1
+        output_error.assert_called_once()
+        assert output_error.call_args.args[0] == "CERT_TYPE_UNKNOWN"
+        output_error_message.assert_not_called()
+
+    def test_signed_zip_metadata_public_key_mismatch_returns_after_error_when_error_is_mocked(self, tmp_path):
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
+
+        with unittest.mock.patch(
+            "nvflare.tool.package.package_commands._validate_signed_public_key_hash", return_value=True
+        ):
+            with unittest.mock.patch(
+                "nvflare.tool.package.package_commands._cert_public_key_sha256", return_value="0" * 64
+            ):
+                with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as output_error:
+                    with unittest.mock.patch.object(Provisioner, "provision") as provision:
+                        rc = handle_package(args)
+
+        assert rc == 1
+        output_error.assert_called_once()
+        assert output_error.call_args.args[0] == "KEY_CERT_MISMATCH"
+        provision.assert_not_called()
 
     @pytest.mark.skipif(
         not hasattr(os, "symlink") or not hasattr(os, "O_NOFOLLOW"), reason="nofollow symlink support required"
