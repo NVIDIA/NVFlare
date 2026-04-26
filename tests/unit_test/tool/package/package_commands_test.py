@@ -15,14 +15,17 @@
 """Unit tests for nvflare package command handler."""
 
 import datetime
+import hashlib
 import json
 import os
 import shutil
 import stat
 import types
 import unittest.mock
+import zipfile
 
 import pytest
+from cryptography.hazmat.primitives import serialization
 
 from nvflare.lighter.constants import CtxKey, PropKey
 from nvflare.lighter.entity import Project
@@ -30,7 +33,7 @@ from nvflare.lighter.impl.cert import CertBuilder
 from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provisioner import Provisioner
-from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
+from nvflare.lighter.utils import Identity, generate_cert, generate_keys, load_crt, serialize_cert, serialize_pri_key
 from nvflare.tool import cli_output
 from nvflare.tool.package.package_commands import (
     _DUMMY_SERVER_NAME,
@@ -227,11 +230,11 @@ def test_package_help_includes_working_examples():
     help_text = parser.format_help()
 
     assert "Examples:" in help_text
-    assert "nvflare package -e grpc://fl-server:8002 -p ./site.yaml --dir ./certs" in help_text
-    assert "nvflare package -e grpc://fl-server:8002 --dir ./hospital-1-kit" in help_text
-    assert "--cert ./signed/hospital-1/hospital-1.crt" in help_text
-    assert "--key ./csr/hospital-1.key" in help_text
-    assert "--rootca ./signed/hospital-1/rootCA.pem" in help_text
+    assert "nvflare package hospital-1.signed.zip -e grpc://fl-server:8002" in help_text
+    assert "--project-file ./project.yaml --request-dir ./hospital-1" in help_text
+    assert "--cert ./signed/hospital-1/hospital-1.crt" not in help_text
+    assert "--key ./csr/hospital-1.key" not in help_text
+    assert "--rootca ./signed/hospital-1/rootCA.pem" not in help_text
 
 
 def test_package_schema_uses_shared_examples(capsys):
@@ -2916,3 +2919,281 @@ class TestYamlModeBuilderPipeline:
         ws_idx = types_.index(WorkspaceBuilder)
         cert_idx = types_.index(PrebuiltCertBuilder)
         assert ws_idx < cert_idx
+
+
+# ---------------------------------------------------------------------------
+# Distributed provisioning signed-zip package mode
+# ---------------------------------------------------------------------------
+
+
+def _signed_zip_sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _signed_zip_sha256_file(path) -> str:
+    with open(path, "rb") as f:
+        return _signed_zip_sha256_bytes(f.read())
+
+
+def _public_key_sha256_from_cert(cert_path) -> str:
+    cert = load_crt(str(cert_path))
+    public_key_der = cert.public_key().public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    return _signed_zip_sha256_bytes(public_key_der)
+
+
+def _make_signed_zip(
+    tmp_path,
+    *,
+    name="site-3",
+    org="nvidia",
+    kind="site",
+    cert_type="client",
+    project_name="example_project",
+    include_key=False,
+    traversal=False,
+    hash_mismatch=False,
+):
+    request_dir = tmp_path / name
+    request_dir.mkdir(exist_ok=True)
+    ca_dir = tmp_path / "ca"
+    ca_dir.mkdir(exist_ok=True)
+    ca_key, ca_cert, rootca_path = _make_ca(str(ca_dir))
+    key_path, cert_path = _make_signed_cert(ca_key, ca_cert, name, str(request_dir), f"{name}.crt", role=cert_type)
+    rootca_copy = request_dir / "rootCA.pem"
+    shutil.copy2(rootca_path, str(rootca_copy))
+    site_yaml_path = request_dir / "site.yaml"
+    signed_json_path = request_dir / "signed.json"
+    site_yaml_path.write_text(
+        f"name: {name}\norg: {org}\nkind: {kind}\ncert_type: {cert_type}\nproject: {project_name}\n"
+    )
+    cert_sha256 = "0" * 64 if hash_mismatch else _signed_zip_sha256_file(cert_path)
+    signed_json_path.write_text(
+        json.dumps(
+            {
+                "format_version": 1,
+                "request_id": "request-123",
+                "name": name,
+                "org": org,
+                "kind": kind,
+                "cert_role": None,
+                "cert_type": cert_type,
+                "requested_cert_role": None,
+                "requested_cert_type": cert_type,
+                "project": project_name,
+                "cert_file": f"{name}.crt",
+                "rootca_file": "rootCA.pem",
+                "approved_at": "2026-04-24T00:00:00Z",
+                "issuer_cn": "example_project",
+                "serial_number": "01",
+                "valid_until": "2029-04-24T00:00:00Z",
+                "csr_sha256": "1" * 64,
+                "site_yaml_sha256": _signed_zip_sha256_file(site_yaml_path),
+                "cert_sha256": cert_sha256,
+                "rootca_sha256": _signed_zip_sha256_file(rootca_copy),
+                "public_key_sha256": _public_key_sha256_from_cert(cert_path),
+            },
+            sort_keys=True,
+        )
+    )
+    signed_zip = request_dir / f"{name}.signed.zip"
+    with zipfile.ZipFile(signed_zip, "w") as zf:
+        zf.write(signed_json_path, "signed.json")
+        zf.write(site_yaml_path, "site.yaml")
+        zf.write(cert_path, f"../{name}.crt" if traversal else f"{name}.crt")
+        zf.write(rootca_copy, "rootCA.pem")
+        if include_key:
+            zf.write(key_path, f"{name}.key")
+    os.remove(cert_path)
+    os.remove(rootca_copy)
+    os.remove(signed_json_path)
+    return signed_zip, request_dir, key_path
+
+
+def _signed_zip_args(signed_zip, tmp_path, **kwargs):
+    defaults = dict(
+        input=str(signed_zip),
+        endpoint="grpc://fl-server:8002",
+        workspace=str(tmp_path / "ws"),
+        force=True,
+        project_file=None,
+        request_dir=None,
+        project_name=None,
+        dir=None,
+        cert=None,
+        key=None,
+        rootca=None,
+        name=None,
+        kit_type=None,
+    )
+    defaults.update(kwargs)
+    return _make_args(**defaults)
+
+
+def _participant_names(project):
+    return sorted(
+        p.name for p in project.get_all_participants() if p.name != "fl-server" and p.name != _DUMMY_SERVER_NAME
+    )
+
+
+def _run_signed_zip_with_captured_provisioner(args, prod_dir):
+    captured = {}
+
+    def _capture_init(self, root_dir, builders):
+        captured["root_dir"] = root_dir
+        captured["builders"] = builders
+
+    def _capture_provision(self, project):
+        captured["project"] = project
+        os.makedirs(prod_dir, exist_ok=True)
+        return {CtxKey.CURRENT_PROD_DIR: str(prod_dir)}
+
+    with unittest.mock.patch.object(Provisioner, "__init__", _capture_init):
+        with unittest.mock.patch.object(Provisioner, "provision", _capture_provision):
+            handle_package(args)
+    return captured
+
+
+class TestSignedZipPackagePublicSurface:
+    def test_package_help_and_schema_lead_with_signed_zip_mode(self, capsys):
+        import argparse
+
+        from nvflare.tool.cli_schema import handle_schema_flag
+        from nvflare.tool.package.package_cli import _PACKAGE_EXAMPLES, def_package_cli_parser
+
+        root = argparse.ArgumentParser(prog="nvflare")
+        subs = root.add_subparsers()
+        parser = def_package_cli_parser(subs)["package"]
+
+        help_text = parser.format_help()
+        assert ".signed.zip" in help_text
+        assert "nvflare package" in help_text
+        assert "--cert ./signed/hospital-1/hospital-1.crt" not in help_text
+        assert "--key ./csr/hospital-1.key" not in help_text
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_schema_flag(parser, "nvflare package", _PACKAGE_EXAMPLES, ["--schema"])
+        assert exc_info.value.code == 0
+        schema_text = capsys.readouterr().out
+        assert ".signed.zip" in schema_text
+        assert "--cert" not in schema_text
+        assert "--rootca" not in schema_text
+
+
+class TestSignedZipPackageMode:
+    def test_signed_zip_finds_sibling_private_key_and_uses_default_project_model(self, tmp_path):
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        sibling_signed_zip = tmp_path / f"{request_dir.name}.signed.zip"
+        shutil.move(str(signed_zip), str(sibling_signed_zip))
+        args = _signed_zip_args(sibling_signed_zip, tmp_path)
+
+        handle_package(args)
+
+        kit_dir = os.path.join(str(tmp_path / "ws"), "example_project", "prod_00", "site-3")
+        assert os.path.isfile(os.path.join(kit_dir, "startup", "client.key"))
+        assert os.path.isfile(os.path.join(kit_dir, "startup", "client.crt"))
+        assert os.path.isfile(os.path.join(kit_dir, "startup", "rootCA.pem"))
+        assert not os.path.exists(os.path.join(str(tmp_path / "ws"), "example_project", "prod_00", "fl-server"))
+
+    @pytest.mark.parametrize(
+        "zip_kwargs",
+        [
+            {"include_key": True},
+            {"traversal": True},
+            {"hash_mismatch": True},
+        ],
+    )
+    def test_signed_zip_rejects_unsafe_or_tampered_contents(self, tmp_path, capsys, monkeypatch, zip_kwargs):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, _, _ = _make_signed_zip(tmp_path, **zip_kwargs)
+        args = _signed_zip_args(signed_zip, tmp_path)
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code != 0
+        capsys.readouterr()
+
+    def test_project_file_custom_builders_apply_to_signed_identity_only(self, tmp_path):
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        project_yaml = tmp_path / "project.yaml"
+        project_yaml.write_text(
+            "api_version: 3\n"
+            "name: example_project\n"
+            'description: ""\n'
+            "participants:\n"
+            "  - name: site-3\n"
+            "    type: client\n"
+            "    org: nvidia\n"
+            "    listening_host:\n"
+            "      scheme: grpc\n"
+            "      default_host: site-3.local\n"
+            "      port: 9001\n"
+            "  - name: site-4\n"
+            "    type: client\n"
+            "    org: nvidia\n"
+            "builders:\n"
+            "  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder\n"
+            "  - path: nvflare.lighter.impl.static_file.StaticFileBuilder\n"
+            "    args:\n"
+            "      scheme: tcp\n"
+        )
+        args = _signed_zip_args(signed_zip, tmp_path, project_file=str(project_yaml), request_dir=str(request_dir))
+
+        captured = _run_signed_zip_with_captured_provisioner(args, tmp_path / "ws" / "example_project" / "prod_00")
+
+        assert _participant_names(captured["project"]) == ["site-3"]
+        participant = captured["project"].get_clients()[0]
+        assert participant.org == "nvidia"
+        assert participant.props["listening_host"]["default_host"] == "site-3.local"
+        assert any(isinstance(b, StaticFileBuilder) and b.scheme == "tcp" for b in captured["builders"])
+
+    def test_project_file_missing_signed_participant_warns_and_builds_signed_identity(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        project_yaml = tmp_path / "project.yaml"
+        _write_project_yaml(project_yaml, [{"name": "site-4", "type": "client", "org": "nvidia"}], "example_project")
+        args = _signed_zip_args(signed_zip, tmp_path, project_file=str(project_yaml), request_dir=str(request_dir))
+
+        captured = _run_signed_zip_with_captured_provisioner(args, tmp_path / "ws" / "example_project" / "prod_00")
+
+        assert _participant_names(captured["project"]) == ["site-3"]
+        combined = capsys.readouterr().out + capsys.readouterr().err
+        assert "Warning" in combined
+        assert "site-3 was not found" in combined
+
+    def test_project_file_identity_conflict_fails_before_build(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        project_yaml = tmp_path / "project.yaml"
+        _write_project_yaml(project_yaml, [{"name": "site-3", "type": "client", "org": "other-org"}], "example_project")
+        args = _signed_zip_args(signed_zip, tmp_path, project_file=str(project_yaml), request_dir=str(request_dir))
+
+        with unittest.mock.patch.object(Provisioner, "provision") as provision:
+            with pytest.raises(SystemExit) as exc_info:
+                handle_package(args)
+
+        assert exc_info.value.code != 0
+        provision.assert_not_called()
+
+    def test_signed_zip_builds_one_participant_when_project_file_lists_many(self, tmp_path):
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        project_yaml = tmp_path / "project.yaml"
+        _write_project_yaml(
+            project_yaml,
+            [
+                {"name": "site-3", "type": "client", "org": "nvidia"},
+                {"name": "site-4", "type": "client", "org": "nvidia"},
+                {"name": "alice@nvidia.com", "type": "admin", "role": "lead", "org": "nvidia"},
+            ],
+            "example_project",
+        )
+        args = _signed_zip_args(signed_zip, tmp_path, project_file=str(project_yaml), request_dir=str(request_dir))
+
+        captured = _run_signed_zip_with_captured_provisioner(args, tmp_path / "ws" / "example_project" / "prod_00")
+
+        assert _participant_names(captured["project"]) == ["site-3"]

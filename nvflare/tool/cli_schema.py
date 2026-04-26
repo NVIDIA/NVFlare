@@ -55,6 +55,8 @@ def parser_to_schema(
     for action in parser._actions:
         if isinstance(action, (argparse._HelpAction, argparse._SubParsersAction)):
             continue
+        if action.help == argparse.SUPPRESS:
+            continue
 
         is_positional = not action.option_strings
         if is_positional:

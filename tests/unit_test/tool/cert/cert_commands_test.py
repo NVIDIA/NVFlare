@@ -15,11 +15,13 @@
 """Unit tests for nvflare cert command handlers: init, csr, sign."""
 
 import argparse
+import hashlib
 import json
 import os
 import platform
 import stat
 import sys
+import zipfile
 from unittest.mock import patch
 
 import pytest
@@ -34,7 +36,13 @@ from cryptography.x509.oid import NameOID
 import nvflare.tool.cert.cert_cli  # noqa: F401
 from nvflare.lighter.utils import load_crt, load_private_key_file, serialize_cert
 from nvflare.tool import cli_output
-from nvflare.tool.cert.cert_commands import _generate_csr, handle_cert_csr, handle_cert_init, handle_cert_sign
+from nvflare.tool.cert.cert_commands import (
+    _generate_csr,
+    _write_zip_nofollow,
+    handle_cert_csr,
+    handle_cert_init,
+    handle_cert_sign,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -518,6 +526,21 @@ class TestCertSign:
         rc = handle_cert_sign(args)
         assert rc == 0
 
+    def test_sign_reuses_loaded_csr(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+
+        from nvflare.tool.cert import cert_commands
+
+        original_load_csr = cert_commands._load_and_validate_csr
+        with patch("nvflare.tool.cert.cert_commands._load_and_validate_csr", wraps=original_load_csr) as load_csr:
+            rc = handle_cert_sign(args)
+
+        assert rc == 0
+        assert load_csr.call_count == 1
+
     def test_sign_output_files(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
         csr_path = _setup_csr(tmp_path)  # name="hospital-1"
@@ -714,6 +737,8 @@ class TestCertSign:
         assert "serial" in data["data"]
         assert isinstance(data["data"]["serial"], str)
         assert data["data"]["serial"].startswith("0x")
+        assert "--dir" not in data["data"]["next_step"]
+        assert "nvflare package <signed.zip>" in data["data"]["next_step"]
 
     def test_sign_force_overwrites_existing_cert(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
@@ -1498,3 +1523,229 @@ class TestHandleCertCmdRouting:
 
         set_output_format.assert_called_once_with("json")
         handle_init.assert_called_once_with(args)
+
+
+# ---------------------------------------------------------------------------
+# Distributed provisioning public request/approve workflow
+# ---------------------------------------------------------------------------
+
+
+def _cert_root_parser():
+    from nvflare.tool.cert.cert_cli import def_cert_cli_parser
+
+    parser = argparse.ArgumentParser(prog="nvflare")
+    subparsers = parser.add_subparsers(dest="sub_command")
+    parsers = def_cert_cli_parser(subparsers)
+    return parser, parsers["cert"]
+
+
+def _run_cert_cli(argv):
+    from nvflare.tool.cert.cert_cli import handle_cert_cmd
+
+    parser, _ = _cert_root_parser()
+    args = parser.parse_args(["cert"] + argv)
+    return handle_cert_cmd(args)
+
+
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _sha256_file(path) -> str:
+    with open(path, "rb") as f:
+        return _sha256_bytes(f.read())
+
+
+def _public_key_sha256_from_csr(csr_path) -> str:
+    csr = _load_csr_file(str(csr_path))
+    public_key_der = csr.public_key().public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    return _sha256_bytes(public_key_der)
+
+
+def _write_request_zip(tmp_path, *, name="site-3", include_key=False, traversal=False, hash_mismatch=False):
+    request_dir = tmp_path / name
+    request_dir.mkdir()
+    key_pem, csr_pem = _generate_csr(name, "nvidia", "client")
+    key_path = request_dir / f"{name}.key"
+    csr_path = request_dir / f"{name}.csr"
+    site_yaml_path = request_dir / "site.yaml"
+    request_json_path = request_dir / "request.json"
+    key_path.write_bytes(key_pem)
+    csr_path.write_bytes(csr_pem)
+    site_yaml_path.write_text("name: site-3\norg: nvidia\ntype: client\nproject: example_project\nkind: site\n")
+    request_json_path.write_text(
+        json.dumps(
+            {
+                "artifact_type": "nvflare.cert.request",
+                "schema_version": "1",
+                "request_id": "request-123",
+                "created_at": "2026-04-24T00:00:00Z",
+                "project": "example_project",
+                "name": name,
+                "org": "nvidia",
+                "kind": "site",
+                "cert_type": "client",
+                "cert_role": None,
+                "csr_sha256": "0" * 64 if hash_mismatch else _sha256_file(csr_path),
+                "public_key_sha256": _public_key_sha256_from_csr(csr_path),
+            },
+            sort_keys=True,
+        )
+    )
+    zip_path = tmp_path / f"{name}.request.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.write(request_json_path, "request.json")
+        zf.write(site_yaml_path, "site.yaml")
+        zf.write(csr_path, f"../{name}.csr" if traversal else f"{name}.csr")
+        if include_key:
+            zf.write(key_path, f"{name}.key")
+    return zip_path
+
+
+class TestDistributedCertPublicSurface:
+    def test_cert_help_exposes_request_and_approve_without_developer_csr_sign(self):
+        _, cert_parser = _cert_root_parser()
+        help_text = cert_parser.format_help()
+
+        assert "request" in help_text
+        assert "approve" in help_text
+        assert " csr " not in help_text
+        assert " sign " not in help_text
+
+
+class TestDistributedCertRequestApprove:
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_request_zip_writer_rejects_symlink_source(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        source = tmp_path / "source.json"
+        source.write_text('{"ok": true}')
+        link = tmp_path / "source-link.json"
+        os.symlink(str(source), str(link))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _write_zip_nofollow(str(tmp_path / "request.zip"), {"request.json": str(link)})
+
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        assert "unsafe zip source" in captured.err
+
+    def test_request_creates_request_zip_without_private_key_and_final_workflow_hint(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        request_dir = tmp_path / "site-3"
+
+        _run_cert_cli(
+            [
+                "request",
+                "site",
+                "site-3",
+                "--org",
+                "nvidia",
+                "--project",
+                "example_project",
+                "--out",
+                str(request_dir),
+            ]
+        )
+
+        assert (request_dir / "site-3.key").is_file()
+        assert (request_dir / "site-3.csr").is_file()
+        assert (request_dir / "site.yaml").is_file()
+        assert (request_dir / "request.json").is_file()
+        request_zip = request_dir / "site-3.request.zip"
+        assert request_zip.is_file()
+
+        with zipfile.ZipFile(request_zip) as zf:
+            assert sorted(zf.namelist()) == ["request.json", "site-3.csr", "site.yaml"]
+            assert not any(name.endswith(".key") for name in zf.namelist())
+            request_json = json.loads(zf.read("request.json"))
+        assert request_json["name"] == "site-3"
+        assert request_json["org"] == "nvidia"
+        assert request_json["kind"] == "site"
+        assert request_json["cert_type"] == "client"
+        assert request_json["project"] == "example_project"
+        assert (tmp_path / "home" / ".nvflare" / "cert_requests" / request_json["request_id"] / "audit.json").is_file()
+
+        captured = capsys.readouterr()
+        combined = captured.out + captured.err
+        assert "request_zip" in combined
+        assert "private_key" not in combined
+        assert "Send site-3.request.zip to your Project Admin" in combined
+        assert "Send site-3.csr" not in combined
+        assert "cert sign" not in combined
+
+    def test_approve_creates_signed_zip_without_private_key_and_final_workflow_hint(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        ca_dir = tmp_path / "ca"
+        request_dir = tmp_path / "site-3"
+        signed_zip = tmp_path / "site-3.signed.zip"
+
+        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        _run_cert_cli(
+            [
+                "request",
+                "site",
+                "site-3",
+                "--org",
+                "nvidia",
+                "--project",
+                "example_project",
+                "--out",
+                str(request_dir),
+            ]
+        )
+        capsys.readouterr()
+
+        _run_cert_cli(
+            ["approve", str(request_dir / "site-3.request.zip"), "--ca-dir", str(ca_dir), "--out", str(signed_zip)]
+        )
+
+        assert signed_zip.is_file()
+        with zipfile.ZipFile(signed_zip) as zf:
+            assert sorted(zf.namelist()) == ["rootCA.pem", "signed.json", "site-3.crt", "site.yaml"]
+            assert not any(name.endswith(".key") for name in zf.namelist())
+            signed_json = json.loads(zf.read("signed.json"))
+        request_json = signed_json["request"]
+        assert request_json["name"] == "site-3"
+        assert request_json["org"] == "nvidia"
+        assert request_json["kind"] == "site"
+        assert request_json["cert_type"] == "client"
+        assert request_json["project"] == "example_project"
+        assert (tmp_path / "home" / ".nvflare" / "cert_approves" / f"{request_json['request_id']}.json").is_file()
+
+        captured = capsys.readouterr()
+        combined = captured.out + captured.err
+        assert "signed_zip" in combined
+        assert "Return site-3.signed.zip to the requester" in combined
+        assert "cert sign" not in combined
+        assert "hospital-1.crt" not in combined
+
+    @pytest.mark.parametrize(
+        "zip_kwargs",
+        [
+            {"include_key": True},
+            {"traversal": True},
+            {"hash_mismatch": True},
+        ],
+    )
+    def test_approve_rejects_unsafe_or_tampered_request_zip(self, tmp_path, capsys, monkeypatch, zip_kwargs):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        ca_dir = tmp_path / "ca"
+        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        request_zip = _write_request_zip(tmp_path, **zip_kwargs)
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir)])
+
+        assert exc_info.value.code != 0
+        capsys.readouterr()

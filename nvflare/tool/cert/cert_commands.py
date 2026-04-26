@@ -12,15 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""nvflare cert subcommand handlers: init, csr, sign."""
+"""nvflare cert subcommand handlers: init, csr, sign, request, approve."""
 
 import datetime
+import hashlib
 import ipaddress
 import json
 import os
+import posixpath
 import re
 import shutil
+import stat
 import sys
+import tempfile
+import uuid
+import zipfile
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -52,6 +58,20 @@ from nvflare.tool.cli_schema import handle_schema_flag
 
 _USAGE_HINT = "Run the command with -h for usage."
 _SAFE_CERT_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@-]*")
+_MAX_ZIP_MEMBER_SIZE = 10 * 1024 * 1024
+_REQUEST_ARTIFACT_TYPE = "nvflare.cert.request"
+_SIGNED_ARTIFACT_TYPE = "nvflare.cert.signed"
+_ARTIFACT_VERSION = "1"
+_REQUEST_KIND_TO_CERT_TYPE = {
+    "site": "client",
+    "server": "server",
+}
+_USER_ROLE_TO_CERT_TYPE = {
+    "org-admin": "org_admin",
+    "org_admin": "org_admin",
+    "lead": "lead",
+    "member": "member",
+}
 
 
 def _validate_safe_cert_name(name: str, *, field_label: str) -> None:
@@ -240,7 +260,10 @@ def _generate_csr(name: str, org: str = None, role: str = None):
 
 def _write_private_key(path: str, pem_bytes: bytes) -> None:
     """Write private key PEM to path with 0600 permissions set atomically at creation."""
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags, 0o600)
     with os.fdopen(fd, "wb") as f:
         f.write(pem_bytes)
 
@@ -260,9 +283,236 @@ def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
 
 
 def _write_json_file(path: str, data: dict) -> None:
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump(data, f, indent=2)
+
+
+def _utc_now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _utc_ts(dt: datetime.datetime = None) -> str:
+    return (dt or _utc_now()).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _sha256_file(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _csr_public_key_sha256(csr: x509.CertificateSigningRequest) -> str:
+    public_key_der = csr.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    return _sha256_bytes(public_key_der)
+
+
+def _cert_public_key_sha256(cert: x509.Certificate) -> str:
+    public_key_der = cert.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    return _sha256_bytes(public_key_der)
+
+
+def _write_yaml_file(path: str, data: dict) -> None:
+    import yaml
+
+    content = yaml.safe_dump(data, sort_keys=False).encode("utf-8")
+    _write_file_nofollow(path, content)
+
+
+def _load_yaml_file(path: str) -> dict:
+    import yaml
+
+    try:
+        with open(path, "r") as f:
+            data = yaml.safe_load(f)
+    except Exception as e:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"failed to parse yaml {path}: {e}",
+        )
+    if not isinstance(data, dict):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"yaml must be a mapping: {path}",
+        )
+    return data
+
+
+def _safe_zip_names(zf: zipfile.ZipFile) -> list:
+    names = []
+    seen = set()
+    for info in zf.infolist():
+        name = info.filename
+        mode = info.external_attr >> 16
+        normalized = posixpath.normpath(name)
+        parts = normalized.split("/")
+        if (
+            not name
+            or name.endswith("/")
+            or name.startswith("/")
+            or "\\" in name
+            or normalized != name
+            or normalized.startswith("../")
+            or ".." in parts
+            or name in seen
+            or info.file_size > _MAX_ZIP_MEMBER_SIZE
+            or stat.S_IFMT(mode) == stat.S_IFLNK
+        ):
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail=f"unsafe zip member or path traversal: {name}",
+            )
+        if name.lower().endswith(".key"):
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail=f"request zip must not contain private keys: {name}",
+            )
+        seen.add(name)
+        names.append(name)
+    return names
+
+
+def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> None:
+    if os.path.exists(zip_path) and not force:
+        output_error("CERT_ALREADY_EXISTS", path=zip_path)
+    parent = os.path.dirname(os.path.abspath(zip_path)) or "."
+    try:
+        os.makedirs(parent, mode=0o700, exist_ok=True)
+    except OSError as e:
+        output_error("OUTPUT_DIR_NOT_WRITABLE", path=parent, detail=str(e))
+
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(zip_path, flags, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            with zipfile.ZipFile(f, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for arcname, src_path in members.items():
+                    if arcname.lower().endswith(".key"):
+                        output_error_message(
+                            "INVALID_ARGS",
+                            "Invalid arguments.",
+                            _USAGE_HINT,
+                            exit_code=4,
+                            detail=f"zip must not contain private keys: {arcname}",
+                        )
+                    try:
+                        src_stat = os.lstat(src_path)
+                        if os.path.islink(src_path) or not stat.S_ISREG(src_stat.st_mode):
+                            raise OSError(f"not a regular file: {src_path}")
+                        read_flags = os.O_RDONLY
+                        if hasattr(os, "O_NOFOLLOW"):
+                            read_flags |= os.O_NOFOLLOW
+                        src_fd = os.open(src_path, read_flags)
+                        with os.fdopen(src_fd, "rb") as src_file:
+                            opened_stat = os.fstat(src_file.fileno())
+                            if (
+                                src_stat.st_ino != opened_stat.st_ino
+                                or src_stat.st_dev != opened_stat.st_dev
+                                or not stat.S_ISREG(opened_stat.st_mode)
+                            ):
+                                raise OSError(f"unsafe zip source changed while reading: {src_path}")
+                            if opened_stat.st_size > _MAX_ZIP_MEMBER_SIZE:
+                                raise OSError(f"zip source too large: {src_path}")
+                            content = src_file.read(_MAX_ZIP_MEMBER_SIZE + 1)
+                            if len(content) > _MAX_ZIP_MEMBER_SIZE:
+                                raise OSError(f"zip source too large: {src_path}")
+                            zf.writestr(arcname, content)
+                    except OSError:
+                        output_error_message(
+                            "INVALID_ARGS",
+                            "Invalid arguments.",
+                            _USAGE_HINT,
+                            exit_code=4,
+                            detail=f"unsafe zip source: {src_path}",
+                        )
+    except OSError as e:
+        output_error("OUTPUT_DIR_NOT_WRITABLE", path=zip_path, detail=str(e))
+
+
+def _read_json(path: str) -> dict:
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+    except Exception as e:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"failed to parse json {path}: {e}",
+        )
+    if not isinstance(data, dict):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"json must be a mapping: {path}",
+        )
+    return data
+
+
+def _audit_root(dirname: str) -> str:
+    return os.path.expanduser(os.path.join("~", ".nvflare", dirname))
+
+
+def _write_request_audit(request_id: str, audit_record: dict) -> str:
+    audit_dir = os.path.join(_audit_root("cert_requests"), request_id)
+    os.makedirs(audit_dir, mode=0o700, exist_ok=True)
+    audit_path = os.path.join(audit_dir, "audit.json")
+    _write_json_file(audit_path, audit_record)
+    return audit_path
+
+
+def _write_approve_audit(request_id: str, audit_record: dict) -> str:
+    audit_dir = _audit_root("cert_approves")
+    os.makedirs(audit_dir, mode=0o700, exist_ok=True)
+    audit_path = os.path.join(audit_dir, f"{request_id}.json")
+    _write_json_file(audit_path, audit_record)
+    return audit_path
+
+
+def _try_write_request_audit(request_id: str, audit_record: dict):
+    try:
+        return _write_request_audit(request_id, audit_record)
+    except OSError as e:
+        print_human(f"Warning: could not write request audit record: {e}")
+        return None
+
+
+def _try_write_approve_audit(request_id: str, audit_record: dict):
+    try:
+        return _write_approve_audit(request_id, audit_record)
+    except OSError as e:
+        print_human(f"Warning: could not write approval audit record: {e}")
+        return None
 
 
 def _backup_existing_csr(out_dir: str, name: str) -> None:
@@ -322,6 +572,61 @@ def _load_single_site_yaml(path: str) -> dict:
     return {"name": name, "org": org, "cert_type": cert_type}
 
 
+def generate_csr_files(name: str, org: str, cert_type: str, output_dir: str, force: bool = False) -> dict:
+    """Generate a participant private key and CSR using the existing cert logic."""
+    name = name.strip()
+    _validate_safe_cert_name(name, field_label="Name")
+    if cert_type not in _VALID_CERT_TYPES:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
+        )
+
+    out_dir = os.path.abspath(output_dir)
+    try:
+        os.makedirs(out_dir, mode=0o700, exist_ok=True)
+    except OSError as e:
+        output_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail=str(e))
+
+    if not os.access(out_dir, os.W_OK):
+        output_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail="directory is not writable")
+
+    key_path = os.path.join(out_dir, f"{name}.key")
+    csr_path = os.path.join(out_dir, f"{name}.csr")
+
+    if os.path.exists(key_path) and not force:
+        output_error("KEY_ALREADY_EXISTS", path=key_path)
+
+    if force and (os.path.exists(key_path) or os.path.exists(csr_path)):
+        _backup_existing_csr(out_dir, name)
+
+    try:
+        pem_key, pem_csr = _generate_csr(name, org, cert_type)
+    except Exception as e:
+        output_error("CSR_GENERATION_FAILED", detail=str(e))
+
+    try:
+        _write_private_key(key_path, pem_key)
+        _write_file(csr_path, pem_csr)
+    except OSError as e:
+        output_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail=str(e))
+
+    csr = x509.load_pem_x509_csr(pem_csr, default_backend())
+    return {
+        "name": name,
+        "org": org,
+        "cert_type": cert_type,
+        "output_dir": out_dir,
+        "key_path": key_path,
+        "csr_path": csr_path,
+        "csr_sha256": _sha256_bytes(pem_csr),
+        "public_key_sha256": _csr_public_key_sha256(csr),
+    }
+
+
 def handle_cert_csr(args):
     # 1. --schema
     import nvflare.tool.cert.cert_cli as _cert_cli
@@ -365,57 +670,23 @@ def handle_cert_csr(args):
             _cert_cli._cert_csr_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
         )
 
-    # 3. Normalize and validate name
     name = (site["name"] if site else args.name).strip()
-    _validate_safe_cert_name(name, field_label="Name")
-
-    # 4. Resolve force
-    force = args.force
-
-    # 5. Resolve output dir; create if needed
-    out_dir = os.path.abspath(args.output_dir)
-    try:
-        os.makedirs(out_dir, mode=0o700, exist_ok=True)
-    except OSError as e:
-        output_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail=str(e))
-
-    # 6. Check write permission
-    if not os.access(out_dir, os.W_OK):
-        output_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail="directory is not writable")
-
-    # 7. Resolve output file paths
-    key_path = os.path.join(out_dir, f"{name}.key")
-    csr_path = os.path.join(out_dir, f"{name}.csr")
-
-    # 8. Check for existing key file
-    if os.path.exists(key_path) and not force:
-        output_error("KEY_ALREADY_EXISTS", path=key_path)
-
-    # 9. Back up existing files if --force and they exist
-    if force and (os.path.exists(key_path) or os.path.exists(csr_path)):
-        _backup_existing_csr(out_dir, name)
-
-    # 10. Generate key and CSR
-    try:
-        org = site["org"] if site else getattr(args, "org", None)
-        cert_type = site["cert_type"] if site else getattr(args, "cert_type", None)
-        pem_key, pem_csr = _generate_csr(name, org, cert_type)
-    except Exception as e:
-        output_error("CSR_GENERATION_FAILED", detail=str(e))
-
-    # 11. Write files
-    try:
-        _write_private_key(key_path, pem_key)
-        _write_file(csr_path, pem_csr)
-    except OSError as e:
-        output_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail=str(e))
+    org = site["org"] if site else getattr(args, "org", None)
+    cert_type = site["cert_type"] if site else getattr(args, "cert_type", None)
+    csr_result = generate_csr_files(
+        name=name,
+        org=org,
+        cert_type=cert_type,
+        output_dir=args.output_dir,
+        force=args.force,
+    )
 
     # 12. Emit output
     result = {
-        "name": name,
-        "key": key_path,
-        "csr": csr_path,
-        "next_step": f"Send {name}.csr to your Project Admin for signing.",
+        "name": csr_result["name"],
+        "key": csr_result["key_path"],
+        "csr": csr_result["csr_path"],
+        "next_step": f"Send {csr_result['name']}.csr to your Project Admin for signing.",
     }
     output_ok(result)
     return 0
@@ -521,7 +792,7 @@ def _build_signed_cert(
             )
         ]
 
-    # Rebuild subject from safe OIDs only — do NOT copy CSR subject verbatim.
+    # Rebuild subject from safe OIDs only; do NOT copy CSR subject verbatim.
     _SAFE_OIDS = {
         NameOID.COMMON_NAME,
         NameOID.ORGANIZATION_NAME,
@@ -583,6 +854,172 @@ def _build_signed_cert(
     return builder.sign(ca_key, hashes.SHA256(), default_backend())
 
 
+def _load_and_validate_csr(csr_path: str) -> x509.CertificateSigningRequest:
+    if not os.path.exists(csr_path):
+        output_error("CSR_NOT_FOUND", path=csr_path)
+    if not os.path.isfile(csr_path):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"-r/--csr must be a file path, not a directory: {csr_path}",
+        )
+
+    with open(csr_path, "rb") as f:
+        csr_data = f.read()
+    try:
+        csr = x509.load_pem_x509_csr(csr_data, default_backend())
+    except Exception as e:
+        output_error("INVALID_CSR", path=csr_path, detail=str(e))
+
+    if not csr.is_signature_valid:
+        output_error("INVALID_CSR", path=csr_path)
+    return csr
+
+
+def _resolve_sign_cert_type(csr: x509.CertificateSigningRequest, cert_type: str, accept_csr_role: bool) -> str:
+    if cert_type and accept_csr_role:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="use either -t/--type or --accept-csr-role, not both",
+        )
+
+    if accept_csr_role:
+        cert_type = _get_csr_role(csr)
+        if not cert_type:
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail="CSR does not contain a proposed role; re-run with -t/--type or generate the CSR with 'cert csr -t'",
+            )
+    elif not cert_type:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="specify either -t/--type to override the role or --accept-csr-role to trust the CSR role",
+        )
+
+    if cert_type not in _VALID_CERT_TYPES:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
+        )
+    return cert_type
+
+
+def sign_csr_files(
+    csr_path: str,
+    ca_dir: str,
+    output_dir: str,
+    cert_type: str = None,
+    accept_csr_role: bool = False,
+    valid_days: int = 1095,
+    force: bool = False,
+    csr: x509.CertificateSigningRequest = None,
+) -> dict:
+    """Sign a CSR using the existing cert signing logic and write cert/rootCA files."""
+    ca_key_path = os.path.join(ca_dir, "rootCA.key")
+    ca_cert_path = os.path.join(ca_dir, "rootCA.pem")
+    ca_json_path = os.path.join(ca_dir, "ca.json")
+    for path in (ca_key_path, ca_cert_path, ca_json_path):
+        if not os.path.exists(path):
+            output_error("CA_NOT_FOUND", ca_dir=ca_dir)
+
+    if csr is None:
+        csr = _load_and_validate_csr(csr_path)
+    cert_type = _resolve_sign_cert_type(csr, cert_type, accept_csr_role)
+
+    subject_cn = _get_cn(csr.subject)
+    _validate_safe_cert_name(subject_cn, field_label="CSR subject CN")
+    output_filename = f"{subject_cn}.crt"
+
+    output_dir = os.path.abspath(output_dir)
+    try:
+        os.makedirs(output_dir, mode=0o700, exist_ok=True)
+    except OSError as e:
+        output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
+
+    if not os.access(output_dir, os.W_OK):
+        output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail="directory is not writable")
+
+    cert_out_path = os.path.join(output_dir, output_filename)
+    rootca_out_path = os.path.join(output_dir, "rootCA.pem")
+
+    if os.path.exists(cert_out_path) and not force:
+        output_error("CERT_ALREADY_EXISTS", path=cert_out_path)
+    if os.path.exists(rootca_out_path) and not force:
+        output_error("ROOTCA_ALREADY_EXISTS", path=rootca_out_path)
+
+    try:
+        ca_cert = load_crt(ca_cert_path)
+        ca_key = load_private_key_file(ca_key_path)
+    except Exception as e:
+        output_error("CA_LOAD_FAILED", ca_dir=ca_dir, detail=str(e))
+
+    now = _utc_now()
+    ca_not_valid_after = _validate_signing_ca(ca_cert, now)
+
+    valid_days = valid_days or 1095
+    requested_not_valid_after = now + datetime.timedelta(days=valid_days)
+    leaf_not_valid_after = min(requested_not_valid_after, ca_not_valid_after)
+    try:
+        signed_cert = _build_signed_cert(
+            csr=csr,
+            ca_cert=ca_cert,
+            ca_key=ca_key,
+            cert_type=cert_type,
+            now=now,
+            not_valid_after=leaf_not_valid_after,
+        )
+    except Exception as e:
+        output_error("CERT_SIGNING_FAILED", reason=str(e))
+
+    try:
+        signed_cert_pem = serialize_cert(signed_cert)
+        _write_file_nofollow(cert_out_path, signed_cert_pem)
+        with open(ca_cert_path, "rb") as f:
+            rootca_bytes = f.read()
+        _write_file_nofollow(rootca_out_path, rootca_bytes)
+    except OSError as e:
+        for path in (cert_out_path, rootca_out_path):
+            try:
+                if os.path.exists(path) and not os.path.islink(path):
+                    os.remove(path)
+            except OSError:
+                pass
+        output_error("CERT_OUTPUT_WRITE_FAILED", path=output_dir, detail=str(e))
+
+    try:
+        valid_until_dt = signed_cert.not_valid_after_utc
+    except AttributeError:
+        valid_until_dt = signed_cert.not_valid_after
+    valid_until = valid_until_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    return {
+        "signed_cert": cert_out_path,
+        "rootca": rootca_out_path,
+        "subject_cn": subject_cn,
+        "cert_type": cert_type,
+        "serial": hex(signed_cert.serial_number),
+        "valid_until": valid_until,
+        "certificate": signed_cert,
+        "certificate_sha256": _sha256_file(cert_out_path),
+        "rootca_sha256": _sha256_file(rootca_out_path),
+        "public_key_sha256": _cert_public_key_sha256(signed_cert),
+    }
+
+
 def handle_cert_sign(args):
     # 1. --schema
     import nvflare.tool.cert.cert_cli as _cert_cli
@@ -612,68 +1049,312 @@ def handle_cert_sign(args):
         output_usage_error(
             _cert_cli._cert_sign_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
         )
-    if getattr(args, "cert_type", None) and getattr(args, "accept_csr_role", False):
-        output_error_message(
-            "INVALID_ARGS",
-            "Invalid arguments.",
-            _USAGE_HINT,
-            exit_code=4,
-            detail="use either -t/--type or --accept-csr-role, not both",
-        )
+    csr = _load_and_validate_csr(args.csr_path)
+    cert_type = _resolve_sign_cert_type(csr, getattr(args, "cert_type", None), getattr(args, "accept_csr_role", False))
+    subject_cn = _get_cn(csr.subject)
+    if getattr(args, "accept_csr_role", False) and not cli_output.is_json_mode() and sys.stdin.isatty():
+        if not prompt_yn(f"CSR for '{subject_cn}' proposes role '{cert_type}'. Sign using this CSR role?"):
+            print_human("Cancelled.")
+            return 1
 
-    # 3. Validate CSR file exists
-    csr_path = args.csr_path
-    if not os.path.exists(csr_path):
-        output_error("CSR_NOT_FOUND", path=csr_path)
-    if not os.path.isfile(csr_path):
-        output_error_message(
-            "INVALID_ARGS",
-            "Invalid arguments.",
-            _USAGE_HINT,
-            exit_code=4,
-            detail=f"-r/--csr must be a file path, not a directory: {csr_path}",
-        )
+    sign_result = sign_csr_files(
+        csr_path=args.csr_path,
+        ca_dir=args.ca_dir,
+        output_dir=args.output_dir,
+        cert_type=cert_type,
+        accept_csr_role=False,
+        valid_days=getattr(args, "valid_days", 1095),
+        force=args.force,
+        csr=csr,
+    )
 
-    # 4. Validate CA dir
-    ca_dir = args.ca_dir
-    ca_key_path = os.path.join(ca_dir, "rootCA.key")
-    ca_cert_path = os.path.join(ca_dir, "rootCA.pem")
-    ca_json_path = os.path.join(ca_dir, "ca.json")
-    for path in (ca_key_path, ca_cert_path, ca_json_path):
-        if not os.path.exists(path):
-            output_error("CA_NOT_FOUND", ca_dir=ca_dir)
+    # 12. Output result
+    next_step = (
+        "This internal command writes a signed certificate and rootCA.pem.\n"
+        "For the public distributed provisioning workflow, use:\n"
+        "  nvflare cert request ...\n"
+        "  nvflare cert approve <request.zip> --ca-dir <ca-dir>\n"
+        "  nvflare package <signed.zip> -e grpc://<server>:<port>"
+    )
+    result = {
+        "signed_cert": sign_result["signed_cert"],
+        "rootca": sign_result["rootca"],
+        "subject_cn": sign_result["subject_cn"],
+        "cert_type": sign_result["cert_type"],
+        "serial": sign_result["serial"],
+        "valid_until": sign_result["valid_until"],
+        "next_step": next_step,
+    }
+    output_ok(result)
+    return 0
 
-    # 5. Load and validate CSR
-    with open(csr_path, "rb") as f:
-        csr_data = f.read()
-    try:
-        csr = x509.load_pem_x509_csr(csr_data, default_backend())
-    except Exception as e:
-        output_error("INVALID_CSR", path=csr_path, detail=str(e))
 
-    if not csr.is_signature_valid:
-        output_error("INVALID_CSR", path=csr_path)
+# ---------------------------------------------------------------------------
+# cert request / approve
+# ---------------------------------------------------------------------------
 
-    # 6. Resolve cert type explicitly: signer either overrides with -t or accepts the CSR role.
-    cert_type = getattr(args, "cert_type", None)
-    if getattr(args, "accept_csr_role", False):
-        cert_type = _get_csr_role(csr)
+
+def _resolve_request_identity(args) -> dict:
+    kind = getattr(args, "kind", None)
+    identity_args = list(getattr(args, "identity_args", None) or getattr(args, "values", []) or [])
+    if kind in _REQUEST_KIND_TO_CERT_TYPE:
+        if len(identity_args) != 1:
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail=f"cert request {kind} requires exactly one NAME argument",
+            )
+        return {
+            "kind": kind,
+            "name": identity_args[0],
+            "cert_role": None,
+            "cert_type": _REQUEST_KIND_TO_CERT_TYPE[kind],
+        }
+    if kind == "user":
+        if len(identity_args) != 2:
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail="cert request user requires ROLE and NAME arguments",
+            )
+        role = identity_args[0]
+        cert_type = _USER_ROLE_TO_CERT_TYPE.get(role)
         if not cert_type:
             output_error_message(
                 "INVALID_ARGS",
                 "Invalid arguments.",
                 _USAGE_HINT,
                 exit_code=4,
-                detail="CSR does not contain a proposed role; re-run with -t/--type or generate the CSR with 'cert csr -t'",
+                detail="user role must be one of: org-admin, lead, member",
             )
-    elif not cert_type:
+        return {
+            "kind": "user",
+            "name": identity_args[1],
+            "cert_role": role,
+            "cert_type": cert_type,
+        }
+    output_error_message(
+        "INVALID_ARGS",
+        "Invalid arguments.",
+        _USAGE_HINT,
+        exit_code=4,
+        detail="cert request kind must be one of: site, server, user",
+    )
+
+
+def _build_site_metadata(request_meta: dict) -> dict:
+    site_meta = {
+        "name": request_meta["name"],
+        "org": request_meta["org"],
+        "type": request_meta["cert_type"],
+        "project": request_meta["project"],
+        "kind": request_meta["kind"],
+    }
+    if request_meta.get("cert_role"):
+        site_meta["cert_role"] = request_meta["cert_role"]
+    return site_meta
+
+
+def handle_cert_request(args):
+    import nvflare.tool.cert.cert_cli as _cert_cli
+
+    _cert_cli._ensure_parsers_initialized()
+    handle_schema_flag(
+        _cert_cli._cert_request_parser,
+        "nvflare cert request",
+        [
+            "nvflare cert request site site-3 --org nvidia --project example_project",
+            "nvflare cert request user org-admin alice@nvidia.com --org nvidia --project example_project",
+        ],
+        sys.argv[1:],
+    )
+
+    missing_flags = [
+        flag for flag, attr in (("--org", "org"), ("--project", "project")) if not getattr(args, attr, None)
+    ]
+    if missing_flags:
+        output_usage_error(
+            _cert_cli._cert_request_parser,
+            f"missing required argument(s): {', '.join(missing_flags)}",
+            exit_code=4,
+        )
+
+    identity = _resolve_request_identity(args)
+    name = identity["name"].strip()
+    _validate_safe_cert_name(name, field_label="Name")
+
+    request_dir = os.path.abspath(
+        getattr(args, "out", None) or getattr(args, "output_dir", None) or os.path.join(".", name)
+    )
+    if os.path.exists(request_dir) and not os.path.isdir(request_dir):
         output_error_message(
             "INVALID_ARGS",
             "Invalid arguments.",
             _USAGE_HINT,
             exit_code=4,
-            detail="specify either -t/--type to override the role or --accept-csr-role to trust the CSR role",
+            detail=f"--out must be a directory path: {request_dir}",
         )
+
+    request_zip_path = os.path.join(request_dir, f"{name}.request.zip")
+    if os.path.exists(request_zip_path) and not getattr(args, "force", False):
+        output_error("CERT_ALREADY_EXISTS", path=request_zip_path)
+
+    csr_result = generate_csr_files(
+        name=name,
+        org=args.org,
+        cert_type=identity["cert_type"],
+        output_dir=request_dir,
+        force=getattr(args, "force", False),
+    )
+
+    request_id = uuid.uuid4().hex
+    created_at = _utc_ts()
+    request_meta = {
+        "artifact_type": _REQUEST_ARTIFACT_TYPE,
+        "schema_version": _ARTIFACT_VERSION,
+        "request_id": request_id,
+        "created_at": created_at,
+        "project": args.project,
+        "project_name": args.project,
+        "name": name,
+        "org": args.org,
+        "kind": identity["kind"],
+        "cert_type": identity["cert_type"],
+        "cert_role": identity["cert_role"],
+        "csr_sha256": csr_result["csr_sha256"],
+        "public_key_sha256": csr_result["public_key_sha256"],
+    }
+    site_meta = _build_site_metadata(request_meta)
+
+    request_json_path = os.path.join(request_dir, "request.json")
+    site_yaml_path = os.path.join(request_dir, "site.yaml")
+    try:
+        _write_json_file(request_json_path, request_meta)
+        _write_yaml_file(site_yaml_path, site_meta)
+        _write_zip_nofollow(
+            request_zip_path,
+            {
+                "request.json": request_json_path,
+                "site.yaml": site_yaml_path,
+                f"{name}.csr": csr_result["csr_path"],
+            },
+            force=getattr(args, "force", False),
+        )
+    except OSError as e:
+        output_error("OUTPUT_DIR_NOT_WRITABLE", path=request_dir, detail=str(e))
+
+    audit_record = {
+        "request": request_meta,
+        "request_dir": request_dir,
+        "request_zip_path": request_zip_path,
+        "private_key_path": csr_result["key_path"],
+        "csr_path": csr_result["csr_path"],
+        "site_yaml_path": site_yaml_path,
+        "hashes": {
+            "request_json_sha256": _sha256_file(request_json_path),
+            "site_yaml_sha256": _sha256_file(site_yaml_path),
+            "csr_sha256": _sha256_file(csr_result["csr_path"]),
+            "request_zip_sha256": _sha256_file(request_zip_path),
+            "public_key_sha256": csr_result["public_key_sha256"],
+        },
+    }
+    audit_path = _try_write_request_audit(request_id, audit_record)
+
+    output_ok(
+        {
+            "name": name,
+            "project": args.project,
+            "request_zip": request_zip_path,
+            "request_id": request_id,
+            "audit": audit_path or "(not written)",
+            "next_step": f"Send {os.path.basename(request_zip_path)} to your Project Admin.",
+        }
+    )
+    return 0
+
+
+def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
+    if not os.path.exists(request_zip_path):
+        output_error("CSR_NOT_FOUND", path=request_zip_path)
+    if not os.path.isfile(request_zip_path):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"request zip must be a file path: {request_zip_path}",
+        )
+
+    try:
+        with zipfile.ZipFile(request_zip_path, "r") as zf:
+            names = _safe_zip_names(zf)
+            if "request.json" not in names or "site.yaml" not in names:
+                output_error_message(
+                    "INVALID_ARGS",
+                    "Invalid arguments.",
+                    _USAGE_HINT,
+                    exit_code=4,
+                    detail="request zip must contain request.json and site.yaml",
+                )
+            request_meta = json.loads(zf.read("request.json").decode("utf-8"))
+            if not isinstance(request_meta, dict):
+                raise ValueError("request.json must be a mapping")
+            name = request_meta.get("name")
+            _validate_safe_cert_name(name, field_label="Name")
+            expected = {"request.json", "site.yaml", f"{name}.csr"}
+            if set(names) != expected:
+                output_error_message(
+                    "INVALID_ARGS",
+                    "Invalid arguments.",
+                    _USAGE_HINT,
+                    exit_code=4,
+                    detail=f"request zip must contain only: {', '.join(sorted(expected))}",
+                )
+            for member in expected:
+                target_path = os.path.join(extract_dir, member)
+                with open(target_path, "wb") as f:
+                    f.write(zf.read(member))
+    except zipfile.BadZipFile as e:
+        output_error_message(
+            "INVALID_ARGS", "Invalid arguments.", _USAGE_HINT, exit_code=4, detail=f"invalid request zip: {e}"
+        )
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"invalid request metadata: {e}",
+        )
+    return request_meta
+
+
+def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: str) -> x509.CertificateSigningRequest:
+    required = ("artifact_type", "schema_version", "request_id", "project", "name", "org", "kind", "cert_type")
+    missing = [field for field in required if not request_meta.get(field)]
+    if missing:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"request metadata missing required field(s): {', '.join(missing)}",
+        )
+    if request_meta["artifact_type"] != _REQUEST_ARTIFACT_TYPE or request_meta["schema_version"] != _ARTIFACT_VERSION:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="unsupported request artifact metadata",
+        )
+    name = request_meta["name"]
+    _validate_safe_cert_name(name, field_label="Name")
+    cert_type = request_meta["cert_type"]
     if cert_type not in _VALID_CERT_TYPES:
         output_error_message(
             "INVALID_ARGS",
@@ -682,94 +1363,218 @@ def handle_cert_sign(args):
             exit_code=4,
             detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
         )
-    subject_cn = _get_cn(csr.subject)
-    if getattr(args, "accept_csr_role", False) and not cli_output.is_json_mode() and sys.stdin.isatty():
-        if not prompt_yn(f"CSR for '{subject_cn}' proposes role '{cert_type}'. Sign using this CSR role?"):
-            print_human("Cancelled.")
-            return 1
-    _validate_safe_cert_name(subject_cn, field_label="CSR subject CN")
-    output_filename = f"{subject_cn}.crt"
 
-    # 7. Resolve output paths; check for existing cert
-    output_dir = os.path.abspath(args.output_dir)
-    try:
-        os.makedirs(output_dir, mode=0o700, exist_ok=True)
-    except OSError as e:
-        output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
-
-    if not os.access(output_dir, os.W_OK):
-        output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail="directory is not writable")
-
-    cert_out_path = os.path.join(output_dir, output_filename)
-    rootca_out_path = os.path.join(output_dir, "rootCA.pem")
-
-    if os.path.exists(cert_out_path) and not args.force:
-        output_error("CERT_ALREADY_EXISTS", path=cert_out_path)
-    if os.path.exists(rootca_out_path) and not args.force:
-        output_error("ROOTCA_ALREADY_EXISTS", path=rootca_out_path)
-
-    # 8. Load CA material
-    try:
-        ca_cert = load_crt(ca_cert_path)
-        ca_key = load_private_key_file(ca_key_path)
-    except Exception as e:
-        output_error("CA_LOAD_FAILED", ca_dir=ca_dir, detail=str(e))
-
-    now = datetime.datetime.now(datetime.timezone.utc)
-    ca_not_valid_after = _validate_signing_ca(ca_cert, now)
-
-    # 9. Build and sign the certificate
-    valid_days = getattr(args, "valid_days", 1095) or 1095
-    requested_not_valid_after = now + datetime.timedelta(days=valid_days)
-    leaf_not_valid_after = min(requested_not_valid_after, ca_not_valid_after)
-    try:
-        signed_cert = _build_signed_cert(
-            csr=csr,
-            ca_cert=ca_cert,
-            ca_key=ca_key,
-            cert_type=cert_type,
-            now=now,
-            not_valid_after=leaf_not_valid_after,
+    for meta_field, site_field in (("name", "name"), ("org", "org"), ("cert_type", "type"), ("project", "project")):
+        if site_meta.get(site_field) != request_meta.get(meta_field):
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail=f"site.yaml field '{site_field}' does not match request metadata",
+            )
+    if site_meta.get("kind") != request_meta.get("kind"):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="site.yaml field 'kind' does not match request metadata",
         )
-    except Exception as e:
-        output_error("CERT_SIGNING_FAILED", reason=str(e))
+    if (site_meta.get("cert_role") or None) != (request_meta.get("cert_role") or None):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="site.yaml field 'cert_role' does not match request metadata",
+        )
 
-    # 10. Write signed cert and copy rootCA.pem
-    try:
-        _write_file_nofollow(cert_out_path, serialize_cert(signed_cert))
-        with open(ca_cert_path, "rb") as f:
-            rootca_bytes = f.read()
-        _write_file_nofollow(rootca_out_path, rootca_bytes)
-    except OSError as e:
-        for path in (cert_out_path, rootca_out_path):
-            try:
-                if os.path.exists(path) and not os.path.islink(path):
-                    os.remove(path)
-            except OSError:
-                pass
-        output_error("CERT_OUTPUT_WRITE_FAILED", path=output_dir, detail=str(e))
+    csr = _load_and_validate_csr(csr_path)
+    if _get_cn(csr.subject) != name:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="CSR common name does not match request metadata",
+        )
+    csr_role = _get_csr_role(csr)
+    if csr_role != cert_type:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="CSR role does not match request metadata",
+        )
+    org_attrs = csr.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)
+    csr_org = org_attrs[0].value if org_attrs else None
+    if csr_org != request_meta.get("org"):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="CSR organization does not match request metadata",
+        )
+    if request_meta.get("csr_sha256") and request_meta["csr_sha256"] != _sha256_file(csr_path):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="CSR hash does not match request metadata",
+        )
+    if request_meta.get("public_key_sha256") and request_meta["public_key_sha256"] != _csr_public_key_sha256(csr):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="CSR public key hash does not match request metadata",
+        )
+    return csr
 
-    # 11. Compute valid_until for output
-    try:
-        _valid_until_dt = signed_cert.not_valid_after_utc
-    except AttributeError:
-        _valid_until_dt = signed_cert.not_valid_after  # cryptography < 42.0
-    valid_until = _valid_until_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # 12. Output result
-    next_step = (
-        f"Send {output_filename} and rootCA.pem to the site admin.\n"
-        f"They place those files in the same directory as their {subject_cn}.key, then run:\n"
-        f"  nvflare package -e grpc://<server>:<port> --dir <that-dir>"
+def handle_cert_approve(args):
+    import nvflare.tool.cert.cert_cli as _cert_cli
+
+    _cert_cli._ensure_parsers_initialized()
+    handle_schema_flag(
+        _cert_cli._cert_approve_parser,
+        "nvflare cert approve",
+        [
+            "nvflare cert approve site-3.request.zip --ca-dir ./ca",
+            "nvflare cert approve site-3.request.zip --ca-dir ./ca --out site-3.signed.zip",
+        ],
+        sys.argv[1:],
     )
-    result = {
-        "signed_cert": cert_out_path,
-        "rootca": rootca_out_path,
-        "subject_cn": subject_cn,
-        "cert_type": cert_type,
-        "serial": hex(signed_cert.serial_number),
-        "valid_until": valid_until,
-        "next_step": next_step,
-    }
-    output_ok(result)
+
+    missing_flags = [
+        flag for flag, attr in (("REQUEST_ZIP", "request_zip"), ("--ca-dir", "ca_dir")) if not getattr(args, attr, None)
+    ]
+    if missing_flags:
+        output_usage_error(
+            _cert_cli._cert_approve_parser,
+            f"missing required argument(s): {', '.join(missing_flags)}",
+            exit_code=4,
+        )
+
+    request_zip_path = os.path.abspath(args.request_zip)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        request_dir = os.path.join(tmp_dir, "request")
+        signed_dir = os.path.join(tmp_dir, "signed")
+        os.makedirs(request_dir, mode=0o700)
+        os.makedirs(signed_dir, mode=0o700)
+
+        request_meta = _read_request_zip(request_zip_path, request_dir)
+        name = request_meta["name"]
+        site_yaml_path = os.path.join(request_dir, "site.yaml")
+        csr_path = os.path.join(request_dir, f"{name}.csr")
+        site_meta = _load_yaml_file(site_yaml_path)
+        csr = _validate_request_metadata(request_meta, site_meta, csr_path)
+
+        sign_result = sign_csr_files(
+            csr_path=csr_path,
+            ca_dir=args.ca_dir,
+            output_dir=signed_dir,
+            cert_type=request_meta["cert_type"],
+            accept_csr_role=False,
+            valid_days=getattr(args, "valid_days", 1095),
+            force=True,
+        )
+
+        approved_at = _utc_ts()
+        signed_meta = {
+            "artifact_type": _SIGNED_ARTIFACT_TYPE,
+            "schema_version": _ARTIFACT_VERSION,
+            "request_id": request_meta["request_id"],
+            "approved_at": approved_at,
+            "project": request_meta["project"],
+            "project_name": request_meta["project"],
+            "name": request_meta["name"],
+            "org": request_meta["org"],
+            "kind": request_meta["kind"],
+            "cert_type": request_meta["cert_type"],
+            "cert_role": request_meta.get("cert_role"),
+            "request": request_meta,
+            "certificate": {
+                "serial": sign_result["serial"],
+                "valid_until": sign_result["valid_until"],
+                "cert_type": sign_result["cert_type"],
+                "public_key_sha256": sign_result["public_key_sha256"],
+            },
+            "serial_number": sign_result["serial"],
+            "valid_until": sign_result["valid_until"],
+            "cert_file": f"{name}.crt",
+            "rootca_file": "rootCA.pem",
+            "requested_cert_role": request_meta.get("cert_role"),
+            "requested_cert_type": request_meta["cert_type"],
+            "csr_sha256": _sha256_file(csr_path),
+            "site_yaml_sha256": _sha256_file(site_yaml_path),
+            "cert_sha256": sign_result["certificate_sha256"],
+            "rootca_sha256": sign_result["rootca_sha256"],
+            "public_key_sha256": sign_result["public_key_sha256"],
+            "hashes": {
+                "csr_sha256": _sha256_file(csr_path),
+                "certificate_sha256": sign_result["certificate_sha256"],
+                "rootca_sha256": sign_result["rootca_sha256"],
+                "public_key_sha256": _csr_public_key_sha256(csr),
+            },
+        }
+        signed_json_path = os.path.join(signed_dir, "signed.json")
+        _write_json_file(signed_json_path, signed_meta)
+        signed_site_yaml_path = os.path.join(signed_dir, "site.yaml")
+        shutil.copyfile(site_yaml_path, signed_site_yaml_path)
+
+        signed_zip_path = getattr(args, "out", None) or getattr(args, "signed_zip", None)
+        if signed_zip_path:
+            signed_zip_path = os.path.abspath(signed_zip_path)
+        else:
+            signed_zip_path = os.path.join(os.path.dirname(request_zip_path), f"{name}.signed.zip")
+        _write_zip_nofollow(
+            signed_zip_path,
+            {
+                "signed.json": signed_json_path,
+                "site.yaml": signed_site_yaml_path,
+                f"{name}.crt": sign_result["signed_cert"],
+                "rootCA.pem": sign_result["rootca"],
+            },
+            force=getattr(args, "force", False),
+        )
+
+        ca_meta = _read_json(os.path.join(args.ca_dir, "ca.json"))
+        audit_record = {
+            "approval": signed_meta,
+            "request_zip_path": request_zip_path,
+            "signed_zip_path": signed_zip_path,
+            "ca": {
+                "ca_dir": os.path.abspath(args.ca_dir),
+                "metadata": ca_meta,
+                "rootca_path": os.path.abspath(os.path.join(args.ca_dir, "rootCA.pem")),
+            },
+            "hashes": {
+                "request_zip_sha256": _sha256_file(request_zip_path),
+                "request_json_sha256": _sha256_file(os.path.join(request_dir, "request.json")),
+                "site_yaml_sha256": _sha256_file(site_yaml_path),
+                "csr_sha256": _sha256_file(csr_path),
+                "certificate_sha256": sign_result["certificate_sha256"],
+                "rootca_sha256": sign_result["rootca_sha256"],
+                "signed_zip_sha256": _sha256_file(signed_zip_path),
+                "public_key_sha256": sign_result["public_key_sha256"],
+            },
+        }
+        audit_path = _try_write_approve_audit(request_meta["request_id"], audit_record)
+
+    output_ok(
+        {
+            "name": name,
+            "project": request_meta["project"],
+            "signed_zip": signed_zip_path,
+            "request_id": request_meta["request_id"],
+            "audit": audit_path or "(not written)",
+            "next_step": f"Return {os.path.basename(signed_zip_path)} to the requester.",
+        }
+    )
     return 0

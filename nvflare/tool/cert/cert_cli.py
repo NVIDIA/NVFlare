@@ -19,10 +19,12 @@ from typing import Optional
 
 from nvflare.tool.cert.cert_constants import VALID_CERT_TYPES
 
-# Module-level parser references — used by --schema in handlers and for help fallback
+# Module-level parser references used by --schema in handlers and for help fallback.
 _cert_init_parser: Optional[argparse.ArgumentParser] = None
 _cert_csr_parser: Optional[argparse.ArgumentParser] = None
 _cert_sign_parser: Optional[argparse.ArgumentParser] = None
+_cert_request_parser: Optional[argparse.ArgumentParser] = None
+_cert_approve_parser: Optional[argparse.ArgumentParser] = None
 _cert_parser: Optional[argparse.ArgumentParser] = None
 
 
@@ -117,7 +119,7 @@ def _def_cert_csr_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argum
     p = cert_sub.add_parser(
         "csr",
         description="Generate a private key and CSR for a participant. Site Admin or job submitter.",
-        help="Generate a private key and CSR for manual provisioning.",
+        help=argparse.SUPPRESS,
     )
     p.add_argument(
         "-n",
@@ -189,7 +191,7 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
     p = cert_sub.add_parser(
         "sign",
         description="Sign a CSR with the project root CA. Project Admin only.",
-        help="Sign a CSR with the project root CA (Project Admin only).",
+        help=argparse.SUPPRESS,
     )
     p.add_argument(
         "-r",
@@ -225,7 +227,7 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         default=None,
         dest="cert_type",
         choices=VALID_CERT_TYPES,
-        help="Cert type to issue. Authoritative — embedded in signed cert UNSTRUCTURED_NAME.",
+        help="Cert type to issue. Authoritative; embedded in signed cert UNSTRUCTURED_NAME.",
     )
     p.add_argument(
         "--accept-csr-role",
@@ -259,6 +261,83 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
     return p
 
 
+def _def_cert_request_parser(cert_sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    global _cert_request_parser
+    p = cert_sub.add_parser(
+        "request",
+        description="Create a local key, CSR, metadata, and request zip.",
+        help="Create a distributed provisioning request zip.",
+    )
+    p.add_argument(
+        "kind",
+        choices=["site", "server", "user"],
+        help="Identity kind to request.",
+    )
+    p.add_argument(
+        "values",
+        nargs="+",
+        help="For site/server: <name>. For user: <cert-role> <email>.",
+    )
+    p.add_argument("--org", required=False, default=None, dest="org", help="Organization name.")
+    p.add_argument("--project", required=False, default=None, dest="project", help="Project name.")
+    p.add_argument(
+        "--out",
+        required=False,
+        default=None,
+        dest="output_dir",
+        help="Request folder. Default: ./<name>.",
+    )
+    p.add_argument("--force", action="store_true", default=False, help="Overwrite existing request files.")
+    p.add_argument("--schema", action="store_true", default=False, help="Print JSON schema for this command and exit.")
+    _add_compat_output_arg(p)
+    _cert_request_parser = p
+    return p
+
+
+def _def_cert_approve_parser(cert_sub: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    global _cert_approve_parser
+    p = cert_sub.add_parser(
+        "approve",
+        description="Approve a request zip and create a signed zip. Project Admin only.",
+        help="Approve a distributed provisioning request zip.",
+    )
+    p.add_argument("request_zip", help="Request zip produced by 'nvflare cert request'.")
+    p.add_argument(
+        "-c",
+        "--ca-dir",
+        required=False,
+        default=None,
+        dest="ca_dir",
+        help="Directory containing rootCA.pem, rootCA.key, and ca.json.",
+    )
+    p.add_argument(
+        "--out",
+        required=False,
+        default=None,
+        dest="signed_zip",
+        help="Signed zip output path. Default: <name>.signed.zip.",
+    )
+    p.add_argument(
+        "--valid-days",
+        required=False,
+        type=_positive_int,
+        default=1095,
+        dest="valid_days",
+        help="Certificate validity in days. Default: 1095 (3 years).",
+    )
+    p.add_argument("--force", action="store_true", default=False, help="Overwrite existing signed zip.")
+    p.add_argument("--schema", action="store_true", default=False, help="Print JSON schema for this command and exit.")
+    _add_compat_output_arg(p)
+    _cert_approve_parser = p
+    return p
+
+
+def _hide_developer_subcommands(cert_sub: argparse._SubParsersAction) -> None:
+    cert_sub._choices_actions = [
+        action for action in cert_sub._choices_actions if getattr(action, "dest", None) not in ("csr", "sign")
+    ]
+
+
 def _ensure_parsers_initialized() -> None:
     """Ensure module-level parser references are populated.
 
@@ -268,16 +347,25 @@ def _ensure_parsers_initialized() -> None:
     initialization using a throwaway top-level parser so that the module-level
     ``_cert_*_parser`` references are populated.
     """
-    global _cert_init_parser, _cert_csr_parser, _cert_sign_parser
-    if _cert_init_parser is None or _cert_csr_parser is None or _cert_sign_parser is None:
+    global _cert_init_parser, _cert_csr_parser, _cert_sign_parser, _cert_request_parser, _cert_approve_parser
+    if (
+        _cert_init_parser is None
+        or _cert_csr_parser is None
+        or _cert_sign_parser is None
+        or _cert_request_parser is None
+        or _cert_approve_parser is None
+    ):
         import argparse as _argparse
 
         _dummy = _argparse.ArgumentParser()
         _sub = _dummy.add_subparsers()
-        _cert_sub = _sub.add_parser("cert").add_subparsers()
+        _cert_sub = _sub.add_parser("cert").add_subparsers(metavar="{init,request,approve}")
         _def_cert_init_parser(_cert_sub)
+        _def_cert_request_parser(_cert_sub)
+        _def_cert_approve_parser(_cert_sub)
         _def_cert_csr_parser(_cert_sub)
         _def_cert_sign_parser(_cert_sub)
+        _hide_developer_subcommands(_cert_sub)
 
 
 def def_cert_cli_parser(sub_cmd) -> dict:
@@ -286,18 +374,27 @@ def def_cert_cli_parser(sub_cmd) -> dict:
     _cert_parser = sub_cmd.add_parser(
         "cert",
         help="Certificate management for distributed provisioning.",
-        description="Manage certificates for FLARE distributed (manual) provisioning.",
+        description="Manage certificates for FLARE distributed provisioning.",
     )
-    cert_sub = _cert_parser.add_subparsers(dest="cert_sub_command")
+    cert_sub = _cert_parser.add_subparsers(dest="cert_sub_command", metavar="{init,request,approve}")
     _def_cert_init_parser(cert_sub)
+    _def_cert_request_parser(cert_sub)
+    _def_cert_approve_parser(cert_sub)
     _def_cert_csr_parser(cert_sub)
     _def_cert_sign_parser(cert_sub)
+    _hide_developer_subcommands(cert_sub)
     return {"cert": _cert_parser}
 
 
 def handle_cert_cmd(args):
     """Dispatch to the appropriate cert subcommand handler."""
-    from nvflare.tool.cert.cert_commands import handle_cert_csr, handle_cert_init, handle_cert_sign
+    from nvflare.tool.cert.cert_commands import (
+        handle_cert_approve,
+        handle_cert_csr,
+        handle_cert_init,
+        handle_cert_request,
+        handle_cert_sign,
+    )
     from nvflare.tool.cli_output import output_usage_error, set_output_format
 
     compat_output_format = getattr(args, "compat_output_format", None)
@@ -306,6 +403,8 @@ def handle_cert_cmd(args):
 
     dispatch = {
         "init": handle_cert_init,
+        "request": handle_cert_request,
+        "approve": handle_cert_approve,
         "csr": handle_cert_csr,
         "sign": handle_cert_sign,
     }

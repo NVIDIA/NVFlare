@@ -1,130 +1,128 @@
 .. _package_command:
 
-#########################
+###############
 Package Command
-#########################
+###############
 
-``nvflare package`` assembles startup kits for distributed (manual)
-provisioning from a locally held private key, a signed certificate, and
-``rootCA.pem``.
+``nvflare package`` assembles a startup kit from a signed zip returned by the
+Project Admin and the requester's local private key.
 
-The command does not generate ``signature.json``. Trust is anchored in mTLS
-using the signed participant certificate and the project root CA.
-
-***********************
-Command Usage
-***********************
+The public distributed provisioning form is:
 
 .. code-block:: none
 
-   usage: nvflare package [-h] [-t {client,server,org_admin,lead,member}]
-                          [-e ENDPOINT] [-n NAME] [--dir DIR] [--cert CERT]
-                          [--key KEY] [--rootca ROOTCA] [-w WORKSPACE]
-                          [--project-name PROJECT_NAME] [-p PROJECT_FILE]
-                          [--admin-port ADMIN_PORT] [--force] [--schema]
+   usage: nvflare package [-h] [-e ENDPOINT] [-w WORKSPACE] [-p PROJECT_FILE]
+                          [--request-dir REQUEST_DIR] [--admin-port ADMIN_PORT]
+                          [--force] [--schema]
+                          [input]
 
-*****************
-Packaging Modes
-*****************
+The ``input`` positional argument is the ``*.signed.zip`` file produced by
+``nvflare cert approve``.
 
-Three packaging modes are supported. Choose the one that best matches how your
-site stores its certificate material.
+*******************
+Basic Package Flow
+*******************
 
-From a Working Directory
-========================
-
-Directory mode is the simplest path for a single participant. Put the private
-key, signed certificate, and ``rootCA.pem`` in one directory:
+For a site request created in ``./site-3``:
 
 .. code-block:: shell
 
-   nvflare package -e grpc://fl-server:8002 --dir ./hospital-1-kit
+   nvflare package site-3.signed.zip -e grpc://server1:8002 --request-dir ./site-3
 
-Behavior in this mode:
-
-- participant name is auto-detected from the ``.key`` filename
-- kit type is derived from the signed certificate's embedded type
-- no ``-t`` is needed
-
-From Explicit File Paths
-========================
-
-Use explicit mode when the key, cert, and root CA are stored in different
-locations:
+If the signed zip is already inside or next to the request folder, the
+``--request-dir`` option is often not needed:
 
 .. code-block:: shell
 
-   nvflare package -n hospital-1 -e grpc://fl-server:8002 \
-     --cert ./signed/hospital-1/hospital-1.crt \
-     --key ./csr/hospital-1.key \
-     --rootca ./signed/hospital-1/rootCA.pem
+   nvflare package site-3/site-3.signed.zip -e grpc://server1:8002
 
-In explicit mode:
+The command validates that:
 
-- ``-n`` supplies the participant name
-- ``--cert``, ``--key``, and ``--rootca`` are all provided explicitly
-- this mode is for a single participant
+- the signed zip contains ``signed.json``, ``site.yaml``, one signed
+  certificate, and ``rootCA.pem``;
+- the signed zip does not contain private keys;
+- the local private key matches the signed certificate;
+- the certificate chains to ``rootCA.pem``;
+- request metadata and signed metadata match when local request state is found.
 
-From YAML
-=========
+The output goes under:
 
-Use ``--project-file`` when you want to package from either:
+.. code-block:: text
 
-- a single-site YAML with ``name``, ``org``, and ``type``
-- a project-style YAML compatible with ``nvflare provision``
+   <workspace>/<project-name>/prod_NN/<identity>/
+
+For example:
+
+.. code-block:: text
+
+   workspace/example_project/prod_00/site-3/
+
+**************************
+Package a User Startup Kit
+**************************
+
+For a lead user:
 
 .. code-block:: shell
 
-   nvflare package -e grpc://fl-server:8002 -p ./site.yaml --dir ./certs
+   nvflare cert request user lead lead@nvidia.com --org nvidia --project example_project
+   nvflare cert approve lead@nvidia.com.request.zip --ca-dir ./ca
+   nvflare package lead@nvidia.com.signed.zip -e grpc://server1:8002 --request-dir ./lead@nvidia.com
 
-When ``--project-file`` is used:
+The generated startup kit contains:
 
-- ``-t`` becomes an optional type filter
-- certs are discovered from ``--dir`` by participant common name
-- kit type is still derived from each signed certificate
+.. code-block:: text
+
+   startup/fl_admin.sh
+
+Run it with:
+
+.. code-block:: shell
+
+   cd workspace/example_project/prod_00/lead@nvidia.com
+   ./startup/fl_admin.sh
+
+**************************
+Use Project Builders
+**************************
+
+Use ``--project-file`` when packaging needs custom builders or project-level
+package configuration:
+
+.. code-block:: shell
+
+   nvflare package site-3.signed.zip \
+       -e grpc://server1:8002 \
+       --project-file ./project.yml \
+       --request-dir ./site-3
+
+In signed-zip mode, the signed zip remains the source of truth for the
+participant identity. The project file supplies builders and non-identity
+package configuration. Only the signed participant is built, even if
+``project.yml`` lists other sites or users.
+
+If the signed participant is listed in the project file, identity fields must
+match the signed zip. If they do not match, packaging fails.
+
+If the signed participant is not listed in the project file, packaging continues
+with the signed identity and project builders, and prints a warning.
 
 ****************
 Main Arguments
 ****************
 
+- ``input``: approved ``*.signed.zip`` returned by ``nvflare cert approve``.
 - ``-e, --endpoint``: server endpoint URI. Supported schemes are ``grpc://``,
-  ``tcp://``, and ``http://``. Required for all modes.
-- ``-t, --type``: optional type filter for YAML mode only. Choices:
-  ``client``, ``server``, ``org_admin``, ``lead``, ``member``.
-- ``-n, --name``: participant name. Auto-detected in directory mode. In admin
-  kit types, this must be an email address.
-- ``--dir``: working directory containing key, cert, and ``rootCA.pem`` by
-  convention. Mutually exclusive with explicit ``--cert/--key/--rootca`` input.
-- ``--cert``: signed certificate from the Project Admin.
-- ``--key``: private key generated locally by ``nvflare cert csr``.
-- ``--rootca``: ``rootCA.pem`` from the Project Admin.
-- ``-w, --workspace``: workspace root directory. Output goes to
-  ``<workspace>/<project-name>/prod_NN/<name>/``. Default: ``workspace``.
-- ``--project-name``: project name used in output path and in generated
-  challenge-response configuration. Default: ``project``.
-- ``-p, --project-file``: site-scoped or project-style YAML. Mutually exclusive
-  with ``-n`` and explicit ``--cert/--key/--rootca`` mode.
-- ``--admin-port``: server admin port. Default: same as the service port
-  (single-port mode).
-- ``--force``: allow re-packaging when the same participant name appears in the
-  most recent ``prod_NN`` directory. A new ``prod_NN`` is created alongside the
-  existing one.
-- ``--schema``: print the JSON schema for this command's arguments and exit.
-
-*********************
-Important Notes
-*********************
-
-- ``--endpoint`` is required in all packaging modes.
-- In single-participant mode, the startup-kit type is derived from the signed
-  certificate produced by ``nvflare cert sign``. The certificate is the source
-  of truth.
-- ``WorkspaceBuilder`` and ``StaticFileBuilder`` are always managed by
-  ``nvflare package``. If they appear in a project YAML builders list, those
-  entries and their custom arguments are ignored.
-- The output path is ``<workspace>/<project-name>/prod_NN/<name>/``.
-- The server hostname in ``--endpoint`` must match the hostname expected by the
-  server certificate for mTLS validation.
+  ``tcp://``, and ``http://``. Required.
+- ``-w, --workspace``: workspace root directory. Default: ``workspace``.
+- ``-p, --project-file``: project YAML for custom builders or package
+  configuration. In signed-zip mode, only the signed participant is built.
+- ``--request-dir``: local request directory containing the private key. Use it
+  when the signed zip is not next to the request folder.
+- ``--admin-port``: server admin port. Default: same as the service port.
+- ``--force``: allow packaging when the participant name already appears in the
+  latest ``prod_NN`` directory. A new ``prod_NN`` is created alongside.
+- ``--schema``: print JSON schema for this command.
 
 *********************
 JSON Output and Help
@@ -140,7 +138,7 @@ The top-level CLI also supports JSON output mode:
 
 .. code-block:: shell
 
-   nvflare package -e grpc://fl-server:8002 --dir ./hospital-1-kit --format json
+   nvflare package site-3.signed.zip -e grpc://server1:8002 --format json
 
-For end-to-end distributed provisioning workflow details, see
+For the end-to-end distributed provisioning workflow, see
 :ref:`distributed_provisioning`.

@@ -20,23 +20,17 @@ from typing import Optional
 _package_parser: Optional[argparse.ArgumentParser] = None
 
 _PACKAGE_EXAMPLES = [
-    "nvflare package -e grpc://fl-server:8002 -p ./site.yaml --dir ./certs",
-    "nvflare package -e grpc://fl-server:8002 --dir ./hospital-1-kit",
-    "nvflare package -n hospital-1 -e grpc://fl-server:8002 --cert ./signed/hospital-1/hospital-1.crt --key ./csr/hospital-1.key --rootca ./signed/hospital-1/rootCA.pem",
+    "nvflare package hospital-1.signed.zip -e grpc://fl-server:8002",
+    "nvflare package hospital-1.signed.zip -e grpc://fl-server:8002 --project-file ./project.yaml --request-dir ./hospital-1",
 ]
 
 _PACKAGE_HELP_EXAMPLES = """Examples:
-  Build kits from a project YAML:
-    nvflare package -e grpc://fl-server:8002 -p ./site.yaml --dir ./certs
+  Build one kit from an approved signed zip:
+    nvflare package hospital-1.signed.zip -e grpc://fl-server:8002
 
-  Build one kit from a working directory:
-    nvflare package -e grpc://fl-server:8002 --dir ./hospital-1-kit
-
-  Build one kit from explicit file paths:
-    nvflare package -n hospital-1 -e grpc://fl-server:8002 \\
-      --cert ./signed/hospital-1/hospital-1.crt \\
-      --key ./csr/hospital-1.key \\
-      --rootca ./signed/hospital-1/rootCA.pem
+  Build one signed-zip kit with project builders:
+    nvflare package hospital-1.signed.zip -e grpc://fl-server:8002 \\
+      --project-file ./project.yaml --request-dir ./hospital-1
 """
 
 
@@ -56,12 +50,18 @@ def def_package_cli_parser(sub_cmd) -> dict:
     p = sub_cmd.add_parser(
         "package",
         description=(
-            "Assemble a startup kit for manual (distributed) provisioning. "
-            "No signature.json is generated — mTLS is the trust anchor."
+            "Assemble a startup kit from a distributed provisioning signed zip. "
+            "No signature.json is generated; mTLS is the trust anchor."
         ),
-        help="Assemble a startup kit from a locally generated key and Project Admin cert.",
+        help="Assemble a startup kit from a signed approval zip.",
         epilog=_PACKAGE_HELP_EXAMPLES,
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p.add_argument(
+        "input",
+        nargs="?",
+        default=None,
+        help="Approved signed zip returned by 'nvflare cert approve' (for example hospital-1.signed.zip).",
     )
     p.add_argument(
         "-t",
@@ -70,11 +70,7 @@ def def_package_cli_parser(sub_cmd) -> dict:
         default=None,
         dest="kit_type",
         choices=["client", "server", "org_admin", "lead", "member"],
-        help=(
-            "In yaml mode (--project-file), optional filter to build only participants of this type. "
-            "Not used in single-participant mode: the kit type is always derived from the signed "
-            "certificate's embedded type (set by 'nvflare cert sign')."
-        ),
+        help=argparse.SUPPRESS,
     )
     p.add_argument(
         "-e",
@@ -88,35 +84,13 @@ def def_package_cli_parser(sub_cmd) -> dict:
         "--name",
         required=False,
         default=None,
-        help=(
-            "Participant name. Auto-detected from *.key filename when --dir is used. "
-            "For admin kit types (org_admin, lead, member), must be an email address "
-            "(e.g. alice@myorg.com)."
-        ),
+        help=argparse.SUPPRESS,
     )
     p.add_argument(
         "--dir",
         required=False,
         default=None,
-        help="Working directory with key + cert + rootCA by convention. Mutually exclusive with --cert/--key/--rootca.",
-    )
-    p.add_argument(
-        "--cert",
-        required=False,
-        default=None,
-        help="Signed certificate from Project Admin.",
-    )
-    p.add_argument(
-        "--key",
-        required=False,
-        default=None,
-        help="Private key generated locally by 'nvflare cert csr'.",
-    )
-    p.add_argument(
-        "--rootca",
-        required=False,
-        default=None,
-        help="rootCA.pem from Project Admin.",
+        help=argparse.SUPPRESS,
     )
     p.add_argument(
         "-w",
@@ -131,10 +105,7 @@ def def_package_cli_parser(sub_cmd) -> dict:
         required=False,
         default=None,
         dest="project_name",
-        help=(
-            "Project name. Used in the output path (<workspace>/<project-name>/prod_NN/<name>/) "
-            "and in fed_server.json/fed_admin.json for challenge-response auth. Default: project"
-        ),
+        help=argparse.SUPPRESS,
     )
     p.add_argument(
         "-p",
@@ -146,12 +117,18 @@ def def_package_cli_parser(sub_cmd) -> dict:
             "Project YAML defining participants and optional custom builders "
             "(schema-compatible with 'nvflare provision' project.yaml), "
             "or a single-site YAML with name/org/type. "
-            "When given, -t becomes an optional type filter. "
             "WorkspaceBuilder and StaticFileBuilder are always managed by nvflare package "
             "(scheme is derived from --endpoint); any YAML entries for these builders, "
             "including custom args such as config_folder, are ignored. "
-            "Mutually exclusive with -n and --cert/--key/--rootca. Use -e, --dir, and -p together."
+            "Signed zip mode builds only the signed participant."
         ),
+    )
+    p.add_argument(
+        "--request-dir",
+        required=False,
+        default=None,
+        dest="request_dir",
+        help="Local request directory containing the private key for signed zip mode.",
     )
     p.add_argument(
         "--admin-port",

@@ -1,170 +1,159 @@
 .. _cert_command:
 
-#########################
+############
 Cert Command
-#########################
+############
 
-The ``nvflare cert`` command family supports distributed (manual)
-provisioning, where each participant generates its own private key locally and
-the Project Admin signs CSRs.
+The ``nvflare cert`` command family manages certificate material for distributed
+provisioning. It is used by both requesters and the Project Admin.
 
-***********************
-Command Usage
-***********************
+The public subcommands are:
 
 .. code-block:: none
 
-   nvflare cert -h
-
-   usage: nvflare cert [-h] {init,csr,sign} ...
+   usage: nvflare cert [-h] {init,request,approve} ...
 
    positional arguments:
-     {init,csr,sign}
-       init   Initialize root CA for distributed provisioning
-       csr    Generate a private key and CSR
-       sign   Sign a CSR with the root CA
+     {init,request,approve}
+       init                Initialize root CA for a distributed provisioning
+                           federation (Project Admin only).
+       request             Create a distributed provisioning request zip.
+       approve             Approve a distributed provisioning request zip.
 
-*****************
-Subcommands
-*****************
-
+**********************
 Initialize the Root CA
-======================
+**********************
 
-Run ``nvflare cert init`` once per federation as the Project Admin:
+The Project Admin runs ``cert init`` once per federation:
 
 .. code-block:: shell
 
-   nvflare cert init --project my-fl-project -o ./ca
-
-Common options:
-
-- ``--project``: project name. Used as the root CA certificate CN.
-- ``-o, --output-dir``: directory where CA files are written.
-- ``--org``: optional organization name for the CA certificate.
-- ``--valid-days``: validity period for the root CA certificate in days. Default: ``3650``.
-- ``--force``: overwrite existing CA files after backing them up.
-- ``--schema``: print the JSON schema for this command and exit.
+   nvflare cert init --project example_project --org nvidia -o ./ca
 
 This creates:
 
-- ``rootCA.pem``
-- ``rootCA.key``
-- ``ca.json``
-
-Generate a Private Key and CSR
-==============================
-
-Run ``nvflare cert csr`` on the participant side to generate a local private
-key and CSR.
-
-Client example:
-
-.. code-block:: shell
-
-   nvflare cert csr -n hospital-1 -t client -o ./csr
-
-Server example:
-
-.. code-block:: shell
-
-   nvflare cert csr -n fl-server -t server -o ./csr
-
-Single-site YAML example:
-
-.. code-block:: shell
-
-   nvflare cert csr --project-file ./site.yaml -o ./csr
+- ``./ca/rootCA.pem``: root CA certificate
+- ``./ca/rootCA.key``: root CA private key; keep this secret
+- ``./ca/ca.json``: CA metadata
 
 Common options:
 
-- ``-n, --name``: participant name. Used as the certificate common name.
-- ``-o, --output-dir``: output directory for the ``.key`` and ``.csr`` files.
-- ``--org``: optional organization name for the certificate.
-- ``--project-file``: single-site YAML with ``name``, ``org``, and ``type``.
-  Use this instead of ``--name``, ``--org``, and ``--type``.
-- ``-t, --type``: required proposed certificate type. Choices:
-  ``client``, ``server``, ``org_admin``, ``lead``, ``member``.
-- ``--force``: overwrite existing key and CSR files.
-- ``--schema``: print the JSON schema for this command and exit.
+- ``--project``: project name. Required.
+- ``--org``: organization name.
+- ``-o, --output-dir``: CA output directory. Required.
+- ``--valid-days``: root CA validity in days. Default: ``3650``.
+- ``--force``: overwrite existing CA files after backing them up.
+- ``--schema``: print JSON schema for this command.
 
-The private key remains local. Only the ``.csr`` file is sent to the Project
-Admin.
+********************
+Create a Request Zip
+********************
 
-The ``-t`` value in ``cert csr`` is the site admin's proposed type for the CSR.
-The Project Admin must either explicitly accept it when signing or explicitly
-override it.
+The requester runs ``cert request`` on the machine that should own the private
+key. The command creates a private key, CSR, metadata, and request zip.
 
-Sign a CSR
-==========
-
-Run ``nvflare cert sign`` as the Project Admin to sign a CSR with the project
-root CA:
+Client site request:
 
 .. code-block:: shell
 
-   nvflare cert sign -r ./csr/hospital-1.csr -c ./ca -o ./signed/hospital-1 --accept-csr-role
+   nvflare cert request site site-3 --org nvidia --project example_project
 
-Use ``-t`` to override the proposed type embedded in the CSR:
+Server request:
 
 .. code-block:: shell
 
-   nvflare cert sign -r ./csr/fl-server.csr -t server -c ./ca -o ./signed/fl-server
+   nvflare cert request server server1 --org nvidia --project example_project
+
+User request:
+
+.. code-block:: shell
+
+   nvflare cert request user org-admin org_admin@nvidia.com --org nvidia --project example_project
+   nvflare cert request user lead lead@nvidia.com --org nvidia --project example_project
+   nvflare cert request user member member@nvidia.com --org nvidia --project example_project
+
+By default, ``cert request`` writes to ``./<name>/``. For ``site-3``:
+
+.. code-block:: text
+
+   site-3/
+     site-3.key
+     site-3.csr
+     site.yaml
+     request.json
+     site-3.request.zip
+
+Send only ``site-3.request.zip`` to the Project Admin. The private key remains
+local and is not included in the zip.
 
 Common options:
 
-- ``-r, --csr``: path to the CSR file received from the participant.
-- ``-c, --ca-dir``: directory containing ``rootCA.pem``, ``rootCA.key``, and ``ca.json``.
-- ``-o, --output-dir``: output directory for the signed cert and ``rootCA.pem`` copy.
-- ``-t, --type``: authoritative cert type to issue. Choices:
-  ``client``, ``server``, ``org_admin``, ``lead``, ``member``.
-- ``--accept-csr-role``: accept the type embedded in the CSR instead of overriding it.
-- ``--valid-days``: certificate validity in days. Default: ``1095``.
-- ``--force``: overwrite existing signed certificate output.
-- ``--schema``: print the JSON schema for this command and exit.
-
-Exactly one of ``--accept-csr-role`` or ``-t/--type`` must be used. The type
-embedded in the signed certificate is the source of truth downstream.
-``nvflare package`` derives startup-kit type from the signed certificate, not
-from the CSR proposal.
-
-Trust Model
-===========
-
-The intended workflow is:
-
-- the **site org admin** generates the CSR and decides the requested role/type
-- the **Project Admin** signs the CSR
-
-When the Project Admin signs with ``--accept-csr-role``, they are explicitly
-trusting the site admin's requested type from the CSR. When they sign with
-``-t/--type``, they are explicitly overriding that requested type.
-
-This means end users should not self-generate role-bearing CSRs and send them
-directly for signing. The trust model assumes the CSR passed through the site
-admin workflow before it reaches the Project Admin.
+- ``kind``: ``site``, ``server``, or ``user``.
+- ``values``: for ``site`` and ``server``, the identity name; for ``user``,
+  ``<cert-role> <email>``.
+- ``--org``: organization name. Required.
+- ``--project``: project name. Required.
+- ``--out``: request folder. Default: ``./<name>``.
+- ``--force``: overwrite existing request files.
+- ``--schema``: print JSON schema for this command.
 
 *********************
-JSON Output and Help
+Approve a Request Zip
 *********************
 
-Use ``--schema`` for machine-readable command discovery:
+The Project Admin runs ``cert approve`` with the project CA:
 
 .. code-block:: shell
 
-   nvflare cert init --schema
-   nvflare cert csr --schema
-   nvflare cert sign --schema
+   nvflare cert approve site-3.request.zip --ca-dir ./ca
 
-The top-level CLI also supports JSON output mode:
+This validates the request zip, signs the CSR, and creates:
+
+.. code-block:: text
+
+   site-3.signed.zip
+
+Return the signed zip to the requester.
+
+Use ``--out`` to choose the signed zip location:
 
 .. code-block:: shell
 
-   nvflare cert init --project my-fl-project -o ./ca --format json
+   nvflare cert approve site-3.request.zip --ca-dir ./ca --out ./signed/site-3.signed.zip
 
-Human-readable argument errors for ``cert init``, ``cert csr``, and
-``cert sign`` print help first and then list the specific missing flags. JSON
-mode prints only the JSON schema or JSON error envelope.
+Common options:
 
-For the full distributed-provisioning workflow, see
+- ``request_zip``: request zip produced by ``nvflare cert request``. Required.
+- ``-c, --ca-dir``: directory containing ``rootCA.pem``, ``rootCA.key``, and
+  ``ca.json``. Required.
+- ``--out``: signed zip output path. Default: ``<name>.signed.zip`` next to the
+  request zip.
+- ``--valid-days``: participant certificate validity in days. Default:
+  ``1095``.
+- ``--force``: overwrite existing signed zip.
+- ``--schema``: print JSON schema for this command.
+
+****************
+End-to-End Flow
+****************
+
+Requester:
+
+.. code-block:: shell
+
+   nvflare cert request site site-3 --org nvidia --project example_project
+
+Project Admin:
+
+.. code-block:: shell
+
+   nvflare cert approve site-3.request.zip --ca-dir ./ca
+
+Requester:
+
+.. code-block:: shell
+
+   nvflare package site-3.signed.zip -e grpc://server1:8002 --request-dir ./site-3
+
+For the full workflow, including package options and artifact layout, see
 :ref:`distributed_provisioning`.
