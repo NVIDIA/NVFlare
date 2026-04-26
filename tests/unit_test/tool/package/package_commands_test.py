@@ -35,8 +35,17 @@ from nvflare.lighter.impl.signature import SignatureBuilder
 from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provisioner import Provisioner
-from nvflare.lighter.utils import Identity, generate_cert, generate_keys, load_crt, serialize_cert, serialize_pri_key
+from nvflare.lighter.utils import (
+    Identity,
+    generate_cert,
+    generate_keys,
+    load_crt,
+    load_crt_bytes,
+    serialize_cert,
+    serialize_pri_key,
+)
 from nvflare.tool import cli_output
+from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256, normalize_sha256_fingerprint
 from nvflare.tool.package.package_commands import (
     _DUMMY_SERVER_NAME,
     PrebuiltCertBuilder,
@@ -98,6 +107,7 @@ def _make_args(**kwargs):
     """Build a minimal namespace for handle_package."""
     defaults = dict(
         kit_type="client",
+        input=None,
         endpoint=None,
         name=None,
         dir=None,
@@ -111,6 +121,9 @@ def _make_args(**kwargs):
         output_fmt=None,
         schema=False,
         project_file=None,
+        request_dir=None,
+        expected_rootca_fingerprint=None,
+        confirm_rootca=False,
     )
     defaults.update(kwargs)
     return types.SimpleNamespace(**defaults)
@@ -459,6 +472,33 @@ class TestSignedZipHelpers:
 
         error.assert_called_once()
         assert "Invalid signed zip cert_type" in error.call_args.args[1]
+
+    def test_validate_signed_metadata_returns_after_invalid_kind_when_error_is_mocked(self):
+        signed_meta = {
+            "artifact_type": "nvflare.cert.signed",
+            "schema_version": "1",
+            "request_id": "1" * 32,
+            "project": "example_project",
+            "name": "site-3",
+            "org": "nvidia",
+            "kind": "workspace",
+            "cert_type": "client",
+            "cert_file": "site-3.crt",
+            "rootca_file": "rootCA.pem",
+            "hashes": {
+                "csr_sha256": "1" * 64,
+                "site_yaml_sha256": "1" * 64,
+                "certificate_sha256": "1" * 64,
+                "rootca_sha256": "1" * 64,
+                "public_key_sha256": "1" * 64,
+            },
+        }
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+            _validate_signed_metadata(signed_meta, {}, "site-3.crt")
+
+        error.assert_called_once()
+        assert "Invalid signed zip kind/cert_type combination" in error.call_args.args[1]
 
     def test_validate_signed_hashes_does_not_emit_spurious_mismatch_when_hash_missing(self):
         with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
@@ -3374,9 +3414,16 @@ def _signed_zip_args(signed_zip, tmp_path, **kwargs):
         rootca=None,
         name=None,
         kit_type=None,
+        expected_rootca_fingerprint=None,
+        confirm_rootca=False,
     )
     defaults.update(kwargs)
     return _make_args(**defaults)
+
+
+def _rootca_fingerprint_from_signed_zip(signed_zip) -> str:
+    with zipfile.ZipFile(signed_zip, "r") as zf:
+        return cert_fingerprint_sha256(load_crt_bytes(zf.read("rootCA.pem")))
 
 
 def _participant_names(project):
@@ -3432,6 +3479,112 @@ class TestSignedZipPackagePublicSurface:
 
 
 class TestSignedZipPackageMode:
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "sha256 Fingerprint=aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99",
+            "SHA256:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99",
+            "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+        ],
+    )
+    def test_normalize_rootca_fingerprint_accepts_common_forms(self, value):
+        assert normalize_sha256_fingerprint(value) == (
+            "SHA256:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:" "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"
+        )
+
+    def test_signed_zip_output_includes_rootca_fingerprint_by_default(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        expected = _rootca_fingerprint_from_signed_zip(signed_zip)
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
+
+        handle_package(args)
+
+        captured = capsys.readouterr()
+        combined = captured.out + captured.err
+        assert "rootca_fingerprint_sha256" in combined
+        assert expected in combined
+
+    def test_signed_zip_accepts_expected_rootca_fingerprint_without_prompting(self, tmp_path, monkeypatch):
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        expected = _rootca_fingerprint_from_signed_zip(signed_zip).replace("SHA256:", "sha256 Fingerprint=")
+        args = _signed_zip_args(
+            signed_zip,
+            tmp_path,
+            request_dir=str(request_dir),
+            expected_rootca_fingerprint=expected,
+        )
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands.prompt_yn") as prompt:
+            handle_package(args)
+
+        prompt.assert_not_called()
+
+    def test_signed_zip_rejects_mismatched_expected_rootca_fingerprint(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        args = _signed_zip_args(
+            signed_zip,
+            tmp_path,
+            request_dir=str(request_dir),
+            expected_rootca_fingerprint="SHA256:" + ":".join(["00"] * 32),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code == 4
+        assert "ROOTCA_FINGERPRINT_MISMATCH" in capsys.readouterr().err
+        assert not (request_dir / "signed.json").exists()
+        assert not (request_dir / "site-3.crt").exists()
+        assert not (request_dir / "rootCA.pem").exists()
+
+    def test_signed_zip_rejects_invalid_expected_rootca_fingerprint(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        args = _signed_zip_args(
+            signed_zip,
+            tmp_path,
+            request_dir=str(request_dir),
+            expected_rootca_fingerprint="not-a-fingerprint",
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code == 4
+        assert "INVALID_ROOTCA_FINGERPRINT" in capsys.readouterr().err
+
+    def test_confirm_rootca_is_rejected_in_json_mode(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir), confirm_rootca=True)
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code == 4
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["error_code"] == "INVALID_ARGS"
+        assert "--confirm-rootca" in payload["message"]
+
+    def test_confirm_rootca_cancel_does_not_materialize_signed_files(self, tmp_path, capsys, monkeypatch):
+        import nvflare.tool.package.package_commands as package_commands
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setattr(package_commands.sys.stdin, "isatty", lambda: True)
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir), confirm_rootca=True)
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands.prompt_yn", return_value=False):
+            rc = handle_package(args)
+
+        assert rc == 1
+        assert "Cancelled." in capsys.readouterr().out
+        assert not (request_dir / "signed.json").exists()
+        assert not (request_dir / "site-3.crt").exists()
+        assert not (request_dir / "rootCA.pem").exists()
+
     def test_signed_zip_finds_sibling_private_key_and_uses_default_project_model(self, tmp_path):
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
         sibling_signed_zip = tmp_path / f"{request_dir.name}.signed.zip"
@@ -3748,6 +3901,37 @@ class TestSignedZipPackageMode:
         assert rc == 1
         output_error.assert_called_once()
         assert "Failed to load certificate from signed zip" in output_error.call_args.args[1]
+
+    def test_signed_zip_missing_identity_name_returns_cleanly_when_error_is_mocked(self, tmp_path):
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
+
+        with unittest.mock.patch(
+            "nvflare.tool.package.package_commands._signed_identity_from_metadata", return_value={"name": None}
+        ):
+            with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as output_error:
+                rc = handle_package(args)
+
+        assert rc == 1
+        output_error.assert_called_once()
+        assert "does not identify a participant name" in output_error.call_args.args[1]
+
+    def test_signed_zip_cert_name_mismatch_returns_cleanly_when_error_is_mocked(self, tmp_path):
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+
+        def _mutate(metadata):
+            metadata["name"] = "other-site"
+
+        _rewrite_signed_zip_metadata(signed_zip, _mutate)
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands._validate_signed_metadata"):
+            with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as output_error:
+                rc = handle_package(args)
+
+        assert rc == 1
+        output_error.assert_called_once()
+        assert "does not match participant" in output_error.call_args.args[1]
 
     def test_read_local_request_metadata_returns_none_after_invalid_json_when_error_is_mocked(self, tmp_path):
         request_dir = tmp_path / "site-3"

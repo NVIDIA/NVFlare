@@ -45,8 +45,7 @@ from nvflare.lighter.utils import (
 )
 from nvflare.tool import cli_output
 from nvflare.tool.cert.cert_constants import ADMIN_CERT_TYPES, VALID_CERT_TYPES
-
-_VALID_CERT_TYPES = set(VALID_CERT_TYPES)
+from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256
 from nvflare.tool.cli_output import (
     output_error,
     output_error_message,
@@ -57,6 +56,7 @@ from nvflare.tool.cli_output import (
 )
 from nvflare.tool.cli_schema import handle_schema_flag
 
+_VALID_CERT_TYPES = set(VALID_CERT_TYPES)
 _USAGE_HINT = "Run the command with -h for usage."
 _SAFE_CERT_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@-]*")
 _SAFE_PROJECT_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -561,6 +561,7 @@ def _load_yaml_file(path: str) -> dict:
             exit_code=4,
             detail=f"failed to parse yaml {path}: {e}",
         )
+        return None
     if not isinstance(data, dict):
         output_error_message(
             "INVALID_ARGS",
@@ -719,6 +720,7 @@ def _read_json(path: str) -> dict:
             exit_code=4,
             detail=f"failed to parse json {path}: {e}",
         )
+        return data
     if not isinstance(data, dict):
         output_error_message(
             "INVALID_ARGS",
@@ -727,6 +729,7 @@ def _read_json(path: str) -> dict:
             exit_code=4,
             detail=f"json must be a mapping: {path}",
         )
+        return None
     return data
 
 
@@ -1299,6 +1302,7 @@ def sign_csr_files(
         "certificate": signed_cert,
         "certificate_sha256": _sha256_file(cert_out_path),
         "rootca_sha256": _sha256_file(rootca_out_path),
+        "rootca_fingerprint_sha256": cert_fingerprint_sha256(ca_cert),
         "public_key_sha256": _cert_public_key_sha256(signed_cert),
     }
 
@@ -1955,6 +1959,7 @@ def handle_cert_approve(args):
             "project": request_meta["project"],
             "signed_zip": signed_zip_path,
             "request_id": request_meta["request_id"],
+            "rootca_fingerprint_sha256": sign_result["rootca_fingerprint_sha256"],
             "audit": audit_path or "(not written)",
             "next_step": f"Return {os.path.basename(signed_zip_path)} to the requester.",
         }

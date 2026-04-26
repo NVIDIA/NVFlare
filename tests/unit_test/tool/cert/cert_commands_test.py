@@ -60,6 +60,7 @@ from nvflare.tool.cert.cert_commands import (
     handle_cert_init,
     handle_cert_sign,
 )
+from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -348,6 +349,17 @@ class TestCertValidationHelpers:
         assert data is None
         output_error.assert_called_once()
         assert "yaml must be a mapping" in output_error.call_args.kwargs["detail"]
+
+    def test_load_yaml_file_returns_after_parse_error_when_error_is_mocked(self, tmp_path):
+        site_yaml = tmp_path / "site.yaml"
+        site_yaml.write_text("name: [unterminated\n")
+
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            data = _load_yaml_file(str(site_yaml))
+
+        assert data is None
+        output_error.assert_called_once()
+        assert "failed to parse yaml" in output_error.call_args.kwargs["detail"]
 
     def test_generate_csr_returns_empty_after_invalid_type_when_error_is_mocked(self, tmp_path):
         with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
@@ -2293,6 +2305,8 @@ class TestDistributedCertRequestApprove:
 
         captured = capsys.readouterr()
         combined = captured.out + captured.err
+        assert "rootca_fingerprint_sha256" in combined
+        assert cert_fingerprint_sha256(load_crt(str(ca_dir / "rootCA.pem"))) in combined
         assert "signed_zip" in combined
         assert "Return site-3.signed.zip to the requester" in combined
         assert "cert sign" not in combined

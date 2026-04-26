@@ -44,6 +44,7 @@ from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import load_crt_bytes, load_yaml, verify_cert
 from nvflare.tool.cert.cert_constants import ADMIN_CERT_TYPES, KIT_TYPE_TO_ROLE, VALID_CERT_TYPES
+from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256, normalize_sha256_fingerprint
 from nvflare.tool.cli_output import (
     is_json_mode,
     output_error,
@@ -51,6 +52,7 @@ from nvflare.tool.cli_output import (
     output_ok,
     output_usage_error,
     print_human,
+    prompt_yn,
 )
 from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -125,7 +127,7 @@ def _validate_org_name(org: str, *, code: str = "INVALID_SIGNED_ZIP") -> bool:
     return True
 
 
-def _validate_signed_kind_cert_type(kind: str, cert_type: str) -> None:
+def _validate_signed_kind_cert_type(kind: str, cert_type: str) -> bool:
     if kind in _SIGNED_KIND_TO_CERT_TYPE:
         expected = _SIGNED_KIND_TO_CERT_TYPE[kind]
         if cert_type != expected:
@@ -136,9 +138,10 @@ def _validate_signed_kind_cert_type(kind: str, cert_type: str) -> None:
                 None,
                 exit_code=4,
             )
-        return
+            return False
+        return True
     if kind == "user" and cert_type in _SIGNED_USER_CERT_TYPES:
-        return
+        return True
     output_error_message(
         "INVALID_SIGNED_ZIP",
         f"Invalid signed zip kind/cert_type combination: kind={kind!r}, cert_type={cert_type!r}.",
@@ -146,9 +149,10 @@ def _validate_signed_kind_cert_type(kind: str, cert_type: str) -> None:
         None,
         exit_code=4,
     )
+    return False
 
 
-def _validate_participant_name(name: str, kit_type: str, *, code: str = "INVALID_SIGNED_ZIP") -> None:
+def _validate_participant_name(name: str, kit_type: str, *, code: str = "INVALID_SIGNED_ZIP") -> bool:
     if kit_type == "client":
         entity_type = "client"
     elif kit_type == "server":
@@ -163,7 +167,7 @@ def _validate_participant_name(name: str, kit_type: str, *, code: str = "INVALID
             None,
             exit_code=4,
         )
-        return
+        return False
 
     if not isinstance(name, str):
         invalid, reason = True, f"name must be a string for entity_type={entity_type}"
@@ -177,6 +181,8 @@ def _validate_participant_name(name: str, kit_type: str, *, code: str = "INVALID
             None,
             exit_code=4,
         )
+        return False
+    return True
 
 
 def _project_dir_under_workspace(workspace: str, project_name: str) -> str:
@@ -1013,6 +1019,60 @@ def _normalize_hash(value: str) -> str:
     return value.removeprefix("sha256:").lower()
 
 
+def _verify_rootca_fingerprint_options(args, actual_fingerprint: str) -> bool:
+    expected = getattr(args, "expected_rootca_fingerprint", None)
+    if expected:
+        normalized_expected = normalize_sha256_fingerprint(expected)
+        if not normalized_expected:
+            output_error_message(
+                "INVALID_ROOTCA_FINGERPRINT",
+                f"Invalid expected root CA SHA256 fingerprint: {expected!r}.",
+                "Use SHA256:AA:BB:... or OpenSSL output such as sha256 Fingerprint=AA:BB:...",
+                None,
+                exit_code=4,
+            )
+            return False
+        if normalized_expected != actual_fingerprint:
+            output_error_message(
+                "ROOTCA_FINGERPRINT_MISMATCH",
+                "Root CA SHA256 fingerprint does not match the expected out-of-band value.",
+                (
+                    f"Expected {normalized_expected}; actual {actual_fingerprint}. "
+                    "Verify that the signed zip came from the intended Project Admin."
+                ),
+                None,
+                exit_code=4,
+            )
+            return False
+
+    if getattr(args, "confirm_rootca", False):
+        if is_json_mode():
+            output_error_message(
+                "INVALID_ARGS",
+                "--confirm-rootca cannot be used with JSON output.",
+                "Use --expected-rootca-fingerprint for non-interactive verification.",
+                None,
+                exit_code=4,
+            )
+            return False
+        if not sys.stdin.isatty():
+            output_error_message(
+                "INVALID_ARGS",
+                "--confirm-rootca requires an interactive terminal.",
+                "Use --expected-rootca-fingerprint for non-interactive verification.",
+                None,
+                exit_code=4,
+            )
+            return False
+        print_human("Root CA SHA256 fingerprint from signed zip:")
+        print_human(actual_fingerprint)
+        if not prompt_yn("Fingerprint verified out-of-band?"):
+            print_human("Cancelled.")
+            return False
+
+    return True
+
+
 def _expected_hash(meta: dict, *names):
     hashes = meta.get("hashes") if isinstance(meta.get("hashes"), dict) else {}
     for name in names:
@@ -1067,8 +1127,10 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             exit_code=4,
         )
         return
-    _validate_signed_kind_cert_type(signed_meta["kind"], cert_type)
-    _validate_participant_name(signed_meta["name"], cert_type, code="INVALID_SIGNED_ZIP")
+    if not _validate_signed_kind_cert_type(signed_meta["kind"], cert_type):
+        return
+    if not _validate_participant_name(signed_meta["name"], cert_type, code="INVALID_SIGNED_ZIP"):
+        return
     if signed_meta["cert_file"] != cert_name or signed_meta["rootca_file"] != "rootCA.pem":
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -1557,6 +1619,7 @@ def _handle_signed_zip_package(args, scheme, host, port):
                 None,
                 exit_code=4,
             )
+            return 1
         if cert_name != f"{identity['name']}.crt":
             output_error_message(
                 "INVALID_SIGNED_ZIP",
@@ -1565,6 +1628,7 @@ def _handle_signed_zip_package(args, scheme, host, port):
                 None,
                 exit_code=4,
             )
+            return 1
 
         _validate_request_id(identity.get("request_id"))
         _validate_safe_project_name(identity.get("project_name"), code="INVALID_SIGNED_ZIP")
@@ -1611,6 +1675,10 @@ def _handle_signed_zip_package(args, scheme, host, port):
                 None,
                 exit_code=4,
             )
+
+        rootca_fingerprint_sha256 = cert_fingerprint_sha256(rootca)
+        if not _verify_rootca_fingerprint_options(args, rootca_fingerprint_sha256):
+            return 1
 
         resolved_request_dir = _resolve_request_dir(args, args.input, identity)
         if not resolved_request_dir:
@@ -1669,6 +1737,7 @@ def _handle_signed_zip_package(args, scheme, host, port):
             participant_props=participant_props,
             custom_builders=custom_builders,
         )
+        result["rootca_fingerprint_sha256"] = rootca_fingerprint_sha256
     output_ok(result)
     return 0
 
@@ -1700,6 +1769,18 @@ def handle_package(args):
             "INVALID_ARGS",
             "Positional signed zip input cannot be combined with -n/--dir/--cert/--key/--rootca.",
             "Use --request-dir to point to the local request folder for signed zip mode.",
+            None,
+            exit_code=4,
+        )
+
+    has_rootca_verify_option = bool(getattr(args, "expected_rootca_fingerprint", None)) or bool(
+        getattr(args, "confirm_rootca", False)
+    )
+    if has_rootca_verify_option and not has_signed_zip_input:
+        output_error_message(
+            "INVALID_ARGS",
+            "Root CA fingerprint verification options require signed zip input.",
+            "Use the distributed provisioning form: nvflare package <signed.zip> -e <endpoint>.",
             None,
             exit_code=4,
         )
