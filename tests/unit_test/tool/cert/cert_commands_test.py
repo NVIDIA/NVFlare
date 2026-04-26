@@ -42,7 +42,9 @@ from nvflare.tool.cert.cert_commands import (
     _load_and_validate_csr,
     _load_single_site_yaml,
     _read_request_zip,
+    _resolve_request_identity,
     _safe_zip_names,
+    _validate_request_kind_cert_type,
     _validate_request_metadata,
     _validate_safe_cert_name,
     _validate_safe_project_name,
@@ -1797,10 +1799,11 @@ class TestHandleCertCmdRouting:
 
         with patch("nvflare.tool.cli_output.set_output_format") as set_output_format:
             with patch("nvflare.tool.cert.cert_commands.handle_cert_init", return_value=0) as handle_init:
-                handle_cert_cmd(args)
+                rc = handle_cert_cmd(args)
 
         set_output_format.assert_called_once_with("json")
         handle_init.assert_called_once_with(args)
+        assert rc == 0
 
 
 # ---------------------------------------------------------------------------
@@ -1915,6 +1918,31 @@ class TestDistributedCertPublicSurface:
 
 
 class TestDistributedCertRequestApprove:
+    def test_resolve_request_identity_returns_none_after_site_arg_error_when_error_is_mocked(self):
+        args = argparse.Namespace(kind="site", identity_args=[])
+
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            identity = _resolve_request_identity(args)
+
+        output_error.assert_called_once()
+        assert identity is None
+
+    def test_resolve_request_identity_returns_none_after_user_arg_error_when_error_is_mocked(self):
+        args = argparse.Namespace(kind="user", identity_args=["lead"])
+
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            identity = _resolve_request_identity(args)
+
+        output_error.assert_called_once()
+        assert identity is None
+
+    def test_validate_request_kind_cert_type_returns_after_invalid_kind_when_error_is_mocked(self):
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            _validate_request_kind_cert_type("bad-kind", "client")
+
+        output_error.assert_called_once()
+        assert "cert request kind must be one of" in output_error.call_args.kwargs["detail"]
+
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
     def test_request_zip_writer_rejects_symlink_source(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
@@ -2342,3 +2370,16 @@ class TestDistributedCertRequestApprove:
         output_error.assert_called_once()
         assert request_meta == {"name": "site-3"}
         assert not (extract_dir / "site-3.csr").exists()
+
+    def test_read_request_zip_returns_after_missing_member_when_error_is_mocked(self, tmp_path):
+        request_zip = tmp_path / "site-3.request.zip"
+        with zipfile.ZipFile(request_zip, "w") as zf:
+            zf.writestr("site.yaml", "name: site-3\norg: nvidia\ntype: client\n")
+        extract_dir = tmp_path / "extract"
+        extract_dir.mkdir()
+
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            request_meta = _read_request_zip(str(request_zip), str(extract_dir))
+
+        output_error.assert_called_once()
+        assert request_meta is None

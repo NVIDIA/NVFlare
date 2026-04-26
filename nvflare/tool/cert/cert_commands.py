@@ -162,7 +162,7 @@ def _validate_org_name(org: str) -> None:
         )
 
 
-def _validate_request_kind(kind: str) -> None:
+def _validate_request_kind(kind: str) -> bool:
     if kind not in _REQUEST_KINDS:
         output_error_message(
             "INVALID_ARGS",
@@ -171,10 +171,13 @@ def _validate_request_kind(kind: str) -> None:
             exit_code=4,
             detail="cert request kind must be one of: site, server, user",
         )
+        return False
+    return True
 
 
 def _validate_request_kind_cert_type(kind: str, cert_type: str, cert_role: str = None) -> None:
-    _validate_request_kind(kind)
+    if not _validate_request_kind(kind):
+        return
     if kind in _REQUEST_KIND_TO_CERT_TYPE:
         expected = _REQUEST_KIND_TO_CERT_TYPE[kind]
         if cert_type != expected:
@@ -1364,6 +1367,7 @@ def _resolve_request_identity(args) -> dict:
                 exit_code=4,
                 detail=f"cert request {kind} requires exactly one NAME argument",
             )
+            return None
         return {
             "kind": kind,
             "name": identity_args[0],
@@ -1379,6 +1383,7 @@ def _resolve_request_identity(args) -> dict:
                 exit_code=4,
                 detail="cert request user requires ROLE and NAME arguments",
             )
+            return None
         role = identity_args[0]
         cert_type = _USER_ROLE_TO_CERT_TYPE.get(role)
         if not cert_type:
@@ -1389,6 +1394,7 @@ def _resolve_request_identity(args) -> dict:
                 exit_code=4,
                 detail="user role must be one of: org-admin, lead, member",
             )
+            return None
         return {
             "kind": "user",
             "name": identity_args[1],
@@ -1431,7 +1437,6 @@ def handle_cert_request(args):
         sys.argv[1:],
     )
 
-    _validate_request_kind(getattr(args, "kind", None))
     missing_flags = [
         flag for flag, attr in (("--org", "org"), ("--project", "project")) if not getattr(args, attr, None)
     ]
@@ -1441,10 +1446,14 @@ def handle_cert_request(args):
             f"missing required argument(s): {', '.join(missing_flags)}",
             exit_code=4,
         )
+    if not _validate_request_kind(getattr(args, "kind", None)):
+        return 1
     _validate_safe_project_name(args.project)
     _validate_org_name(args.org)
 
     identity = _resolve_request_identity(args)
+    if identity is None:
+        return 1
     name = identity["name"].strip()
     _validate_safe_cert_name(name, field_label="Name")
     _validate_identity_name(name, identity["cert_type"])
@@ -1563,6 +1572,7 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
                     exit_code=4,
                     detail="request zip must contain request.json and site.yaml",
                 )
+                return request_meta
             request_meta = json.loads(_read_zip_member_limited(zf, "request.json").decode("utf-8"))
             if not isinstance(request_meta, dict):
                 raise ValueError("request.json must be a mapping")
@@ -1794,6 +1804,8 @@ def handle_cert_approve(args):
         os.makedirs(signed_dir, mode=0o700)
 
         request_meta = _read_request_zip(request_zip_path, request_dir)
+        if not request_meta:
+            return 1
         name = request_meta["name"]
         site_yaml_path = os.path.join(request_dir, "site.yaml")
         csr_path = os.path.join(request_dir, f"{name}.csr")

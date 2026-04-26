@@ -484,6 +484,7 @@ def _validate_cert_material(cert_path: str, key_path: str, rootca_path: str, *, 
         now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     if expiry < now:
         output_error("CERT_EXPIRED", exit_code=1, cert=cert_path, expiry=expiry.isoformat())
+        return None
 
     if validate_key_match:
         cert_public = None

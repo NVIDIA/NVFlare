@@ -3806,6 +3806,39 @@ class TestSignedZipPackageMode:
         error.assert_called_once()
         assert error.call_args.args[0] == "KEY_INVALID"
 
+    def test_validate_cert_material_expired_cert_does_not_check_key_when_error_is_mocked(self, tmp_path, monkeypatch):
+        ca_dir = tmp_path / "ca"
+        ca_dir.mkdir()
+        ca_key, ca_cert, rootca_path = _make_ca(str(ca_dir))
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "site-3", str(tmp_path), "site-3.crt", role="client")
+
+        import nvflare.tool.package.package_commands as package_commands
+
+        real_load_crt = package_commands._load_crt_nofollow
+        past = datetime.datetime(2000, 1, 1, tzinfo=datetime.timezone.utc)
+
+        def patched_load_crt(path):
+            cert = real_load_crt(path)
+            if path == cert_path:
+                mock_cert = unittest.mock.MagicMock(wraps=cert)
+                mock_cert.not_valid_after_utc = past
+                return mock_cert
+            return cert
+
+        error = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error", error)
+        monkeypatch.setattr("nvflare.tool.package.package_commands._load_crt_nofollow", patched_load_crt)
+        monkeypatch.setattr("nvflare.tool.package.package_commands.verify_cert", lambda _cert, _ca_public_key: None)
+        key_loader = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands._load_private_key_nofollow", key_loader)
+
+        cert = _validate_cert_material(cert_path, key_path, rootca_path, validate_key_match=True)
+
+        assert cert is None
+        error.assert_called_once()
+        assert error.call_args.args[0] == "CERT_EXPIRED"
+        key_loader.assert_not_called()
+
     def test_signed_zip_rejects_local_request_metadata_mismatch(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)

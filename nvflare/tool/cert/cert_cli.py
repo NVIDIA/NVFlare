@@ -404,4 +404,4 @@ def handle_cert_cmd(args):
             "cert subcommand required" if getattr(args, "cert_sub_command", None) is None else "invalid cert subcommand"
         )
         output_usage_error(_cert_parser, detail, exit_code=4)
-    handler(args)
+    return handler(args)
