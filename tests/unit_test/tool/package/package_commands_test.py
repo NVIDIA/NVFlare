@@ -3385,6 +3385,29 @@ class TestSignedZipPackageMode:
         assert exc_info.value.code != 0
         capsys.readouterr()
 
+    @pytest.mark.parametrize("large_member", ["signed.json", "site-3.crt"])
+    def test_signed_zip_rejects_member_exceeding_read_limit(self, tmp_path, capsys, monkeypatch, large_member):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        with zipfile.ZipFile(signed_zip, "r") as zf:
+            contents = {name: zf.read(name) for name in zf.namelist()}
+        contents[large_member] = b"x" * 513
+        with zipfile.ZipFile(signed_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for name, content in contents.items():
+                zf.writestr(name, content)
+        monkeypatch.setattr("nvflare.tool.package.package_commands._MAX_ZIP_MEMBER_SIZE", 512)
+        monkeypatch.setattr(
+            "nvflare.tool.package.package_commands._safe_zip_names",
+            lambda _zf, _zip_path: ["signed.json", "site.yaml", "rootCA.pem", "site-3.crt"],
+        )
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code == 4
+        assert "Signed zip member exceeds size limit" in capsys.readouterr().err
+
     def test_signed_zip_missing_private_key_does_not_materialize_files(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         signed_zip, request_dir, key_path = _make_signed_zip(tmp_path)

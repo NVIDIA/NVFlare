@@ -935,9 +935,34 @@ def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
     return names
 
 
+def _read_zip_member_limited(zf: zipfile.ZipFile, name: str, zip_path: str) -> bytes:
+    try:
+        with zf.open(name) as member_file:
+            content = member_file.read(_MAX_ZIP_MEMBER_SIZE + 1)
+    except Exception as e:
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            f"Failed to read {name} from signed zip {zip_path}: {e}.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+        raise
+    if len(content) > _MAX_ZIP_MEMBER_SIZE:
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            f"Signed zip member exceeds size limit: {name}.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+        raise ValueError(f"signed zip member exceeds size limit: {name}")
+    return content
+
+
 def _read_zip_json(zf: zipfile.ZipFile, name: str, zip_path: str):
     try:
-        return json.loads(zf.read(name).decode("utf-8"))
+        return json.loads(_read_zip_member_limited(zf, name, zip_path).decode("utf-8"))
     except Exception as e:
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -951,7 +976,7 @@ def _read_zip_json(zf: zipfile.ZipFile, name: str, zip_path: str):
 def _read_zip_yaml(zf: zipfile.ZipFile, name: str, zip_path: str):
     data = None
     try:
-        data = yaml.safe_load(zf.read(name).decode("utf-8"))
+        data = yaml.safe_load(_read_zip_member_limited(zf, name, zip_path).decode("utf-8"))
     except Exception as e:
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -1220,10 +1245,10 @@ def _load_signed_zip(input_path: str):
                     exit_code=4,
                 )
             file_contents = {
-                "signed.json": zf.read("signed.json"),
-                "site.yaml": zf.read("site.yaml"),
-                "rootCA.pem": zf.read("rootCA.pem"),
-                "cert": zf.read(cert_name),
+                "signed.json": _read_zip_member_limited(zf, "signed.json", input_path),
+                "site.yaml": _read_zip_member_limited(zf, "site.yaml", input_path),
+                "rootCA.pem": _read_zip_member_limited(zf, "rootCA.pem", input_path),
+                "cert": _read_zip_member_limited(zf, cert_name, input_path),
             }
             _validate_signed_metadata(signed_meta, site_meta, cert_name)
     except zipfile.BadZipFile:
