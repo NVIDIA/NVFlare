@@ -675,11 +675,14 @@ def test_package_compat_output_alias_sets_output_format(tmp_path):
     args = root.parse_args(["package", "-e", "grpc://fl-server:8002", "--dir", str(tmp_path), "--output", "json"])
 
     with unittest.mock.patch("nvflare.tool.cli_output.set_output_format") as set_output_format:
-        with unittest.mock.patch("nvflare.tool.package.package_commands.handle_package") as handle_package:
-            handle_package_cmd(args)
+        with unittest.mock.patch(
+            "nvflare.tool.package.package_commands.handle_package", return_value=1
+        ) as handle_package:
+            rc = handle_package_cmd(args)
 
     set_output_format.assert_called_once_with("json")
     handle_package.assert_called_once_with(args)
+    assert rc == 1
 
 
 # ---------------------------------------------------------------------------

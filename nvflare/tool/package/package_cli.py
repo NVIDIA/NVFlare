@@ -202,4 +202,4 @@ def handle_package_cmd(args):
     if compat_output_format:
         set_output_format("json" if compat_output_format == "json" else "txt")
 
-    handle_package(args)
+    return handle_package(args)
