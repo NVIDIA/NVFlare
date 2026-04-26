@@ -281,7 +281,7 @@ def _display_unknown_args(argv, cmd: str, args, unknown: list) -> list:
         return unknown
 
     input_path = getattr(args, "input", None)
-    if not input_path or str(input_path).endswith(".signed.zip"):
+    if not input_path or str(input_path).lower().endswith(".signed.zip"):
         return unknown
 
     display_unknown = []

@@ -89,8 +89,10 @@ def _validate_safe_project_name(project_name: str, *, code: str = "INVALID_PROJE
         return
     if len(project_name) > 64:
         _reject_invalid_project_name(project_name, code=code, hint="Project names must be 64 characters or fewer.")
+        return
     if os.sep in project_name or (os.altsep and os.altsep in project_name) or project_name.startswith("."):
         _reject_invalid_project_name(project_name, code=code, hint=hint)
+        return
     if not _SAFE_PROJECT_NAME_PATTERN.fullmatch(project_name):
         _reject_invalid_project_name(project_name, code=code, hint=hint)
 
@@ -223,6 +225,22 @@ def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
         raise
     with os.fdopen(fd, "wb") as f:
         f.write(content)
+
+
+def _read_file_nofollow(path: str, max_size: int = _MAX_ZIP_MEMBER_SIZE) -> bytes:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags)
+    with os.fdopen(fd, "rb") as f:
+        content = f.read(max_size + 1)
+    if len(content) > max_size:
+        raise ValueError(f"file exceeds maximum size: {path}")
+    return content
+
+
+def _read_json_file_nofollow(path: str) -> dict:
+    return json.loads(_read_file_nofollow(path).decode("utf-8"))
 
 
 class PrebuiltCertBuilder(Builder):
@@ -452,6 +470,8 @@ def _validate_cert_material(cert_path: str, key_path: str, rootca_path: str, *, 
         output_error("CERT_EXPIRED", exit_code=1, cert=cert_path, expiry=expiry.isoformat())
 
     if validate_key_match:
+        cert_public = None
+        key_public = None
         try:
             private_key = load_private_key_file(key_path)
             cert_public = cert.public_key().public_bytes(
@@ -1237,22 +1257,43 @@ def _audit_request_dir(request_id: str):
         if not os.path.isfile(path):
             continue
         try:
-            with open(path, "r") as f:
-                data = json.load(f)
+            data = _read_json_file_nofollow(path)
         except Exception:
             continue
         request_data = data.get("request") if isinstance(data.get("request"), dict) else {}
         for key in ("request_dir", "request_folder", "output_dir"):
             value = data.get(key)
             if value:
-                return value
+                request_dir = _validated_audit_request_dir(value, request_id)
+                if request_dir:
+                    return request_dir
             value = request_data.get(key)
             if value:
-                return value
+                request_dir = _validated_audit_request_dir(value, request_id)
+                if request_dir:
+                    return request_dir
         private_key_path = data.get("private_key_path") or data.get("key_path")
         if private_key_path:
-            return os.path.dirname(private_key_path)
+            request_dir = _validated_audit_request_dir(os.path.dirname(private_key_path), request_id)
+            if request_dir:
+                return request_dir
     return None
+
+
+def _validated_audit_request_dir(value: str, request_id: str):
+    if not isinstance(value, str) or not value.strip():
+        return None
+    request_dir = os.path.realpath(os.path.abspath(os.path.expanduser(value)))
+    request_json_path = os.path.join(request_dir, "request.json")
+    if not os.path.isfile(request_json_path):
+        return None
+    try:
+        request_meta = _read_json_file_nofollow(request_json_path)
+    except Exception:
+        return None
+    if not isinstance(request_meta, dict) or request_meta.get("request_id") != request_id:
+        return None
+    return request_dir
 
 
 def _has_request_material(request_dir: str, name: str) -> bool:
@@ -1291,8 +1332,7 @@ def _read_local_request_metadata(request_dir: str) -> dict:
         )
 
     try:
-        with open(request_json_path, "r") as f:
-            request_meta = json.load(f)
+        request_meta = _read_json_file_nofollow(request_json_path)
     except Exception as e:
         output_error_message(
             "REQUEST_METADATA_INVALID",
@@ -1559,7 +1599,7 @@ def handle_package(args):
     has_signed_zip_input = bool(input_path)
     has_project_file = bool(getattr(args, "project_file", None))
 
-    if has_signed_zip_input and not input_path.endswith(".signed.zip"):
+    if has_signed_zip_input and not str(input_path).lower().endswith(".signed.zip"):
         output_error_message(
             "INVALID_ARGS",
             f"Unsupported package input: {input_path}.",

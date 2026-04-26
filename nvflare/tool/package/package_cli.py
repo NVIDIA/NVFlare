@@ -117,10 +117,9 @@ def def_package_cli_parser(sub_cmd) -> dict:
             "Project YAML defining participants and optional custom builders "
             "(schema-compatible with 'nvflare provision' project.yaml), "
             "or a single-site YAML with name/org/type. "
-            "WorkspaceBuilder and StaticFileBuilder are always managed by nvflare package "
-            "(scheme is derived from --endpoint); any YAML entries for these builders, "
-            "including custom args such as config_folder, are ignored. "
-            "Signed zip mode builds only the signed participant."
+            "Signed zip mode builds only the signed participant. "
+            "Custom builders are honored; if StaticFileBuilder is present, its scheme is forced "
+            "from --endpoint while other builder args are retained."
         ),
     )
     p.add_argument(

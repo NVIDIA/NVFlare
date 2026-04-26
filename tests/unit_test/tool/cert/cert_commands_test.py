@@ -39,6 +39,9 @@ from nvflare.lighter.utils import load_crt, load_private_key_file, serialize_cer
 from nvflare.tool import cli_output
 from nvflare.tool.cert.cert_commands import (
     _generate_csr,
+    _load_and_validate_csr,
+    _validate_safe_cert_name,
+    _validate_safe_project_name,
     _write_file_nofollow,
     _write_zip_nofollow,
     handle_cert_csr,
@@ -125,6 +128,36 @@ def test_write_file_nofollow_sets_requested_mode_despite_umask(tmp_path):
 # ---------------------------------------------------------------------------
 # cert init tests
 # ---------------------------------------------------------------------------
+
+
+class TestCertValidationHelpers:
+    def test_safe_cert_name_returns_after_length_error_when_error_is_mocked(self):
+        with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
+            _validate_safe_cert_name("a" * 65, field_label="Name")
+
+        output_error.assert_called_once()
+        assert "64 characters" in output_error.call_args.kwargs["reason"]
+
+    def test_safe_project_name_returns_after_separator_error_when_error_is_mocked(self):
+        with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
+            _validate_safe_project_name("../escape")
+
+        output_error.assert_called_once()
+        assert "path separators" in output_error.call_args.kwargs["reason"]
+
+    def test_safe_cert_name_returns_after_pattern_error_when_error_is_mocked(self):
+        with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
+            _validate_safe_cert_name("bad:name", field_label="Name")
+
+        output_error.assert_called_once()
+        assert "must match" in output_error.call_args.kwargs["reason"]
+
+    def test_safe_project_name_returns_after_pattern_error_when_error_is_mocked(self):
+        with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
+            _validate_safe_project_name("bad:name")
+
+        output_error.assert_called_once()
+        assert "must match" in output_error.call_args.kwargs["reason"]
 
 
 class TestCertInit:
@@ -718,6 +751,22 @@ class TestCertSign:
         captured = capsys.readouterr()
         assert "must be a file path, not a directory" in captured.err
         assert "INTERNAL_ERROR" not in captured.err
+
+    @pytest.mark.skipif(
+        not hasattr(os, "symlink") or not hasattr(os, "O_NOFOLLOW"), reason="nofollow symlink support required"
+    )
+    def test_load_csr_symlink_source_is_rejected(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        csr_path = _setup_csr(tmp_path)
+        link_path = tmp_path / "linked.csr"
+        os.symlink(csr_path, str(link_path))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _load_and_validate_csr(str(link_path))
+
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        assert "failed to read CSR" in captured.err
 
     def test_sign_ca_dir_invalid(self, tmp_path):
         csr_path = _setup_csr(tmp_path)
@@ -1394,6 +1443,22 @@ class TestLoadSingleSiteYaml:
         path = self._write_yaml(tmp_path, "name: ''\norg: ACME\ntype: client\n")
         with pytest.raises(SystemExit) as exc_info:
             _load_single_site_yaml(path)
+        assert exc_info.value.code == 4
+
+    @pytest.mark.skipif(
+        not hasattr(os, "symlink") or not hasattr(os, "O_NOFOLLOW"), reason="nofollow symlink support required"
+    )
+    def test_symlink_source_is_rejected(self, tmp_path):
+        from nvflare.tool.cert.cert_commands import _load_single_site_yaml
+
+        real_path = tmp_path / "real.yml"
+        real_path.write_text("name: hospital-1\norg: ACME\ntype: client\n")
+        link_path = tmp_path / "site.yml"
+        os.symlink(str(real_path), str(link_path))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _load_single_site_yaml(str(link_path))
+
         assert exc_info.value.code == 4
 
 

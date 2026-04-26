@@ -93,6 +93,7 @@ def _validate_safe_cert_name(name: str, *, field_label: str) -> None:
         return
     if len(name) > 64:
         output_error("INVALID_NAME", exit_code=4, name=name, reason=f"{field_label} must be 64 characters or fewer.")
+        return
     if os.sep in name or (os.altsep and os.altsep in name) or name.startswith("."):
         output_error(
             "INVALID_NAME",
@@ -100,6 +101,7 @@ def _validate_safe_cert_name(name: str, *, field_label: str) -> None:
             name=name,
             reason=f"{field_label} must not contain path separators or start with '.'.",
         )
+        return
     if not _SAFE_CERT_NAME_PATTERN.fullmatch(name):
         output_error(
             "INVALID_NAME",
@@ -107,6 +109,7 @@ def _validate_safe_cert_name(name: str, *, field_label: str) -> None:
             name=name,
             reason=f"{field_label} must match [A-Za-z0-9][A-Za-z0-9._@-]*.",
         )
+        return
 
 
 def _validate_safe_project_name(project: str, *, field_label: str = "Project") -> None:
@@ -125,6 +128,7 @@ def _validate_safe_project_name(project: str, *, field_label: str = "Project") -
             name=project,
             reason=f"{field_label} must be 64 characters or fewer.",
         )
+        return
     if os.sep in project or (os.altsep and os.altsep in project) or project.startswith("."):
         output_error(
             "INVALID_PROJECT_NAME",
@@ -132,6 +136,7 @@ def _validate_safe_project_name(project: str, *, field_label: str = "Project") -
             name=project,
             reason=f"{field_label} must not contain path separators or start with '.'.",
         )
+        return
     if not _SAFE_PROJECT_NAME_PATTERN.fullmatch(project):
         output_error(
             "INVALID_PROJECT_NAME",
@@ -139,6 +144,7 @@ def _validate_safe_project_name(project: str, *, field_label: str = "Project") -
             name=project,
             reason=f"{field_label} must match [A-Za-z0-9][A-Za-z0-9._-]*.",
         )
+        return
 
 
 def _validate_org_name(org: str) -> None:
@@ -454,6 +460,10 @@ def _read_file_nofollow(path: str, max_size: int = None) -> bytes:
     return content
 
 
+def _read_text_nofollow(path: str) -> str:
+    return _read_file_nofollow(path).decode("utf-8")
+
+
 def _write_json_file(path: str, data: dict) -> None:
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     if hasattr(os, "O_NOFOLLOW"):
@@ -509,8 +519,7 @@ def _load_yaml_file(path: str) -> dict:
 
     data = None
     try:
-        with open(path, "r") as f:
-            data = yaml.safe_load(f)
+        data = yaml.safe_load(_read_text_nofollow(path))
     except Exception as e:
         output_error_message(
             "INVALID_ARGS",
@@ -548,8 +557,9 @@ def _safe_zip_names(zf: zipfile.ZipFile) -> list:
             or ".." in parts
             or posixpath.basename(name) != name
             or name in seen
+            or info.is_dir()
             or info.file_size > _MAX_ZIP_MEMBER_SIZE
-            or stat.S_IFMT(mode) == stat.S_IFLNK
+            or stat.S_IFMT(mode) in {stat.S_IFDIR, stat.S_IFLNK}
         ):
             output_error_message(
                 "INVALID_ARGS",
@@ -648,8 +658,7 @@ def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> No
 def _read_json(path: str) -> dict:
     data = None
     try:
-        with open(path, "r") as f:
-            data = json.load(f)
+        data = json.loads(_read_text_nofollow(path))
     except Exception as e:
         output_error_message(
             "INVALID_ARGS",
@@ -722,8 +731,7 @@ def _load_single_site_yaml(path: str) -> dict:
     if not os.path.isfile(path):
         output_error("PROJECT_FILE_NOT_FOUND", path=path)
     try:
-        with open(path, "r") as f:
-            data = yaml.safe_load(f)
+        data = yaml.safe_load(_read_text_nofollow(path))
     except Exception as e:
         output_error_message(
             "INVALID_ARGS",
@@ -1056,8 +1064,16 @@ def _load_and_validate_csr(csr_path: str) -> x509.CertificateSigningRequest:
             detail=f"-r/--csr must be a file path, not a directory: {csr_path}",
         )
 
-    with open(csr_path, "rb") as f:
-        csr_data = f.read()
+    try:
+        csr_data = _read_file_nofollow(csr_path)
+    except Exception as e:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"failed to read CSR {csr_path}: {e}",
+        )
     try:
         csr = x509.load_pem_x509_csr(csr_data, default_backend())
     except Exception as e:
@@ -1767,8 +1783,7 @@ def handle_cert_approve(args):
         signed_json_path = os.path.join(signed_dir, "signed.json")
         _write_json_file(signed_json_path, signed_meta)
         signed_site_yaml_path = os.path.join(signed_dir, "site.yaml")
-        with open(site_yaml_path, "rb") as _src:
-            _write_file_nofollow(signed_site_yaml_path, _src.read())
+        _write_file_nofollow(signed_site_yaml_path, _read_file_nofollow(site_yaml_path))
 
         signed_zip_path = getattr(args, "out", None) or getattr(args, "signed_zip", None)
         if signed_zip_path:

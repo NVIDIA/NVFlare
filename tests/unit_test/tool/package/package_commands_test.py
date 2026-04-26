@@ -43,6 +43,7 @@ from nvflare.tool.package.package_commands import (
     _parse_endpoint,
     _validate_cert_material,
     _validate_signed_public_key_hash,
+    _write_file_nofollow,
     handle_package,
 )
 
@@ -79,10 +80,8 @@ def _make_signed_cert(ca_key, ca_cert, name, tmp_dir, cert_filename, role=None, 
     cert = generate_cert(subj, issuer, ca_key, pub)
     key_path = os.path.join(tmp_dir, f"{name}.key")
     cert_path = os.path.join(tmp_dir, cert_filename)
-    with open(key_path, "wb") as f:
-        f.write(serialize_pri_key(key))
-    with open(cert_path, "wb") as f:
-        f.write(serialize_cert(cert))
+    _write_file_nofollow(key_path, serialize_pri_key(key), mode=0o600)
+    _write_file_nofollow(cert_path, serialize_cert(cert), mode=0o644)
     return key_path, cert_path
 
 
@@ -3188,6 +3187,8 @@ class TestSignedZipPackagePublicSurface:
         help_text = parser.format_help()
         assert ".signed.zip" in help_text
         assert "nvflare package" in help_text
+        assert "Custom builders are honored" in help_text
+        assert "are ignored" not in help_text
         assert "--cert ./signed/hospital-1/hospital-1.crt" not in help_text
         assert "--key ./csr/hospital-1.key" not in help_text
 
@@ -3215,6 +3216,17 @@ class TestSignedZipPackageMode:
         assert os.path.isfile(os.path.join(kit_dir, "startup", "rootCA.pem"))
         assert not os.path.exists(os.path.join(str(tmp_path / "ws"), "example_project", "prod_00", "fl-server"))
 
+    def test_signed_zip_input_suffix_is_case_insensitive(self, tmp_path):
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        uppercase_signed_zip = request_dir / "site-3.SIGNED.ZIP"
+        shutil.move(str(signed_zip), str(uppercase_signed_zip))
+        args = _signed_zip_args(uppercase_signed_zip, tmp_path, request_dir=str(request_dir))
+
+        handle_package(args)
+
+        kit_dir = os.path.join(str(tmp_path / "ws"), "example_project", "prod_00", "site-3")
+        assert os.path.isfile(os.path.join(kit_dir, "startup", "client.key"))
+
     def test_signed_zip_ignores_stale_audit_request_dir_and_uses_sibling_request_folder(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HOME", str(tmp_path / "home"))
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
@@ -3226,6 +3238,61 @@ class TestSignedZipPackageMode:
         (stale_audit_dir / "audit.json").write_text(
             json.dumps({"schema_version": "1", "request_dir": str(tmp_path / "missing-request-dir")})
         )
+        args = _signed_zip_args(sibling_signed_zip, tmp_path)
+
+        handle_package(args)
+
+        kit_dir = os.path.join(str(tmp_path / "ws"), "example_project", "prod_00", "site-3")
+        assert os.path.isfile(os.path.join(kit_dir, "startup", "client.key"))
+
+    def test_signed_zip_ignores_audit_request_dir_with_wrong_request_id(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        sibling_signed_zip = tmp_path / f"{request_dir.name}.signed.zip"
+        shutil.move(str(signed_zip), str(sibling_signed_zip))
+        tampered_request_dir = tmp_path / "tampered-site-3"
+        tampered_request_dir.mkdir()
+        other_key, _other_pub = generate_keys()
+        _write_file_nofollow(tampered_request_dir / "site-3.key", serialize_pri_key(other_key), mode=0o600)
+        (tampered_request_dir / "request.json").write_text(
+            json.dumps(
+                {
+                    "request_id": "22222222222222222222222222222222",
+                    "project": "example_project",
+                    "name": "site-3",
+                    "org": "nvidia",
+                    "kind": "site",
+                    "cert_type": "client",
+                    "csr_sha256": "1" * 64,
+                    "public_key_sha256": "1" * 64,
+                }
+            )
+        )
+        audit_dir = tmp_path / "home" / ".nvflare" / "cert_requests" / "11111111111111111111111111111111"
+        audit_dir.mkdir(parents=True)
+        (audit_dir / "audit.json").write_text(
+            json.dumps({"schema_version": "1", "request_dir": str(tampered_request_dir)})
+        )
+        args = _signed_zip_args(sibling_signed_zip, tmp_path)
+
+        handle_package(args)
+
+        kit_dir = os.path.join(str(tmp_path / "ws"), "example_project", "prod_00", "site-3")
+        assert os.path.isfile(os.path.join(kit_dir, "startup", "client.key"))
+
+    @pytest.mark.skipif(
+        not hasattr(os, "symlink") or not hasattr(os, "O_NOFOLLOW"), reason="nofollow symlink support required"
+    )
+    def test_signed_zip_ignores_symlinked_audit_record(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        sibling_signed_zip = tmp_path / f"{request_dir.name}.signed.zip"
+        shutil.move(str(signed_zip), str(sibling_signed_zip))
+        audit_dir = tmp_path / "home" / ".nvflare" / "cert_requests" / "11111111111111111111111111111111"
+        audit_dir.mkdir(parents=True)
+        real_audit = tmp_path / "audit.json"
+        real_audit.write_text(json.dumps({"schema_version": "1", "request_dir": str(tmp_path / "missing")}))
+        os.symlink(str(real_audit), str(audit_dir / "audit.json"))
         args = _signed_zip_args(sibling_signed_zip, tmp_path)
 
         handle_package(args)
