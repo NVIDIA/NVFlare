@@ -9,6 +9,15 @@ Minimal scripted flow. JSON on stdout via `--format json`.
 
 Template: `../site.template.yml`
 
+The script uses the public distributed provisioning command sequence:
+
+```bash
+nvflare cert init ...
+nvflare cert request ...
+nvflare cert approve ...
+nvflare package ...
+```
+
 ## Run
 ```bash
 ./scripted_mode_demo.sh <project_name> <server_endpoint> <work_dir> <site_yaml...>
@@ -21,6 +30,5 @@ Example (server + two clients):
 ```
 
 Security note:
-- Before packaging or startup, verify the returned `rootCA.pem` fingerprint with the
-  Project Admin through a trusted out-of-band channel. Example:
-  `openssl x509 -in rootCA.pem -noout -fingerprint -sha256`
+- Before packaging or startup, verify the `rootCA.pem` fingerprint reported by
+  the script with the Project Admin through a trusted out-of-band channel.

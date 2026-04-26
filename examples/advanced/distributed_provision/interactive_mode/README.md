@@ -55,118 +55,109 @@ type: client
 ## Step 1 — Project Admin: initialise root CA
 
 ```bash
-./01_project_admin_init_ca.sh fed-project ./distprov_demo/ca
+./01_project_admin_init_ca.sh fed-project NvidiaOrg ./distprov_demo/ca
 ```
 
 Outputs: `./distprov_demo/ca/rootCA.pem` and the CA private key.
 
 ---
 
-## Step 2 — Site Admin: generate CSR + private key
+## Step 2 — Site Admin: create request zip + private key
 
 Each site admin runs this on their own machine, one call per site.
 
 ```bash
 # Server site admin
-./02_site_admin_csr.sh ./server.yml ./distprov_demo/server-csr
+./02_site_admin_request.sh fed-project ./server.yml ./distprov_demo/server-request
 
 # Client site-1 admin
-./02_site_admin_csr.sh ./site-1.yml ./distprov_demo/site-1-csr
+./02_site_admin_request.sh fed-project ./site-1.yml ./distprov_demo/site-1-request
 
 # Client site-2 admin
-./02_site_admin_csr.sh ./site-2.yml ./distprov_demo/site-2-csr
+./02_site_admin_request.sh fed-project ./site-2.yml ./distprov_demo/site-2-request
 ```
 
-Each `<csr_dir>` receives `<name>.csr` and `<name>.key`.
-The site admin **keeps the `.key` private** and sends only the `.csr` to the Project Admin.
+Each `<request_dir>` receives `<name>.key`, `<name>.csr`, `site.yaml`,
+`request.json`, and `<name>.request.zip`.
+The site admin **keeps the `.key` private** and sends only the `.request.zip`
+to the Project Admin.
 
 ---
 
-## Step 3 — Project Admin: sign each CSR
+## Step 3 — Project Admin: approve each request zip
 
-The Project Admin receives the `.csr` files and signs them one at a time.
+The Project Admin receives the `.request.zip` files and approves them one at a time.
 
 ```bash
-./03_project_admin_sign.sh \
-  ./distprov_demo/server-csr/server.csr \
+./03_project_admin_approve.sh \
+  ./distprov_demo/server-request/server.request.zip \
   ./distprov_demo/ca \
-  ./distprov_demo/server-signed
+  ./distprov_demo/server.signed.zip
 
-./03_project_admin_sign.sh \
-  ./distprov_demo/site-1-csr/site-1.csr \
+./03_project_admin_approve.sh \
+  ./distprov_demo/site-1-request/site-1.request.zip \
   ./distprov_demo/ca \
-  ./distprov_demo/site-1-signed
+  ./distprov_demo/site-1.signed.zip
 
-./03_project_admin_sign.sh \
-  ./distprov_demo/site-2-csr/site-2.csr \
+./03_project_admin_approve.sh \
+  ./distprov_demo/site-2-request/site-2.request.zip \
   ./distprov_demo/ca \
-  ./distprov_demo/site-2-signed
+  ./distprov_demo/site-2.signed.zip
 ```
 
-Each `<out_dir>` receives `<name>.crt` and `rootCA.pem`.
-The script prints the `rootCA.pem` SHA256 fingerprint — share it with each site admin
-through a **trusted out-of-band channel** (e.g. a secure Slack DM or signed email)
-so they can verify it before packaging.
+Each approval command creates a `<name>.signed.zip`. Return only this signed zip
+to the requesting site admin.
+
+The script prints the `rootCA.pem` SHA256 fingerprint. Share it with each site
+admin through a **trusted out-of-band channel** (e.g. a secure Slack DM or
+signed email) so they can verify it before packaging.
 
 ---
 
-## Step 4 — Site Admin: assemble bundle and package startup kit
+## Step 4 — Site Admin: package startup kit
 
-Each site admin assembles a bundle directory containing:
-- `<name>.key` (kept from Step 2)
-- `<name>.crt` and `rootCA.pem` (received from the Project Admin in Step 3)
-
-Then runs `04_site_admin_package.sh`. The script prints the `rootCA.pem` fingerprint
-and asks for confirmation before building the kit.
+Each site admin runs `04_site_admin_package.sh` with the signed zip returned by
+the Project Admin and the original local request directory from Step 2. The
+script prints the `rootCA.pem` fingerprint from the signed zip and asks for
+confirmation before building the kit.
 
 ```bash
 # Server site admin
-mkdir -p ./distprov_demo/server-bundle
-cp ./distprov_demo/server-csr/server.key   ./distprov_demo/server-bundle/
-cp ./distprov_demo/server-signed/server.crt ./distprov_demo/server-bundle/
-cp ./distprov_demo/server-signed/rootCA.pem ./distprov_demo/server-bundle/
-
 ./04_site_admin_package.sh \
-  ./server.yml \
+  ./distprov_demo/server.signed.zip \
   grpc://server.example.com:8002 \
-  ./distprov_demo/server-bundle
+  ./distprov_demo/server-request
 
 # Client site-1 admin
-mkdir -p ./distprov_demo/site-1-bundle
-cp ./distprov_demo/site-1-csr/site-1.key    ./distprov_demo/site-1-bundle/
-cp ./distprov_demo/site-1-signed/site-1.crt ./distprov_demo/site-1-bundle/
-cp ./distprov_demo/site-1-signed/rootCA.pem ./distprov_demo/site-1-bundle/
-
 ./04_site_admin_package.sh \
-  ./site-1.yml \
+  ./distprov_demo/site-1.signed.zip \
   grpc://server.example.com:8002 \
-  ./distprov_demo/site-1-bundle
+  ./distprov_demo/site-1-request
 
 # Client site-2 admin
-mkdir -p ./distprov_demo/site-2-bundle
-cp ./distprov_demo/site-2-csr/site-2.key    ./distprov_demo/site-2-bundle/
-cp ./distprov_demo/site-2-signed/site-2.crt ./distprov_demo/site-2-bundle/
-cp ./distprov_demo/site-2-signed/rootCA.pem ./distprov_demo/site-2-bundle/
-
 ./04_site_admin_package.sh \
-  ./site-2.yml \
+  ./distprov_demo/site-2.signed.zip \
   grpc://server.example.com:8002 \
-  ./distprov_demo/site-2-bundle
+  ./distprov_demo/site-2-request
 ```
 
-The startup kits are written into the standard NVFlare production directory
-(`~/nvflare/poc/<project>/prod_00/` by default).
+The startup kits are written under the package workspace:
+`workspace/<project>/prod_NN/<name>/` by default. Since signed-zip packaging
+builds one participant at a time, repeated package commands can create separate
+`prod_NN` directories.
 
 ---
 
 ## Notes
 
+- `python3` is required by the helper scripts to read `site.yml`.
 - `openssl` is required by `04_site_admin_package.sh` to display and verify the
   `rootCA.pem` fingerprint before packaging.
-- Root CA initialisation does **not** require an `org` in `site.yml`.
-- `org` **is required** for every participant and must match `^[A-Za-z0-9_]+$`.
-- To override a participant's role at signing time, pass the type as a fourth
-  argument to `03_project_admin_sign.sh`:
-  ```bash
-  ./03_project_admin_sign.sh <csr_path> <ca_dir> <out_dir> org_admin
-  ```
+- `org` is required for every participant and must match `^[A-Za-z0-9_]+$`.
+- The package helper accepts an optional fourth `project_file` argument for
+  custom builders or package configuration. The signed zip remains the source of
+  truth for participant identity. If you pass a single-site YAML as the project
+  file, include a matching `project` or `project_name`; otherwise omit it.
+- Project Admin approval signs the identity in the request zip. To change the
+  requested type or role, reject the request and ask the requester to generate a
+  corrected request zip.
