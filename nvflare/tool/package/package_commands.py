@@ -42,7 +42,7 @@ from nvflare.lighter.prov_utils import prepare_builders
 from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Builder
-from nvflare.lighter.utils import load_crt, load_private_key_file, load_yaml, verify_cert
+from nvflare.lighter.utils import load_crt_bytes, load_yaml, verify_cert
 from nvflare.tool.cert.cert_constants import ADMIN_CERT_TYPES, KIT_TYPE_TO_ROLE, VALID_CERT_TYPES
 from nvflare.tool.cli_output import (
     is_json_mode,
@@ -241,6 +241,14 @@ def _read_file_nofollow(path: str, max_size: int = _MAX_ZIP_MEMBER_SIZE) -> byte
 
 def _read_json_file_nofollow(path: str) -> dict:
     return json.loads(_read_file_nofollow(path).decode("utf-8"))
+
+
+def _load_crt_nofollow(path: str):
+    return load_crt_bytes(_read_file_nofollow(path))
+
+
+def _load_private_key_nofollow(path: str):
+    return serialization.load_pem_private_key(_read_file_nofollow(path), password=None)
 
 
 class PrebuiltCertBuilder(Builder):
@@ -450,8 +458,8 @@ def _participant_kit_type(participant) -> str:
 
 def _validate_cert_material(cert_path: str, key_path: str, rootca_path: str, *, validate_key_match: bool = False):
     try:
-        cert = load_crt(cert_path)
-        ca_cert = load_crt(rootca_path)
+        cert = _load_crt_nofollow(cert_path)
+        ca_cert = _load_crt_nofollow(rootca_path)
         verify_cert(cert, ca_cert.public_key())
     except Exception as e:
         output_error("CERT_CHAIN_INVALID", exit_code=1, cert=cert_path, rootca=rootca_path, detail=str(e))
@@ -470,7 +478,7 @@ def _validate_cert_material(cert_path: str, key_path: str, rootca_path: str, *, 
         cert_public = None
         key_public = None
         try:
-            private_key = load_private_key_file(key_path)
+            private_key = _load_private_key_nofollow(key_path)
             cert_public = cert.public_key().public_bytes(
                 serialization.Encoding.PEM,
                 serialization.PublicFormat.SubjectPublicKeyInfo,
@@ -733,7 +741,7 @@ def _handle_package_yaml_mode(args, scheme, host, port):
     # Validate all cert/key files up front before building anything.
     cert_map = {}
     try:
-        ca_cert = load_crt(rootca_path)
+        ca_cert = _load_crt_nofollow(rootca_path)
     except Exception as e:
         output_error_message(
             "ROOTCA_INVALID",
@@ -763,7 +771,7 @@ def _handle_package_yaml_mode(args, scheme, host, port):
             )
 
         try:
-            cert = load_crt(cert_path)
+            cert = _load_crt_nofollow(cert_path)
             verify_cert(cert, ca_cert.public_key())
         except Exception as e:
             output_error("CERT_CHAIN_INVALID", exit_code=1, cert=cert_path, rootca=rootca_path, detail=str(e))
@@ -1313,7 +1321,7 @@ def _resolve_request_dir(args, signed_zip_path: str, identity: dict):
     for candidate in candidates:
         if _has_request_material(candidate, identity["name"]):
             return candidate
-    return candidates[0] if os.path.basename(signed_dir) == identity["name"] else candidates[1]
+    return None
 
 
 def _read_local_request_metadata(request_dir: str) -> dict:
@@ -1456,9 +1464,9 @@ def _handle_signed_zip_package(args, scheme, host, port):
         try:
             _write_file_nofollow(temp_cert, file_contents["cert"])
             _write_file_nofollow(temp_rootca, file_contents["rootCA.pem"])
-            cert = load_crt(temp_cert)
+            cert = _load_crt_nofollow(temp_cert)
             # Used below to ensure signed metadata project matches the root CA subject.
-            rootca = load_crt(temp_rootca)
+            rootca = _load_crt_nofollow(temp_rootca)
         except Exception as e:
             output_error_message(
                 "INVALID_SIGNED_ZIP",
@@ -1533,6 +1541,14 @@ def _handle_signed_zip_package(args, scheme, host, port):
             )
 
         resolved_request_dir = _resolve_request_dir(args, args.input, identity)
+        if not resolved_request_dir:
+            output_error_message(
+                "REQUEST_DIR_NOT_FOUND",
+                "Local request directory was not found.",
+                "Use --request-dir to point to the original request folder created by 'nvflare cert request'.",
+                None,
+                exit_code=1,
+            )
         key_path = os.path.join(resolved_request_dir, f"{identity['name']}.key")
         if not os.path.isfile(key_path):
             output_error(

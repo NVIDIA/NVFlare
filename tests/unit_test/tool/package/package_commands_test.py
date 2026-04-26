@@ -1576,7 +1576,7 @@ class TestCertExpired:
     """Expired certificate must be rejected with exit code 1."""
 
     def test_expired_cert_exits_1(self, cert_env, tmp_path):
-        """Patch load_crt to return a cert whose expiry is in the past."""
+        """Patch package cert loading to return a cert whose expiry is in the past."""
         work = tmp_path / "work"
         work.mkdir()
         ca_key = cert_env["ca_key"]
@@ -1589,9 +1589,9 @@ class TestCertExpired:
 
         past = datetime.datetime(2000, 1, 1, tzinfo=datetime.timezone.utc)
 
-        import nvflare.lighter.utils as lighter_utils
+        import nvflare.tool.package.package_commands as package_commands
 
-        real_load_crt = lighter_utils.load_crt
+        real_load_crt = package_commands._load_crt_nofollow
 
         def patched_load_crt(path):
             cert = real_load_crt(path)
@@ -1602,7 +1602,9 @@ class TestCertExpired:
                 return mock_cert
             return cert
 
-        with unittest.mock.patch("nvflare.tool.package.package_commands.load_crt", side_effect=patched_load_crt):
+        with unittest.mock.patch(
+            "nvflare.tool.package.package_commands._load_crt_nofollow", side_effect=patched_load_crt
+        ):
             args = _make_args(
                 kit_type="client",
                 name="hospital-1",
@@ -3344,6 +3346,23 @@ class TestSignedZipPackageMode:
         assert os.path.isfile(os.path.join(kit_dir, "startup", "client.key"))
         assert request_dir == tmp_path / "site-3"
 
+    def test_signed_zip_without_discoverable_request_dir_returns_targeted_error(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, _request_dir, _ = _make_signed_zip(tmp_path)
+        signed_container = tmp_path / "elsewhere" / "signed"
+        signed_container.mkdir(parents=True)
+        remote_signed_zip = signed_container / signed_zip.name
+        shutil.move(str(signed_zip), str(remote_signed_zip))
+        args = _signed_zip_args(remote_signed_zip, tmp_path)
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "REQUEST_DIR_NOT_FOUND" in captured.err
+        assert "--request-dir" in captured.err
+
     @pytest.mark.parametrize(
         "zip_kwargs",
         [
@@ -3502,6 +3521,29 @@ class TestSignedZipPackageMode:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "KEY_CERT_MISMATCH" in captured.err
+        assert existing_site_yaml.read_text() == "existing local request site.yaml"
+        for name in ("signed.json", "site-3.crt", "rootCA.pem"):
+            assert not (request_dir / name).exists()
+
+    @pytest.mark.skipif(
+        not hasattr(os, "symlink") or not hasattr(os, "O_NOFOLLOW"), reason="nofollow symlink support required"
+    )
+    def test_signed_zip_rejects_symlinked_local_private_key(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, key_path = _make_signed_zip(tmp_path)
+        real_key_path = request_dir / "real-site-3.key"
+        os.rename(key_path, real_key_path)
+        os.symlink(str(real_key_path), key_path)
+        existing_site_yaml = request_dir / "site.yaml"
+        existing_site_yaml.write_text("existing local request site.yaml")
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "KEY_INVALID" in captured.err
         assert existing_site_yaml.read_text() == "existing local request site.yaml"
         for name in ("signed.json", "site-3.crt", "rootCA.pem"):
             assert not (request_dir / name).exists()

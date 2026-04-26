@@ -467,7 +467,13 @@ def _write_json_file(path: str, data: dict) -> None:
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     fd = os.open(path, flags, 0o600)
-    with os.fdopen(fd, "w") as f:
+    try:
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
+    except Exception:
+        os.close(fd)
+        raise
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
 
@@ -573,6 +579,21 @@ def _safe_zip_names(zf: zipfile.ZipFile) -> list:
         seen.add(name)
         names.append(name)
     return names
+
+
+def _read_zip_member_limited(zf: zipfile.ZipFile, member: str) -> bytes:
+    with zf.open(member) as member_file:
+        content = member_file.read(_MAX_ZIP_MEMBER_SIZE + 1)
+    if len(content) > _MAX_ZIP_MEMBER_SIZE:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"zip member exceeds size limit: {member}",
+        )
+        raise ValueError(f"zip member exceeds size limit: {member}")
+    return content
 
 
 def _read_zip_source_nofollow(src_path: str) -> bytes:
@@ -724,6 +745,8 @@ def _load_single_site_yaml(path: str) -> dict:
 
     if not os.path.isfile(path):
         output_error("PROJECT_FILE_NOT_FOUND", path=path)
+        return None
+    data = None
     try:
         data = yaml.safe_load(_read_text_nofollow(path))
     except Exception as e:
@@ -734,6 +757,7 @@ def _load_single_site_yaml(path: str) -> dict:
             exit_code=4,
             detail=f"failed to parse site yaml {path}: {e}",
         )
+        return None
     if not isinstance(data, dict):
         output_error_message(
             "INVALID_ARGS",
@@ -742,6 +766,7 @@ def _load_single_site_yaml(path: str) -> dict:
             exit_code=4,
             detail=f"site yaml must be a mapping: {path}",
         )
+        return None
     name = data.get("name")
     org = data.get("org")
     cert_type = data.get("type")
@@ -753,6 +778,7 @@ def _load_single_site_yaml(path: str) -> dict:
             exit_code=4,
             detail="site yaml must contain: name, org, type",
         )
+        return None
     if cert_type not in _VALID_CERT_TYPES:
         output_error_message(
             "INVALID_ARGS",
@@ -761,6 +787,7 @@ def _load_single_site_yaml(path: str) -> dict:
             exit_code=4,
             detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
         )
+        return None
     return {"name": name, "org": org, "cert_type": cert_type}
 
 
@@ -1492,6 +1519,7 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
             detail=f"request zip must be a file path: {request_zip_path}",
         )
 
+    request_meta = None
     try:
         with zipfile.ZipFile(request_zip_path, "r") as zf:
             names = _safe_zip_names(zf)
@@ -1503,7 +1531,7 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
                     exit_code=4,
                     detail="request zip must contain request.json and site.yaml",
                 )
-            request_meta = json.loads(zf.read("request.json").decode("utf-8"))
+            request_meta = json.loads(_read_zip_member_limited(zf, "request.json").decode("utf-8"))
             if not isinstance(request_meta, dict):
                 raise ValueError("request.json must be a mapping")
             name = request_meta.get("name")
@@ -1519,7 +1547,7 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
                 )
             for member in expected:
                 target_path = os.path.join(extract_dir, member)
-                _write_file_nofollow(target_path, zf.read(member))
+                _write_file_nofollow(target_path, _read_zip_member_limited(zf, member))
     except zipfile.BadZipFile as e:
         output_error_message(
             "INVALID_ARGS", "Invalid arguments.", _USAGE_HINT, exit_code=4, detail=f"invalid request zip: {e}"

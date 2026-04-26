@@ -40,6 +40,8 @@ from nvflare.tool import cli_output
 from nvflare.tool.cert.cert_commands import (
     _generate_csr,
     _load_and_validate_csr,
+    _load_single_site_yaml,
+    _read_request_zip,
     _validate_safe_cert_name,
     _validate_safe_project_name,
     _write_file_nofollow,
@@ -158,6 +160,16 @@ class TestCertValidationHelpers:
 
         output_error.assert_called_once()
         assert "must match" in output_error.call_args.kwargs["reason"]
+
+    def test_single_site_yaml_returns_after_invalid_type_when_error_is_mocked(self, tmp_path):
+        site_yaml = tmp_path / "site.yaml"
+        site_yaml.write_text("name: site-3\norg: nvidia\ntype: workspace\n")
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            result = _load_single_site_yaml(str(site_yaml))
+
+        assert result is None
+        output_error.assert_called_once()
+        assert "invalid cert type" in output_error.call_args.kwargs["detail"]
 
 
 class TestCertInit:
@@ -2108,6 +2120,29 @@ class TestDistributedCertRequestApprove:
         captured = capsys.readouterr()
         assert "failed to read request zip" in captured.err
         assert "blocked" in captured.err
+
+    @pytest.mark.parametrize("large_member", ["request.json", "site-3.csr"])
+    def test_read_request_zip_rejects_member_exceeding_read_limit(self, tmp_path, capsys, monkeypatch, large_member):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        request_zip = tmp_path / "site-3.request.zip"
+        request_json = json.dumps({"name": "site-3"})
+        with zipfile.ZipFile(request_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("request.json", request_json if large_member != "request.json" else "x" * 513)
+            zf.writestr("site.yaml", "name: site-3\norg: nvidia\ntype: client\n")
+            zf.writestr("site-3.csr", b"x" * (513 if large_member == "site-3.csr" else 8))
+        monkeypatch.setattr("nvflare.tool.cert.cert_commands._MAX_ZIP_MEMBER_SIZE", 512)
+        monkeypatch.setattr(
+            "nvflare.tool.cert.cert_commands._safe_zip_names",
+            lambda _zf: ["request.json", "site.yaml", "site-3.csr"],
+        )
+        extract_dir = tmp_path / "extract"
+        extract_dir.mkdir()
+
+        with pytest.raises(SystemExit) as exc_info:
+            _read_request_zip(str(request_zip), str(extract_dir))
+
+        assert exc_info.value.code == 4
+        assert "zip member exceeds size limit" in capsys.readouterr().err
 
     def test_approve_reuses_validated_csr(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
