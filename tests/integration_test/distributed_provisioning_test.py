@@ -19,7 +19,7 @@ federation and verifies the resulting startup kits are self-consistent and
 structurally equivalent to what `nvflare provision` would produce.
 
 Run with:
-    python3 -m pytest tests/integration_test/test_distributed_provisioning.py -v
+    python3 -m pytest tests/integration_test/distributed_provisioning_test.py -v
 """
 
 import json

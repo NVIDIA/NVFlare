@@ -186,6 +186,7 @@ CLAUDE.local.md
 .codex/
 .cursor/
 .claude/
+tmp/review/
 
 # memory profiler output
 tests/memory_profile/**/*.dat

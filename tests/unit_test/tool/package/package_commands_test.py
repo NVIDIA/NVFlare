@@ -85,7 +85,7 @@ def _make_signed_cert(ca_key, ca_cert, name, tmp_dir, cert_filename, role=None, 
     """Generate a key + CA-signed cert, write them into tmp_dir.
 
     Pass ``role`` to embed it as UNSTRUCTURED_NAME in the cert subject (simulates
-    certs produced by ``nvflare cert sign -t <role>``).
+    certs produced by the internal signing helper with an explicit role).
     """
     key, pub = generate_keys()
     subj = Identity(name, org, role=role)
@@ -621,6 +621,24 @@ def test_package_schema_uses_shared_examples(capsys):
     schema = json.loads(capsys.readouterr().out)
     assert schema["command"] == "nvflare package"
     assert schema["examples"] == _PACKAGE_EXAMPLES
+    input_arg = next(arg for arg in schema["args"] if arg["name"] == "input")
+    assert input_arg["required"] is True
+    assert "nargs" not in input_arg
+
+
+def test_package_help_shows_signed_zip_input_required():
+    import argparse
+
+    from nvflare.tool.package.package_cli import def_package_cli_parser
+
+    root = argparse.ArgumentParser(prog="nvflare")
+    subs = root.add_subparsers()
+    parser = def_package_cli_parser(subs)["package"]
+
+    help_text = parser.format_help()
+
+    assert " input" in help_text
+    assert "[input]" not in help_text
 
 
 # ---------------------------------------------------------------------------
@@ -2800,10 +2818,10 @@ class TestYamlMode:
         assert exc_info.value.code == 4
 
     # ------------------------------------------------------------------
-    # 9. --dir is required in yaml mode
+    # 9. public package mode requires a signed zip
     # ------------------------------------------------------------------
-    def test_dir_required_in_yaml_mode(self, cert_env, tmp_path, capsys):
-        """--project-file without --dir must exit with INVALID_ARGS (exit 4)."""
+    def test_project_file_without_signed_zip_is_missing_input(self, cert_env, tmp_path, capsys):
+        """--project-file without signed zip must not fall into hidden internal yaml mode."""
         project_yaml = tmp_path / "project.yaml"
         _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
 
@@ -2820,7 +2838,7 @@ class TestYamlMode:
         captured = capsys.readouterr()
         combined = captured.out + captured.err
         assert "INVALID_ARGS" in combined
-        assert "material directory is required" in combined
+        assert "Signed zip input is required" in combined
 
     # ------------------------------------------------------------------
     # 10. No dummy server dir in prod when yaml has no server participant

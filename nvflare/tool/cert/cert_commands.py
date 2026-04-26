@@ -1183,7 +1183,10 @@ def _resolve_sign_cert_type(csr: x509.CertificateSigningRequest, cert_type: str,
                 "Invalid arguments.",
                 _USAGE_HINT,
                 exit_code=4,
-                detail="CSR does not contain a proposed role; re-run with -t/--type or generate the CSR with 'cert csr -t'",
+                detail=(
+                    "CSR does not contain a proposed role; provide -t/--type for this internal signing helper "
+                    "or create a public request with 'nvflare cert request user <role> <email>'"
+                ),
             )
             return None
     elif not cert_type:

@@ -1393,13 +1393,13 @@ class TestCertSign:
 
 
 # ---------------------------------------------------------------------------
-# cert csr -t: proposed role embedded in CSR
+# internal CSR helper: proposed role embedded in CSR
 # ---------------------------------------------------------------------------
 
 
 class TestCertCsrWithRole:
     def test_csr_role_embedded_when_type_given(self, tmp_path):
-        """cert csr -t lead embeds 'lead' in CSR UNSTRUCTURED_NAME."""
+        """The internal CSR helper embeds 'lead' in CSR UNSTRUCTURED_NAME."""
         args = _csr_args(name="alice", output_dir=str(tmp_path), cert_type="lead")
         handle_cert_csr(args)
         csr = _load_csr_file(str(tmp_path / "alice.csr"))
@@ -1408,7 +1408,7 @@ class TestCertCsrWithRole:
         assert role_attrs[0].value == "lead"
 
     def test_csr_no_role_when_type_absent(self, tmp_path):
-        """cert csr without -t is rejected."""
+        """The internal CSR helper rejects missing role/type."""
         args = _csr_args(name="h1", output_dir=str(tmp_path))
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_csr(args)
@@ -1427,13 +1427,13 @@ class TestCertCsrWithRole:
 
 
 # ---------------------------------------------------------------------------
-# cert sign: read type from CSR when -t is omitted
+# internal signing helper: read type from CSR when explicit type is omitted
 # ---------------------------------------------------------------------------
 
 
 class TestCertSignReadsTypeFromCsr:
     def test_sign_accepts_type_from_csr_when_flag_is_set(self, tmp_path):
-        """cert sign --accept-csr-role reads role from CSR UNSTRUCTURED_NAME."""
+        """The internal signing helper reads role from CSR UNSTRUCTURED_NAME."""
         ca_dir = _setup_ca(tmp_path)
         # Generate CSR with role embedded
         csr_dir = str(tmp_path / "csr")
@@ -1451,7 +1451,7 @@ class TestCertSignReadsTypeFromCsr:
         assert role_attrs[0].value == "lead"
 
     def test_sign_t_overrides_csr_role(self, tmp_path):
-        """cert sign -t overrides the role proposed in the CSR."""
+        """The internal signing helper can override the role proposed in the CSR."""
         ca_dir = _setup_ca(tmp_path)
         csr_dir = str(tmp_path / "csr")
         os.makedirs(csr_dir, exist_ok=True)
@@ -1468,7 +1468,7 @@ class TestCertSignReadsTypeFromCsr:
         assert role_attrs[0].value == "lead"
 
     def test_sign_without_explicit_decision_fails(self, tmp_path):
-        """cert sign requires either --accept-csr-role or -t."""
+        """The internal signing helper requires an explicit role decision."""
         ca_dir = _setup_ca(tmp_path)
         csr_dir = str(tmp_path / "csr")
         os.makedirs(csr_dir, exist_ok=True)

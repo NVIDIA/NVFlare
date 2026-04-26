@@ -16,7 +16,7 @@ The public distributed provisioning form is:
                           [--expected-rootca-fingerprint EXPECTED_ROOTCA_FINGERPRINT]
                           [--confirm-rootca] [--admin-port ADMIN_PORT]
                           [--force] [--schema]
-                          [input]
+                          input
 
 The ``input`` positional argument is the ``*.signed.zip`` file produced by
 ``nvflare cert approve``.

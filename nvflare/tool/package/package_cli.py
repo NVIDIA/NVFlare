@@ -63,8 +63,6 @@ def def_package_cli_parser(sub_cmd) -> dict:
     )
     p.add_argument(
         "input",
-        nargs="?",
-        default=None,
         help="Approved signed zip returned by 'nvflare cert approve' (for example hospital-1.signed.zip).",
     )
     p.add_argument(
