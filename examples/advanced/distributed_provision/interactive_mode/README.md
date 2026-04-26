@@ -108,9 +108,9 @@ The Project Admin receives the `.request.zip` files and approves them one at a t
 Each approval command creates a `<name>.signed.zip`. Return only this signed zip
 to the requesting site admin.
 
-The script prints the `rootCA.pem` SHA256 fingerprint. Share it with each site
-admin through a **trusted out-of-band channel** (e.g. a secure Slack DM or
-signed email) so they can verify it before packaging.
+The approval command prints `rootca_fingerprint_sha256`. Share this value with
+each site admin through a **trusted out-of-band channel** (e.g. a secure Slack
+DM or signed email) so they can verify it before packaging.
 
 ---
 
@@ -118,8 +118,8 @@ signed email) so they can verify it before packaging.
 
 Each site admin runs `04_site_admin_package.sh` with the signed zip returned by
 the Project Admin and the original local request directory from Step 2. The
-script prints the `rootCA.pem` fingerprint from the signed zip and asks for
-confirmation before building the kit.
+package command prints the `rootCA.pem` fingerprint from the signed zip and asks
+for confirmation before building the kit.
 
 ```bash
 # Server site admin
@@ -151,8 +151,6 @@ builds one participant at a time, repeated package commands can create separate
 ## Notes
 
 - `python3` is required by the helper scripts to read `site.yml`.
-- `openssl` is required by `04_site_admin_package.sh` to display and verify the
-  `rootCA.pem` fingerprint before packaging.
 - `org` is required for every participant and must match `^[A-Za-z0-9_]+$`.
 - The package helper accepts an optional fourth `project_file` argument for
   custom builders or package configuration. The signed zip remains the source of

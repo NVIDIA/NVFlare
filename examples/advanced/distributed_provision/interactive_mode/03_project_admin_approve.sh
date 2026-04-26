@@ -17,10 +17,5 @@ mkdir -m 0700 -p "$(dirname "${SIGNED_ZIP}")"
 
 nvflare cert approve "${REQUEST_ZIP}" -c "${CA_DIR}" --out "${SIGNED_ZIP}"
 
-if command -v openssl >/dev/null 2>&1; then
-  echo >&2
-  echo "Share this rootCA.pem SHA256 fingerprint with the site admin for out-of-band verification:" >&2
-  openssl x509 -in "${CA_DIR}/rootCA.pem" -noout -fingerprint -sha256 >&2
-else
-  echo "WARNING: openssl not found; share the rootCA.pem fingerprint with the site admin manually." >&2
-fi
+echo >&2
+echo "Share the rootca_fingerprint_sha256 value above with the site admin through a trusted out-of-band channel." >&2

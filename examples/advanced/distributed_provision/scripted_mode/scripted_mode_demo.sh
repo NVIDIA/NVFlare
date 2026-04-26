@@ -75,7 +75,6 @@ fi
 
 command -v nvflare >/dev/null 2>&1 || json_error 2 "MISSING_DEPENDENCY" "Missing nvflare"
 command -v jq >/dev/null 2>&1 || json_error 2 "MISSING_DEPENDENCY" "Missing jq"
-command -v openssl >/dev/null 2>&1 || json_error 2 "MISSING_DEPENDENCY" "Missing openssl"
 command -v python3 >/dev/null 2>&1 || json_error 2 "MISSING_DEPENDENCY" "Missing python3"
 
 CA_DIR="${WORK_DIR}/ca"
@@ -89,12 +88,12 @@ mkdir -m 0700 -p "${REQUEST_DIR}" "${SIGNED_DIR}" "${WORKSPACE_DIR}"
 # 1) Root CA
 jq -n -c '{step:"warning", scope:"cert init", message:"cert init --force regenerates the root CA and invalidates previously signed certs."}'
 nvflare cert init --project "${PROJECT_NAME}" -o "${CA_DIR}" --force --format json >"${WORK_DIR}/ca.json"
-ROOTCA_FP="$(openssl x509 -in "${CA_DIR}/rootCA.pem" -noout -fingerprint -sha256 | sed 's/^[Ss][Hh][Aa]256 Fingerprint=//')"
 
 SITE_NAMES=()
 REQUEST_DIRS=()
 REQUEST_ZIPS=()
 SIGNED_ZIPS=()
+ROOTCA_FPS=()
 TMP_REQUEST_JSON=""
 SEEN_SITE_NAMES=" "
 trap 'rm -f "${TMP_REQUEST_JSON:-}"' EXIT
@@ -156,7 +155,12 @@ for i in "${!SITE_NAMES[@]}"; do
   REQUEST_ZIP="${REQUEST_ZIPS[$i]}"
   SIGNED_ZIP="${SIGNED_DIR}/${SITE_NAME}.signed.zip"
   nvflare cert approve "${REQUEST_ZIP}" -c "${CA_DIR}" --out "${SIGNED_ZIP}" --force --format json >"${WORK_DIR}/approve_${SITE_NAME}.json"
+  ROOTCA_FP="$(jq -r '.data.rootca_fingerprint_sha256' <"${WORK_DIR}/approve_${SITE_NAME}.json")"
+  if [[ "${ROOTCA_FP}" == "null" || -z "${ROOTCA_FP}" ]]; then
+    json_error 1 "INVALID_APPROVE_OUTPUT" "cert approve output did not include rootca_fingerprint_sha256."
+  fi
   SIGNED_ZIPS+=("${SIGNED_ZIP}")
+  ROOTCA_FPS+=("${ROOTCA_FP}")
 
 done
 
@@ -169,6 +173,7 @@ for i in "${!SITE_NAMES[@]}"; do
   nvflare package "${SIGNED_ZIP}" \
     -e "${SERVER_ENDPOINT}" \
     --request-dir "${SITE_REQUEST_DIR}" \
+    --expected-rootca-fingerprint "${ROOTCA_FPS[$i]}" \
     -w "${WORKSPACE_DIR}" \
     --force \
     --format json >"${WORK_DIR}/package_${SITE_NAME}.json"
@@ -177,12 +182,11 @@ done
 
 # Summaries
 jq -c '{step:"cert init", data:.data}' <"${WORK_DIR}/ca.json"
-jq -n -c --arg fp "${ROOTCA_FP}" '{step:"verify rootca", fingerprint_sha256:$fp}'
 for i in "${!SITE_NAMES[@]}"; do
   SITE_NAME="${SITE_NAMES[$i]}"
   jq -c --arg site "${SITE_NAME}" '{step:"cert request", site:$site, data:.data}' <"${WORK_DIR}/request_${SITE_NAME}.json"
   jq -c --arg site "${SITE_NAME}" '{step:"cert approve", site:$site, data:.data}' <"${WORK_DIR}/approve_${SITE_NAME}.json"
-  jq -n -c --arg site "${SITE_NAME}" --arg fp "${ROOTCA_FP}" '{step:"verify rootca", site:$site, fingerprint_sha256:$fp}'
+  jq -n -c --arg site "${SITE_NAME}" --arg fp "${ROOTCA_FPS[$i]}" '{step:"verify rootca", site:$site, fingerprint_sha256:$fp}'
   jq -c --arg site "${SITE_NAME}" '{step:"package", site:$site, data:.data}' <"${WORK_DIR}/package_${SITE_NAME}.json"
 
 done

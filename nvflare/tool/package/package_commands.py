@@ -84,22 +84,24 @@ def _reject_invalid_project_name(project_name: str, *, code: str, hint: str) -> 
     )
 
 
-def _validate_safe_project_name(project_name: str, *, code: str = "INVALID_PROJECT_NAME") -> None:
+def _validate_safe_project_name(project_name: str, *, code: str = "INVALID_PROJECT_NAME") -> bool:
     hint = "Project names must match [A-Za-z0-9][A-Za-z0-9._-]* and must not contain path separators."
     if not project_name or not isinstance(project_name, str) or not project_name.strip():
         _reject_invalid_project_name(project_name, code=code, hint=hint)
-        return
+        return False
     if len(project_name) > 64:
         _reject_invalid_project_name(project_name, code=code, hint="Project names must be 64 characters or fewer.")
-        return
+        return False
     if os.sep in project_name or (os.altsep and os.altsep in project_name) or project_name.startswith("."):
         _reject_invalid_project_name(project_name, code=code, hint=hint)
-        return
+        return False
     if not _SAFE_PROJECT_NAME_PATTERN.fullmatch(project_name):
         _reject_invalid_project_name(project_name, code=code, hint=hint)
+        return False
+    return True
 
 
-def _validate_request_id(request_id: str, *, code: str = "INVALID_SIGNED_ZIP") -> None:
+def _validate_request_id(request_id: str, *, code: str = "INVALID_SIGNED_ZIP") -> bool:
     if not isinstance(request_id, str) or not _REQUEST_ID_PATTERN.fullmatch(request_id):
         output_error_message(
             code,
@@ -108,6 +110,8 @@ def _validate_request_id(request_id: str, *, code: str = "INVALID_SIGNED_ZIP") -
             None,
             exit_code=4,
         )
+        return False
+    return True
 
 
 def _validate_org_name(org: str, *, code: str = "INVALID_SIGNED_ZIP") -> bool:
@@ -186,7 +190,8 @@ def _validate_participant_name(name: str, kit_type: str, *, code: str = "INVALID
 
 
 def _project_dir_under_workspace(workspace: str, project_name: str) -> str:
-    _validate_safe_project_name(project_name)
+    if not _validate_safe_project_name(project_name):
+        return os.path.abspath(workspace)
     workspace_abs = os.path.abspath(workspace)
     project_dir = os.path.abspath(os.path.join(workspace_abs, project_name))
     try:
@@ -426,6 +431,7 @@ def _load_project_from_file(path: str) -> tuple:
                 None,
                 exit_code=1,
             )
+            return None, None
         participant = {k: v for k, v in project_dict.items() if k not in {"name", "org", "type", "project_name"}}
         participant.update({"name": project_dict.get("name"), "org": project_dict.get("org")})
         if p_type in _ADMIN_ROLES:
@@ -449,7 +455,9 @@ def _load_project_from_file(path: str) -> tuple:
             None,
             exit_code=1,
         )
-    _validate_safe_project_name(project.name, code="INVALID_PROJECT_FILE")
+        return None, None
+    if not _validate_safe_project_name(project.name, code="INVALID_PROJECT_FILE"):
+        return None, None
 
     if project.get_relays():
         output_error_message(
@@ -459,6 +467,7 @@ def _load_project_from_file(path: str) -> tuple:
             None,
             exit_code=4,
         )
+        return None, None
 
     custom_builders = prepare_builders(project_dict)
     return project, custom_builders
@@ -691,6 +700,8 @@ def _handle_package_yaml_mode(args, scheme, host, port):
     is resolved from --dir/<name>.crt and --dir/<name>.key; rootCA is --dir/rootCA.pem.
     """
     project_from_yaml, custom_builders = _load_project_from_file(args.project_file)
+    if project_from_yaml is None:
+        return 1
 
     # --dir is required in yaml mode (no single key auto-discovery)
     if not getattr(args, "dir", None):
@@ -1113,8 +1124,10 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             exit_code=4,
         )
         return
-    _validate_request_id(signed_meta["request_id"])
-    _validate_safe_project_name(signed_meta["project"], code="INVALID_SIGNED_ZIP")
+    if not _validate_request_id(signed_meta["request_id"]):
+        return
+    if not _validate_safe_project_name(signed_meta["project"], code="INVALID_SIGNED_ZIP"):
+        return
     if not _validate_org_name(signed_meta["org"], code="INVALID_SIGNED_ZIP"):
         return
     cert_type = signed_meta["cert_type"]
@@ -1214,7 +1227,7 @@ def _validate_signed_hashes(signed_meta: dict, file_contents: dict):
             )
 
 
-def _validate_signed_public_key_hash(signed_meta: dict, cert):
+def _validate_signed_public_key_hash(signed_meta: dict, cert) -> bool:
     expected = _expected_hash(signed_meta, "public_key")
     if not expected:
         output_error_message(
@@ -1224,7 +1237,7 @@ def _validate_signed_public_key_hash(signed_meta: dict, cert):
             None,
             exit_code=4,
         )
-        return
+        return False
     public_key_der = cert.public_key().public_bytes(
         serialization.Encoding.DER,
         serialization.PublicFormat.SubjectPublicKeyInfo,
@@ -1238,6 +1251,8 @@ def _validate_signed_public_key_hash(signed_meta: dict, cert):
             None,
             exit_code=4,
         )
+        return False
+    return True
 
 
 def _signed_identity_from_metadata(signed_meta: dict, site_meta: dict, cert):
@@ -1495,27 +1510,28 @@ def _request_metadata_mismatch(detail: str) -> None:
     )
 
 
-def _validate_local_request_metadata(request_meta: dict, signed_meta: dict) -> None:
+def _validate_local_request_metadata(request_meta: dict, signed_meta: dict) -> bool:
     required = ("request_id", "project", "name", "org", "kind", "cert_type", "csr_sha256", "public_key_sha256")
     missing = [field for field in required if not request_meta.get(field)]
     if missing:
         _request_metadata_mismatch(f"request.json missing required field(s): {', '.join(missing)}")
-        return
+        return False
 
     for field in ("request_id", "project", "name", "org", "kind", "cert_type", "cert_role"):
         if (request_meta.get(field) or None) != (signed_meta.get(field) or None):
             _request_metadata_mismatch(f"field {field!r} differs")
-            return
+            return False
 
     signed_public_key_hash = _expected_hash(signed_meta, "public_key")
     if _normalize_hash(request_meta["public_key_sha256"]) != signed_public_key_hash:
         _request_metadata_mismatch("public_key_sha256 differs")
-        return
+        return False
 
     signed_csr_hash = _expected_hash(signed_meta, "csr")
     if signed_csr_hash and _normalize_hash(request_meta["csr_sha256"]) != signed_csr_hash:
         _request_metadata_mismatch("csr_sha256 differs")
-        return
+        return False
+    return True
 
 
 def _write_materialized_signed_files(
@@ -1545,6 +1561,8 @@ def _selected_project_context(args, identity: dict, kit_type: str):
         return None, None, identity.get("project_name") or getattr(args, "project_name", None) or "project"
 
     project_from_yaml, custom_builders = _load_project_from_file(args.project_file)
+    if project_from_yaml is None:
+        return None, None, None
     signed_project = identity.get("project_name")
     if signed_project and project_from_yaml.name and signed_project != project_from_yaml.name:
         output_error_message(
@@ -1554,6 +1572,7 @@ def _selected_project_context(args, identity: dict, kit_type: str):
             None,
             exit_code=4,
         )
+        return None, None, None
 
     participant = _find_project_participant(project_from_yaml, identity["name"])
     if not participant:
@@ -1572,6 +1591,7 @@ def _selected_project_context(args, identity: dict, kit_type: str):
             None,
             exit_code=4,
         )
+        return None, None, None
 
     participant_kit_type = _participant_kit_type(participant)
     if participant_kit_type != kit_type:
@@ -1582,6 +1602,7 @@ def _selected_project_context(args, identity: dict, kit_type: str):
             None,
             exit_code=4,
         )
+        return None, None, None
 
     return participant, custom_builders, signed_project or getattr(args, "project_name", None) or project_from_yaml.name
 
@@ -1608,7 +1629,8 @@ def _handle_signed_zip_package(args, scheme, host, port):
                 exit_code=4,
             )
             return 1
-        _validate_signed_public_key_hash(signed_meta, cert)
+        if not _validate_signed_public_key_hash(signed_meta, cert):
+            return 1
 
         identity = _signed_identity_from_metadata(signed_meta, site_meta, cert)
         if not identity.get("name"):
@@ -1630,8 +1652,10 @@ def _handle_signed_zip_package(args, scheme, host, port):
             )
             return 1
 
-        _validate_request_id(identity.get("request_id"))
-        _validate_safe_project_name(identity.get("project_name"), code="INVALID_SIGNED_ZIP")
+        if not _validate_request_id(identity.get("request_id")):
+            return 1
+        if not _validate_safe_project_name(identity.get("project_name"), code="INVALID_SIGNED_ZIP"):
+            return 1
         if identity.get("org"):
             if not _validate_org_name(identity["org"], code="INVALID_SIGNED_ZIP"):
                 return 1
@@ -1639,7 +1663,8 @@ def _handle_signed_zip_package(args, scheme, host, port):
         cert_kit_type = _read_cert_type_from_cert(cert)
         if not cert_kit_type or cert_kit_type not in _VALID_CERT_TYPES:
             output_error("CERT_TYPE_UNKNOWN", exit_code=1, cert=cert_name)
-        _validate_participant_name(identity["name"], cert_kit_type, code="INVALID_SIGNED_ZIP")
+        if not _validate_participant_name(identity["name"], cert_kit_type, code="INVALID_SIGNED_ZIP"):
+            return 1
         if identity.get("cert_type") and identity["cert_type"] != cert_kit_type:
             output_error_message(
                 "SIGNED_ZIP_IDENTITY_CONFLICT",
@@ -1648,6 +1673,7 @@ def _handle_signed_zip_package(args, scheme, host, port):
                 None,
                 exit_code=4,
             )
+            return 1
         cert_cn = _read_cert_common_name(cert)
         if cert_cn and cert_cn != identity["name"]:
             output_error_message(
@@ -1657,6 +1683,7 @@ def _handle_signed_zip_package(args, scheme, host, port):
                 None,
                 exit_code=4,
             )
+            return 1
         cert_org = _read_cert_org(cert)
         if identity.get("org") and cert_org != identity["org"]:
             output_error_message(
@@ -1666,6 +1693,7 @@ def _handle_signed_zip_package(args, scheme, host, port):
                 None,
                 exit_code=4,
             )
+            return 1
         root_project = _read_cert_common_name(rootca)
         if identity.get("project_name") and root_project != identity["project_name"]:
             output_error_message(
@@ -1675,6 +1703,7 @@ def _handle_signed_zip_package(args, scheme, host, port):
                 None,
                 exit_code=4,
             )
+            return 1
 
         rootca_fingerprint_sha256 = cert_fingerprint_sha256(rootca)
         if not _verify_rootca_fingerprint_options(args, rootca_fingerprint_sha256):
@@ -1689,6 +1718,7 @@ def _handle_signed_zip_package(args, scheme, host, port):
                 None,
                 exit_code=1,
             )
+            return 1
         key_path = os.path.join(resolved_request_dir, f"{identity['name']}.key")
         if not os.path.isfile(key_path):
             output_error(
@@ -1700,7 +1730,8 @@ def _handle_signed_zip_package(args, scheme, host, port):
         request_meta = _read_local_request_metadata(resolved_request_dir)
         if request_meta is None:
             return 1
-        _validate_local_request_metadata(request_meta, signed_meta)
+        if not _validate_local_request_metadata(request_meta, signed_meta):
+            return 1
 
         cert = _validate_cert_material(temp_cert, key_path, temp_rootca, validate_key_match=True)
         if cert is None:
@@ -1716,6 +1747,8 @@ def _handle_signed_zip_package(args, scheme, host, port):
             )
         identity["org"] = identity.get("org") or _read_cert_org(cert) or _DUMMY_ORG
         participant, custom_builders, project_name = _selected_project_context(args, identity, cert_kit_type)
+        if participant is None and custom_builders is None and project_name is None:
+            return 1
         participant_props = dict(participant.props) if participant else {}
 
         _write_materialized_signed_files(resolved_request_dir, identity, signed_meta, site_meta, file_contents)

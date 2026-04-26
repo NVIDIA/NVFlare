@@ -3464,6 +3464,8 @@ class TestSignedZipPackagePublicSurface:
         help_text = parser.format_help()
         assert ".signed.zip" in help_text
         assert "nvflare package" in help_text
+        assert "--confirm-rootca" in help_text
+        assert "--expected-rootca-fingerprint" in help_text
         assert "Custom builders are honored" in help_text
         assert "are ignored" not in help_text
         assert "--cert ./signed/hospital-1/hospital-1.crt" not in help_text
@@ -3474,6 +3476,8 @@ class TestSignedZipPackagePublicSurface:
         assert exc_info.value.code == 0
         schema_text = capsys.readouterr().out
         assert ".signed.zip" in schema_text
+        assert "--confirm-rootca" in schema_text
+        assert "--expected-rootca-fingerprint" in schema_text
         assert "--cert" not in schema_text
         assert "--rootca" not in schema_text
 
@@ -3970,9 +3974,10 @@ class TestSignedZipPackageMode:
         }
 
         with unittest.mock.patch("nvflare.tool.package.package_commands._request_metadata_mismatch") as mismatch:
-            _validate_local_request_metadata(request_meta, signed_meta)
+            valid = _validate_local_request_metadata(request_meta, signed_meta)
 
         mismatch.assert_called_once()
+        assert valid is False
         assert "public_key_sha256" in mismatch.call_args.args[0]
 
     def test_signed_public_key_hash_helper_requires_hash(self, tmp_path, capsys, monkeypatch):
@@ -3997,9 +4002,10 @@ class TestSignedZipPackageMode:
         cert = load_crt(cert_path)
 
         with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as output_error:
-            _validate_signed_public_key_hash({}, cert)
+            valid = _validate_signed_public_key_hash({}, cert)
 
         output_error.assert_called_once()
+        assert valid is False
         assert "Missing required public key hash" in output_error.call_args.args[1]
 
     @pytest.mark.parametrize(

@@ -11,6 +11,8 @@ Single scripted flow using **single-site** `site.yml` files and the public
 Notes:
 - Uses `--format json` for all CLI calls; JSON goes to stdout.
 - Human-readable progress output (if any) goes to stderr.
+- Reads `rootca_fingerprint_sha256` from `cert approve` output and passes it to
+  `package --expected-rootca-fingerprint`.
 - `org` must match `^[A-Za-z0-9_]+$` (no hyphens or spaces).
 - `type: client` maps to `cert request site`; `type: server` maps to
   `cert request server`; admin types map to `cert request user`.

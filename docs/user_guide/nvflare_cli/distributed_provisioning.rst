@@ -25,7 +25,10 @@ At a high level:
 1. The requester creates a local request folder and request zip.
 2. The requester sends only the request zip to the Project Admin.
 3. The Project Admin approves the request zip and returns a signed zip.
-4. The requester packages the signed zip with their local private key.
+4. The Project Admin shares the ``rootca_fingerprint_sha256`` value through a
+   trusted out-of-band channel.
+5. The requester packages the signed zip with their local private key and
+   verifies the root CA fingerprint.
 
 The resulting startup kit is used the same way as a centrally provisioned
 startup kit.
@@ -69,13 +72,15 @@ Project Admin approves the request:
 
    nvflare cert approve site-3.request.zip --ca-dir ./ca
 
-This creates ``site-3.signed.zip``. Return that signed zip to the Site Admin.
+This creates ``site-3.signed.zip`` and prints ``rootca_fingerprint_sha256``.
+Return the signed zip to the Site Admin and share the fingerprint through a
+trusted out-of-band channel.
 
 Site Admin packages the startup kit:
 
 .. code-block:: shell
 
-   nvflare package site-3.signed.zip -e grpc://server1:8002
+   nvflare package site-3.signed.zip -e grpc://server1:8002 --confirm-rootca
 
 The output goes under:
 
@@ -116,7 +121,7 @@ Requester packages the returned signed zip:
 
 .. code-block:: shell
 
-   nvflare package org_admin@nvidia.com.signed.zip -e grpc://server1:8002
+   nvflare package org_admin@nvidia.com.signed.zip -e grpc://server1:8002 --confirm-rootca
 
 The generated user startup kit contains ``startup/fl_admin.sh``.
 
@@ -131,7 +136,7 @@ For a study lead certificate, use:
 
    nvflare cert request user lead lead@nvidia.com --org nvidia --project example_project
    nvflare cert approve lead@nvidia.com.request.zip --ca-dir ./ca
-   nvflare package lead@nvidia.com.signed.zip -e grpc://server1:8002
+   nvflare package lead@nvidia.com.signed.zip -e grpc://server1:8002 --confirm-rootca
 
 .. note::
 
@@ -149,7 +154,7 @@ Server identity is also requested through the same workflow:
 
    nvflare cert request server server1 --org nvidia --project example_project
    nvflare cert approve server1.request.zip --ca-dir ./ca
-   nvflare package server1.signed.zip -e grpc://server1:8002
+   nvflare package server1.signed.zip -e grpc://server1:8002 --confirm-rootca
 
 The server certificate common name should match the hostname used in the
 endpoint. For ``grpc://server1:8002``, the server identity should be
@@ -191,11 +196,34 @@ Requester machine:
 
 .. code-block:: shell
 
-   nvflare package site-3.signed.zip -e grpc://server1:8002 --request-dir ./site-3
+   nvflare package site-3.signed.zip -e grpc://server1:8002 --request-dir ./site-3 --confirm-rootca
 
 ``--request-dir`` points to the local request folder that contains
 ``site-3.key`` and ``request.json``. If the signed zip is next to the request
 folder, the command can usually find the request folder automatically.
+
+*****************************
+Root CA Fingerprint Check
+*****************************
+
+``nvflare cert approve`` prints ``rootca_fingerprint_sha256``. This is the
+SHA256 certificate fingerprint for the project ``rootCA.pem``. The Project
+Admin should send this value to the requester through a trusted out-of-band
+channel.
+
+``nvflare package`` always prints the fingerprint computed from the signed zip.
+Use one of these options to make the package command verify it:
+
+.. code-block:: shell
+
+   nvflare package site-3.signed.zip -e grpc://server1:8002 --confirm-rootca
+   nvflare package site-3.signed.zip \
+       -e grpc://server1:8002 \
+       --expected-rootca-fingerprint SHA256:AA:BB:...
+
+Without either option, packaging still validates the signed zip, metadata,
+certificate chain, and local private-key match, but it does not prompt and does
+not perform an out-of-band fingerprint comparison.
 
 *********************
 Local Automation Flow
@@ -209,7 +237,7 @@ different command shape:
    nvflare cert init --project example_project --org nvidia -o ./ca
    nvflare cert request site site-3 --org nvidia --project example_project
    nvflare cert approve site-3/site-3.request.zip --ca-dir ./ca
-   nvflare package site-3/site-3.signed.zip -e grpc://server1:8002
+   nvflare package site-3/site-3.signed.zip -e grpc://server1:8002 --confirm-rootca
 
 This is the same workflow as remote approval. The only difference is that the
 zip files are not copied between machines.
@@ -229,7 +257,8 @@ project-level packaging configuration:
    nvflare package site-3.signed.zip \
        -e grpc://server1:8002 \
        --project-file ./project.yml \
-       --request-dir ./site-3
+       --request-dir ./site-3 \
+       --confirm-rootca
 
 In signed-zip mode, the signed zip is the source of truth for participant
 identity. The project file supplies custom builders and non-identity package
@@ -387,7 +416,7 @@ Requester:
 .. code-block:: shell
 
    nvflare cert request site site-3 --org nvidia --project example_project
-   nvflare package site-3.signed.zip -e grpc://server1:8002
+   nvflare package site-3.signed.zip -e grpc://server1:8002 --confirm-rootca
 
 With explicit locations:
 
@@ -398,7 +427,8 @@ With explicit locations:
    nvflare package ./signed/site-3.signed.zip \
        -e grpc://server1:8002 \
        --request-dir ./requests/site-3 \
-       -w ./workspace
+       -w ./workspace \
+       --confirm-rootca
 
 ****************
 Notes
@@ -409,6 +439,8 @@ Notes
 - The server endpoint belongs to ``nvflare package``, not ``cert request``.
   Endpoint changes do not require a new certificate. Re-run ``nvflare package``
   with a new ``-e`` value.
+- Use ``--confirm-rootca`` for interactive root CA fingerprint confirmation or
+  ``--expected-rootca-fingerprint`` for non-interactive automation.
 - Startup kits generated from signed zips are compatible with the normal
   NVFlare runtime.
 - Standard distributed provisioning does not generate ``signature.json``.

@@ -4,8 +4,13 @@ These examples use the public distributed provisioning CLI workflow:
 
 1. `nvflare cert init` creates the project CA.
 2. `nvflare cert request` creates a local private key, CSR, metadata, and request zip.
-3. `nvflare cert approve` signs the request zip and returns a signed zip.
+3. `nvflare cert approve` signs the request zip, returns a signed zip, and prints `rootca_fingerprint_sha256`.
 4. `nvflare package` combines the signed zip with the local request folder to build a startup kit.
+
+Interactive examples use `package --confirm-rootca` so the site admin can
+compare the displayed fingerprint with the Project Admin's out-of-band value.
+Scripted examples pass the approval output to
+`package --expected-rootca-fingerprint`.
 
 Two example modes are provided:
 

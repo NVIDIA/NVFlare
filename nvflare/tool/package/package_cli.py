@@ -21,12 +21,16 @@ _package_parser: Optional[argparse.ArgumentParser] = None
 
 _PACKAGE_EXAMPLES = [
     "nvflare package hospital-1.signed.zip -e grpc://fl-server:8002",
+    "nvflare package hospital-1.signed.zip -e grpc://fl-server:8002 --confirm-rootca",
     "nvflare package hospital-1.signed.zip -e grpc://fl-server:8002 --project-file ./project.yaml --request-dir ./hospital-1",
 ]
 
 _PACKAGE_HELP_EXAMPLES = """Examples:
   Build one kit from an approved signed zip:
     nvflare package hospital-1.signed.zip -e grpc://fl-server:8002
+
+  Build after interactively confirming the Project Admin's root CA fingerprint:
+    nvflare package hospital-1.signed.zip -e grpc://fl-server:8002 --confirm-rootca
 
   Build one signed-zip kit with project builders:
     nvflare package hospital-1.signed.zip -e grpc://fl-server:8002 \\
@@ -128,6 +132,23 @@ def def_package_cli_parser(sub_cmd) -> dict:
         default=None,
         dest="request_dir",
         help="Local request directory containing the private key for signed zip mode.",
+    )
+    p.add_argument(
+        "--expected-rootca-fingerprint",
+        required=False,
+        default=None,
+        dest="expected_rootca_fingerprint",
+        help=(
+            "Expected SHA256 fingerprint for rootCA.pem in signed zip. "
+            "Use this for non-interactive out-of-band root CA verification."
+        ),
+    )
+    p.add_argument(
+        "--confirm-rootca",
+        action="store_true",
+        default=False,
+        dest="confirm_rootca",
+        help="Prompt to confirm the signed zip root CA fingerprint was verified out-of-band before packaging.",
     )
     p.add_argument(
         "--admin-port",

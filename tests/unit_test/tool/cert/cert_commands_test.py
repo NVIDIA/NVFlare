@@ -49,6 +49,8 @@ from nvflare.tool.cert.cert_commands import (
     _validate_request_kind_cert_type,
     _validate_request_metadata,
     _validate_request_project_matches_ca,
+    _validate_request_id,
+    _validate_identity_name,
     _validate_safe_cert_name,
     _validate_safe_project_name,
     _write_file_nofollow,
@@ -206,31 +208,83 @@ def test_write_private_key_removes_created_file_when_write_fails(tmp_path):
 class TestCertValidationHelpers:
     def test_safe_cert_name_returns_after_length_error_when_error_is_mocked(self):
         with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
-            _validate_safe_cert_name("a" * 65, field_label="Name")
+            valid = _validate_safe_cert_name("a" * 65, field_label="Name")
 
         output_error.assert_called_once()
+        assert valid is False
         assert "64 characters" in output_error.call_args.kwargs["reason"]
 
     def test_safe_project_name_returns_after_separator_error_when_error_is_mocked(self):
         with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
-            _validate_safe_project_name("../escape")
+            valid = _validate_safe_project_name("../escape")
 
         output_error.assert_called_once()
+        assert valid is False
         assert "path separators" in output_error.call_args.kwargs["reason"]
 
     def test_safe_cert_name_returns_after_pattern_error_when_error_is_mocked(self):
         with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
-            _validate_safe_cert_name("bad:name", field_label="Name")
+            valid = _validate_safe_cert_name("bad:name", field_label="Name")
 
         output_error.assert_called_once()
+        assert valid is False
         assert "must match" in output_error.call_args.kwargs["reason"]
 
     def test_safe_project_name_returns_after_pattern_error_when_error_is_mocked(self):
         with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
-            _validate_safe_project_name("bad:name")
+            valid = _validate_safe_project_name("bad:name")
 
         output_error.assert_called_once()
+        assert valid is False
         assert "must match" in output_error.call_args.kwargs["reason"]
+
+    def test_request_id_returns_false_after_error_when_error_is_mocked(self):
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            valid = _validate_request_id("bad-request-id")
+
+        output_error.assert_called_once()
+        assert valid is False
+
+    def test_identity_name_returns_false_after_error_when_error_is_mocked(self):
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            valid = _validate_identity_name("not-an-email", "lead")
+
+        output_error.assert_called_once()
+        assert valid is False
+
+    def test_safe_cert_name_returns_false_after_error_when_error_is_mocked(self):
+        with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
+            valid = _validate_safe_cert_name("../site-3", field_label="Name")
+
+        output_error.assert_called_once()
+        assert valid is False
+
+    def test_request_zip_not_file_returns_none_when_error_is_mocked(self, tmp_path):
+        request_zip = tmp_path / "site-3.request.zip"
+        request_zip.mkdir()
+        extract_dir = tmp_path / "extract"
+        extract_dir.mkdir()
+
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            request_meta = _read_request_zip(str(request_zip), str(extract_dir))
+
+        output_error.assert_called_once()
+        assert request_meta is None
+
+    def test_request_zip_invalid_name_returns_none_when_error_is_mocked(self, tmp_path):
+        request_zip = tmp_path / "site-3.request.zip"
+        with zipfile.ZipFile(request_zip, "w") as zf:
+            zf.writestr("request.json", json.dumps({"name": "bad:name"}))
+            zf.writestr("site.yaml", "name: site-3\norg: nvidia\ntype: client\n")
+            zf.writestr("bad:name.csr", "csr")
+        extract_dir = tmp_path / "extract"
+        extract_dir.mkdir()
+
+        with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
+            request_meta = _read_request_zip(str(request_zip), str(extract_dir))
+
+        output_error.assert_called_once()
+        assert request_meta is None
 
     def test_single_site_yaml_returns_after_invalid_type_when_error_is_mocked(self, tmp_path):
         site_yaml = tmp_path / "site.yaml"
@@ -381,6 +435,17 @@ class TestCertValidationHelpers:
         assert ca_meta is None
         output_error.assert_called_once()
         assert output_error.call_args.args[0] == "CA_LOAD_FAILED"
+
+    def test_request_project_ca_mismatch_returns_none_when_error_is_mocked(self, tmp_path):
+        ca_dir = tmp_path / "ca"
+        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            ca_meta = _validate_request_project_matches_ca(str(ca_dir), "other_project")
+
+        assert ca_meta is None
+        output_error.assert_called_once()
+        assert "does not match CA project" in output_error.call_args.args[1]
 
 
 class TestCertInit:

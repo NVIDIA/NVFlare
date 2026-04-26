@@ -30,5 +30,7 @@ Example (server + two clients):
 ```
 
 Security note:
-- Before packaging or startup, verify the `rootCA.pem` fingerprint reported by
-  the script with the Project Admin through a trusted out-of-band channel.
+- The script passes the `rootca_fingerprint_sha256` value reported by
+  `cert approve` to `package --expected-rootca-fingerprint` for each signed zip.
+  In remote deployments, exchange that value with the requester through a
+  trusted out-of-band channel.

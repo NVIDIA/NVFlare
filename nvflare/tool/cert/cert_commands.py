@@ -85,15 +85,15 @@ class _UnsafeZipSourceError(Exception):
     pass
 
 
-def _validate_safe_cert_name(name: str, *, field_label: str) -> None:
+def _validate_safe_cert_name(name: str, *, field_label: str) -> bool:
     if not isinstance(name, str) or not name.strip():
         output_error(
             "INVALID_NAME", exit_code=4, name=name, reason=f"{field_label} must not be empty or whitespace only."
         )
-        return
+        return False
     if len(name) > 64:
         output_error("INVALID_NAME", exit_code=4, name=name, reason=f"{field_label} must be 64 characters or fewer.")
-        return
+        return False
     if os.sep in name or (os.altsep and os.altsep in name) or name.startswith("."):
         output_error(
             "INVALID_NAME",
@@ -101,7 +101,7 @@ def _validate_safe_cert_name(name: str, *, field_label: str) -> None:
             name=name,
             reason=f"{field_label} must not contain path separators or start with '.'.",
         )
-        return
+        return False
     if not _SAFE_CERT_NAME_PATTERN.fullmatch(name):
         output_error(
             "INVALID_NAME",
@@ -109,10 +109,11 @@ def _validate_safe_cert_name(name: str, *, field_label: str) -> None:
             name=name,
             reason=f"{field_label} must match [A-Za-z0-9][A-Za-z0-9._@-]*.",
         )
-        return
+        return False
+    return True
 
 
-def _validate_safe_project_name(project: str, *, field_label: str = "Project") -> None:
+def _validate_safe_project_name(project: str, *, field_label: str = "Project") -> bool:
     if not isinstance(project, str) or not project.strip():
         output_error(
             "INVALID_PROJECT_NAME",
@@ -120,7 +121,7 @@ def _validate_safe_project_name(project: str, *, field_label: str = "Project") -
             name=project,
             reason=f"{field_label} must not be empty or whitespace only.",
         )
-        return
+        return False
     if len(project) > 64:
         output_error(
             "INVALID_PROJECT_NAME",
@@ -128,7 +129,7 @@ def _validate_safe_project_name(project: str, *, field_label: str = "Project") -
             name=project,
             reason=f"{field_label} must be 64 characters or fewer.",
         )
-        return
+        return False
     if os.sep in project or (os.altsep and os.altsep in project) or project.startswith("."):
         output_error(
             "INVALID_PROJECT_NAME",
@@ -136,7 +137,7 @@ def _validate_safe_project_name(project: str, *, field_label: str = "Project") -
             name=project,
             reason=f"{field_label} must not contain path separators or start with '.'.",
         )
-        return
+        return False
     if not _SAFE_PROJECT_NAME_PATTERN.fullmatch(project):
         output_error(
             "INVALID_PROJECT_NAME",
@@ -144,7 +145,8 @@ def _validate_safe_project_name(project: str, *, field_label: str = "Project") -
             name=project,
             reason=f"{field_label} must match [A-Za-z0-9][A-Za-z0-9._-]*.",
         )
-        return
+        return False
+    return True
 
 
 def _validate_org_name(org: str) -> bool:
@@ -214,7 +216,7 @@ def _validate_request_kind_cert_type(kind: str, cert_type: str, cert_role: str =
     return True
 
 
-def _validate_identity_name(name: str, cert_type: str) -> None:
+def _validate_identity_name(name: str, cert_type: str) -> bool:
     if cert_type == "client":
         entity_type = "client"
     elif cert_type == "server":
@@ -229,7 +231,7 @@ def _validate_identity_name(name: str, cert_type: str) -> None:
             exit_code=4,
             detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
         )
-        return
+        return False
 
     if not isinstance(name, str):
         output_error_message(
@@ -239,7 +241,7 @@ def _validate_identity_name(name: str, cert_type: str) -> None:
             exit_code=4,
             detail=f"name must be a string for entity_type={entity_type}",
         )
-        return
+        return False
 
     invalid, reason = name_check(name, entity_type)
     if invalid:
@@ -250,9 +252,11 @@ def _validate_identity_name(name: str, cert_type: str) -> None:
             exit_code=4,
             detail=reason,
         )
+        return False
+    return True
 
 
-def _validate_request_id(request_id: str) -> None:
+def _validate_request_id(request_id: str) -> bool:
     if not isinstance(request_id, str) or not _REQUEST_ID_PATTERN.fullmatch(request_id):
         output_error_message(
             "INVALID_ARGS",
@@ -261,6 +265,8 @@ def _validate_request_id(request_id: str) -> None:
             exit_code=4,
             detail="request_id must be a UUID hex string.",
         )
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +312,8 @@ def handle_cert_init(args):
         output_usage_error(
             _cert_cli._cert_init_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
         )
-    _validate_safe_project_name(args.project)
+    if not _validate_safe_project_name(args.project):
+        return 1
 
     # 3. Resolve force
     force = args.force
@@ -834,7 +841,8 @@ def _load_single_site_yaml(path: str) -> dict:
 def generate_csr_files(name: str, org: str, cert_type: str, output_dir: str, force: bool = False) -> dict:
     """Generate a participant private key and CSR using the existing cert logic."""
     name = name.strip()
-    _validate_safe_cert_name(name, field_label="Name")
+    if not _validate_safe_cert_name(name, field_label="Name"):
+        return {}
     if cert_type not in _VALID_CERT_TYPES:
         output_error_message(
             "INVALID_ARGS",
@@ -1122,6 +1130,7 @@ def _build_signed_cert(
 def _load_and_validate_csr(csr_path: str) -> x509.CertificateSigningRequest:
     if not os.path.exists(csr_path):
         output_error("CSR_NOT_FOUND", path=csr_path)
+        return None
     if not os.path.isfile(csr_path):
         output_error_message(
             "INVALID_ARGS",
@@ -1228,7 +1237,8 @@ def sign_csr_files(
         return None
 
     subject_cn = _get_cn(csr.subject)
-    _validate_safe_cert_name(subject_cn, field_label="CSR subject CN")
+    if not _validate_safe_cert_name(subject_cn, field_label="CSR subject CN"):
+        return None
     output_filename = f"{subject_cn}.crt"
 
     output_dir = os.path.abspath(output_dir)
@@ -1481,7 +1491,8 @@ def handle_cert_request(args):
         )
     if not _validate_request_kind(getattr(args, "kind", None)):
         return 1
-    _validate_safe_project_name(args.project)
+    if not _validate_safe_project_name(args.project):
+        return 1
     if not _validate_org_name(args.org):
         return 1
 
@@ -1489,8 +1500,10 @@ def handle_cert_request(args):
     if identity is None:
         return 1
     name = identity["name"].strip()
-    _validate_safe_cert_name(name, field_label="Name")
-    _validate_identity_name(name, identity["cert_type"])
+    if not _validate_safe_cert_name(name, field_label="Name"):
+        return 1
+    if not _validate_identity_name(name, identity["cert_type"]):
+        return 1
 
     request_dir = os.path.abspath(
         getattr(args, "out", None) or getattr(args, "output_dir", None) or os.path.join(".", name)
@@ -1587,6 +1600,7 @@ def handle_cert_request(args):
 def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
     if not os.path.exists(request_zip_path):
         output_error("CSR_NOT_FOUND", path=request_zip_path)
+        return None
     if not os.path.isfile(request_zip_path):
         output_error_message(
             "INVALID_ARGS",
@@ -1595,6 +1609,7 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
             exit_code=4,
             detail=f"request zip must be a file path: {request_zip_path}",
         )
+        return None
 
     request_meta = None
     try:
@@ -1613,7 +1628,8 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
             if not isinstance(request_meta, dict):
                 raise ValueError("request.json must be a mapping")
             name = request_meta.get("name")
-            _validate_safe_cert_name(name, field_label="Name")
+            if not _validate_safe_cert_name(name, field_label="Name"):
+                return None
             expected = {"request.json", "site.yaml", f"{name}.csr"}
             if set(names) != expected:
                 output_error_message(
@@ -1682,10 +1698,13 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             detail="unsupported request artifact metadata",
         )
         return None
-    _validate_request_id(request_meta["request_id"])
-    _validate_safe_project_name(request_meta["project"])
+    if not _validate_request_id(request_meta["request_id"]):
+        return None
+    if not _validate_safe_project_name(request_meta["project"]):
+        return None
     name = request_meta["name"]
-    _validate_safe_cert_name(name, field_label="Name")
+    if not _validate_safe_cert_name(name, field_label="Name"):
+        return None
     if not _validate_org_name(request_meta["org"]):
         return None
     cert_type = request_meta["cert_type"]
@@ -1700,7 +1719,8 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
         return None
     if not _validate_request_kind_cert_type(request_meta["kind"], cert_type, request_meta.get("cert_role")):
         return None
-    _validate_identity_name(name, cert_type)
+    if not _validate_identity_name(name, cert_type):
+        return None
 
     for meta_field, site_field in (("name", "name"), ("org", "org"), ("cert_type", "type"), ("project", "project")):
         if site_meta.get(site_field) != request_meta.get(meta_field):
@@ -1791,10 +1811,14 @@ def _validate_request_project_matches_ca(ca_dir: str, project: str) -> dict:
     for path in (ca_json_path, ca_cert_path):
         if not os.path.exists(path):
             output_error("CA_NOT_FOUND", ca_dir=ca_dir)
+            return None
 
     ca_meta = _read_json(ca_json_path)
+    if ca_meta is None:
+        return None
     ca_project = ca_meta.get("project")
-    _validate_safe_project_name(ca_project, field_label="CA project")
+    if not _validate_safe_project_name(ca_project, field_label="CA project"):
+        return None
     if ca_project != project:
         output_error_message(
             "PROJECT_CA_MISMATCH",
@@ -1803,6 +1827,7 @@ def _validate_request_project_matches_ca(ca_dir: str, project: str) -> dict:
             None,
             exit_code=4,
         )
+        return None
 
     ca_cert = None
     try:
@@ -1819,6 +1844,7 @@ def _validate_request_project_matches_ca(ca_dir: str, project: str) -> dict:
             None,
             exit_code=4,
         )
+        return None
     return ca_meta
 
 

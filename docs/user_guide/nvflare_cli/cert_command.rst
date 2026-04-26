@@ -117,6 +117,10 @@ CA metadata and root CA subject, signs the CSR, and creates:
 
 Return the signed zip to the requester.
 
+The command output includes ``rootca_fingerprint_sha256``. Share that value
+with the requester through a trusted out-of-band channel so they can verify the
+signed zip root CA during ``nvflare package``.
+
 Use ``--out`` to choose the signed zip location:
 
 .. code-block:: shell
@@ -155,7 +159,7 @@ Requester:
 
 .. code-block:: shell
 
-   nvflare package site-3.signed.zip -e grpc://server1:8002 --request-dir ./site-3
+   nvflare package site-3.signed.zip -e grpc://server1:8002 --request-dir ./site-3 --confirm-rootca
 
 For the full workflow, including package options and artifact layout, see
 :ref:`distributed_provisioning`.

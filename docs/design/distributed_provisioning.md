@@ -1,7 +1,7 @@
 # FLARE Distributed Provisioning
 
 Created: 2026-03-27
-Updated: 2026-04-25
+Updated: 2026-04-26
 
 ---
 
@@ -52,8 +52,8 @@ between machines.
 | 2 | Requester | `nvflare cert request site site-3 --org nvidia --project example_project` |
 | 3 | Requester | Send generated `site-3/site-3.request.zip` to Project Admin |
 | 4 | Project Admin | `nvflare cert approve site-3.request.zip --ca-dir ./ca` |
-| 5 | Project Admin | Return generated `site-3.signed.zip` to requester |
-| 6 | Requester | `nvflare package site-3.signed.zip -e grpc://server1:8002` |
+| 5 | Project Admin | Return generated `site-3.signed.zip` and share `rootca_fingerprint_sha256` out-of-band |
+| 6 | Requester | `nvflare package site-3.signed.zip -e grpc://server1:8002 --confirm-rootca` |
 | 7 | Requester | `cd workspace/example_project/prod_00/site-3 && ./startup/start.sh` |
 
 Step 1 is done once. Each new participant repeats steps 2-7 independently.
@@ -70,7 +70,7 @@ as roles evolve:
 ```bash
 nvflare cert request user org-admin alice@nvidia.com --org nvidia --project example_project
 nvflare cert approve alice@nvidia.com.request.zip --ca-dir ./ca
-nvflare package alice@nvidia.com.signed.zip -e grpc://server1:8002
+nvflare package alice@nvidia.com.signed.zip -e grpc://server1:8002 --confirm-rootca
 ```
 
 The positional certificate role is not a study role. Future study-specific roles are
@@ -84,7 +84,7 @@ Local automation uses the same zip artifacts:
 nvflare cert init --project example_project --org nvidia -o ./ca
 nvflare cert request site site-3 --org nvidia --project example_project
 nvflare cert approve site-3/site-3.request.zip --ca-dir ./ca
-nvflare package site-3/site-3.signed.zip -e grpc://server1:8002
+nvflare package site-3/site-3.signed.zip -e grpc://server1:8002 --confirm-rootca
 ```
 
 This is useful for tests and scripted local deployments. It exercises the same request,
@@ -106,9 +106,9 @@ nvflare cert approve site-1/site-1.request.zip --ca-dir ./ca
 nvflare cert approve site-2/site-2.request.zip --ca-dir ./ca
 nvflare cert approve admin@nvidia.com/admin@nvidia.com.request.zip --ca-dir ./ca
 
-nvflare package site-1/site-1.signed.zip -e grpc://server1:8002
-nvflare package site-2/site-2.signed.zip -e grpc://server1:8002
-nvflare package admin@nvidia.com/admin@nvidia.com.signed.zip -e grpc://server1:8002
+nvflare package site-1/site-1.signed.zip -e grpc://server1:8002 --confirm-rootca
+nvflare package site-2/site-2.signed.zip -e grpc://server1:8002 --confirm-rootca
+nvflare package admin@nvidia.com/admin@nvidia.com.signed.zip -e grpc://server1:8002 --confirm-rootca
 ```
 
 A future bulk command may read a participant file and produce multiple request zips, but
@@ -124,6 +124,7 @@ passes the project file to `package`:
 ```bash
 nvflare package site-3.signed.zip \
     -e grpc://server1:8002 \
+    --confirm-rootca \
     --project-file ./project.yml
 ```
 
@@ -331,6 +332,7 @@ cert_type: client
 project: example_project
 csr_sha256: ...
 signed_zip: site-3.signed.zip
+rootca_fingerprint_sha256: SHA256:...
 next_step: Return site-3.signed.zip to the requester.
 ```
 
@@ -343,13 +345,43 @@ site-3.signed.zip
 ```
 
 The signed zip contains the signed certificate and root CA, but no private key.
+The Project Admin also shares the `rootca_fingerprint_sha256` value from the
+`cert approve` output with the requester through a trusted out-of-band channel.
+
+### Root CA Fingerprint Verification
+
+`rootca_fingerprint_sha256` is the OpenSSL-style SHA256 certificate fingerprint
+of the `rootCA.pem` certificate:
+
+```text
+SHA256:AA:BB:...
+```
+
+The fingerprint is useful only when compared against a value received outside
+the signed zip transfer path. The signed zip already contains `rootCA.pem`, so
+`nvflare package` can always compute and display the same fingerprint, but that
+does not independently prove who sent the zip.
+
+`nvflare package` therefore supports two explicit verification modes:
+
+- `--expected-rootca-fingerprint <fingerprint>` is the automation path. The
+  command fails if the signed zip's `rootCA.pem` fingerprint does not match the
+  expected value.
+- `--confirm-rootca` is the interactive path. The command prints the signed
+  zip's `rootCA.pem` fingerprint and asks the requester to confirm they compared
+  it with the Project Admin's out-of-band value.
+
+If neither option is supplied, `nvflare package` still validates signed zip
+structure, hashes, identity metadata, certificate chain, and local private-key
+match, then includes `rootca_fingerprint_sha256` in the output. It does not
+prompt by default because the CLI has no independent value to compare against.
 
 ### Step 5: Requester Packages the Startup Kit
 
 On the requester machine:
 
 ```bash
-nvflare package site-3.signed.zip -e grpc://server1:8002
+nvflare package site-3.signed.zip -e grpc://server1:8002 --confirm-rootca
 ```
 
 Endpoint is package-time configuration. It does not belong in `cert request` because the
@@ -765,7 +797,7 @@ the presence of valid startup integrity metadata in the startup kit.
 |---------|---------|
 | `nvflare cert request ...` | Create local key, CSR, metadata, and request zip. |
 | `nvflare cert approve <request.zip>` | Project Admin signs a request zip and creates a signed zip. |
-| `nvflare package <signed.zip> -e <endpoint>` | Requester combines signed approval with local private key and creates startup kit. |
+| `nvflare package <signed.zip> -e <endpoint> [--confirm-rootca | --expected-rootca-fingerprint <fp>]` | Requester combines signed approval with local private key and creates startup kit. |
 
 The implementation should reuse existing CSR generation, certificate signing, and package
 builder logic behind these commands. Public help and customer docs should expose this final
@@ -968,17 +1000,21 @@ rootCA.pem      # project root CA certificate
 
 It does not include the private key.
 
+The command output includes `rootca_fingerprint_sha256`; the Project Admin
+shares this value through a trusted out-of-band channel.
+
 ### `nvflare package` - Requester
 
 ```bash
-nvflare package <signed-zip> -e <server-endpoint> [-w <workspace>] [--project-file <project.yml>] [--request-dir <dir>]
+nvflare package <signed-zip> -e <server-endpoint> [-w <workspace>] [--project-file <project.yml>] [--request-dir <dir>] [--expected-rootca-fingerprint <fingerprint> | --confirm-rootca]
 ```
 
 Example:
 
 ```bash
-nvflare package site-3.signed.zip -e grpc://server1:8002
-nvflare package site-3.signed.zip -e grpc://server1:8002 --project-file ./project.yml
+nvflare package site-3.signed.zip -e grpc://server1:8002 --confirm-rootca
+nvflare package site-3.signed.zip -e grpc://server1:8002 --expected-rootca-fingerprint SHA256:AA:BB:...
+nvflare package site-3.signed.zip -e grpc://server1:8002 --project-file ./project.yml --confirm-rootca
 ```
 
 `package` reads the signed zip, finds the matching local private key, validates the
