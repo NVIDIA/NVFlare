@@ -582,7 +582,8 @@ def test_package_help_includes_working_examples():
     assert "--rootca ./signed/hospital-1/rootCA.pem" not in help_text
 
 
-def test_package_parser_accepts_hidden_explicit_cert_mode():
+@pytest.mark.parametrize("old_arg", ["--dir", "--cert", "--key", "--rootca", "--project-name", "-n", "-t"])
+def test_package_parser_rejects_removed_low_level_options(old_arg, tmp_path):
     import argparse
 
     from nvflare.tool.package.package_cli import def_package_cli_parser
@@ -591,25 +592,16 @@ def test_package_parser_accepts_hidden_explicit_cert_mode():
     subs = root.add_subparsers(dest="sub_command")
     def_package_cli_parser(subs)
 
-    args = root.parse_args(
-        [
-            "package",
-            "-e",
-            "grpc://fl-server:8002",
-            "-n",
-            "hospital-1",
-            "--cert",
-            "hospital-1.crt",
-            "--key",
-            "hospital-1.key",
-            "--rootca",
-            "rootCA.pem",
-        ]
-    )
+    argv = ["package", "hospital-1.signed.zip", "-e", "grpc://fl-server:8002", old_arg]
+    if old_arg in {"--dir", "--cert", "--key", "--rootca", "--project-name", "-n"}:
+        argv.append(str(tmp_path))
+    elif old_arg == "-t":
+        argv.append("client")
 
-    assert args.cert == "hospital-1.crt"
-    assert args.key == "hospital-1.key"
-    assert args.rootca == "rootCA.pem"
+    with pytest.raises(SystemExit) as exc_info:
+        root.parse_args(argv)
+
+    assert exc_info.value.code == 2
 
 
 def test_package_schema_uses_shared_examples(capsys):
@@ -672,7 +664,7 @@ def test_package_compat_output_alias_sets_output_format(tmp_path):
     root = argparse.ArgumentParser(prog="nvflare")
     subs = root.add_subparsers(dest="sub_command")
     def_package_cli_parser(subs)
-    args = root.parse_args(["package", "-e", "grpc://fl-server:8002", "--dir", str(tmp_path), "--output", "json"])
+    args = root.parse_args(["package", "hospital-1.signed.zip", "-e", "grpc://fl-server:8002", "--output", "json"])
 
     with unittest.mock.patch("nvflare.tool.cli_output.set_output_format") as set_output_format:
         with unittest.mock.patch(

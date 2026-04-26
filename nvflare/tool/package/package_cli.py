@@ -68,51 +68,11 @@ def def_package_cli_parser(sub_cmd) -> dict:
         help="Approved signed zip returned by 'nvflare cert approve' (for example hospital-1.signed.zip).",
     )
     p.add_argument(
-        "-t",
-        "--type",
-        required=False,
-        default=None,
-        dest="kit_type",
-        choices=["client", "server", "org_admin", "lead", "member"],
-        help=argparse.SUPPRESS,
-    )
-    p.add_argument(
         "-e",
         "--endpoint",
         required=False,
         default=None,
         help="Server endpoint URI (grpc://host:port, tcp://host:port, or http://host:port). Required for all kit types.",
-    )
-    p.add_argument(
-        "-n",
-        "--name",
-        required=False,
-        default=None,
-        help=argparse.SUPPRESS,
-    )
-    p.add_argument(
-        "--dir",
-        required=False,
-        default=None,
-        help=argparse.SUPPRESS,
-    )
-    p.add_argument(
-        "--cert",
-        required=False,
-        default=None,
-        help=argparse.SUPPRESS,
-    )
-    p.add_argument(
-        "--key",
-        required=False,
-        default=None,
-        help=argparse.SUPPRESS,
-    )
-    p.add_argument(
-        "--rootca",
-        required=False,
-        default=None,
-        help=argparse.SUPPRESS,
     )
     p.add_argument(
         "-w",
@@ -121,13 +81,6 @@ def def_package_cli_parser(sub_cmd) -> dict:
         default="workspace",
         dest="workspace",
         help="Workspace root directory. Output goes to <workspace>/<project-name>/prod_NN/<name>/. Default: workspace",
-    )
-    p.add_argument(
-        "--project-name",
-        required=False,
-        default=None,
-        dest="project_name",
-        help=argparse.SUPPRESS,
     )
     p.add_argument(
         "-p",

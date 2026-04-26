@@ -901,20 +901,14 @@ def generate_csr_files(name: str, org: str, cert_type: str, output_dir: str, for
 
 
 def handle_cert_csr(args):
-    # 1. --schema
-    import nvflare.tool.cert.cert_cli as _cert_cli
-
-    _cert_cli._ensure_parsers_initialized()
-    handle_schema_flag(
-        _cert_cli._cert_csr_parser,
-        "nvflare cert csr",
-        [
-            "nvflare cert csr -n hospital-1 -t client -o ./csr",
-            "nvflare cert csr -n fl-server -t server -o ./server-csr --org ACME --force",
-            "nvflare cert csr --project-file site.yml -o ./csr",
-        ],
-        sys.argv[1:],
-    )
+    if getattr(args, "schema", False):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            "Use 'nvflare cert request --schema' for the public distributed provisioning request schema.",
+            exit_code=4,
+            detail="'nvflare cert csr' is not a public CLI command",
+        )
 
     # 2. Resolve inputs (either --project-file or explicit args)
     site = None
@@ -939,8 +933,12 @@ def handle_cert_csr(args):
     if site is None and not getattr(args, "cert_type", None):
         missing_flags.append("-t/--type")
     if missing_flags:
-        output_usage_error(
-            _cert_cli._cert_csr_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"missing required argument(s): {', '.join(missing_flags)}",
         )
 
     name = (site["name"] if site else args.name).strip()
@@ -1318,19 +1316,14 @@ def sign_csr_files(
 
 
 def handle_cert_sign(args):
-    # 1. --schema
-    import nvflare.tool.cert.cert_cli as _cert_cli
-
-    _cert_cli._ensure_parsers_initialized()
-    handle_schema_flag(
-        _cert_cli._cert_sign_parser,
-        "nvflare cert sign",
-        [
-            "nvflare cert sign -r ./hospital-1.csr -c ./ca -o ./signed --accept-csr-role",
-            "nvflare cert sign -r ./alice.csr -c ./ca -o ./alice-signed -t lead",
-        ],
-        sys.argv[1:],
-    )
+    if getattr(args, "schema", False):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            "Use 'nvflare cert approve --schema' for the public distributed provisioning approval schema.",
+            exit_code=4,
+            detail="'nvflare cert sign' is not a public CLI command",
+        )
 
     # 2. Validate required args and signer decision mode
     missing_flags = [
@@ -1343,8 +1336,12 @@ def handle_cert_sign(args):
         if not getattr(args, attr, None)
     ]
     if missing_flags:
-        output_usage_error(
-            _cert_cli._cert_sign_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"missing required argument(s): {', '.join(missing_flags)}",
         )
     csr = _load_and_validate_csr(args.csr_path)
     if csr is None:

@@ -791,15 +791,6 @@ class TestCertCsr:
         assert "BEGIN RSA PRIVATE KEY" not in out
         assert "BEGIN PRIVATE KEY" not in out
 
-    def test_schema_flag(self, tmp_path, capsys, monkeypatch):
-        monkeypatch.setattr(sys, "argv", ["nvflare", "cert", "csr", "--schema"])
-        with pytest.raises(SystemExit) as exc_info:
-            handle_cert_csr(_csr_args(cert_type="client"))
-        assert exc_info.value.code == 0
-        data = json.loads(capsys.readouterr().out)
-        assert data["schema_version"] == "1"
-        assert data["command"] == "nvflare cert csr"
-
     def test_missing_required_args_show_help_and_missing_flags(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         with pytest.raises(SystemExit) as exc_info:
@@ -808,7 +799,6 @@ class TestCertCsr:
         captured = capsys.readouterr()
         assert "INVALID_ARGS" in captured.err
         assert "missing required argument(s): -o/--output-dir, -n/--name, -t/--type" in captured.err
-        assert "usage:" in captured.err
 
 
 # ---------------------------------------------------------------------------
@@ -857,16 +847,6 @@ def _overwrite_ca_cert(ca_dir: str, not_before, not_after, ca: bool = True) -> N
 
 
 class TestCertSign:
-    def test_sign_parser_rejects_non_positive_valid_days(self, capsys):
-        import nvflare.tool.cert.cert_cli as cert_cli
-
-        cert_cli._ensure_parsers_initialized()
-        parser = cert_cli._cert_sign_parser
-        with pytest.raises(SystemExit) as exc_info:
-            parser.parse_args(["-r", "req.csr", "-c", "ca", "-o", "out", "-t", "client", "--valid-days", "0"])
-        assert exc_info.value.code == 2
-        assert "value must be >= 1" in capsys.readouterr().err
-
     def test_basic_sign(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
         csr_path = _setup_csr(tmp_path)
@@ -1117,15 +1097,6 @@ class TestCertSign:
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client", force=True)
         assert handle_cert_sign(args) == 0
 
-    def test_sign_schema_output(self, tmp_path, capsys, monkeypatch):
-        monkeypatch.setattr(sys, "argv", ["nvflare", "cert", "sign", "--schema"])
-        with pytest.raises(SystemExit) as exc_info:
-            handle_cert_sign(_sign_args())
-        assert exc_info.value.code == 0
-        data = json.loads(capsys.readouterr().out)
-        assert data["schema_version"] == "1"
-        assert data["command"] == "nvflare cert sign"
-
     def test_missing_required_args_show_help_and_missing_flags(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         with pytest.raises(SystemExit) as exc_info:
@@ -1134,7 +1105,6 @@ class TestCertSign:
         captured = capsys.readouterr()
         assert "INVALID_ARGS" in captured.err
         assert "missing required argument(s): -r/--csr, -c/--ca-dir, -o/--output-dir" in captured.err
-        assert "usage:" in captured.err
 
     def test_sign_rootca_copied(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
@@ -2039,6 +2009,15 @@ class TestDistributedCertPublicSurface:
         assert "approve" in help_text
         assert " csr " not in help_text
         assert " sign " not in help_text
+
+    @pytest.mark.parametrize("subcommand", ["csr", "sign"])
+    def test_removed_developer_subcommands_are_not_parseable(self, subcommand):
+        parser, _ = _cert_root_parser()
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["cert", subcommand, "--schema"])
+
+        assert exc_info.value.code == 2
 
 
 class TestDistributedCertRequestApprove:

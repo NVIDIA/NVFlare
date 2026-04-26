@@ -301,22 +301,22 @@ class TestSchemaWithMissingRequiredArgs:
         # stderr must not contain an argparse "required" error
         assert "error" not in captured.err.lower()
 
-    def test_cert_csr_schema_with_missing_optional_args(self, capsys, monkeypatch):
-        """nvflare cert csr --schema must route to the csr handler and print schema JSON."""
+    def test_cert_request_schema_with_missing_required_args(self, capsys, monkeypatch):
+        """nvflare cert request --schema must route to the request handler and print schema JSON."""
         import sys
 
         from nvflare.cli import parse_args
 
-        monkeypatch.setattr(sys, "argv", ["nvflare", "cert", "csr", "--schema"])
+        monkeypatch.setattr(sys, "argv", ["nvflare", "cert", "request", "--schema"])
         _parser, args, _ = parse_args("nvflare")
-        from nvflare.tool.cert.cert_commands import handle_cert_csr
+        from nvflare.tool.cert.cert_commands import handle_cert_request
 
         with pytest.raises(SystemExit) as exc_info:
-            handle_cert_csr(args)
+            handle_cert_request(args)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         schema = json.loads(captured.out)
-        assert schema["command"] == "nvflare cert csr"
+        assert schema["command"] == "nvflare cert request"
         assert schema["schema_version"] == "1"
         assert "error" not in captured.err.lower()
 
