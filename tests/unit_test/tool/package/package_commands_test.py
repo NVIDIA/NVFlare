@@ -41,6 +41,7 @@ from nvflare.tool.package.package_commands import (
     _DUMMY_SERVER_NAME,
     PrebuiltCertBuilder,
     _discover_name_from_dir,
+    _load_signed_zip,
     _parse_endpoint,
     _read_zip_json,
     _resolve_request_dir,
@@ -3446,6 +3447,42 @@ class TestSignedZipPackageMode:
         kit_dir = os.path.join(str(tmp_path / "ws"), "example_project", "prod_00", "site-3")
         assert os.path.isfile(os.path.join(kit_dir, "startup", "client.key"))
 
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_signed_zip_ignores_symlinked_audit_request_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        sibling_signed_zip = tmp_path / f"{request_dir.name}.signed.zip"
+        shutil.move(str(signed_zip), str(sibling_signed_zip))
+        tampered_request_dir = tmp_path / "tampered-site-3"
+        tampered_request_dir.mkdir()
+        other_key, _other_pub = generate_keys()
+        _write_file_nofollow(tampered_request_dir / "site-3.key", serialize_pri_key(other_key), mode=0o600)
+        (tampered_request_dir / "request.json").write_text(
+            json.dumps(
+                {
+                    "request_id": "11111111111111111111111111111111",
+                    "project": "example_project",
+                    "name": "site-3",
+                    "org": "nvidia",
+                    "kind": "site",
+                    "cert_type": "client",
+                    "csr_sha256": "1" * 64,
+                    "public_key_sha256": "1" * 64,
+                }
+            )
+        )
+        request_link = tmp_path / "request-link"
+        os.symlink(str(tampered_request_dir), str(request_link))
+        audit_dir = tmp_path / "home" / ".nvflare" / "cert_requests" / "11111111111111111111111111111111"
+        audit_dir.mkdir(parents=True)
+        (audit_dir / "audit.json").write_text(json.dumps({"schema_version": "1", "request_dir": str(request_link)}))
+        args = _signed_zip_args(sibling_signed_zip, tmp_path)
+
+        handle_package(args)
+
+        kit_dir = os.path.join(str(tmp_path / "ws"), "example_project", "prod_00", "site-3")
+        assert os.path.isfile(os.path.join(kit_dir, "startup", "client.key"))
+
     @pytest.mark.skipif(
         not hasattr(os, "symlink") or not hasattr(os, "O_NOFOLLOW"), reason="nofollow symlink support required"
     )
@@ -3602,6 +3639,39 @@ class TestSignedZipPackageMode:
         assert exc_info.value.code == 4
         assert "missing required hashes" in capsys.readouterr().err
 
+    def test_signed_zip_missing_cert_returns_cleanly_when_error_is_mocked(self, tmp_path):
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        with zipfile.ZipFile(signed_zip, "r") as zf:
+            members = {name: zf.read(name) for name in zf.namelist() if not name.endswith(".crt")}
+        with zipfile.ZipFile(signed_zip, "w") as zf:
+            for name, content in members.items():
+                zf.writestr(name, content)
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as output_error:
+            rc = handle_package(args)
+
+        assert rc == 1
+        output_error.assert_called_once()
+        assert "exactly one signed certificate" in output_error.call_args.args[1]
+
+    def test_load_signed_zip_returns_after_missing_cert_when_error_is_mocked(self, tmp_path):
+        signed_zip, _request_dir, _ = _make_signed_zip(tmp_path)
+        with zipfile.ZipFile(signed_zip, "r") as zf:
+            members = {name: zf.read(name) for name in zf.namelist() if not name.endswith(".crt")}
+        with zipfile.ZipFile(signed_zip, "w") as zf:
+            for name, content in members.items():
+                zf.writestr(name, content)
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as output_error:
+            signed_meta, site_meta, cert_name, file_contents = _load_signed_zip(str(signed_zip))
+
+        output_error.assert_called_once()
+        assert signed_meta is None
+        assert site_meta is None
+        assert cert_name == ""
+        assert file_contents == {}
+
     def test_signed_public_key_hash_helper_requires_hash(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         ca_dir = tmp_path / "ca"
@@ -3615,6 +3685,19 @@ class TestSignedZipPackageMode:
 
         assert exc_info.value.code == 4
         assert "Missing required public key hash" in capsys.readouterr().err
+
+    def test_signed_public_key_hash_helper_returns_after_missing_hash_when_error_is_mocked(self, tmp_path):
+        ca_dir = tmp_path / "ca"
+        ca_dir.mkdir()
+        ca_key, ca_cert, _ = _make_ca(str(ca_dir))
+        _key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "site-3", str(tmp_path), "site-3.crt", role="client")
+        cert = load_crt(cert_path)
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as output_error:
+            _validate_signed_public_key_hash({}, cert)
+
+        output_error.assert_called_once()
+        assert "Missing required public key hash" in output_error.call_args.args[1]
 
     @pytest.mark.parametrize(
         "field,value,expected",

@@ -858,6 +858,11 @@ def generate_csr_files(name: str, org: str, cert_type: str, output_dir: str, for
         _write_private_key(key_path, pem_key)
         _write_file_nofollow(csr_path, pem_csr)
     except OSError as e:
+        try:
+            if os.path.exists(key_path) and not os.path.islink(key_path):
+                os.remove(key_path)
+        except OSError:
+            pass
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail=str(e))
 
     csr = x509.load_pem_x509_csr(pem_csr, default_backend())
@@ -1572,6 +1577,7 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
                     exit_code=4,
                     detail=f"request zip must contain only: {', '.join(sorted(expected))}",
                 )
+                return request_meta
             for member in expected:
                 target_path = os.path.join(extract_dir, member)
                 _write_file_nofollow(target_path, _read_zip_member_limited(zf, member))
@@ -1793,6 +1799,8 @@ def handle_cert_approve(args):
         csr_path = os.path.join(request_dir, f"{name}.csr")
         site_meta = _load_yaml_file(site_yaml_path)
         csr = _validate_request_metadata(request_meta, site_meta, csr_path)
+        if csr is None:
+            return 1
         ca_meta = _validate_request_project_matches_ca(args.ca_dir, request_meta["project"])
 
         sign_result = sign_csr_files(

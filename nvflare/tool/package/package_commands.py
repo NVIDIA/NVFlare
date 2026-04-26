@@ -751,16 +751,6 @@ def _handle_package_yaml_mode(args, scheme, host, port):
 
     # Validate all cert/key files up front before building anything.
     cert_map = {}
-    try:
-        ca_cert = _load_crt_nofollow(rootca_path)
-    except Exception as e:
-        output_error_message(
-            "ROOTCA_INVALID",
-            f"Failed to load root CA certificate '{rootca_path}': {e}.",
-            "Ensure the file is a valid PEM-encoded certificate.",
-            None,
-            exit_code=1,
-        )
     for kit_type, participant in all_participants:
         p_name = participant.name
         cert_path = os.path.join(args.dir, f"{p_name}.crt")
@@ -781,20 +771,9 @@ def _handle_package_yaml_mode(args, scheme, host, port):
                 detail=f"Run 'nvflare cert csr -n {p_name}' to generate a key.",
             )
 
-        try:
-            cert = _load_crt_nofollow(cert_path)
-            verify_cert(cert, ca_cert.public_key())
-        except Exception as e:
-            output_error("CERT_CHAIN_INVALID", exit_code=1, cert=cert_path, rootca=rootca_path, detail=str(e))
-
-        try:
-            expiry = cert.not_valid_after_utc
-            now = datetime.datetime.now(datetime.timezone.utc)
-        except AttributeError:
-            expiry = cert.not_valid_after
-            now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
-        if expiry < now:
-            output_error("CERT_EXPIRED", exit_code=1, cert=cert_path, expiry=expiry.isoformat())
+        cert = _validate_cert_material(cert_path, key_path, rootca_path, validate_key_match=True)
+        if cert is None:
+            return 1
 
         cert_map[p_name] = (cert_path, key_path)
 
@@ -1175,6 +1154,7 @@ def _validate_signed_public_key_hash(signed_meta: dict, cert):
             None,
             exit_code=4,
         )
+        return
     public_key_der = cert.public_key().public_bytes(
         serialization.Encoding.DER,
         serialization.PublicFormat.SubjectPublicKeyInfo,
@@ -1230,7 +1210,7 @@ def _load_signed_zip(input_path: str):
     signed_meta = None
     site_meta = None
     cert_name = ""
-    file_contents = None
+    file_contents = {}
     try:
         with zipfile.ZipFile(input_path, "r") as zf:
             names = set(_safe_zip_names(zf, input_path))
@@ -1244,6 +1224,7 @@ def _load_signed_zip(input_path: str):
                     None,
                     exit_code=4,
                 )
+                return signed_meta, site_meta, cert_name, file_contents
             cert_names = sorted(n for n in names if n.endswith(".crt"))
             if len(cert_names) != 1:
                 output_error_message(
@@ -1253,6 +1234,7 @@ def _load_signed_zip(input_path: str):
                     None,
                     exit_code=4,
                 )
+                return signed_meta, site_meta, cert_name, file_contents
             cert_name = cert_names[0]
             expected = required | {cert_name}
             if names != expected:
@@ -1264,6 +1246,7 @@ def _load_signed_zip(input_path: str):
                     None,
                     exit_code=4,
                 )
+                return signed_meta, site_meta, cert_name, file_contents
             file_contents = {
                 "signed.json": _read_zip_member_limited(zf, "signed.json", input_path),
                 "site.yaml": _read_zip_member_limited(zf, "site.yaml", input_path),
@@ -1335,7 +1318,9 @@ def _audit_request_dir(request_id: str):
 def _validated_audit_request_dir(value: str, request_id: str):
     if not isinstance(value, str) or not value.strip():
         return None
-    request_dir = os.path.realpath(os.path.abspath(os.path.expanduser(value)))
+    request_dir = os.path.abspath(os.path.expanduser(value))
+    if os.path.islink(request_dir):
+        return None
     request_json_path = os.path.join(request_dir, "request.json")
     if not os.path.isfile(request_json_path):
         return None
@@ -1526,6 +1511,8 @@ def _selected_project_context(args, identity: dict, kit_type: str):
 
 def _handle_signed_zip_package(args, scheme, host, port):
     signed_meta, site_meta, cert_name, file_contents = _load_signed_zip(args.input)
+    if not signed_meta or not site_meta or not cert_name or not file_contents:
+        return 1
     with tempfile.TemporaryDirectory() as tmp_dir:
         temp_cert = os.path.join(tmp_dir, cert_name)
         temp_rootca = os.path.join(tmp_dir, "rootCA.pem")
@@ -1827,7 +1814,7 @@ def handle_package(args):
         )
         output_error("ROOTCA_NOT_FOUND", exit_code=1, path=args.rootca, detail=hint)
 
-    cert = _validate_cert_material(args.cert, args.key, args.rootca)
+    cert = _validate_cert_material(args.cert, args.key, args.rootca, validate_key_match=True)
     if cert is None:
         return 1
     kit_type = _read_cert_type_from_cert(cert)

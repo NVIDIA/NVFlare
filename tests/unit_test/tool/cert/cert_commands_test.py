@@ -50,6 +50,7 @@ from nvflare.tool.cert.cert_commands import (
     _write_json_file,
     _write_private_key,
     _write_zip_nofollow,
+    generate_csr_files,
     handle_cert_csr,
     handle_cert_init,
     handle_cert_sign,
@@ -310,6 +311,15 @@ class TestCertValidationHelpers:
         output_error.assert_called_once()
         with zipfile.ZipFile(zip_path, "r") as zf:
             assert zf.namelist() == ["request.json"]
+
+    def test_generate_csr_removes_private_key_if_csr_write_fails(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        with patch("nvflare.tool.cert.cert_commands._write_file_nofollow", side_effect=OSError("disk full")):
+            with pytest.raises(SystemExit) as exc_info:
+                generate_csr_files("site-3", "nvidia", "client", str(tmp_path))
+
+        assert exc_info.value.code == 1
+        assert not (tmp_path / "site-3.key").exists()
 
 
 class TestCertInit:
@@ -2169,6 +2179,9 @@ class TestDistributedCertRequestApprove:
             assert sorted(zf.namelist()) == ["rootCA.pem", "signed.json", "site-3.crt", "site.yaml"]
             assert not any(name.endswith(".key") for name in zf.namelist())
             signed_json = json.loads(zf.read("signed.json"))
+            cert_bytes = zf.read("site-3.crt")
+            rootca_bytes = zf.read("rootCA.pem")
+            site_yaml_bytes = zf.read("site.yaml")
         assert signed_json["name"] == "site-3"
         assert signed_json["org"] == "nvidia"
         assert signed_json["kind"] == "site"
@@ -2186,6 +2199,9 @@ class TestDistributedCertRequestApprove:
         assert "public_key_sha256" not in signed_json["certificate"]
         assert signed_json["hashes"]["certificate_sha256"]
         assert signed_json["hashes"]["public_key_sha256"]
+        assert signed_json["hashes"]["certificate_sha256"] == _sha256_bytes(cert_bytes)
+        assert signed_json["hashes"]["rootca_sha256"] == _sha256_bytes(rootca_bytes)
+        assert signed_json["hashes"]["site_yaml_sha256"] == _sha256_bytes(site_yaml_bytes)
         approve_audit_path = tmp_path / "home" / ".nvflare" / "cert_approves" / f"{signed_json['request_id']}.json"
         assert approve_audit_path.is_file()
         approve_audit = json.loads(approve_audit_path.read_text())
@@ -2299,3 +2315,30 @@ class TestDistributedCertRequestApprove:
 
         assert load_csr.call_count == 1
         capsys.readouterr()
+
+    def test_approve_returns_when_request_metadata_validation_returns_none(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = tmp_path / "ca"
+        request_zip = _write_request_zip(tmp_path)
+        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+
+        with patch("nvflare.tool.cert.cert_commands._validate_request_metadata", return_value=None):
+            with patch("nvflare.tool.cert.cert_commands.sign_csr_files") as sign_csr:
+                _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir)])
+
+        sign_csr.assert_not_called()
+
+    def test_read_request_zip_returns_after_member_mismatch_when_error_is_mocked(self, tmp_path):
+        request_zip = tmp_path / "site-3.request.zip"
+        with zipfile.ZipFile(request_zip, "w") as zf:
+            zf.writestr("request.json", json.dumps({"name": "site-3"}))
+            zf.writestr("site.yaml", "name: site-3\norg: nvidia\ntype: client\n")
+        extract_dir = tmp_path / "extract"
+        extract_dir.mkdir()
+
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            request_meta = _read_request_zip(str(request_zip), str(extract_dir))
+
+        output_error.assert_called_once()
+        assert request_meta == {"name": "site-3"}
+        assert not (extract_dir / "site-3.csr").exists()
