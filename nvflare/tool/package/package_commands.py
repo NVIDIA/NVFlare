@@ -1054,6 +1054,9 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
 
 
 def _validate_signed_hashes(signed_meta: dict, file_contents: dict):
+    # Hash aliases are resolved as hashes[alias] or hashes[f"{alias}_sha256"];
+    # this keeps canonical keys like certificate_sha256 readable while allowing
+    # older short names such as cert_sha256 during schema tightening.
     checks = [
         (("site_yaml", "site", "site.yaml"), "site.yaml"),
         (("cert", "certificate", "crt"), "cert"),
@@ -1410,7 +1413,6 @@ def _handle_signed_zip_package(args, scheme, host, port):
             cert = load_crt(temp_cert)
             # Used below to ensure signed metadata project matches the root CA subject.
             rootca = load_crt(temp_rootca)
-            _validate_signed_public_key_hash(signed_meta, cert)
         except Exception as e:
             output_error_message(
                 "INVALID_SIGNED_ZIP",
@@ -1419,6 +1421,7 @@ def _handle_signed_zip_package(args, scheme, host, port):
                 None,
                 exit_code=4,
             )
+        _validate_signed_public_key_hash(signed_meta, cert)
 
         identity = _signed_identity_from_metadata(signed_meta, site_meta, cert)
         if not identity.get("name"):

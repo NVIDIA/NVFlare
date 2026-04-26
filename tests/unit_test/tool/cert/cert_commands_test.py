@@ -25,6 +25,7 @@ import zipfile
 from unittest.mock import patch
 
 import pytest
+import yaml
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
@@ -1637,7 +1638,12 @@ def _write_request_zip(
     request_json_path = request_dir / "request.json"
     key_path.write_bytes(key_pem)
     csr_path.write_bytes(csr_pem)
-    site_yaml_path.write_text(f"name: {name}\norg: {org}\ntype: {cert_type}\nproject: {project}\nkind: {kind}\n")
+    site_yaml_path.write_text(
+        yaml.safe_dump(
+            {"name": name, "org": org, "type": cert_type, "project": project, "kind": kind},
+            sort_keys=False,
+        )
+    )
     request_metadata = {
         "artifact_type": "nvflare.cert.request",
         "schema_version": "1",
