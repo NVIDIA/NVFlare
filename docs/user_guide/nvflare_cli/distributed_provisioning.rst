@@ -194,8 +194,8 @@ Requester machine:
    nvflare package site-3.signed.zip -e grpc://server1:8002 --request-dir ./site-3
 
 ``--request-dir`` points to the local request folder that contains
-``site-3.key``. If the signed zip is next to the request folder, the command can
-usually find the key automatically.
+``site-3.key`` and ``request.json``. If the signed zip is next to the request
+folder, the command can usually find the request folder automatically.
 
 *********************
 Local Automation Flow
@@ -366,6 +366,10 @@ User certificate roles:
      - Lead researcher or job submitter
    * - ``member``
      - Read-only or limited user
+
+Project names must be path-safe identifiers matching
+``[A-Za-z0-9][A-Za-z0-9._-]*``. During approval, the request project must
+match the CA metadata and the root CA certificate subject.
 
 ****************
 Command Summary

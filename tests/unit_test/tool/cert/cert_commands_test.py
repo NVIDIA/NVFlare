@@ -329,6 +329,20 @@ class TestCertCsr:
         mode = stat.S_IMODE(os.stat(key_path).st_mode)
         assert mode == 0o600
 
+    @pytest.mark.skipif(
+        not hasattr(os, "symlink") or not hasattr(os, "O_NOFOLLOW"), reason="nofollow symlink support required"
+    )
+    def test_csr_symlink_destination_is_rejected(self, tmp_path):
+        outside_target = tmp_path / "outside.csr"
+        outside_target.write_text("sentinel")
+        os.symlink(str(outside_target), str(tmp_path / "h1.csr"))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_csr(tmp_path, name="h1")
+
+        assert exc_info.value.code == 1
+        assert outside_target.read_text() == "sentinel"
+
     def test_no_cert_generated(self, tmp_path):
         _run_csr(tmp_path, name="h1")
         assert not (tmp_path / "h1.crt").exists()
@@ -797,6 +811,26 @@ class TestCertSign:
         assert outside_target.read_text() == "sentinel"
         assert not (out_dir / "hospital-1.crt").exists()
 
+    @pytest.mark.skipif(
+        not hasattr(os, "symlink") or not hasattr(os, "O_NOFOLLOW"), reason="nofollow symlink support required"
+    )
+    def test_sign_rootca_symlink_source_is_rejected(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)
+        rootca_path = os.path.join(ca_dir, "rootCA.pem")
+        real_rootca_path = os.path.join(ca_dir, "rootCA-real.pem")
+        os.replace(rootca_path, real_rootca_path)
+        os.symlink(real_rootca_path, rootca_path)
+        out_dir = tmp_path / "signed"
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(_sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=str(out_dir), cert_type="client"))
+
+        assert exc_info.value.code == 1
+        assert "CA_LOAD_FAILED" in capsys.readouterr().err
+        assert not (out_dir / "hospital-1.crt").exists()
+
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
     def test_sign_cert_symlink_destination_is_rejected(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
@@ -931,7 +965,7 @@ class TestCertSign:
             now = datetime.datetime.now(datetime.timezone.utc)
         except AttributeError:
             not_after = cert.not_valid_after
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
         days_remaining = (not_after - now).days
         # Should be ~90 days; give ±2 days tolerance for test timing
         assert 88 <= days_remaining <= 92
@@ -952,7 +986,7 @@ class TestCertSign:
             now = datetime.datetime.now(datetime.timezone.utc)
         except AttributeError:
             not_after = cert.not_valid_after
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
         days_remaining = (not_after - now).days
         assert 1093 <= days_remaining <= 1097
 
@@ -1565,7 +1599,22 @@ def _public_key_sha256_from_csr(csr_path) -> str:
     return _sha256_bytes(public_key_der)
 
 
-def _write_request_zip(tmp_path, *, name="site-3", include_key=False, traversal=False, hash_mismatch=False):
+def _write_request_zip(
+    tmp_path,
+    *,
+    name="site-3",
+    project="example_project",
+    org="nvidia",
+    kind="site",
+    cert_type="client",
+    request_id="11111111111111111111111111111111",
+    include_key=False,
+    traversal=False,
+    csr_member=None,
+    hash_mismatch=False,
+    omit_fields=(),
+    metadata_updates=None,
+):
     request_dir = tmp_path / name
     request_dir.mkdir()
     key_pem, csr_pem = _generate_csr(name, "nvidia", "client")
@@ -1575,31 +1624,31 @@ def _write_request_zip(tmp_path, *, name="site-3", include_key=False, traversal=
     request_json_path = request_dir / "request.json"
     key_path.write_bytes(key_pem)
     csr_path.write_bytes(csr_pem)
-    site_yaml_path.write_text("name: site-3\norg: nvidia\ntype: client\nproject: example_project\nkind: site\n")
-    request_json_path.write_text(
-        json.dumps(
-            {
-                "artifact_type": "nvflare.cert.request",
-                "schema_version": "1",
-                "request_id": "request-123",
-                "created_at": "2026-04-24T00:00:00Z",
-                "project": "example_project",
-                "name": name,
-                "org": "nvidia",
-                "kind": "site",
-                "cert_type": "client",
-                "cert_role": None,
-                "csr_sha256": "0" * 64 if hash_mismatch else _sha256_file(csr_path),
-                "public_key_sha256": _public_key_sha256_from_csr(csr_path),
-            },
-            sort_keys=True,
-        )
-    )
+    site_yaml_path.write_text(f"name: {name}\norg: nvidia\ntype: client\nproject: {project}\nkind: site\n")
+    request_metadata = {
+        "artifact_type": "nvflare.cert.request",
+        "schema_version": "1",
+        "request_id": request_id,
+        "created_at": "2026-04-24T00:00:00Z",
+        "project": project,
+        "name": name,
+        "org": org,
+        "kind": kind,
+        "cert_type": cert_type,
+        "cert_role": None,
+        "csr_sha256": "0" * 64 if hash_mismatch else _sha256_file(csr_path),
+        "public_key_sha256": _public_key_sha256_from_csr(csr_path),
+    }
+    if metadata_updates:
+        request_metadata.update(metadata_updates)
+    for field in omit_fields:
+        request_metadata.pop(field, None)
+    request_json_path.write_text(json.dumps(request_metadata, sort_keys=True))
     zip_path = tmp_path / f"{name}.request.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
         zf.write(request_json_path, "request.json")
         zf.write(site_yaml_path, "site.yaml")
-        zf.write(csr_path, f"../{name}.csr" if traversal else f"{name}.csr")
+        zf.write(csr_path, csr_member or (f"../{name}.csr" if traversal else f"{name}.csr"))
         if include_key:
             zf.write(key_path, f"{name}.key")
     return zip_path
@@ -1624,13 +1673,56 @@ class TestDistributedCertRequestApprove:
         source.write_text('{"ok": true}')
         link = tmp_path / "source-link.json"
         os.symlink(str(source), str(link))
+        zip_path = tmp_path / "request.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("sentinel.txt", "keep")
 
         with pytest.raises(SystemExit) as exc_info:
-            _write_zip_nofollow(str(tmp_path / "request.zip"), {"request.json": str(link)})
+            _write_zip_nofollow(str(zip_path), {"request.json": str(link)}, force=True)
 
         assert exc_info.value.code == 4
         captured = capsys.readouterr()
         assert "unsafe zip source" in captured.err
+        with zipfile.ZipFile(zip_path) as zf:
+            assert zf.read("sentinel.txt") == b"keep"
+
+    def test_request_zip_writer_does_not_truncate_existing_zip_for_private_key_member(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        source = tmp_path / "source.json"
+        source.write_text('{"ok": true}')
+        zip_path = tmp_path / "request.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("sentinel.txt", "keep")
+
+        with pytest.raises(SystemExit) as exc_info:
+            _write_zip_nofollow(str(zip_path), {"site-3.key": str(source)}, force=True)
+
+        assert exc_info.value.code == 4
+        assert "private keys" in capsys.readouterr().err
+        with zipfile.ZipFile(zip_path) as zf:
+            assert zf.read("sentinel.txt") == b"keep"
+
+    def test_request_zip_writer_removes_partial_zip_when_write_fails(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        source = tmp_path / "source.json"
+        source.write_text('{"ok": true}')
+        zip_path = tmp_path / "request.zip"
+
+        original_writestr = zipfile.ZipFile.writestr
+
+        def _fail_after_first_write(self, zinfo_or_arcname, data, *args, **kwargs):
+            original_writestr(self, zinfo_or_arcname, data, *args, **kwargs)
+            raise OSError("disk full")
+
+        with patch("zipfile.ZipFile.writestr", _fail_after_first_write):
+            with pytest.raises(SystemExit) as exc_info:
+                _write_zip_nofollow(str(zip_path), {"request.json": str(source)})
+
+        assert exc_info.value.code == 1
+        assert "OUTPUT_DIR_NOT_WRITABLE" in capsys.readouterr().err
+        assert not zip_path.exists()
 
     def test_request_creates_request_zip_without_private_key_and_final_workflow_hint(
         self, tmp_path, capsys, monkeypatch
@@ -1679,6 +1771,127 @@ class TestDistributedCertRequestApprove:
         assert "Send site-3.csr" not in combined
         assert "cert sign" not in combined
 
+    @pytest.mark.parametrize(
+        "cert_role, expected_cert_type",
+        [
+            ("org-admin", "org_admin"),
+            ("lead", "lead"),
+            ("member", "member"),
+        ],
+    )
+    def test_request_user_role_email_creates_user_request_metadata(
+        self, tmp_path, capsys, monkeypatch, cert_role, expected_cert_type
+    ):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        email = f"{cert_role}@nvidia.com"
+        request_dir = tmp_path / email
+
+        _run_cert_cli(
+            [
+                "request",
+                "user",
+                cert_role,
+                email,
+                "--org",
+                "nvidia",
+                "--project",
+                "example_project",
+                "--out",
+                str(request_dir),
+            ]
+        )
+
+        with zipfile.ZipFile(request_dir / f"{email}.request.zip") as zf:
+            request_json = json.loads(zf.read("request.json"))
+            site_yaml = zf.read("site.yaml").decode("utf-8")
+
+        assert request_json["kind"] == "user"
+        assert request_json["name"] == email
+        assert request_json["cert_role"] == cert_role
+        assert request_json["cert_type"] == expected_cert_type
+        assert f"cert_role: {cert_role}" in site_yaml
+        assert f"type: {expected_cert_type}" in site_yaml
+        capsys.readouterr()
+
+    def test_request_user_invalid_role_fails(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        with pytest.raises(SystemExit) as exc_info:
+            _run_cert_cli(
+                [
+                    "request",
+                    "user",
+                    "study-lead",
+                    "alice@nvidia.com",
+                    "--org",
+                    "nvidia",
+                    "--project",
+                    "example_project",
+                    "--out",
+                    str(tmp_path / "alice@nvidia.com"),
+                ]
+            )
+
+        assert exc_info.value.code == 4
+
+    def test_request_user_requires_email_identity(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        with pytest.raises(SystemExit) as exc_info:
+            _run_cert_cli(
+                [
+                    "request",
+                    "user",
+                    "lead",
+                    "alice",
+                    "--org",
+                    "nvidia",
+                    "--project",
+                    "example_project",
+                    "--out",
+                    str(tmp_path / "alice"),
+                ]
+            )
+
+        assert exc_info.value.code == 4
+
+    def test_request_rejects_unsafe_project_name(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        with pytest.raises(SystemExit) as exc_info:
+            _run_cert_cli(
+                [
+                    "request",
+                    "site",
+                    "site-3",
+                    "--org",
+                    "nvidia",
+                    "--project",
+                    "../escape",
+                    "--out",
+                    str(tmp_path / "site-3"),
+                ]
+            )
+
+        assert exc_info.value.code == 4
+
+    def test_request_rejects_invalid_org_name(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        with pytest.raises(SystemExit) as exc_info:
+            _run_cert_cli(
+                [
+                    "request",
+                    "site",
+                    "site-3",
+                    "--org",
+                    "bad-org",
+                    "--project",
+                    "example_project",
+                    "--out",
+                    str(tmp_path / "site-3"),
+                ]
+            )
+
+        assert exc_info.value.code == 4
+
     def test_approve_creates_signed_zip_without_private_key_and_final_workflow_hint(
         self, tmp_path, capsys, monkeypatch
     ):
@@ -1704,22 +1917,41 @@ class TestDistributedCertRequestApprove:
         )
         capsys.readouterr()
 
-        _run_cert_cli(
-            ["approve", str(request_dir / "site-3.request.zip"), "--ca-dir", str(ca_dir), "--out", str(signed_zip)]
-        )
+        with patch(
+            "nvflare.tool.cert.cert_commands.shutil.copyfile",
+            side_effect=AssertionError("site.yaml should be written with nofollow semantics"),
+        ):
+            _run_cert_cli(
+                ["approve", str(request_dir / "site-3.request.zip"), "--ca-dir", str(ca_dir), "--out", str(signed_zip)]
+            )
 
         assert signed_zip.is_file()
         with zipfile.ZipFile(signed_zip) as zf:
             assert sorted(zf.namelist()) == ["rootCA.pem", "signed.json", "site-3.crt", "site.yaml"]
             assert not any(name.endswith(".key") for name in zf.namelist())
             signed_json = json.loads(zf.read("signed.json"))
-        request_json = signed_json["request"]
-        assert request_json["name"] == "site-3"
-        assert request_json["org"] == "nvidia"
-        assert request_json["kind"] == "site"
-        assert request_json["cert_type"] == "client"
-        assert request_json["project"] == "example_project"
-        assert (tmp_path / "home" / ".nvflare" / "cert_approves" / f"{request_json['request_id']}.json").is_file()
+        assert signed_json["name"] == "site-3"
+        assert signed_json["org"] == "nvidia"
+        assert signed_json["kind"] == "site"
+        assert signed_json["cert_type"] == "client"
+        assert signed_json["project"] == "example_project"
+        assert "request" not in signed_json
+        assert "project_name" not in signed_json
+        assert "serial_number" not in signed_json
+        assert "valid_until" not in signed_json
+        assert "requested_cert_role" not in signed_json
+        assert "public_key_sha256" not in signed_json
+        assert "csr_sha256" not in signed_json
+        assert signed_json["certificate"]["serial"]
+        assert signed_json["certificate"]["valid_until"]
+        assert "public_key_sha256" not in signed_json["certificate"]
+        assert signed_json["hashes"]["certificate_sha256"]
+        assert signed_json["hashes"]["public_key_sha256"]
+        approve_audit_path = tmp_path / "home" / ".nvflare" / "cert_approves" / f"{signed_json['request_id']}.json"
+        assert approve_audit_path.is_file()
+        approve_audit = json.loads(approve_audit_path.read_text())
+        assert approve_audit["schema_version"] == "1"
+        assert approve_audit["request"]["name"] == "site-3"
 
         captured = capsys.readouterr()
         combined = captured.out + captured.err
@@ -1734,6 +1966,16 @@ class TestDistributedCertRequestApprove:
             {"include_key": True},
             {"traversal": True},
             {"hash_mismatch": True},
+            {"omit_fields": ("csr_sha256",)},
+            {"omit_fields": ("public_key_sha256",)},
+            {"csr_member": "subdir/site-3.csr"},
+            {"project": "../escape"},
+            {"request_id": "../escape"},
+            {"metadata_updates": {"project": 123}},
+            {"metadata_updates": {"name": 123}},
+            {"metadata_updates": {"org": 123}},
+            {"metadata_updates": {"kind": "workspace"}},
+            {"org": "bad-org"},
         ],
     )
     def test_approve_rejects_unsafe_or_tampered_request_zip(self, tmp_path, capsys, monkeypatch, zip_kwargs):
@@ -1748,4 +1990,50 @@ class TestDistributedCertRequestApprove:
             _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir)])
 
         assert exc_info.value.code != 0
+        assert not (tmp_path / "home" / ".nvflare" / "escape.json").exists()
+        capsys.readouterr()
+
+    def test_approve_rejects_request_for_different_ca_project(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = tmp_path / "ca"
+        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        request_zip = _write_request_zip(tmp_path, project="other_project")
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir)])
+
+        assert exc_info.value.code == 4
+        assert "does not match CA project" in capsys.readouterr().err
+
+    def test_approve_request_zip_read_error_returns_cli_error(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = tmp_path / "ca"
+        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        request_zip = _write_request_zip(tmp_path)
+        capsys.readouterr()
+
+        with patch("nvflare.tool.cert.cert_commands.zipfile.ZipFile", side_effect=PermissionError("blocked")):
+            with pytest.raises(SystemExit) as exc_info:
+                _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir)])
+
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        assert "failed to read request zip" in captured.err
+        assert "blocked" in captured.err
+
+    def test_approve_reuses_validated_csr(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = tmp_path / "ca"
+        request_zip = _write_request_zip(tmp_path)
+        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        capsys.readouterr()
+
+        from nvflare.tool.cert import cert_commands
+
+        original_load_csr = cert_commands._load_and_validate_csr
+        with patch("nvflare.tool.cert.cert_commands._load_and_validate_csr", wraps=original_load_csr) as load_csr:
+            _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir)])
+
+        assert load_csr.call_count == 1
         capsys.readouterr()

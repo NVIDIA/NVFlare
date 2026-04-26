@@ -18,6 +18,7 @@ import datetime
 import hashlib
 import json
 import os
+import posixpath
 import re
 import shutil
 import stat
@@ -34,6 +35,7 @@ from nvflare.apis.utils.format_check import name_check
 from nvflare.lighter.constants import AdminRole, CtxKey, ParticipantType, PropKey
 from nvflare.lighter.entity import Project
 from nvflare.lighter.impl.cert import CertBuilder
+from nvflare.lighter.impl.signature import SignatureBuilder
 from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.prov_utils import prepare_builders
@@ -59,6 +61,137 @@ _KIT_TYPE_TO_ROLE = KIT_TYPE_TO_ROLE
 _DUMMY_SERVER_NAME = "__nvflare_dummy_server__"
 _DUMMY_ORG = "myorg"
 _MAX_ZIP_MEMBER_SIZE = 10 * 1024 * 1024
+_SAFE_PROJECT_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+_REQUEST_ID_PATTERN = re.compile(
+    r"(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
+)
+_SIGNED_KIND_TO_CERT_TYPE = {
+    "site": "client",
+    "server": "server",
+}
+_SIGNED_USER_CERT_TYPES = _VALID_CERT_TYPES - {"client", "server"}
+
+
+def _reject_invalid_project_name(project_name: str, *, code: str, hint: str) -> None:
+    output_error_message(
+        code,
+        f"Invalid project name: {project_name!r}.",
+        hint,
+        None,
+        exit_code=4,
+    )
+
+
+def _validate_safe_project_name(project_name: str, *, code: str = "INVALID_PROJECT_NAME") -> None:
+    hint = "Project names must match [A-Za-z0-9][A-Za-z0-9._-]* and must not contain path separators."
+    if not project_name or not isinstance(project_name, str) or not project_name.strip():
+        _reject_invalid_project_name(project_name, code=code, hint=hint)
+        return
+    if len(project_name) > 64:
+        _reject_invalid_project_name(project_name, code=code, hint="Project names must be 64 characters or fewer.")
+    if os.sep in project_name or (os.altsep and os.altsep in project_name) or project_name.startswith("."):
+        _reject_invalid_project_name(project_name, code=code, hint=hint)
+    if not _SAFE_PROJECT_NAME_PATTERN.fullmatch(project_name):
+        _reject_invalid_project_name(project_name, code=code, hint=hint)
+
+
+def _validate_request_id(request_id: str, *, code: str = "INVALID_SIGNED_ZIP") -> None:
+    if not isinstance(request_id, str) or not _REQUEST_ID_PATTERN.fullmatch(request_id):
+        output_error_message(
+            code,
+            f"Invalid request_id: {request_id!r}.",
+            "Signed zip request_id must be a UUID hex string.",
+            None,
+            exit_code=4,
+        )
+
+
+def _validate_org_name(org: str, *, code: str = "INVALID_SIGNED_ZIP") -> None:
+    if not isinstance(org, str):
+        invalid, reason = True, "org must be a string"
+    else:
+        invalid, reason = name_check(org, "org")
+    if invalid:
+        output_error_message(
+            code,
+            f"Invalid org name: {org!r}.",
+            reason,
+            None,
+            exit_code=4,
+        )
+
+
+def _validate_signed_kind_cert_type(kind: str, cert_type: str) -> None:
+    if kind in _SIGNED_KIND_TO_CERT_TYPE:
+        expected = _SIGNED_KIND_TO_CERT_TYPE[kind]
+        if cert_type != expected:
+            output_error_message(
+                "INVALID_SIGNED_ZIP",
+                f"Signed zip kind {kind!r} requires cert_type {expected!r}.",
+                "Ask the Project Admin to regenerate the signed zip.",
+                None,
+                exit_code=4,
+            )
+        return
+    if kind == "user" and cert_type in _SIGNED_USER_CERT_TYPES:
+        return
+    output_error_message(
+        "INVALID_SIGNED_ZIP",
+        f"Invalid signed zip kind/cert_type combination: kind={kind!r}, cert_type={cert_type!r}.",
+        "Ask the Project Admin to regenerate the signed zip.",
+        None,
+        exit_code=4,
+    )
+
+
+def _validate_participant_name(name: str, kit_type: str, *, code: str = "INVALID_SIGNED_ZIP") -> None:
+    if kit_type == "client":
+        entity_type = "client"
+    elif kit_type == "server":
+        entity_type = "server"
+    elif kit_type in _ADMIN_ROLES:
+        entity_type = "admin"
+    else:
+        output_error_message(
+            code,
+            f"Invalid participant type: {kit_type!r}.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+        return
+
+    if not isinstance(name, str):
+        invalid, reason = True, f"name must be a string for entity_type={entity_type}"
+    else:
+        invalid, reason = name_check(name, entity_type)
+    if invalid:
+        output_error_message(
+            code,
+            f"Invalid participant name: {name!r}.",
+            reason,
+            None,
+            exit_code=4,
+        )
+
+
+def _project_dir_under_workspace(workspace: str, project_name: str) -> str:
+    _validate_safe_project_name(project_name)
+    workspace_abs = os.path.abspath(workspace)
+    project_dir = os.path.abspath(os.path.join(workspace_abs, project_name))
+    try:
+        is_inside = os.path.commonpath([workspace_abs, project_dir]) == workspace_abs
+    except ValueError:
+        is_inside = False
+    if not is_inside:
+        output_error_message(
+            "INVALID_PROJECT_NAME",
+            f"Project path escapes workspace: {project_name!r}.",
+            "Use a path-safe project name.",
+            None,
+            exit_code=4,
+        )
+    return project_dir
 
 
 def _read_cert_type_from_cert(cert) -> str:
@@ -82,6 +215,12 @@ def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     fd = os.open(path, flags, mode)
+    try:
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, mode)
+    except Exception:
+        os.close(fd)
+        raise
     with os.fdopen(fd, "wb") as f:
         f.write(content)
 
@@ -136,14 +275,14 @@ class PrebuiltCertBuilder(Builder):
                 cert_dst = os.path.join(kit_dir, "client.crt")
                 key_dst = os.path.join(kit_dir, "client.key")
 
-            shutil.copy2(cert_path, cert_dst)
-            fd = os.open(key_dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "wb") as _kf, open(key_path, "rb") as _src:
-                _kf.write(_src.read())
+            with open(cert_path, "rb") as _src:
+                _write_file_nofollow(cert_dst, _src.read(), mode=0o644)
+            with open(key_path, "rb") as _src:
+                _write_file_nofollow(key_dst, _src.read(), mode=0o600)
 
             rootca_dst = os.path.join(kit_dir, "rootCA.pem")
-            shutil.copy2(self.rootca_path, rootca_dst)
-            os.chmod(rootca_dst, 0o644)
+            with open(self.rootca_path, "rb") as _src:
+                _write_file_nofollow(rootca_dst, _src.read(), mode=0o644)
             built_count += 1
 
         if built_count == 0:
@@ -164,7 +303,7 @@ def _parse_endpoint(endpoint: str) -> tuple:
 
 def _discover_name_from_dir(work_dir: str) -> str:
     """Find the single *.key file in work_dir and return its stem as the participant name."""
-    keys = [f for f in os.listdir(work_dir) if f.endswith(".key")]
+    keys = [f for f in os.listdir(work_dir) if f.endswith(".key") and not f.startswith(".")]
     if len(keys) == 0:
         output_error(
             "KEY_NOT_FOUND",
@@ -188,7 +327,7 @@ def _latest_prod_dir(workspace: str, project_name: str):
 
     Returns None if no prod_NN directories exist.
     """
-    project_dir = os.path.join(workspace, project_name)
+    project_dir = _project_dir_under_workspace(workspace, project_name)
     if not os.path.exists(project_dir):
         return None
     dirs = [
@@ -253,7 +392,7 @@ def _load_project_from_file(path: str) -> tuple:
             participant.update({"type": p_type})
         project_dict = {
             PropKey.API_VERSION: 3,
-            PropKey.NAME: project_dict.get("project_name", "project"),
+            PropKey.NAME: project_dict.get("project") or project_dict.get("project_name", "project"),
             "participants": [participant],
         }
 
@@ -268,6 +407,7 @@ def _load_project_from_file(path: str) -> tuple:
             None,
             exit_code=1,
         )
+    _validate_safe_project_name(project.name, code="INVALID_PROJECT_FILE")
 
     if project.get_relays():
         output_error_message(
@@ -306,7 +446,7 @@ def _validate_cert_material(cert_path: str, key_path: str, rootca_path: str, *, 
         now = datetime.datetime.now(datetime.timezone.utc)
     except AttributeError:
         expiry = cert.not_valid_after
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     if expiry < now:
         output_error("CERT_EXPIRED", exit_code=1, cert=cert_path, expiry=expiry.isoformat())
 
@@ -344,6 +484,8 @@ def _build_package_builders(custom_builders, cert_builder, scheme):
     has_cert = False
     all_builders = []
     for b in custom_builders or []:
+        if isinstance(b, SignatureBuilder):
+            continue
         if isinstance(b, CertBuilder):
             all_builders.append(cert_builder)
             has_cert = True
@@ -432,6 +574,7 @@ def _build_selected_participant_package(
     workspace = os.path.abspath(getattr(args, "workspace", None) or "workspace")
     admin_port = args.admin_port if args.admin_port is not None else port
     project_name = project_name or getattr(args, "project_name", None) or "project"
+    _project_dir_under_workspace(workspace, project_name)
 
     latest_prod = _latest_prod_dir(workspace, project_name)
     if latest_prod:
@@ -604,7 +747,7 @@ def _handle_package_yaml_mode(args, scheme, host, port):
             now = datetime.datetime.now(datetime.timezone.utc)
         except AttributeError:
             expiry = cert.not_valid_after
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
         if expiry < now:
             output_error("CERT_EXPIRED", exit_code=1, cert=cert_path, expiry=expiry.isoformat())
 
@@ -718,13 +861,14 @@ def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
     seen = set()
     for info in zf.infolist():
         name = info.filename
-        norm = os.path.normpath(name)
+        norm = posixpath.normpath(name)
         mode = info.external_attr >> 16
         if (
             os.path.isabs(name)
             or "\\" in name
+            or norm != name
             or norm.startswith("..")
-            or os.path.basename(name) != name
+            or posixpath.basename(name) != name
             or name in seen
             or info.file_size > _MAX_ZIP_MEMBER_SIZE
             or stat.S_IFMT(mode) == stat.S_IFLNK
@@ -736,7 +880,7 @@ def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
                 None,
                 exit_code=4,
             )
-        if name.endswith("/") or info.is_dir():
+        if info.is_dir():
             output_error_message(
                 "INVALID_SIGNED_ZIP",
                 f"Unexpected directory in signed zip {zip_path}: {name!r}.",
@@ -744,7 +888,7 @@ def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
                 None,
                 exit_code=4,
             )
-        if name.endswith(".key"):
+        if name.lower().endswith(".key"):
             output_error_message(
                 "INVALID_SIGNED_ZIP",
                 "Signed zip must not contain private key material.",
@@ -771,6 +915,7 @@ def _read_zip_json(zf: zipfile.ZipFile, name: str, zip_path: str):
 
 
 def _read_zip_yaml(zf: zipfile.ZipFile, name: str, zip_path: str):
+    data = None
     try:
         data = yaml.safe_load(zf.read(name).decode("utf-8"))
     except Exception as e:
@@ -813,10 +958,99 @@ def _normalize_hash(value: str) -> str:
 def _expected_hash(meta: dict, *names):
     hashes = meta.get("hashes") if isinstance(meta.get("hashes"), dict) else {}
     for name in names:
-        value = hashes.get(name) or meta.get(f"{name}_sha256")
+        value = hashes.get(name) or hashes.get(f"{name}_sha256") or meta.get(f"{name}_sha256")
         if value:
             return _normalize_hash(value)
     return ""
+
+
+def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str) -> None:
+    if not isinstance(signed_meta, dict):
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            "signed.json in signed zip must be a mapping.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+    if signed_meta.get("artifact_type") != "nvflare.cert.signed" or signed_meta.get("schema_version") != "1":
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            "Signed zip metadata has an unsupported artifact type or schema version.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+
+    required = ("request_id", "project", "name", "org", "kind", "cert_type", "cert_file", "rootca_file")
+    missing = [field for field in required if not signed_meta.get(field)]
+    if missing:
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            f"Signed zip metadata is missing required field(s): {', '.join(missing)}.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+    _validate_request_id(signed_meta["request_id"])
+    _validate_safe_project_name(signed_meta["project"], code="INVALID_SIGNED_ZIP")
+    _validate_org_name(signed_meta["org"], code="INVALID_SIGNED_ZIP")
+    cert_type = signed_meta["cert_type"]
+    if cert_type not in _VALID_CERT_TYPES:
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            f"Invalid signed zip cert_type: {cert_type!r}.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+    _validate_signed_kind_cert_type(signed_meta["kind"], cert_type)
+    _validate_participant_name(signed_meta["name"], cert_type, code="INVALID_SIGNED_ZIP")
+    if signed_meta["cert_file"] != cert_name or signed_meta["rootca_file"] != "rootCA.pem":
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            "Signed zip metadata file names do not match zip contents.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+
+    for meta_field, site_field in (("name", "name"), ("org", "org"), ("cert_type", "type"), ("project", "project")):
+        if site_meta.get(site_field) != signed_meta.get(meta_field):
+            output_error_message(
+                "INVALID_SIGNED_ZIP",
+                f"site.yaml field '{site_field}' does not match signed metadata.",
+                "Ask the Project Admin to regenerate the signed zip.",
+                None,
+                exit_code=4,
+            )
+    if site_meta.get("kind") != signed_meta.get("kind"):
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            "site.yaml field 'kind' does not match signed metadata.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+    if (site_meta.get("cert_role") or None) != (signed_meta.get("cert_role") or None):
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            "site.yaml field 'cert_role' does not match signed metadata.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+
+    hashes = signed_meta.get("hashes")
+    required_hashes = ("site_yaml_sha256", "certificate_sha256", "rootca_sha256", "public_key_sha256")
+    if not isinstance(hashes, dict) or any(not hashes.get(name) for name in required_hashes):
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            "Signed zip metadata is missing required hashes.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
 
 
 def _validate_signed_hashes(signed_meta: dict, file_contents: dict):
@@ -828,7 +1062,13 @@ def _validate_signed_hashes(signed_meta: dict, file_contents: dict):
     for hash_names, content_name in checks:
         expected = _expected_hash(signed_meta, *hash_names)
         if not expected:
-            continue
+            output_error_message(
+                "INVALID_SIGNED_ZIP",
+                f"Missing required hash for {content_name} in signed zip metadata.",
+                "Ask the Project Admin to regenerate the signed zip.",
+                None,
+                exit_code=4,
+            )
         actual = _hash_bytes(file_contents[content_name])
         if actual != expected:
             output_error_message(
@@ -843,7 +1083,13 @@ def _validate_signed_hashes(signed_meta: dict, file_contents: dict):
 def _validate_signed_public_key_hash(signed_meta: dict, cert):
     expected = _expected_hash(signed_meta, "public_key")
     if not expected:
-        return
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            "Missing required public key hash in signed zip metadata.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
     public_key_der = cert.public_key().public_bytes(
         serialization.Encoding.DER,
         serialization.PublicFormat.SubjectPublicKeyInfo,
@@ -938,6 +1184,7 @@ def _load_signed_zip(input_path: str):
                 "rootCA.pem": zf.read("rootCA.pem"),
                 "cert": zf.read(cert_name),
             }
+            _validate_signed_metadata(signed_meta, site_meta, cert_name)
     except zipfile.BadZipFile:
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -948,6 +1195,14 @@ def _load_signed_zip(input_path: str):
         )
     except FileNotFoundError:
         output_error("SIGNED_ZIP_NOT_FOUND", exit_code=1, path=input_path)
+    except Exception as e:
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            f"Failed to read signed zip {input_path}: {e}.",
+            "Provide the .signed.zip returned by 'nvflare cert approve'.",
+            None,
+            exit_code=4,
+        )
 
     _validate_signed_hashes(signed_meta, file_contents)
     return signed_meta, site_meta, cert_name, file_contents
@@ -984,21 +1239,92 @@ def _audit_request_dir(request_id: str):
     return None
 
 
+def _has_request_material(request_dir: str, name: str) -> bool:
+    return os.path.isfile(os.path.join(request_dir, f"{name}.key")) and os.path.isfile(
+        os.path.join(request_dir, "request.json")
+    )
+
+
 def _resolve_request_dir(args, signed_zip_path: str, identity: dict):
     if getattr(args, "request_dir", None):
         return os.path.abspath(args.request_dir)
 
     audit_dir = _audit_request_dir(identity.get("request_id"))
-    if audit_dir:
+    if audit_dir and _has_request_material(audit_dir, identity["name"]):
         return os.path.abspath(audit_dir)
 
     signed_dir = os.path.dirname(os.path.abspath(signed_zip_path))
     parent = os.path.dirname(signed_dir)
     candidates = [signed_dir, os.path.join(signed_dir, identity["name"]), os.path.join(parent, identity["name"])]
     for candidate in candidates:
-        if os.path.isfile(os.path.join(candidate, f"{identity['name']}.key")):
+        if _has_request_material(candidate, identity["name"]):
             return candidate
     return candidates[0] if os.path.basename(signed_dir) == identity["name"] else candidates[1]
+
+
+def _read_local_request_metadata(request_dir: str) -> dict:
+    request_json_path = os.path.join(request_dir, "request.json")
+    if not os.path.isfile(request_json_path):
+        output_error_message(
+            "REQUEST_METADATA_NOT_FOUND",
+            "Local request metadata was not found.",
+            "Use --request-dir to point to the original request folder created by 'nvflare cert request'.",
+            None,
+            exit_code=1,
+            detail=f"missing {request_json_path}",
+        )
+
+    try:
+        with open(request_json_path, "r") as f:
+            request_meta = json.load(f)
+    except Exception as e:
+        output_error_message(
+            "REQUEST_METADATA_INVALID",
+            "Local request metadata could not be read.",
+            "Use the original request folder created by 'nvflare cert request'.",
+            None,
+            exit_code=4,
+            detail=str(e),
+        )
+    if not isinstance(request_meta, dict):
+        output_error_message(
+            "REQUEST_METADATA_INVALID",
+            "Local request metadata must be a JSON object.",
+            "Use the original request folder created by 'nvflare cert request'.",
+            None,
+            exit_code=4,
+        )
+    return request_meta
+
+
+def _request_metadata_mismatch(detail: str) -> None:
+    output_error_message(
+        "REQUEST_METADATA_MISMATCH",
+        "Local request metadata does not match the signed zip.",
+        "Use the signed zip returned for this request, or point --request-dir to the matching request folder.",
+        None,
+        exit_code=4,
+        detail=detail,
+    )
+
+
+def _validate_local_request_metadata(request_meta: dict, signed_meta: dict) -> None:
+    required = ("request_id", "project", "name", "org", "kind", "cert_type", "csr_sha256", "public_key_sha256")
+    missing = [field for field in required if not request_meta.get(field)]
+    if missing:
+        _request_metadata_mismatch(f"request.json missing required field(s): {', '.join(missing)}")
+
+    for field in ("request_id", "project", "name", "org", "kind", "cert_type", "cert_role"):
+        if (request_meta.get(field) or None) != (signed_meta.get(field) or None):
+            _request_metadata_mismatch(f"field {field!r} differs")
+
+    signed_public_key_hash = _expected_hash(signed_meta, "public_key")
+    if _normalize_hash(request_meta["public_key_sha256"]) != signed_public_key_hash:
+        _request_metadata_mismatch("public_key_sha256 differs")
+
+    signed_csr_hash = _expected_hash(signed_meta, "csr")
+    if signed_csr_hash and _normalize_hash(request_meta["csr_sha256"]) != signed_csr_hash:
+        _request_metadata_mismatch("csr_sha256 differs")
 
 
 def _write_materialized_signed_files(
@@ -1071,104 +1397,133 @@ def _selected_project_context(args, identity: dict, kit_type: str):
 
 def _handle_signed_zip_package(args, scheme, host, port):
     signed_meta, site_meta, cert_name, file_contents = _load_signed_zip(args.input)
-    try:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            temp_cert = os.path.join(tmp_dir, cert_name)
-            with open(temp_cert, "wb") as f:
-                f.write(file_contents["cert"])
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        temp_cert = os.path.join(tmp_dir, cert_name)
+        temp_rootca = os.path.join(tmp_dir, "rootCA.pem")
+        try:
+            _write_file_nofollow(temp_cert, file_contents["cert"])
+            _write_file_nofollow(temp_rootca, file_contents["rootCA.pem"])
             cert = load_crt(temp_cert)
+            # Used below to ensure signed metadata project matches the root CA subject.
+            rootca = load_crt(temp_rootca)
             _validate_signed_public_key_hash(signed_meta, cert)
-    except Exception as e:
-        output_error_message(
-            "INVALID_SIGNED_ZIP",
-            f"Failed to load certificate from signed zip: {e}.",
-            "Ask the Project Admin to regenerate the signed zip.",
-            None,
-            exit_code=4,
-        )
+        except Exception as e:
+            output_error_message(
+                "INVALID_SIGNED_ZIP",
+                f"Failed to load certificate from signed zip: {e}.",
+                "Ask the Project Admin to regenerate the signed zip.",
+                None,
+                exit_code=4,
+            )
 
-    identity = _signed_identity_from_metadata(signed_meta, site_meta, cert)
-    if not identity.get("name"):
-        output_error_message(
-            "INVALID_SIGNED_ZIP",
-            "Signed zip does not identify a participant name.",
-            "Ask the Project Admin to regenerate the signed zip.",
-            None,
-            exit_code=4,
-        )
-    if cert_name != f"{identity['name']}.crt":
-        output_error_message(
-            "INVALID_SIGNED_ZIP",
-            f"Signed zip certificate {cert_name!r} does not match participant {identity['name']!r}.",
-            "Ask the Project Admin to regenerate the signed zip.",
-            None,
-            exit_code=4,
-        )
+        identity = _signed_identity_from_metadata(signed_meta, site_meta, cert)
+        if not identity.get("name"):
+            output_error_message(
+                "INVALID_SIGNED_ZIP",
+                "Signed zip does not identify a participant name.",
+                "Ask the Project Admin to regenerate the signed zip.",
+                None,
+                exit_code=4,
+            )
+        if cert_name != f"{identity['name']}.crt":
+            output_error_message(
+                "INVALID_SIGNED_ZIP",
+                f"Signed zip certificate {cert_name!r} does not match participant {identity['name']!r}.",
+                "Ask the Project Admin to regenerate the signed zip.",
+                None,
+                exit_code=4,
+            )
 
-    cert_kit_type = _read_cert_type_from_cert(cert)
-    if not cert_kit_type or cert_kit_type not in _VALID_CERT_TYPES:
-        output_error("CERT_TYPE_UNKNOWN", exit_code=1, cert=cert_name)
-    if identity.get("cert_type") and identity["cert_type"] != cert_kit_type:
-        output_error_message(
-            "SIGNED_ZIP_IDENTITY_CONFLICT",
-            f"Signed metadata type {identity['cert_type']!r} conflicts with certificate type {cert_kit_type!r}.",
-            "Ask the Project Admin to regenerate the signed zip.",
-            None,
-            exit_code=4,
-        )
-    cert_cn = _read_cert_common_name(cert)
-    if cert_cn and cert_cn != identity["name"]:
-        output_error_message(
-            "SIGNED_ZIP_IDENTITY_CONFLICT",
-            f"Signed metadata name {identity['name']!r} conflicts with certificate CN {cert_cn!r}.",
-            "Ask the Project Admin to regenerate the signed zip.",
-            None,
-            exit_code=4,
-        )
+        _validate_request_id(identity.get("request_id"))
+        _validate_safe_project_name(identity.get("project_name"), code="INVALID_SIGNED_ZIP")
+        if identity.get("org"):
+            _validate_org_name(identity["org"], code="INVALID_SIGNED_ZIP")
 
-    resolved_request_dir = _resolve_request_dir(args, args.input, identity)
-    _write_materialized_signed_files(resolved_request_dir, identity, signed_meta, site_meta, file_contents)
+        cert_kit_type = _read_cert_type_from_cert(cert)
+        if not cert_kit_type or cert_kit_type not in _VALID_CERT_TYPES:
+            output_error("CERT_TYPE_UNKNOWN", exit_code=1, cert=cert_name)
+        _validate_participant_name(identity["name"], cert_kit_type, code="INVALID_SIGNED_ZIP")
+        if identity.get("cert_type") and identity["cert_type"] != cert_kit_type:
+            output_error_message(
+                "SIGNED_ZIP_IDENTITY_CONFLICT",
+                f"Signed metadata type {identity['cert_type']!r} conflicts with certificate type {cert_kit_type!r}.",
+                "Ask the Project Admin to regenerate the signed zip.",
+                None,
+                exit_code=4,
+            )
+        cert_cn = _read_cert_common_name(cert)
+        if cert_cn and cert_cn != identity["name"]:
+            output_error_message(
+                "SIGNED_ZIP_IDENTITY_CONFLICT",
+                f"Signed metadata name {identity['name']!r} conflicts with certificate CN {cert_cn!r}.",
+                "Ask the Project Admin to regenerate the signed zip.",
+                None,
+                exit_code=4,
+            )
+        cert_org = _read_cert_org(cert)
+        if identity.get("org") and cert_org != identity["org"]:
+            output_error_message(
+                "SIGNED_ZIP_IDENTITY_CONFLICT",
+                f"Signed metadata org {identity['org']!r} conflicts with certificate org {cert_org!r}.",
+                "Ask the Project Admin to regenerate the signed zip.",
+                None,
+                exit_code=4,
+            )
+        root_project = _read_cert_common_name(rootca)
+        if identity.get("project_name") and root_project != identity["project_name"]:
+            output_error_message(
+                "SIGNED_ZIP_IDENTITY_CONFLICT",
+                f"Signed metadata project {identity['project_name']!r} conflicts with root CA project {root_project!r}.",
+                "Ask the Project Admin to regenerate the signed zip.",
+                None,
+                exit_code=4,
+            )
 
-    key_path = os.path.join(resolved_request_dir, f"{identity['name']}.key")
-    cert_path = os.path.join(resolved_request_dir, f"{identity['name']}.crt")
-    rootca_path = os.path.join(resolved_request_dir, "rootCA.pem")
-    if not os.path.isfile(key_path):
-        output_error(
-            "KEY_NOT_FOUND",
-            exit_code=1,
-            path=key_path,
-            detail="Use --request-dir to point to the local request folder that contains the private key.",
+        resolved_request_dir = _resolve_request_dir(args, args.input, identity)
+        key_path = os.path.join(resolved_request_dir, f"{identity['name']}.key")
+        if not os.path.isfile(key_path):
+            output_error(
+                "KEY_NOT_FOUND",
+                exit_code=1,
+                path=key_path,
+                detail="Use --request-dir to point to the local request folder that contains the private key.",
+            )
+        request_meta = _read_local_request_metadata(resolved_request_dir)
+        _validate_local_request_metadata(request_meta, signed_meta)
+
+        cert = _validate_cert_material(temp_cert, key_path, temp_rootca, validate_key_match=True)
+        expected_public_key_hash = _expected_hash(signed_meta, "public_key")
+        if expected_public_key_hash and _cert_public_key_sha256(cert) != expected_public_key_hash:
+            output_error_message(
+                "KEY_CERT_MISMATCH",
+                "The signed certificate public key does not match signed metadata.",
+                "Ask the Project Admin to regenerate the signed zip.",
+                None,
+                exit_code=1,
+            )
+        identity["org"] = identity.get("org") or _read_cert_org(cert) or _DUMMY_ORG
+        participant, custom_builders, project_name = _selected_project_context(args, identity, cert_kit_type)
+        participant_props = dict(participant.props) if participant else {}
+
+        _write_materialized_signed_files(resolved_request_dir, identity, signed_meta, site_meta, file_contents)
+        cert_path = os.path.join(resolved_request_dir, f"{identity['name']}.crt")
+        rootca_path = os.path.join(resolved_request_dir, "rootCA.pem")
+
+        result = _build_selected_participant_package(
+            args=args,
+            scheme=scheme,
+            host=host,
+            port=port,
+            name=identity["name"],
+            org=identity.get("org") or _DUMMY_ORG,
+            kit_type=cert_kit_type,
+            cert_path=cert_path,
+            key_path=key_path,
+            rootca_path=rootca_path,
+            project_name=project_name,
+            participant_props=participant_props,
+            custom_builders=custom_builders,
         )
-
-    cert = _validate_cert_material(cert_path, key_path, rootca_path, validate_key_match=True)
-    expected_public_key_hash = _expected_hash(signed_meta, "public_key")
-    if expected_public_key_hash and _cert_public_key_sha256(cert) != expected_public_key_hash:
-        output_error_message(
-            "KEY_CERT_MISMATCH",
-            "The signed certificate public key does not match signed metadata.",
-            "Ask the Project Admin to regenerate the signed zip.",
-            None,
-            exit_code=1,
-        )
-    identity["org"] = identity.get("org") or _read_cert_org(cert) or _DUMMY_ORG
-    participant, custom_builders, project_name = _selected_project_context(args, identity, cert_kit_type)
-    participant_props = dict(participant.props) if participant else {}
-
-    result = _build_selected_participant_package(
-        args=args,
-        scheme=scheme,
-        host=host,
-        port=port,
-        name=identity["name"],
-        org=identity.get("org") or _DUMMY_ORG,
-        kit_type=cert_kit_type,
-        cert_path=cert_path,
-        key_path=key_path,
-        rootca_path=rootca_path,
-        project_name=project_name,
-        participant_props=participant_props,
-        custom_builders=custom_builders,
-    )
     output_ok(result)
     return 0
 

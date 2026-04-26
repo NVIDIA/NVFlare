@@ -292,6 +292,7 @@ The command validates:
   `*.key` file is present.
 - Hashes in `request.json` match the CSR and metadata files.
 - CSR subject fields match `request.json` and `site.yaml`.
+- The request project matches the CA metadata and root CA subject.
 - Requested `kind` and certificate role map to an allowed certificate type.
 - The Project Admin explicitly chose to approve this request.
 
@@ -364,10 +365,14 @@ site-3/site-3.key
 
 The command finds the private key by:
 
-1. Centralized local request state created by `cert request`, for example
+1. Explicit override: `--request-dir <dir>`.
+2. Centralized local request state created by `cert request`, for example
    `~/.nvflare/cert_requests/<request_id>/`.
-2. A request folder next to the signed zip, such as `./site-3/`.
-3. Advanced fallback: an explicit `--request-dir <dir>`.
+3. A request folder next to the signed zip, such as `./site-3/`.
+
+Each discovered request directory must contain both `<name>.key` and `request.json`.
+Incomplete candidates are skipped so a stray private-key file does not block lookup of the
+real request folder.
 
 The command validates:
 
@@ -521,20 +526,17 @@ cert_role: org-admin
 
 ```json
 {
-  "format_version": 1,
+  "artifact_type": "nvflare.cert.request",
+  "schema_version": "1",
   "request_id": "8ff2d9e7-6f89-4acb-96e2-fc2d2fb8c6f7",
+  "created_at": "2026-04-24T00:00:00Z",
+  "project": "example_project",
   "name": "site-3",
   "org": "nvidia",
   "kind": "site",
-  "cert_role": null,
   "cert_type": "client",
-  "project_name": "example_project",
-  "csr_file": "site-3.csr",
-  "site_yaml_file": "site.yaml",
-  "created_at": "2026-04-24T00:00:00Z",
-  "nvflare_version": "<version>",
+  "cert_role": null,
   "csr_sha256": "<hex>",
-  "site_yaml_sha256": "<hex>",
   "public_key_sha256": "<hex>"
 }
 ```
@@ -568,27 +570,29 @@ to the local request:
 
 ```json
 {
-  "format_version": 1,
+  "artifact_type": "nvflare.cert.signed",
+  "schema_version": "1",
   "request_id": "8ff2d9e7-6f89-4acb-96e2-fc2d2fb8c6f7",
+  "approved_at": "2026-04-24T00:00:00Z",
+  "project": "example_project",
   "name": "site-3",
   "org": "nvidia",
   "kind": "site",
-  "cert_role": null,
   "cert_type": "client",
-  "requested_cert_role": null,
-  "requested_cert_type": "client",
-  "project_name": "example_project",
+  "cert_role": null,
+  "certificate": {
+    "serial": "<hex>",
+    "valid_until": "2029-04-24T00:00:00Z"
+  },
   "cert_file": "site-3.crt",
   "rootca_file": "rootCA.pem",
-  "approved_at": "2026-04-24T00:00:00Z",
-  "issuer_cn": "example_project",
-  "serial_number": "<hex>",
-  "valid_until": "2029-04-24T00:00:00Z",
-  "csr_sha256": "<hex>",
-  "site_yaml_sha256": "<hex>",
-  "cert_sha256": "<hex>",
-  "rootca_sha256": "<hex>",
-  "public_key_sha256": "<hex>"
+  "hashes": {
+    "csr_sha256": "<hex>",
+    "site_yaml_sha256": "<hex>",
+    "certificate_sha256": "<hex>",
+    "rootca_sha256": "<hex>",
+    "public_key_sha256": "<hex>"
+  }
 }
 ```
 
@@ -933,6 +937,7 @@ Validation:
 - `<cert-role>` must map to a known certificate type, such as `org-admin`, `lead`,
   or `member`.
 - User `<email>` must be an email address.
+- Project names must be path-safe identifiers matching `[A-Za-z0-9][A-Za-z0-9._-]*`.
 
 ### `nvflare cert approve` - Project Admin
 
@@ -966,7 +971,7 @@ It does not include the private key.
 ### `nvflare package` - Requester
 
 ```bash
-nvflare package <signed-zip> -e <server-endpoint> [-w <workspace>] [--project-file <project.yml>]
+nvflare package <signed-zip> -e <server-endpoint> [-w <workspace>] [--project-file <project.yml>] [--request-dir <dir>]
 ```
 
 Example:

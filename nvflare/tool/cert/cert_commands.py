@@ -33,6 +33,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import NameOID
 
+from nvflare.apis.utils.format_check import name_check
 from nvflare.lighter.impl.cert import CertBuilder
 from nvflare.lighter.utils import (
     generate_keys,
@@ -58,6 +59,10 @@ from nvflare.tool.cli_schema import handle_schema_flag
 
 _USAGE_HINT = "Run the command with -h for usage."
 _SAFE_CERT_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@-]*")
+_SAFE_PROJECT_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+_REQUEST_ID_PATTERN = re.compile(
+    r"(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
+)
 _MAX_ZIP_MEMBER_SIZE = 10 * 1024 * 1024
 _REQUEST_ARTIFACT_TYPE = "nvflare.cert.request"
 _SIGNED_ARTIFACT_TYPE = "nvflare.cert.signed"
@@ -72,13 +77,20 @@ _USER_ROLE_TO_CERT_TYPE = {
     "lead": "lead",
     "member": "member",
 }
+_REQUEST_KINDS = set(_REQUEST_KIND_TO_CERT_TYPE) | {"user"}
+_USER_CERT_TYPES = set(_USER_ROLE_TO_CERT_TYPE.values())
+
+
+class _UnsafeZipSourceError(Exception):
+    pass
 
 
 def _validate_safe_cert_name(name: str, *, field_label: str) -> None:
-    if not name or not name.strip():
+    if not isinstance(name, str) or not name.strip():
         output_error(
             "INVALID_NAME", exit_code=4, name=name, reason=f"{field_label} must not be empty or whitespace only."
         )
+        return
     if len(name) > 64:
         output_error("INVALID_NAME", exit_code=4, name=name, reason=f"{field_label} must be 64 characters or fewer.")
     if os.sep in name or (os.altsep and os.altsep in name) or name.startswith("."):
@@ -94,6 +106,145 @@ def _validate_safe_cert_name(name: str, *, field_label: str) -> None:
             exit_code=4,
             name=name,
             reason=f"{field_label} must match [A-Za-z0-9][A-Za-z0-9._@-]*.",
+        )
+
+
+def _validate_safe_project_name(project: str, *, field_label: str = "Project") -> None:
+    if not isinstance(project, str) or not project.strip():
+        output_error(
+            "INVALID_PROJECT_NAME",
+            exit_code=4,
+            name=project,
+            reason=f"{field_label} must not be empty or whitespace only.",
+        )
+        return
+    if len(project) > 64:
+        output_error(
+            "INVALID_PROJECT_NAME",
+            exit_code=4,
+            name=project,
+            reason=f"{field_label} must be 64 characters or fewer.",
+        )
+    if os.sep in project or (os.altsep and os.altsep in project) or project.startswith("."):
+        output_error(
+            "INVALID_PROJECT_NAME",
+            exit_code=4,
+            name=project,
+            reason=f"{field_label} must not contain path separators or start with '.'.",
+        )
+    if not _SAFE_PROJECT_NAME_PATTERN.fullmatch(project):
+        output_error(
+            "INVALID_PROJECT_NAME",
+            exit_code=4,
+            name=project,
+            reason=f"{field_label} must match [A-Za-z0-9][A-Za-z0-9._-]*.",
+        )
+
+
+def _validate_org_name(org: str) -> None:
+    if not isinstance(org, str):
+        invalid, reason = True, "org must be a string"
+    else:
+        invalid, reason = name_check(org, "org")
+    if invalid:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=reason,
+        )
+
+
+def _validate_request_kind(kind: str) -> None:
+    if kind not in _REQUEST_KINDS:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="cert request kind must be one of: site, server, user",
+        )
+
+
+def _validate_request_kind_cert_type(kind: str, cert_type: str, cert_role: str = None) -> None:
+    _validate_request_kind(kind)
+    if kind in _REQUEST_KIND_TO_CERT_TYPE:
+        expected = _REQUEST_KIND_TO_CERT_TYPE[kind]
+        if cert_type != expected:
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail=f"request kind '{kind}' requires cert type '{expected}'",
+            )
+        return
+
+    if cert_type not in _USER_CERT_TYPES:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="request kind 'user' requires cert type one of: org_admin, lead, member",
+        )
+    if cert_role and _USER_ROLE_TO_CERT_TYPE.get(cert_role) != cert_type:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="user cert_role does not match request cert_type",
+        )
+
+
+def _validate_identity_name(name: str, cert_type: str) -> None:
+    if cert_type == "client":
+        entity_type = "client"
+    elif cert_type == "server":
+        entity_type = "server"
+    elif cert_type in ADMIN_CERT_TYPES:
+        entity_type = "admin"
+    else:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
+        )
+        return
+
+    if not isinstance(name, str):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"name must be a string for entity_type={entity_type}",
+        )
+        return
+
+    invalid, reason = name_check(name, entity_type)
+    if invalid:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=reason,
+        )
+
+
+def _validate_request_id(request_id: str) -> None:
+    if not isinstance(request_id, str) or not _REQUEST_ID_PATTERN.fullmatch(request_id):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="request_id must be a UUID hex string.",
         )
 
 
@@ -140,6 +291,7 @@ def handle_cert_init(args):
         output_usage_error(
             _cert_cli._cert_init_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
         )
+    _validate_safe_project_name(args.project)
 
     # 3. Resolve force
     force = args.force
@@ -282,6 +434,20 @@ def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
         f.write(content)
 
 
+def _read_file_nofollow(path: str, max_size: int = None) -> bytes:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags)
+    with os.fdopen(fd, "rb") as f:
+        if max_size is None:
+            return f.read()
+        content = f.read(max_size + 1)
+    if len(content) > max_size:
+        raise _UnsafeZipSourceError(f"zip source too large: {path}")
+    return content
+
+
 def _write_json_file(path: str, data: dict) -> None:
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     if hasattr(os, "O_NOFOLLOW"):
@@ -335,6 +501,7 @@ def _write_yaml_file(path: str, data: dict) -> None:
 def _load_yaml_file(path: str) -> dict:
     import yaml
 
+    data = None
     try:
         with open(path, "r") as f:
             data = yaml.safe_load(f)
@@ -373,6 +540,7 @@ def _safe_zip_names(zf: zipfile.ZipFile) -> list:
             or normalized != name
             or normalized.startswith("../")
             or ".." in parts
+            or posixpath.basename(name) != name
             or name in seen
             or info.file_size > _MAX_ZIP_MEMBER_SIZE
             or stat.S_IFMT(mode) == stat.S_IFLNK
@@ -397,6 +565,30 @@ def _safe_zip_names(zf: zipfile.ZipFile) -> list:
     return names
 
 
+def _read_zip_source_nofollow(src_path: str) -> bytes:
+    src_stat = os.lstat(src_path)
+    if os.path.islink(src_path) or not stat.S_ISREG(src_stat.st_mode):
+        raise _UnsafeZipSourceError(f"not a regular file: {src_path}")
+    read_flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        read_flags |= os.O_NOFOLLOW
+    src_fd = os.open(src_path, read_flags)
+    with os.fdopen(src_fd, "rb") as src_file:
+        opened_stat = os.fstat(src_file.fileno())
+        if (
+            src_stat.st_ino != opened_stat.st_ino
+            or src_stat.st_dev != opened_stat.st_dev
+            or not stat.S_ISREG(opened_stat.st_mode)
+        ):
+            raise _UnsafeZipSourceError(f"unsafe zip source changed while reading: {src_path}")
+        if opened_stat.st_size > _MAX_ZIP_MEMBER_SIZE:
+            raise _UnsafeZipSourceError(f"zip source too large: {src_path}")
+        content = src_file.read(_MAX_ZIP_MEMBER_SIZE + 1)
+        if len(content) > _MAX_ZIP_MEMBER_SIZE:
+            raise _UnsafeZipSourceError(f"zip source too large: {src_path}")
+        return content
+
+
 def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> None:
     if os.path.exists(zip_path) and not force:
         output_error("CERT_ALREADY_EXISTS", path=zip_path)
@@ -406,6 +598,29 @@ def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> No
     except OSError as e:
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=parent, detail=str(e))
 
+    prepared_members = []
+    for arcname, src_path in members.items():
+        if arcname.lower().endswith(".key"):
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail=f"zip must not contain private keys: {arcname}",
+            )
+        try:
+            prepared_members.append((arcname, _read_zip_source_nofollow(src_path)))
+        except _UnsafeZipSourceError as e:
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail=f"unsafe zip source: {e}",
+            )
+        except OSError as e:
+            output_error("OUTPUT_DIR_NOT_WRITABLE", path=src_path, detail=str(e))
+
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
@@ -413,50 +628,19 @@ def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> No
         fd = os.open(zip_path, flags, 0o600)
         with os.fdopen(fd, "wb") as f:
             with zipfile.ZipFile(f, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-                for arcname, src_path in members.items():
-                    if arcname.lower().endswith(".key"):
-                        output_error_message(
-                            "INVALID_ARGS",
-                            "Invalid arguments.",
-                            _USAGE_HINT,
-                            exit_code=4,
-                            detail=f"zip must not contain private keys: {arcname}",
-                        )
-                    try:
-                        src_stat = os.lstat(src_path)
-                        if os.path.islink(src_path) or not stat.S_ISREG(src_stat.st_mode):
-                            raise OSError(f"not a regular file: {src_path}")
-                        read_flags = os.O_RDONLY
-                        if hasattr(os, "O_NOFOLLOW"):
-                            read_flags |= os.O_NOFOLLOW
-                        src_fd = os.open(src_path, read_flags)
-                        with os.fdopen(src_fd, "rb") as src_file:
-                            opened_stat = os.fstat(src_file.fileno())
-                            if (
-                                src_stat.st_ino != opened_stat.st_ino
-                                or src_stat.st_dev != opened_stat.st_dev
-                                or not stat.S_ISREG(opened_stat.st_mode)
-                            ):
-                                raise OSError(f"unsafe zip source changed while reading: {src_path}")
-                            if opened_stat.st_size > _MAX_ZIP_MEMBER_SIZE:
-                                raise OSError(f"zip source too large: {src_path}")
-                            content = src_file.read(_MAX_ZIP_MEMBER_SIZE + 1)
-                            if len(content) > _MAX_ZIP_MEMBER_SIZE:
-                                raise OSError(f"zip source too large: {src_path}")
-                            zf.writestr(arcname, content)
-                    except OSError:
-                        output_error_message(
-                            "INVALID_ARGS",
-                            "Invalid arguments.",
-                            _USAGE_HINT,
-                            exit_code=4,
-                            detail=f"unsafe zip source: {src_path}",
-                        )
-    except OSError as e:
+                for arcname, content in prepared_members:
+                    zf.writestr(arcname, content)
+    except Exception as e:
+        try:
+            if os.path.exists(zip_path) and not os.path.islink(zip_path):
+                os.remove(zip_path)
+        except OSError:
+            pass
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=zip_path, detail=str(e))
 
 
 def _read_json(path: str) -> dict:
+    data = None
     try:
         with open(path, "r") as f:
             data = json.load(f)
@@ -610,7 +794,7 @@ def generate_csr_files(name: str, org: str, cert_type: str, output_dir: str, for
 
     try:
         _write_private_key(key_path, pem_key)
-        _write_file(csr_path, pem_csr)
+        _write_file_nofollow(csr_path, pem_csr)
     except OSError as e:
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail=str(e))
 
@@ -962,7 +1146,8 @@ def sign_csr_files(
         output_error("ROOTCA_ALREADY_EXISTS", path=rootca_out_path)
 
     try:
-        ca_cert = load_crt(ca_cert_path)
+        rootca_bytes = _read_file_nofollow(ca_cert_path)
+        ca_cert = x509.load_pem_x509_certificate(rootca_bytes, default_backend())
         ca_key = load_private_key_file(ca_key_path)
     except Exception as e:
         output_error("CA_LOAD_FAILED", ca_dir=ca_dir, detail=str(e))
@@ -988,8 +1173,6 @@ def sign_csr_files(
     try:
         signed_cert_pem = serialize_cert(signed_cert)
         _write_file_nofollow(cert_out_path, signed_cert_pem)
-        with open(ca_cert_path, "rb") as f:
-            rootca_bytes = f.read()
         _write_file_nofollow(rootca_out_path, rootca_bytes)
     except OSError as e:
         for path in (cert_out_path, rootca_out_path):
@@ -1173,6 +1356,7 @@ def handle_cert_request(args):
         sys.argv[1:],
     )
 
+    _validate_request_kind(getattr(args, "kind", None))
     missing_flags = [
         flag for flag, attr in (("--org", "org"), ("--project", "project")) if not getattr(args, attr, None)
     ]
@@ -1182,10 +1366,13 @@ def handle_cert_request(args):
             f"missing required argument(s): {', '.join(missing_flags)}",
             exit_code=4,
         )
+    _validate_safe_project_name(args.project)
+    _validate_org_name(args.org)
 
     identity = _resolve_request_identity(args)
     name = identity["name"].strip()
     _validate_safe_cert_name(name, field_label="Name")
+    _validate_identity_name(name, identity["cert_type"])
 
     request_dir = os.path.abspath(
         getattr(args, "out", None) or getattr(args, "output_dir", None) or os.path.join(".", name)
@@ -1219,7 +1406,6 @@ def handle_cert_request(args):
         "request_id": request_id,
         "created_at": created_at,
         "project": args.project,
-        "project_name": args.project,
         "name": name,
         "org": args.org,
         "kind": identity["kind"],
@@ -1248,6 +1434,7 @@ def handle_cert_request(args):
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=request_dir, detail=str(e))
 
     audit_record = {
+        "schema_version": _ARTIFACT_VERSION,
         "request": request_meta,
         "request_dir": request_dir,
         "request_zip_path": request_zip_path,
@@ -1316,8 +1503,7 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
                 )
             for member in expected:
                 target_path = os.path.join(extract_dir, member)
-                with open(target_path, "wb") as f:
-                    f.write(zf.read(member))
+                _write_file_nofollow(target_path, zf.read(member))
     except zipfile.BadZipFile as e:
         output_error_message(
             "INVALID_ARGS", "Invalid arguments.", _USAGE_HINT, exit_code=4, detail=f"invalid request zip: {e}"
@@ -1330,11 +1516,30 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
             exit_code=4,
             detail=f"invalid request metadata: {e}",
         )
+    except Exception as e:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"failed to read request zip: {e}",
+        )
     return request_meta
 
 
 def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: str) -> x509.CertificateSigningRequest:
-    required = ("artifact_type", "schema_version", "request_id", "project", "name", "org", "kind", "cert_type")
+    required = (
+        "artifact_type",
+        "schema_version",
+        "request_id",
+        "project",
+        "name",
+        "org",
+        "kind",
+        "cert_type",
+        "csr_sha256",
+        "public_key_sha256",
+    )
     missing = [field for field in required if not request_meta.get(field)]
     if missing:
         output_error_message(
@@ -1352,8 +1557,11 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             exit_code=4,
             detail="unsupported request artifact metadata",
         )
+    _validate_request_id(request_meta["request_id"])
+    _validate_safe_project_name(request_meta["project"])
     name = request_meta["name"]
     _validate_safe_cert_name(name, field_label="Name")
+    _validate_org_name(request_meta["org"])
     cert_type = request_meta["cert_type"]
     if cert_type not in _VALID_CERT_TYPES:
         output_error_message(
@@ -1363,6 +1571,8 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             exit_code=4,
             detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
         )
+    _validate_request_kind_cert_type(request_meta["kind"], cert_type, request_meta.get("cert_role"))
+    _validate_identity_name(name, cert_type)
 
     for meta_field, site_field in (("name", "name"), ("org", "org"), ("cert_type", "type"), ("project", "project")):
         if site_meta.get(site_field) != request_meta.get(meta_field):
@@ -1418,7 +1628,7 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             exit_code=4,
             detail="CSR organization does not match request metadata",
         )
-    if request_meta.get("csr_sha256") and request_meta["csr_sha256"] != _sha256_file(csr_path):
+    if request_meta["csr_sha256"] != _sha256_file(csr_path):
         output_error_message(
             "INVALID_ARGS",
             "Invalid arguments.",
@@ -1426,7 +1636,7 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             exit_code=4,
             detail="CSR hash does not match request metadata",
         )
-    if request_meta.get("public_key_sha256") and request_meta["public_key_sha256"] != _csr_public_key_sha256(csr):
+    if request_meta["public_key_sha256"] != _csr_public_key_sha256(csr):
         output_error_message(
             "INVALID_ARGS",
             "Invalid arguments.",
@@ -1435,6 +1645,41 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             detail="CSR public key hash does not match request metadata",
         )
     return csr
+
+
+def _validate_request_project_matches_ca(ca_dir: str, project: str) -> dict:
+    ca_json_path = os.path.join(ca_dir, "ca.json")
+    ca_cert_path = os.path.join(ca_dir, "rootCA.pem")
+    for path in (ca_json_path, ca_cert_path):
+        if not os.path.exists(path):
+            output_error("CA_NOT_FOUND", ca_dir=ca_dir)
+
+    ca_meta = _read_json(ca_json_path)
+    ca_project = ca_meta.get("project")
+    _validate_safe_project_name(ca_project, field_label="CA project")
+    if ca_project != project:
+        output_error_message(
+            "PROJECT_CA_MISMATCH",
+            f"Request project {project!r} does not match CA project {ca_project!r}.",
+            "Use the CA directory for the same project as the request.",
+            None,
+            exit_code=4,
+        )
+
+    try:
+        ca_cert = load_crt(ca_cert_path)
+    except Exception as e:
+        output_error("CA_LOAD_FAILED", ca_dir=ca_dir, detail=str(e))
+    ca_subject = _get_cn(ca_cert.subject)
+    if ca_subject != project:
+        output_error_message(
+            "PROJECT_CA_MISMATCH",
+            f"Request project {project!r} does not match root CA subject {ca_subject!r}.",
+            "Use the CA directory for the same project as the request.",
+            None,
+            exit_code=4,
+        )
+    return ca_meta
 
 
 def handle_cert_approve(args):
@@ -1474,6 +1719,7 @@ def handle_cert_approve(args):
         csr_path = os.path.join(request_dir, f"{name}.csr")
         site_meta = _load_yaml_file(site_yaml_path)
         csr = _validate_request_metadata(request_meta, site_meta, csr_path)
+        ca_meta = _validate_request_project_matches_ca(args.ca_dir, request_meta["project"])
 
         sign_result = sign_csr_files(
             csr_path=csr_path,
@@ -1483,6 +1729,7 @@ def handle_cert_approve(args):
             accept_csr_role=False,
             valid_days=getattr(args, "valid_days", 1095),
             force=True,
+            csr=csr,
         )
 
         approved_at = _utc_ts()
@@ -1492,32 +1739,20 @@ def handle_cert_approve(args):
             "request_id": request_meta["request_id"],
             "approved_at": approved_at,
             "project": request_meta["project"],
-            "project_name": request_meta["project"],
             "name": request_meta["name"],
             "org": request_meta["org"],
             "kind": request_meta["kind"],
             "cert_type": request_meta["cert_type"],
             "cert_role": request_meta.get("cert_role"),
-            "request": request_meta,
             "certificate": {
                 "serial": sign_result["serial"],
                 "valid_until": sign_result["valid_until"],
-                "cert_type": sign_result["cert_type"],
-                "public_key_sha256": sign_result["public_key_sha256"],
             },
-            "serial_number": sign_result["serial"],
-            "valid_until": sign_result["valid_until"],
             "cert_file": f"{name}.crt",
             "rootca_file": "rootCA.pem",
-            "requested_cert_role": request_meta.get("cert_role"),
-            "requested_cert_type": request_meta["cert_type"],
-            "csr_sha256": _sha256_file(csr_path),
-            "site_yaml_sha256": _sha256_file(site_yaml_path),
-            "cert_sha256": sign_result["certificate_sha256"],
-            "rootca_sha256": sign_result["rootca_sha256"],
-            "public_key_sha256": sign_result["public_key_sha256"],
             "hashes": {
                 "csr_sha256": _sha256_file(csr_path),
+                "site_yaml_sha256": _sha256_file(site_yaml_path),
                 "certificate_sha256": sign_result["certificate_sha256"],
                 "rootca_sha256": sign_result["rootca_sha256"],
                 "public_key_sha256": _csr_public_key_sha256(csr),
@@ -1526,7 +1761,8 @@ def handle_cert_approve(args):
         signed_json_path = os.path.join(signed_dir, "signed.json")
         _write_json_file(signed_json_path, signed_meta)
         signed_site_yaml_path = os.path.join(signed_dir, "site.yaml")
-        shutil.copyfile(site_yaml_path, signed_site_yaml_path)
+        with open(site_yaml_path, "rb") as _src:
+            _write_file_nofollow(signed_site_yaml_path, _src.read())
 
         signed_zip_path = getattr(args, "out", None) or getattr(args, "signed_zip", None)
         if signed_zip_path:
@@ -1544,9 +1780,10 @@ def handle_cert_approve(args):
             force=getattr(args, "force", False),
         )
 
-        ca_meta = _read_json(os.path.join(args.ca_dir, "ca.json"))
         audit_record = {
+            "schema_version": _ARTIFACT_VERSION,
             "approval": signed_meta,
+            "request": request_meta,
             "request_zip_path": request_zip_path,
             "signed_zip_path": signed_zip_path,
             "ca": {

@@ -43,7 +43,7 @@ The command validates that:
 - the signed zip does not contain private keys;
 - the local private key matches the signed certificate;
 - the certificate chains to ``rootCA.pem``;
-- request metadata and signed metadata match when local request state is found.
+- local ``request.json`` metadata and signed metadata match.
 
 The output goes under:
 
@@ -117,8 +117,8 @@ Main Arguments
 - ``-w, --workspace``: workspace root directory. Default: ``workspace``.
 - ``-p, --project-file``: project YAML for custom builders or package
   configuration. In signed-zip mode, only the signed participant is built.
-- ``--request-dir``: local request directory containing the private key. Use it
-  when the signed zip is not next to the request folder.
+- ``--request-dir``: local request directory containing the private key and
+  ``request.json``. Use it when the signed zip is not next to the request folder.
 - ``--admin-port``: server admin port. Default: same as the service port.
 - ``--force``: allow packaging when the participant name already appears in the
   latest ``prod_NN`` directory. A new ``prod_NN`` is created alongside.

@@ -333,6 +333,8 @@ def _def_cert_approve_parser(cert_sub: argparse._SubParsersAction) -> argparse.A
 
 
 def _hide_developer_subcommands(cert_sub: argparse._SubParsersAction) -> None:
+    # argparse.SUPPRESS is not enough for subparsers: hidden commands still show
+    # up in cert help as "==SUPPRESS==". argparse exposes no public API for this.
     cert_sub._choices_actions = [
         action for action in cert_sub._choices_actions if getattr(action, "dest", None) not in ("csr", "sign")
     ]

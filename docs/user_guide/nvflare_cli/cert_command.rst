@@ -38,7 +38,8 @@ This creates:
 
 Common options:
 
-- ``--project``: project name. Required.
+- ``--project``: project name. Required. Must be a path-safe identifier
+  matching ``[A-Za-z0-9][A-Za-z0-9._-]*``.
 - ``--org``: organization name.
 - ``-o, --output-dir``: CA output directory. Required.
 - ``--valid-days``: root CA validity in days. Default: ``3650``.
@@ -107,7 +108,8 @@ The Project Admin runs ``cert approve`` with the project CA:
 
    nvflare cert approve site-3.request.zip --ca-dir ./ca
 
-This validates the request zip, signs the CSR, and creates:
+This validates the request zip, verifies that the request project matches the
+CA metadata and root CA subject, signs the CSR, and creates:
 
 .. code-block:: text
 
