@@ -690,6 +690,7 @@ def _build_selected_participant_package(
             None,
             exit_code=1,
         )
+        return 1
 
     prod_dir = ctx[CtxKey.CURRENT_PROD_DIR]
     if not is_server:
@@ -870,6 +871,7 @@ def _handle_package_yaml_mode(args, scheme, host, port):
             None,
             exit_code=1,
         )
+        return 1
 
     prod_dir = ctx[CtxKey.CURRENT_PROD_DIR]
 
@@ -1787,6 +1789,8 @@ def _handle_signed_zip_package(args, scheme, host, port):
             participant_props=participant_props,
             custom_builders=custom_builders,
         )
+        if not isinstance(result, dict):
+            return result
         result["rootca_fingerprint_sha256"] = rootca_fingerprint_sha256
     output_ok(result)
     return 0
@@ -1995,5 +1999,7 @@ def handle_package(args):
         rootca_path=args.rootca,
         project_name=project_name,
     )
+    if not isinstance(result, dict):
+        return result
     output_ok(result)
     return 0

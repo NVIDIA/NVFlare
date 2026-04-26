@@ -49,6 +49,7 @@ from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256, normalize_sha
 from nvflare.tool.package.package_commands import (
     _DUMMY_SERVER_NAME,
     PrebuiltCertBuilder,
+    _build_selected_participant_package,
     _discover_name_from_dir,
     _load_signed_zip,
     _parse_endpoint,
@@ -708,6 +709,35 @@ def cert_env(tmp_path):
 
 
 class TestClientKitAssembly:
+    def test_explicit_mode_returns_build_error_without_success_output(self, cert_env, tmp_path, monkeypatch):
+        work = tmp_path / "work"
+        work.mkdir()
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        rootca = cert_env["rootca_path"]
+        key_path, cert_path = _make_signed_cert(
+            ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt", role="client"
+        )
+        args = _make_args(
+            kit_type="client",
+            name="hospital-1",
+            endpoint="grpc://server.example.com:8002",
+            cert=cert_path,
+            key=key_path,
+            rootca=rootca,
+            workspace=str(tmp_path / "ws"),
+        )
+        output_ok = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands.output_ok", output_ok)
+        monkeypatch.setattr(
+            "nvflare.tool.package.package_commands._build_selected_participant_package", lambda **kwargs: 1
+        )
+
+        result = handle_package(args)
+
+        assert result == 1
+        output_ok.assert_not_called()
+
     def test_basic_explicit_mode(self, cert_env, tmp_path):
         work = tmp_path / "work"
         work.mkdir()
@@ -2470,6 +2500,56 @@ def _write_single_site_yaml(path, data):
 class TestYamlMode:
     """Tests for _handle_package_yaml_mode (invoked via handle_package --project-file)."""
 
+    def test_selected_participant_build_error_returns_when_error_is_mocked(self, tmp_path, monkeypatch):
+        error = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
+        monkeypatch.setattr(Provisioner, "provision", lambda self, project: {CtxKey.BUILD_ERROR: True})
+        args = _make_args(workspace=str(tmp_path / "ws"))
+
+        result = _build_selected_participant_package(
+            args=args,
+            scheme="grpc",
+            host="fl-server",
+            port=8002,
+            name="hospital-1",
+            org="myorg",
+            kit_type="client",
+            cert_path=str(tmp_path / "hospital-1.crt"),
+            key_path=str(tmp_path / "hospital-1.key"),
+            rootca_path=str(tmp_path / "rootCA.pem"),
+            project_name="myproject",
+        )
+
+        assert result == 1
+        error.assert_called_once()
+        assert error.call_args.args[0] == "BUILD_FAILED"
+
+    def test_yaml_build_error_returns_when_error_is_mocked(self, cert_env, tmp_path, monkeypatch):
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        cert_dir = tmp_path / "certs"
+        cert_dir.mkdir()
+        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
+        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
+        project_yaml = tmp_path / "project.yaml"
+        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
+        error = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
+        monkeypatch.setattr(Provisioner, "provision", lambda self, project: {CtxKey.BUILD_ERROR: True})
+        args = _make_args(
+            kit_type=None,
+            endpoint="grpc://fl-server:8002",
+            dir=str(cert_dir),
+            workspace=str(tmp_path / "ws"),
+            project_name="myproject",
+            project_file=str(project_yaml),
+        )
+
+        result = handle_package(args)
+
+        assert result == 1
+        assert error.call_args.args[0] == "BUILD_FAILED"
+
     # ------------------------------------------------------------------
     # 1. All participants land in the SAME prod_NN directory
     # ------------------------------------------------------------------
@@ -3566,6 +3646,20 @@ class TestSignedZipPackageMode:
         combined = captured.out + captured.err
         assert "rootca_fingerprint_sha256" in combined
         assert expected in combined
+
+    def test_signed_zip_returns_build_error_without_success_output(self, tmp_path, monkeypatch):
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
+        output_ok = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands.output_ok", output_ok)
+        monkeypatch.setattr(
+            "nvflare.tool.package.package_commands._build_selected_participant_package", lambda **kwargs: 1
+        )
+
+        result = handle_package(args)
+
+        assert result == 1
+        output_ok.assert_not_called()
 
     def test_signed_zip_accepts_expected_rootca_fingerprint_without_prompting(self, tmp_path, monkeypatch):
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
