@@ -148,6 +148,55 @@ builds one participant at a time, repeated package commands can create separate
 
 ---
 
+## Optional — package with `project.yml` custom builders
+
+`cert request` and `cert approve` do not use the project file. They only handle
+identity and certificate approval. Pass `project.yml` to the package step when
+startup-kit generation needs custom builders or participant-specific package
+configuration.
+
+Example `project.yml` for `site-1`:
+
+```yaml
+api_version: 3
+name: fed-project
+description: ""
+participants:
+  - name: site-1
+    type: client
+    org: Org1
+    listening_host:
+      scheme: grpc
+      default_host: site-1.example.com
+      port: 9001
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      scheme: grpc
+  # Add your custom startup-kit builder here.
+  # - path: my_package.my_builders.MyCustomBuilder
+  #   args:
+  #     my_option: my_value
+```
+
+Then pass it as the optional fourth argument:
+
+```bash
+./04_site_admin_package.sh \
+  ./distprov_demo/site-1.signed.zip \
+  grpc://server.example.com:8002 \
+  ./distprov_demo/site-1-request \
+  ./project.yml
+```
+
+The signed zip remains the source of truth for identity. If `project.yml`
+contains `site-1`, its `name`, `org`, and type must match the signed zip. If the
+project file lists other participants too, this command still builds only the
+participant in the signed zip.
+
+---
+
 ## Notes
 
 - `python3` is required by the helper scripts to read `site.yml`.
