@@ -1516,10 +1516,12 @@ def handle_cert_request(args):
             exit_code=4,
             detail=f"--out must be a directory path: {request_dir}",
         )
+        return 1
 
     request_zip_path = os.path.join(request_dir, f"{name}.request.zip")
     if os.path.exists(request_zip_path) and not getattr(args, "force", False):
         output_error("CERT_ALREADY_EXISTS", path=request_zip_path)
+        return 1
 
     csr_result = generate_csr_files(
         name=name,
@@ -1871,6 +1873,7 @@ def handle_cert_approve(args):
             f"missing required argument(s): {', '.join(missing_flags)}",
             exit_code=4,
         )
+        return 1
 
     request_zip_path = os.path.abspath(args.request_zip)
     with tempfile.TemporaryDirectory() as tmp_dir:
