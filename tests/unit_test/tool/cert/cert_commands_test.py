@@ -38,6 +38,7 @@ from nvflare.lighter.utils import load_crt, load_private_key_file, serialize_cer
 from nvflare.tool import cli_output
 from nvflare.tool.cert.cert_commands import (
     _generate_csr,
+    _write_file_nofollow,
     _write_zip_nofollow,
     handle_cert_csr,
     handle_cert_init,
@@ -106,6 +107,18 @@ def _run_csr(tmp_path, name="hospital-1", **kwargs):
 def _load_csr_file(path):
     with open(path, "rb") as f:
         return x509.load_pem_x509_csr(f.read(), default_backend())
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="chmod not meaningful on Windows")
+def test_write_file_nofollow_sets_requested_mode_despite_umask(tmp_path):
+    path = tmp_path / "rootCA.pem"
+    old_umask = os.umask(0o077)
+    try:
+        _write_file_nofollow(str(path), b"public cert", mode=0o644)
+    finally:
+        os.umask(old_umask)
+
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o644
 
 
 # ---------------------------------------------------------------------------
@@ -1617,14 +1630,14 @@ def _write_request_zip(
 ):
     request_dir = tmp_path / name
     request_dir.mkdir()
-    key_pem, csr_pem = _generate_csr(name, "nvidia", "client")
+    key_pem, csr_pem = _generate_csr(name, org, cert_type)
     key_path = request_dir / f"{name}.key"
     csr_path = request_dir / f"{name}.csr"
     site_yaml_path = request_dir / "site.yaml"
     request_json_path = request_dir / "request.json"
     key_path.write_bytes(key_pem)
     csr_path.write_bytes(csr_pem)
-    site_yaml_path.write_text(f"name: {name}\norg: nvidia\ntype: client\nproject: {project}\nkind: site\n")
+    site_yaml_path.write_text(f"name: {name}\norg: {org}\ntype: {cert_type}\nproject: {project}\nkind: {kind}\n")
     request_metadata = {
         "artifact_type": "nvflare.cert.request",
         "schema_version": "1",

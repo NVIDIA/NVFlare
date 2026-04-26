@@ -430,6 +430,12 @@ def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     fd = os.open(path, flags, mode)
+    try:
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, mode)
+    except Exception:
+        os.close(fd)
+        raise
     with os.fdopen(fd, "wb") as f:
         f.write(content)
 

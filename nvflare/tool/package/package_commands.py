@@ -1142,6 +1142,10 @@ def _signed_identity_from_metadata(signed_meta: dict, site_meta: dict, cert):
 
 
 def _load_signed_zip(input_path: str):
+    signed_meta = {}
+    site_meta = {}
+    cert_name = ""
+    file_contents = {}
     try:
         with zipfile.ZipFile(input_path, "r") as zf:
             names = set(_safe_zip_names(zf, input_path))
