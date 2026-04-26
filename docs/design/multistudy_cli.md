@@ -796,7 +796,7 @@ These commands mutate runtime study state only.
 
 ## Relationship to Distributed Provisioning
 
-The distributed provisioning workflow (`docs/design/distributed_provisioning.md`) decentralizes the **identity layer**: each site generates its own private key, sends only a CSR to the Project Admin, and receives a signed certificate in return. Once the site packages its startup kit and connects to the server, it is a fully authenticated participant — without the Project Admin ever holding its private key.
+The distributed provisioning workflow (`docs/design/distributed_provisioning.md`) decentralizes the **identity layer**: each requester generates its own private key, sends only a request zip to the Project Admin, and receives a signed zip in return. Once the requester packages its startup kit and connects to the server, it is a fully authenticated participant — without the Project Admin ever holding its private key.
 
 The multi-study CLI owns the **study authorization layer** at runtime: once sites are authenticated and connected, an org admin can register studies, enroll sites within their org, and manage study-user membership without involving provisioning. Project-admin mutations may enroll sites for multiple orgs in one call by supplying explicit `--site-org` groups.
 
