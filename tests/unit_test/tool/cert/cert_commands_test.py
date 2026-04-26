@@ -140,6 +140,15 @@ def test_write_json_file_removes_created_file_when_fchmod_fails(tmp_path):
     assert not path.exists()
 
 
+def test_write_json_file_removes_created_file_when_json_dump_fails(tmp_path):
+    path = tmp_path / "request.json"
+    with patch("nvflare.tool.cert.cert_commands.json.dump", side_effect=OSError("disk full")):
+        with pytest.raises(OSError):
+            _write_json_file(str(path), {"ok": True})
+
+    assert not path.exists()
+
+
 class _FailingFdOpen:
     def __init__(self, fd):
         self.fd = fd

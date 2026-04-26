@@ -491,7 +491,14 @@ def _write_json_file(path: str, data: dict) -> None:
             pass
         raise
     with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+        try:
+            json.dump(data, f, indent=2)
+        except Exception:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            raise
 
 
 def _utc_now() -> datetime.datetime:
