@@ -564,7 +564,8 @@ def _build_package_builders(custom_builders, cert_builder, scheme):
 
     if not any(isinstance(b, StaticFileBuilder) for b in all_builders):
         cert_pos = next((i for i, b in enumerate(all_builders) if isinstance(b, PrebuiltCertBuilder)), None)
-        assert cert_pos is not None, "PrebuiltCertBuilder missing from builder list; this is a bug"
+        if cert_pos is None:
+            raise RuntimeError("PrebuiltCertBuilder missing from builder list; this is a bug")
         all_builders.insert(cert_pos + 1, StaticFileBuilder(scheme=scheme))
 
     return all_builders
@@ -615,6 +616,7 @@ def _build_selected_participant_package(
             None,
             exit_code=4,
         )
+        return 1
 
     if kit_type in _ADMIN_ROLES and name_check(name, "admin")[0]:
         output_error_message(
@@ -624,6 +626,7 @@ def _build_selected_participant_package(
             None,
             exit_code=4,
         )
+        return 1
 
     if kit_type != "server" and name == host:
         output_error_message(
@@ -633,6 +636,7 @@ def _build_selected_participant_package(
             None,
             exit_code=4,
         )
+        return 1
 
     workspace = os.path.abspath(getattr(args, "workspace", None) or "workspace")
     admin_port = args.admin_port if args.admin_port is not None else port
@@ -644,6 +648,7 @@ def _build_selected_participant_package(
         existing_path = os.path.join(latest_prod, name)
         if os.path.exists(existing_path) and not args.force:
             output_error("OUTPUT_DIR_EXISTS", exit_code=1, path=existing_path)
+            return 1
 
     is_server = kit_type == "server"
     server_props = {
@@ -1734,6 +1739,7 @@ def _handle_signed_zip_package(args, scheme, host, port):
                 path=key_path,
                 detail="Use --request-dir to point to the local request folder that contains the private key.",
             )
+            return 1
         request_meta = _read_local_request_metadata(resolved_request_dir)
         if request_meta is None:
             return 1
@@ -1816,7 +1822,7 @@ def handle_package(args):
             exit_code=4,
         )
 
-    if not has_signed_zip_input and not has_project_file and not has_dir and not has_explicit:
+    if not has_signed_zip_input and not has_dir and not has_explicit:
         output_error_message(
             "INVALID_ARGS",
             "Signed zip input is required.",
