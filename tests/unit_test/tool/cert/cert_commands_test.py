@@ -60,7 +60,9 @@ from nvflare.tool.cert.cert_commands import (
     generate_csr_files,
     handle_cert_csr,
     handle_cert_init,
+    handle_cert_request,
     handle_cert_sign,
+    sign_csr_files,
 )
 from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256
 
@@ -439,17 +441,36 @@ class TestCertValidationHelpers:
         output_error.assert_called_once()
         generate_csr.assert_not_called()
 
-    def test_request_project_ca_load_failure_returns_none_when_error_is_mocked(self, tmp_path):
+    def test_generate_csr_existing_key_does_not_overwrite_when_error_is_mocked(self, tmp_path):
+        key_path = tmp_path / "site-3.key"
+        key_path.write_text("existing key")
+
+        with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
+            with patch("nvflare.tool.cert.cert_commands._generate_csr") as generate_csr:
+                result = generate_csr_files("site-3", "nvidia", "client", str(tmp_path))
+
+        assert result == {}
+        output_error.assert_called_once()
+        assert output_error.call_args.args[0] == "KEY_ALREADY_EXISTS"
+        generate_csr.assert_not_called()
+        assert key_path.read_text() == "existing key"
+
+    def test_request_project_ca_uses_nofollow_read_for_rootca(self, tmp_path):
         ca_dir = tmp_path / "ca"
         handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        rootca_path = str(ca_dir / "rootCA.pem")
 
-        with patch("nvflare.tool.cert.cert_commands.load_crt", side_effect=ValueError("bad ca")):
+        from nvflare.tool.cert import cert_commands
+
+        with patch(
+            "nvflare.tool.cert.cert_commands._read_file_nofollow", wraps=cert_commands._read_file_nofollow
+        ) as read_file:
             with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
                 ca_meta = _validate_request_project_matches_ca(str(ca_dir), "example_project")
 
-        assert ca_meta is None
-        output_error.assert_called_once()
-        assert output_error.call_args.args[0] == "CA_LOAD_FAILED"
+        assert ca_meta["project"] == "example_project"
+        output_error.assert_not_called()
+        read_file.assert_any_call(rootca_path)
 
     def test_request_project_ca_mismatch_returns_none_when_error_is_mocked(self, tmp_path):
         ca_dir = tmp_path / "ca"
@@ -815,6 +836,23 @@ class TestCertCsr:
         assert "INVALID_ARGS" in captured.err
         assert "missing required argument(s): -o/--output-dir, -n/--name, -t/--type" in captured.err
 
+    def test_missing_required_args_return_when_error_is_mocked(self, tmp_path):
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            with patch("nvflare.tool.cert.cert_commands.generate_csr_files") as generate_csr:
+                result = handle_cert_csr(_csr_args(name=None, output_dir=None))
+
+        assert result == 1
+        output_error.assert_called_once()
+        generate_csr.assert_not_called()
+
+    def test_empty_csr_result_returns_before_success_output(self, tmp_path):
+        with patch("nvflare.tool.cert.cert_commands.generate_csr_files", return_value={}):
+            with patch("nvflare.tool.cert.cert_commands.output_ok") as output_ok:
+                result = handle_cert_csr(_csr_args(name="site-3", output_dir=str(tmp_path), cert_type="client"))
+
+        assert result == 1
+        output_ok.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # cert sign tests
@@ -1120,6 +1158,33 @@ class TestCertSign:
         captured = capsys.readouterr()
         assert "INVALID_ARGS" in captured.err
         assert "missing required argument(s): -r/--csr, -c/--ca-dir, -o/--output-dir" in captured.err
+
+    def test_missing_required_args_return_when_error_is_mocked(self):
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            with patch("nvflare.tool.cert.cert_commands._load_and_validate_csr") as load_csr:
+                result = handle_cert_sign(_sign_args(csr_path=None, ca_dir=None, output_dir=None))
+
+        assert result == 1
+        output_error.assert_called_once()
+        load_csr.assert_not_called()
+
+    def test_sign_existing_cert_does_not_overwrite_when_error_is_mocked(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)
+        out_dir = tmp_path / "signed"
+        out_dir.mkdir()
+        cert_path = out_dir / "hospital-1.crt"
+        cert_path.write_text("existing cert")
+
+        with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
+            with patch("nvflare.tool.cert.cert_commands._build_signed_cert") as build_cert:
+                result = sign_csr_files(csr_path=csr_path, ca_dir=ca_dir, output_dir=str(out_dir), cert_type="client")
+
+        assert result is None
+        output_error.assert_called_once()
+        assert output_error.call_args.args[0] == "CERT_ALREADY_EXISTS"
+        build_cert.assert_not_called()
+        assert cert_path.read_text() == "existing cert"
 
     def test_sign_rootca_copied(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
@@ -2036,6 +2101,26 @@ class TestDistributedCertPublicSurface:
 
 
 class TestDistributedCertRequestApprove:
+    def test_request_missing_flags_returns_when_error_is_mocked(self, tmp_path):
+        args = argparse.Namespace(
+            schema=False,
+            kind="site",
+            identity_args=["site-3"],
+            org=None,
+            project="example_project",
+            out=str(tmp_path / "site-3"),
+            force=False,
+        )
+
+        with patch("nvflare.tool.cert.cert_commands.output_usage_error") as output_error:
+            with patch("nvflare.tool.cert.cert_commands._validate_request_kind") as validate_kind:
+                result = handle_cert_request(args)
+
+        assert result == 1
+        output_error.assert_called_once()
+        validate_kind.assert_not_called()
+        assert not (tmp_path / "site-3").exists()
+
     def test_resolve_sign_cert_type_returns_after_conflicting_modes_when_error_is_mocked(self):
         with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
             cert_type = _resolve_sign_cert_type(None, "client", True)

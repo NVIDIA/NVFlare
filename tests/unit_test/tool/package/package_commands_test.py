@@ -51,6 +51,8 @@ from nvflare.tool.package.package_commands import (
     PrebuiltCertBuilder,
     _build_selected_participant_package,
     _discover_name_from_dir,
+    _handle_package_yaml_mode,
+    _load_project_from_file,
     _load_signed_zip,
     _parse_endpoint,
     _read_local_request_metadata,
@@ -62,6 +64,7 @@ from nvflare.tool.package.package_commands import (
     _validate_signed_hashes,
     _validate_signed_metadata,
     _validate_signed_public_key_hash,
+    _validated_audit_request_dir,
     _write_file_nofollow,
     handle_package,
 )
@@ -2500,6 +2503,140 @@ def _write_single_site_yaml(path, data):
 class TestYamlMode:
     """Tests for _handle_package_yaml_mode (invoked via handle_package --project-file)."""
 
+    def test_load_project_missing_file_returns_when_error_is_mocked(self, tmp_path, monkeypatch):
+        error = unittest.mock.Mock()
+        load_yaml = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
+        monkeypatch.setattr("nvflare.tool.package.package_commands.load_yaml", load_yaml)
+
+        project, builders = _load_project_from_file(str(tmp_path / "missing.yaml"))
+
+        assert project is None
+        assert builders is None
+        assert error.call_args.args[0] == "PROJECT_FILE_NOT_FOUND"
+        load_yaml.assert_not_called()
+
+    def test_load_project_parse_failure_returns_when_error_is_mocked(self, tmp_path, monkeypatch):
+        project_yaml = tmp_path / "project.yaml"
+        project_yaml.write_text("name: project\n")
+        error = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
+        monkeypatch.setattr(
+            "nvflare.tool.package.package_commands.load_yaml", unittest.mock.Mock(side_effect=ValueError("bad"))
+        )
+
+        project, builders = _load_project_from_file(str(project_yaml))
+
+        assert project is None
+        assert builders is None
+        assert error.call_args.args[0] == "INVALID_PROJECT_FILE"
+
+    def test_yaml_missing_material_dir_returns_when_error_is_mocked(self, tmp_path, monkeypatch):
+        project_yaml = tmp_path / "project.yaml"
+        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
+        error = unittest.mock.Mock()
+        provision = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
+        monkeypatch.setattr(Provisioner, "provision", provision)
+        args = _make_args(
+            kit_type=None,
+            endpoint="grpc://fl-server:8002",
+            dir=None,
+            workspace=str(tmp_path / "ws"),
+            project_name="myproject",
+            project_file=str(project_yaml),
+        )
+
+        result = _handle_package_yaml_mode(args, "grpc", "fl-server", 8002)
+
+        assert result == 1
+        assert error.call_args.args[0] == "INVALID_ARGS"
+        provision.assert_not_called()
+
+    def test_yaml_missing_rootca_returns_when_error_is_mocked(self, tmp_path, monkeypatch):
+        cert_dir = tmp_path / "certs"
+        cert_dir.mkdir()
+        project_yaml = tmp_path / "project.yaml"
+        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
+        error = unittest.mock.Mock()
+        provision = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error", error)
+        monkeypatch.setattr(Provisioner, "provision", provision)
+        args = _make_args(
+            kit_type=None,
+            endpoint="grpc://fl-server:8002",
+            dir=str(cert_dir),
+            workspace=str(tmp_path / "ws"),
+            project_name="myproject",
+            project_file=str(project_yaml),
+        )
+
+        result = _handle_package_yaml_mode(args, "grpc", "fl-server", 8002)
+
+        assert result == 1
+        assert error.call_args.args[0] == "ROOTCA_NOT_FOUND"
+        provision.assert_not_called()
+
+    def test_yaml_missing_participant_material_returns_when_error_is_mocked(self, cert_env, tmp_path, monkeypatch):
+        cert_dir = tmp_path / "certs"
+        cert_dir.mkdir()
+        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
+        project_yaml = tmp_path / "project.yaml"
+        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
+        error = unittest.mock.Mock()
+        validate = unittest.mock.Mock()
+        provision = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error", error)
+        monkeypatch.setattr("nvflare.tool.package.package_commands._validate_cert_material", validate)
+        monkeypatch.setattr(Provisioner, "provision", provision)
+        args = _make_args(
+            kit_type=None,
+            endpoint="grpc://fl-server:8002",
+            dir=str(cert_dir),
+            workspace=str(tmp_path / "ws"),
+            project_name="myproject",
+            project_file=str(project_yaml),
+        )
+
+        result = _handle_package_yaml_mode(args, "grpc", "fl-server", 8002)
+
+        assert result == 1
+        assert error.call_args.args[0] == "CERT_NOT_FOUND"
+        validate.assert_not_called()
+        provision.assert_not_called()
+
+    def test_yaml_existing_output_returns_when_error_is_mocked(self, cert_env, tmp_path, monkeypatch):
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        cert_dir = tmp_path / "certs"
+        cert_dir.mkdir()
+        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
+        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
+        project_yaml = tmp_path / "project.yaml"
+        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
+        workspace = tmp_path / "ws"
+        existing = workspace / "myproject" / "prod_00" / "hospital-1"
+        existing.mkdir(parents=True)
+        error = unittest.mock.Mock()
+        provision = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error", error)
+        monkeypatch.setattr(Provisioner, "provision", provision)
+        args = _make_args(
+            kit_type=None,
+            endpoint="grpc://fl-server:8002",
+            dir=str(cert_dir),
+            workspace=str(workspace),
+            project_name="myproject",
+            project_file=str(project_yaml),
+            force=False,
+        )
+
+        result = _handle_package_yaml_mode(args, "grpc", "fl-server", 8002)
+
+        assert result == 1
+        assert error.call_args.args[0] == "OUTPUT_DIR_EXISTS"
+        provision.assert_not_called()
+
     def test_selected_participant_build_error_returns_when_error_is_mocked(self, tmp_path, monkeypatch):
         error = unittest.mock.Mock()
         monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
@@ -3870,6 +4007,19 @@ class TestSignedZipPackageMode:
 
         kit_dir = os.path.join(str(tmp_path / "ws"), "example_project", "prod_00", "site-3")
         assert os.path.isfile(os.path.join(kit_dir, "startup", "client.key"))
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_audit_request_dir_rejects_symlinked_parent(self, tmp_path):
+        real_parent = tmp_path / "real-parent"
+        request_dir = real_parent / "site-3"
+        request_dir.mkdir(parents=True)
+        (request_dir / "request.json").write_text(json.dumps({"request_id": "1" * 32}))
+        link_parent = tmp_path / "link-parent"
+        os.symlink(str(real_parent), str(link_parent))
+
+        result = _validated_audit_request_dir(str(link_parent / "site-3"), "1" * 32)
+
+        assert result is None
 
     @pytest.mark.skipif(
         not hasattr(os, "symlink") or not hasattr(os, "O_NOFOLLOW"), reason="nofollow symlink support required"

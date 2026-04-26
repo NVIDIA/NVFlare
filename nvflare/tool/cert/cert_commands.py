@@ -35,14 +35,7 @@ from cryptography.x509.oid import NameOID
 
 from nvflare.apis.utils.format_check import name_check
 from nvflare.lighter.impl.cert import CertBuilder
-from nvflare.lighter.utils import (
-    generate_keys,
-    load_crt,
-    load_private_key_file,
-    serialize_cert,
-    serialize_pri_key,
-    x509_name,
-)
+from nvflare.lighter.utils import generate_keys, load_private_key_file, serialize_cert, serialize_pri_key, x509_name
 from nvflare.tool import cli_output
 from nvflare.tool.cert.cert_constants import ADMIN_CERT_TYPES, VALID_CERT_TYPES
 from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256
@@ -861,15 +854,18 @@ def generate_csr_files(name: str, org: str, cert_type: str, output_dir: str, for
         os.makedirs(out_dir, mode=0o700, exist_ok=True)
     except OSError as e:
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail=str(e))
+        return {}
 
     if not os.access(out_dir, os.W_OK):
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail="directory is not writable")
+        return {}
 
     key_path = os.path.join(out_dir, f"{name}.key")
     csr_path = os.path.join(out_dir, f"{name}.csr")
 
     if os.path.exists(key_path) and not force:
         output_error("KEY_ALREADY_EXISTS", path=key_path)
+        return {}
 
     if force and (os.path.exists(key_path) or os.path.exists(csr_path)):
         _backup_existing_csr(out_dir, name)
@@ -878,6 +874,7 @@ def generate_csr_files(name: str, org: str, cert_type: str, output_dir: str, for
         pem_key, pem_csr = _generate_csr(name, org, cert_type)
     except Exception as e:
         output_error("CSR_GENERATION_FAILED", detail=str(e))
+        return {}
 
     try:
         _write_private_key(key_path, pem_key)
@@ -889,6 +886,7 @@ def generate_csr_files(name: str, org: str, cert_type: str, output_dir: str, for
         except OSError:
             pass
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail=str(e))
+        return {}
 
     csr = x509.load_pem_x509_csr(pem_csr, default_backend())
     return {
@@ -926,6 +924,7 @@ def handle_cert_csr(args):
                 exit_code=4,
                 detail="use either --project-file or --name/--org/--type",
             )
+            return 1
         site = _load_single_site_yaml(args.project_file)
 
     # 3. Validate required args (-o is required in all modes; -n/-t only without --project-file)
@@ -944,6 +943,7 @@ def handle_cert_csr(args):
             exit_code=4,
             detail=f"missing required argument(s): {', '.join(missing_flags)}",
         )
+        return 1
 
     name = (site["name"] if site else args.name).strip()
     org = site["org"] if site else getattr(args, "org", None)
@@ -955,6 +955,8 @@ def handle_cert_csr(args):
         output_dir=args.output_dir,
         force=args.force,
     )
+    if not csr_result:
+        return 1
 
     # 12. Emit output
     result = {
@@ -1232,6 +1234,7 @@ def sign_csr_files(
     for path in (ca_key_path, ca_cert_path, ca_json_path):
         if not os.path.exists(path):
             output_error("CA_NOT_FOUND", ca_dir=ca_dir)
+            return None
 
     if csr is None:
         csr = _load_and_validate_csr(csr_path)
@@ -1251,17 +1254,21 @@ def sign_csr_files(
         os.makedirs(output_dir, mode=0o700, exist_ok=True)
     except OSError as e:
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
+        return None
 
     if not os.access(output_dir, os.W_OK):
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail="directory is not writable")
+        return None
 
     cert_out_path = os.path.join(output_dir, output_filename)
     rootca_out_path = os.path.join(output_dir, "rootCA.pem")
 
     if os.path.exists(cert_out_path) and not force:
         output_error("CERT_ALREADY_EXISTS", path=cert_out_path)
+        return None
     if os.path.exists(rootca_out_path) and not force:
         output_error("ROOTCA_ALREADY_EXISTS", path=rootca_out_path)
+        return None
 
     try:
         rootca_bytes = _read_file_nofollow(ca_cert_path)
@@ -1269,6 +1276,7 @@ def sign_csr_files(
         ca_key = load_private_key_file(ca_key_path)
     except Exception as e:
         output_error("CA_LOAD_FAILED", ca_dir=ca_dir, detail=str(e))
+        return None
 
     now = _utc_now()
     ca_not_valid_after = _validate_signing_ca(ca_cert, now)
@@ -1287,6 +1295,7 @@ def sign_csr_files(
         )
     except Exception as e:
         output_error("CERT_SIGNING_FAILED", reason=str(e))
+        return None
 
     try:
         signed_cert_pem = serialize_cert(signed_cert)
@@ -1300,6 +1309,7 @@ def sign_csr_files(
             except OSError:
                 pass
         output_error("CERT_OUTPUT_WRITE_FAILED", path=output_dir, detail=str(e))
+        return None
 
     try:
         valid_until_dt = signed_cert.not_valid_after_utc
@@ -1351,6 +1361,7 @@ def handle_cert_sign(args):
             exit_code=4,
             detail=f"missing required argument(s): {', '.join(missing_flags)}",
         )
+        return 1
     csr = _load_and_validate_csr(args.csr_path)
     if csr is None:
         return 1
@@ -1494,6 +1505,7 @@ def handle_cert_request(args):
             f"missing required argument(s): {', '.join(missing_flags)}",
             exit_code=4,
         )
+        return 1
     if not _validate_request_kind(getattr(args, "kind", None)):
         return 1
     if not _validate_safe_project_name(args.project):
@@ -1836,9 +1848,8 @@ def _validate_request_project_matches_ca(ca_dir: str, project: str) -> dict:
         )
         return None
 
-    ca_cert = None
     try:
-        ca_cert = load_crt(ca_cert_path)
+        ca_cert = x509.load_pem_x509_certificate(_read_file_nofollow(ca_cert_path), default_backend())
     except Exception as e:
         output_error("CA_LOAD_FAILED", ca_dir=ca_dir, detail=str(e))
         return None
