@@ -45,6 +45,7 @@ from nvflare.tool.cert.cert_commands import (
     _validate_safe_cert_name,
     _validate_safe_project_name,
     _write_file_nofollow,
+    _write_json_file,
     _write_zip_nofollow,
     handle_cert_csr,
     handle_cert_init,
@@ -125,6 +126,15 @@ def test_write_file_nofollow_sets_requested_mode_despite_umask(tmp_path):
         os.umask(old_umask)
 
     assert stat.S_IMODE(os.stat(path).st_mode) == 0o644
+
+
+def test_write_json_file_removes_created_file_when_fchmod_fails(tmp_path):
+    path = tmp_path / "request.json"
+    with patch("nvflare.tool.cert.cert_commands.os.fchmod", side_effect=OSError("chmod failed")):
+        with pytest.raises(OSError):
+            _write_json_file(str(path), {"ok": True})
+
+    assert not path.exists()
 
 
 # ---------------------------------------------------------------------------

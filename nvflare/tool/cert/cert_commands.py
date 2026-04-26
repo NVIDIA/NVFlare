@@ -426,11 +426,6 @@ def _write_private_key(path: str, pem_bytes: bytes) -> None:
         f.write(pem_bytes)
 
 
-def _write_file(path: str, pem_bytes: bytes) -> None:
-    with open(path, "wb") as f:
-        f.write(pem_bytes)
-
-
 def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     if hasattr(os, "O_NOFOLLOW"):
@@ -476,6 +471,10 @@ def _write_json_file(path: str, data: dict) -> None:
             os.fchmod(fd, 0o600)
     except Exception:
         os.close(fd)
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
         raise
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
