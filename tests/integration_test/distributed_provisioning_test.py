@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Integration test: cert init → cert csr → cert sign → nvflare package.
+"""Integration test: cert init → cert request → cert approve → nvflare package.
 
 Tests the full distributed provisioning workflow for a localhost 2-site
 federation and verifies the resulting startup kits are self-consistent and
@@ -36,7 +36,7 @@ import unittest.mock
 import pytest
 
 from nvflare.lighter.provision import provision
-from nvflare.tool.cert.cert_commands import handle_cert_csr, handle_cert_init, handle_cert_sign
+from nvflare.tool.cert.cert_commands import handle_cert_approve, handle_cert_init, handle_cert_request
 from nvflare.tool.package.package_commands import handle_package
 
 
@@ -91,12 +91,33 @@ def _ns(**kwargs):
     return types.SimpleNamespace(**defaults)
 
 
-def _run_package(name, cert, key, rootca, workspace):
-    """Call handle_package and return the output result dict.
+def _request_kind_and_values(name: str, cert_type: str):
+    if cert_type == "client":
+        return "site", [name]
+    if cert_type == "server":
+        return "server", [name]
+    if cert_type == "org_admin":
+        return "user", ["org-admin", name]
+    if cert_type in {"lead", "member"}:
+        return "user", [cert_type, name]
+    raise ValueError(f"unsupported cert_type: {cert_type}")
 
-    Kit type is derived automatically from the signed certificate's UNSTRUCTURED_NAME;
-    no -t/--type argument is needed in the new workflow.
-    """
+
+def _run_request(name: str, cert_type: str, project: str, request_root: str, org: str = "myorg"):
+    kind, values = _request_kind_and_values(name, cert_type)
+    request_dir = os.path.join(request_root, name)
+    handle_cert_request(_ns(kind=kind, values=values, org=org, project=project, output_dir=request_dir))
+    return request_dir, os.path.join(request_dir, f"{name}.request.zip")
+
+
+def _run_approve(name: str, request_zip: str, ca_dir: str, signed_dir: str):
+    signed_zip = os.path.join(signed_dir, f"{name}.signed.zip")
+    handle_cert_approve(_ns(request_zip=request_zip, ca_dir=ca_dir, signed_zip=signed_zip, valid_days=1095))
+    return signed_zip
+
+
+def _run_package(name: str, signed_zip: str, request_dir: str, workspace: str, endpoint: str = _ENDPOINT):
+    """Call handle_package signed-zip mode and return the output result dict."""
     result = {}
 
     def _capture(data, exit_code=0, status="ok"):
@@ -105,15 +126,13 @@ def _run_package(name, cert, key, rootca, workspace):
         result["_status"] = status
 
     args = _ns(
-        kit_type=None,  # derived from signed cert
-        name=name,
-        endpoint=_ENDPOINT,
-        dir=None,
-        cert=cert,
-        key=key,
-        rootca=rootca,
+        input=signed_zip,
+        endpoint=endpoint,
+        request_dir=request_dir,
         workspace=workspace,
-        project_name=_PROJECT,
+        project_file=None,
+        expected_rootca_fingerprint=None,
+        confirm_rootca=False,
         admin_port=None,
     )
     with unittest.mock.patch("nvflare.tool.package.package_commands.output_ok", side_effect=_capture):
@@ -122,56 +141,42 @@ def _run_package(name, cert, key, rootca, workspace):
 
 
 # ---------------------------------------------------------------------------
-# Test
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture()
 def provisioned(tmp_path):
-    """Run the full 4-step workflow and return a dict of kit_dir paths by participant name."""
+    """Run the full public workflow and return a dict of kit_dir paths by participant name."""
     ca_dir = str(tmp_path / "ca")
-    csr_dir = str(tmp_path / "csr")
+    request_root = str(tmp_path / "requests")
     signed_dir = str(tmp_path / "signed")
     ws = str(tmp_path / "ws")
 
     # Step 1 — cert init
     handle_cert_init(_ns(project=_PROJECT, output_dir=ca_dir))
 
-    # Step 2 — cert csr for each participant (propose type in CSR)
+    request_dirs = {}
+    request_zips = {}
+    signed_zips = {}
+    # Step 2 — cert request for each participant. The private key remains in request_dir.
     for name, cert_type in _PARTICIPANTS:
-        handle_cert_csr(_ns(name=name, output_dir=csr_dir, cert_type=cert_type))
+        request_dirs[name], request_zips[name] = _run_request(name, cert_type, _PROJECT, request_root)
 
-    # Step 3 — cert sign for each participant (type read from CSR; no -t needed)
+    # Step 3 — cert approve for each request zip.
     for name, _ in _PARTICIPANTS:
-        sign_out = os.path.join(signed_dir, name)
-        handle_cert_sign(
-            _ns(
-                csr_path=os.path.join(csr_dir, f"{name}.csr"),
-                ca_dir=ca_dir,
-                output_dir=sign_out,
-                cert_type=None,  # read from CSR
-                accept_csr_role=True,
-            )
-        )
+        signed_zips[name] = _run_approve(name, request_zips[name], ca_dir, signed_dir)
 
-    # Step 4 — nvflare package for each participant (kit type derived from signed cert)
+    # Step 4 — nvflare package signed zip for each participant.
     kit_dirs = {}
     for name, _ in _PARTICIPANTS:
-        sign_out = os.path.join(signed_dir, name)
-        result = _run_package(
-            name=name,
-            cert=os.path.join(sign_out, f"{name}.crt"),
-            key=os.path.join(csr_dir, f"{name}.key"),
-            rootca=os.path.join(sign_out, "rootCA.pem"),
-            workspace=ws,
-        )
+        result = _run_package(name=name, signed_zip=signed_zips[name], request_dir=request_dirs[name], workspace=ws)
         kit_dirs[name] = result["output_dir"]
 
     return kit_dirs
 
 
 class TestDistributedProvisioningWorkflow:
-    """Full distributed provisioning workflow: cert init → csr → sign → package."""
+    """Full distributed provisioning workflow: cert init → request → approve → package."""
 
     # ------------------------------------------------------------------
     # Step-level smoke tests (fail fast if a command itself breaks)
@@ -184,33 +189,25 @@ class TestDistributedProvisioningWorkflow:
         assert os.path.isfile(os.path.join(ca_dir, "rootCA.key"))
         assert os.path.isfile(os.path.join(ca_dir, "ca.json"))
 
-    def test_cert_csr_produces_key_and_csr(self, tmp_path):
-        csr_dir = str(tmp_path / "csr")
-        handle_cert_csr(_ns(name="site-1", output_dir=csr_dir, cert_type="client"))
-        assert os.path.isfile(os.path.join(csr_dir, "site-1.key"))
-        assert os.path.isfile(os.path.join(csr_dir, "site-1.csr"))
+    def test_cert_request_produces_key_csr_and_request_zip(self, tmp_path):
+        request_root = str(tmp_path / "requests")
+        request_dir, request_zip = _run_request("site-1", "client", _PROJECT, request_root)
+        assert os.path.isfile(os.path.join(request_dir, "site-1.key"))
+        assert os.path.isfile(os.path.join(request_dir, "site-1.csr"))
+        assert os.path.isfile(os.path.join(request_dir, "request.json"))
+        assert os.path.isfile(request_zip)
         # Key must be private (permissions 0o600)
-        mode = stat.S_IMODE(os.stat(os.path.join(csr_dir, "site-1.key")).st_mode)
+        mode = stat.S_IMODE(os.stat(os.path.join(request_dir, "site-1.key")).st_mode)
         assert mode == 0o600
 
-    def test_cert_sign_produces_cert_and_rootca(self, tmp_path):
+    def test_cert_approve_produces_signed_zip(self, tmp_path):
         ca_dir = str(tmp_path / "ca")
-        csr_dir = str(tmp_path / "csr")
-        sign_out = str(tmp_path / "signed")
+        request_root = str(tmp_path / "requests")
+        signed_dir = str(tmp_path / "signed")
         handle_cert_init(_ns(project=_PROJECT, output_dir=ca_dir))
-        handle_cert_csr(_ns(name="site-1", output_dir=csr_dir, cert_type="client"))
-        # cert_type=None: type read from CSR UNSTRUCTURED_NAME
-        handle_cert_sign(
-            _ns(
-                csr_path=os.path.join(csr_dir, "site-1.csr"),
-                ca_dir=ca_dir,
-                output_dir=sign_out,
-                cert_type=None,
-                accept_csr_role=True,
-            )
-        )
-        assert os.path.isfile(os.path.join(sign_out, "site-1.crt"))
-        assert os.path.isfile(os.path.join(sign_out, "rootCA.pem"))
+        _request_dir, request_zip = _run_request("site-1", "client", _PROJECT, request_root)
+        signed_zip = _run_approve("site-1", request_zip, ca_dir, signed_dir)
+        assert os.path.isfile(signed_zip)
 
     # ------------------------------------------------------------------
     # Kit structure tests
@@ -551,54 +548,35 @@ def _run_centralized_provision(workspace: str) -> dict:
 
 
 def _run_distributed_provision(workspace: str) -> dict:
-    """Run the full cert init → csr → sign → package workflow.
+    """Run the full cert init → request → approve → package workflow.
 
     Returns a dict mapping participant name → kit directory.
     """
     ca_dir = os.path.join(workspace, "ca")
-    csr_dir = os.path.join(workspace, "csr")
+    request_root = os.path.join(workspace, "requests")
     signed_dir = os.path.join(workspace, "signed")
     kits_ws = os.path.join(workspace, "kits")
 
     handle_cert_init(_ns(project=_PARITY_PROJECT, output_dir=ca_dir))
 
+    request_dirs = {}
+    request_zips = {}
+    signed_zips = {}
     for name, cert_type in _PARITY_PARTICIPANTS:
-        handle_cert_csr(_ns(name=name, output_dir=csr_dir, cert_type=cert_type))
+        request_dirs[name], request_zips[name] = _run_request(name, cert_type, _PARITY_PROJECT, request_root)
 
     for name, _ in _PARITY_PARTICIPANTS:
-        sign_out = os.path.join(signed_dir, name)
-        handle_cert_sign(
-            _ns(
-                csr_path=os.path.join(csr_dir, f"{name}.csr"),
-                ca_dir=ca_dir,
-                output_dir=sign_out,
-                cert_type=None,
-                accept_csr_role=True,
-            )
-        )
+        signed_zips[name] = _run_approve(name, request_zips[name], ca_dir, signed_dir)
 
     kit_dirs = {}
     for name, _ in _PARITY_PARTICIPANTS:
-        sign_out = os.path.join(signed_dir, name)
-        result = {}
-
-        def _capture(data, exit_code=0, status="ok"):
-            result.update(data)
-
-        args = _ns(
-            kit_type=None,
+        result = _run_package(
             name=name,
-            endpoint=_PARITY_ENDPOINT,
-            dir=None,
-            cert=os.path.join(sign_out, f"{name}.crt"),
-            key=os.path.join(csr_dir, f"{name}.key"),
-            rootca=os.path.join(sign_out, "rootCA.pem"),
+            signed_zip=signed_zips[name],
+            request_dir=request_dirs[name],
             workspace=kits_ws,
-            project_name=_PARITY_PROJECT,
-            admin_port=None,
+            endpoint=_PARITY_ENDPOINT,
         )
-        with unittest.mock.patch("nvflare.tool.package.package_commands.output_ok", side_effect=_capture):
-            handle_package(args)
         kit_dirs[name] = result["output_dir"]
 
     return kit_dirs

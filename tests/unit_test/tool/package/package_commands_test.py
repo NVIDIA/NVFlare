@@ -2802,7 +2802,7 @@ class TestYamlMode:
     # ------------------------------------------------------------------
     # 9. --dir is required in yaml mode
     # ------------------------------------------------------------------
-    def test_dir_required_in_yaml_mode(self, cert_env, tmp_path):
+    def test_dir_required_in_yaml_mode(self, cert_env, tmp_path, capsys):
         """--project-file without --dir must exit with INVALID_ARGS (exit 4)."""
         project_yaml = tmp_path / "project.yaml"
         _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
@@ -2817,6 +2817,10 @@ class TestYamlMode:
         with pytest.raises(SystemExit) as exc_info:
             handle_package(args)
         assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        combined = captured.out + captured.err
+        assert "INVALID_ARGS" in combined
+        assert "material directory is required" in combined
 
     # ------------------------------------------------------------------
     # 10. No dummy server dir in prod when yaml has no server participant

@@ -1816,7 +1816,7 @@ def handle_package(args):
             exit_code=4,
         )
 
-    if not has_signed_zip_input and not has_dir and not has_explicit:
+    if not has_signed_zip_input and not has_project_file and not has_dir and not has_explicit:
         output_error_message(
             "INVALID_ARGS",
             "Signed zip input is required.",
