@@ -2596,3 +2596,16 @@ class TestDistributedCertRequestApprove:
 
         output_error.assert_called_once()
         assert request_meta is None
+
+    def test_read_request_zip_returns_after_extract_error_when_error_is_mocked(self, tmp_path):
+        request_zip = _write_request_zip(tmp_path)
+        extract_dir = tmp_path / "extract"
+        extract_dir.mkdir()
+
+        with patch("nvflare.tool.cert.cert_commands._write_file_nofollow", side_effect=OSError("blocked")):
+            with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+                request_meta = _read_request_zip(str(request_zip), str(extract_dir))
+
+        output_error.assert_called_once()
+        assert "failed to read request zip" in output_error.call_args.kwargs["detail"]
+        assert request_meta is None

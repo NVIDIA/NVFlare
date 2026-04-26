@@ -1666,6 +1666,7 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
         output_error_message(
             "INVALID_ARGS", "Invalid arguments.", _USAGE_HINT, exit_code=4, detail=f"invalid request zip: {e}"
         )
+        return None
     except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
         output_error_message(
             "INVALID_ARGS",
@@ -1674,6 +1675,7 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
             exit_code=4,
             detail=f"invalid request metadata: {e}",
         )
+        return None
     except Exception as e:
         output_error_message(
             "INVALID_ARGS",
@@ -1682,6 +1684,7 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
             exit_code=4,
             detail=f"failed to read request zip: {e}",
         )
+        return None
     return request_meta
 
 
