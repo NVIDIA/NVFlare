@@ -228,7 +228,14 @@ def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
             pass
         raise
     with os.fdopen(fd, "wb") as f:
-        f.write(content)
+        try:
+            f.write(content)
+        except Exception:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            raise
 
 
 def _read_file_nofollow(path: str, max_size: int = _MAX_ZIP_MEMBER_SIZE) -> bytes:
@@ -1260,6 +1267,7 @@ def _load_signed_zip(input_path: str):
             signed_meta = _decode_zip_json(file_contents["signed.json"], "signed.json", input_path)
             site_meta = _decode_zip_yaml(file_contents["site.yaml"], "site.yaml", input_path)
             _validate_signed_metadata(signed_meta, site_meta, cert_name)
+            _validate_signed_hashes(signed_meta, file_contents)
     except zipfile.BadZipFile:
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -1279,7 +1287,6 @@ def _load_signed_zip(input_path: str):
             exit_code=4,
         )
 
-    _validate_signed_hashes(signed_meta, file_contents)
     return signed_meta, site_meta, cert_name, file_contents
 
 
@@ -1366,8 +1373,13 @@ def _resolve_request_dir(args, signed_zip_path: str, identity: dict):
     signed_dir = os.path.dirname(os.path.abspath(signed_zip_path))
     parent = os.path.dirname(signed_dir)
     candidates = [signed_dir, os.path.join(signed_dir, identity["name"]), os.path.join(parent, identity["name"])]
+    request_id = identity.get("request_id")
     for candidate in candidates:
-        if _has_request_material(candidate, identity["name"]):
+        if request_id:
+            validated = _validated_audit_request_dir(candidate, request_id)
+            if validated and _has_request_material(validated, identity["name"]):
+                return validated
+        elif _has_request_material(candidate, identity["name"]):
             return candidate
     return None
 

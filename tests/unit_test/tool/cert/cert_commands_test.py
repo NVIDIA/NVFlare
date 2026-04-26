@@ -42,10 +42,13 @@ from nvflare.tool.cert.cert_commands import (
     _load_and_validate_csr,
     _load_single_site_yaml,
     _read_request_zip,
+    _safe_zip_names,
+    _validate_request_metadata,
     _validate_safe_cert_name,
     _validate_safe_project_name,
     _write_file_nofollow,
     _write_json_file,
+    _write_private_key,
     _write_zip_nofollow,
     handle_cert_csr,
     handle_cert_init,
@@ -137,6 +140,48 @@ def test_write_json_file_removes_created_file_when_fchmod_fails(tmp_path):
     assert not path.exists()
 
 
+class _FailingFdOpen:
+    def __init__(self, fd):
+        self.fd = fd
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        os.close(self.fd)
+
+    def write(self, _content):
+        raise OSError("disk full")
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="unlinking open files differs on Windows")
+def test_write_file_nofollow_removes_created_file_when_write_fails(tmp_path):
+    path = tmp_path / "rootCA.pem"
+
+    def failing_fdopen(fd, _mode):
+        return _FailingFdOpen(fd)
+
+    with patch("nvflare.tool.cert.cert_commands.os.fdopen", side_effect=failing_fdopen):
+        with pytest.raises(OSError):
+            _write_file_nofollow(str(path), b"public cert")
+
+    assert not path.exists()
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="unlinking open files differs on Windows")
+def test_write_private_key_removes_created_file_when_write_fails(tmp_path):
+    path = tmp_path / "site-3.key"
+
+    def failing_fdopen(fd, _mode):
+        return _FailingFdOpen(fd)
+
+    with patch("nvflare.tool.cert.cert_commands.os.fdopen", side_effect=failing_fdopen):
+        with pytest.raises(OSError):
+            _write_private_key(str(path), b"private key")
+
+    assert not path.exists()
+
+
 # ---------------------------------------------------------------------------
 # cert init tests
 # ---------------------------------------------------------------------------
@@ -180,6 +225,28 @@ class TestCertValidationHelpers:
         assert result is None
         output_error.assert_called_once()
         assert "invalid cert type" in output_error.call_args.kwargs["detail"]
+
+    def test_request_zip_safe_names_do_not_return_unsafe_entries_when_error_is_mocked(self, tmp_path):
+        zip_path = tmp_path / "request.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("request.json", "{}")
+            zf.writestr("../escape.csr", "csr")
+            zf.writestr("site-3.key", "key")
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+                names = _safe_zip_names(zf)
+
+        assert output_error.call_count == 2
+        assert names == ["request.json"]
+
+    def test_request_metadata_returns_after_missing_fields_when_error_is_mocked(self, tmp_path):
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            result = _validate_request_metadata({"name": "site-3"}, {}, str(tmp_path / "site-3.csr"))
+
+        assert result is None
+        output_error.assert_called_once()
+        assert "missing required field" in output_error.call_args.kwargs["detail"]
 
 
 class TestCertInit:

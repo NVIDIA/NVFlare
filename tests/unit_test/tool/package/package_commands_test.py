@@ -18,6 +18,7 @@ import datetime
 import hashlib
 import json
 import os
+import platform
 import shutil
 import stat
 import types
@@ -42,6 +43,7 @@ from nvflare.tool.package.package_commands import (
     _discover_name_from_dir,
     _parse_endpoint,
     _read_zip_json,
+    _resolve_request_dir,
     _safe_zip_names,
     _validate_cert_material,
     _validate_signed_public_key_hash,
@@ -291,6 +293,32 @@ class TestPrebuiltCertBuilder:
 
 
 class TestSignedZipHelpers:
+    class _FailingFdOpen:
+        def __init__(self, fd):
+            self.fd = fd
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            os.close(self.fd)
+
+        def write(self, _content):
+            raise OSError("disk full")
+
+    @pytest.mark.skipif(platform.system() == "Windows", reason="unlinking open files differs on Windows")
+    def test_write_file_nofollow_removes_created_file_when_write_fails(self, tmp_path):
+        path = tmp_path / "rootCA.pem"
+
+        def failing_fdopen(fd, _mode):
+            return self._FailingFdOpen(fd)
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands.os.fdopen", side_effect=failing_fdopen):
+            with pytest.raises(OSError):
+                _write_file_nofollow(str(path), b"public cert")
+
+        assert not path.exists()
+
     def test_safe_zip_names_does_not_append_directory_when_error_is_mocked(self, tmp_path):
         zip_path = tmp_path / "signed.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
@@ -316,6 +344,18 @@ class TestSignedZipHelpers:
                     _read_zip_json(zf, "signed.json", str(zip_path))
 
         error.assert_called_once()
+
+    def test_resolve_request_dir_rejects_fallback_candidate_with_mismatched_request_id(self, tmp_path):
+        signed_dir = tmp_path / "signed"
+        signed_dir.mkdir()
+        candidate = signed_dir / "site-3"
+        candidate.mkdir()
+        _write_file_nofollow(candidate / "site-3.key", b"key", mode=0o600)
+        (candidate / "request.json").write_text(json.dumps({"request_id": "2" * 32}))
+        args = types.SimpleNamespace(request_dir=None)
+        identity = {"name": "site-3", "request_id": "1" * 32}
+
+        assert _resolve_request_dir(args, str(signed_dir / "site-3.signed.zip"), identity) is None
 
 
 def test_missing_endpoint_human_mode_no_help_dump(capsys, monkeypatch, tmp_path):

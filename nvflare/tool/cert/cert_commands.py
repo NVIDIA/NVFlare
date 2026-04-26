@@ -423,7 +423,14 @@ def _write_private_key(path: str, pem_bytes: bytes) -> None:
         flags |= os.O_NOFOLLOW
     fd = os.open(path, flags, 0o600)
     with os.fdopen(fd, "wb") as f:
-        f.write(pem_bytes)
+        try:
+            f.write(pem_bytes)
+        except Exception:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            raise
 
 
 def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
@@ -442,7 +449,14 @@ def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
             pass
         raise
     with os.fdopen(fd, "wb") as f:
-        f.write(content)
+        try:
+            f.write(content)
+        except Exception:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            raise
 
 
 def _read_file_nofollow(path: str, max_size: int = _MAX_ZIP_MEMBER_SIZE) -> bytes:
@@ -571,6 +585,7 @@ def _safe_zip_names(zf: zipfile.ZipFile) -> list:
                 exit_code=4,
                 detail=f"unsafe zip member or path traversal: {name}",
             )
+            continue
         if name.lower().endswith(".key"):
             output_error_message(
                 "INVALID_ARGS",
@@ -579,6 +594,7 @@ def _safe_zip_names(zf: zipfile.ZipFile) -> list:
                 exit_code=4,
                 detail=f"request zip must not contain private keys: {name}",
             )
+            continue
         seen.add(name)
         names.append(name)
     return names
@@ -1596,6 +1612,7 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             exit_code=4,
             detail=f"request metadata missing required field(s): {', '.join(missing)}",
         )
+        return None
     if request_meta["artifact_type"] != _REQUEST_ARTIFACT_TYPE or request_meta["schema_version"] != _ARTIFACT_VERSION:
         output_error_message(
             "INVALID_ARGS",
