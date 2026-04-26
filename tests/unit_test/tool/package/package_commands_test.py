@@ -3311,12 +3311,13 @@ class TestSignedZipPackageMode:
         assert exc_info.value.code == 4
         assert "unsupported artifact type or schema version" in capsys.readouterr().err
 
-    def test_signed_zip_rejects_missing_required_hash(self, tmp_path, capsys, monkeypatch):
+    @pytest.mark.parametrize("hash_name", ["csr_sha256", "certificate_sha256"])
+    def test_signed_zip_rejects_missing_required_hash(self, tmp_path, capsys, monkeypatch, hash_name):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
 
         def _mutate(metadata):
-            del metadata["hashes"]["certificate_sha256"]
+            del metadata["hashes"][hash_name]
 
         _rewrite_signed_zip_metadata(signed_zip, _mutate)
         args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
@@ -3455,7 +3456,7 @@ class TestSignedZipPackageMode:
         assert captured["project"].name == "example_project"
         assert _participant_names(captured["project"]) == ["site-3"]
 
-    def test_project_file_custom_builders_apply_to_signed_identity_only(self, tmp_path):
+    def test_project_file_custom_builders_apply_to_signed_identity_only_and_endpoint_scheme_wins(self, tmp_path):
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
         project_yaml = tmp_path / "project.yaml"
         project_yaml.write_text(
@@ -3488,7 +3489,7 @@ class TestSignedZipPackageMode:
         participant = captured["project"].get_clients()[0]
         assert participant.org == "nvidia"
         assert participant.props["listening_host"]["default_host"] == "site-3.local"
-        assert any(isinstance(b, StaticFileBuilder) and b.scheme == "tcp" for b in captured["builders"])
+        assert any(isinstance(b, StaticFileBuilder) and b.scheme == "grpc" for b in captured["builders"])
         assert not any(isinstance(b, SignatureBuilder) for b in captured["builders"])
 
     def test_project_file_missing_signed_participant_warns_and_builds_signed_identity(

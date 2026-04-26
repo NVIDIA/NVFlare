@@ -656,7 +656,8 @@ class TestCertSign:
         out_dir = str(tmp_path / "signed")
         os.makedirs(out_dir, exist_ok=True)
         # Pre-create the cert file (named after participant)
-        open(os.path.join(out_dir, "hospital-1.crt"), "w").close()
+        with open(os.path.join(out_dir, "hospital-1.crt"), "w"):
+            pass
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_sign(args)
@@ -667,7 +668,8 @@ class TestCertSign:
         csr_path = _setup_csr(tmp_path)
         out_dir = str(tmp_path / "signed")
         os.makedirs(out_dir, exist_ok=True)
-        open(os.path.join(out_dir, "hospital-1.crt"), "w").close()
+        with open(os.path.join(out_dir, "hospital-1.crt"), "w"):
+            pass
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client", force=True)
         rc = handle_cert_sign(args)
         assert rc == 0
@@ -773,7 +775,8 @@ class TestCertSign:
         csr_path = _setup_csr(tmp_path)
         out_dir = str(tmp_path / "signed")
         os.makedirs(out_dir, exist_ok=True)
-        open(os.path.join(out_dir, "hospital-1.crt"), "w").close()
+        with open(os.path.join(out_dir, "hospital-1.crt"), "w"):
+            pass
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client", force=True)
         assert handle_cert_sign(args) == 0
 

@@ -278,8 +278,8 @@ def _def_cert_request_parser(cert_sub: argparse._SubParsersAction) -> argparse.A
         nargs="+",
         help="For site/server: <name>. For user: <cert-role> <email>.",
     )
-    p.add_argument("--org", required=False, default=None, dest="org", help="Organization name.")
-    p.add_argument("--project", required=False, default=None, dest="project", help="Project name.")
+    p.add_argument("--org", required=False, default=None, dest="org", help="Organization name. Required.")
+    p.add_argument("--project", required=False, default=None, dest="project", help="Project name. Required.")
     p.add_argument(
         "--out",
         required=False,

@@ -904,9 +904,9 @@ Produces:
 ### `nvflare cert request` - Requester
 
 ```bash
-nvflare cert request site <name> --org <org> [--project <project>] [--out <dir>]
-nvflare cert request server <name> --org <org> [--project <project>] [--out <dir>]
-nvflare cert request user <cert-role> <email> --org <org> [--project <project>] [--out <dir>]
+nvflare cert request site <name> --org <org> --project <project> [--out <dir>]
+nvflare cert request server <name> --org <org> --project <project> [--out <dir>]
+nvflare cert request user <cert-role> <email> --org <org> --project <project> [--out <dir>]
 ```
 
 Examples:

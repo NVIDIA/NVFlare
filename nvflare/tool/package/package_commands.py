@@ -438,8 +438,8 @@ def _validate_cert_material(cert_path: str, key_path: str, rootca_path: str, *, 
         cert = load_crt(cert_path)
         ca_cert = load_crt(rootca_path)
         verify_cert(cert, ca_cert.public_key())
-    except Exception:
-        output_error("CERT_CHAIN_INVALID", exit_code=1, cert=cert_path, rootca=rootca_path)
+    except Exception as e:
+        output_error("CERT_CHAIN_INVALID", exit_code=1, cert=cert_path, rootca=rootca_path, detail=str(e))
 
     try:
         expiry = cert.not_valid_after_utc
@@ -489,6 +489,12 @@ def _build_package_builders(custom_builders, cert_builder, scheme):
         if isinstance(b, CertBuilder):
             all_builders.append(cert_builder)
             has_cert = True
+        elif isinstance(b, StaticFileBuilder):
+            # The signed-zip package endpoint is supplied at package time. Keep
+            # any custom StaticFileBuilder instance from the project file, but
+            # make its connection scheme match -e/--endpoint.
+            b.scheme = scheme
+            all_builders.append(b)
         else:
             all_builders.append(b)
 
@@ -739,8 +745,8 @@ def _handle_package_yaml_mode(args, scheme, host, port):
         try:
             cert = load_crt(cert_path)
             verify_cert(cert, ca_cert.public_key())
-        except Exception:
-            output_error("CERT_CHAIN_INVALID", exit_code=1, cert=cert_path, rootca=rootca_path)
+        except Exception as e:
+            output_error("CERT_CHAIN_INVALID", exit_code=1, cert=cert_path, rootca=rootca_path, detail=str(e))
 
         try:
             expiry = cert.not_valid_after_utc
@@ -1042,7 +1048,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
         )
 
     hashes = signed_meta.get("hashes")
-    required_hashes = ("site_yaml_sha256", "certificate_sha256", "rootca_sha256", "public_key_sha256")
+    required_hashes = ("csr_sha256", "site_yaml_sha256", "certificate_sha256", "rootca_sha256", "public_key_sha256")
     if not isinstance(hashes, dict) or any(not hashes.get(name) for name in required_hashes):
         output_error_message(
             "INVALID_SIGNED_ZIP",
