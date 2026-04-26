@@ -381,16 +381,20 @@ class TestSignedZipHelpers:
 
     def test_validate_signed_metadata_returns_after_non_dict_when_error_is_mocked(self):
         with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
-            _validate_signed_metadata(None, {}, "site-3.crt")
+            valid = _validate_signed_metadata(None, {}, "site-3.crt")
 
         error.assert_called_once()
+        assert valid is False
         assert "must be a mapping" in error.call_args.args[1]
 
     def test_validate_signed_metadata_returns_after_missing_fields_when_error_is_mocked(self):
         with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
-            _validate_signed_metadata({"artifact_type": "nvflare.cert.signed", "schema_version": "1"}, {}, "site-3.crt")
+            valid = _validate_signed_metadata(
+                {"artifact_type": "nvflare.cert.signed", "schema_version": "1"}, {}, "site-3.crt"
+            )
 
         error.assert_called_once()
+        assert valid is False
         assert "missing required field" in error.call_args.args[1]
 
     def test_validate_signed_metadata_returns_after_file_mismatch_when_error_is_mocked(self):
@@ -422,9 +426,10 @@ class TestSignedZipHelpers:
         }
 
         with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
-            _validate_signed_metadata(signed_meta, site_meta, "site-3.crt")
+            valid = _validate_signed_metadata(signed_meta, site_meta, "site-3.crt")
 
         error.assert_called_once()
+        assert valid is False
         assert "file names do not match" in error.call_args.args[1]
 
     def test_validate_signed_metadata_returns_after_invalid_org_when_error_is_mocked(self):
@@ -449,9 +454,10 @@ class TestSignedZipHelpers:
         }
 
         with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
-            _validate_signed_metadata(signed_meta, {}, "site-3.crt")
+            valid = _validate_signed_metadata(signed_meta, {}, "site-3.crt")
 
         error.assert_called_once()
+        assert valid is False
         assert "Invalid org name" in error.call_args.args[1]
 
     def test_validate_signed_metadata_returns_after_invalid_cert_type_when_error_is_mocked(self):
@@ -468,9 +474,10 @@ class TestSignedZipHelpers:
             "rootca_file": "rootCA.pem",
         }
         with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
-            _validate_signed_metadata(signed_meta, {}, "site-3.crt")
+            valid = _validate_signed_metadata(signed_meta, {}, "site-3.crt")
 
         error.assert_called_once()
+        assert valid is False
         assert "Invalid signed zip cert_type" in error.call_args.args[1]
 
     def test_validate_signed_metadata_returns_after_invalid_kind_when_error_is_mocked(self):
@@ -495,17 +502,21 @@ class TestSignedZipHelpers:
         }
 
         with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
-            _validate_signed_metadata(signed_meta, {}, "site-3.crt")
+            valid = _validate_signed_metadata(signed_meta, {}, "site-3.crt")
 
         error.assert_called_once()
+        assert valid is False
         assert "Invalid signed zip kind/cert_type combination" in error.call_args.args[1]
 
     def test_validate_signed_hashes_does_not_emit_spurious_mismatch_when_hash_missing(self):
         with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
-            _validate_signed_hashes({"hashes": {}}, {"site.yaml": b"site", "cert": b"cert", "rootCA.pem": b"root"})
+            valid = _validate_signed_hashes(
+                {"hashes": {}}, {"site.yaml": b"site", "cert": b"cert", "rootCA.pem": b"root"}
+            )
 
-        assert error.call_count == 3
-        assert all("Missing required hash" in call.args[1] for call in error.call_args_list)
+        assert valid is False
+        error.assert_called_once()
+        assert "Missing required hash" in error.call_args.args[1]
 
     def test_resolve_request_dir_rejects_fallback_candidate_with_mismatched_request_id(self, tmp_path):
         signed_dir = tmp_path / "signed"
@@ -3601,6 +3612,22 @@ class TestSignedZipPackageMode:
         payload = json.loads(capsys.readouterr().out)
         assert payload["error_code"] == "INVALID_ARGS"
         assert "--confirm-rootca" in payload["message"]
+
+    def test_confirm_rootca_is_rejected_when_stdin_is_not_a_tty(self, tmp_path, capsys, monkeypatch):
+        import nvflare.tool.package.package_commands as package_commands
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setattr(package_commands.sys.stdin, "isatty", lambda: False)
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir), confirm_rootca=True)
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code == 4
+        err = capsys.readouterr().err
+        assert "INVALID_ARGS" in err
+        assert "--confirm-rootca requires an interactive terminal" in err
 
     def test_confirm_rootca_cancel_does_not_materialize_signed_files(self, tmp_path, capsys, monkeypatch):
         import nvflare.tool.package.package_commands as package_commands

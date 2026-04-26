@@ -1093,7 +1093,7 @@ def _expected_hash(meta: dict, *names):
     return ""
 
 
-def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str) -> None:
+def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str) -> bool:
     if not isinstance(signed_meta, dict):
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -1102,7 +1102,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             None,
             exit_code=4,
         )
-        return
+        return False
     if signed_meta.get("artifact_type") != "nvflare.cert.signed" or signed_meta.get("schema_version") != "1":
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -1111,7 +1111,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             None,
             exit_code=4,
         )
-        return
+        return False
 
     required = ("request_id", "project", "name", "org", "kind", "cert_type", "cert_file", "rootca_file")
     missing = [field for field in required if not signed_meta.get(field)]
@@ -1123,13 +1123,13 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             None,
             exit_code=4,
         )
-        return
+        return False
     if not _validate_request_id(signed_meta["request_id"]):
-        return
+        return False
     if not _validate_safe_project_name(signed_meta["project"], code="INVALID_SIGNED_ZIP"):
-        return
+        return False
     if not _validate_org_name(signed_meta["org"], code="INVALID_SIGNED_ZIP"):
-        return
+        return False
     cert_type = signed_meta["cert_type"]
     if cert_type not in _VALID_CERT_TYPES:
         output_error_message(
@@ -1139,11 +1139,11 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             None,
             exit_code=4,
         )
-        return
+        return False
     if not _validate_signed_kind_cert_type(signed_meta["kind"], cert_type):
-        return
+        return False
     if not _validate_participant_name(signed_meta["name"], cert_type, code="INVALID_SIGNED_ZIP"):
-        return
+        return False
     if signed_meta["cert_file"] != cert_name or signed_meta["rootca_file"] != "rootCA.pem":
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -1152,7 +1152,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             None,
             exit_code=4,
         )
-        return
+        return False
 
     for meta_field, site_field in (("name", "name"), ("org", "org"), ("cert_type", "type"), ("project", "project")):
         if site_meta.get(site_field) != signed_meta.get(meta_field):
@@ -1163,7 +1163,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
                 None,
                 exit_code=4,
             )
-            return
+            return False
     if site_meta.get("kind") != signed_meta.get("kind"):
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -1172,7 +1172,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             None,
             exit_code=4,
         )
-        return
+        return False
     if (site_meta.get("cert_role") or None) != (signed_meta.get("cert_role") or None):
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -1181,7 +1181,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             None,
             exit_code=4,
         )
-        return
+        return False
 
     hashes = signed_meta.get("hashes")
     required_hashes = ("csr_sha256", "site_yaml_sha256", "certificate_sha256", "rootca_sha256", "public_key_sha256")
@@ -1193,10 +1193,11 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             None,
             exit_code=4,
         )
-        return
+        return False
+    return True
 
 
-def _validate_signed_hashes(signed_meta: dict, file_contents: dict):
+def _validate_signed_hashes(signed_meta: dict, file_contents: dict) -> bool:
     # Hash aliases are resolved as hashes[alias] or hashes[f"{alias}_sha256"];
     # this keeps canonical keys like certificate_sha256 readable while allowing
     # older short names such as cert_sha256 during schema tightening.
@@ -1215,7 +1216,7 @@ def _validate_signed_hashes(signed_meta: dict, file_contents: dict):
                 None,
                 exit_code=4,
             )
-            continue
+            return False
         actual = _hash_bytes(file_contents[content_name])
         if actual != expected:
             output_error_message(
@@ -1225,6 +1226,8 @@ def _validate_signed_hashes(signed_meta: dict, file_contents: dict):
                 None,
                 exit_code=4,
             )
+            return False
+    return True
 
 
 def _validate_signed_public_key_hash(signed_meta: dict, cert) -> bool:
@@ -1340,8 +1343,10 @@ def _load_signed_zip(input_path: str):
             }
             signed_meta = _decode_zip_json(file_contents["signed.json"], "signed.json", input_path)
             site_meta = _decode_zip_yaml(file_contents["site.yaml"], "site.yaml", input_path)
-            _validate_signed_metadata(signed_meta, site_meta, cert_name)
-            _validate_signed_hashes(signed_meta, file_contents)
+            if not _validate_signed_metadata(signed_meta, site_meta, cert_name):
+                return None, None, None, {}
+            if not _validate_signed_hashes(signed_meta, file_contents):
+                return None, None, None, {}
     except zipfile.BadZipFile:
         output_error_message(
             "INVALID_SIGNED_ZIP",
