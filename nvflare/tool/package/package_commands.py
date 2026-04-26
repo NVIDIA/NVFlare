@@ -972,7 +972,7 @@ def _read_zip_member_limited(zf: zipfile.ZipFile, name: str, zip_path: str) -> b
             None,
             exit_code=4,
         )
-        raise
+        return b""
     if len(content) > _MAX_ZIP_MEMBER_SIZE:
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -981,7 +981,7 @@ def _read_zip_member_limited(zf: zipfile.ZipFile, name: str, zip_path: str) -> b
             None,
             exit_code=4,
         )
-        raise ValueError(f"signed zip member exceeds size limit: {name}")
+        return b""
     return content
 
 
@@ -1575,6 +1575,8 @@ def _write_materialized_signed_files(
         _write_file_nofollow(os.path.join(request_dir, "rootCA.pem"), file_contents["rootCA.pem"])
     except OSError as e:
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=request_dir, detail=str(e))
+        return False
+    return True
 
 
 def _find_project_participant(project, name: str):
@@ -1782,7 +1784,8 @@ def _handle_signed_zip_package(args, scheme, host, port):
             return 1
         participant_props = dict(participant.props) if participant else {}
 
-        _write_materialized_signed_files(resolved_request_dir, identity, signed_meta, site_meta, file_contents)
+        if not _write_materialized_signed_files(resolved_request_dir, identity, signed_meta, site_meta, file_contents):
+            return 1
         cert_path = os.path.join(resolved_request_dir, f"{identity['name']}.crt")
         rootca_path = os.path.join(resolved_request_dir, "rootCA.pem")
 

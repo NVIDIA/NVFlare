@@ -57,6 +57,7 @@ from nvflare.tool.package.package_commands import (
     _parse_endpoint,
     _read_local_request_metadata,
     _read_zip_json,
+    _read_zip_member_limited,
     _resolve_request_dir,
     _safe_zip_names,
     _validate_cert_material,
@@ -66,6 +67,7 @@ from nvflare.tool.package.package_commands import (
     _validate_signed_public_key_hash,
     _validated_audit_request_dir,
     _write_file_nofollow,
+    _write_materialized_signed_files,
     handle_package,
 )
 
@@ -3797,6 +3799,52 @@ class TestSignedZipPackageMode:
 
         assert result == 1
         output_ok.assert_not_called()
+
+    def test_signed_zip_member_limited_returns_empty_when_error_is_mocked(self, tmp_path, monkeypatch):
+        signed_zip = tmp_path / "site-3.signed.zip"
+        with zipfile.ZipFile(signed_zip, "w") as zf:
+            zf.writestr("signed.json", b"x" * 513)
+        monkeypatch.setattr("nvflare.tool.package.package_commands._MAX_ZIP_MEMBER_SIZE", 512)
+
+        with zipfile.ZipFile(signed_zip, "r") as zf:
+            with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as output_error:
+                content = _read_zip_member_limited(zf, "signed.json", str(signed_zip))
+
+        assert content == b""
+        output_error.assert_called_once()
+
+    def test_write_materialized_signed_files_returns_false_when_error_is_mocked(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "nvflare.tool.package.package_commands._write_file_nofollow",
+            unittest.mock.Mock(side_effect=OSError("blocked")),
+        )
+        error = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error", error)
+
+        result = _write_materialized_signed_files(
+            str(tmp_path / "site-3"),
+            {"name": "site-3"},
+            {"signed": True},
+            {"name": "site-3"},
+            {"cert": b"cert", "rootCA.pem": b"rootca"},
+        )
+
+        assert result is False
+        assert error.call_args.args[0] == "OUTPUT_DIR_NOT_WRITABLE"
+
+    def test_signed_zip_returns_when_materialized_files_fail(self, tmp_path, monkeypatch):
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
+        build = unittest.mock.Mock()
+        monkeypatch.setattr(
+            "nvflare.tool.package.package_commands._write_materialized_signed_files", lambda *a, **k: False
+        )
+        monkeypatch.setattr("nvflare.tool.package.package_commands._build_selected_participant_package", build)
+
+        result = handle_package(args)
+
+        assert result == 1
+        build.assert_not_called()
 
     def test_signed_zip_accepts_expected_rootca_fingerprint_without_prompting(self, tmp_path, monkeypatch):
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)

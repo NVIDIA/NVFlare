@@ -15,6 +15,7 @@
 """Unit tests for nvflare cert command handlers: init, csr, sign."""
 
 import argparse
+import datetime
 import hashlib
 import json
 import os
@@ -43,6 +44,7 @@ from nvflare.tool.cert.cert_commands import (
     _load_single_site_yaml,
     _load_yaml_file,
     _read_request_zip,
+    _read_zip_member_limited,
     _resolve_request_identity,
     _resolve_sign_cert_type,
     _safe_zip_names,
@@ -53,6 +55,7 @@ from nvflare.tool.cert.cert_commands import (
     _validate_request_project_matches_ca,
     _validate_safe_cert_name,
     _validate_safe_project_name,
+    _validate_signing_ca,
     _write_file_nofollow,
     _write_json_file,
     _write_private_key,
@@ -454,6 +457,34 @@ class TestCertValidationHelpers:
         assert output_error.call_args.args[0] == "KEY_ALREADY_EXISTS"
         generate_csr.assert_not_called()
         assert key_path.read_text() == "existing key"
+
+    def test_validate_signing_ca_returns_none_when_basic_constraints_missing_and_error_is_mocked(self):
+        class _Extensions:
+            def get_extension_for_class(self, _extension_type):
+                raise x509.ExtensionNotFound("missing", x509.BasicConstraints)
+
+        ca_cert = argparse.Namespace(extensions=_Extensions())
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
+            result = _validate_signing_ca(ca_cert, now)
+
+        assert result is None
+        output_error.assert_called_once()
+        assert output_error.call_args.args[0] == "CERT_SIGNING_FAILED"
+
+    def test_read_zip_member_limited_returns_empty_when_error_is_mocked(self, tmp_path, monkeypatch):
+        zip_path = tmp_path / "request.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("request.json", b"x" * 513)
+        monkeypatch.setattr("nvflare.tool.cert.cert_commands._MAX_ZIP_MEMBER_SIZE", 512)
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+                content = _read_zip_member_limited(zf, "request.json")
+
+        assert content == b""
+        output_error.assert_called_once()
 
     def test_request_project_ca_uses_nofollow_read_for_rootca(self, tmp_path):
         ca_dir = tmp_path / "ca"
@@ -1185,6 +1216,18 @@ class TestCertSign:
         assert output_error.call_args.args[0] == "CERT_ALREADY_EXISTS"
         build_cert.assert_not_called()
         assert cert_path.read_text() == "existing cert"
+
+    def test_sign_returns_when_ca_validation_returns_none(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)
+        out_dir = tmp_path / "signed"
+
+        with patch("nvflare.tool.cert.cert_commands._validate_signing_ca", return_value=None):
+            with patch("nvflare.tool.cert.cert_commands._build_signed_cert") as build_cert:
+                result = sign_csr_files(csr_path=csr_path, ca_dir=ca_dir, output_dir=str(out_dir), cert_type="client")
+
+        assert result is None
+        build_cert.assert_not_called()
 
     def test_sign_rootca_copied(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
@@ -1961,6 +2004,21 @@ class TestHandleCertCmdRouting:
         assert "invalid cert subcommand" in captured.err
         assert "Code: INVALID_ARGS (exit 4)" in captured.err
 
+    def test_no_subcommand_returns_when_error_is_mocked(self):
+        from unittest.mock import MagicMock
+
+        from nvflare.tool.cert.cert_cli import handle_cert_cmd
+
+        args = MagicMock()
+        args.cert_sub_command = None
+        args.compat_output_format = None
+
+        with patch("nvflare.tool.cli_output.output_usage_error") as output_usage_error:
+            rc = handle_cert_cmd(args)
+
+        assert rc == 1
+        output_usage_error.assert_called_once()
+
     def test_compat_output_alias_sets_output_format(self, tmp_path):
         from argparse import ArgumentParser
 
@@ -2211,6 +2269,28 @@ class TestDistributedCertRequestApprove:
         assert exc_info.value.code == 1
         assert "OUTPUT_DIR_NOT_WRITABLE" in capsys.readouterr().err
         assert not zip_path.exists()
+
+    def test_request_returns_after_zip_write_error_when_error_is_mocked(self, tmp_path):
+        request_dir = tmp_path / "site-3"
+        args = argparse.Namespace(
+            schema=False,
+            kind="site",
+            identity_args=["site-3"],
+            org="nvidia",
+            project="example_project",
+            out=str(request_dir),
+            force=False,
+        )
+
+        with patch("nvflare.tool.cert.cert_commands._write_zip_nofollow", side_effect=OSError("blocked")):
+            with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
+                with patch("nvflare.tool.cert.cert_commands._try_write_request_audit") as write_audit:
+                    rc = handle_cert_request(args)
+
+        assert rc == 1
+        output_error.assert_called_once()
+        assert output_error.call_args.args[0] == "OUTPUT_DIR_NOT_WRITABLE"
+        write_audit.assert_not_called()
 
     def test_request_creates_request_zip_without_private_key_and_final_workflow_hint(
         self, tmp_path, capsys, monkeypatch

@@ -631,7 +631,7 @@ def _read_zip_member_limited(zf: zipfile.ZipFile, member: str) -> bytes:
             exit_code=4,
             detail=f"zip member exceeds size limit: {member}",
         )
-        raise ValueError(f"zip member exceeds size limit: {member}")
+        return b""
     return content
 
 
@@ -1006,9 +1006,11 @@ def _validate_signing_ca(ca_cert: x509.Certificate, now: datetime.datetime) -> d
         basic_constraints = ca_cert.extensions.get_extension_for_class(x509.BasicConstraints).value
     except x509.ExtensionNotFound:
         output_error("CERT_SIGNING_FAILED", reason="CA certificate is missing BasicConstraints")
+        return None
 
     if not basic_constraints.ca:
         output_error("CERT_SIGNING_FAILED", reason="CA certificate is not a CA certificate")
+        return None
 
     ca_not_valid_after = _get_cert_not_valid_after(ca_cert)
     if ca_not_valid_after <= now:
@@ -1016,6 +1018,7 @@ def _validate_signing_ca(ca_cert: x509.Certificate, now: datetime.datetime) -> d
             "CERT_SIGNING_FAILED",
             reason=f"CA certificate expired at {ca_not_valid_after.strftime('%Y-%m-%dT%H:%M:%SZ')}",
         )
+        return None
 
     return ca_not_valid_after
 
@@ -1280,6 +1283,8 @@ def sign_csr_files(
 
     now = _utc_now()
     ca_not_valid_after = _validate_signing_ca(ca_cert, now)
+    if ca_not_valid_after is None:
+        return None
 
     valid_days = valid_days or 1095
     requested_not_valid_after = now + datetime.timedelta(days=valid_days)
@@ -1584,6 +1589,7 @@ def handle_cert_request(args):
         )
     except OSError as e:
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=request_dir, detail=str(e))
+        return 1
 
     audit_record = {
         "schema_version": _ARTIFACT_VERSION,
