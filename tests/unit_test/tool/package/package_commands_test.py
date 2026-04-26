@@ -41,6 +41,7 @@ from nvflare.tool.package.package_commands import (
     PrebuiltCertBuilder,
     _discover_name_from_dir,
     _parse_endpoint,
+    _validate_cert_material,
     _validate_signed_public_key_hash,
     handle_package,
 )
@@ -3409,6 +3410,22 @@ class TestSignedZipPackageMode:
         assert existing_site_yaml.read_text() == "existing local request site.yaml"
         for name in ("signed.json", "site-3.crt", "rootCA.pem"):
             assert not (request_dir / name).exists()
+
+    def test_validate_cert_material_invalid_key_does_not_fall_through_when_error_is_mocked(self, tmp_path, monkeypatch):
+        ca_dir = tmp_path / "ca"
+        ca_dir.mkdir()
+        ca_key, ca_cert, rootca_path = _make_ca(str(ca_dir))
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "site-3", str(tmp_path), "site-3.crt", role="client")
+        with open(key_path, "wb") as f:
+            f.write(b"not a private key")
+        error = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
+
+        cert = _validate_cert_material(cert_path, key_path, rootca_path, validate_key_match=True)
+
+        assert cert is None
+        error.assert_called_once()
+        assert error.call_args.args[0] == "KEY_INVALID"
 
     def test_signed_zip_rejects_local_request_metadata_mismatch(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")

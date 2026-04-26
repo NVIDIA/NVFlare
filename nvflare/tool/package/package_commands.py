@@ -440,6 +440,7 @@ def _validate_cert_material(cert_path: str, key_path: str, rootca_path: str, *, 
         verify_cert(cert, ca_cert.public_key())
     except Exception as e:
         output_error("CERT_CHAIN_INVALID", exit_code=1, cert=cert_path, rootca=rootca_path, detail=str(e))
+        return None
 
     try:
         expiry = cert.not_valid_after_utc
@@ -469,6 +470,7 @@ def _validate_cert_material(cert_path: str, key_path: str, rootca_path: str, *, 
                 None,
                 exit_code=1,
             )
+            return None
         if cert_public != key_public:
             output_error_message(
                 "KEY_CERT_MISMATCH",
@@ -477,6 +479,7 @@ def _validate_cert_material(cert_path: str, key_path: str, rootca_path: str, *, 
                 None,
                 exit_code=1,
             )
+            return None
     return cert
 
 
@@ -1505,6 +1508,8 @@ def _handle_signed_zip_package(args, scheme, host, port):
         _validate_local_request_metadata(request_meta, signed_meta)
 
         cert = _validate_cert_material(temp_cert, key_path, temp_rootca, validate_key_match=True)
+        if cert is None:
+            return 1
         expected_public_key_hash = _expected_hash(signed_meta, "public_key")
         if expected_public_key_hash and _cert_public_key_sha256(cert) != expected_public_key_hash:
             output_error_message(
@@ -1702,6 +1707,8 @@ def handle_package(args):
         output_error("ROOTCA_NOT_FOUND", exit_code=1, path=args.rootca, detail=hint)
 
     cert = _validate_cert_material(args.cert, args.key, args.rootca)
+    if cert is None:
+        return 1
     kit_type = _read_cert_type_from_cert(cert)
     if not kit_type or kit_type not in _VALID_CERT_TYPES:
         output_error("CERT_TYPE_UNKNOWN", exit_code=1, cert=args.cert)

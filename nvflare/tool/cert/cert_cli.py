@@ -332,14 +332,6 @@ def _def_cert_approve_parser(cert_sub: argparse._SubParsersAction) -> argparse.A
     return p
 
 
-def _hide_developer_subcommands(cert_sub: argparse._SubParsersAction) -> None:
-    # argparse.SUPPRESS is not enough for subparsers: hidden commands still show
-    # up in cert help as "==SUPPRESS==". argparse exposes no public API for this.
-    cert_sub._choices_actions = [
-        action for action in cert_sub._choices_actions if getattr(action, "dest", None) not in ("csr", "sign")
-    ]
-
-
 def _ensure_parsers_initialized() -> None:
     """Ensure module-level parser references are populated.
 
@@ -367,7 +359,6 @@ def _ensure_parsers_initialized() -> None:
         _def_cert_approve_parser(_cert_sub)
         _def_cert_csr_parser(_cert_sub)
         _def_cert_sign_parser(_cert_sub)
-        _hide_developer_subcommands(_cert_sub)
 
 
 def def_cert_cli_parser(sub_cmd) -> dict:
@@ -382,9 +373,6 @@ def def_cert_cli_parser(sub_cmd) -> dict:
     _def_cert_init_parser(cert_sub)
     _def_cert_request_parser(cert_sub)
     _def_cert_approve_parser(cert_sub)
-    _def_cert_csr_parser(cert_sub)
-    _def_cert_sign_parser(cert_sub)
-    _hide_developer_subcommands(cert_sub)
     return {"cert": _cert_parser}
 
 
