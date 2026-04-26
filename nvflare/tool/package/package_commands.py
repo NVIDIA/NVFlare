@@ -1389,6 +1389,7 @@ def _read_local_request_metadata(request_dir: str) -> dict:
             exit_code=1,
             detail=f"missing {request_json_path}",
         )
+        return None
 
     try:
         request_meta = _read_json_file_nofollow(request_json_path)
@@ -1401,6 +1402,7 @@ def _read_local_request_metadata(request_dir: str) -> dict:
             exit_code=4,
             detail=str(e),
         )
+        return None
     if not isinstance(request_meta, dict):
         output_error_message(
             "REQUEST_METADATA_INVALID",
@@ -1409,6 +1411,7 @@ def _read_local_request_metadata(request_dir: str) -> dict:
             None,
             exit_code=4,
         )
+        return None
     return request_meta
 
 
@@ -1531,6 +1534,7 @@ def _handle_signed_zip_package(args, scheme, host, port):
                 None,
                 exit_code=4,
             )
+            return 1
         _validate_signed_public_key_hash(signed_meta, cert)
 
         identity = _signed_identity_from_metadata(signed_meta, site_meta, cert)
@@ -1614,6 +1618,8 @@ def _handle_signed_zip_package(args, scheme, host, port):
                 detail="Use --request-dir to point to the local request folder that contains the private key.",
             )
         request_meta = _read_local_request_metadata(resolved_request_dir)
+        if request_meta is None:
+            return 1
         _validate_local_request_metadata(request_meta, signed_meta)
 
         cert = _validate_cert_material(temp_cert, key_path, temp_rootca, validate_key_match=True)

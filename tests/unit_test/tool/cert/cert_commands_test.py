@@ -43,6 +43,7 @@ from nvflare.tool.cert.cert_commands import (
     _load_single_site_yaml,
     _read_request_zip,
     _resolve_request_identity,
+    _resolve_sign_cert_type,
     _safe_zip_names,
     _validate_request_kind_cert_type,
     _validate_request_metadata,
@@ -1918,6 +1919,14 @@ class TestDistributedCertPublicSurface:
 
 
 class TestDistributedCertRequestApprove:
+    def test_resolve_sign_cert_type_returns_after_conflicting_modes_when_error_is_mocked(self):
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            cert_type = _resolve_sign_cert_type(None, "client", True)
+
+        output_error.assert_called_once()
+        assert cert_type is None
+        assert "use either -t/--type or --accept-csr-role" in output_error.call_args.kwargs["detail"]
+
     def test_resolve_request_identity_returns_none_after_site_arg_error_when_error_is_mocked(self):
         args = argparse.Namespace(kind="site", identity_args=[])
 

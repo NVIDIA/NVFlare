@@ -175,9 +175,9 @@ def _validate_request_kind(kind: str) -> bool:
     return True
 
 
-def _validate_request_kind_cert_type(kind: str, cert_type: str, cert_role: str = None) -> None:
+def _validate_request_kind_cert_type(kind: str, cert_type: str, cert_role: str = None) -> bool:
     if not _validate_request_kind(kind):
-        return
+        return False
     if kind in _REQUEST_KIND_TO_CERT_TYPE:
         expected = _REQUEST_KIND_TO_CERT_TYPE[kind]
         if cert_type != expected:
@@ -188,7 +188,8 @@ def _validate_request_kind_cert_type(kind: str, cert_type: str, cert_role: str =
                 exit_code=4,
                 detail=f"request kind '{kind}' requires cert type '{expected}'",
             )
-        return
+            return False
+        return True
 
     if cert_type not in _USER_CERT_TYPES:
         output_error_message(
@@ -198,6 +199,7 @@ def _validate_request_kind_cert_type(kind: str, cert_type: str, cert_role: str =
             exit_code=4,
             detail="request kind 'user' requires cert type one of: org_admin, lead, member",
         )
+        return False
     if cert_role and _USER_ROLE_TO_CERT_TYPE.get(cert_role) != cert_type:
         output_error_message(
             "INVALID_ARGS",
@@ -206,6 +208,8 @@ def _validate_request_kind_cert_type(kind: str, cert_type: str, cert_role: str =
             exit_code=4,
             detail="user cert_role does not match request cert_type",
         )
+        return False
+    return True
 
 
 def _validate_identity_name(name: str, cert_type: str) -> None:
@@ -1149,6 +1153,7 @@ def _resolve_sign_cert_type(csr: x509.CertificateSigningRequest, cert_type: str,
             exit_code=4,
             detail="use either -t/--type or --accept-csr-role, not both",
         )
+        return None
 
     if accept_csr_role:
         cert_type = _get_csr_role(csr)
@@ -1160,6 +1165,7 @@ def _resolve_sign_cert_type(csr: x509.CertificateSigningRequest, cert_type: str,
                 exit_code=4,
                 detail="CSR does not contain a proposed role; re-run with -t/--type or generate the CSR with 'cert csr -t'",
             )
+            return None
     elif not cert_type:
         output_error_message(
             "INVALID_ARGS",
@@ -1168,6 +1174,7 @@ def _resolve_sign_cert_type(csr: x509.CertificateSigningRequest, cert_type: str,
             exit_code=4,
             detail="specify either -t/--type to override the role or --accept-csr-role to trust the CSR role",
         )
+        return None
 
     if cert_type not in _VALID_CERT_TYPES:
         output_error_message(
@@ -1177,6 +1184,7 @@ def _resolve_sign_cert_type(csr: x509.CertificateSigningRequest, cert_type: str,
             exit_code=4,
             detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
         )
+        return None
     return cert_type
 
 
@@ -1201,6 +1209,8 @@ def sign_csr_files(
     if csr is None:
         csr = _load_and_validate_csr(csr_path)
     cert_type = _resolve_sign_cert_type(csr, cert_type, accept_csr_role)
+    if cert_type is None:
+        return None
 
     subject_cn = _get_cn(csr.subject)
     _validate_safe_cert_name(subject_cn, field_label="CSR subject CN")
@@ -1312,6 +1322,8 @@ def handle_cert_sign(args):
         )
     csr = _load_and_validate_csr(args.csr_path)
     cert_type = _resolve_sign_cert_type(csr, getattr(args, "cert_type", None), getattr(args, "accept_csr_role", False))
+    if cert_type is None:
+        return 1
     subject_cn = _get_cn(csr.subject)
     if getattr(args, "accept_csr_role", False) and not cli_output.is_json_mode() and sys.stdin.isatty():
         if not prompt_yn(f"CSR for '{subject_cn}' proposes role '{cert_type}'. Sign using this CSR role?"):
@@ -1328,6 +1340,8 @@ def handle_cert_sign(args):
         force=args.force,
         csr=csr,
     )
+    if sign_result is None:
+        return 1
 
     # 12. Output result
     next_step = (
@@ -1408,6 +1422,7 @@ def _resolve_request_identity(args) -> dict:
         exit_code=4,
         detail="cert request kind must be one of: site, server, user",
     )
+    return None
 
 
 def _build_site_metadata(request_meta: dict) -> dict:
@@ -1661,7 +1676,8 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
         )
         return None
-    _validate_request_kind_cert_type(request_meta["kind"], cert_type, request_meta.get("cert_role"))
+    if not _validate_request_kind_cert_type(request_meta["kind"], cert_type, request_meta.get("cert_role")):
+        return None
     _validate_identity_name(name, cert_type)
 
     for meta_field, site_field in (("name", "name"), ("org", "org"), ("cert_type", "type"), ("project", "project")):
@@ -1673,6 +1689,7 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
                 exit_code=4,
                 detail=f"site.yaml field '{site_field}' does not match request metadata",
             )
+            return None
     if site_meta.get("kind") != request_meta.get("kind"):
         output_error_message(
             "INVALID_ARGS",
@@ -1681,6 +1698,7 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             exit_code=4,
             detail="site.yaml field 'kind' does not match request metadata",
         )
+        return None
     if (site_meta.get("cert_role") or None) != (request_meta.get("cert_role") or None):
         output_error_message(
             "INVALID_ARGS",
@@ -1689,8 +1707,11 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             exit_code=4,
             detail="site.yaml field 'cert_role' does not match request metadata",
         )
+        return None
 
     csr = _load_and_validate_csr(csr_path)
+    if csr is None:
+        return None
     if _get_cn(csr.subject) != name:
         output_error_message(
             "INVALID_ARGS",
@@ -1699,6 +1720,7 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             exit_code=4,
             detail="CSR common name does not match request metadata",
         )
+        return None
     csr_role = _get_csr_role(csr)
     if csr_role != cert_type:
         output_error_message(
@@ -1708,6 +1730,7 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             exit_code=4,
             detail="CSR role does not match request metadata",
         )
+        return None
     org_attrs = csr.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)
     csr_org = org_attrs[0].value if org_attrs else None
     if csr_org != request_meta.get("org"):
@@ -1718,6 +1741,7 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             exit_code=4,
             detail="CSR organization does not match request metadata",
         )
+        return None
     if request_meta["csr_sha256"] != _sha256_file(csr_path):
         output_error_message(
             "INVALID_ARGS",
@@ -1726,6 +1750,7 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             exit_code=4,
             detail="CSR hash does not match request metadata",
         )
+        return None
     if request_meta["public_key_sha256"] != _csr_public_key_sha256(csr):
         output_error_message(
             "INVALID_ARGS",
@@ -1734,6 +1759,7 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             exit_code=4,
             detail="CSR public key hash does not match request metadata",
         )
+        return None
     return csr
 
 
@@ -1825,6 +1851,8 @@ def handle_cert_approve(args):
             force=True,
             csr=csr,
         )
+        if sign_result is None:
+            return 1
 
         approved_at = _utc_ts()
         signed_meta = {

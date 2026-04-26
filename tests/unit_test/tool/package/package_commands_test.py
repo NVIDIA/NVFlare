@@ -43,6 +43,7 @@ from nvflare.tool.package.package_commands import (
     _discover_name_from_dir,
     _load_signed_zip,
     _parse_endpoint,
+    _read_local_request_metadata,
     _read_zip_json,
     _resolve_request_dir,
     _safe_zip_names,
@@ -3671,6 +3672,32 @@ class TestSignedZipPackageMode:
         assert site_meta is None
         assert cert_name == ""
         assert file_contents == {}
+
+    def test_signed_zip_cert_load_failure_returns_cleanly_when_error_is_mocked(self, tmp_path):
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
+
+        with unittest.mock.patch(
+            "nvflare.tool.package.package_commands._load_crt_nofollow", side_effect=ValueError("bad cert")
+        ):
+            with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as output_error:
+                rc = handle_package(args)
+
+        assert rc == 1
+        output_error.assert_called_once()
+        assert "Failed to load certificate from signed zip" in output_error.call_args.args[1]
+
+    def test_read_local_request_metadata_returns_none_after_invalid_json_when_error_is_mocked(self, tmp_path):
+        request_dir = tmp_path / "site-3"
+        request_dir.mkdir()
+        (request_dir / "request.json").write_text("not json")
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as output_error:
+            request_meta = _read_local_request_metadata(str(request_dir))
+
+        assert request_meta is None
+        output_error.assert_called_once()
+        assert output_error.call_args.args[0] == "REQUEST_METADATA_INVALID"
 
     def test_signed_public_key_hash_helper_requires_hash(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
