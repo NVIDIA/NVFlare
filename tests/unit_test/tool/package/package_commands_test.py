@@ -542,7 +542,10 @@ class TestSignedZipHelpers:
         args = types.SimpleNamespace(request_dir=str(request_dir))
         identity = {"name": "site-3"}
 
-        assert _resolve_request_dir(args, str(tmp_path / "site-3.signed.zip"), identity) is None
+        with pytest.raises(SystemExit) as exc_info:
+            _resolve_request_dir(args, str(tmp_path / "site-3.signed.zip"), identity)
+
+        assert exc_info.value.code == 1
 
 
 def test_missing_endpoint_human_mode_no_help_dump(capsys, monkeypatch, tmp_path):
@@ -4122,6 +4125,23 @@ class TestSignedZipPackageMode:
         assert "REQUEST_DIR_NOT_FOUND" in captured.err
         assert "--request-dir" in captured.err
 
+    def test_signed_zip_explicit_request_dir_missing_key_returns_targeted_error(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        incomplete_dir = tmp_path / "incomplete-request"
+        incomplete_dir.mkdir()
+        shutil.copy2(str(request_dir / "request.json"), str(incomplete_dir / "request.json"))
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(incomplete_dir))
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "REQUEST_DIR_INCOMPLETE" in captured.err
+        assert "site-3.key" in captured.err
+        assert "REQUEST_DIR_NOT_FOUND" not in captured.err
+
     @pytest.mark.parametrize(
         "zip_kwargs",
         [
@@ -4180,7 +4200,8 @@ class TestSignedZipPackageMode:
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
-        assert "KEY_NOT_FOUND" in captured.err
+        assert "REQUEST_DIR_INCOMPLETE" in captured.err
+        assert "site-3.key" in captured.err
         assert existing_site_yaml.read_text() == "existing local request site.yaml"
         for name in ("signed.json", "site-3.crt", "rootCA.pem"):
             assert not (request_dir / name).exists()

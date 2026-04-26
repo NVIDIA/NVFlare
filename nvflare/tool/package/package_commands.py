@@ -1204,6 +1204,8 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
         return False
 
     hashes = signed_meta.get("hashes")
+    # The signed.zip schema requires canonical hash field names produced by cert approve.
+    # Later hash verification accepts aliases only as a tolerance layer for lookup.
     required_hashes = ("csr_sha256", "site_yaml_sha256", "certificate_sha256", "rootca_sha256", "public_key_sha256")
     if not isinstance(hashes, dict) or any(not hashes.get(name) for name in required_hashes):
         output_error_message(
@@ -1452,6 +1454,11 @@ def _has_request_material(request_dir: str, name: str) -> bool:
     )
 
 
+def _missing_request_material(request_dir: str, name: str) -> list:
+    expected = (f"{name}.key", "request.json")
+    return [filename for filename in expected if not os.path.isfile(os.path.join(request_dir, filename))]
+
+
 def _resolve_request_dir(args, signed_zip_path: str, identity: dict):
     if getattr(args, "request_dir", None):
         candidate = os.path.abspath(args.request_dir)
@@ -1459,6 +1466,16 @@ def _resolve_request_dir(args, signed_zip_path: str, identity: dict):
         if request_id:
             validated = _validated_audit_request_dir(candidate, request_id)
             if not validated:
+                missing = _missing_request_material(candidate, identity["name"]) if os.path.isdir(candidate) else []
+                if missing:
+                    output_error_message(
+                        "REQUEST_DIR_INCOMPLETE",
+                        "The specified --request-dir is missing local request material.",
+                        f"Expected file(s): {', '.join(missing)}.",
+                        None,
+                        exit_code=1,
+                    )
+                    return None
                 output_error_message(
                     "REQUEST_DIR_MISMATCH",
                     "The specified --request-dir does not match the signed zip request_id.",
@@ -1467,9 +1484,28 @@ def _resolve_request_dir(args, signed_zip_path: str, identity: dict):
                     exit_code=4,
                 )
                 return None
+            missing = _missing_request_material(validated, identity["name"])
+            if missing:
+                output_error_message(
+                    "REQUEST_DIR_INCOMPLETE",
+                    "The specified --request-dir is missing local request material.",
+                    f"Expected file(s): {', '.join(missing)}.",
+                    None,
+                    exit_code=1,
+                )
+                return None
             return validated
         if _has_request_material(candidate, identity["name"]):
             return candidate
+        if os.path.isdir(candidate):
+            missing = _missing_request_material(candidate, identity["name"])
+            output_error_message(
+                "REQUEST_DIR_INCOMPLETE",
+                "The specified --request-dir is missing local request material.",
+                f"Expected file(s): {', '.join(missing)}.",
+                None,
+                exit_code=1,
+            )
         return None
 
     audit_dir = _audit_request_dir(identity.get("request_id"))

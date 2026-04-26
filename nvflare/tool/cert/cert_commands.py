@@ -166,7 +166,7 @@ def _validate_request_kind(kind: str) -> bool:
             "Invalid arguments.",
             _USAGE_HINT,
             exit_code=4,
-            detail="cert request kind must be one of: site, server, user",
+            detail=f"cert request kind must be one of: {', '.join(sorted(_REQUEST_KINDS))}",
         )
         return False
     return True
@@ -668,6 +668,7 @@ def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> No
         os.makedirs(parent, mode=0o700, exist_ok=True)
     except OSError as e:
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=parent, detail=str(e))
+        return
 
     prepared_members = []
     for arcname, src_path in members.items():
@@ -679,7 +680,7 @@ def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> No
                 exit_code=4,
                 detail=f"zip must not contain private keys: {arcname}",
             )
-            continue
+            return
         try:
             prepared_members.append((arcname, _read_zip_source_nofollow(src_path)))
         except _UnsafeZipSourceError as e:
@@ -690,8 +691,10 @@ def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> No
                 exit_code=4,
                 detail=f"unsafe zip source: {e}",
             )
+            return
         except OSError as e:
             output_error("OUTPUT_DIR_NOT_WRITABLE", path=src_path, detail=str(e))
+            return
 
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     if hasattr(os, "O_NOFOLLOW"):

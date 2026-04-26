@@ -48,6 +48,7 @@ from nvflare.tool.cert.cert_commands import (
     _resolve_request_identity,
     _resolve_sign_cert_type,
     _safe_zip_names,
+    _UnsafeZipSourceError,
     _validate_identity_name,
     _validate_request_id,
     _validate_request_kind_cert_type,
@@ -363,7 +364,7 @@ class TestCertValidationHelpers:
         output_error.assert_called_once()
         assert "invalid cert type" in output_error.call_args.kwargs["detail"]
 
-    def test_write_zip_skips_private_key_member_when_error_is_mocked(self, tmp_path):
+    def test_write_zip_returns_after_private_key_member_when_error_is_mocked(self, tmp_path):
         key_path = tmp_path / "site-3.key"
         key_path.write_text("private key")
         request_path = tmp_path / "request.json"
@@ -371,11 +372,12 @@ class TestCertValidationHelpers:
         zip_path = tmp_path / "request.zip"
 
         with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
-            _write_zip_nofollow(str(zip_path), {"site-3.key": str(key_path), "request.json": str(request_path)})
+            with patch("nvflare.tool.cert.cert_commands._read_zip_source_nofollow") as read_source:
+                _write_zip_nofollow(str(zip_path), {"site-3.key": str(key_path), "request.json": str(request_path)})
 
         output_error.assert_called_once()
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            assert zf.namelist() == ["request.json"]
+        read_source.assert_not_called()
+        assert not zip_path.exists()
 
     def test_write_zip_does_not_overwrite_existing_zip_when_error_is_mocked(self, tmp_path):
         source_path = tmp_path / "request.json"
@@ -391,6 +393,37 @@ class TestCertValidationHelpers:
         with zipfile.ZipFile(zip_path, "r") as zf:
             assert zf.namelist() == ["sentinel.txt"]
             assert zf.read("sentinel.txt") == b"keep"
+
+    def test_write_zip_returns_after_makedirs_error_when_error_is_mocked(self, tmp_path):
+        source_path = tmp_path / "request.json"
+        source_path.write_text("{}")
+        zip_path = tmp_path / "missing-parent" / "request.zip"
+
+        with patch("nvflare.tool.cert.cert_commands.os.makedirs", side_effect=OSError("blocked")):
+            with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
+                with patch("nvflare.tool.cert.cert_commands._read_zip_source_nofollow") as read_source:
+                    _write_zip_nofollow(str(zip_path), {"request.json": str(source_path)}, force=False)
+
+        output_error.assert_called_once()
+        assert output_error.call_args.args[0] == "OUTPUT_DIR_NOT_WRITABLE"
+        read_source.assert_not_called()
+        assert not zip_path.exists()
+
+    def test_write_zip_returns_after_unsafe_source_when_error_is_mocked(self, tmp_path):
+        source_path = tmp_path / "request.json"
+        source_path.write_text("{}")
+        zip_path = tmp_path / "request.zip"
+
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            with patch(
+                "nvflare.tool.cert.cert_commands._read_zip_source_nofollow",
+                side_effect=_UnsafeZipSourceError("not a regular file"),
+            ):
+                _write_zip_nofollow(str(zip_path), {"request.json": str(source_path)}, force=False)
+
+        output_error.assert_called_once()
+        assert "unsafe zip source" in output_error.call_args.kwargs["detail"]
+        assert not zip_path.exists()
 
     def test_generate_csr_removes_private_key_if_csr_write_fails(self, tmp_path, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
