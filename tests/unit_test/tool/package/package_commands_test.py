@@ -224,6 +224,34 @@ class TestPrebuiltCertBuilder:
             builder.build(project, ctx)
         assert rootca_redirect.read_text() == "rootca target"
 
+    @pytest.mark.skipif(
+        not hasattr(os, "symlink") or not hasattr(os, "O_NOFOLLOW"), reason="nofollow symlink support required"
+    )
+    def test_source_key_symlink_is_rejected(self, tmp_path):
+        ca_key, ca_cert, rootca_path = _make_ca(str(tmp_path))
+        key_path, cert_path = _make_signed_cert(
+            ca_key,
+            ca_cert,
+            "hospital-1",
+            str(tmp_path),
+            "hospital-1.crt",
+            role="client",
+        )
+        key_link = tmp_path / "hospital-1-link.key"
+        os.symlink(key_path, str(key_link))
+        project = Project("pkgtest", "")
+        project.add_client("hospital-1", "myorg", {})
+        ctx = _FakeBuilderCtx(str(tmp_path / "kits"))
+        builder = PrebuiltCertBuilder(
+            cert_path=cert_path,
+            key_path=str(key_link),
+            rootca_path=rootca_path,
+            target_name="hospital-1",
+        )
+
+        with pytest.raises(OSError):
+            builder.build(project, ctx)
+
     def test_mismatched_target_name_raises_instead_of_silent_empty_kit(self, tmp_path):
         ca_key, ca_cert, rootca_path = _make_ca(str(tmp_path))
         key_path, cert_path = _make_signed_cert(

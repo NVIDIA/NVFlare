@@ -293,14 +293,11 @@ class PrebuiltCertBuilder(Builder):
                 cert_dst = os.path.join(kit_dir, "client.crt")
                 key_dst = os.path.join(kit_dir, "client.key")
 
-            with open(cert_path, "rb") as _src:
-                _write_file_nofollow(cert_dst, _src.read(), mode=0o644)
-            with open(key_path, "rb") as _src:
-                _write_file_nofollow(key_dst, _src.read(), mode=0o600)
+            _write_file_nofollow(cert_dst, _read_file_nofollow(cert_path), mode=0o644)
+            _write_file_nofollow(key_dst, _read_file_nofollow(key_path), mode=0o600)
 
             rootca_dst = os.path.join(kit_dir, "rootCA.pem")
-            with open(self.rootca_path, "rb") as _src:
-                _write_file_nofollow(rootca_dst, _src.read(), mode=0o644)
+            _write_file_nofollow(rootca_dst, _read_file_nofollow(self.rootca_path), mode=0o644)
             built_count += 1
 
         if built_count == 0:

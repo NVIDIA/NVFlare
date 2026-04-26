@@ -446,14 +446,12 @@ def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
         f.write(content)
 
 
-def _read_file_nofollow(path: str, max_size: int = None) -> bytes:
+def _read_file_nofollow(path: str, max_size: int = _MAX_ZIP_MEMBER_SIZE) -> bytes:
     flags = os.O_RDONLY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     fd = os.open(path, flags)
     with os.fdopen(fd, "rb") as f:
-        if max_size is None:
-            return f.read()
         content = f.read(max_size + 1)
     if len(content) > max_size:
         raise _UnsafeZipSourceError(f"zip source too large: {path}")
@@ -486,11 +484,7 @@ def _sha256_bytes(data: bytes) -> str:
 
 
 def _sha256_file(path: str) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
+    return _sha256_bytes(_read_file_nofollow(path))
 
 
 def _csr_public_key_sha256(csr: x509.CertificateSigningRequest) -> str:
