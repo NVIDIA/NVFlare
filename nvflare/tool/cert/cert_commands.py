@@ -312,6 +312,7 @@ def handle_cert_init(args):
         output_usage_error(
             _cert_cli._cert_init_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
         )
+        return 1
     if not _validate_safe_project_name(args.project):
         return 1
 
@@ -591,6 +592,7 @@ def _safe_zip_names(zf: zipfile.ZipFile) -> list:
         parts = normalized.split("/")
         if (
             not name
+            or name == "."
             or name.endswith("/")
             or name.startswith("/")
             or "\\" in name
@@ -910,6 +912,7 @@ def handle_cert_csr(args):
             exit_code=4,
             detail="'nvflare cert csr' is not a public CLI command",
         )
+        return 1
 
     # 2. Resolve inputs (either --project-file or explicit args)
     site = None
@@ -1328,6 +1331,7 @@ def handle_cert_sign(args):
             exit_code=4,
             detail="'nvflare cert sign' is not a public CLI command",
         )
+        return 1
 
     # 2. Validate required args and signer decision mode
     missing_flags = [
@@ -1626,7 +1630,7 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
                     exit_code=4,
                     detail="request zip must contain request.json and site.yaml",
                 )
-                return request_meta
+                return None
             request_meta = json.loads(_read_zip_member_limited(zf, "request.json").decode("utf-8"))
             if not isinstance(request_meta, dict):
                 raise ValueError("request.json must be a mapping")

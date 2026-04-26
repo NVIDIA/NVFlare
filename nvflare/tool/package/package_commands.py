@@ -855,7 +855,8 @@ def _handle_package_yaml_mode(args, scheme, host, port):
 
     if not any(isinstance(b, StaticFileBuilder) for b in all_builders):
         cert_pos = next((i for i, b in enumerate(all_builders) if isinstance(b, PrebuiltCertBuilder)), None)
-        assert cert_pos is not None, "PrebuiltCertBuilder missing from builder list; this is a bug"
+        if cert_pos is None:
+            raise RuntimeError("PrebuiltCertBuilder missing from builder list; this is a bug")
         all_builders.insert(cert_pos + 1, StaticFileBuilder(scheme=scheme))
 
     provisioner = Provisioner(root_dir=workspace, builders=all_builders)
@@ -914,7 +915,9 @@ def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
         norm = posixpath.normpath(name)
         mode = info.external_attr >> 16
         if (
-            os.path.isabs(name)
+            not name
+            or name == "."
+            or os.path.isabs(name)
             or "\\" in name
             or norm != name
             or norm.startswith("..")
@@ -1869,6 +1872,7 @@ def handle_package(args):
             exit_code=4,
             hint="Provide the server endpoint URI, e.g. grpc://server.example.com:8002",
         )
+        return 1
     try:
         scheme, host, port = _parse_endpoint(args.endpoint)
     except ValueError:

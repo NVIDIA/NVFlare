@@ -284,16 +284,21 @@ def _display_unknown_args(argv, cmd: str, args, unknown: list) -> list:
     if not input_path or str(input_path).lower().endswith(".signed.zip"):
         return unknown
 
+    unknown_set = set(unknown)
     display_unknown = []
+    display_unknown_set = set()
+
     for i, token in enumerate(argv):
-        if token not in unknown:
+        if token not in unknown_set or token in display_unknown_set:
             continue
         display_unknown.append(token)
+        display_unknown_set.add(token)
         if token.startswith("-") and "=" not in token and i + 1 < len(argv) and argv[i + 1] == input_path:
             display_unknown.append(argv[i + 1])
+            display_unknown_set.add(argv[i + 1])
 
     for token in unknown:
-        if token not in display_unknown:
+        if token not in display_unknown_set:
             display_unknown.append(token)
     return display_unknown
 

@@ -82,7 +82,10 @@ def require_signed_jobs(workspace: Workspace) -> bool:
     server_config_path = os.path.join(workspace.get_startup_kit_dir(), "fed_server.json")
     if os.path.exists(server_config_path):
         try:
-            fd = os.open(server_config_path, os.O_RDONLY)
+            _open_flags = os.O_RDONLY
+            if hasattr(os, "O_NOFOLLOW"):
+                _open_flags |= os.O_NOFOLLOW
+            fd = os.open(server_config_path, _open_flags)
             with os.fdopen(fd) as f:
                 st = os.fstat(f.fileno())
                 if st.st_mode & (_stat.S_IWGRP | _stat.S_IWOTH):
