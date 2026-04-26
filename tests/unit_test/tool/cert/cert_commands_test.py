@@ -372,6 +372,21 @@ class TestCertValidationHelpers:
         with zipfile.ZipFile(zip_path, "r") as zf:
             assert zf.namelist() == ["request.json"]
 
+    def test_write_zip_does_not_overwrite_existing_zip_when_error_is_mocked(self, tmp_path):
+        source_path = tmp_path / "request.json"
+        source_path.write_text('{"new": true}')
+        zip_path = tmp_path / "request.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("sentinel.txt", "keep")
+
+        with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
+            _write_zip_nofollow(str(zip_path), {"request.json": str(source_path)}, force=False)
+
+        output_error.assert_called_once()
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            assert zf.namelist() == ["sentinel.txt"]
+            assert zf.read("sentinel.txt") == b"keep"
+
     def test_generate_csr_removes_private_key_if_csr_write_fails(self, tmp_path, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         with patch("nvflare.tool.cert.cert_commands._write_file_nofollow", side_effect=OSError("disk full")):
@@ -2481,7 +2496,7 @@ class TestDistributedCertRequestApprove:
             request_meta = _read_request_zip(str(request_zip), str(extract_dir))
 
         output_error.assert_called_once()
-        assert request_meta == {"name": "site-3"}
+        assert request_meta is None
         assert not (extract_dir / "site-3.csr").exists()
 
     def test_read_request_zip_returns_after_missing_member_when_error_is_mocked(self, tmp_path):

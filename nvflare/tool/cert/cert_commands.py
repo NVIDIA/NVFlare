@@ -667,6 +667,7 @@ def _read_zip_source_nofollow(src_path: str) -> bytes:
 def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> None:
     if os.path.exists(zip_path) and not force:
         output_error("CERT_ALREADY_EXISTS", path=zip_path)
+        return
     parent = os.path.dirname(os.path.abspath(zip_path)) or "."
     try:
         os.makedirs(parent, mode=0o700, exist_ok=True)
@@ -1641,7 +1642,7 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
                     exit_code=4,
                     detail=f"request zip must contain only: {', '.join(sorted(expected))}",
                 )
-                return request_meta
+                return None
             for member in expected:
                 target_path = os.path.join(extract_dir, member)
                 _write_file_nofollow(target_path, _read_zip_member_limited(zf, member))
