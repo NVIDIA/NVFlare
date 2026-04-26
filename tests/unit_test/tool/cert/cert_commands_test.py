@@ -257,6 +257,60 @@ class TestCertValidationHelpers:
         output_error.assert_called_once()
         assert "missing required field" in output_error.call_args.kwargs["detail"]
 
+    def test_request_metadata_returns_after_artifact_mismatch_when_error_is_mocked(self, tmp_path):
+        request_meta = {
+            "artifact_type": "other",
+            "schema_version": "1",
+            "request_id": "1" * 32,
+            "project": "example_project",
+            "name": "site-3",
+            "org": "nvidia",
+            "kind": "site",
+            "cert_type": "client",
+            "csr_sha256": "1" * 64,
+            "public_key_sha256": "1" * 64,
+        }
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            result = _validate_request_metadata(request_meta, {}, str(tmp_path / "site-3.csr"))
+
+        assert result is None
+        output_error.assert_called_once()
+        assert "unsupported request artifact metadata" in output_error.call_args.kwargs["detail"]
+
+    def test_request_metadata_returns_after_invalid_cert_type_when_error_is_mocked(self, tmp_path):
+        request_meta = {
+            "artifact_type": "nvflare.cert.request",
+            "schema_version": "1",
+            "request_id": "1" * 32,
+            "project": "example_project",
+            "name": "site-3",
+            "org": "nvidia",
+            "kind": "site",
+            "cert_type": "workspace",
+            "csr_sha256": "1" * 64,
+            "public_key_sha256": "1" * 64,
+        }
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            result = _validate_request_metadata(request_meta, {}, str(tmp_path / "site-3.csr"))
+
+        assert result is None
+        output_error.assert_called_once()
+        assert "invalid cert type" in output_error.call_args.kwargs["detail"]
+
+    def test_write_zip_skips_private_key_member_when_error_is_mocked(self, tmp_path):
+        key_path = tmp_path / "site-3.key"
+        key_path.write_text("private key")
+        request_path = tmp_path / "request.json"
+        request_path.write_text("{}")
+        zip_path = tmp_path / "request.zip"
+
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            _write_zip_nofollow(str(zip_path), {"site-3.key": str(key_path), "request.json": str(request_path)})
+
+        output_error.assert_called_once()
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            assert zf.namelist() == ["request.json"]
+
 
 class TestCertInit:
     def test_basic_init(self, tmp_path):

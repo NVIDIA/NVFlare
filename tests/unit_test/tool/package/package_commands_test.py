@@ -46,6 +46,8 @@ from nvflare.tool.package.package_commands import (
     _resolve_request_dir,
     _safe_zip_names,
     _validate_cert_material,
+    _validate_signed_hashes,
+    _validate_signed_metadata,
     _validate_signed_public_key_hash,
     _write_file_nofollow,
     handle_package,
@@ -333,6 +335,22 @@ class TestSignedZipHelpers:
         assert "nested/" not in names
         assert names == ["signed.json"]
 
+    def test_safe_zip_names_does_not_append_mode_bit_directory_when_error_is_mocked(self, tmp_path):
+        zip_path = tmp_path / "signed.zip"
+        dir_info = zipfile.ZipInfo("directory")
+        dir_info.external_attr = stat.S_IFDIR << 16
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr(dir_info, b"")
+            zf.writestr("signed.json", "{}")
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+                names = _safe_zip_names(zf, str(zip_path))
+
+        error.assert_called_once()
+        assert "directory" not in names
+        assert names == ["signed.json"]
+
     def test_read_zip_json_raises_after_error_when_error_is_mocked(self, tmp_path):
         zip_path = tmp_path / "signed.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
@@ -345,6 +363,46 @@ class TestSignedZipHelpers:
 
         error.assert_called_once()
 
+    def test_validate_signed_metadata_returns_after_non_dict_when_error_is_mocked(self):
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+            _validate_signed_metadata(None, {}, "site-3.crt")
+
+        error.assert_called_once()
+        assert "must be a mapping" in error.call_args.args[1]
+
+    def test_validate_signed_metadata_returns_after_missing_fields_when_error_is_mocked(self):
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+            _validate_signed_metadata({"artifact_type": "nvflare.cert.signed", "schema_version": "1"}, {}, "site-3.crt")
+
+        error.assert_called_once()
+        assert "missing required field" in error.call_args.args[1]
+
+    def test_validate_signed_metadata_returns_after_invalid_cert_type_when_error_is_mocked(self):
+        signed_meta = {
+            "artifact_type": "nvflare.cert.signed",
+            "schema_version": "1",
+            "request_id": "1" * 32,
+            "project": "example_project",
+            "name": "site-3",
+            "org": "nvidia",
+            "kind": "site",
+            "cert_type": "workspace",
+            "cert_file": "site-3.crt",
+            "rootca_file": "rootCA.pem",
+        }
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+            _validate_signed_metadata(signed_meta, {}, "site-3.crt")
+
+        error.assert_called_once()
+        assert "Invalid signed zip cert_type" in error.call_args.args[1]
+
+    def test_validate_signed_hashes_does_not_emit_spurious_mismatch_when_hash_missing(self):
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+            _validate_signed_hashes({"hashes": {}}, {"site.yaml": b"site", "cert": b"cert", "rootCA.pem": b"root"})
+
+        assert error.call_count == 3
+        assert all("Missing required hash" in call.args[1] for call in error.call_args_list)
+
     def test_resolve_request_dir_rejects_fallback_candidate_with_mismatched_request_id(self, tmp_path):
         signed_dir = tmp_path / "signed"
         signed_dir.mkdir()
@@ -356,6 +414,14 @@ class TestSignedZipHelpers:
         identity = {"name": "site-3", "request_id": "1" * 32}
 
         assert _resolve_request_dir(args, str(signed_dir / "site-3.signed.zip"), identity) is None
+
+    def test_resolve_request_dir_rejects_explicit_candidate_without_material_when_request_id_absent(self, tmp_path):
+        request_dir = tmp_path / "empty"
+        request_dir.mkdir()
+        args = types.SimpleNamespace(request_dir=str(request_dir))
+        identity = {"name": "site-3"}
+
+        assert _resolve_request_dir(args, str(tmp_path / "site-3.signed.zip"), identity) is None
 
 
 def test_missing_endpoint_human_mode_no_help_dump(capsys, monkeypatch, tmp_path):

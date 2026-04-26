@@ -665,6 +665,7 @@ def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> No
                 exit_code=4,
                 detail=f"zip must not contain private keys: {arcname}",
             )
+            continue
         try:
             prepared_members.append((arcname, _read_zip_source_nofollow(src_path)))
         except _UnsafeZipSourceError as e:
@@ -1628,6 +1629,7 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             exit_code=4,
             detail="unsupported request artifact metadata",
         )
+        return None
     _validate_request_id(request_meta["request_id"])
     _validate_safe_project_name(request_meta["project"])
     name = request_meta["name"]
@@ -1642,6 +1644,7 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             exit_code=4,
             detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
         )
+        return None
     _validate_request_kind_cert_type(request_meta["kind"], cert_type, request_meta.get("cert_role"))
     _validate_identity_name(name, cert_type)
 

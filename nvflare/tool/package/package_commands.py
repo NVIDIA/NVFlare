@@ -917,7 +917,7 @@ def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
             or name in seen
             or info.is_dir()
             or info.file_size > _MAX_ZIP_MEMBER_SIZE
-            or stat.S_IFMT(mode) == stat.S_IFLNK
+            or stat.S_IFMT(mode) in {stat.S_IFDIR, stat.S_IFLNK}
         ):
             output_error_message(
                 "INVALID_SIGNED_ZIP",
@@ -1049,6 +1049,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             None,
             exit_code=4,
         )
+        return
     if signed_meta.get("artifact_type") != "nvflare.cert.signed" or signed_meta.get("schema_version") != "1":
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -1057,6 +1058,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             None,
             exit_code=4,
         )
+        return
 
     required = ("request_id", "project", "name", "org", "kind", "cert_type", "cert_file", "rootca_file")
     missing = [field for field in required if not signed_meta.get(field)]
@@ -1068,6 +1070,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             None,
             exit_code=4,
         )
+        return
     _validate_request_id(signed_meta["request_id"])
     _validate_safe_project_name(signed_meta["project"], code="INVALID_SIGNED_ZIP")
     _validate_org_name(signed_meta["org"], code="INVALID_SIGNED_ZIP")
@@ -1080,6 +1083,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             None,
             exit_code=4,
         )
+        return
     _validate_signed_kind_cert_type(signed_meta["kind"], cert_type)
     _validate_participant_name(signed_meta["name"], cert_type, code="INVALID_SIGNED_ZIP")
     if signed_meta["cert_file"] != cert_name or signed_meta["rootca_file"] != "rootCA.pem":
@@ -1127,6 +1131,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             None,
             exit_code=4,
         )
+        return
 
 
 def _validate_signed_hashes(signed_meta: dict, file_contents: dict):
@@ -1148,6 +1153,7 @@ def _validate_signed_hashes(signed_meta: dict, file_contents: dict):
                 None,
                 exit_code=4,
             )
+            continue
         actual = _hash_bytes(file_contents[content_name])
         if actual != expected:
             output_error_message(
@@ -1364,7 +1370,9 @@ def _resolve_request_dir(args, signed_zip_path: str, identity: dict):
                 )
                 return None
             return validated
-        return candidate
+        if _has_request_material(candidate, identity["name"]):
+            return candidate
+        return None
 
     audit_dir = _audit_request_dir(identity.get("request_id"))
     if audit_dir and _has_request_material(audit_dir, identity["name"]):
