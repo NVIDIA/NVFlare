@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.apis.fl_constant import AdminCommandNames
-from nvflare.fuel.flare_api.api_spec import MonitorReturnCode, TargetType
+from nvflare.fuel.flare_api.api_spec import CommandError, MonitorReturnCode, TargetType
 from nvflare.fuel.hci.client.api import ResultKey
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
@@ -141,12 +141,43 @@ class TestCheckStatus:
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [AdminCommandNames.CHECK_STATUS, TargetType.CLIENT, "site-1"]
 
+    def test_check_status_preserves_multiple_client_targets(self):
+        # Regression: prior code joined multiple names into a single
+        # whitespace-separated string and handed it to join_args, which wrapped
+        # it in double quotes; server-side shlex.split then collapsed the names
+        # back into one token, causing INVALID_CLIENT. Each name must round-trip
+        # as its own command arg.
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.check_status(TargetType.CLIENT, ["site-1", "site-2"])
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [
+            AdminCommandNames.CHECK_STATUS,
+            TargetType.CLIENT,
+            "site-1",
+            "site-2",
+        ]
+
     def test_get_client_job_status_quotes_client_names(self):
         session = _make_session()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
             session.get_client_job_status(["site-1"])
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [AdminCommandNames.CHECK_STATUS, TargetType.CLIENT, "site-1"]
+
+    def test_get_client_job_status_preserves_multiple_client_names(self):
+        # Regression: see test_check_status_preserves_multiple_client_targets.
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.get_client_job_status(["site-1", "site-2", "site-3"])
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [
+            AdminCommandNames.CHECK_STATUS,
+            TargetType.CLIENT,
+            "site-1",
+            "site-2",
+            "site-3",
+        ]
 
 
 class TestReportResources:
@@ -176,6 +207,45 @@ class TestReportResources:
             result = session.report_resources(TargetType.SERVER)
         assert "server" in result
         assert result["server"] == "unlimited"
+
+    def test_preserves_multiple_client_targets(self):
+        # Consistency regression: report_resources today escapes the original
+        # over-quoting bug only because it uses " ".join(parts) instead of
+        # join_args(parts). Lock in the parts.extend(targets) pattern so that
+        # each name round-trips as its own token regardless of which joiner is
+        # used. See TestCheckStatus.test_check_status_preserves_multiple_client_targets.
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.report_resources(TargetType.CLIENT, ["site-1", "site-2"])
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [
+            AdminCommandNames.REPORT_RESOURCES,
+            TargetType.CLIENT,
+            "site-1",
+            "site-2",
+        ]
+
+
+class TestReportVersion:
+    def test_sends_report_version_command(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.report_version(TargetType.SERVER)
+        cmd = mock_cmd.call_args[0][0]
+        assert AdminCommandNames.REPORT_VERSION in cmd
+
+    def test_preserves_multiple_client_targets(self):
+        # Consistency regression: see TestReportResources.test_preserves_multiple_client_targets.
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.report_version(TargetType.CLIENT, ["site-1", "site-2"])
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [
+            AdminCommandNames.REPORT_VERSION,
+            TargetType.CLIENT,
+            "site-1",
+            "site-2",
+        ]
 
 
 class TestShutdown:
@@ -214,6 +284,33 @@ class TestShutdown:
 
         mock_cmd.assert_called_once_with(f"{AdminCommandNames.SHUTDOWN} {TargetType.ALL}")
 
+    def test_shutdown_client_quotes_single_target(self):
+        session = _make_session()
+        session.close = MagicMock()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.shutdown(TargetType.CLIENT, ["site-1"])
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.SHUTDOWN, TargetType.CLIENT, "site-1"]
+        session.close.assert_not_called()
+
+    def test_shutdown_preserves_multiple_client_targets(self):
+        # Regression: see TestCheckStatus.test_check_status_preserves_multiple_client_targets.
+        # PR #4462 restored shutdown's multi-target support but reintroduced the
+        # over-quoting pattern — this test guards against that regression.
+        session = _make_session()
+        session.close = MagicMock()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.shutdown(TargetType.CLIENT, ["site-1", "site-2", "site-3"])
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [
+            AdminCommandNames.SHUTDOWN,
+            TargetType.CLIENT,
+            "site-1",
+            "site-2",
+            "site-3",
+        ]
+        session.close.assert_not_called()
+
 
 class TestRestart:
     def test_sends_restart_command(self):
@@ -227,6 +324,28 @@ class TestRestart:
         session = _make_session()
         with pytest.raises(ValueError, match="restart target_type"):
             session.restart("invalid-target")
+
+    def test_restart_client_quotes_single_target(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.restart(TargetType.CLIENT, ["site-1"])
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.RESTART, TargetType.CLIENT, "site-1"]
+
+    def test_restart_preserves_multiple_client_targets(self):
+        # Regression: see TestCheckStatus.test_check_status_preserves_multiple_client_targets.
+        # PR #4462 restored restart's multi-target support but reintroduced the
+        # over-quoting pattern — this test guards against that regression.
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.restart(TargetType.CLIENT, ["site-1", "site-2"])
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [
+            AdminCommandNames.RESTART,
+            TargetType.CLIENT,
+            "site-1",
+            "site-2",
+        ]
 
 
 class TestRemoveClient:
@@ -248,6 +367,56 @@ class TestRemoveClient:
         session = _make_session()
         with pytest.raises(ValueError):
             session.remove_client("")
+
+
+class TestStudyCommands:
+    def test_register_study_sends_expected_command(self):
+        session = _make_session()
+        reply = _ok_meta_result()
+        reply["data"] = [{"type": "dict", "data": {"name": "cancer-research", "sites": ["hospital-a"], "users": []}}]
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            result = session.register_study("cancer-research", ["hospital-a"])
+        assert result["name"] == "cancer-research"
+        assert split_to_args(mock_cmd.call_args[0][0]) == [
+            AdminCommandNames.REGISTER_STUDY,
+            "cancer-research",
+            "--sites",
+            "hospital-a",
+        ]
+
+    def test_register_study_accepts_project_admin_site_org_groups(self):
+        session = _make_session()
+        reply = _ok_meta_result()
+        reply["data"] = [{"type": "dict", "data": {"name": "cancer-research", "site_orgs": {}, "users": []}}]
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            session.register_study("cancer-research", site_orgs=["org_a:hospital-a", "org_b:hospital-b"])
+
+        assert split_to_args(mock_cmd.call_args[0][0]) == [
+            AdminCommandNames.REGISTER_STUDY,
+            "cancer-research",
+            "--site-org",
+            "org_a:hospital-a",
+            "--site-org",
+            "org_b:hospital-b",
+        ]
+
+    def test_show_study_raises_command_error_from_payload(self):
+        session = _make_session()
+        reply = _ok_meta_result()
+        reply["data"] = [
+            {
+                "type": "dict",
+                "data": {
+                    "error_code": "STUDY_NOT_FOUND",
+                    "message": "Study 'ghost-study' not found.",
+                    "hint": "Verify the study name.",
+                    "exit_code": 1,
+                },
+            }
+        ]
+        with patch.object(session, "_do_command", return_value=reply):
+            with pytest.raises(CommandError, match="ghost-study"):
+                session.show_study("ghost-study")
 
 
 class TestShowStats:
@@ -272,6 +441,25 @@ class TestShowStats:
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [AdminCommandNames.SHOW_STATS, "job-1", TargetType.CLIENT, "site-1"]
 
+    def test_preserves_multiple_client_targets(self):
+        # Regression: see TestCheckStatus.test_check_status_preserves_multiple_client_targets.
+        # show_stats / show_errors share _collect_info helper in flare_api.py, which
+        # was the third caller affected by the over-quoting bug.
+        session = _make_session()
+        from nvflare.fuel.hci.client.api import APIStatus
+
+        reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            session.show_stats("job-1", TargetType.CLIENT, ["site-1", "site-2"])
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [
+            AdminCommandNames.SHOW_STATS,
+            "job-1",
+            TargetType.CLIENT,
+            "site-1",
+            "site-2",
+        ]
+
 
 class TestShowErrors:
     def test_sends_show_errors_command(self):
@@ -295,6 +483,23 @@ class TestShowErrors:
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [AdminCommandNames.SHOW_ERRORS, "job-1", TargetType.CLIENT, "site-1"]
 
+    def test_preserves_multiple_client_targets(self):
+        # Regression: see TestCheckStatus.test_check_status_preserves_multiple_client_targets.
+        session = _make_session()
+        from nvflare.fuel.hci.client.api import APIStatus
+
+        reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            session.show_errors("job-1", TargetType.CLIENT, ["site-1", "site-2"])
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [
+            AdminCommandNames.SHOW_ERRORS,
+            "job-1",
+            TargetType.CLIENT,
+            "site-1",
+            "site-2",
+        ]
+
 
 class TestGetJobLogs:
     def test_sends_get_job_log_command(self):
@@ -305,83 +510,89 @@ class TestGetJobLogs:
         with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
             session.get_job_logs("job1")
         cmd = mock_cmd.call_args[0][0]
-        assert "get_job_log" in cmd
-        assert "job1" in cmd
+        assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "server"]
 
-    def test_includes_tail_lines_flag(self):
+    def test_sends_client_target(self):
         session = _make_session()
         from nvflare.fuel.hci.client.api import APIStatus
 
         reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
         with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
-            session.get_job_logs("job1", tail_lines=50)
+            session.get_job_logs("job1", target="site-1")
         cmd = mock_cmd.call_args[0][0]
-        assert "-n" in cmd
-        assert "50" in cmd
+        assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "site-1"]
 
-    @pytest.mark.parametrize("tail_lines", [0, -1])
-    def test_rejects_non_positive_tail_lines(self, tail_lines):
-        session = _make_session()
-
-        with pytest.raises(ValueError, match="greater than 0"):
-            session.get_job_logs("job1", tail_lines=tail_lines)
-
-    def test_rejects_non_integer_tail_lines(self):
-        session = _make_session()
-
-        with pytest.raises(ValueError, match="tail_lines must be int"):
-            session.get_job_logs("job1", tail_lines=2.5)
-
-    def test_includes_grep_pattern_flag(self):
+    def test_sends_all_target(self):
         session = _make_session()
         from nvflare.fuel.hci.client.api import APIStatus
 
         reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
         with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
-            session.get_job_logs("job1", grep_pattern="ERROR")
+            session.get_job_logs("job1", target="all")
         cmd = mock_cmd.call_args[0][0]
-        assert "-g" in cmd
-        assert "ERROR" in cmd
+        assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "all"]
 
-    def test_quotes_multi_word_grep_pattern(self):
+    def test_accepts_legacy_tail_and_grep_keywords_without_changing_command(self):
         session = _make_session()
         from nvflare.fuel.hci.client.api import APIStatus
 
-        reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
+        reply = {
+            ResultKey.STATUS: APIStatus.SUCCESS,
+            ResultKey.META: None,
+            "data": [
+                {
+                    "type": "dict",
+                    "data": {
+                        "logs": {
+                            "server": "INFO first\nERROR second\nINFO third\nERROR fourth\n",
+                            "site-1": "INFO site\nERROR site\n",
+                        }
+                    },
+                }
+            ],
+        }
         with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
-            session.get_job_logs("job1", grep_pattern="CUDA out of memory")
-        cmd = mock_cmd.call_args[0][0]
-        assert split_to_args(cmd) == [
-            AdminCommandNames.GET_JOB_LOG,
-            "job1",
-            "-g",
-            "CUDA out of memory",
-        ]
+            result = session.get_job_logs("job1", tail_lines=1, grep_pattern="ERROR")
 
-    def test_quotes_grep_pattern_with_embedded_double_quote(self):
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "server"]
+        assert result == {
+            "logs": {
+                "server": "ERROR fourth\n",
+                "site-1": "ERROR site\n",
+            }
+        }
+
+    def test_accepts_legacy_positional_tail_and_grep_arguments(self):
         session = _make_session()
         from nvflare.fuel.hci.client.api import APIStatus
 
-        reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
+        reply = {
+            ResultKey.STATUS: APIStatus.SUCCESS,
+            ResultKey.META: None,
+            "data": [
+                {
+                    "type": "dict",
+                    "data": {
+                        "logs": {
+                            "site-1": "ERROR first\nINFO second\nERROR third\n",
+                        }
+                    },
+                }
+            ],
+        }
         with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
-            session.get_job_logs("job1", grep_pattern='foo"bar')
-        cmd = mock_cmd.call_args[0][0]
-        assert split_to_args(cmd) == [
-            AdminCommandNames.GET_JOB_LOG,
-            "job1",
-            "-g",
-            'foo"bar',
-        ]
+            result = session.get_job_logs("job1", "site-1", 2, "ERROR")
 
-    def test_ignores_empty_grep_pattern(self):
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "site-1"]
+        assert result == {"logs": {"site-1": "ERROR third\n"}}
+
+    def test_rejects_empty_target(self):
         session = _make_session()
-        from nvflare.fuel.hci.client.api import APIStatus
 
-        reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
-        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
-            session.get_job_logs("job1", grep_pattern="")
-        cmd = mock_cmd.call_args[0][0]
-        assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1"]
+        with pytest.raises(ValueError, match="target must be a non-empty str"):
+            session.get_job_logs("job1", target="")
 
     def test_grep_target_quotes_pattern_with_embedded_double_quote(self):
         session = _make_session()
@@ -399,20 +610,29 @@ class TestGetJobLogs:
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == ["grep", "server", 'foo"bar', "log.txt"]
 
-    def test_returns_logs_dict(self):
+    def test_returns_logs_dict_and_unavailable(self):
         session = _make_session()
         from nvflare.fuel.hci.client.api import APIStatus
 
-        reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
+        reply = {
+            ResultKey.STATUS: APIStatus.SUCCESS,
+            ResultKey.META: None,
+            "data": [
+                {
+                    "type": "dict",
+                    "data": {
+                        "logs": {"server": "server log\n"},
+                        "unavailable": {"site-1": "client log stream not available for this job"},
+                    },
+                }
+            ],
+        }
         with patch.object(session, "_do_command", return_value=reply):
             result = session.get_job_logs("job1")
-        assert "logs" in result
-
-    def test_rejects_non_server_target(self):
-        session = _make_session()
-
-        with pytest.raises(ValueError, match="only supports target='server'"):
-            session.get_job_logs("job1", target="all")
+        assert result == {
+            "logs": {"server": "server log\n"},
+            "unavailable": {"site-1": "client log stream not available for this job"},
+        }
 
 
 class TestConfigureJobLog:

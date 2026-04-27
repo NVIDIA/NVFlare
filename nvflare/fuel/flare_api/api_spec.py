@@ -87,6 +87,15 @@ class NoReply(Exception):
     pass
 
 
+class CommandError(Exception):
+    def __init__(self, error_code: str, message: str = "", hint: str = "", exit_code: int = 1):
+        super().__init__(message or error_code)
+        self.error_code = error_code
+        self.message = message or error_code
+        self.hint = hint or ""
+        self.exit_code = exit_code
+
+
 class TargetType:
     ALL = "all"
     SERVER = "server"
@@ -278,17 +287,22 @@ class SessionSpec(ABC):
 
     @abstractmethod
     def get_job_logs(
-        self, job_id: str, target: str = "server", tail_lines: int = None, grep_pattern: str = None
+        self,
+        job_id: str,
+        target: str = "server",
+        tail_lines: Optional[int] = None,
+        grep_pattern: Optional[str] = None,
     ) -> dict:
         """Retrieve logs for the specified job.
 
         Args:
             job_id: ID of the job
-            target: target site name. Only ``server`` is currently supported
-            tail_lines: optional number of tail lines to retrieve
-            grep_pattern: optional substring filter
+            target: ``server``, ``all``, or a client site name
+            tail_lines: deprecated compatibility option to return the last N lines
+            grep_pattern: deprecated compatibility option to return matching lines
 
-        Returns: dict with ``logs`` mapping site names to log content.
+        Returns: dict with ``logs`` mapping site names to log content, and
+            optional ``unavailable`` mapping site names to reasons.
 
         """
         pass
@@ -685,6 +699,115 @@ class SessionSpec(ABC):
         """
         rc, _ = self.monitor_job_and_return_job_meta(job_id, timeout, poll_interval, cb, *cb_args, **cb_kwargs)
         return rc
+
+    @abstractmethod
+    def register_study(
+        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
+    ) -> dict:
+        """Create or merge a study in the server registry.
+
+        Exactly one of sites or site_orgs must be provided; passing both raises
+        InvalidArgumentError. Use sites for org_admin callers (own-org sites only)
+        and site_orgs for project_admin callers (cross-org enrollment).
+
+        Args:
+            study: study name
+            sites: flat site list for org_admin callers; mutually exclusive with site_orgs
+            site_orgs: repeatable "org:s1,s2,..." groups for project_admin callers; mutually exclusive with sites
+
+        Returns: study payload dict
+        """
+        pass
+
+    @abstractmethod
+    def add_study_site(
+        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
+    ) -> dict:
+        """Add sites to an existing study.
+
+        Exactly one of sites or site_orgs must be provided; passing both raises
+        InvalidArgumentError.
+
+        Args:
+            study: study name
+            sites: flat site list for org_admin callers; mutually exclusive with site_orgs
+            site_orgs: repeatable "org:s1,s2,..." groups for project_admin callers; mutually exclusive with sites
+
+        Returns: study payload dict with added/already_enrolled lists
+        """
+        pass
+
+    @abstractmethod
+    def remove_study_site(
+        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
+    ) -> dict:
+        """Remove sites from an existing study.
+
+        Exactly one of sites or site_orgs must be provided; passing both raises
+        InvalidArgumentError.
+
+        Args:
+            study: study name
+            sites: flat site list for org_admin callers; mutually exclusive with site_orgs
+            site_orgs: repeatable "org:s1,s2,..." groups for project_admin callers; mutually exclusive with sites
+
+        Returns: study payload dict with removed/not_enrolled lists
+        """
+        pass
+
+    @abstractmethod
+    def remove_study(self, study: str) -> dict:
+        """Remove a study and all its registry entries.
+
+        Args:
+            study: study name
+
+        Returns: study payload dict
+        """
+        pass
+
+    @abstractmethod
+    def list_studies(self) -> dict:
+        """List studies visible to the caller.
+
+        Returns: dict with studies list
+        """
+        pass
+
+    @abstractmethod
+    def show_study(self, study: str) -> dict:
+        """Show details for a single study.
+
+        Args:
+            study: study name
+
+        Returns: study payload dict
+        """
+        pass
+
+    @abstractmethod
+    def add_study_user(self, study: str, user: str) -> dict:
+        """Add a user to the study admins list.
+
+        Args:
+            study: study name
+            user: user name to add
+
+        Returns: study payload dict
+        """
+        pass
+
+    @abstractmethod
+    def remove_study_user(self, study: str, user: str) -> dict:
+        """Remove a user from the study admins list.
+
+        Args:
+            study: study name
+            user: user name to remove
+
+        Returns: study payload dict
+        """
+        pass
 
     @abstractmethod
     def close(self):

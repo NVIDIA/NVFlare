@@ -21,6 +21,34 @@ from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound
 from nvflare.tool import cli_output
 
 
+def _configure_active_startup_kit(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    admin_dir = tmp_path / "active-admin"
+    startup_dir = admin_dir / "startup"
+    startup_dir.mkdir(parents=True)
+    (startup_dir / "fed_admin.json").write_text('{"admin": {"username": "admin@nvidia.com"}}', encoding="utf-8")
+    (startup_dir / "client.crt").write_text("cert", encoding="utf-8")
+    (startup_dir / "rootCA.pem").write_text("root", encoding="utf-8")
+
+    config_dir = home / ".nvflare"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.conf").write_text(
+        f"""
+        version = 2
+        startup_kits {{
+          active = "admin@nvidia.com"
+          entries {{
+            "admin@nvidia.com" = "{admin_dir}"
+          }}
+        }}
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
+    return admin_dir
+
+
 class TestJobMeta:
     """Tests for nvflare job meta command."""
 
@@ -89,6 +117,20 @@ class TestJobMeta:
             with pytest.raises(AuthenticationError):
                 cmd_job_meta(args)
 
+    def test_meta_uses_active_startup_kit_session(self, tmp_path, monkeypatch):
+        from nvflare.tool.job.job_cli import cmd_job_meta
+
+        active_admin_dir = _configure_active_startup_kit(tmp_path, monkeypatch)
+        args = self._make_args()
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"job_id": "abc123", "status": "RUNNING"}
+
+        with patch("nvflare.tool.cli_session.new_secure_session", return_value=mock_sess) as new_secure:
+            cmd_job_meta(args)
+
+        assert new_secure.call_args.kwargs["username"] == "admin@nvidia.com"
+        assert new_secure.call_args.kwargs["startup_kit_location"] == str(active_admin_dir)
+
     def test_meta_parser_positional_job_id(self):
         """meta parser should accept positional job_id."""
         import argparse
@@ -104,7 +146,16 @@ class TestJobMeta:
         args = parser.parse_args(["abc123"])
         assert args.job_id == "abc123"
 
-    def test_meta_parser_accepts_startup_target(self):
+    @pytest.mark.parametrize(
+        ("selector", "value"),
+        [
+            ("--startup-target", "prod"),
+            ("--startup_target", "prod"),
+            ("--startup-kit", "/tmp/startup"),
+            ("--startup_kit", "/tmp/startup"),
+        ],
+    )
+    def test_meta_parser_rejects_old_startup_selectors(self, selector, value):
         import argparse
 
         from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser
@@ -114,5 +165,26 @@ class TestJobMeta:
         def_job_cli_parser(subs)
 
         parser = job_sub_cmd_parser["meta"]
-        args = parser.parse_args(["abc123", "--startup-target", "prod"])
-        assert args.startup_target == "prod"
+        with pytest.raises(SystemExit):
+            parser.parse_args(["abc123", selector, value])
+
+    def test_meta_help_and_schema_omit_old_startup_selectors(self, capsys):
+        import argparse
+
+        from nvflare.tool.job.job_cli import cmd_job_meta, def_job_cli_parser, job_sub_cmd_parser
+
+        root = argparse.ArgumentParser()
+        def_job_cli_parser(root.add_subparsers())
+
+        help_text = job_sub_cmd_parser["meta"].format_help()
+        for token in ("--startup-target", "--startup_target", "--startup-kit", "--startup_kit"):
+            assert token not in help_text
+
+        with patch("sys.argv", ["nvflare", "job", "meta", "--schema"]):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_meta(MagicMock())
+
+        assert exc_info.value.code == 0
+        schema_text = capsys.readouterr().out
+        for token in ("--startup-target", "--startup_target", "--startup-kit", "--startup_kit"):
+            assert token not in schema_text

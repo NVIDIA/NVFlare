@@ -225,6 +225,14 @@ class ReservedTopic(object):
 
 class AdminCommandNames(object):
 
+    REGISTER_STUDY = "register_study"
+    ADD_STUDY_SITE = "add_study_site"
+    REMOVE_STUDY_SITE = "remove_study_site"
+    REMOVE_STUDY = "remove_study"
+    LIST_STUDIES = "list_studies"
+    SHOW_STUDY = "show_study"
+    ADD_STUDY_USER = "add_study_user"
+    REMOVE_STUDY_USER = "remove_study_user"
     SUBMIT_JOB = "submit_job"
     LIST_JOBS = "list_jobs"
     GET_JOB_META = "get_job_meta"

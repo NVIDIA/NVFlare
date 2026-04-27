@@ -245,7 +245,7 @@ def handle_event(self, event_type, fl_ctx):
 
 **File:** `nvflare/app_opt/job_launcher/docker_launcher.py`
 
-See [Docker_Job_Launcher_Design.md](Docker_Job_Launcher_Design.md) for deployment topology, networking, security posture, and operational details.
+See [docker_job_launcher_design.md](docker_job_launcher_design.md) for deployment topology, networking, security posture, and operational details.
 
 **Class hierarchy:**
 
@@ -522,7 +522,7 @@ Each site configures exactly one launcher in `resources.json` (or `local/resourc
 }
 ```
 
-See [Docker_Job_Launcher_Design.md](Docker_Job_Launcher_Design.md) for the full deployment guide including `start_docker.sh`, Docker network setup, and `study_data.json`.
+See [docker_job_launcher_design.md](docker_job_launcher_design.md) for the full deployment guide including `start_docker.sh`, Docker network setup, and `study_data.json`.
 
 ### 9.3 Kubernetes Launcher
 
