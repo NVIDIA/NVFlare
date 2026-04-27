@@ -66,6 +66,7 @@ class Participant:
     security_context: dict | None = None
     pending_timeout: int | None = None
     pvc_config: dict = field(default_factory=dict)
+    pod_annotations: dict = field(default_factory=dict)
     # Kubernetes imagePullPolicy override. `None` keeps whatever the helm chart
     # defaults to (typically IfNotPresent). Set to "Always" on mutable dev tags.
     pull_policy: str | None = None
@@ -174,6 +175,7 @@ def load_config(config_path: Path) -> DeployConfig:
                 security_context=merged.get("security_context"),
                 pending_timeout=merged.get("pending_timeout"),
                 pvc_config=merged.get("pvc_config") or {},
+                pod_annotations=merged.get("pod_annotations") or {},
                 pull_policy=merged.get("pull_policy"),
             )
         )
@@ -184,7 +186,7 @@ def load_config(config_path: Path) -> DeployConfig:
 
     gcp = cloud_derived.get("gcp", {})
     aws = cloud_derived.get("aws", {})
-    azure = (clouds.get("azure") or {})
+    azure = clouds.get("azure") or {}
     return DeployConfig(
         participants=participants,
         server_cloud=server_cloud,
@@ -843,6 +845,11 @@ def deploy_participant(
         if p.security_context:
             for k, v in _flatten_set("securityContext", p.security_context):
                 helm_args += ["--set", f"{k}={v}"]
+
+        for k, v in p.pod_annotations.items():
+            escaped = k.replace(".", r"\.").replace("/", r"\/")
+            escaped_v = str(v).replace("\\", r"\\").replace(",", r"\,").replace("=", r"\=")
+            helm_args += ["--set-string", f"podAnnotations.{escaped}={escaped_v}"]
 
         if ":" in p.image:
             repo, tag = p.image.rsplit(":", 1)

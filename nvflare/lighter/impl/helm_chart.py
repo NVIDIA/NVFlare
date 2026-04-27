@@ -175,6 +175,7 @@ class HelmChartBuilder(Builder):
                 "annotations": {},
                 "automountServiceAccountToken": True,
             },
+            "podAnnotations": {},
             "rbac": {
                 "create": True,
             },
@@ -295,6 +296,7 @@ class HelmChartBuilder(Builder):
                 "annotations": {},
                 "automountServiceAccountToken": True,
             },
+            "podAnnotations": {},
             "rbac": {
                 "create": True,
             },
