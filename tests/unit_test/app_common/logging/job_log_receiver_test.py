@@ -116,7 +116,9 @@ def test_job_log_receiver_logs_error_once_when_site_does_not_allow(tmp_path):
     assert "allow_log_streaming" in log_error.call_args.args[1]
 
 
-def test_job_log_receiver_logs_error_once_when_client_not_registered(tmp_path):
+def test_job_log_receiver_does_not_warn_when_client_not_registered(tmp_path):
+    # Default-allow: an unknown client does not produce a security error;
+    # only an explicit allow_log_streaming=False in site_config does.
     receiver = JobLogReceiver(dest_dir=str(tmp_path))
     fl_ctx = _make_recv_fl_ctx(site_allows=None)
     stream_ctx = {
@@ -128,9 +130,8 @@ def test_job_log_receiver_logs_error_once_when_client_not_registered(tmp_path):
 
     with patch.object(receiver, "log_error") as log_error:
         receiver._on_chunk_received(b"a\n", stream_ctx, fl_ctx)
-        receiver._on_chunk_received(b"b\n", stream_ctx, fl_ctx)
 
-    assert log_error.call_count == 1
+    log_error.assert_not_called()
 
 
 def test_job_log_receiver_does_not_warn_when_site_allows(tmp_path):

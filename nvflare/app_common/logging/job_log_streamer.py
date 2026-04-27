@@ -133,7 +133,7 @@ class JobLogStreamer(Widget):
         if not is_log_streaming_allowed(fl_ctx):
             self.log_warning(
                 fl_ctx,
-                f"JobLogStreamer disabled: '{ALLOW_LOG_STREAMING_VAR}' is not True in resources.json; "
+                f"JobLogStreamer disabled: '{ALLOW_LOG_STREAMING_VAR}' is set to False in resources.json; "
                 f"no live log streaming for '{self._log_file_name}'",
             )
             return

@@ -104,20 +104,21 @@ class JobLogReceiver(Widget):
         """Look up the registered Client and check its site_config (forwarded
         from the client's resources.json during registration).
 
-        Returns False if the client isn't registered, has no site_config, or
-        the site_config does not explicitly enable streaming.
+        Default-allow: only an explicit ``allow_log_streaming=False`` in the
+        site_config disables streaming. Missing fields, unknown clients, and
+        unavailable engine all resolve to allowed.
         """
         engine = fl_ctx.get_engine()
         if engine is None:
-            return False
+            return True
         getter = getattr(engine, "get_client_from_name", None)
         if getter is None:
-            return False
+            return True
         client = getter(client_name)
         if client is None:
-            return False
+            return True
         site_config = client.get_site_config() or {}
-        return bool(site_config.get(ALLOW_LOG_STREAMING_VAR))
+        return bool(site_config.get(ALLOW_LOG_STREAMING_VAR, True))
 
     def _on_chunk_received(self, data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext):
         f = stream_ctx.get(_KEY_RECV_FILE)
