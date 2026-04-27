@@ -205,6 +205,10 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "Output directory already exists: {path}.",
         "hint": "Use --force to package into a new prod_NN stage directory.",
     },
+    "SIGNED_ZIP_NOT_FOUND": {
+        "message": "Signed zip not found: {path}.",
+        "hint": "Provide the .signed.zip returned by 'nvflare cert approve'.",
+    },
     "AMBIGUOUS_KEY": {
         "message": "Multiple *.key files found in {path}: {files}",
         "hint": "Select one participant key for this internal packaging operation.",

@@ -116,7 +116,7 @@ def _run_approve(name: str, request_zip: str, ca_dir: str, signed_dir: str):
     return signed_zip
 
 
-def _run_package(name: str, signed_zip: str, request_dir: str, workspace: str, endpoint: str = _ENDPOINT):
+def _run_package(signed_zip: str, request_dir: str, workspace: str, endpoint: str = _ENDPOINT):
     """Call handle_package signed-zip mode and return the output result dict."""
     result = {}
 
@@ -169,7 +169,7 @@ def provisioned(tmp_path):
     # Step 4 — nvflare package signed zip for each participant.
     kit_dirs = {}
     for name, _ in _PARTICIPANTS:
-        result = _run_package(name=name, signed_zip=signed_zips[name], request_dir=request_dirs[name], workspace=ws)
+        result = _run_package(signed_zip=signed_zips[name], request_dir=request_dirs[name], workspace=ws)
         kit_dirs[name] = result["output_dir"]
 
     return kit_dirs
@@ -571,7 +571,6 @@ def _run_distributed_provision(workspace: str) -> dict:
     kit_dirs = {}
     for name, _ in _PARITY_PARTICIPANTS:
         result = _run_package(
-            name=name,
             signed_zip=signed_zips[name],
             request_dir=request_dirs[name],
             workspace=kits_ws,

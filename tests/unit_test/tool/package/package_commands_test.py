@@ -375,16 +375,16 @@ class TestSignedZipHelpers:
         assert "directory" not in names
         assert names == ["signed.json"]
 
-    def test_read_zip_json_raises_after_error_when_error_is_mocked(self, tmp_path):
+    def test_read_zip_json_returns_none_after_error_when_error_is_mocked(self, tmp_path):
         zip_path = tmp_path / "signed.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
             zf.writestr("signed.json", "not json")
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
-                with pytest.raises(json.JSONDecodeError):
-                    _read_zip_json(zf, "signed.json", str(zip_path))
+                result = _read_zip_json(zf, "signed.json", str(zip_path))
 
+        assert result is None
         error.assert_called_once()
 
     def test_validate_signed_metadata_returns_after_non_dict_when_error_is_mocked(self):
@@ -683,6 +683,23 @@ class TestDiscoverNameFromDir:
         (tmp_path / "bob.key").write_text("dummy")
         with pytest.raises(SystemExit):
             _discover_name_from_dir(str(tmp_path))
+
+    def test_no_key_returns_after_error_when_error_is_mocked(self, tmp_path):
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error") as error:
+            name = _discover_name_from_dir(str(tmp_path))
+
+        assert name == ""
+        error.assert_called_once()
+
+    def test_multiple_keys_returns_after_error_when_error_is_mocked(self, tmp_path):
+        (tmp_path / "alice.key").write_text("dummy")
+        (tmp_path / "bob.key").write_text("dummy")
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+            name = _discover_name_from_dir(str(tmp_path))
+
+        assert name == ""
+        error.assert_called_once()
 
 
 def test_package_compat_output_alias_sets_output_format(tmp_path):
@@ -3851,7 +3868,7 @@ class TestSignedZipPackageMode:
         assert result == 1
         output_ok.assert_not_called()
 
-    def test_signed_zip_member_limited_returns_empty_when_error_is_mocked(self, tmp_path, monkeypatch):
+    def test_signed_zip_member_limited_returns_none_when_error_is_mocked(self, tmp_path, monkeypatch):
         signed_zip = tmp_path / "site-3.signed.zip"
         with zipfile.ZipFile(signed_zip, "w") as zf:
             zf.writestr("signed.json", b"x" * 513)
@@ -3861,7 +3878,7 @@ class TestSignedZipPackageMode:
             with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as output_error:
                 content = _read_zip_member_limited(zf, "signed.json", str(signed_zip))
 
-        assert content == b""
+        assert content is None
         output_error.assert_called_once()
 
     def test_write_materialized_signed_files_returns_false_when_error_is_mocked(self, tmp_path, monkeypatch):
@@ -4234,6 +4251,41 @@ class TestSignedZipPackageMode:
 
         assert exc_info.value.code == 4
         assert "Signed zip member exceeds size limit" in capsys.readouterr().err
+
+    def test_load_signed_zip_member_size_error_emits_once_when_error_is_mocked(self, tmp_path, monkeypatch):
+        signed_zip, _request_dir, _ = _make_signed_zip(tmp_path)
+        with zipfile.ZipFile(signed_zip, "r") as zf:
+            contents = {name: zf.read(name) for name in zf.namelist()}
+        contents["signed.json"] = b"x" * 513
+        with zipfile.ZipFile(signed_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for name, content in contents.items():
+                zf.writestr(name, content)
+        monkeypatch.setattr("nvflare.tool.package.package_commands._MAX_ZIP_MEMBER_SIZE", 512)
+        monkeypatch.setattr(
+            "nvflare.tool.package.package_commands._safe_zip_names",
+            lambda _zf, _zip_path: ["signed.json", "site.yaml", "rootCA.pem", "site-3.crt"],
+        )
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as output_error:
+            signed_meta, site_meta, cert_name, file_contents = _load_signed_zip(str(signed_zip))
+
+        output_error.assert_called_once()
+        assert "Signed zip member exceeds size limit" in output_error.call_args.args[1]
+        assert signed_meta is None
+        assert site_meta is None
+        assert cert_name is None
+        assert file_contents == {}
+
+    def test_missing_signed_zip_uses_registered_error_in_dev_mode(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("NVFLARE_DEV", "1")
+        args = _signed_zip_args(tmp_path / "missing.signed.zip", tmp_path)
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code == 1
+        assert "Signed zip not found" in capsys.readouterr().err
 
     def test_signed_zip_missing_private_key_does_not_materialize_files(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
