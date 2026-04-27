@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""nvflare cert subcommand handlers: init, csr, sign, request, approve."""
+"""nvflare cert subcommand handlers: init, request, approve, and internal csr/sign helpers."""
 
 import datetime
 import hashlib
@@ -1539,9 +1539,7 @@ def handle_cert_request(args):
     if not _validate_identity_name(name, identity["cert_type"]):
         return 1
 
-    request_dir = os.path.abspath(
-        getattr(args, "out", None) or getattr(args, "output_dir", None) or os.path.join(".", name)
-    )
+    request_dir = os.path.abspath(getattr(args, "output_dir", None) or os.path.join(".", name))
     if os.path.exists(request_dir) and not os.path.isdir(request_dir):
         output_error_message(
             "INVALID_ARGS",
@@ -1966,7 +1964,6 @@ def handle_cert_approve(args):
             "org": request_meta["org"],
             "kind": request_meta["kind"],
             "cert_type": request_meta["cert_type"],
-            "cert_role": request_meta.get("cert_role"),
             "certificate": {
                 "serial": sign_result["serial"],
                 "valid_until": sign_result["valid_until"],
@@ -1981,6 +1978,8 @@ def handle_cert_approve(args):
                 "public_key_sha256": _csr_public_key_sha256(csr),
             },
         }
+        if request_meta.get("cert_role"):
+            signed_meta["cert_role"] = request_meta["cert_role"]
         signed_json_path = os.path.join(signed_dir, "signed.json")
         _write_json_file(signed_json_path, signed_meta)
         signed_site_yaml_path = os.path.join(signed_dir, "site.yaml")

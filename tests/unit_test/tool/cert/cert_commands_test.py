@@ -2243,7 +2243,7 @@ class TestDistributedCertRequestApprove:
             identity_args=["site-3"],
             org=None,
             project="example_project",
-            out=str(tmp_path / "site-3"),
+            output_dir=str(tmp_path / "site-3"),
             force=False,
         )
 
@@ -2355,7 +2355,7 @@ class TestDistributedCertRequestApprove:
             identity_args=["site-3"],
             org="nvidia",
             project="example_project",
-            out=str(request_dir),
+            output_dir=str(request_dir),
             force=False,
         )
 
@@ -2377,7 +2377,7 @@ class TestDistributedCertRequestApprove:
             identity_args=["site-3"],
             org="nvidia",
             project="example_project",
-            out=str(request_dir),
+            output_dir=str(request_dir),
             force=False,
         )
 
@@ -2606,6 +2606,7 @@ class TestDistributedCertRequestApprove:
         assert "project_name" not in signed_json
         assert "serial_number" not in signed_json
         assert "valid_until" not in signed_json
+        assert "cert_role" not in signed_json
         assert "requested_cert_role" not in signed_json
         assert "public_key_sha256" not in signed_json
         assert "csr_sha256" not in signed_json
