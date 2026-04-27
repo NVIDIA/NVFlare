@@ -43,7 +43,7 @@ Secret at `/var/tmp/nvflare/workspace/startup`.
 | `local/` | Included in the per-job workspace bundle | Bundled whole so local config, resources, and custom code remain available |
 | `<job_id>/` | Included in the per-job workspace bundle | Private runnable job state for exactly one job |
 
-The job pod still mounts the study-data PVC separately at `/var/tmp/nvflare/data`.
+The job pod still mounts the study-data PVC separately at `/var/tmp/nvflare/data` when the study mapping resolves to a PVC name.
 The shared workspace PVC is not mounted into the job pod.
 
 ## Kubernetes Resources
@@ -52,7 +52,7 @@ For each launched job pod, the launcher creates a pod manifest with:
 
 - an `emptyDir` mounted at `/var/tmp/nvflare/workspace`
 - a read-only Secret mount at `/var/tmp/nvflare/workspace/startup`
-- the study-data PVC mounted read-only at `/var/tmp/nvflare/data`
+- the optional study-data PVC mounted read-only at `/var/tmp/nvflare/data`
 
 The launcher also creates or updates a startup Secret for the participant site.
 That Secret contains the startup-kit files needed by the launched process, such
@@ -101,7 +101,7 @@ When the Kubernetes launcher starts a job, it performs these steps:
 5. Launch the job pod with:
    - `emptyDir` workspace
    - read-only startup Secret mount
-   - read-only study-data PVC mount
+   - optional read-only study-data PVC mount
    - `NVFL_WORKSPACE_OWNER_FQCN` in the environment
    - `NVFL_WORKSPACE_TRANSFER_TOKEN` in the environment
 

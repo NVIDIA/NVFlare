@@ -35,12 +35,7 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     ENV_WORKSPACE_TRANSFER_TOKEN,
     WorkspaceTransferManager,
 )
-from nvflare.utils.job_launcher_utils import (
-    get_client_job_args,
-    get_job_launcher_spec,
-    get_launcher_resource_spec,
-    get_server_job_args,
-)
+from nvflare.utils.job_launcher_utils import get_client_job_args, get_job_launcher_spec, get_server_job_args
 
 
 class JobState(Enum):
@@ -397,7 +392,7 @@ class K8sJobLauncher(JobLauncherSpec):
         return secret_name
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
-        if self.default_data_pvc is None:
+        if self.study_data_pvc_dict is None:
             with open(self.study_data_pvc_file_path, "rt") as f:
                 study_data_pvc_dict = yaml.safe_load(f)
             if not study_data_pvc_dict:
@@ -411,15 +406,13 @@ class K8sJobLauncher(JobLauncherSpec):
             # ...
             # ...
             # default: default_data_pvc
-            # currently, support one pvc and always mount to /var/tmp/nvflare/data
+            # Null or empty values mean the job pod should not mount a data PVC.
+            # Currently, support one pvc and always mount to /var/tmp/nvflare/data.
             if not isinstance(study_data_pvc_dict, dict):
                 raise ValueError(
                     f"file at study_data_pvc_file_path '{self.study_data_pvc_file_path}' does not contain a dictionary."
                 )
-            default_data_pvc = study_data_pvc_dict.get("default")
-            if default_data_pvc is None:
-                raise ValueError(f"No default PVC found in '{self.study_data_pvc_file_path}'.")
-            self.default_data_pvc = default_data_pvc
+            self.default_data_pvc = study_data_pvc_dict.get("default")
             self.study_data_pvc_dict = study_data_pvc_dict
         if self.core_v1 is None:
             from kubernetes import config
@@ -459,9 +452,14 @@ class K8sJobLauncher(JobLauncherSpec):
                 f"launcher_spec['default']['k8s']['image'] (shared default), "
                 f"or resource_spec['{site_name}']['k8s']['image'] (legacy)."
             )
-        site_resources = get_launcher_resource_spec(job_meta, site_name, "k8s")
         study = job_meta.get(JobMetaKey.STUDY.value)
-        job_resource = site_resources.get("num_of_gpus", None)
+        site_resources = (job_meta.get(JobMetaKey.RESOURCE_SPEC.value) or {}).get(site_name) or {}
+        flat_gpu_count = (
+            0
+            if any(k in site_resources for k in ("process", "docker", "k8s"))
+            else site_resources.get("num_of_gpus", 0)
+        )
+        job_resource = k8s_spec["num_of_gpus"] if "num_of_gpus" in k8s_spec else flat_gpu_count
         job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
         if not job_args:
             raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
@@ -470,13 +468,7 @@ class K8sJobLauncher(JobLauncherSpec):
         if not exe_module_entry:
             raise RuntimeError(f"missing {JobProcessArgs.EXE_MODULE} in {FLContextKey.JOB_PROCESS_ARGS}")
         _, job_cmd = exe_module_entry
-        # Opt out of the data PVC mount via resource_spec[<site>][k8s][data] = false.
-        # The data PVC is RWO, so mounting it blocks any second job on this site from
-        # attaching the same disk on a different node. Jobs that don't read data
-        # should set data=false so multiple can run in parallel.
-        # TODO: revisit when study and resource-spec shapes evolve.
-        mount_data_pvc = site_resources.get("data", True)
-        data_pvc = self.study_data_pvc_dict.get(study, self.default_data_pvc) if mount_data_pvc else None
+        data_pvc = self.study_data_pvc_dict.get(study, self.default_data_pvc)
 
         env = {}
         if app_custom_folder:

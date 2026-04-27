@@ -235,7 +235,7 @@ Consistency requirements across chart and `comm_config.json`:
 {
   "launcher_spec": {
     "site-1": {
-      "k8s": { "image": "myregistry/nvflare-client:2.7.0" }
+      "k8s": { "image": "myregistry/nvflare-client:2.7.0", "num_of_gpus": 1 }
     },
     "default": {
       "k8s": { "image": "myregistry/nvflare-job:2.7.0" }
@@ -250,7 +250,8 @@ use `launcher_spec["default"]["k8s"]` when present.
 **`K8sJobLauncher`** responsibilities:
 - Loads `kubeconfig` from a file path provided at construction time.
 - Builds a Pod manifest with an ephemeral workspace volume, a startup-kit Secret mount, and an optional `nvfldata` PVC.
-- Attaches `nvidia.com/gpu` resource limits when specified in job metadata.
+- Attaches `nvidia.com/gpu` resource limits when `num_of_gpus` is specified in `launcher_spec[site]["k8s"]`, `launcher_spec["default"]["k8s"]`, or legacy flat `resource_spec[site]`.
+- Resolves the data PVC from the study mapping YAML; null or empty mapping values skip the data PVC mount.
 - Converts the UUID job ID to an RFC 1123-compliant pod name via `uuid4_to_rfc1123()`.
 - Registers itself as launcher on `BEFORE_JOB_LAUNCH` unconditionally (launcher type is site policy, not job config); `launch_job` raises `RuntimeError` if no image is found for this site.
 

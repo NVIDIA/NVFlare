@@ -107,7 +107,7 @@ launcher_spec: launcher-specific execution configuration, namespaced by launcher
     }
   }
 }
-In this model, num_of_gpus remains in resource_spec as the single source of truth. Each launcher reads that value and translates it into its own runtime-specific form:
+In this model, num_of_gpus can remain in resource_spec as the scheduler-facing requirement. Docker and K8s also accept num_of_gpus in launcher_spec for launcher-local runtime configuration, and fall back to flat resource_spec[site] for backward compatibility when the launcher-specific value is absent:
 Docker: --gpus=2
 K8s: resources.limits["nvidia.com/gpu"] = 2
 Process: passed as an environment variable or argument
@@ -192,7 +192,7 @@ Recommended: Option 4
 Option 4 is the only option that cleanly separates what resources are required from how the job is launched. That separation gives it the strongest long-term foundation.
 Its main advantages are:
 Clear semantics: resource_spec is scheduler input, launcher_spec is launcher input
-No duplication of shared resource fields such as num_of_gpus
+No required duplication of shared resource fields such as num_of_gpus because launchers keep flat resource_spec fallback
 Better extensibility as new launcher modes or launcher-specific settings are added
 Cleaner validation boundaries between scheduler logic and launcher logic
 Although it introduces a new top-level key, it can still be rolled out in a backward-compatible way by continuing to support the current flat resource_spec format during migration.

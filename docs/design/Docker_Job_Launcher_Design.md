@@ -251,7 +251,7 @@ Docker-specific runtime flags live under `launcher_spec[site][docker]`. Keys use
 
 `DockerJobLauncher` translates `num_of_gpus` to `device_requests: [{"Count": N, "Capabilities": [["gpu"]]}]` before calling `docker run`. For fine-grained control (specific GPU UUIDs, driver constraints), set `device_requests` directly in the `docker` spec — it takes precedence over `num_of_gpus`.
 
-GPU can also be declared in a flat `resource_spec[site] = {"num_of_gpus": N}` (no mode nesting) — `DockerJobLauncher` falls back to this for backward compatibility when `launcher_spec` is absent and `resource_spec[site]` has no mode keys. New jobs should use `launcher_spec`.
+GPU can also be declared in a flat `resource_spec[site] = {"num_of_gpus": N}` (no mode nesting) — `DockerJobLauncher` falls back to this for backward compatibility when `launcher_spec[site]["docker"]["num_of_gpus"]` is absent and `resource_spec[site]` has no mode keys. New jobs should use `launcher_spec`.
 
 Job-level `launcher_spec[site][docker]` is merged with site-level defaults from `default_job_container_kwargs` in `local/resources.json`; job-level wins on conflict. Reserved keys controlled by the launcher (`volumes`, `network`, `environment`, `command`, `name`, `detach`, `user`, `working_dir`) cannot be overridden.
 

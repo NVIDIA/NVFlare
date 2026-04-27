@@ -132,7 +132,7 @@ If a job lacks required configuration for the site's launcher (e.g. no image on 
     },
     "site-1": {
       "docker": { "image": "nvflare-pt:2.7", "shm_size": "8g" },
-      "k8s":    { "image": "nvflare-pt:2.7", "cpu": "4", "memory": "16Gi" }
+      "k8s":    { "image": "nvflare-pt:2.7", "cpu": "4", "memory": "16Gi", "num_of_gpus": 1 }
     }
   }
 }
@@ -143,7 +143,7 @@ Resolution via `get_job_launcher_spec(job_meta, site_name, mode)` in `nvflare/ut
 1. Merge `launcher_spec["default"][mode]` with `launcher_spec[site_name][mode]` (site wins on conflict).
 2. Fall back to the nested `resource_spec[site][mode]` format for backward compatibility when `launcher_spec` is absent.
 
-`resource_spec` (distinct from `launcher_spec`) is scheduler-facing: the scheduler reads it at job admission time to decide if the site has the required hardware. `num_of_gpus` in `resource_spec` is a placement hint; Docker and K8s launchers read it directly for GPU configuration rather than going through a resource manager.
+`resource_spec` (distinct from `launcher_spec`) is scheduler-facing: the scheduler reads it at job admission time to decide if the site has the required hardware. Docker and K8s both support flat `resource_spec[site]["num_of_gpus"]` as a backward-compatible GPU fallback when `num_of_gpus` is not present in `launcher_spec`.
 
 ### 3.3 Server Side (`ServerEngine`)
 
@@ -353,7 +353,7 @@ Constructor parameters:
 |-----------|---------|---------|
 | `config_file_path` | required | Path to kubeconfig. Loaded lazily on first `launch_job`. |
 | `workspace_pvc` | required | PVC claim name for workspace volume. |
-| `study_data_pvc_file_path` | required | YAML file mapping study names to data PVC names. Validated lazily; requires a `"default"` key. |
+| `study_data_pvc_file_path` | required | YAML file mapping study names to data PVC names. Validated lazily; null or empty values skip the data PVC mount. |
 | `timeout` | `None` | Wall-clock seconds for `enter_states([RUNNING])`; also `_max_stuck_count`. |
 | `namespace` | `"default"` | Kubernetes namespace. |
 | `pending_timeout` | `120` | Stuck-detection threshold (poll iterations) when `timeout` is `None`. |
@@ -366,7 +366,7 @@ Launch sequence:
 | 0 | Lazy init: load kubeconfig, parse PVC YAML, create `CoreV1Api`. |
 | 1 | Sanitize job ID via `uuid4_to_rfc1123`. Extract `site_name`, `job_image` from `get_job_launcher_spec(job_meta, site_name, "k8s")`. Raise if `WORKSPACE_OBJECT` missing. |
 | 2 | Read `JOB_PROCESS_ARGS`; raise if absent or `EXE_MODULE` missing. Resolve data PVC. |
-| 3 | Build `job_config`: name, image, args from `get_module_args()`. Add `resources.limits` from `resource_spec` `num_of_gpus` and from `launcher_spec` `cpu`/`memory` (when present). |
+| 3 | Build `job_config`: name, image, args from `get_module_args()`. Add K8s `resources.limits` from `launcher_spec` `num_of_gpus`, `cpu`, and `memory` when present; `num_of_gpus` falls back to flat `resource_spec[site]` for backward compatibility. Resolve the data PVC from `study_data_pvc_file_path`; null or empty mapping values skip the data PVC mount. |
 | 4 | Create `K8sJobHandle`. |
 | 5 | `core_v1.create_namespaced_pod()`. On any exception: set `terminal_state = TERMINATED`, return handle. |
 | 6 | `job_handle.enter_states([RUNNING])`. On any `BaseException`: `terminate()` then re-raise. |
@@ -431,7 +431,7 @@ JobLauncherSpec (FLComponent, ABC)
 | **Workspace access** | Direct filesystem | Host bind mount → `/var/tmp/nvflare/workspace` | PersistentVolumeClaims |
 | **Data access** | Direct filesystem | Optional bind mount from `study_data.json` | PVC resolved per-study from YAML file |
 | **PARENT_URL** | `tcp://localhost:port` | Derived at runtime: `tcp://<site_name>:<port>` (Docker DNS) | Baked into comm_config at provision time |
-| **GPU config** | `GPUResourceManager` → `CUDA_VISIBLE_DEVICES` | `device_requests` via `launcher_spec` or flat `resource_spec` | `nvidia.com/gpu` limit via `resource_spec[site][num_of_gpus]` |
+| **GPU config** | `GPUResourceManager` → `CUDA_VISIBLE_DEVICES` | `device_requests` via `launcher_spec` or flat `resource_spec` | `nvidia.com/gpu` limit via `launcher_spec` or flat `resource_spec` |
 | **Resource manager** | `GPUResourceManager` | `PassthroughResourceManager` | `PassthroughResourceManager` |
 | **Start verification** | None | `enter_states(["running"])` with timeout | `enter_states([RUNNING])` with stuck detection |
 | **Terminate** | `SIGTERM`/`SIGKILL` | `container.stop()` + `container.remove()` | `delete_namespaced_pod(grace_period=0)` |
@@ -540,11 +540,12 @@ See [Docker_Job_Launcher_Design.md](Docker_Job_Launcher_Design.md) for the full 
 }
 ```
 
-The `study_data_pvc_file_path` YAML requires a `"default"` key:
+The `study_data_pvc_file_path` YAML maps study names to PVC names. Use `default` for unmapped studies. A null or empty value means no data PVC is mounted:
 
 ```yaml
 default: default-data-pvc
 study-alpha: alpha-data-pvc
+study-without-data:
 ```
 
 ---
