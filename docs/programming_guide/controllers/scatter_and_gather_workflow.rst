@@ -5,7 +5,7 @@ Scatter and Gather Workflow
 The federated scatter and gather workflow is an included reference implementation of the default workflow in previous versions
 of NVIDIA FLARE, with a server aggregating results from clients that have produced shareable results from their trainer.
 
-At the core, the control flow of :class:`nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather` is a for loop:
+At the core, the ``control_flow`` of :class:`nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather` is a for loop:
 
 .. image:: ../../resources/fed_sag_round.png
     :height: 400px

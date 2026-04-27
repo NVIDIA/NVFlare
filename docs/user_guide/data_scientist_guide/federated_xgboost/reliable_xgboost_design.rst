@@ -8,7 +8,7 @@ Flare as XGBoost Launcher
 *************************
 
 NVFLARE serves as a launchpad to start the XGBoost system.
-Once started, the XGBoost system runs independently of FLARE.
+Once started, the XGBoost system runs independently of FLARE,
 as illustrated in the following figure.
 
 .. figure:: ../../../resources/loose_xgb.png
