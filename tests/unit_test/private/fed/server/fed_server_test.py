@@ -266,9 +266,7 @@ class TestGetValidatedSiteConfig:
 
     def _call(self, shareable):
         mock_self = MagicMock()
-        mock_self._SITE_CONFIG_MAX_SERIALIZED_BYTES = (
-            FederatedServer._SITE_CONFIG_MAX_SERIALIZED_BYTES
-        )
+        mock_self._SITE_CONFIG_MAX_SERIALIZED_BYTES = FederatedServer._SITE_CONFIG_MAX_SERIALIZED_BYTES
         return FederatedServer._get_validated_site_config(mock_self, shareable, "site-1")
 
     def test_returns_none_when_missing(self):
@@ -286,9 +284,7 @@ class TestGetValidatedSiteConfig:
 
     def test_returns_none_when_oversized(self):
         s = Shareable()
-        s[ClientRegMsgKey.SITE_CONFIG] = {
-            "blob": "a" * (FederatedServer._SITE_CONFIG_MAX_SERIALIZED_BYTES + 1)
-        }
+        s[ClientRegMsgKey.SITE_CONFIG] = {"blob": "a" * (FederatedServer._SITE_CONFIG_MAX_SERIALIZED_BYTES + 1)}
         assert self._call(s) is None
 
     def test_returns_dict_when_valid(self):

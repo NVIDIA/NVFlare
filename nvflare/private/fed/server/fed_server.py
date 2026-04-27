@@ -664,9 +664,7 @@ class FederatedServer(BaseServer):
         try:
             serialized_size = len(json.dumps(site_config))
         except (TypeError, ValueError) as e:
-            self.logger.warning(
-                f"dropping site config from client {client_name}: not JSON-serializable ({e})"
-            )
+            self.logger.warning(f"dropping site config from client {client_name}: not JSON-serializable ({e})")
             return None
 
         if serialized_size > self._SITE_CONFIG_MAX_SERIALIZED_BYTES:
@@ -727,9 +725,7 @@ class FederatedServer(BaseServer):
                             raise exception
 
                 if site_config is not None:
-                    fl_ctx.set_prop(
-                        key=FLContextKey.CLIENT_SITE_CONFIG, value=site_config, private=True, sticky=False
-                    )
+                    fl_ctx.set_prop(key=FLContextKey.CLIENT_SITE_CONFIG, value=site_config, private=True, sticky=False)
 
                 client = self.client_manager.authenticate(request, fl_ctx)
                 if client and client.token:
