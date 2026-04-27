@@ -238,7 +238,7 @@ class Communicator:
         site_config = client_config.get(ClientRegMsgKey.SITE_CONFIG)
         if site_config is not None and not isinstance(site_config, dict):
             self.logger.warning(
-                f"site config will not be sent to server: expected dict but got {type(site_config)}"
+                f"site config will not be sent to server: expected dict but got {type(site_config).__name__}"
             )
             return None
         return site_config

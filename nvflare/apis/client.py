@@ -78,7 +78,8 @@ class Client:
     def get_is_leaf(self):
         return self.get_prop(ClientPropKey.IS_LEAF)
 
-    def set_site_config(self, value):
+    def set_site_config(self, value: dict):
+        """Set site config metadata. Exposed via to_dict() to controllers and job metadata — do not store secrets."""
         self.set_prop(ClientPropKey.SITE_CONFIG, copy.deepcopy(value))
 
     def get_site_config(self):

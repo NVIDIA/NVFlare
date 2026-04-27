@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import threading
 import time
@@ -644,6 +645,10 @@ class FederatedServer(BaseServer):
             self.logger.debug(f"challenge ok: {reply=}")
             return make_cellnet_reply(rc=F3ReturnCode.OK, body=reply)
 
+    # Cap on serialized site_config so a misbehaving client cannot push large blobs
+    # into Client objects and downstream job metadata.
+    _SITE_CONFIG_MAX_SERIALIZED_BYTES = 64 * 1024
+
     def _get_validated_site_config(self, shareable: Shareable, client_name: str):
         site_config = shareable.get(ClientRegMsgKey.SITE_CONFIG)
         if site_config is None:
@@ -651,7 +656,24 @@ class FederatedServer(BaseServer):
 
         if not isinstance(site_config, dict):
             self.logger.warning(
-                f"dropping site config from client {client_name}: expected dict but got {type(site_config)}"
+                f"dropping site config from client {client_name}: "
+                f"expected dict but got {type(site_config).__name__}"
+            )
+            return None
+
+        try:
+            serialized_size = len(json.dumps(site_config))
+        except (TypeError, ValueError) as e:
+            self.logger.warning(
+                f"dropping site config from client {client_name}: not JSON-serializable ({e})"
+            )
+            return None
+
+        if serialized_size > self._SITE_CONFIG_MAX_SERIALIZED_BYTES:
+            self.logger.warning(
+                f"dropping site config from client {client_name}: "
+                f"serialized size {serialized_size} exceeds limit "
+                f"{self._SITE_CONFIG_MAX_SERIALIZED_BYTES}"
             )
             return None
 
@@ -711,7 +733,6 @@ class FederatedServer(BaseServer):
 
                 client = self.client_manager.authenticate(request, fl_ctx)
                 if client and client.token:
-                    client_type = request.get_header(CellMessageHeaderKeys.CLIENT_TYPE)
                     if client_type == ClientType.REGULAR:
                         self.tokens[client.token] = self.task_meta_info(client.name)
                         if self.admin_server:

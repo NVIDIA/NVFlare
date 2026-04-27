@@ -20,7 +20,7 @@ from nvflare.apis.fl_constant import RunProcessKey
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
-from nvflare.private.defs import CellMessageHeaderKeys, new_cell_message
+from nvflare.private.defs import CellMessageHeaderKeys, ClientRegMsgKey, new_cell_message
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.server_state import ColdState, HotState
 
@@ -257,3 +257,42 @@ class TestFederatedServer:
             assert result.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
             assert "disabled" in result.get_header(MessageHeaderKey.ERROR)
             assert "token" not in server.client_manager.clients
+
+
+class TestGetValidatedSiteConfig:
+    """_get_validated_site_config doesn't depend on instance state beyond
+    self.logger and the class-level size cap, so we drive it with a MagicMock
+    self instead of constructing a full FederatedServer."""
+
+    def _call(self, shareable):
+        mock_self = MagicMock()
+        mock_self._SITE_CONFIG_MAX_SERIALIZED_BYTES = (
+            FederatedServer._SITE_CONFIG_MAX_SERIALIZED_BYTES
+        )
+        return FederatedServer._get_validated_site_config(mock_self, shareable, "site-1")
+
+    def test_returns_none_when_missing(self):
+        assert self._call(Shareable()) is None
+
+    def test_returns_none_when_not_a_dict(self):
+        s = Shareable()
+        s[ClientRegMsgKey.SITE_CONFIG] = ["bad"]
+        assert self._call(s) is None
+
+    def test_returns_none_when_not_json_serializable(self):
+        s = Shareable()
+        s[ClientRegMsgKey.SITE_CONFIG] = {"x": {1, 2, 3}}  # set is not JSON-serializable
+        assert self._call(s) is None
+
+    def test_returns_none_when_oversized(self):
+        s = Shareable()
+        s[ClientRegMsgKey.SITE_CONFIG] = {
+            "blob": "a" * (FederatedServer._SITE_CONFIG_MAX_SERIALIZED_BYTES + 1)
+        }
+        assert self._call(s) is None
+
+    def test_returns_dict_when_valid(self):
+        site_config = {"format_version": 1, "labels": {"region": "us-east"}}
+        s = Shareable()
+        s[ClientRegMsgKey.SITE_CONFIG] = site_config
+        assert self._call(s) == site_config
