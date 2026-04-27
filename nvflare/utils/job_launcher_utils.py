@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import logging
 import os
 import sys
 
-from nvflare.apis.fl_constant import FLContextKey, JobConstants, SystemVarName
-from nvflare.apis.job_def import ALL_SITES, JobMetaKey
+from nvflare.apis.fl_constant import FLContextKey, SystemVarName
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs
 
 
@@ -83,6 +84,7 @@ def get_server_job_args(include_exe_module=True, include_set_options=True):
             JobProcessArgs.JOB_ID,
             JobProcessArgs.TOKEN_SIGNATURE,
             JobProcessArgs.PARENT_URL,
+            JobProcessArgs.PARENT_CONN_SEC,
             JobProcessArgs.ROOT_URL,
             JobProcessArgs.SERVICE_HOST,
             JobProcessArgs.SERVICE_PORT,
@@ -109,38 +111,79 @@ def generate_server_command(fl_ctx) -> str:
 _LAUNCHER_MODE_KEYS = {"process", "docker", "k8s"}
 
 
-def get_launcher_resource_spec(job_meta, site_name, mode):
-    """Extract the resource spec for a site for a specific launcher mode.
+def get_site_launcher_spec(site_spec, mode):
+    """Extract the launcher-mode portion of a single site's resource spec.
 
-    New nested format: resource_spec[site][mode] = {num_of_gpus: ..., shm_size: ..., ...}
-    Legacy flat format: resource_spec[site] = {num_of_gpus: ...} — treated as process mode for
+    New nested format: ``{mode: {...}}`` — returns the inner dict for *mode*.
+    Legacy flat format: ``{num_of_gpus: ...}`` — treated as process mode for
     backward compatibility; Docker and K8s modes receive an empty spec.
-
-    Returns a dict for the given mode, or an empty dict if not specified.
     """
-    resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
-    site_spec = resource_spec.get(site_name) or {}
+    site_spec = site_spec or {}
     if any(k in site_spec for k in _LAUNCHER_MODE_KEYS):
         return site_spec.get(mode, {})
-    # Legacy flat format — treat as process only
     return site_spec if mode == "process" else {}
 
 
-# TODO: remove in follow-up PR once K8s launcher is updated to use get_launcher_resource_spec
-def extract_job_image(job_meta, site_name):
-    deploy_map = job_meta.get(JobMetaKey.DEPLOY_MAP, {})
-    fallback = None
-    for _, participants in deploy_map.items():
-        for item in participants:
-            if isinstance(item, dict):
-                sites = item.get(JobConstants.SITES)
-                if not sites:
-                    continue
-                if site_name in sites:
-                    return item.get(JobConstants.JOB_IMAGE)
-                if ALL_SITES in sites and fallback is None:
-                    fallback = item.get(JobConstants.JOB_IMAGE)
-    return fallback
+def get_launcher_resource_spec(job_meta, site_name, mode):
+    """Extract the launcher-mode resource spec for a site from full job meta."""
+    resource_spec = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}) or {}
+    return get_site_launcher_spec(resource_spec.get(site_name), mode)
+
+
+_LAUNCHER_SPEC_DEFAULT_KEY = "default"
+
+# "default" is the only reserved top-level key in launcher_spec. Every other
+# top-level key is treated as a site name. A typo such as "defaults" would be
+# silently accepted as a site name and never matched during resolution.
+_LAUNCHER_SPEC_RESERVED_KEYS = {_LAUNCHER_SPEC_DEFAULT_KEY}
+
+
+def _validate_launcher_spec(launcher_spec: dict) -> list:
+    """Return top-level keys that look like misspellings of a reserved token.
+
+    Reserved keys (_LAUNCHER_SPEC_RESERVED_KEYS) are skipped. All other keys
+    are treated as site names. A key whose sub-keys are all valid launcher modes
+    but whose name closely resembles a reserved token is flagged so callers can
+    warn the user before resolution silently ignores it.
+    """
+    suspicious = []
+    for key in launcher_spec:
+        if key in _LAUNCHER_SPEC_RESERVED_KEYS:
+            continue
+        value = launcher_spec[key]
+        if not isinstance(value, dict):
+            continue
+        # Flag keys whose sub-keys look like launcher modes (i.e. look like a
+        # site block) but whose name is a near-match for a reserved token.
+        if set(value.keys()) <= _LAUNCHER_MODE_KEYS:
+            for reserved in _LAUNCHER_SPEC_RESERVED_KEYS:
+                if key != reserved and (key.startswith(reserved) or reserved.startswith(key)):
+                    suspicious.append(key)
+    return suspicious
+
+
+def get_job_launcher_spec(job_meta, site_name, mode):
+    """Get launcher-specific config for a site/mode.
+
+    Resolution order:
+    1. Merge launcher_spec["default"][mode] with launcher_spec[site][mode] (site wins).
+    2. Fall back to get_launcher_resource_spec (nested resource_spec backward compat) when
+       neither launcher_spec["default"][mode] nor launcher_spec[site][mode] is present —
+       even if launcher_spec exists for other sites or modes.
+
+    Returns a dict for the given mode, or an empty dict if not specified.
+    """
+    launcher_spec = job_meta.get(JobMetaKey.JOB_LAUNCHER_SPEC.value, {}) or {}
+    for bad_key in _validate_launcher_spec(launcher_spec):
+        logging.getLogger(__name__).warning(
+            f"launcher_spec key '{bad_key}' looks like a misspelling of the reserved key "
+            f"'{_LAUNCHER_SPEC_DEFAULT_KEY}' and will be treated as a site name, not a default block."
+        )
+    default_spec = (launcher_spec.get(_LAUNCHER_SPEC_DEFAULT_KEY) or {}).get(mode) or {}
+    site_spec = (launcher_spec.get(site_name) or {}).get(mode)
+    if default_spec or site_spec is not None:
+        return {**default_spec, **(site_spec or {})}
+    return get_launcher_resource_spec(job_meta, site_name, mode)
 
 
 def add_custom_dir_to_path(app_custom_folder, new_env):

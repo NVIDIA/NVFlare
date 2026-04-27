@@ -34,6 +34,5 @@ builders:
       docker_image: __DOCKER_IMAGE__
       parent_port: 8102
       workspace_pvc: nvflws
-      etc_pvc: nvfletc
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder

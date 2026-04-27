@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 import shutil
 
@@ -21,8 +22,10 @@ import nvflare.lighter as prov
 from nvflare.lighter.constants import CommConfigArg, ConnSecurity, CtxKey, PropKey, ProvFileName
 from nvflare.lighter.entity import Participant
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
+from nvflare.lighter.utils import update_storage_locations
 
 _HELM_TEMPLATES_DIR = os.path.join(os.path.dirname(prov.__file__), "templates", "helm")
+logger = logging.getLogger(__name__)
 
 
 def _split_image(docker_image: str):
@@ -44,9 +47,7 @@ class HelmChartBuilder(Builder):
         docker_image: str,
         parent_port: int = 8102,
         workspace_pvc: str = "nvflws",
-        etc_pvc: str = "nvfletc",
         workspace_mount_path: str = "/var/tmp/nvflare/workspace",
-        etc_mount_path: str = "/var/tmp/nvflare/etc",
     ):
         """Build Helm charts for the FL server and all FL clients.
 
@@ -78,16 +79,12 @@ class HelmChartBuilder(Builder):
                 (default 8102).  Exposed as ``containerPort`` in the Pod and
                 as ``port``/``targetPort`` in the client Service.
             workspace_pvc: PVC claim name for the runtime workspace volume.
-            etc_pvc: PVC claim name for the startup-kit/etc volume.
             workspace_mount_path: in-container mount path for the workspace PVC.
-            etc_mount_path: in-container mount path for the etc PVC.
         """
         self.docker_image = docker_image
         self.parent_port = parent_port
         self.workspace_pvc = workspace_pvc
-        self.etc_pvc = etc_pvc
         self.workspace_mount_path = workspace_mount_path
-        self.etc_mount_path = etc_mount_path
 
     # ------------------------------------------------------------------
     # Builder lifecycle
@@ -131,6 +128,11 @@ class HelmChartBuilder(Builder):
         self._write_server_values_yaml(chart_dir, server, fed_learn_port, admin_port)
         self._write_server_template_files(templates_dir)
 
+        # Repoint job-store and snapshot-storage at the workspace PVC mount.
+        # Defaults in master_template.yml put them under /tmp/nvflare/... which
+        # is the container's ephemeral root FS and disappears on pod restart.
+        self._relocate_storage_to_workspace_pvc(ctx, server)
+
     def _write_server_chart_yaml(self, chart_dir: str, server: Participant):
         _, tag = _split_image(self.docker_image)
         chart = {
@@ -173,15 +175,11 @@ class HelmChartBuilder(Builder):
                 "annotations": {},
                 "automountServiceAccountToken": True,
             },
+            "podAnnotations": {},
             "rbac": {
                 "create": True,
             },
             "persistence": {
-                "etc": {
-                    "claimName": self.etc_pvc,
-                    "friendlyName": self.etc_pvc,
-                    "mountPath": self.etc_mount_path,
-                },
                 "workspace": {
                     "claimName": self.workspace_pvc,
                     "friendlyName": self.workspace_pvc,
@@ -298,15 +296,11 @@ class HelmChartBuilder(Builder):
                 "annotations": {},
                 "automountServiceAccountToken": True,
             },
+            "podAnnotations": {},
             "rbac": {
                 "create": True,
             },
             "persistence": {
-                "etc": {
-                    "claimName": self.etc_pvc,
-                    "friendlyName": self.etc_pvc,
-                    "mountPath": self.etc_mount_path,
-                },
                 "workspace": {
                     "claimName": self.workspace_pvc,
                     "friendlyName": self.workspace_pvc,
@@ -339,3 +333,12 @@ class HelmChartBuilder(Builder):
             (_helm_src("client", "role.yaml"), "role.yaml"),
         ]:
             shutil.copy(src, os.path.join(templates_dir, dst))
+
+    def _relocate_storage_to_workspace_pvc(self, ctx: ProvisionContext, participant: Participant):
+        """Rewrite server resources so job and snapshot state live on the workspace PVC."""
+        local_dir = os.path.join(ctx.get_ws_dir(participant), "local")
+        default_resource = os.path.join(local_dir, "resources.json.default")
+        if not os.path.exists(default_resource):
+            logger.warning("resources.json.default not found at %s; skipping storage relocation.", local_dir)
+            return
+        update_storage_locations(local_dir=local_dir, workspace=self.workspace_mount_path)
