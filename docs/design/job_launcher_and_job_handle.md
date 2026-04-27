@@ -353,7 +353,7 @@ Constructor parameters:
 |-----------|---------|---------|
 | `config_file_path` | required | Path to kubeconfig. Loaded lazily on first `launch_job`. |
 | `workspace_pvc` | required | PVC claim name for workspace volume. |
-| `study_data_pvc_file_path` | required | YAML file mapping study names to data PVC names. Validated lazily; null or empty values skip the data PVC mount. |
+| `study_data_pvc_file_path` | required | YAML file mapping study/dataset names to PVC claim names. Validated lazily; missing study entries skip data PVC mounts. |
 | `timeout` | `None` | Wall-clock seconds for `enter_states([RUNNING])`; also `_max_stuck_count`. |
 | `namespace` | `"default"` | Kubernetes namespace. |
 | `pending_timeout` | `120` | Stuck-detection threshold (poll iterations) when `timeout` is `None`. |
@@ -363,14 +363,16 @@ Launch sequence:
 
 | Step | Action |
 |------|--------|
-| 0 | Lazy init: load kubeconfig, parse PVC YAML, create `CoreV1Api`. |
+| 0 | Lazy init: load kubeconfig and create `CoreV1Api`. |
 | 1 | Sanitize job ID via `uuid4_to_rfc1123`. Extract `site_name`, `job_image` from `get_job_launcher_spec(job_meta, site_name, "k8s")`. Raise if `WORKSPACE_OBJECT` missing. |
-| 2 | Read `JOB_PROCESS_ARGS`; raise if absent or `EXE_MODULE` missing. Resolve data PVC. |
-| 3 | Build `job_config`: name, image, args from `get_module_args()`. Add K8s `resources.limits` from `launcher_spec` `num_of_gpus`, `cpu`, and `memory` when present; `num_of_gpus` falls back to flat `resource_spec[site]` for backward compatibility. Resolve the data PVC from `study_data_pvc_file_path`; null or empty mapping values skip the data PVC mount. |
+| 2 | Read `JOB_PROCESS_ARGS`; raise if absent or `EXE_MODULE` missing. Resolve dataset PVC mounts from `study_data_pvc_file_path` when the YAML file contains entries for the job study. |
+| 3 | Build `job_config`: name, image, args from `get_module_args()`. Add K8s `resources.limits` from `launcher_spec` `num_of_gpus`, `cpu`, and `memory` when present; `num_of_gpus` falls back to flat `resource_spec[site]` for backward compatibility. Missing study entries skip data PVC mounts. |
 | 4 | Create `K8sJobHandle`. |
 | 5 | `core_v1.create_namespaced_pod()`. On any exception: set `terminal_state = TERMINATED`, return handle. |
 | 6 | `job_handle.enter_states([RUNNING])`. On any `BaseException`: `terminate()` then re-raise. |
 | 7 | Return handle. |
+
+The K8s launcher loads `study_data_pvc_file_path` once per launcher instance. Restart the parent site process to pick up hand edits to this runtime file.
 
 **Event registration** — unconditional (site policy, not job config):
 
@@ -429,7 +431,7 @@ JobLauncherSpec (FLComponent, ABC)
 | **Image required** | No | Yes — `launcher_spec[site][docker][image]` | Yes — `launcher_spec[site][k8s][image]` |
 | **No-image behavior** | N/A | `launch_job` raises `RuntimeError` | `launch_job` raises `RuntimeError` |
 | **Workspace access** | Direct filesystem | Host bind mount → `/var/tmp/nvflare/workspace` | PersistentVolumeClaims |
-| **Data access** | Direct filesystem | Optional bind mount from `study_data.json` | PVC resolved per-study from YAML file |
+| **Data access** | Direct filesystem | Optional dataset bind mounts from `study_data.yaml` | Optional dataset PVC mounts from `study_data.yaml` |
 | **PARENT_URL** | `tcp://localhost:port` | Derived at runtime: `tcp://<site_name>:<port>` (Docker DNS) | Baked into comm_config at provision time |
 | **GPU config** | `GPUResourceManager` → `CUDA_VISIBLE_DEVICES` | `device_requests` via `launcher_spec` or flat `resource_spec` | `nvidia.com/gpu` limit via `launcher_spec` or flat `resource_spec` |
 | **Resource manager** | `GPUResourceManager` | `PassthroughResourceManager` | `PassthroughResourceManager` |
@@ -522,7 +524,7 @@ Each site configures exactly one launcher in `resources.json` (or `local/resourc
 }
 ```
 
-See [docker_job_launcher_design.md](docker_job_launcher_design.md) for the full deployment guide including `start_docker.sh`, Docker network setup, and `study_data.json`.
+See [docker_job_launcher_design.md](docker_job_launcher_design.md) for the full deployment guide including `start_docker.sh`, Docker network setup, and `study_data.yaml`.
 
 ### 9.3 Kubernetes Launcher
 
@@ -533,20 +535,30 @@ See [docker_job_launcher_design.md](docker_job_launcher_design.md) for the full 
   "args": {
     "config_file_path": "/path/to/kubeconfig",
     "workspace_pvc": "nvflare-workspace-pvc",
-    "study_data_pvc_file_path": "/path/to/study_data_pvc.yaml",
+    "study_data_pvc_file_path": "/path/to/study_data.yaml",
     "timeout": 120,
     "namespace": "nvflare"
   }
 }
 ```
 
-The `study_data_pvc_file_path` YAML maps study names to PVC names. Use `default` for unmapped studies. A null or empty value means no data PVC is mounted:
+The `study_data_pvc_file_path` YAML maps study and dataset names to PVC claim names. Missing study entries mean no data PVC is mounted:
 
 ```yaml
-default: default-data-pvc
-study-alpha: alpha-data-pvc
-study-without-data:
+default:
+  training:
+    source: default-data-pvc
+    mode: ro
+study-alpha:
+  training:
+    source: alpha-training-pvc
+    mode: ro
+  output:
+    source: alpha-output-pvc
+    mode: rw
 ```
+
+For K8s, each dataset `source` is a trusted PVC claim name that is inserted into the pod manifest. The multicloud deploy tool validates generated values against `pvc_config`; manually edited runtime files are trusted site-operator input. For Docker, the same YAML shape is used but `source` is a trusted host path instead of a PVC claim name.
 
 ---
 

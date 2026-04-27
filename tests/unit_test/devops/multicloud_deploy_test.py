@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 DEPLOY_PY = Path(__file__).resolve().parents[3] / "devops" / "multicloud" / "deploy.py"
 SPEC = importlib.util.spec_from_file_location("multicloud_deploy", DEPLOY_PY)
@@ -27,7 +28,7 @@ SPEC.loader.exec_module(DEPLOY_MODULE)
 
 
 class TestPatchResourcesJson:
-    def test_replaces_process_launcher_and_writes_study_pvc_file_to_local_workspace(self, tmp_path):
+    def test_replaces_process_launcher_without_writing_default_study_pvc_file(self, tmp_path):
         kit_dir = tmp_path
         local_dir = kit_dir / "local"
         local_dir.mkdir()
@@ -55,9 +56,51 @@ class TestPatchResourcesJson:
         assert component["path"] == "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
         assert component["args"]["namespace"] == "nvflare-client-1"
         assert "workspace_pvc" not in component["args"]
-        assert component["args"]["study_data_pvc_file_path"] == "/var/tmp/nvflare/workspace/local/study_data_pvc.yaml"
+        assert component["args"]["study_data_pvc_file_path"] == "/var/tmp/nvflare/workspace/local/study_data.yaml"
         assert component["args"]["security_context"] == {"seLinuxOptions": {"type": "spc_t"}}
-        assert (kit_dir / "local" / "study_data_pvc.yaml").read_text() == "default: nvfldata\n"
+        assert not (kit_dir / "local" / "study_data.yaml").exists()
+
+    def test_writes_configured_study_data_file(self, tmp_path):
+        kit_dir = tmp_path
+        local_dir = kit_dir / "local"
+        local_dir.mkdir()
+        resources = {
+            "components": [
+                {
+                    "id": "process_launcher",
+                    "path": "nvflare.app_common.job_launcher.process_launcher.ProcessJobLauncher",
+                    "args": {},
+                }
+            ]
+        }
+        study_data = {"default": {"data": {"source": "nvfldata", "mode": "ro"}}}
+        (local_dir / "resources.json.default").write_text(json.dumps(resources))
+
+        DEPLOY_MODULE.patch_resources_json(
+            kit_dir,
+            "nvflare-client-1",
+            "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
+            study_data=study_data,
+        )
+
+        assert yaml.safe_load((local_dir / "study_data.yaml").read_text()) == study_data
+
+    def test_dry_run_previews_configured_study_data_file(self, monkeypatch, tmp_path, capsys):
+        study_data = {"default": {"data": {"source": "nvfldata", "mode": "ro"}}}
+        monkeypatch.setattr(DEPLOY_MODULE, "DRY_RUN", True)
+
+        DEPLOY_MODULE.patch_resources_json(
+            tmp_path,
+            "nvflare-client-1",
+            "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
+            study_data=study_data,
+        )
+
+        out = capsys.readouterr().out
+        assert "Would patch" in out
+        assert "Would write" in out
+        assert "study_data.yaml" in out
+        assert "source: nvfldata" in out
 
     def test_raises_when_process_launcher_component_is_missing(self, tmp_path):
         kit_dir = tmp_path
@@ -71,6 +114,29 @@ class TestPatchResourcesJson:
                 "nvflare-client-1",
                 "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
             )
+
+
+class TestLoadConfig:
+    def test_translates_study_data_pvc_to_runtime_source(self, tmp_path):
+        config_path = tmp_path / "deploy.yaml"
+        config_path.write_text("""
+clouds:
+  gcp:
+    kubeconfig: missing-kubeconfig.yaml
+    image: repo/image:tag
+    pvc_config:
+      nvflws: {sc: standard-rwo, access: ReadWriteOnce, size: 1Gi}
+      nvfldata: {sc: standard-rwo, access: ReadWriteOnce, size: 1Gi}
+    study_data:
+      default:
+        data: {pvc: nvfldata, mode: ro}
+participants:
+  - {name: gcp-server, cloud: gcp, namespace: nvflare-server, role: server}
+""")
+
+        config = DEPLOY_MODULE.load_config(config_path)
+
+        assert config.participants[0].study_data == {"default": {"data": {"source": "nvfldata", "mode": "ro"}}}
 
 
 class TestHelmDeployFlow:
@@ -89,7 +155,7 @@ class TestHelmDeployFlow:
         (kit_dir / "startup").mkdir(parents=True)
         (kit_dir / "local").mkdir()
         chart_dir.mkdir()
-        (kit_dir / "local" / "study_data_pvc.yaml").write_text("default: nvfldata\n")
+        (kit_dir / "local" / "study_data.yaml").write_text("{}\n")
 
         participant = DEPLOY_MODULE.Participant(
             name="site-1",

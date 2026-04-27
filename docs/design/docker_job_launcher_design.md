@@ -142,7 +142,7 @@ If a job package is intended to be portable across deployments and carries both 
 workspace/               ← bind-mounted into all containers at /var/tmp/nvflare/workspace
   startup/               ← certs, config, sub_start.sh
   local/
-    study_data.json      ← optional: site admin maps study names to host data paths
+    study_data.yaml      ← optional: site admin maps study/dataset names to host data paths
   runs/
     job_001/             ← written by SJ/CJ for job 1
     job_002/             ← written by SJ/CJ for job 2
@@ -182,7 +182,7 @@ SP/CP container (site admin grants via start_docker.sh)
 SJ/CJ container (DockerJobLauncher controls)
   ├── NO Docker socket                        ← cannot create further containers
   ├── workspace bind mount at /var/tmp/nvflare/workspace
-  ├── data bind mount at /var/tmp/nvflare/data (read-only, if study_data.json configured)
+  ├── optional data bind mounts at /data/<study>/<dataset>
   └── nvflare-network                         ← intra-site to SP/CP only (PARENT_URL)
 ```
 
@@ -197,7 +197,7 @@ A complete example:
 ```json
 {
   "name": "my-fl-job",
-  "study": "study_A",
+  "study": "study_a",
   "deploy_map": {
     "app": ["server", "site-1", "site-2"]
   },
@@ -275,19 +275,28 @@ Site-level defaults (set by site admin in `local/resources.json`):
 Set `"study"` in `meta.json` to the name of the study whose data the job needs:
 
 ```json
-{ "study": "study_A" }
+{ "study": "study_a" }
 ```
 
-The site admin creates `workspace/local/study_data.json` mapping study names to host data paths:
+The site admin creates `workspace/local/study_data.yaml` mapping study and dataset names to host data paths:
 
-```json
-{
-  "study_A": "/host/data/study_A",
-  "study_B": "/host/data/study_B"
-}
+```yaml
+study_a:
+  training:
+    source: /host/data/study_a/training
+    mode: ro
+  output:
+    source: /host/data/study_a/output
+    mode: rw
+default:
+  training:
+    source: /host/data/default/training
+    mode: ro
 ```
 
-At launch time, `DockerJobLauncher` looks up the study name and bind-mounts the host path into the SJ/CJ container at `/var/tmp/nvflare/data` (read-only). If the file doesn't exist or the study has no entry, no data volume is added. Training code reads data from `/var/tmp/nvflare/data` inside the container.
+At launch time, `DockerJobLauncher` looks up the study name and bind-mounts each configured dataset into the SJ/CJ container at `/data/<study>/<dataset>`. In Docker mode, `source` is the host path passed to Docker and `mode` must be `ro` or `rw`. If the file doesn't exist or the study has no entry, no data volume is added.
+
+This YAML schema replaces the legacy flat `study -> path` map. A stale flat-format file now fails validation instead of being ignored. If a configured dataset host `source` path does not exist, Docker reports the bind-mount failure when the job container is created.
 
 ---
 
@@ -442,16 +451,16 @@ NVFL_P_IMAGE=nvflare-site:2.7.2 ./start_docker.sh
 
 ### Step 4 — Configure site data (optional)
 
-If jobs need access to study data, create `workspace/local/study_data.json`. No change to `resources.json` is needed — `DockerJobLauncher` reads this file fresh on every job launch, so entries can be added or updated at any time without restarting SP/CP.
+If jobs need access to study data, create `workspace/local/study_data.yaml`. No change to `resources.json` is needed — `DockerJobLauncher` reads this file fresh on every job launch, so entries can be added or updated at any time without restarting SP/CP.
 
-```json
-{
-  "study_A": "/host/data/study_A",
-  "study_B": "/host/data/study_B"
-}
+```yaml
+study_a:
+  training:
+    source: /host/data/study_a/training
+    mode: ro
 ```
 
-Keys are study names (from `meta.json`); values are host paths that will be bind-mounted read-only into SJ/CJ containers at `/var/tmp/nvflare/data`. If the file is absent or the job's study has no entry, no data volume is added and the job runs without a data mount.
+Top-level keys are study names from `meta.json`; nested keys are dataset names. Each dataset entry defines the host `source` path and mount `mode`. Dataset names appear in the container path as `/data/<study>/<dataset>`. If the file is absent or the job's study has no entry, no data volume is added and the job runs without a data mount. Legacy flat `study -> path` entries are invalid in this schema.
 
 ### Step 5 — Submit a job
 

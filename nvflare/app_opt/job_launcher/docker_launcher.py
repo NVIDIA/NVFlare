@@ -29,9 +29,14 @@ except ImportError:
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import JobMetaKey, get_job_meta_study
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
+from nvflare.app_opt.job_launcher.study_data import (
+    load_study_data_file,
+    resolve_study_dataset_mounts,
+    should_mount_study_data,
+)
 from nvflare.utils.job_launcher_utils import get_client_job_args, get_job_launcher_spec, get_server_job_args
 
 
@@ -236,8 +241,7 @@ class DockerJobLauncher(JobLauncherSpec):
     """
 
     WORKSPACE_MOUNT = "/var/tmp/nvflare/workspace"
-    DATA_MOUNT = "/var/tmp/nvflare/data"
-    STUDY_DATA_PATH_FILE = "local/study_data.json"
+    STUDY_DATA_PATH_FILE = "local/study_data.yaml"
 
     def __init__(
         self,
@@ -424,29 +428,30 @@ class DockerJobLauncher(JobLauncherSpec):
         if num_gpus and "device_requests" not in job_container_kwargs:
             merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
 
-        # Volumes: always mount workspace; optionally mount study data if local/study_data.json exists
+        # Volumes: always mount workspace; mount study datasets only when the job declares a study.
         volumes = {
             workspace: {"bind": self.WORKSPACE_MOUNT, "mode": "rw"},
         }
-        # Read study data map from workspace/local/study_data.json.
+        # Read study data map from workspace/local/study_data.yaml.
         # Must use WORKSPACE_MOUNT (container-internal path) for the file read because launch_job
         # runs inside the SP/CP container. The host path (workspace) does not exist in the container
         # filesystem. The Docker volume source must remain the host path for the daemon API.
-        # Maps study name → host data path; study name comes from meta.json "study" field.
+        # Maps study -> dataset -> {source, mode}; source is a host path for Docker.
+        # Each dataset is mounted at /data/<study>/<dataset>.
         study_data_file = os.path.join(self.WORKSPACE_MOUNT, self.STUDY_DATA_PATH_FILE)
-        if os.path.isfile(study_data_file):
-            try:
-                import json as _json
-
-                with open(study_data_file) as f:
-                    study_data_map = _json.load(f)
-                study = get_job_meta_study(job_meta)
-                data_host_path = study_data_map.get(study) if study else None
-                if data_host_path:
-                    volumes[data_host_path] = {"bind": self.DATA_MOUNT, "mode": "ro"}
-                    self.logger.info(f"mounting study '{study}' data from {data_host_path} -> {self.DATA_MOUNT}")
-            except Exception as e:
-                self.logger.warning(f"failed to read {study_data_file}: {e}")
+        study = job_meta.get(JobMetaKey.STUDY.value)
+        if should_mount_study_data(study):
+            study_data_map = load_study_data_file(study_data_file)
+            data_mounts = resolve_study_dataset_mounts(study_data_map, study, study_data_file)
+            for dataset_mount in data_mounts:
+                volumes[dataset_mount.source] = {"bind": dataset_mount.mount_path, "mode": dataset_mount.mode}
+                self.logger.info(
+                    "mounting study '%s' dataset '%s' from %s -> %s",
+                    study,
+                    dataset_mount.dataset,
+                    dataset_mount.source,
+                    dataset_mount.mount_path,
+                )
 
         self.logger.info(f"launching job {job_id} as container {container_name} using image {job_image}")
 

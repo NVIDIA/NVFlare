@@ -9,6 +9,9 @@ clouds:
     pvc_config:
       nvflws:   { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
       nvfldata: { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
+    study_data:
+      default:
+        data: { pvc: nvfldata, mode: ro }
   aws:
     kubeconfig: ../../.tmp/kubeconfigs/aws.yaml
     image: 637528030358.dkr.ecr.us-west-2.amazonaws.com/nvflare/nvflare:pcnudde-dev
@@ -20,6 +23,9 @@ clouds:
     pvc_config:
       nvflws:   { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }
       nvfldata: { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }
+    study_data:
+      default:
+        data: { pvc: nvfldata, mode: ro }
 
 participants:
   - { name: gcp-server,   cloud: gcp, namespace: nvflare-server,   role: server }
