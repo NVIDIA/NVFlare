@@ -5,11 +5,15 @@ NVIDIA FLARE Job CLI
 #########################
 
 The ``nvflare job`` command family is used to submit, inspect, monitor, and
-manage federated learning jobs from a configured admin startup kit.
+manage federated learning jobs from the active local admin startup kit.
 
-Before using these commands, configure the startup kit location with
-``nvflare config --poc.startup_kit <path>`` or prepare a local POC workspace
-with ``nvflare poc prepare``.
+Before using server-connected job commands, either run ``nvflare poc prepare``
+or activate a registered startup kit with :ref:`kit_command`:
+
+.. code-block:: shell
+
+   nvflare config kit add project_admin /path/to/admin@nvidia.com
+   nvflare config kit use project_admin
 
 ***********************
 Command Usage
@@ -27,7 +31,7 @@ Command Usage
      list            list jobs on the server
      abort           abort a running job
      meta            get metadata for a job
-     logs            retrieve job logs from server workspace
+     logs            retrieve job logs from the server-side log store
      log-config      change logging configuration for a running job
      stats           show running job statistics
      download        download job result
@@ -47,15 +51,6 @@ Common Workflow
 4. Inspect metadata, stats, or logs as needed.
 5. Download, clone, abort, or delete the job when appropriate.
 
-.. note::
-
-   ``--startup-target`` and ``--startup-kit`` are accepted by all
-   server-connected ``nvflare job`` commands, including ``submit``,
-   ``monitor``, ``list``, ``meta``, ``abort``, ``clone``, ``download``,
-   ``delete``, ``stats``, ``logs``, and ``log-config``. They are mutually
-   exclusive explicit selectors; startup kit resolution also supports
-   ``NVFLARE_STARTUP_KIT_DIR`` and config fallback as described below.
-
 ****************
 Submit a Job
 ****************
@@ -69,8 +64,6 @@ Use ``nvflare job submit`` to submit a pre-built NVFlare job folder:
 Submit options:
 
 - ``-j, --job_folder``: job folder path. Defaults to ``./current_job``.
-- ``--startup-target {poc,prod}``: choose the configured startup target from ``~/.nvflare/config.conf``. Mutually exclusive with ``--startup-kit``. See the startup kit resolution order below.
-- ``--startup-kit``: explicit admin startup kit directory, or its ``startup/`` subdirectory. Mutually exclusive with ``--startup-target``.
 - ``--study``: submit into a named study when the server is configured for multi-study access. If omitted, the literal study name ``default`` is submitted.
 - ``-debug, --debug``: keep the temporary copied job folder for inspection.
 - ``--schema``: print the command schema as JSON and exit.
@@ -81,26 +74,21 @@ job status.
 To change job configuration values, edit the exported job files before
 submission. Submit-time ``-f/--config_file`` overrides are not supported.
 
-Startup kit resolution order:
+Startup kit resolution order for server-connected job commands:
 
-1. ``--startup-kit``
-2. ``NVFLARE_STARTUP_KIT_DIR``
-3. resolved target via config (explicit ``--startup-target`` value, otherwise default ``poc``):
-   - ``poc`` -> ``poc.startup_kit``
-   - ``prod`` -> ``prod.startup_kit``
+1. ``NVFLARE_STARTUP_KIT_DIR`` when set.
+2. ``startup_kits.active`` from ``~/.nvflare/config.conf``.
+3. If neither resolves to a valid admin startup kit, the command fails before connecting.
 
 Examples:
 
 .. code-block:: shell
 
-   nvflare job submit -j /tmp/nvflare/hello-pt --startup-target poc
-   nvflare job submit -j /tmp/nvflare/hello-pt --startup-target prod
-   nvflare job submit -j /tmp/nvflare/hello-pt --startup-kit /tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com
+   nvflare config kit use project_admin
+   nvflare job submit -j /tmp/nvflare/hello-pt
 
-``--startup-kit`` must point to the admin startup kit directory itself, not the
-broader ``prod_00`` root. For example, use
-``/tmp/nvflare/poc/example_project/prod_00/admin@nvidia.com`` rather than
-``/tmp/nvflare/poc/example_project/prod_00``.
+Registered startup kit paths must point to the admin startup kit directory
+itself, not the broader ``prod_00`` root.
 
 Example JSON success response:
 
@@ -225,19 +213,60 @@ Notes:
 Observability
 **************
 
-Retrieve job logs from the server workspace:
+Retrieve job logs from the server-side log store:
 
 .. code-block:: shell
 
    nvflare job logs <job_id>
-   nvflare job logs <job_id> --tail 200
-   nvflare job logs <job_id> --grep ERROR
+   nvflare job logs <job_id> --site site-1
+   nvflare job logs <job_id> --site all
 
-Current implementation note:
+``job logs`` accepts:
 
-- ``job logs --site`` accepts only ``server``. Default: ``server``. Any other
-  value is rejected during argument parsing.
-- ``job logs`` also supports ``--tail``, ``--grep``, and ``--schema``.
+- ``--site server``: return the server job log. This is the default.
+- ``--site <client_name>``: return that client's job log after it has been
+  streamed to and stored by the server.
+- ``--site all``: return the server log and all client logs currently available
+  in the server-side log store. If a known job site does not have stored log
+  content, the JSON response includes it under ``unavailable``.
+- ``--sites`` is accepted as an alias for ``--site`` but still selects one
+  target value.
+- ``job logs`` also supports ``--schema``.
+
+In normal human output mode, ``job logs`` prints the log text directly. With
+``--site all``, each site is separated by a short header. Use ``--format json``
+when a structured ``logs`` dictionary is needed for automation.
+
+``job logs`` does not provide built-in ``tail`` or ``grep`` options. Pipe or
+post-process the returned content when filtering is needed.
+
+Client logs are not fetched from client machines at command time. The command
+asks the server for logs that were already streamed to the server during the
+job. The current implementation reads client logs from the server job
+workspace, where streamed client logs are stored as ``<client_name>/log.txt``;
+after the job workspace is archived, the same files are read from the stored
+job ``workspace`` artifact.
+
+To enable client job log streaming in a portable job, add the job-level log
+streamer and receiver components to the job definition:
+
+.. code-block:: python
+
+   from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
+   from nvflare.app_common.logging.job_log_streamer import JobLogStreamer
+
+   # Tails each client's job log.txt and streams it to the server.
+   recipe.job.to_clients(JobLogStreamer())
+
+   # Receives streamed log chunks on the server and stores them with the job.
+   recipe.job.to_server(JobLogReceiver())
+
+System-level logging configuration in ``resources.json.default`` is separate
+from this job-level opt-in. Some deployments may configure a server-side
+``JobLogReceiver`` globally, but including both components in the job makes the
+job self-contained across POC and production deployments.
+
+The ``examples/hello-world/hello-log-streaming`` example shows this pattern.
 
 Change logging configuration for a running job:
 

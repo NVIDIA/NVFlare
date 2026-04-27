@@ -66,14 +66,12 @@ def test_run_uses_study_specific_auth_hint_in_json_mode(capsys):
     args.version = False
 
     with patch.object(cli_mod, "parse_args", return_value=(MagicMock(), args, {})):
-        with patch(
-            "nvflare.tool.cli_output.set_output_format",
-            side_effect=lambda fmt: setattr(cli_output, "_output_format", fmt),
-        ):
-            with patch("nvflare.tool.cli_output.set_connect_timeout"):
-                with patch.object(cli_mod, "handlers", {"job": lambda _args: (_ for _ in ()).throw(auth_error)}):
-                    with pytest.raises(SystemExit) as exc_info:
-                        cli_mod.run("nvflare")
+        with patch.object(cli_output, "_output_format", "json"):
+            with patch("nvflare.tool.cli_output.set_output_format"):
+                with patch("nvflare.tool.cli_output.set_connect_timeout"):
+                    with patch.object(cli_mod, "handlers", {"job": lambda _args: (_ for _ in ()).throw(auth_error)}):
+                        with pytest.raises(SystemExit) as exc_info:
+                            cli_mod.run("nvflare")
 
     assert exc_info.value.code == 2
     payload = json.loads(capsys.readouterr().out)
@@ -91,14 +89,12 @@ def test_run_uses_cert_specific_hint_for_error_cert_in_json_mode(capsys):
     args.version = False
 
     with patch.object(cli_mod, "parse_args", return_value=(MagicMock(), args, {})):
-        with patch(
-            "nvflare.tool.cli_output.set_output_format",
-            side_effect=lambda fmt: setattr(cli_output, "_output_format", fmt),
-        ):
-            with patch("nvflare.tool.cli_output.set_connect_timeout"):
-                with patch.object(cli_mod, "handlers", {"job": lambda _args: (_ for _ in ()).throw(auth_error)}):
-                    with pytest.raises(SystemExit) as exc_info:
-                        cli_mod.run("nvflare")
+        with patch.object(cli_output, "_output_format", "json"):
+            with patch("nvflare.tool.cli_output.set_output_format"):
+                with patch("nvflare.tool.cli_output.set_connect_timeout"):
+                    with patch.object(cli_mod, "handlers", {"job": lambda _args: (_ for _ in ()).throw(auth_error)}):
+                        with pytest.raises(SystemExit) as exc_info:
+                            cli_mod.run("nvflare")
 
     assert exc_info.value.code == 2
     payload = json.loads(capsys.readouterr().out)
@@ -116,14 +112,12 @@ def test_run_routes_authorization_error_through_auth_failed_envelope(capsys):
     args.version = False
 
     with patch.object(cli_mod, "parse_args", return_value=(MagicMock(), args, {})):
-        with patch(
-            "nvflare.tool.cli_output.set_output_format",
-            side_effect=lambda fmt: setattr(cli_output, "_output_format", fmt),
-        ):
-            with patch("nvflare.tool.cli_output.set_connect_timeout"):
-                with patch.object(cli_mod, "handlers", {"job": lambda _args: (_ for _ in ()).throw(auth_error)}):
-                    with pytest.raises(SystemExit) as exc_info:
-                        cli_mod.run("nvflare")
+        with patch.object(cli_output, "_output_format", "json"):
+            with patch("nvflare.tool.cli_output.set_output_format"):
+                with patch("nvflare.tool.cli_output.set_connect_timeout"):
+                    with patch.object(cli_mod, "handlers", {"job": lambda _args: (_ for _ in ()).throw(auth_error)}):
+                        with pytest.raises(SystemExit) as exc_info:
+                            cli_mod.run("nvflare")
 
     assert exc_info.value.code == 2
     payload = json.loads(capsys.readouterr().out)
@@ -139,16 +133,14 @@ def test_run_routes_cli_exception_through_error_envelope(capsys):
     args.version = False
 
     with patch.object(cli_mod, "parse_args", return_value=(MagicMock(), args, {})):
-        with patch(
-            "nvflare.tool.cli_output.set_output_format",
-            side_effect=lambda fmt: setattr(cli_output, "_output_format", fmt),
-        ):
-            with patch("nvflare.tool.cli_output.set_connect_timeout"):
-                with patch.object(
-                    cli_mod, "handlers", {"job": lambda _args: (_ for _ in ()).throw(CLIException("boom"))}
-                ):
-                    with pytest.raises(SystemExit) as exc_info:
-                        cli_mod.run("nvflare")
+        with patch.object(cli_output, "_output_format", "json"):
+            with patch("nvflare.tool.cli_output.set_output_format"):
+                with patch("nvflare.tool.cli_output.set_connect_timeout"):
+                    with patch.object(
+                        cli_mod, "handlers", {"job": lambda _args: (_ for _ in ()).throw(CLIException("boom"))}
+                    ):
+                        with pytest.raises(SystemExit) as exc_info:
+                            cli_mod.run("nvflare")
 
     assert exc_info.value.code == 1
     payload = json.loads(capsys.readouterr().out)
@@ -164,14 +156,12 @@ def test_run_routes_missing_handler_to_invalid_args_envelope(capsys):
     args.version = False
 
     with patch.object(cli_mod, "parse_args", return_value=(MagicMock(), args, {})):
-        with patch(
-            "nvflare.tool.cli_output.set_output_format",
-            side_effect=lambda fmt: setattr(cli_output, "_output_format", fmt),
-        ):
-            with patch("nvflare.tool.cli_output.set_connect_timeout"):
-                with patch.object(cli_mod, "handlers", {}):
-                    with pytest.raises(SystemExit) as exc_info:
-                        cli_mod.run("nvflare")
+        with patch.object(cli_output, "_output_format", "json"):
+            with patch("nvflare.tool.cli_output.set_output_format"):
+                with patch("nvflare.tool.cli_output.set_connect_timeout"):
+                    with patch.object(cli_mod, "handlers", {}):
+                        with pytest.raises(SystemExit) as exc_info:
+                            cli_mod.run("nvflare")
 
     assert exc_info.value.code == 4
     payload = json.loads(capsys.readouterr().out)

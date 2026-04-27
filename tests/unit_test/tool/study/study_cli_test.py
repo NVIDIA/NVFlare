@@ -23,6 +23,34 @@ from nvflare.fuel.flare_api.api_spec import CommandError
 from nvflare.tool import cli_output
 
 
+def _configure_active_startup_kit(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    admin_dir = tmp_path / "active-admin"
+    startup_dir = admin_dir / "startup"
+    startup_dir.mkdir(parents=True)
+    (startup_dir / "fed_admin.json").write_text('{"admin": {"username": "admin@nvidia.com"}}', encoding="utf-8")
+    (startup_dir / "client.crt").write_text("cert", encoding="utf-8")
+    (startup_dir / "rootCA.pem").write_text("root", encoding="utf-8")
+
+    config_dir = home / ".nvflare"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.conf").write_text(
+        f"""
+        version = 2
+        startup_kits {{
+          active = "admin@nvidia.com"
+          entries {{
+            "admin@nvidia.com" = "{admin_dir}"
+          }}
+        }}
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
+    return admin_dir
+
+
 class TestStudyCli:
     @pytest.fixture(autouse=True)
     def json_mode(self, monkeypatch):
@@ -76,70 +104,31 @@ class TestStudyCli:
         assert "Invalid arguments" not in captured.out
         assert captured.err == ""
 
-    def _make_startup_args(self, startup_kit=None, startup_target=None):
-        args = MagicMock()
-        args.startup_kit = startup_kit
-        args.startup_target = startup_target
-        return args
+    def test_study_session_uses_active_startup_kit(self, tmp_path, monkeypatch):
+        from nvflare.tool.study.study_cli import _study_session
 
-    def test_resolve_session_inputs_prefers_explicit_startup_kit_over_env_and_config(self, tmp_path, monkeypatch):
-        from nvflare.tool.study.study_cli import _resolve_session_inputs
+        active_admin_dir = _configure_active_startup_kit(tmp_path, monkeypatch)
+        fake_session = MagicMock()
 
-        explicit_dir = tmp_path / "explicit-admin"
-        env_dir = tmp_path / "env-admin"
-        explicit_dir.mkdir()
-        env_dir.mkdir()
-        args = self._make_startup_args(startup_kit=str(explicit_dir), startup_target=None)
-        monkeypatch.setenv("NVFLARE_STARTUP_KIT_DIR", str(env_dir))
+        with patch("nvflare.tool.cli_session.new_secure_session", return_value=fake_session) as new_secure:
+            with _study_session(Namespace()) as sess:
+                assert sess is fake_session
 
-        with patch("nvflare.utils.cli_utils.find_startup_kit_location") as find_startup:
-            with patch(
-                "nvflare.tool.study.study_cli._resolve_admin_user_and_dir_from_startup_kit",
-                return_value=("admin@nvidia.com", str(explicit_dir)),
-            ) as resolve_admin:
-                assert _resolve_session_inputs(args) == ("admin@nvidia.com", str(explicit_dir))
+        assert new_secure.call_args.kwargs["username"] == "admin@nvidia.com"
+        assert new_secure.call_args.kwargs["startup_kit_location"] == str(active_admin_dir)
 
-        find_startup.assert_not_called()
-        resolve_admin.assert_called_once_with(str(explicit_dir))
+    def test_try_get_caller_role_uses_active_startup_kit(self, tmp_path, monkeypatch):
+        from nvflare.tool.study.study_cli import _try_get_caller_role
 
-    def test_resolve_session_inputs_uses_env_before_config(self, tmp_path, monkeypatch):
-        from nvflare.tool.study.study_cli import _resolve_session_inputs
-
-        env_dir = tmp_path / "env-admin"
-        env_dir.mkdir()
-        args = self._make_startup_args(startup_kit=None, startup_target="prod")
-        monkeypatch.setenv("NVFLARE_STARTUP_KIT_DIR", str(env_dir))
-
-        with patch("nvflare.utils.cli_utils.find_startup_kit_location") as find_startup:
-            with patch(
-                "nvflare.tool.study.study_cli._resolve_admin_user_and_dir_from_startup_kit",
-                return_value=("admin@nvidia.com", str(env_dir)),
-            ) as resolve_admin:
-                assert _resolve_session_inputs(args) == ("admin@nvidia.com", str(env_dir))
-
-        find_startup.assert_not_called()
-        resolve_admin.assert_called_once_with(str(env_dir))
-
-    @pytest.mark.parametrize("startup_target", [None, "prod"])
-    def test_resolve_session_inputs_uses_config_fallback(self, tmp_path, monkeypatch, startup_target):
-        from nvflare.tool.study.study_cli import _resolve_session_inputs
-
-        configured_dir = tmp_path / "configured-admin"
-        configured_dir.mkdir()
-        args = self._make_startup_args(startup_kit=None, startup_target=startup_target)
-        monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
+        active_admin_dir = _configure_active_startup_kit(tmp_path, monkeypatch)
 
         with patch(
-            "nvflare.utils.cli_utils.find_startup_kit_location", return_value=str(configured_dir)
-        ) as find_startup:
-            with patch(
-                "nvflare.tool.study.study_cli._resolve_admin_user_and_dir_from_startup_kit",
-                return_value=("admin@nvidia.com", str(configured_dir)),
-            ) as resolve_admin:
-                assert _resolve_session_inputs(args) == ("admin@nvidia.com", str(configured_dir))
+            "nvflare.tool.study.study_cli._get_caller_role_from_startup_kit",
+            return_value="project_admin",
+        ) as get_role:
+            assert _try_get_caller_role(Namespace()) == "project_admin"
 
-        find_startup.assert_called_once_with(target=startup_target)
-        resolve_admin.assert_called_once_with(str(configured_dir))
+        get_role.assert_called_once_with(str(active_admin_dir))
 
     def test_get_caller_role_from_startup_kit_reads_cert_role(self, tmp_path):
         from nvflare.fuel.hci.client.api_spec import AdminConfigKey
@@ -160,20 +149,118 @@ class TestStudyCli:
                 ):
                     assert _get_caller_role_from_startup_kit(str(tmp_path)) == "project_admin"
 
-    def test_study_session_missing_startup_kit_when_no_source_resolves(self, capsys, monkeypatch):
+    def test_study_session_missing_startup_kit_when_no_source_resolves(self, capsys, monkeypatch, tmp_path):
         from nvflare.tool.study.study_cli import _study_session
 
-        args = self._make_startup_args()
+        args = Namespace()
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
         monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
 
-        with patch("nvflare.utils.cli_utils.find_startup_kit_location", return_value=None):
-            with pytest.raises(SystemExit) as exc_info:
-                with _study_session(args):
-                    pass
+        with pytest.raises(SystemExit) as exc_info:
+            with _study_session(args):
+                pass
 
         assert exc_info.value.code == 4
         payload = json.loads(capsys.readouterr().out)
         assert payload["error_code"] == "STARTUP_KIT_MISSING"
+
+    def test_add_user_uses_active_startup_kit_and_preserves_study_args(self, tmp_path, monkeypatch):
+        from nvflare.tool.study.study_cli import cmd_add_user
+
+        active_admin_dir = _configure_active_startup_kit(tmp_path, monkeypatch)
+        args = Namespace(study="cancer-research", user="trainer@org_a.com")
+        fake_session = MagicMock()
+        fake_session.add_study_user.return_value = {"study": args.study, "user": args.user}
+
+        with patch("sys.argv", ["nvflare", "study", "add-user", args.study, args.user]):
+            with patch("nvflare.tool.cli_session.new_secure_session", return_value=fake_session) as new_secure:
+                cmd_add_user(args)
+
+        assert new_secure.call_args.kwargs["startup_kit_location"] == str(active_admin_dir)
+        fake_session.add_study_user.assert_called_once_with("cancer-research", "trainer@org_a.com")
+
+    @pytest.mark.parametrize(
+        ("argv_prefix"),
+        [
+            ["register", "cancer-research", "--site-org", "nvidia:site-1"],
+            ["add-site", "cancer-research", "--site-org", "nvidia:site-2"],
+            ["remove-site", "cancer-research", "--site-org", "nvidia:site-2"],
+            ["remove", "cancer-research"],
+            ["list"],
+            ["show", "cancer-research"],
+            ["add-user", "cancer-research", "trainer@org_a.com"],
+            ["remove-user", "cancer-research", "trainer@org_a.com"],
+        ],
+    )
+    @pytest.mark.parametrize(
+        ("selector", "value"),
+        [
+            ("--startup-target", "prod"),
+            ("--startup_kit", "/tmp/startup"),
+            ("--startup-kit", "/tmp/startup"),
+            ("--startup_target", "prod"),
+        ],
+    )
+    def test_study_parser_rejects_old_startup_selectors(self, argv_prefix, selector, value):
+        import argparse
+
+        from nvflare.tool.study.study_cli import def_study_cli_parser
+
+        root = argparse.ArgumentParser(prog="nvflare")
+        parser = def_study_cli_parser(root.add_subparsers(dest="sub_command"))["study"]
+
+        with pytest.raises(SystemExit):
+            parser.parse_args([*argv_prefix, selector, value])
+
+    def test_study_parser_accepts_multiple_space_delimited_sites(self):
+        import argparse
+
+        from nvflare.tool.study.study_cli import def_study_cli_parser
+
+        root = argparse.ArgumentParser(prog="nvflare")
+        parser = def_study_cli_parser(root.add_subparsers(dest="sub_command"))["study"]
+
+        args = parser.parse_args(["register", "cancer-research", "--sites", "site-1", "site-2"])
+
+        assert args.sites == ["site-1", "site-2"]
+
+    def test_study_help_omits_old_startup_selectors(self):
+        import argparse
+
+        from nvflare.tool.study import study_cli
+
+        root = argparse.ArgumentParser(prog="nvflare")
+        study_cli.def_study_cli_parser(root.add_subparsers(dest="sub_command"))
+
+        for parser in study_cli._study_sub_cmd_parsers.values():
+            help_text = parser.format_help()
+            for token in ("--startup-target", "--startup_target", "--startup-kit", "--startup_kit"):
+                assert token not in help_text
+
+    @pytest.mark.parametrize(
+        ("cmd_name", "handler_name"),
+        [
+            ("register", "cmd_register"),
+            ("add-site", "cmd_add_site"),
+            ("remove-site", "cmd_remove_site"),
+            ("remove", "cmd_remove"),
+            ("list", "cmd_list"),
+            ("show", "cmd_show"),
+            ("add-user", "cmd_add_user"),
+            ("remove-user", "cmd_remove_user"),
+        ],
+    )
+    def test_study_schema_omits_old_startup_selectors(self, capsys, cmd_name, handler_name):
+        import nvflare.tool.study.study_cli as study_cli_mod
+
+        with patch("sys.argv", ["nvflare", "study", cmd_name, "--schema"]):
+            with pytest.raises(SystemExit) as exc_info:
+                getattr(study_cli_mod, handler_name)(MagicMock())
+
+        assert exc_info.value.code == 0
+        schema_text = capsys.readouterr().out
+        for token in ("--startup-target", "--startup_target", "--startup-kit", "--startup_kit"):
+            assert token not in schema_text
 
     def test_register_missing_sites_is_structured_usage_error(self, capsys):
         from nvflare.tool.study.study_cli import cmd_register
@@ -183,8 +270,9 @@ class TestStudyCli:
         args.sites = None
         args.site_org = []
 
-        with pytest.raises(SystemExit) as exc_info:
-            cmd_register(args)
+        with patch("nvflare.tool.study.study_cli._try_get_caller_role", return_value=None):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_register(args)
 
         assert exc_info.value.code == 4
         payload = json.loads(capsys.readouterr().out)
@@ -310,6 +398,25 @@ class TestStudyCli:
         payload = json.loads(capsys.readouterr().out)
         assert payload["status"] == "ok"
         assert payload["data"]["added"] == ["hospital-b"]
+
+    def test_register_passes_multiple_sites_to_session(self, capsys):
+        from nvflare.tool.study.study_cli import cmd_register
+
+        args = MagicMock()
+        args.name = "cancer-research"
+        args.sites = ["site-1", "site-2"]
+        args.site_org = []
+        mock_sess = MagicMock()
+        mock_sess.register_study.return_value = {"name": "cancer-research", "sites": ["site-1", "site-2"]}
+
+        with patch("nvflare.tool.study.study_cli._study_session", return_value=nullcontext(mock_sess)):
+            with patch("nvflare.tool.study.study_cli._try_get_caller_role", return_value="org_admin"):
+                cmd_register(args)
+
+        mock_sess.register_study.assert_called_once_with("cancer-research", sites=["site-1", "site-2"], site_orgs=None)
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["status"] == "ok"
+        assert payload["data"]["sites"] == ["site-1", "site-2"]
 
     def test_remove_site_outputs_ok_envelope(self, capsys):
         from nvflare.tool.study.study_cli import cmd_remove_site
