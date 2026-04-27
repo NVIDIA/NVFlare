@@ -90,6 +90,8 @@ NVIDIA FLARE
    user_guide/admin_guide/deployment/operation
    user_guide/admin_guide/monitoring
    user_guide/admin_guide/configurations/logging_configuration
+   Live Log Streaming <programming_guide/live_log_streaming>
+   Site Configuration Metadata <user_guide/admin_guide/configurations/site_config>
    System Configuration <user_guide/admin_guide/configurations/system_configuration>
 
 .. toctree::

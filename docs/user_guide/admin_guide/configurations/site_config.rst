@@ -112,7 +112,8 @@ Controlling Live Log Streaming
 
 A client may not want its job logs streamed to the server in real time. The
 ``allow_log_streaming`` boolean in ``resources.json`` is the site-level kill
-switch for live log streaming.
+switch for live log streaming. See :ref:`live_log_streaming` for an overview
+of the feature itself.
 
 The default is ``true`` — streaming is enabled. To disable streaming at a
 site, opt out by setting:
