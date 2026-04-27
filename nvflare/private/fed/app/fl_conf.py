@@ -14,7 +14,6 @@
 
 """FL Server / Client startup configure."""
 
-import copy
 import os
 import re
 import sys
@@ -30,6 +29,7 @@ from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.url_utils import make_url
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
 from nvflare.private.defs import ClientRegMsgKey, SSLConstants
+from nvflare.private.fed.utils.site_config import project_site_config
 from nvflare.private.json_configer import JsonConfigurator
 from nvflare.private.privacy_manager import PrivacyManager, Scope
 
@@ -39,35 +39,6 @@ from .fl_app_validator import FLAppValidator
 
 FL_PACKAGES = ["nvflare"]
 FL_MODULES = ["server", "client", "app_common", "private"]
-
-# Top-level keys in the merged fed_client.json + resources.json that should not be
-# forwarded to the server as site metadata. These are either plumbed elsewhere,
-# describe local wiring/components, or hold paths and identities that don't
-# transfer across machines.
-_SITE_CONFIG_EXCLUDED_TOP_LEVEL_KEYS = frozenset(
-    {
-        "format_version",  # config schema version, not site metadata
-        "client",  # already forwarded as client_config; including it here would be circular
-        "servers",  # connection info
-        "components",  # local component wiring (class paths, args)
-        "handlers",  # local handler wiring
-        "snapshot_persistor",  # server-side persistence backend
-        "admin",  # admin client config
-        "relay_config",  # local connection topology
-    }
-)
-
-
-def _project_site_config(config_data: dict) -> dict:
-    """Project site_config from merged fed_client.json + resources.json.
-
-    Drops the structural / local-only top-level keys in
-    ``_SITE_CONFIG_EXCLUDED_TOP_LEVEL_KEYS`` and deep-copies the rest so the
-    resulting dict is independent of the live config. May be empty.
-    """
-    if not isinstance(config_data, dict):
-        return {}
-    return {k: copy.deepcopy(v) for k, v in config_data.items() if k not in _SITE_CONFIG_EXCLUDED_TOP_LEVEL_KEYS}
 
 
 class FLServerStarterConfiger(JsonConfigurator):
@@ -427,7 +398,7 @@ class FLClientStarterConfiger(JsonConfigurator):
         # local-only keys, so site operators can advertise custom top-level
         # vars to the server just by adding them to resources.json.
         if ClientRegMsgKey.SITE_CONFIG not in client_config:
-            projected_site_config = _project_site_config(self.config_data)
+            projected_site_config = project_site_config(self.config_data)
             if projected_site_config:
                 client_config[ClientRegMsgKey.SITE_CONFIG] = projected_site_config
 

@@ -733,6 +733,12 @@ class FederatedServer(BaseServer):
 
                 client = self.client_manager.authenticate(request, fl_ctx)
                 if client and client.token:
+                    accepted_site_config = client.get_site_config()
+                    if accepted_site_config:
+                        self.logger.info(
+                            f"client {client.name} registered with site_config keys: "
+                            f"{sorted(accepted_site_config.keys())}"
+                        )
                     if client_type == ClientType.REGULAR:
                         self.tokens[client.token] = self.task_meta_info(client.name)
                         if self.admin_server:

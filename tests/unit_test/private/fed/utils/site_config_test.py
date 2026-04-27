@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.private.fed.app.fl_conf import _SITE_CONFIG_EXCLUDED_TOP_LEVEL_KEYS, _project_site_config
+from nvflare.private.fed.utils.site_config import SITE_CONFIG_EXCLUDED_TOP_LEVEL_KEYS, project_site_config
 
 
 def test_drops_blacklisted_top_level_keys():
@@ -25,8 +25,9 @@ def test_drops_blacklisted_top_level_keys():
         "snapshot_persistor": {"path": "/tmp/x"},
         "admin": {"port": 8003},
         "relay_config": {"fqcn": "relay.x"},
+        "overseer_agent": {"path": "x.OverseerAgent", "args": {}},
     }
-    assert _project_site_config(config_data) == {}
+    assert project_site_config(config_data) == {}
 
 
 def test_keeps_custom_top_level_keys():
@@ -38,7 +39,7 @@ def test_keeps_custom_top_level_keys():
         "capabilities": ["he", "psi"],
         "resources": {"memory_gb": 128},
     }
-    projected = _project_site_config(config_data)
+    projected = project_site_config(config_data)
     assert projected == {
         "labels": {"region": "us-east"},
         "capabilities": ["he", "psi"],
@@ -48,7 +49,7 @@ def test_keeps_custom_top_level_keys():
 
 def test_result_is_deep_copied():
     config_data = {"labels": {"region": "us-east"}}
-    projected = _project_site_config(config_data)
+    projected = project_site_config(config_data)
 
     config_data["labels"]["region"] = "mutated"
     projected["labels"]["region"] = "also-mutated"
@@ -58,8 +59,8 @@ def test_result_is_deep_copied():
 
 
 def test_returns_empty_for_non_dict():
-    assert _project_site_config(None) == {}
-    assert _project_site_config("not a dict") == {}
+    assert project_site_config(None) == {}
+    assert project_site_config("not a dict") == {}
 
 
 def test_blacklist_covers_known_local_keys():
@@ -73,5 +74,6 @@ def test_blacklist_covers_known_local_keys():
         "snapshot_persistor",
         "admin",
         "relay_config",
+        "overseer_agent",
     ):
-        assert key in _SITE_CONFIG_EXCLUDED_TOP_LEVEL_KEYS
+        assert key in SITE_CONFIG_EXCLUDED_TOP_LEVEL_KEYS
