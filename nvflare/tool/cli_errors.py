@@ -12,10 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Tuple
+import os
+from types import MappingProxyType
+from typing import Dict, Mapping, Optional, Tuple
 
-# Primary error registry — Phase 0+1 CLI commands use this via output_error().
-ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
+# _ERROR_REGISTRY is a plain mutable dict so entries can be added simply at module load time.
+# It is never exported; callers must use ERROR_REGISTRY (the frozen public view) or the
+# helper functions below.  The two-name pattern avoids accidental mutation from call sites
+# while keeping the definition readable.
+_ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     # --- General ---
     "CONNECTION_FAILED": {
         "message": "Could not connect to the FLARE server.",
@@ -35,7 +40,7 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "STARTUP_KIT_MISSING": {
         "message": "Startup kit not found.",
-        "hint": "Set --startup or configure via 'nvflare config'.",
+        "hint": "Run 'nvflare config kit list' and 'nvflare config kit use <id>', or set NVFLARE_STARTUP_KIT_DIR for automation.",
     },
     "SITE_NOT_FOUND": {
         "message": "Site '{site}' is not connected.",
@@ -57,6 +62,46 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "Command failed.",
         "hint": "",
     },
+    "STUDY_NOT_FOUND": {
+        "message": "Study '{study}' not found.",
+        "hint": "Verify the study name. If the study exists and you expect access, contact a project_admin.",
+    },
+    "STUDY_ALREADY_EXISTS": {
+        "message": "Study '{study}' already exists.",
+        "hint": "Use 'nvflare study show {study}' or contact a project_admin to update access.",
+    },
+    "STUDY_HAS_JOBS": {
+        "message": "Study '{study}' has associated jobs and cannot be removed.",
+        "hint": "Archive or delete the associated jobs before retrying.",
+    },
+    "INVALID_STUDY_NAME": {
+        "message": "Invalid study name '{study}'.",
+        "hint": "Use only lowercase letters, numbers, underscores, and hyphens.",
+    },
+    "INVALID_SITE": {
+        "message": "Invalid site value.",
+        "hint": "Use a comma-separated list of valid site names.",
+    },
+    "USER_ALREADY_IN_STUDY": {
+        "message": "User '{user}' is already in study '{study}'.",
+        "hint": "Use a different user or remove the existing entry first.",
+    },
+    "USER_NOT_IN_STUDY": {
+        "message": "User '{user}' is not in study '{study}'.",
+        "hint": "Use 'nvflare study add-user' to add the user first.",
+    },
+    "STARTUP_KIT_NOT_CONFIGURED": {
+        "message": "No active startup kit is configured.",
+        "hint": "Run 'nvflare config kit list' and 'nvflare config kit use <id>', or set NVFLARE_STARTUP_KIT_DIR for automation.",
+    },
+    "LOCK_TIMEOUT": {
+        "message": "Study registry is busy.",
+        "hint": "Another study mutation is in progress. Retry shortly.",
+    },
+    "NOT_AUTHORIZED": {
+        "message": "Not authorized for this operation.",
+        "hint": "Use a startup kit with the required admin role.",
+    },
     # --- Job commands ---
     "JOB_NOT_FOUND": {
         "message": "Job '{job_id}' does not exist.",
@@ -69,6 +114,10 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     "JOB_INVALID": {
         "message": "Job folder is not a valid NVFlare job.",
         "hint": "Check meta.json and config_fed_server.json.",
+    },
+    "LOG_NOT_FOUND": {
+        "message": "Job logs are not available for site '{site}'.",
+        "hint": "Verify that client log streaming is enabled and that the site has run this job.",
     },
     # --- Cert commands ---
     "OUTPUT_DIR_NOT_WRITABLE": {
@@ -191,7 +240,7 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     # --- Version ---
     "VERSION_MISMATCH": {
         "message": "Remote server and client sites are running different NVFlare versions.",
-        "hint": "Run 'nvflare system version' to see per-site versions. Run 'nvflare preflight' to verify compatibility.",
+        "hint": "Run 'nvflare system version' to see per-site versions. Run 'nvflare preflight-check' to verify compatibility.",
     },
     # --- Job lifecycle ---
     "JOB_FAILED": {
@@ -228,6 +277,17 @@ ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "hint": "Check the recipe class run() method for errors.",
     },
 }
+# Freeze the registry into an immutable MappingProxyType so callers cannot accidentally
+# add, remove, or overwrite entries at runtime.  Use get_error_entry() / get_error() to
+# look up codes; use _ERROR_REGISTRY directly only when adding new entries in this file.
+ERROR_REGISTRY: Mapping[str, Mapping[str, str]] = MappingProxyType(_ERROR_REGISTRY)
+
+
+def get_error_entry(code: str) -> Optional[Mapping[str, str]]:
+    entry = ERROR_REGISTRY.get(code)
+    if entry is None and os.getenv("NVFLARE_DEV") == "1":
+        raise KeyError(f"Unknown CLI error code: {code}")
+    return entry
 
 
 def get_error(code: str, **kwargs) -> Tuple[str, str]:
@@ -236,7 +296,7 @@ def get_error(code: str, **kwargs) -> Tuple[str, str]:
     Transitional helper for legacy cert/package call sites. New CLI code should prefer
     output_error()/output_error_message(). Falls back to a generic tuple for unknown codes.
     """
-    entry = ERROR_REGISTRY.get(code)
+    entry = get_error_entry(code)
     if entry is None:
         return "Unknown error.", "Check logs for details."
     template = entry["message"]

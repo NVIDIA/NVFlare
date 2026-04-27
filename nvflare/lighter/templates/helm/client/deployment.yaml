@@ -6,6 +6,8 @@ metadata:
     {{- include "nvflare-client.labels" . | nindent 4 }}
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "nvflare-client.selectorLabels" . | nindent 6 }}
@@ -22,9 +24,6 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       volumes:
-        - name: {{ .Values.persistence.etc.friendlyName }}
-          persistentVolumeClaim:
-            claimName: {{ .Values.persistence.etc.claimName }}
         - name: {{ .Values.persistence.workspace.friendlyName }}
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.workspace.claimName }}
@@ -44,7 +43,5 @@ spec:
             {{- toYaml .Values.args | nindent 12 }}
             - uid={{ .Values.name }}
           volumeMounts:
-            - name: {{ .Values.persistence.etc.friendlyName }}
-              mountPath: {{ .Values.persistence.etc.mountPath }}
             - name: {{ .Values.persistence.workspace.friendlyName }}
               mountPath: {{ .Values.persistence.workspace.mountPath }}

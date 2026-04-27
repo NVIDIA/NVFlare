@@ -33,9 +33,8 @@ class TestSchemaWithMissingArgs:
         with patch("sys.argv", argv):
             from nvflare import cli
 
-            with patch("nvflare.cli.ensure_hidden_config_migrated"):
-                with pytest.raises(SystemExit) as exc_info:
-                    cli.main()
+            with pytest.raises(SystemExit) as exc_info:
+                cli.main()
         return exc_info.value.code
 
     def test_job_abort_schema_no_job_id(self, capsys):
@@ -103,7 +102,7 @@ class TestSchemaWithMissingArgs:
         assert schema["command"] == "nvflare recipe list"
 
     def test_recipe_schema_ignores_space_separated_global_flag_values(self, capsys):
-        exit_code = self._run_schema(["nvflare", "--out-format", "json", "recipe", "--schema"])
+        exit_code = self._run_schema(["nvflare", "--format", "json", "recipe", "--schema"])
         assert exit_code == 0
 
         captured = capsys.readouterr()

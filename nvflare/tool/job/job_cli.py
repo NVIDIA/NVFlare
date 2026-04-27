@@ -30,7 +30,7 @@ from pyhocon import ConfigTree
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
-from nvflare.tool.cli_session import new_cli_session
+from nvflare.tool.cli_session import new_active_cli_session, new_cli_session
 from nvflare.tool.job.config.configer import (
     build_config_file_indices,
     filter_indices,
@@ -60,19 +60,15 @@ from nvflare.tool.job.job_client_const import (
     TEMPLATES_KEY,
 )
 from nvflare.utils.cli_utils import (
-    TARGET_POC,
-    backup_hidden_config_file,
     create_job_template_config,
     find_job_templates_location,
     get_curr_dir,
-    get_startup_kit_dir_for_target,
     load_hidden_config_state,
-    print_hidden_config_migration_notice,
     save_config,
 )
 
-CMD_LIST_TEMPLATES = "list_templates"
-CMD_SHOW_VARIABLES = "show_variables"
+CMD_LIST_TEMPLATES = "list-templates"
+CMD_SHOW_VARIABLES = "show-variables"
 CMD_CREATE_JOB = "create"
 CMD_SUBMIT_JOB = "submit"
 CMD_JOB_LIST = "list"
@@ -92,6 +88,9 @@ CMD_JOB_LOG_CONFIG = "log-config"
 CMD_JOB_LOG_ALIAS = "log"
 
 _JOB_HELP_FORMATTER = partial(argparse.HelpFormatter, max_help_position=24, width=120)
+_ACTIVE_STARTUP_KIT_HINT = (
+    "Run 'nvflare config kit list' and 'nvflare config kit use <id>', or set NVFLARE_STARTUP_KIT_DIR for automation."
+)
 
 
 def find_filename_basename(f: str):
@@ -256,7 +255,7 @@ def show_variables(cmd_args):
 
     handle_schema_flag(
         job_sub_cmd_parser[CMD_SHOW_VARIABLES],
-        "nvflare job show_variables",
+        "nvflare job show-variables",
         [],
         sys.argv[1:],
         deprecated=True,
@@ -264,7 +263,9 @@ def show_variables(cmd_args):
     )
     from nvflare.tool.cli_output import print_human
 
-    print_human("WARNING: 'nvflare job show_variables' is deprecated. Use the Job Recipe API instead.")
+    if getattr(cmd_args, "job_sub_cmd", None) == "show_variables":
+        print_human("WARNING: 'nvflare job show_variables' is deprecated; use 'nvflare job show-variables' instead.")
+    print_human("WARNING: 'nvflare job show-variables' is deprecated. Use the Job Recipe API instead.")
     try:
         if not os.path.isdir(cmd_args.job_folder):
             raise ValueError("required job folder is not specified.")
@@ -291,7 +292,7 @@ def check_template_exists(target_template_name, template_index_conf):
     if not found:
         raise ValueError(
             f"Invalid template name {target_template_name}, "
-            f"please check the available templates using nvflare job list_templates"
+            f"please check the available templates using nvflare job list-templates"
         )
 
 
@@ -346,7 +347,7 @@ def list_templates(cmd_args):
 
     handle_schema_flag(
         job_sub_cmd_parser[CMD_LIST_TEMPLATES],
-        "nvflare job list_templates",
+        "nvflare job list-templates",
         [],
         sys.argv[1:],
         deprecated=True,
@@ -354,7 +355,9 @@ def list_templates(cmd_args):
     )
     from nvflare.tool.cli_output import print_human
 
-    print_human("WARNING: 'nvflare job list_templates' is deprecated. Use 'nvflare recipe list' instead.")
+    if getattr(cmd_args, "job_sub_cmd", None) == "list_templates":
+        print_human("WARNING: 'nvflare job list_templates' is deprecated; use 'nvflare job list-templates' instead.")
+    print_human("WARNING: 'nvflare job list-templates' is deprecated. Use 'nvflare recipe list' instead.")
     try:
         job_templates_dir = find_job_templates_location(cmd_args.job_templates_dir)
         job_templates_dir = os.path.abspath(job_templates_dir)
@@ -373,17 +376,14 @@ def list_templates(cmd_args):
 
 
 def update_job_templates_dir(job_templates_dir: str):
-    config_file_path, nvflare_config, migration_needed = load_hidden_config_state()
+    config_file_path, nvflare_config, _migration_needed = load_hidden_config_state()
     if nvflare_config is None:
         from pyhocon import ConfigFactory as CF
 
         nvflare_config = CF.parse_string("{}")
 
     config = create_job_template_config(nvflare_config, job_templates_dir)
-    backup_path = backup_hidden_config_file(config_file_path) if migration_needed else None
     save_config(config, config_file_path)
-    if backup_path:
-        print_hidden_config_migration_notice(config_file_path, backup_path)
 
 
 def display_available_templates(template_index_conf):
@@ -434,7 +434,7 @@ def submit_job(cmd_args):
     handle_schema_flag(
         job_sub_cmd_parser[CMD_SUBMIT_JOB],
         "nvflare job submit",
-        ["nvflare job submit -j ./my_job"],
+        ["nvflare config kit use admin@nvidia.com", "nvflare job submit -j ./my_job"],
         sys.argv[1:],
     )
 
@@ -489,11 +489,7 @@ def submit_job(cmd_args):
         app_names = app_names if app_names else [DEFAULT_APP_NAME]
 
         prepare_job_config(cmd_args, app_names, temp_job_dir)
-        admin_username, admin_user_dir = find_admin_user_and_dir(
-            startup_kit_dir=getattr(cmd_args, "startup_kit", None),
-            target=getattr(cmd_args, "startup_target", None),
-        )
-        internal_submit_job(admin_user_dir, admin_username, temp_job_dir, cmd_args)
+        internal_submit_job(None, None, temp_job_dir, cmd_args)
 
     except ValueError as e:
         from nvflare.tool.cli_output import output_usage_error, print_human
@@ -512,33 +508,9 @@ def submit_job(cmd_args):
 
 
 def _resolve_admin_user_and_dir_from_startup_kit(startup_kit_dir: str) -> Tuple[str, str]:
-    if os.path.basename(startup_kit_dir) == "startup":
-        admin_user_dir = os.path.dirname(startup_kit_dir)
-        startup_dir = startup_kit_dir
-    else:
-        admin_user_dir = startup_kit_dir
-        startup_dir = os.path.join(admin_user_dir, "startup")
+    from nvflare.tool.kit.kit_config import resolve_admin_user_and_dir_from_startup_kit
 
-    if not os.path.isdir(startup_dir):
-        raise ValueError(
-            f"startup kit directory '{startup_kit_dir}' must be an admin startup kit directory "
-            f"or its 'startup' subdirectory"
-        )
-
-    fed_admin_config = ConfigFactory.load_config("fed_admin.json", [startup_dir])
-
-    if fed_admin_config:
-        config_dict = fed_admin_config.to_dict()
-        admin_username = config_dict["admin"].get("username", None)
-    else:
-        raise ValueError(f"Unable to locate fed_admin configuration from startup kit location {startup_kit_dir}")
-
-    return admin_username, admin_user_dir
-
-
-def find_admin_user_and_dir(startup_kit_dir: Optional[str] = None, target: Optional[str] = None) -> Tuple[str, str]:
-    startup_kit_dir = get_startup_kit_dir_for_target(startup_kit_dir=startup_kit_dir, target=target)
-    return _resolve_admin_user_and_dir_from_startup_kit(startup_kit_dir)
+    return resolve_admin_user_and_dir_from_startup_kit(startup_kit_dir)
 
 
 def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
@@ -548,15 +520,8 @@ def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
     if not is_json_mode():
         print_human("trying to connect to the server")
     study = getattr(cmd_args, "study", "default") if cmd_args else "default"
-    from nvflare.tool.cli_output import get_connect_timeout
 
-    timeout = get_connect_timeout()
-    sess = new_cli_session(
-        username=username,
-        startup_kit_location=admin_user_dir,
-        timeout=timeout,
-        study=study,
-    )
+    sess = _get_session(args=cmd_args, admin_user_dir=admin_user_dir, username=username, study=study)
     try:
         try:
             job_id = sess.submit_job(temp_job_dir)
@@ -613,7 +578,12 @@ job_sub_cmd_parser = {
 
 
 def handle_job_cli_cmd(cmd_args):
-    job_cmd_handler = job_sub_cmd_handlers.get(cmd_args.job_sub_cmd, None)
+    sub_cmd = {
+        "list_templates": CMD_LIST_TEMPLATES,
+        "show_variables": CMD_SHOW_VARIABLES,
+    }.get(cmd_args.job_sub_cmd, cmd_args.job_sub_cmd)
+    cmd_args.job_sub_cmd = sub_cmd
+    job_cmd_handler = job_sub_cmd_handlers.get(sub_cmd, None)
     if job_cmd_handler:
         job_cmd_handler(cmd_args)
     elif cmd_args.job_sub_cmd is None:
@@ -648,25 +618,13 @@ def define_submit_job_parser(job_subparser):
     submit_parser = job_subparser.add_parser("submit", help="submit job")
     submit_parser.add_argument(
         "-j",
-        "--job_folder",
+        "--job-folder",
+        "--job_folder",  # backward compat
+        dest="job_folder",
         type=str,
         nargs="?",
         default=os.path.join(get_curr_dir(), "current_job"),
-        help="job_folder path, default to ./current_job directory",
-    )
-    startup_target_group = submit_parser.add_mutually_exclusive_group()
-    startup_target_group.add_argument(
-        "--startup-target",
-        choices=["poc", "prod"],
-        default=None,
-        dest="startup_target",
-        help=f"startup kit target from ~/.nvflare/config.conf, default to {TARGET_POC}",
-    )
-    startup_target_group.add_argument(
-        "--startup_kit",
-        type=str,
-        default=None,
-        help="explicit startup kit location; mutually exclusive with --startup-target",
+        help="job folder path, default to ./current_job directory",
     )
     submit_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     submit_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
@@ -675,7 +633,11 @@ def define_submit_job_parser(job_subparser):
 
 
 def define_list_templates_parser(job_subparser):
-    show_jobs_parser = job_subparser.add_parser("list_templates", help="[DEPRECATED] use 'nvflare recipe list'")
+    show_jobs_parser = job_subparser.add_parser(
+        CMD_LIST_TEMPLATES,
+        aliases=["list_templates"],
+        help="[DEPRECATED] use 'nvflare recipe list'",
+    )
     show_jobs_parser.add_argument(
         "-d",
         "--job_templates_dir",
@@ -692,15 +654,18 @@ def define_list_templates_parser(job_subparser):
 
 def define_variables_parser(job_subparser):
     show_variables_parser = job_subparser.add_parser(
-        "show_variables", help="[DEPRECATED] use 'nvflare recipe list' or the Job Recipe API"
+        CMD_SHOW_VARIABLES,
+        aliases=["show_variables"],
+        help="[DEPRECATED] use 'nvflare recipe list' or the Job Recipe API",
     )
     show_variables_parser.add_argument(
         "-j",
+        "--job-folder",
         "--job_folder",
         type=str,
         nargs="?",
         default=os.path.join(get_curr_dir(), "current_job"),
-        help="job_folder path, default to ./current_job directory",
+        help="job folder path, default to ./current_job directory",
     )
     show_variables_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     show_variables_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
@@ -726,7 +691,7 @@ def define_create_job_parser(job_subparser):
         type=str,
         nargs="?",
         default="sag_pt",
-        help="""template name or template folder. You can use list_templates to see available jobs from job templates,
+        help="""template name or template folder. You can use list-templates to see available jobs from job templates,
                 pick name such as 'sag_pt' as template name.
                 Alternatively, you can use the path to the job template folder, such as job_templates/sag_pt
                 """,
@@ -959,22 +924,46 @@ def create_app_dir(job_folder, app_name: str = "app"):
 # ---------------------------------------------------------------------------
 
 
-def _get_session(admin_user_dir=None, username=None, study="default"):
-    """Create a secure session using the startup kit."""
+def _get_session(args=None, admin_user_dir=None, username=None, study="default"):
+    """Create a secure session using the active startup kit."""
     from nvflare.tool.cli_output import get_connect_timeout, output_error
+
+    timeout = get_connect_timeout()
+
+    if admin_user_dir is None and username is None:
+        try:
+            return new_active_cli_session(
+                timeout=timeout,
+                study=study,
+                debug=_get_arg_value(args, "debug", False),
+            )
+        except ValueError as e:
+            output_error(
+                "STARTUP_KIT_MISSING",
+                exit_code=2,
+                detail=str(e),
+                hint=getattr(e, "hint", None) or _ACTIVE_STARTUP_KIT_HINT,
+            )
+            raise SystemExit(2)
 
     if admin_user_dir is None or username is None:
         try:
-            u, d = find_admin_user_and_dir()
+            from nvflare.tool.kit.kit_config import resolve_admin_user_and_dir_from_startup_kit, resolve_startup_kit_dir
+
+            u, d = resolve_admin_user_and_dir_from_startup_kit(resolve_startup_kit_dir())
         except ValueError as e:
-            output_error("STARTUP_KIT_MISSING", exit_code=2, detail=str(e))
+            output_error(
+                "STARTUP_KIT_MISSING",
+                exit_code=2,
+                detail=str(e),
+                hint=getattr(e, "hint", None) or _ACTIVE_STARTUP_KIT_HINT,
+            )
             raise SystemExit(2)
         if username is None:
             username = u
         if admin_user_dir is None:
             admin_user_dir = d
 
-    timeout = get_connect_timeout()
     return new_cli_session(
         username=username,
         startup_kit_location=admin_user_dir,
@@ -984,13 +973,28 @@ def _get_session(admin_user_dir=None, username=None, study="default"):
 
 
 @contextmanager
-def _session(admin_user_dir=None, username=None, study="default"):
-    sess = _get_session(admin_user_dir=admin_user_dir, username=username, study=study)
+def _session(args=None, admin_user_dir=None, username=None, study="default"):
+    sess = _get_session(args=args, admin_user_dir=admin_user_dir, username=username, study=study)
     try:
         yield sess
     finally:
         if sess is not None:
             sess.close()
+
+
+def _get_arg_value(args, name, default=None):
+    if args is None:
+        return default
+    try:
+        return vars(args).get(name, default)
+    except TypeError:
+        return getattr(args, name, default)
+
+
+def _job_session_for_args(cmd_args=None, study="default"):
+    if study != "default":
+        return _session(study=study)
+    return _session()
 
 
 def cmd_job_list(cmd_args):
@@ -1012,7 +1016,7 @@ def cmd_job_list(cmd_args):
     study = getattr(cmd_args, "study", "default")
 
     try:
-        with _session(study=study) as sess:
+        with _job_session_for_args(cmd_args, study=study) as sess:
             jobs = sess.list_jobs(
                 name_prefix=getattr(cmd_args, "name", None),
                 id_prefix=getattr(cmd_args, "id", None),
@@ -1045,7 +1049,7 @@ def cmd_job_meta(cmd_args):
     )
 
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             meta = sess.get_job_meta(cmd_args.job_id)
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
@@ -1086,7 +1090,7 @@ def cmd_job_abort(cmd_args):
             return
 
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             sess.abort_job(cmd_args.job_id)
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
@@ -1116,7 +1120,7 @@ def cmd_job_clone(cmd_args):
     )
 
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             new_job_id = sess.clone_job(cmd_args.job_id)
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
@@ -1145,7 +1149,7 @@ def cmd_job_download(cmd_args):
     destination = os.path.abspath(getattr(cmd_args, "output_dir", "./"))
     print_human(f"Downloading job {cmd_args.job_id} ...")
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             path = sess.download_job_result(cmd_args.job_id, destination)
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
@@ -1184,7 +1188,7 @@ def cmd_job_delete(cmd_args):
             return
 
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             sess.delete_job(cmd_args.job_id)
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
@@ -1285,7 +1289,7 @@ def cmd_job_stats(cmd_args):
         targets = [site]
 
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             result = sess.show_stats(cmd_args.job_id, target_type, targets)
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
@@ -1301,33 +1305,25 @@ def cmd_job_stats(cmd_args):
 
 def cmd_job_logs(cmd_args):
     from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
-    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
         job_sub_cmd_parser[CMD_JOB_LOGS],
         "nvflare job logs",
-        ["nvflare job logs abc123", "nvflare job logs abc123 --tail 100 --site server"],
+        [
+            "nvflare job logs abc123",
+            "nvflare job logs abc123 --site site-1",
+            "nvflare job logs abc123 --site all",
+        ],
         sys.argv[1:],
     )
 
     site = getattr(cmd_args, "site", "server")
-    if site != "server":
-        output_error(
-            "INVALID_ARGS",
-            exit_code=4,
-            detail="only --site server is currently supported; client log streaming is not yet available",
-        )
-        raise SystemExit(4)
 
     try:
-        with _session() as sess:
-            result = sess.get_job_logs(
-                cmd_args.job_id,
-                target=site,
-                tail_lines=cmd_args.tail,
-                grep_pattern=cmd_args.grep,
-            )
+        with _job_session_for_args(cmd_args) as sess:
+            result = sess.get_job_logs(cmd_args.job_id, target=site)
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         return
@@ -1340,7 +1336,54 @@ def cmd_job_logs(cmd_args):
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         return
 
-    output_ok({"job_id": cmd_args.job_id, "logs": result.get("logs", {})})
+    logs = result.get("logs", {})
+    unavailable = result.get("unavailable", {})
+    if site != "all" and site != "server" and site in unavailable and site not in logs:
+        output_error(
+            "LOG_NOT_FOUND",
+            exit_code=1,
+            site=site,
+            detail=unavailable.get(site),
+        )
+        return
+
+    payload = {"job_id": cmd_args.job_id, "target": site, "logs": logs}
+    if unavailable:
+        payload["unavailable"] = unavailable
+    if not is_json_mode():
+        _print_job_logs_human(site, logs, unavailable, print_human)
+        return
+    output_ok(payload)
+
+
+def _print_job_logs_human(target: str, logs: dict, unavailable: dict, print_func):
+    def _print_log_text(text):
+        if text:
+            print_func(text, end="" if text.endswith("\n") else "\n")
+        else:
+            print_func("(no log content)")
+
+    if target != "all" and target in logs and len(logs) == 1 and not unavailable:
+        _print_log_text(logs[target])
+        return
+
+    site_names = list(logs.keys())
+    if "server" in site_names:
+        site_names.remove("server")
+        site_names.insert(0, "server")
+
+    for index, site_name in enumerate(site_names):
+        if index:
+            print_func()
+        print_func(f"===== {site_name} =====")
+        _print_log_text(logs[site_name])
+
+    if unavailable:
+        if logs:
+            print_func()
+        print_func("Unavailable logs:", file=sys.stderr)
+        for site_name in sorted(unavailable):
+            print_func(f"{site_name}: {unavailable[site_name]}", file=sys.stderr)
 
 
 def define_job_stats_parser(job_subparser):
@@ -1353,16 +1396,15 @@ def define_job_stats_parser(job_subparser):
 
 
 def define_job_logs_parser(job_subparser):
-    p = job_subparser.add_parser(CMD_JOB_LOGS, help="retrieve job logs from server workspace")
+    p = job_subparser.add_parser(CMD_JOB_LOGS, help="retrieve job logs from the server-side log store")
     p.add_argument("job_id", type=str, help="job ID")
     p.add_argument(
+        "--sites",
         "--site",
+        dest="site",
         default="server",
-        choices=["server"],
-        help="target site: only 'server' is currently supported (client log streaming not yet available)",
+        help="target site name, server, or all. Client logs must have been streamed to the server.",
     )
-    p.add_argument("--tail", type=int, default=None, help="number of tail lines to retrieve")
-    p.add_argument("--grep", default=None, help="grep pattern to filter log lines")
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_LOGS] = p
     job_sub_cmd_handlers[CMD_JOB_LOGS] = cmd_job_logs
@@ -1605,7 +1647,7 @@ def cmd_job_monitor(cmd_args):
     )
 
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             rc, meta = sess.monitor_job_and_return_job_meta(
                 cmd_args.job_id,
                 timeout=timeout,
@@ -1713,7 +1755,7 @@ def cmd_job_log(cmd_args):
         return
 
     try:
-        with _session() as sess:
+        with _job_session_for_args(cmd_args) as sess:
             meta = sess.get_job_meta(cmd_args.job_id)
             job_status = meta.get("status", "UNKNOWN") if meta else "UNKNOWN"
             if job_status in _TERMINAL_JOB_STATES:

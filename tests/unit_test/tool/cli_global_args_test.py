@@ -19,11 +19,11 @@ def test_global_args_after_subcommand(monkeypatch):
     monkeypatch.setattr(
         cli_mod.sys,
         "argv",
-        ["nvflare", "system", "version", "--out-format", "json", "--connect-timeout", "7"],
+        ["nvflare", "system", "version", "--format", "json", "--connect-timeout", "7"],
     )
 
     _, args, _ = cli_mod.parse_args("nvflare")
     assert args.sub_command == "system"
     assert args.system_sub_cmd == "version"
-    assert args.out_format == "json"
+    assert args.format == "json"
     assert args.connect_timeout == 7.0

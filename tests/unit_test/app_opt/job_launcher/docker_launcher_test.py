@@ -407,7 +407,7 @@ def _make_job_meta(job_id="job-1", site_name="site-1", docker_spec=None, resourc
         spec = {"image": "nvflare/nvflare:test"}
         if docker_spec is not None:
             spec.update(docker_spec)
-        meta[JobMetaKey.RESOURCE_SPEC.value] = {site_name: {"docker": spec}}
+        meta["launcher_spec"] = {site_name: {"docker": spec}}
     return meta
 
 
@@ -590,8 +590,9 @@ class TestDockerJobLauncherLaunchJob:
         call_kwargs = dc.containers.run.call_args[1]
         assert call_kwargs.get("device_requests") == [{"Count": 2, "Capabilities": [["gpu"]]}]
 
-    def test_launch_legacy_flat_resource_spec_not_used_for_docker(self):
-        """Legacy flat resource_spec (process mode) is not applied to Docker containers."""
+    def test_launch_num_of_gpus_mixed_with_mode_keys_ignored(self):
+        """num_of_gpus at the site level alongside mode keys (nested format) is treated as nested —
+        the site-level num_of_gpus is not used as a flat fallback."""
         launcher = _make_launcher()
         dc = launcher._docker_client
         container = MagicMock()
@@ -600,7 +601,6 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.get.return_value = _make_container("running")
 
         fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
-        # Top-level num_of_gpus (outside any mode section) must NOT be used by Docker launcher
         job_meta = _make_job_meta(
             site_name="site-1",
             resource_spec={"site-1": {"docker": {"image": "nvflare:test"}, "num_of_gpus": 2}},
@@ -609,6 +609,43 @@ class TestDockerJobLauncherLaunchJob:
 
         call_kwargs = dc.containers.run.call_args[1]
         assert call_kwargs.get("device_requests") is None
+
+    def test_launch_num_of_gpus_from_flat_resource_spec(self):
+        """Option 4: num_of_gpus in flat resource_spec[site] is used by Docker launcher."""
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1")
+        job_meta[JobMetaKey.RESOURCE_SPEC.value] = {"site-1": {"num_of_gpus": 2}}
+        launcher.launch_job(job_meta, fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        assert call_kwargs.get("device_requests") == [{"Count": 2, "Capabilities": [["gpu"]]}]
+
+    def test_launch_image_from_launcher_spec_default(self):
+        """launcher_spec 'default' key applies to all sites that have no explicit entry."""
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = {
+            JobConstants.JOB_ID: "job-1",
+            JobMetaKey.JOB_LAUNCHER_SPEC.value: {
+                "default": {"docker": {"image": "default/img:v1"}},
+            },
+        }
+        launcher.launch_job(job_meta, fl_ctx)
+
+        assert dc.containers.run.call_args[0][0] == "default/img:v1"
 
     def test_launch_no_container_kwargs_no_extra_keys(self):
         launcher = _make_launcher()

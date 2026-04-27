@@ -22,12 +22,10 @@ from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, No
 from nvflare.tool import cli_output
 
 
-def _make_args(job_id="abc123", site="server", tail=None, grep=None):
+def _make_args(job_id="abc123", site="server"):
     args = MagicMock()
     args.job_id = job_id
     args.site = site
-    args.tail = tail
-    args.grep = grep
     return args
 
 
@@ -40,7 +38,7 @@ class TestJobLogs:
 
     def _fake_session(self, mock_sess):
         @contextmanager
-        def _ctx():
+        def _ctx(*_args, **_kwargs):
             yield mock_sess
 
         return _ctx
@@ -61,6 +59,7 @@ class TestJobLogs:
         assert envelope["exit_code"] == 0
         data = envelope["data"]
         assert data["job_id"] == "abc123"
+        assert data["target"] == "server"
         assert data["logs"] == {"server": "line1\nline2\n"}
 
     def test_logs_no_log_source_field(self, capsys):
@@ -88,6 +87,40 @@ class TestJobLogs:
 
         data = json.loads(capsys.readouterr().out)["data"]
         assert "server" in data["logs"]
+
+    def test_logs_human_single_site_prints_raw_log_text(self, capsys, monkeypatch):
+        """Human mode prints readable log text instead of a dict/table."""
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.return_value = {"logs": {"server": "line1\nline2\n"}}
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            cmd_job_logs(_make_args())
+
+        captured = capsys.readouterr()
+        assert captured.out == "line1\nline2\n"
+        assert captured.err == ""
+
+    def test_logs_human_all_sites_prints_headers_and_unavailable(self, capsys, monkeypatch):
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.return_value = {
+            "logs": {"server": "server log\n", "site-1": "client log\n"},
+            "unavailable": {"site-2": "client log stream not available for this job"},
+        }
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            cmd_job_logs(_make_args(site="all"))
+
+        captured = capsys.readouterr()
+        assert "===== server =====\nserver log\n" in captured.out
+        assert "===== site-1 =====\nclient log\n" in captured.out
+        assert "Unavailable logs:" in captured.err
+        assert "site-2: client log stream not available for this job" in captured.err
 
     def test_logs_job_not_found_exits_1(self, capsys):
         """JobNotFound maps to JOB_NOT_FOUND, exit 1."""
@@ -130,97 +163,70 @@ class TestJobLogs:
             with pytest.raises(AuthenticationError):
                 cmd_job_logs(_make_args())
 
-    def test_logs_tail_passed_to_session(self):
-        """--tail value is forwarded as tail_lines to get_job_logs."""
+    def test_logs_request_does_not_apply_cli_filters(self):
         from nvflare.tool.job.job_cli import cmd_job_logs
 
         mock_sess = MagicMock()
         mock_sess.get_job_logs.return_value = {"logs": {}}
 
         with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
-            cmd_job_logs(_make_args(tail=50))
+            cmd_job_logs(_make_args())
 
-        mock_sess.get_job_logs.assert_called_once_with(
-            "abc123",
-            target="server",
-            tail_lines=50,
-            grep_pattern=None,
-        )
+        mock_sess.get_job_logs.assert_called_once_with("abc123", target="server")
 
-    def test_logs_grep_passed_to_session(self):
-        """--grep value is forwarded as grep_pattern to get_job_logs."""
+    def test_logs_client_site_calls_session_with_target(self, capsys):
+        """--site with a client name is passed through to the session API."""
         from nvflare.tool.job.job_cli import cmd_job_logs
 
         mock_sess = MagicMock()
-        mock_sess.get_job_logs.return_value = {"logs": {}}
+        mock_sess.get_job_logs.return_value = {"logs": {"site-1": "client log\n"}}
 
         with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
-            cmd_job_logs(_make_args(grep="ERROR"))
-
-        mock_sess.get_job_logs.assert_called_once_with(
-            "abc123",
-            target="server",
-            tail_lines=None,
-            grep_pattern="ERROR",
-        )
-
-    def test_logs_multi_word_grep_passed_without_shell_quotes(self):
-        """Multi-word grep patterns should be passed through literally, not shell-quoted."""
-        from nvflare.tool.job.job_cli import cmd_job_logs
-
-        mock_sess = MagicMock()
-        mock_sess.get_job_logs.return_value = {"logs": {}}
-
-        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
-            cmd_job_logs(_make_args(grep="CUDA out of memory"))
-
-        mock_sess.get_job_logs.assert_called_once_with(
-            "abc123",
-            target="server",
-            tail_lines=None,
-            grep_pattern="CUDA out of memory",
-        )
-
-    def test_logs_non_server_site_rejected(self, capsys):
-        """--site with a non-server value → INVALID_ARGS, exits 4."""
-        from nvflare.tool.job.job_cli import cmd_job_logs
-
-        with pytest.raises(SystemExit) as exc_info:
             cmd_job_logs(_make_args(site="site-1"))
-        assert exc_info.value.code == 4
 
-        envelope = json.loads(capsys.readouterr().out)
-        assert envelope["error_code"] == "INVALID_ARGS"
+        mock_sess.get_job_logs.assert_called_once_with("abc123", target="site-1")
+        data = json.loads(capsys.readouterr().out)["data"]
+        assert data["target"] == "site-1"
+        assert data["logs"] == {"site-1": "client log\n"}
 
-    def test_logs_all_site_rejected(self, capsys):
-        """--site all → INVALID_ARGS, exits 4 (client streaming not yet available)."""
+    def test_logs_all_site_keeps_unavailable_as_partial_success(self, capsys):
+        """--site all returns available logs plus unavailable sites."""
         from nvflare.tool.job.job_cli import cmd_job_logs
 
-        with pytest.raises(SystemExit) as exc_info:
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.return_value = {
+            "logs": {"server": "server log\n", "site-1": "client log\n"},
+            "unavailable": {"site-2": "client log stream not available for this job"},
+        }
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
             cmd_job_logs(_make_args(site="all"))
-        assert exc_info.value.code == 4
 
-        envelope = json.loads(capsys.readouterr().out)
-        assert envelope["error_code"] == "INVALID_ARGS"
+        data = json.loads(capsys.readouterr().out)["data"]
+        assert data["target"] == "all"
+        assert data["logs"] == {"server": "server log\n", "site-1": "client log\n"}
+        assert data["unavailable"] == {"site-2": "client log stream not available for this job"}
 
-    def test_logs_non_server_site_still_exits_when_output_error_is_mocked(self):
+    def test_logs_specific_missing_client_exits_with_log_not_found(self, capsys):
         from nvflare.tool.job.job_cli import cmd_job_logs
 
-        with patch("nvflare.tool.cli_output.output_error") as output_error:
-            with patch("nvflare.tool.job.job_cli._session") as session_factory:
-                with pytest.raises(SystemExit) as exc_info:
-                    cmd_job_logs(_make_args(site="site-1"))
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.return_value = {
+            "logs": {},
+            "unavailable": {"site-1": "client log stream not available for this job"},
+        }
 
-        assert exc_info.value.code == 4
-        output_error.assert_called_once_with(
-            "INVALID_ARGS",
-            exit_code=4,
-            detail="only --site server is currently supported; client log streaming is not yet available",
-        )
-        session_factory.assert_not_called()
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_logs(_make_args(site="site-1"))
+
+        assert exc_info.value.code == 1
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "LOG_NOT_FOUND"
+        assert "site-1" in envelope["message"]
 
     def test_logs_parser(self):
-        """'logs' subparser parses job_id, server-only --site, --tail, and --grep correctly."""
+        """'logs' subparser parses job_id and open-ended --site."""
         import argparse
 
         from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser
@@ -231,11 +237,20 @@ class TestJobLogs:
 
         parser = job_sub_cmd_parser["logs"]
         assert parser is not None
-        args = parser.parse_args(["abc123", "--site", "server", "--tail", "100", "--grep", "OOM"])
+        args = parser.parse_args(["abc123", "--site", "server"])
         assert args.job_id == "abc123"
         assert args.site == "server"
-        assert args.tail == 100
-        assert args.grep == "OOM"
 
+        args = parser.parse_args(["abc123", "--site", "site-1"])
+        assert args.site == "site-1"
+        args = parser.parse_args(["abc123", "--site", "all"])
+        assert args.site == "all"
+        args = parser.parse_args(["abc123", "--sites", "server"])
+        assert args.site == "server"
+        args = parser.parse_args(["--sites", "server", "abc123"])
+        assert args.job_id == "abc123"
+        assert args.site == "server"
         with pytest.raises(SystemExit):
-            parser.parse_args(["abc123", "--site", "all"])
+            parser.parse_args(["abc123", "--tail", "100"])
+        with pytest.raises(SystemExit):
+            parser.parse_args(["abc123", "--grep", "OOM"])

@@ -52,6 +52,11 @@ def test_each_entry_has_message_and_hint(code):
     assert isinstance(entry["hint"], str)
 
 
+def test_error_registry_is_read_only():
+    with pytest.raises(TypeError):
+        ERROR_REGISTRY["NEW_CODE"] = {"message": "x", "hint": "y"}
+
+
 def test_job_not_found_format_substitution():
     entry = ERROR_REGISTRY["JOB_NOT_FOUND"]
     result = entry["message"].format_map({"job_id": "abc123"})
@@ -66,6 +71,35 @@ def test_site_not_found_format_substitution():
 
 def test_internal_error_hint_does_not_reference_verbose():
     assert "--verbose" not in ERROR_REGISTRY["INTERNAL_ERROR"]["hint"]
+
+
+def test_startup_kit_hints_name_kit_registry_commands():
+    hints = [
+        ERROR_REGISTRY[code]["hint"]
+        for code in ("STARTUP_KIT_MISSING", "STARTUP_KIT_NOT_CONFIGURED")
+        if code in ERROR_REGISTRY
+    ]
+    combined = " ".join(hints)
+    assert "nvflare config kit list" in combined
+    assert "nvflare config kit use <id>" in combined
+    assert "NVFLARE_STARTUP_KIT_DIR" in combined
+
+
+def test_no_error_hint_recommends_old_startup_kit_flags():
+    forbidden = [
+        "--startup-kit",
+        "--startup_kit_dir",
+        "poc.startup_kit",
+        "prod.startup_kit",
+        "--{target}.startup_kit",
+    ]
+
+    offenders = {
+        code: entry["hint"]
+        for code, entry in ERROR_REGISTRY.items()
+        if any(old_text in entry["hint"] for old_text in forbidden)
+    }
+    assert offenders == {}
 
 
 def test_missing_substitution_key_falls_back_to_template():
@@ -92,6 +126,11 @@ class TestGetError:
         message, hint = get_error("TOTALLY_UNKNOWN_CODE_XYZ")
         assert message == "Unknown error."
         assert hint == "Check logs for details."
+
+    def test_unknown_code_raises_in_dev_mode(self, monkeypatch):
+        monkeypatch.setenv("NVFLARE_DEV", "1")
+        with pytest.raises(KeyError):
+            get_error("TOTALLY_UNKNOWN_CODE_XYZ")
 
     def test_ca_already_exists(self):
         message, hint = get_error("CA_ALREADY_EXISTS", path="/tmp/ca")

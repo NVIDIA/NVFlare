@@ -1,6 +1,6 @@
 # NVFlare Helm Chart — Overview
 
-**Version:** 2.7.x / Helm chart 0.1.0
+**Version:** Helm chart 0.1.0
 **Date:** 2026-04-10
 
 ---
@@ -93,8 +93,8 @@ helm install site-2   prod_00/site-2/helm_chart/
 Before running `helm install`:
 
 1. `microk8s enable ingress` on the cluster node.
-2. PVCs `nvflws` (workspace) and `nvfletc` (startup kit) created in the target namespace.
-3. Startup kit contents copied into the `nvfletc` PVC under `<site-name>/startup/`.
+2. PVC `nvflws` (workspace) created in the target namespace.
+3. Startup kit contents copied into the workspace PVC under `<site-name>/startup/`.
 4. Container image pushed to a registry accessible from the cluster.
 
 **AWS Security Group inbound rules:**

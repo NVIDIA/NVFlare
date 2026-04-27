@@ -15,20 +15,24 @@
 from types import SimpleNamespace
 
 from nvflare.apis.fl_constant import MachineStatus
-from nvflare.private.fed.server.server_status import ServerStatus
 from nvflare.private.fed.server.training_cmds import _server_status_value
 
 
-def test_server_status_value_uses_server_lifecycle_started():
-    engine = SimpleNamespace(server=SimpleNamespace(status=ServerStatus.STARTED))
+def _make_engine(machine_status: MachineStatus):
+    engine_info = SimpleNamespace(status=machine_status)
+    return SimpleNamespace(get_engine_info=lambda: engine_info)
+
+
+def test_server_status_value_started_when_jobs_running():
+    engine = _make_engine(MachineStatus.STARTED)
     assert _server_status_value(engine) == MachineStatus.STARTED.value
 
 
-def test_server_status_value_uses_server_lifecycle_starting():
-    engine = SimpleNamespace(server=SimpleNamespace(status=ServerStatus.STARTING))
-    assert _server_status_value(engine) == MachineStatus.STARTING.value
-
-
-def test_server_status_value_defaults_to_stopped():
-    engine = SimpleNamespace(server=SimpleNamespace(status=ServerStatus.STOPPED))
+def test_server_status_value_stopped_when_no_jobs():
+    engine = _make_engine(MachineStatus.STOPPED)
     assert _server_status_value(engine) == MachineStatus.STOPPED.value
+
+
+def test_server_status_value_starting():
+    engine = _make_engine(MachineStatus.STARTING)
+    assert _server_status_value(engine) == MachineStatus.STARTING.value

@@ -5,10 +5,10 @@
 NVFlare can host multiple logical studies inside one deployment. A study defines:
 
 - which client sites participate
-- which effective role each admin user has in that study
+- which admin users may open a session for that study
 - which jobs and client-targeted operations are visible from a session bound to that study
 
-The active study is established when the admin session logs in, stored in the authenticated server session, and then
+The active study is established when the admin session is created, stored in the authenticated server session, and then
 propagated through job submission, job metadata, and scheduling.
 
 This document describes the shipped multi-study design, including session plumbing, job metadata, registry-backed
@@ -18,10 +18,11 @@ access control, client filtering, and scheduler enforcement.
 
 ## Core Principles
 
-1. **Session-scoped study** — study is chosen at session creation/login time, not passed command by command.
+1. **Session-scoped study** — study is chosen at session creation time, not passed command by command.
 2. **Backward-compatible default** — `default` is the built-in fallback study name.
-3. **Registry-backed named studies** — named studies come from `project.yml`, are validated at provisioning time, and
-   are loaded at server startup from a generated runtime registry.
+3. **Registry-backed named studies** — named studies are loaded from `study_registry.json` at server startup. In
+   centralized provisioning, `project.yml` may bootstrap the initial registry contents. After server startup, the
+   registry is runtime state.
 4. **Two-layer enforcement** — study boundary first, existing RBAC second.
 5. **Operational convenience for shared-trust deployments** — multi-study provides study-level authorization and
    scheduling boundaries within a shared deployment, while separate deployments remain the right choice for stronger
@@ -80,13 +81,13 @@ run = recipe.execute(env)
 
 For `flare_api.Session`, `ProdEnv`, and the admin console:
 
-- the study is sent at login time
+- the study is sent at session creation time
 - the server stores it as authenticated session state
 - the session token carries the active study so recreated sessions keep the same study context
 
 Study names are syntactically validated with the regex:
 
-`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`
+`^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$`
 
 ### Job Metadata
 
@@ -136,44 +137,68 @@ participants:
 
 studies:
   cancer-research:
-    sites: [hospital-a, hospital-b]
+    site_orgs:
+      org_a: [hospital-a]
+      org_b: [hospital-b]
     admins:
-      admin@nvidia.com: project_admin
-      trainer@org_a.com: lead
+      - admin@nvidia.com
+      - trainer@org_a.com
 
   multiple-sclerosis:
-    sites: [hospital-a]
+    site_orgs:
+      org_a: [hospital-a]
     admins:
-      trainer@org_a.com: member
+      - trainer@org_a.com
 ```
 
-Validation rules:
+In centralized provisioning, `studies:` is optional bootstrap input for the initial server-side registry.
+Dynamic provisioning does not manage study state.
+
+Validation rules for centralized bootstrap:
 
 - `studies:` requires `api_version: 4`
 - study names must pass `name_check(..., "study")`
 - `default` is reserved
-- `studies.<name>.sites` must reference existing client participants
-- `studies.<name>.admins` must reference existing admin participants
-- per-study roles must be one of the existing built-in roles
+- `studies.<name>.site_orgs` must be a mapping from org name to enrolled client site list
+- each `studies.<name>.site_orgs.<org>` key must reference an existing org in `participants`
+- each site listed under `studies.<name>.site_orgs.<org>` must reference an existing client participant from that same org
+- a site may appear in at most one org list within the same study
+- `studies.<name>.admins` must be a list of admin participants allowed to open a session for that study
+- each `studies.<name>.admins` entry must reference an existing admin participant
 
 ### Runtime Registry
 
-Provisioning emits `study_registry.json` into the server `local/` directory. The server loads this file at startup as
-the authoritative runtime registry for:
+The server loads `study_registry.json` at startup as the authoritative study registry for:
 
 - registry format version
 - study names
-- enrolled sites per study
-- per-study admin role mappings
+- enrolled sites per study, grouped by org
+- per-study admin membership lists
+
+Bootstrap modes:
+
+1. **Centralized provisioning**
+   - `project.yml` may define initial studies
+   - provisioning writes the initial `study_registry.json`
+2. **Dynamic provisioning**
+   - provisioning manages participant identity only
+   - studies are created and updated later through runtime study management
+
+Runtime study state and runtime participant identity are separate concerns:
+
+- `study_registry.json` is the source of truth for study membership and per-study admin membership
+- the running server derives `site -> org` ownership from authenticated client certificates when sites connect
+- this connected-client `site -> org` map is runtime state used to validate study membership mutations; it is not persisted in `study_registry.json`
+- centralized bootstrap may pre-populate `site_orgs`, but runtime-created or runtime-mutated study membership is still validated against the connected client's certificate org
 
 ### Update Flow
 
-Study mappings are updated through the normal reprovision and restart flow:
+Once the server is running, study mappings are runtime-managed state:
 
-1. edit `project.yml`
-2. reprovision
-3. deploy the updated server artifacts
-4. restart the server
+- study lifecycle and study-user membership updates happen through `nvflare study ...`
+- dynamic provisioning adds participants but does not add or modify studies
+- centralized provisioning may bootstrap initial study state, but ongoing study changes are not coupled to provisioning
+- when a study mutation references client sites, the server validates each site's org ownership from the connected client's authenticated certificate identity at runtime
 
 ---
 
@@ -193,15 +218,15 @@ The admin participant `role` in `project.yml` is still baked into the cert. That
 - it is the effective role for the `default` study
 - it is also the role used for server-only/global operations
 
-When a session logs in to a named study:
+When a session is opened for a named study:
 
 1. the server verifies that a study registry exists
 2. the study name exists in the registry
-3. the user has an entry in that study's `admins` mapping
+3. the user has an entry in that study's `admins` list
 
-If any of those checks fail, login is rejected.
+If any of those checks fail, opening a session for that named study is rejected.
 
-For a valid named study session, the mapped study role becomes the effective role for **study-scoped authorization**.
+For a valid named study session, the certificate-baked role remains the effective role for **study-scoped authorization**. The study record adds membership, not a second role.
 
 ### What Is Study-Scoped
 
@@ -229,9 +254,9 @@ Requests are enforced in this order:
 
 ### Login
 
-- `default` login is always allowed if certificate authentication succeeds
-- named-study login is allowed only when the runtime registry exists and the user is mapped into that study
-- if `studies:` is absent, named-study login is rejected
+- opening a default-study session is always allowed if certificate authentication succeeds
+- opening a session for a named study is allowed only when the runtime registry exists and the user is listed in that study
+- if the runtime registry has no named studies, opening a session for a named study is rejected
 
 ### Job Visibility
 
@@ -268,15 +293,15 @@ This is in addition to submit-time `deploy_map` validation.
 
 ## Single-Tenant Behavior
 
-If `project.yml` has no `studies:` section:
+If there is no bootstrapped study registry and no runtime-created named studies:
 
 - the deployment is single-tenant
-- only `default` is a valid login study
+- only `default` is a valid study for new sessions
 - submitted jobs are tagged `default`
 - legacy jobs with no `study` field normalize to `default`
 - jobs persisted with a non-default `study` are hidden from default sessions
 
-This gives one consistent rule: without a provisioned study registry, there are no named study sessions.
+This gives one consistent rule: without a named study in the registry, no named-study sessions can be opened.
 
 ---
 
@@ -318,8 +343,9 @@ Use separate deployments when:
 | Study membership | A client site can participate in multiple named studies. |
 | Role model | The feature reuses the built-in roles: `project_admin`, `org_admin`, `lead`, and `member`. |
 | Default study | `default` is the built-in fallback study and is reserved in `project.yml`. |
-| Runtime source of truth | The server loads generated `study_registry.json` at startup. |
-| Named study availability | Named studies are provisioned through `studies:` in `project.yml` and activated by the runtime registry. |
+| Runtime source of truth | The server loads `study_registry.json` at startup. |
+| Named study availability | Centralized provisioning may bootstrap initial studies from `project.yml`; ongoing study state is runtime-managed. |
+| Provisioned study schema | Each study stores `site_orgs: { org: [site, ...] }` plus `admins: [user, ...]`. |
 | Authorization config | Existing `authorization.json` RBAC remains in effect, using the effective role for each request. |
-| Update model | Study mapping changes are applied through edit, reprovision, redeploy, and restart. |
+| Update model | Ongoing study mapping changes are runtime-managed; dynamic provisioning does not manage studies. |
 | Runtime posture | Multi-study provides authorization and scheduling boundaries within a shared deployment. |

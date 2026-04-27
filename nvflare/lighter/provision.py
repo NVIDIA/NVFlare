@@ -22,7 +22,7 @@ import sys
 from typing import Optional
 
 from nvflare.apis.utils.format_check import name_check
-from nvflare.lighter.constants import AdminRole, CtxKey, ParticipantType, PropKey
+from nvflare.lighter.constants import CtxKey, ParticipantType, PropKey
 from nvflare.lighter.entity import participant_from_dict
 from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
 from nvflare.lighter.provisioner import Provisioner
@@ -65,11 +65,11 @@ def _normalize_and_validate_studies(project_dict: dict, participant_defs: list, 
     if not isinstance(studies, dict):
         raise ValueError(f"studies must be a mapping but got {type(studies)}")
 
-    client_names = {p.get("name") for p in participant_defs if p.get("type") == ParticipantType.CLIENT}
+    client_defs = {p.get("name"): p for p in participant_defs if p.get("type") == ParticipantType.CLIENT}
     admin_names = {p.get("name") for p in participant_defs if p.get("type") == ParticipantType.ADMIN}
+    org_names = {p.get("org") for p in participant_defs if p.get("org")}
 
     normalized = {}
-    valid_roles = {AdminRole.PROJECT_ADMIN, AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER}
     for study_name, study_def in studies.items():
         if study_name == "default":
             raise ValueError("study name 'default' is reserved")
@@ -85,29 +85,52 @@ def _normalize_and_validate_studies(project_dict: dict, participant_defs: list, 
         if not isinstance(study_def, dict):
             raise ValueError(f"study '{study_name}' must be a mapping")
 
-        sites = study_def.get("sites", [])
-        admins = study_def.get("admins", {})
-        if sites is None:
-            sites = []
+        site_orgs = study_def.get("site_orgs", {})
+        admins = study_def.get("admins", [])
         if admins is None:
-            admins = {}
+            admins = []
 
-        if not isinstance(sites, list):
-            raise ValueError(f"study '{study_name}' sites must be a list")
-        if not isinstance(admins, dict):
-            raise ValueError(f"study '{study_name}' admins must be a mapping")
+        if site_orgs is None:
+            site_orgs = {}
+        if not isinstance(site_orgs, dict):
+            raise ValueError(f"study '{study_name}' site_orgs must be a mapping")
+        if not isinstance(admins, list):
+            raise ValueError(f"study '{study_name}' admins must be a list")
 
-        for site in sites:
-            if site not in client_names:
-                raise ValueError(f"study '{study_name}' references unknown client '{site}'")
+        seen_sites = set()
+        normalized_site_orgs = {}
+        for org_name, sites in site_orgs.items():
+            if org_name not in org_names:
+                raise ValueError(f"study '{study_name}' references unknown org '{org_name}'")
+            if not isinstance(sites, list):
+                raise ValueError(f"study '{study_name}' site_orgs for org '{org_name}' must be a list")
+            normalized_sites = []
+            for site in sites:
+                client_def = client_defs.get(site)
+                if not client_def:
+                    raise ValueError(f"study '{study_name}' references unknown client '{site}'")
+                if client_def.get("org") != org_name:
+                    raise ValueError(f"study '{study_name}' lists client '{site}' under wrong org '{org_name}'")
+                if site in seen_sites:
+                    raise ValueError(f"study '{study_name}' references duplicate client '{site}' across org groups")
+                seen_sites.add(site)
+                normalized_sites.append(site)
+            normalized_site_orgs[org_name] = normalized_sites
 
-        for admin_name, role in admins.items():
+        normalized_admins = []
+        seen_admins = set()
+        for admin_name in admins:
             if admin_name not in admin_names:
                 raise ValueError(f"study '{study_name}' references unknown admin '{admin_name}'")
-            if role not in valid_roles:
-                raise ValueError(f"study '{study_name}' assigns unknown role '{role}' to '{admin_name}'")
+            if admin_name in seen_admins:
+                continue
+            seen_admins.add(admin_name)
+            normalized_admins.append(admin_name)
 
-        normalized[study_name] = dict(study_def)
+        normalized[study_name] = {
+            "site_orgs": normalized_site_orgs,
+            "admins": normalized_admins,
+        }
 
     return normalized
 
@@ -128,21 +151,65 @@ def define_provision_parser(parser):
     global _provision_parser
     _provision_parser = parser
     # Action flags — mutually exclusive but no longer required; default is -g behavior
-    parser.add_argument("-p", "--project_file", type=str, default=None, help="file to describe FL project")
+    parser.add_argument(
+        "-p",
+        "--project-file",
+        "--project_file",
+        dest="project_file",
+        type=str,
+        default=None,  # backward compat
+        help="file to describe FL project",
+    )
     parser.add_argument(
         "-g",
         "--generate",
         action="store_true",
         help="generate a sample project.yml and exit (default when no flag given)",
     )
-    parser.add_argument("-e", "--gen_edge", action="store_true", help="generate a sample edge project.yml and exit")
+    parser.add_argument(
+        "-e",
+        "--gen-edge",
+        "--gen_edge",
+        dest="gen_edge",
+        action="store_true",  # backward compat
+        help="generate a sample edge project.yml and exit",
+    )
 
     # Optional arguments
     parser.add_argument("-w", "--workspace", type=str, default="workspace", help="directory used by provision")
-    parser.add_argument("-c", "--custom_folder", type=str, default=".", help="additional folder to load python codes")
-    parser.add_argument("--add_user", type=str, default="", help="yaml file for added user")
-    parser.add_argument("--add_client", type=str, default="", help="yaml file for added client")
-    parser.add_argument("-s", "--gen_scripts", action="store_true", help="generate test scripts like start_all.sh")
+    parser.add_argument(
+        "-c",
+        "--custom-folder",
+        "--custom_folder",
+        dest="custom_folder",
+        type=str,
+        default=".",  # backward compat
+        help="additional folder to load python codes",
+    )
+    parser.add_argument(
+        "--add-user",
+        "--add_user",
+        dest="add_user",
+        type=str,
+        default="",  # backward compat
+        help="yaml file for added user",
+    )
+    parser.add_argument(
+        "--add-client",
+        "--add_client",
+        dest="add_client",
+        type=str,
+        default="",  # backward compat
+        help="yaml file for added client",
+    )
+    parser.add_argument(
+        "-s",
+        "--gen-scripts",
+        "--gen_scripts",
+        dest="gen_scripts",
+        action="store_true",  # backward compat
+        help="generate test scripts like start_all.sh",
+    )
     parser.add_argument("--force", action="store_true", help="skip Y/N confirmation prompts")
     parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
@@ -305,7 +372,7 @@ def handle_provision(args):
         print_human(f"\nProvisioning complete. Packages written to: {workspace_full_path}")
         if packages:
             print_human(f"  Packages: {', '.join(packages)}")
-            print_human("  Verify each package with: nvflare preflight -p <package_path>")
+            print_human("  Verify each package with: nvflare preflight-check -p <package_path>")
         print_human("  Distribute packages to each participant and run their start.sh")
     try:
         install_skills()

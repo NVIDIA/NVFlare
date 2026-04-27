@@ -64,7 +64,7 @@ Validation rules:
 
 - Sites listed in a study must reference existing client participants.
 - Admins listed in a study must reference existing admin participants.
-- Study names follow DNS label format: lowercase alphanumeric and hyphens, 1–63 characters.
+- Study names use lowercase alphanumeric characters plus hyphens or underscores, 1-63 characters, and must start and end with an alphanumeric character.
 - ``"default"`` is reserved and cannot be used as a study name.
 - Provisioning generates ``study_registry.json`` in the server's ``local/`` folder.
 
@@ -154,5 +154,9 @@ radius — use separate NVFlare deployments.
 Updating Studies
 ================
 
-Changing study definitions requires reprovisioning and a server restart. There is no live reload
-mechanism.
+Study site enrollment and user membership can be updated at runtime using the ``nvflare study``
+command family without reprovisioning or restarting the server. See :ref:`study_command` for the
+full command reference.
+
+Changing the core study definition (adding new studies or altering the base provisioned
+configuration) requires reprovisioning and a server restart.

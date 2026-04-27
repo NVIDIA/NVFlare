@@ -23,6 +23,34 @@ from nvflare.tool import cli_output
 from nvflare.tool.job.job_cli import _parse_monitor_duration_seconds, _parse_monitor_start_ts
 
 
+def _configure_active_startup_kit(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    admin_dir = tmp_path / "active-admin"
+    startup_dir = admin_dir / "startup"
+    startup_dir.mkdir(parents=True)
+    (startup_dir / "fed_admin.json").write_text('{"admin": {"username": "admin@nvidia.com"}}', encoding="utf-8")
+    (startup_dir / "client.crt").write_text("cert", encoding="utf-8")
+    (startup_dir / "rootCA.pem").write_text("root", encoding="utf-8")
+
+    config_dir = home / ".nvflare"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.conf").write_text(
+        f"""
+        version = 2
+        startup_kits {{
+          active = "admin@nvidia.com"
+          entries {{
+            "admin@nvidia.com" = "{admin_dir}"
+          }}
+        }}
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
+    return admin_dir
+
+
 def _make_args(job_id="abc123", timeout=0, interval=2, stats_target="server", metrics=None):
     args = MagicMock()
     args.job_id = job_id
@@ -78,7 +106,7 @@ def _mock_session(rc, meta):
     mock_sess.show_stats.return_value = {}
 
     @contextmanager
-    def _fake_session():
+    def _fake_session(*args, **kwargs):
         yield mock_sess
 
     return patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session), mock_sess
@@ -109,6 +137,49 @@ class TestJobMonitorOutput:
         assert data["exit_code"] == 0
         assert data["data"]["job_id"] == "abc123"
         assert data["data"]["status"] == "FINISHED_OK"
+
+    @pytest.mark.parametrize(
+        ("selector", "value"),
+        [
+            ("--startup-target", "prod"),
+            ("--startup_target", "prod"),
+            ("--startup-kit", "/tmp/startup"),
+            ("--startup_kit", "/tmp/startup"),
+        ],
+    )
+    def test_monitor_parser_rejects_old_startup_selectors(self, selector, value):
+        import argparse
+
+        from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        def_job_cli_parser(subs)
+
+        parser = job_sub_cmd_parser["monitor"]
+        with pytest.raises(SystemExit):
+            parser.parse_args(["abc123", selector, value])
+
+    def test_monitor_help_and_schema_omit_old_startup_selectors(self, capsys):
+        import argparse
+
+        from nvflare.tool.job.job_cli import cmd_job_monitor, def_job_cli_parser, job_sub_cmd_parser
+
+        root = argparse.ArgumentParser()
+        def_job_cli_parser(root.add_subparsers())
+
+        help_text = job_sub_cmd_parser["monitor"].format_help()
+        for token in ("--startup-target", "--startup_target", "--startup-kit", "--startup_kit"):
+            assert token not in help_text
+
+        with patch("sys.argv", ["nvflare", "job", "monitor", "--schema"]):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_monitor(MagicMock())
+
+        assert exc_info.value.code == 0
+        schema_text = capsys.readouterr().out
+        for token in ("--startup-target", "--startup_target", "--startup-kit", "--startup_kit"):
+            assert token not in schema_text
 
     def test_failed_outputs_error_envelope_exits_1(self, capsys):
         meta = _make_meta("FAILED")
@@ -197,7 +268,7 @@ class TestJobMonitorOutput:
 
     def test_job_not_found_exits_1(self, capsys):
         @contextmanager
-        def _fake_session():
+        def _fake_session(*args, **kwargs):
             sess = MagicMock()
             sess.monitor_job_and_return_job_meta.side_effect = JobNotFound("job does not exist")
             yield sess
@@ -215,7 +286,7 @@ class TestJobMonitorOutput:
 
     def test_connection_error_propagates_to_top_level_handler(self):
         @contextmanager
-        def _fake_session():
+        def _fake_session(*args, **kwargs):
             sess = MagicMock()
             sess.monitor_job_and_return_job_meta.side_effect = NoConnection("connection refused")
             yield sess
@@ -228,7 +299,7 @@ class TestJobMonitorOutput:
 
     def test_authentication_error_propagates_to_top_level_handler(self):
         @contextmanager
-        def _fake_session():
+        def _fake_session(*args, **kwargs):
             sess = MagicMock()
             sess.monitor_job_and_return_job_meta.side_effect = AuthenticationError("bad cert")
             yield sess
@@ -254,7 +325,7 @@ class TestJobMonitorOutput:
 
     def test_unexpected_monitor_exception_exits_internal_error(self, capsys):
         @contextmanager
-        def _fake_session():
+        def _fake_session(*args, **kwargs):
             sess = MagicMock()
             sess.monitor_job_and_return_job_meta.side_effect = KeyError("stats blew up")
             yield sess
@@ -305,7 +376,7 @@ class TestJobMonitorOutput:
         mock_sess.show_stats.return_value = {"server": {"round": 10, "loss": 0.05}}
 
         @contextmanager
-        def _fake_session():
+        def _fake_session(*args, **kwargs):
             yield mock_sess
 
         with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
@@ -315,6 +386,21 @@ class TestJobMonitorOutput:
 
         data = json.loads(capsys.readouterr().out)
         assert "stats_raw" in data["data"]
+
+    def test_monitor_uses_active_startup_kit_session(self, tmp_path, monkeypatch):
+        active_admin_dir = _configure_active_startup_kit(tmp_path, monkeypatch)
+        meta = _make_meta("FINISHED_OK")
+        mock_sess = MagicMock()
+        mock_sess.monitor_job_and_return_job_meta.return_value = (MonitorReturnCode.JOB_FINISHED, meta)
+        mock_sess.show_stats.return_value = {}
+
+        with patch("nvflare.tool.cli_session.new_secure_session", return_value=mock_sess) as new_secure:
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            cmd_job_monitor(_make_args())
+
+        assert new_secure.call_args.kwargs["username"] == "admin@nvidia.com"
+        assert new_secure.call_args.kwargs["startup_kit_location"] == str(active_admin_dir)
 
     def test_no_human_text_on_stdout(self, capsys):
         """In json mode, stdout contains only one JSON line."""
@@ -349,7 +435,7 @@ class TestJobMonitorOutput:
         mock_sess.show_stats.return_value = {}
 
         @contextmanager
-        def _fake_session():
+        def _fake_session(*args, **kwargs):
             yield mock_sess
 
         with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):

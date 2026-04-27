@@ -41,6 +41,7 @@ from .api_spec import (
     AuthorizationError,
     ClientInfo,
     ClientsStillRunning,
+    CommandError,
     InternalError,
     InvalidArgumentError,
     InvalidJobDefinition,
@@ -64,6 +65,20 @@ from .api_spec import (
 _VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
 
 __all__ = ["NoConnection", "NoReply", "SystemInfo", "TargetType"]
+
+
+def _validate_target_strs(targets: List[str]) -> None:
+    """Validate that each item in ``targets`` is a well-formed target name.
+
+    Wraps :func:`process_targets_into_str` for its validation side-effect only —
+    the joined string it returns is intentionally discarded because callers then
+    do ``parts.extend(targets)`` so that every name becomes its own command
+    argument. If the joined string were appended instead, :func:`join_args`
+    would wrap the whitespace-containing element in double quotes, and the
+    server's ``shlex.split`` in ``parse_command_line`` would collapse multiple
+    names back into a single token (see NVBug 6098943).
+    """
+    process_targets_into_str(targets)
 
 
 class Session(SessionSpec):
@@ -518,8 +533,8 @@ class Session(SessionSpec):
         """
         parts = [AdminCommandNames.CHECK_STATUS, TargetType.CLIENT]
         if client_names:
-            processed_targets_str = process_targets_into_str(client_names)
-            parts.append(processed_targets_str)
+            _validate_target_strs(client_names)
+            parts.extend(client_names)
 
         command = join_args(parts)
         result = self._do_command(command)
@@ -527,49 +542,53 @@ class Session(SessionSpec):
         return meta.get(MetaKey.CLIENT_STATUS, None)
 
     def restart(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
-        """Restart the FL server.
+        """Restart the server, specific clients, or all participants.
 
         Args:
-            target_type (str): must be ``server``
-            client_names (List[str]): unused; retained for signature compatibility
+            target_type: ``server``, ``client``, or ``all``
+            client_names: when target_type is ``client``, restrict to these clients (empty = all clients)
 
-        Returns: a dict that contains detailed info about the restart request:
-            status - the overall status of the result.
-            server_status - whether the server is restarted successfully.
-
+        Returns: a dict with detailed info about the restart request.
         """
-        if target_type != TargetType.SERVER:
-            raise ValueError("restart only supports target_type 'server'")
+        if target_type not in _VALID_TARGET_TYPES:
+            raise ValueError(f"restart target_type must be one of {_VALID_TARGET_TYPES}")
 
         parts = [AdminCommandNames.RESTART, target_type]
+        if target_type == TargetType.CLIENT and client_names:
+            _validate_target_strs(client_names)
+            parts.extend(client_names)
 
-        command = " ".join(parts)
+        command = join_args(parts)
         result = self._do_command(command)
         return result[ResultKey.META]
 
-    def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None) -> dict:
-        """Shut down the FL server.
+    def shutdown(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
+        """Shut down the server, specific clients, or all participants.
 
         Args:
-            target_type: must be ``server``
-            client_names: unused; retained for signature compatibility
+            target_type: ``server``, ``client``, or ``all``
+            client_names: when target_type is ``client``, restrict to these clients (empty = all clients)
 
-        Returns: a dict that contains detailed info about the shutdown request.
+        Returns: a dict with detailed info about the shutdown request.
         """
-        if target_type != TargetType.SERVER:
-            raise ValueError("shutdown only supports target_type 'server'")
+        if target_type not in _VALID_TARGET_TYPES:
+            raise ValueError(f"shutdown target_type must be one of {_VALID_TARGET_TYPES}")
 
         parts = [AdminCommandNames.SHUTDOWN, target_type]
+        if target_type == TargetType.CLIENT and client_names:
+            _validate_target_strs(client_names)
+            parts.extend(client_names)
 
-        command = " ".join(parts)
+        command = join_args(parts)
         result = self._do_command(command)
-        try:
-            self.close()
-        except Exception:
-            # The shutdown request already succeeded; the server may tear down the
-            # connection before the client can complete logout. Preserve the command
-            # result instead of masking it with a secondary close failure.
-            pass
+        if target_type in (TargetType.SERVER, TargetType.ALL):
+            try:
+                self.close()
+            except Exception:
+                # The shutdown request already succeeded; the server may tear down the
+                # connection before the client can complete logout. Preserve the command
+                # result instead of masking it with a secondary close failure.
+                pass
         return result[ResultKey.META]
 
     def set_timeout(self, value: float):
@@ -784,6 +803,132 @@ class Session(SessionSpec):
                     return it.get(ProtoKey.DATA, {})
         return result
 
+    @staticmethod
+    def _get_study_payload(reply: dict) -> dict:
+        payload = Session._get_dict_data(reply)
+        if not isinstance(payload, dict):
+            raise InternalError(f"study payload must be dict but got {type(payload)}")
+        error_code = payload.get("error_code")
+        if error_code:
+            raise CommandError(
+                error_code=error_code,
+                message=payload.get("message", error_code),
+                hint=payload.get("hint", ""),
+                exit_code=payload.get("exit_code", 1),
+            )
+        return payload
+
+    @staticmethod
+    def _validate_study_name(study: str):
+        if not isinstance(study, str):
+            raise InvalidArgumentError(f"study must be str but got {type(study)}")
+        if not study:
+            raise InvalidArgumentError("study is required but not specified.")
+
+    @staticmethod
+    def _validate_study_sites(sites: List[str]):
+        if not isinstance(sites, list):
+            raise InvalidArgumentError(f"sites must be list but got {type(sites)}")
+        if not sites:
+            raise InvalidArgumentError("sites are required but not specified.")
+        for site in sites:
+            if not isinstance(site, str) or not site:
+                raise InvalidArgumentError(f"invalid site value: {site}")
+
+    @staticmethod
+    def _validate_study_user(user: str):
+        if not isinstance(user, str):
+            raise InvalidArgumentError(f"user must be str but got {type(user)}")
+        if not user:
+            raise InvalidArgumentError("user is required but not specified.")
+
+    @staticmethod
+    def _validate_study_site_orgs(site_orgs: List[str]):
+        if not isinstance(site_orgs, list):
+            raise InvalidArgumentError(f"site_orgs must be list but got {type(site_orgs)}")
+        if not site_orgs:
+            raise InvalidArgumentError("site_orgs are required but not specified.")
+        for item in site_orgs:
+            if not isinstance(item, str) or not item:
+                raise InvalidArgumentError(f"invalid site_org value: {item}")
+
+    def register_study(
+        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
+    ) -> dict:
+        self._validate_study_name(study)
+        if sites and site_orgs:
+            raise InvalidArgumentError("sites and site_orgs are mutually exclusive; provide only one")
+        parts = [AdminCommandNames.REGISTER_STUDY, study]
+        if site_orgs:
+            self._validate_study_site_orgs(site_orgs)
+            for item in site_orgs:
+                parts.extend(["--site-org", item])
+        else:
+            self._validate_study_sites(sites)
+            parts.extend(["--sites", ",".join(sites)])
+        reply = self._do_command(join_args(parts))
+        return self._get_study_payload(reply)
+
+    def add_study_site(
+        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
+    ) -> dict:
+        self._validate_study_name(study)
+        if sites and site_orgs:
+            raise InvalidArgumentError("sites and site_orgs are mutually exclusive; provide only one")
+        parts = [AdminCommandNames.ADD_STUDY_SITE, study]
+        if site_orgs:
+            self._validate_study_site_orgs(site_orgs)
+            for item in site_orgs:
+                parts.extend(["--site-org", item])
+        else:
+            self._validate_study_sites(sites)
+            parts.extend(["--sites", ",".join(sites)])
+        reply = self._do_command(join_args(parts))
+        return self._get_study_payload(reply)
+
+    def remove_study_site(
+        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
+    ) -> dict:
+        self._validate_study_name(study)
+        if sites and site_orgs:
+            raise InvalidArgumentError("sites and site_orgs are mutually exclusive; provide only one")
+        parts = [AdminCommandNames.REMOVE_STUDY_SITE, study]
+        if site_orgs:
+            self._validate_study_site_orgs(site_orgs)
+            for item in site_orgs:
+                parts.extend(["--site-org", item])
+        else:
+            self._validate_study_sites(sites)
+            parts.extend(["--sites", ",".join(sites)])
+        reply = self._do_command(join_args(parts))
+        return self._get_study_payload(reply)
+
+    def remove_study(self, study: str) -> dict:
+        self._validate_study_name(study)
+        reply = self._do_command(join_args([AdminCommandNames.REMOVE_STUDY, study]))
+        return self._get_study_payload(reply)
+
+    def list_studies(self) -> dict:
+        reply = self._do_command(AdminCommandNames.LIST_STUDIES)
+        return self._get_study_payload(reply)
+
+    def show_study(self, study: str) -> dict:
+        self._validate_study_name(study)
+        reply = self._do_command(join_args([AdminCommandNames.SHOW_STUDY, study]))
+        return self._get_study_payload(reply)
+
+    def add_study_user(self, study: str, user: str) -> dict:
+        self._validate_study_name(study)
+        self._validate_study_user(user)
+        reply = self._do_command(join_args([AdminCommandNames.ADD_STUDY_USER, study, user]))
+        return self._get_study_payload(reply)
+
+    def remove_study_user(self, study: str, user: str) -> dict:
+        self._validate_study_name(study)
+        self._validate_study_user(user)
+        reply = self._do_command(join_args([AdminCommandNames.REMOVE_STUDY_USER, study, user]))
+        return self._get_study_payload(reply)
+
     def show_stats(self, job_id: str, target_type: str, targets: Optional[List[str]] = None) -> dict:
         """Show processing stats of specified job on specified targets.
 
@@ -835,8 +980,8 @@ class Session(SessionSpec):
 
         parts = [cmd, job_id, target_type]
         if target_type == TargetType.CLIENT and targets:
-            processed_targets_str = process_targets_into_str(targets)
-            parts.append(processed_targets_str)
+            _validate_target_strs(targets)
+            parts.extend(targets)
 
         command = join_args(parts)
         reply = self._do_command(command, enforce_meta=False)
@@ -857,8 +1002,8 @@ class Session(SessionSpec):
 
         parts = [AdminCommandNames.CHECK_STATUS, target_type]
         if target_type == TargetType.CLIENT and targets:
-            processed_targets_str = process_targets_into_str(targets)
-            parts.append(processed_targets_str)
+            _validate_target_strs(targets)
+            parts.extend(targets)
 
         command = join_args(parts)
         result = self._do_command(command)
@@ -885,8 +1030,8 @@ class Session(SessionSpec):
 
         parts = [AdminCommandNames.REPORT_RESOURCES, target_type]
         if target_type == TargetType.CLIENT and targets:
-            processed_targets_str = process_targets_into_str(targets)
-            parts.append(processed_targets_str)
+            _validate_target_strs(targets)
+            parts.extend(targets)
 
         command = " ".join(parts)
         result = self._do_command(command, enforce_meta=False)
@@ -917,8 +1062,8 @@ class Session(SessionSpec):
 
         parts = [AdminCommandNames.REPORT_VERSION, target_type]
         if target_type == TargetType.CLIENT and targets:
-            processed_targets_str = process_targets_into_str(targets)
-            parts.append(processed_targets_str)
+            _validate_target_strs(targets)
+            parts.extend(targets)
 
         command = " ".join(parts)
         reply = self._do_command(command, enforce_meta=False)
@@ -938,41 +1083,75 @@ class Session(SessionSpec):
 
         self._do_command(join_args([AdminCommandNames.REMOVE_CLIENT, client_name]))
 
+    @staticmethod
+    def _filter_job_log_text(log_text: str, tail_lines: Optional[int], grep_pattern: Optional[str]) -> str:
+        lines = log_text.splitlines(keepends=True)
+        if tail_lines is not None:
+            try:
+                line_count = int(tail_lines)
+            except (TypeError, ValueError) as e:
+                raise ValueError("tail_lines must be an integer") from e
+            if line_count < 0:
+                raise ValueError("tail_lines must be greater than or equal to 0")
+            lines = lines[-line_count:] if line_count else []
+        if grep_pattern:
+            pattern = str(grep_pattern)
+            lines = [line for line in lines if pattern in line]
+        return "".join(lines)
+
+    @classmethod
+    def _filter_job_logs_payload(cls, result: dict, tail_lines: Optional[int], grep_pattern: Optional[str]) -> dict:
+        if tail_lines is None and not grep_pattern:
+            return result
+
+        logs = result.get("logs")
+        if not isinstance(logs, dict):
+            return result
+
+        filtered_logs = {}
+        for site_name, log_text in logs.items():
+            if isinstance(log_text, str):
+                filtered_logs[site_name] = cls._filter_job_log_text(log_text, tail_lines, grep_pattern)
+            else:
+                filtered_logs[site_name] = log_text
+
+        filtered_result = dict(result)
+        filtered_result["logs"] = filtered_logs
+        return filtered_result
+
     def get_job_logs(
-        self, job_id: str, target: str = "server", tail_lines: int = None, grep_pattern: str = None
+        self,
+        job_id: str,
+        target: str = "server",
+        tail_lines: Optional[int] = None,
+        grep_pattern: Optional[str] = None,
     ) -> dict:
-        """Retrieve job logs from server workspace.
+        """Retrieve job logs from the server-side log store.
 
         Args:
             job_id (str): ID of the job
-            target (str): target site name. Only "server" is currently supported.
-            tail_lines (int): optional number of tail lines to retrieve
-            grep_pattern (str): optional grep pattern to filter log lines
+            target (str): "server", "all", or a client site name
+            tail_lines (int, optional): deprecated compatibility filter that returns only the last N lines
+            grep_pattern (str, optional): deprecated compatibility filter that returns matching lines
 
-        Returns: dict with "logs" keys mapping site name to log text.
+        Returns: dict with "logs" mapping site name to log text, and optional
+            "unavailable" mapping site names to reasons.
 
         """
         self._validate_job_id(job_id)
-        if target != "server":
-            raise ValueError("get_job_logs currently only supports target='server'")
-        if tail_lines is not None:
-            if not isinstance(tail_lines, int):
-                raise ValueError(f"tail_lines must be int but got {type(tail_lines)}")
-            if tail_lines <= 0:
-                raise ValueError("tail_lines must be greater than 0")
+        if not isinstance(target, str) or not target:
+            raise ValueError("target must be a non-empty str")
 
-        parts = [AdminCommandNames.GET_JOB_LOG, job_id]
-        if tail_lines is not None:
-            parts.extend(["-n", str(tail_lines)])
-        if grep_pattern:
-            parts.extend(["-g", grep_pattern])
-
+        parts = [AdminCommandNames.GET_JOB_LOG, job_id, target]
         command = join_args(parts)
         reply = self._do_command(command, enforce_meta=False)
         payload = self._get_dict_data(reply)
         if isinstance(payload, dict) and "logs" in payload:
-            return {"logs": payload.get("logs", {})}
-        return {"logs": payload}
+            result = {"logs": payload.get("logs", {})}
+            if "unavailable" in payload:
+                result["unavailable"] = payload.get("unavailable", {})
+            return self._filter_job_logs_payload(result, tail_lines, grep_pattern)
+        return self._filter_job_logs_payload({"logs": payload}, tail_lines, grep_pattern)
 
     def configure_job_log(self, job_id: str, config, target: str = "all") -> None:
         """Configure logging for a running job.

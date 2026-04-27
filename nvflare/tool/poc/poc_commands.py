@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
+import errno
 import json
 import os
 import random
@@ -20,16 +22,14 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, OrderedDict, Tuple
+from typing import Any, Dict, List, Optional, OrderedDict, Tuple
 
 import yaml
-from pyhocon import ConfigFactory as CF
 
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
-from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
-from nvflare.lighter.constants import PropKey, ProvisionMode
+from nvflare.lighter.constants import CtxKey, PropKey, ProvisionMode
 from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
 from nvflare.lighter.provision import gen_default_project_config, prepare_project
 from nvflare.lighter.provisioner import Provisioner
@@ -40,8 +40,22 @@ from nvflare.lighter.utils import (
     update_storage_locations,
 )
 from nvflare.tool.api_utils import shutdown_system
+from nvflare.tool.kit.kit_config import (
+    STARTUP_KIT_KIND_ADMIN,
+    STARTUP_KIT_KIND_SITE,
+    StartupKitConfigError,
+    add_startup_kit_entry,
+    classify_startup_kit,
+    get_active_startup_kit_id,
+    get_startup_kit_entries,
+    inspect_startup_kit_metadata,
+    load_cli_config,
+    remove_entries_under_workspace,
+    resolve_startup_kit_dir,
+    save_cli_config,
+)
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
-from nvflare.utils.cli_utils import get_hidden_nvflare_config_path, get_or_create_hidden_nvflare_dir, hocon_to_string
+from nvflare.utils.cli_utils import get_hidden_nvflare_config_path, get_or_create_hidden_nvflare_dir
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 DEFAULT_PROJECT_NAME = "example_project"
@@ -51,6 +65,20 @@ CMD_PREPARE_JOBS_DIR = "prepare-jobs-dir"
 CMD_START_POC = "start"
 CMD_STOP_POC = "stop"
 CMD_CLEAN_POC = "clean"
+CMD_ADD_POC = "add"
+CMD_ADD_USER = "user"
+CMD_ADD_SITE = "site"
+
+POC_USER_CERT_ROLES = ("project_admin", "org_admin", "lead", "member")
+POC_ADD_REQUIRED_CERT_ROLE = "project_admin"
+
+POC_KEY = "poc"
+STARTUP_KIT_KEY = "startup_kit"
+WORKSPACE_KEY = "workspace"
+
+
+class AuthorizationError(PermissionError):
+    """The current CLI identity is not authorized for the command."""
 
 
 def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, List[int]]:
@@ -230,10 +258,29 @@ def _prepare_jobs_dir(
     return True
 
 
+def _get_prod_dirs(workspace, project_name: str = DEFAULT_PROJECT_NAME) -> List[str]:
+    project_name = project_name if project_name else DEFAULT_PROJECT_NAME
+    project_dir = os.path.join(workspace, project_name)
+    prod_dirs = []
+    if os.path.isdir(project_dir):
+        for name in os.listdir(project_dir):
+            if not name.startswith("prod_"):
+                continue
+            try:
+                stage = int(name.split("_")[-1])
+            except ValueError:
+                continue
+            prod_dirs.append((stage, os.path.join(project_dir, name)))
+
+    return [path for _, path in sorted(prod_dirs)]
+
+
 def get_prod_dir(workspace, project_name: str = DEFAULT_PROJECT_NAME):
     project_name = project_name if project_name else DEFAULT_PROJECT_NAME
-    prod_dir = os.path.join(workspace, project_name, "prod_00")
-    return prod_dir
+    prod_dirs = _get_prod_dirs(workspace, project_name)
+    if prod_dirs:
+        return prod_dirs[-1]
+    return os.path.join(workspace, project_name, "prod_00")
 
 
 def gen_project_config_file(workspace: str) -> str:
@@ -436,15 +483,95 @@ def prepare_clients(clients, number_of_clients):
     return clients
 
 
-def save_startup_kit_dir_config(workspace, project_name):
-    dst = get_hidden_nvflare_config_path(str(get_or_create_hidden_nvflare_dir()))
-    config = None
-    if os.path.isfile(dst):
-        try:
-            config = CF.parse_file(dst)
-        except Exception:
-            config = None
+def _is_startup_kit_kind(kit_dir: str, expected_kind: str) -> bool:
+    try:
+        kind, _ = classify_startup_kit(kit_dir)
+    except StartupKitConfigError:
+        return False
+    return kind == expected_kind
 
+
+def _get_generated_poc_startup_kits(project_config: Dict, prod_dir: str) -> Tuple[Dict[str, str], Optional[str]]:
+    participants = project_config.get("participants", [])
+    if not isinstance(participants, list):
+        raise CLIException("project.yml participants must be a list")
+
+    entries = {}
+    active_id = None
+    for participant in participants:
+        if not isinstance(participant, dict):
+            raise CLIException("participant entry must be a mapping")
+        identity = participant.get("name")
+        if not identity:
+            raise CLIException("participant missing name")
+
+        kit_dir = os.path.abspath(os.path.join(prod_dir, identity))
+        participant_type = participant.get("type")
+        if participant_type == "admin" and _is_startup_kit_kind(kit_dir, STARTUP_KIT_KIND_ADMIN):
+            entries[identity] = kit_dir
+            if active_id is None and participant.get("role") == "project_admin":
+                active_id = identity
+
+    return entries, active_id
+
+
+def _get_configured_poc_workspace(config: Dict[str, Any]) -> Optional[str]:
+    try:
+        workspace = config.get(f"{POC_KEY}.{WORKSPACE_KEY}", None)
+    except Exception:
+        return None
+    return workspace.strip() if isinstance(workspace, str) and workspace.strip() else None
+
+
+def _register_poc_startup_kits(
+    config: Dict[str, Any], workspace: str, kit_entries: Dict[str, str]
+) -> Tuple[Dict[str, Any], set]:
+    removed_ids = set()
+    previous_workspace = _get_configured_poc_workspace(config)
+    if previous_workspace:
+        config, removed_ids = remove_entries_under_workspace(config, previous_workspace)
+    config, current_removed_ids = remove_entries_under_workspace(config, workspace)
+    removed_ids.update(current_removed_ids)
+    entries = get_startup_kit_entries(config)
+
+    for kit_id, kit_path in kit_entries.items():
+        existing_path = entries.get(kit_id)
+        if existing_path:
+            raise CLIException(
+                f"startup kit id '{kit_id}' already exists outside POC workspace; "
+                f"run 'nvflare config kit remove {kit_id}' or replace it explicitly"
+            )
+        config = add_startup_kit_entry(config, kit_id, kit_path, force=True)
+
+    return config, removed_ids
+
+
+def _write_poc_startup_kit_registry(workspace: str, project_name: str, project_config: Dict):
+    config = load_cli_config()
+    prod_dir = get_prod_dir(workspace, project_name)
+    kit_entries, active_id = _get_generated_poc_startup_kits(project_config, prod_dir)
+    config, _removed_ids = _register_poc_startup_kits(config, workspace, kit_entries)
+
+    if active_id:
+        config.put("startup_kits.active", active_id)
+    else:
+        from nvflare.tool.cli_output import print_human
+
+        print_human(
+            "No generated Project Admin startup kit was found; "
+            "run 'nvflare config kit use <id>' after registering an admin startup kit."
+        )
+
+    config.put(f"{POC_KEY}.{WORKSPACE_KEY}", workspace)
+    try:
+        config.pop(f"{POC_KEY}.{STARTUP_KIT_KEY}", None)
+        config.pop("prod.startup_kit", None)
+    except Exception:
+        pass
+    save_cli_config(config)
+
+
+def save_startup_kit_dir_config(workspace, project_name):
     project_file = os.path.join(workspace, "project.yml")
     try:
         project_config = load_yaml(project_file) if os.path.isfile(project_file) else None
@@ -452,25 +579,389 @@ def save_startup_kit_dir_config(workspace, project_name):
         project_config = None
     if not project_config or not isinstance(project_config, dict):
         raise CLIException(f"invalid or unreadable project config: {project_file}")
-    project_admin = get_proj_admin(project_config)
-    prod_dir = get_prod_dir(workspace, project_name)
-    poc_admin_dir = os.path.join(prod_dir, project_admin)
-    conf = f"""
-        version = 2
-        poc {{
-            startup_kit = "{poc_admin_dir}"
-            workspace = "{workspace}"
-        }}
-    """
-    if config:
-        new_config = CF.parse_string(conf)
-        config = new_config.with_fallback(config)
-        config_str = hocon_to_string(ConfigFormat.PYHOCON, config)
-    else:
-        config_str = conf
+    _write_poc_startup_kit_registry(workspace, project_name, project_config)
 
-    with open(dst, "w") as file:
-        file.write(f"{config_str}\n")
+
+def _load_poc_project_config(poc_workspace: str) -> Tuple[str, Dict]:
+    project_file = os.path.join(poc_workspace, "project.yml")
+    if not os.path.isfile(project_file):
+        raise CLIException("please use nvflare poc prepare to create workspace first")
+
+    project_config = load_yaml(project_file)
+    if not isinstance(project_config, dict):
+        raise CLIException(f"invalid or unreadable project config: {project_file}")
+
+    participants = project_config.get("participants")
+    if not isinstance(participants, list):
+        raise CLIException("project.yml participants must be a list")
+
+    return project_file, project_config
+
+
+def _find_participant_index(participants: List[Dict], name: str) -> Optional[int]:
+    for index, participant in enumerate(participants):
+        if isinstance(participant, dict) and participant.get("name") == name:
+            return index
+    return None
+
+
+def _upsert_poc_participant(project_config: Dict, participant: Dict, force: bool) -> str:
+    participants = project_config.get("participants")
+    index = _find_participant_index(participants, participant["name"])
+    if index is None:
+        participants.append(participant)
+        return "added"
+
+    existing = participants[index]
+    if existing.get("type") != participant.get("type"):
+        raise CLIException(
+            f"participant '{participant['name']}' already exists as type '{existing.get('type')}', "
+            f"not '{participant.get('type')}'"
+        )
+
+    if not force:
+        raise CLIException(f"participant '{participant['name']}' already exists; use --force to replace it")
+
+    if existing.get("type") == "admin" and existing.get("role") != participant.get("role"):
+        raise CLIException(
+            f"participant '{participant['name']}' already exists with role '{existing.get('role')}'; "
+            "changing a POC user's certificate role requires nvflare poc clean and a fresh prepare"
+        )
+
+    updated = dict(existing)
+    updated.update(participant)
+    participants[index] = updated
+    return "updated"
+
+
+def _restore_poc_active_kit(previous_active: Optional[str], preferred_active: Optional[str] = None):
+    config = load_cli_config()
+    entries = get_startup_kit_entries(config)
+    active_id = None
+    if previous_active and previous_active in entries:
+        active_id = previous_active
+    elif preferred_active and preferred_active in entries:
+        active_id = preferred_active
+
+    if active_id:
+        config.put("startup_kits.active", active_id)
+        save_cli_config(config)
+
+
+def _get_existing_poc_prod_dir(poc_workspace: str, project_name: str) -> str:
+    prod_dirs = _get_prod_dirs(poc_workspace, project_name)
+    if not prod_dirs:
+        raise CLIException("POC workspace has no existing provisioned output; run 'nvflare poc prepare' first")
+    return prod_dirs[-1]
+
+
+def _remove_path(path: str):
+    if os.path.isdir(path):
+        shutil.rmtree(path)
+    elif os.path.exists(path):
+        os.remove(path)
+
+
+class _PocDynamicProvisionLogger:
+    def debug(self, msg: str):
+        pass
+
+    def info(self, msg: str):
+        pass
+
+    def warning(self, msg: str):
+        pass
+
+    def error(self, msg: str):
+        pass
+
+
+def _dynamic_poc_project_config(project_config: Dict, participant: Dict) -> Dict:
+    dynamic_config = copy.deepcopy(project_config)
+    participants = project_config.get("participants", [])
+    servers = [p for p in participants if isinstance(p, dict) and p.get("type") == "server"]
+    if len(servers) != 1:
+        raise CLIException(f"project should only have one server, but {len(servers)} are provided")
+
+    dynamic_config["participants"] = [copy.deepcopy(servers[0]), copy.deepcopy(participant)]
+    # Dynamic POC provisioning only builds the new participant kit. Study registry updates
+    # belong to the running server metadata, not to this short-lived reduced project.
+    dynamic_config.pop("studies", None)
+    return dynamic_config
+
+
+def _ensure_dynamic_poc_ca_available(poc_workspace: str, project_name: str, prod_dir: str, project_config: Dict) -> str:
+    state_file = os.path.join(poc_workspace, project_name, "state", "cert.json")
+    if not os.path.isfile(state_file):
+        raise CLIException(
+            "existing POC CA state was not found; run 'nvflare poc prepare' before using 'nvflare poc add'"
+        )
+
+    server_name = get_fl_server_name(project_config)
+    root_ca_path = os.path.join(prod_dir, server_name, SC.STARTUP, "rootCA.pem")
+    if not os.path.isfile(root_ca_path):
+        raise CLIException(
+            "existing POC rootCA.pem was not found; run 'nvflare poc prepare' before using 'nvflare poc add'"
+        )
+    return root_ca_path
+
+
+def _provision_poc_participant_only(
+    poc_workspace: str,
+    project_config: Dict,
+    participant: Dict,
+    target_prod_dir: str,
+    force: bool = False,
+) -> str:
+    project_name = project_config.get("name") or DEFAULT_PROJECT_NAME
+    _ensure_dynamic_poc_ca_available(poc_workspace, project_name, target_prod_dir, project_config)
+    dynamic_config = _dynamic_poc_project_config(project_config, participant)
+
+    project = prepare_project(dynamic_config)
+    builders = prepare_builders(dynamic_config)
+    packager = prepare_packager(dynamic_config)
+    provisioner = Provisioner(poc_workspace, builders, packager)
+
+    temp_prod_dir = None
+    try:
+        ctx = provisioner.provision(project, mode=ProvisionMode.POC, logger=_PocDynamicProvisionLogger())
+        if ctx.get(CtxKey.BUILD_ERROR):
+            raise CLIException("dynamic POC provisioning failed; see provisioning output for details")
+
+        temp_prod_dir = ctx.get(CtxKey.CURRENT_PROD_DIR)
+        if not temp_prod_dir:
+            raise CLIException("dynamic POC provisioning did not produce an output directory")
+
+        participant_name = participant["name"]
+        generated_kit = os.path.join(temp_prod_dir, participant_name)
+        if not os.path.isdir(generated_kit):
+            raise CLIException(f"startup kit was not generated for participant '{participant_name}'")
+
+        target_kit = os.path.join(target_prod_dir, participant_name)
+        if os.path.exists(target_kit):
+            if not force:
+                raise CLIException(f"startup kit already exists for participant '{participant_name}'")
+            _remove_path(target_kit)
+
+        shutil.move(generated_kit, target_kit)
+        return target_kit
+    finally:
+        if temp_prod_dir and os.path.isdir(temp_prod_dir):
+            shutil.rmtree(temp_prod_dir, ignore_errors=True)
+
+
+def _dynamic_poc_provision(
+    poc_workspace: str,
+    project_file: str,
+    project_config: Dict,
+    participant: Dict,
+    expected_kit_kind: str,
+    previous_active: Optional[str],
+    preferred_active: Optional[str] = None,
+    force: bool = False,
+) -> Tuple[Dict, str]:
+    project_name = project_config.get("name") if project_config else DEFAULT_PROJECT_NAME
+    prod_dir = _get_existing_poc_prod_dir(poc_workspace, project_name)
+    startup_kit = _provision_poc_participant_only(
+        poc_workspace,
+        project_config,
+        participant,
+        prod_dir,
+        force=force,
+    )
+    if not _is_startup_kit_kind(startup_kit, expected_kit_kind):
+        raise CLIException(f"startup kit was not generated for participant '{participant['name']}'")
+
+    save_project_config(project_config, project_file)
+    save_startup_kit_dir_config(poc_workspace, project_name)
+    _restore_poc_active_kit(previous_active, preferred_active)
+    return project_config, prod_dir
+
+
+def _add_poc_user(poc_workspace: str, cert_role: str, email: str, org: str, force: bool = False) -> Dict:
+    project_file, project_config = _load_poc_project_config(poc_workspace)
+    previous_active = get_active_startup_kit_id(load_cli_config())
+    participant = {"name": email, "type": "admin", "org": org, "role": cert_role}
+    action = _upsert_poc_participant(project_config, participant, force)
+    preferred_active = email if not previous_active else None
+    project_config, prod_dir = _dynamic_poc_provision(
+        poc_workspace,
+        project_file,
+        project_config,
+        participant,
+        STARTUP_KIT_KIND_ADMIN,
+        previous_active,
+        preferred_active=preferred_active,
+        force=force,
+    )
+    startup_kit = os.path.join(prod_dir, email)
+    if not _is_startup_kit_kind(startup_kit, STARTUP_KIT_KIND_ADMIN):
+        raise CLIException(f"startup kit was not generated for user '{email}'")
+
+    result = {
+        "status": action,
+        "type": "user",
+        "id": email,
+        "identity": email,
+        "org": org,
+        "cert_role": cert_role,
+        "startup_kit": startup_kit,
+        "prod_dir": prod_dir,
+    }
+    if preferred_active:
+        result["active"] = email
+    else:
+        result["next_step"] = f"nvflare config kit use {email}"
+    return result
+
+
+def _add_poc_site(poc_workspace: str, name: str, org: str, force: bool = False) -> Dict:
+    project_file, project_config = _load_poc_project_config(poc_workspace)
+    previous_active = get_active_startup_kit_id(load_cli_config())
+    participant = {"name": name, "type": "client", "org": org}
+    action = _upsert_poc_participant(project_config, participant, force)
+    project_config, prod_dir = _dynamic_poc_provision(
+        poc_workspace,
+        project_file,
+        project_config,
+        participant,
+        STARTUP_KIT_KIND_SITE,
+        previous_active,
+        force=force,
+    )
+    startup_kit = os.path.join(prod_dir, name)
+    if not _is_startup_kit_kind(startup_kit, STARTUP_KIT_KIND_SITE):
+        raise CLIException(f"startup kit was not generated for site '{name}'")
+
+    return {
+        "status": action,
+        "type": "site",
+        "id": name,
+        "name": name,
+        "org": org,
+        "startup_kit": startup_kit,
+        "prod_dir": prod_dir,
+    }
+
+
+def _require_poc_project_admin():
+    startup_kit_dir = resolve_startup_kit_dir()
+    metadata = inspect_startup_kit_metadata(startup_kit_dir)
+    cert_role = metadata.get("cert_role")
+    identity = metadata.get("identity") or "<unknown>"
+    if not cert_role:
+        raise AuthorizationError(
+            f"nvflare poc add requires an active startup kit with role '{POC_ADD_REQUIRED_CERT_ROLE}'; "
+            f"could not determine the certificate role for active identity '{identity}'"
+        )
+    if cert_role != POC_ADD_REQUIRED_CERT_ROLE:
+        raise AuthorizationError(
+            f"nvflare poc add requires an active startup kit with role '{POC_ADD_REQUIRED_CERT_ROLE}'; "
+            f"active identity '{identity}' has role '{cert_role}'"
+        )
+
+
+def add_poc(cmd_args):
+    sub_cmd = getattr(cmd_args, "poc_add_sub_cmd", None)
+    if sub_cmd == CMD_ADD_USER:
+        return add_poc_user(cmd_args)
+    if sub_cmd == CMD_ADD_SITE:
+        return add_poc_site(cmd_args)
+    from nvflare.tool.cli_output import output_error
+
+    output_error(
+        "INVALID_ARGS",
+        exit_code=4,
+        detail="poc add subcommand required",
+        hint="Run with -h for usage.",
+    )
+    raise SystemExit(4)
+
+
+def add_poc_user(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok, print_human
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        _poc_add_sub_cmd_parsers.get(CMD_ADD_USER),
+        "nvflare poc add user",
+        ["nvflare poc add user lead bob@nvidia.com --org nvidia"],
+        sys.argv[1:],
+    )
+    poc_workspace = get_poc_workspace()
+    try:
+        _require_poc_project_admin()
+        result = _add_poc_user(
+            poc_workspace,
+            cmd_args.cert_role,
+            cmd_args.email,
+            cmd_args.org,
+            force=getattr(cmd_args, "force", False),
+        )
+    except StartupKitConfigError as e:
+        output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e), hint=getattr(e, "hint", ""))
+        raise SystemExit(4)
+    except ValueError as e:
+        output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e))
+        raise SystemExit(4)
+    except AuthorizationError as e:
+        output_error("NOT_AUTHORIZED", exit_code=1, detail=str(e))
+        raise SystemExit(1)
+    except CLIException as e:
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+        raise SystemExit(4)
+    except Exception as e:
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
+        raise SystemExit(5)
+
+    output_ok(result)
+    print_human(f"\nPOC user {result['status']}: {result['identity']}")
+    print_human(f"  Startup kit: {result['startup_kit']}")
+    if result.get("active"):
+        print_human(f"  Active startup kit: {result['active']}")
+    else:
+        print_human(f"  Activate with: {result['next_step']}")
+
+
+def add_poc_site(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok, print_human
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        _poc_add_sub_cmd_parsers.get(CMD_ADD_SITE),
+        "nvflare poc add site",
+        ["nvflare poc add site site-3 --org nvidia"],
+        sys.argv[1:],
+    )
+    poc_workspace = get_poc_workspace()
+    try:
+        _require_poc_project_admin()
+        result = _add_poc_site(
+            poc_workspace,
+            cmd_args.name,
+            cmd_args.org,
+            force=getattr(cmd_args, "force", False),
+        )
+    except StartupKitConfigError as e:
+        output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e), hint=getattr(e, "hint", ""))
+        raise SystemExit(4)
+    except ValueError as e:
+        output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e))
+        raise SystemExit(4)
+    except AuthorizationError as e:
+        output_error("NOT_AUTHORIZED", exit_code=1, detail=str(e))
+        raise SystemExit(1)
+    except CLIException as e:
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+        raise SystemExit(4)
+    except Exception as e:
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
+        raise SystemExit(5)
+
+    output_ok(result)
+    print_human(f"\nPOC site {result['status']}: {result['name']}")
+    print_human(f"  Startup kit: {result['startup_kit']}")
+    print_human(f"  Start with: nvflare poc start -p {result['name']}")
 
 
 def prepare_poc(cmd_args):
@@ -580,8 +1071,14 @@ def _prepare_poc(
     else:
         print_human(f"Preparing POC workspace at {workspace} using {project_conf_path}...")
 
-    project_config = None
     if os.path.exists(workspace):
+        running_poc = _get_running_poc_context(workspace)
+        if running_poc:
+            if force:
+                _ensure_poc_stopped(workspace, project_config=running_poc[0], service_config=running_poc[1])
+            else:
+                raise CLIException("system is still running, please stop the system first.")
+
         if not force:
             if not prompt_yn(
                 f"This will delete poc workspace directory: '{workspace}' and create a new one. Is it OK to proceed?"
@@ -606,6 +1103,53 @@ def _prepare_poc(
     project_name = project_config.get("name") if project_config else None
     save_startup_kit_dir_config(workspace, project_name)
     return True
+
+
+def _get_running_poc_context(workspace: str):
+    try:
+        project_config, service_config = setup_service_config(workspace)
+    except Exception:
+        # Best-effort detection only: unreadable workspace metadata should not block force recreation.
+        return None
+
+    if not project_config or not service_config:
+        return None
+
+    if not is_poc_ready(workspace, service_config, project_config):
+        return None
+
+    if not is_poc_running(workspace, service_config, project_config):
+        return None
+
+    return project_config, service_config
+
+
+def _ensure_poc_stopped(
+    workspace: str,
+    timeout_in_sec: int = 30,
+    poll_interval: float = 1.0,
+    project_config=None,
+    service_config=None,
+    reason: str = "recreating the workspace",
+):
+    if project_config is None or service_config is None:
+        running_poc = _get_running_poc_context(workspace)
+        if not running_poc:
+            return
+        project_config, service_config = running_poc
+
+    from nvflare.tool.cli_output import print_human
+
+    print_human(f"Existing POC system is still running; stopping it before {reason}.")
+    _stop_poc(workspace, project_config=project_config, service_config=service_config)
+
+    deadline = time.time() + timeout_in_sec
+    while time.time() < deadline:
+        if not is_poc_running(workspace, service_config, project_config):
+            return
+        time.sleep(poll_interval)
+
+    raise CLIException("system is still running after shutdown was requested; please run 'nvflare poc stop' first.")
 
 
 def prepare_poc_provision(
@@ -882,8 +1426,9 @@ def stop_poc(cmd_args):
     output_ok({"status": "stopped"})
 
 
-def _stop_poc(poc_workspace: str, excluded=None, services_list=None):
-    project_config, service_config = setup_service_config(poc_workspace)
+def _stop_poc(poc_workspace: str, excluded=None, services_list=None, project_config=None, service_config=None):
+    if project_config is None or service_config is None:
+        project_config, service_config = setup_service_config(poc_workspace)
 
     if services_list is None:
         services_list = []
@@ -1043,60 +1588,89 @@ def _run_poc(
 
 
 def clean_poc(cmd_args):
-    from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
         _poc_sub_cmd_parsers.get(CMD_CLEAN_POC),
         "nvflare poc clean",
-        ["nvflare poc clean"],
+        ["nvflare poc clean", "nvflare poc clean --force"],
         sys.argv[1:],
     )
     poc_workspace = get_poc_workspace()
-    force = getattr(cmd_args, "force", False)
+    _clean_poc(poc_workspace, force=getattr(cmd_args, "force", False))
 
-    try:
-        result = _clean_poc(poc_workspace, force=force)
-    except CLIException as e:
-        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
-        raise SystemExit(4)
-    except Exception as e:
-        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
-        raise SystemExit(5)
-    if result is False:
-        return
 
-    output_ok({"status": "cleaned"})
+def _clean_poc_config(poc_workspace: str):
+    config = load_cli_config()
+    config, _removed_ids = remove_entries_under_workspace(config, poc_workspace)
+    for key in (f"{POC_KEY}.{WORKSPACE_KEY}", f"{POC_KEY}.{STARTUP_KIT_KEY}", "prod.startup_kit"):
+        try:
+            config.pop(key, None)
+        except Exception:
+            pass
+    save_cli_config(config)
 
 
 def is_poc_running(poc_workspace, service_config, project_config):
     project_name = project_config.get("name") if project_config else DEFAULT_PROJECT_NAME
-    prod_dir = get_prod_dir(poc_workspace, project_name)
-    server_dir = os.path.join(prod_dir, service_config[SC.FLARE_SERVER])
-    pid_file = os.path.join(server_dir, "pid.fl")
-    return os.path.exists(pid_file)
+    prod_dirs = _get_prod_dirs(poc_workspace, project_name)
+    if not prod_dirs:
+        prod_dirs = [get_prod_dir(poc_workspace, project_name)]
+    for prod_dir in prod_dirs:
+        server_dir = os.path.join(prod_dir, service_config[SC.FLARE_SERVER])
+        pid_file = os.path.join(server_dir, "pid.fl")
+        daemon_pid_file = os.path.join(server_dir, "daemon_pid.fl")
+        if _is_live_pid_file(pid_file) or _is_live_pid_file(daemon_pid_file):
+            return True
+    return False
 
 
-def _clean_poc(poc_workspace: str, force: bool = False) -> bool:
+def _is_live_pid_file(pid_file: str) -> bool:
+    if not os.path.exists(pid_file):
+        return False
+
+    try:
+        with open(pid_file, "r") as f:
+            pid = int(f.read().strip())
+    except (OSError, ValueError):
+        return False
+
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError as e:
+        if e.errno == errno.EPERM:
+            return True
+        return False
+
+
+def _clean_poc(poc_workspace: str, force: bool = False):
     if os.path.isdir(poc_workspace):
         project_config, service_config = setup_service_config(poc_workspace)
         if project_config is None:
             raise CLIException(f"{poc_workspace} is not valid poc directory")
         if is_poc_ready(poc_workspace, service_config, project_config):
-            if not is_poc_running(poc_workspace, service_config, project_config):
-                from nvflare.tool.cli_output import print_human, prompt_yn
+            if is_poc_running(poc_workspace, service_config, project_config):
+                if force:
+                    _ensure_poc_stopped(
+                        poc_workspace,
+                        project_config=project_config,
+                        service_config=service_config,
+                        reason="cleaning the workspace",
+                    )
+                else:
+                    raise CLIException("system is still running, please stop the system first.")
 
-                if not force:
-                    if not sys.stdin.isatty():
-                        raise CLIException("workspace exists; use --force to clean in non-interactive mode")
-                    if not prompt_yn(f"POC workspace already exists: {poc_workspace}. Remove it?"):
-                        return False
-                shutil.rmtree(poc_workspace, ignore_errors=True)
-
-                print_human(f"{poc_workspace} is removed")
-                return True
-            else:
+            if is_poc_running(poc_workspace, service_config, project_config):
                 raise CLIException("system is still running, please stop the system first.")
+
+            from nvflare.tool.cli_output import print_human
+
+            shutil.rmtree(poc_workspace)
+            _clean_poc_config(poc_workspace)
+
+            print_human(f"{poc_workspace} is removed")
+            return True
         else:
             raise CLIException(f"{poc_workspace} is not valid poc directory")
     else:
@@ -1106,6 +1680,7 @@ def _clean_poc(poc_workspace: str, force: bool = False) -> bool:
 poc_sub_cmd_handlers = {
     CMD_PREPARE_POC: prepare_poc,
     CMD_PREPARE_JOBS_DIR: prepare_jobs_dir,
+    CMD_ADD_POC: add_poc,
     CMD_START_POC: start_poc,
     CMD_STOP_POC: stop_poc,
     CMD_CLEAN_POC: clean_poc,
@@ -1113,6 +1688,7 @@ poc_sub_cmd_handlers = {
 
 # Populated by define_*_parser functions; used by handlers for --schema support
 _poc_sub_cmd_parsers = {}
+_poc_add_sub_cmd_parsers = {}
 _poc_root_parser = None
 
 
@@ -1125,6 +1701,7 @@ def def_poc_parser(sub_cmd):
     poc_parser = parser.add_subparsers(title=cmd, dest="poc_sub_cmd", help="poc subcommand")
     define_prepare_parser(poc_parser)
     define_prepare_jobs_parser(poc_parser)
+    define_add_parser(poc_parser)
     define_start_parser(poc_parser)
     define_stop_parser(poc_parser)
     define_clean_parser(poc_parser)
@@ -1138,7 +1715,14 @@ def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optio
     _poc_sub_cmd_parsers[CMD_PREPARE_POC] = prepare_parser
 
     prepare_parser.add_argument(
-        "-n", "--number_of_clients", type=int, nargs="?", default=2, help="number of sites or clients, default to 2"
+        "-n",
+        "--number-of-clients",
+        "--number_of_clients",  # backward compat
+        dest="number_of_clients",
+        type=int,
+        nargs="?",
+        default=2,
+        help="number of sites or clients, default to 2",
     )
     prepare_parser.add_argument(
         "-c",
@@ -1157,7 +1741,9 @@ def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optio
 
     prepare_parser.add_argument(
         "-i",
-        "--project_input",
+        "--project-input",
+        "--project_input",  # backward compat
+        dest="project_input",
         type=str,
         nargs="?",
         default="",
@@ -1166,7 +1752,9 @@ def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optio
     )
     prepare_parser.add_argument(
         "-d",
-        "--docker_image",
+        "--docker-image",
+        "--docker_image",  # backward compat
+        dest="docker_image",
         nargs="?",
         default=None,
         const="nvflare/nvflare",
@@ -1182,7 +1770,16 @@ def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optio
 def define_prepare_jobs_parser(poc_parser):
     prepare_jobs_dir_parser = poc_parser.add_parser(CMD_PREPARE_JOBS_DIR, help="prepare jobs directory")
     _poc_sub_cmd_parsers[CMD_PREPARE_JOBS_DIR] = prepare_jobs_dir_parser
-    prepare_jobs_dir_parser.add_argument("-j", "--jobs_dir", type=str, nargs="?", default=None, help="jobs directory")
+    prepare_jobs_dir_parser.add_argument(
+        "-j",
+        "--jobs-dir",
+        "--jobs_dir",  # backward compat
+        dest="jobs_dir",
+        type=str,
+        nargs="?",
+        default=None,
+        help="jobs directory",
+    )
     prepare_jobs_dir_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     prepare_jobs_dir_parser.add_argument(
         "--force", action="store_true", help="overwrite existing jobs directory without prompting"
@@ -1190,11 +1787,37 @@ def define_prepare_jobs_parser(poc_parser):
     prepare_jobs_dir_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
+def define_add_parser(poc_parser):
+    add_parser = poc_parser.add_parser(CMD_ADD_POC, help="add a participant to the local POC project")
+    _poc_sub_cmd_parsers[CMD_ADD_POC] = add_parser
+
+    add_sub_parser = add_parser.add_subparsers(
+        title=CMD_ADD_POC,
+        dest="poc_add_sub_cmd",
+        help="poc add subcommand",
+    )
+
+    user_parser = add_sub_parser.add_parser(CMD_ADD_USER, help="add a POC user startup kit")
+    _poc_add_sub_cmd_parsers[CMD_ADD_USER] = user_parser
+    user_parser.add_argument("cert_role", choices=POC_USER_CERT_ROLES, help="certificate role for the user")
+    user_parser.add_argument("email", help="user identity, usually an email address")
+    user_parser.add_argument("--org", default="nvidia", help="organization name, default nvidia")
+    user_parser.add_argument("--force", action="store_true", help="replace an existing user participant")
+    user_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+
+    site_parser = add_sub_parser.add_parser(CMD_ADD_SITE, help="add a POC site startup kit")
+    _poc_add_sub_cmd_parsers[CMD_ADD_SITE] = site_parser
+    site_parser.add_argument("name", help="site name")
+    site_parser.add_argument("--org", default="nvidia", help="organization name, default nvidia")
+    site_parser.add_argument("--force", action="store_true", help="replace an existing site participant")
+    site_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+
+
 def define_clean_parser(poc_parser):
     clean_parser = poc_parser.add_parser(CMD_CLEAN_POC, help="clean up poc workspace")
     _poc_sub_cmd_parsers[CMD_CLEAN_POC] = clean_parser
     clean_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
-    clean_parser.add_argument("--force", action="store_true", help="remove workspace without prompting")
+    clean_parser.add_argument("--force", action="store_true", help="stop a running POC system before cleanup")
     clean_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 

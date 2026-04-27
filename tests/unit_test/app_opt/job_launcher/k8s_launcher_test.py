@@ -57,17 +57,31 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobReturnCode
 from nvflare.app_opt.job_launcher.k8s_launcher import (
+    DATA_PVC_VOLUME_NAME,
     DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT,
     JOB_RETURN_CODE_MAPPING,
     POD_STATE_MAPPING,
-    VOLUME_MOUNT_LIST,
+    WORKSPACE_MOUNT_PATH,
     JobState,
     K8sJobHandle,
     PodPhase,
-    PvName,
     _job_args_dict,
+    site_name_to_rfc1123,
     uuid4_to_rfc1123,
 )
+from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_WORKSPACE_OWNER_FQCN, ENV_WORKSPACE_TRANSFER_TOKEN
+
+_DEFAULT_VOLUME_MOUNT_LIST = [
+    {"name": "workspace-job", "mountPath": WORKSPACE_MOUNT_PATH},
+    {"name": "startup-kit", "mountPath": f"{WORKSPACE_MOUNT_PATH}/startup", "readOnly": True},
+    {"name": DATA_PVC_VOLUME_NAME, "mountPath": "/var/tmp/nvflare/data", "readOnly": True},
+]
+
+_DEFAULT_VOLUME_LIST = [
+    {"name": "workspace-job", "emptyDir": {}},
+    {"name": "startup-kit", "secret": {"secretName": f"nvflare-startup-{site_name_to_rfc1123('site1')}"}},
+    {"name": DATA_PVC_VOLUME_NAME, "persistentVolumeClaim": {"claimName": "data-pvc"}},
+]
 
 
 def _make_job_config(**overrides):
@@ -76,11 +90,8 @@ def _make_job_config(**overrides):
         "image": "nvflare/nvflare:test",
         "container_name": "container-test-job-123",
         "command": "nvflare.private.fed.app.client.worker_process",
-        "volume_mount_list": VOLUME_MOUNT_LIST,
-        "volume_list": [
-            {"name": PvName.WORKSPACE.value, "persistentVolumeClaim": {"claimName": "ws-pvc"}},
-            {"name": PvName.DATA.value, "persistentVolumeClaim": {"claimName": "data-pvc"}},
-        ],
+        "volume_mount_list": _DEFAULT_VOLUME_MOUNT_LIST,
+        "volume_list": _DEFAULT_VOLUME_LIST,
         "module_args": {"-m": "val_m", "-w": "val_w"},
         "set_list": ["key1=val1", "key2=val2"],
         "resources": {"limits": {"nvidia.com/gpu": 1}},
@@ -142,6 +153,11 @@ class TestUuid4ToRfc1123:
 
     def test_empty_string(self):
         assert uuid4_to_rfc1123("") == ""
+
+
+class TestSiteNameToRfc1123:
+    def test_site_name_collision_gets_distinct_suffixes(self):
+        assert site_name_to_rfc1123("site#1") != site_name_to_rfc1123("site1")
 
 
 # ---------------------------------------------------------------------------
@@ -261,16 +277,17 @@ class TestK8sJobHandle:
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
         volumes = handle.get_manifest()["spec"]["volumes"]
-        assert len(volumes) == 2
-        pvc_names = [v["persistentVolumeClaim"]["claimName"] for v in volumes]
-        assert "ws-pvc" in pvc_names
-        assert "data-pvc" in pvc_names
+        assert len(volumes) == 3
+        vol_map = {v["name"]: v for v in volumes}
+        assert "emptyDir" in vol_map["workspace-job"]
+        assert "secret" in vol_map["startup-kit"]
+        assert vol_map[DATA_PVC_VOLUME_NAME]["persistentVolumeClaim"]["claimName"] == "data-pvc"
 
     def test_manifest_volume_mounts(self):
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
         container = handle.get_manifest()["spec"]["containers"][0]
-        assert container["volumeMounts"] == VOLUME_MOUNT_LIST
+        assert container["volumeMounts"] == _DEFAULT_VOLUME_MOUNT_LIST
 
     def test_manifest_args_contain_command(self):
         cfg = _make_job_config()
@@ -337,11 +354,19 @@ class TestK8sJobHandle:
         container = handle.get_manifest()["spec"]["containers"][0]
         assert container["resources"]["limits"]["nvidia.com/gpu"] == 1
 
-    def test_manifest_no_gpu_resources(self):
-        cfg = _make_job_config(resources={"limits": {"nvidia.com/gpu": None}})
+    def test_manifest_resources_passed_through_unconditionally(self):
+        cfg = _make_job_config(resources={"limits": {"cpu": "500m"}})
+
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
         container = handle.get_manifest()["spec"]["containers"][0]
-        assert "resources" not in container
+        assert container["resources"] == {"limits": {"cpu": "500m"}}
+
+    def test_manifest_no_gpu_resources(self):
+        cfg = _make_job_config(resources={"limits": {}})
+
+        handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
+        container = handle.get_manifest()["spec"]["containers"][0]
+        assert container["resources"] == {"limits": {}}
 
     def test_manifest_no_resources_key(self):
         cfg = _make_job_config()
@@ -423,6 +448,16 @@ class TestK8sJobHandle:
         handle.terminal_state = JobState.TERMINATED
         assert handle.poll() == JobReturnCode.ABORTED
         api.read_namespaced_pod.assert_not_called()
+
+    def test_poll_removes_workspace_job_on_terminal_state(self):
+        api = _make_api_instance()
+        resp = Mock()
+        resp.status.phase = PodPhase.SUCCEEDED.value
+        api.read_namespaced_pod.return_value = resp
+        ws_transfer = Mock()
+        handle = _make_handle(api=api, workspace_transfer=ws_transfer, workspace_job_id="job-raw")
+        assert handle.poll() == JobReturnCode.SUCCESS
+        ws_transfer.remove_job.assert_called_once_with("job-raw")
 
     # -- terminate ------------------------------------------------------------
     def test_terminate_deletes_pod_and_sets_terminated(self):
@@ -556,6 +591,23 @@ class TestK8sJobHandle:
         handle = _make_handle(api=api)
         handle.wait()
         assert handle.poll() == JobReturnCode.SUCCESS
+
+    def test_wait_removes_workspace_job_on_terminal_state(self):
+        api = _make_api_instance()
+        resp = Mock()
+        resp.status.phase = PodPhase.SUCCEEDED.value
+        api.read_namespaced_pod.return_value = resp
+        ws_transfer = Mock()
+        handle = _make_handle(api=api, workspace_transfer=ws_transfer, workspace_job_id="job-raw")
+        handle.wait()
+        ws_transfer.remove_job.assert_called_once_with("job-raw")
+
+    def test_terminate_removes_workspace_job(self):
+        api = _make_api_instance()
+        ws_transfer = Mock()
+        handle = _make_handle(api=api, workspace_transfer=ws_transfer, workspace_job_id="job-raw")
+        handle.terminate()
+        ws_transfer.remove_job.assert_called_once_with("job-raw")
 
     # -- enter_states ---------------------------------------------------------
     def test_enter_states_returns_true_when_state_matches(self):
@@ -713,10 +765,12 @@ def _make_k8s_launcher_patches():
     # import) and builtins.open (for reading the PVC file).  CoreV1Api on the
     # already-stubbed _k8s_core module is patched with patch.object so each
     # test gets a fresh, controllable mock and the original stub is restored.
+    # WorkspaceTransferManager is patched so tests don't register real CellNet handlers.
     return [
         patch("builtins.open", create=True),
         patch("nvflare.app_opt.job_launcher.k8s_launcher.yaml"),
         patch.object(_k8s_core, "CoreV1Api"),
+        patch("nvflare.app_opt.job_launcher.k8s_launcher.WorkspaceTransferManager"),
     ]
 
 
@@ -735,21 +789,20 @@ def _setup_launcher(launcher_cls):
     # PVC file are loaded lazily inside launch_job, so no mocks are needed here.
     return launcher_cls(
         config_file_path="/fake/kube/config",
-        workspace_pvc="ws-pvc",
         study_data_pvc_file_path="/fake/data_pvc.yaml",
     )
 
 
 class TestK8sJobLauncherHandleEvent:
-    def test_adds_launcher_when_image_present(self):
+    def test_always_adds_launcher_on_before_job_launch(self):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        _mock_open, _mock_yaml, _mock_core_cls = _enter_patches(patches)
+        _mock_open, _mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
         try:
             launcher = _setup_launcher(ClientK8sJobLauncher)
             fl_ctx = FLContext()
-            job_meta = {JobMetaKey.DEPLOY_MAP.value: {"app": [{"sites": ["site-1"], "image": "nvflare/custom:latest"}]}}
+            job_meta = {JobMetaKey.JOB_LAUNCHER_SPEC.value: {"site-1": {"k8s": {"image": "nvflare/custom:v1"}}}}
             fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
             fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, "site-1", private=False, sticky=True)
 
@@ -761,21 +814,25 @@ class TestK8sJobLauncherHandleEvent:
         finally:
             _exit_patches(patches)
 
-    def test_skips_when_no_image(self):
+    def test_adds_launcher_even_without_image_in_meta(self):
+        # Launcher selection is a site policy (resources.json), not a job decision.
+        # K8sJobLauncher always registers; launch_job raises if no image is configured.
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        _mock_open, _mock_yaml, _mock_core_cls = _enter_patches(patches)
+        _mock_open, _mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
         try:
             launcher = _setup_launcher(ClientK8sJobLauncher)
             fl_ctx = FLContext()
-            job_meta = {JobMetaKey.DEPLOY_MAP.value: {}}
+            job_meta = {}
             fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
             fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, "site-1", private=False, sticky=True)
 
             launcher.handle_event(EventType.BEFORE_JOB_LAUNCH, fl_ctx)
 
-            assert fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER) is None
+            launchers = fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
+            assert launchers is not None
+            assert launcher in launchers
         finally:
             _exit_patches(patches)
 
@@ -791,13 +848,11 @@ class TestK8sJobLauncherInit:
 
         launcher = ClientK8sJobLauncher(
             config_file_path="/fake/kube/config",
-            workspace_pvc="ws-pvc",
             study_data_pvc_file_path="/fake/data_pvc.yaml",
             timeout=60,
             namespace="test-ns",
         )
 
-        assert launcher.workspace_pvc == "ws-pvc"
         assert launcher.study_data_pvc_file_path == "/fake/data_pvc.yaml"
         assert launcher.timeout == 60
         assert launcher.namespace == "test-ns"
@@ -813,7 +868,7 @@ class TestClientK8sJobLauncherGetModuleArgs:
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        _mock_open, _mock_yaml, _mock_core_cls = _enter_patches(patches)
+        _mock_open, _mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
         try:
             launcher = _setup_launcher(ClientK8sJobLauncher)
             fl_ctx = FLContext()
@@ -833,7 +888,7 @@ class TestClientK8sJobLauncherGetModuleArgs:
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        _mock_open, _mock_yaml, _mock_core_cls = _enter_patches(patches)
+        _mock_open, _mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
         try:
             launcher = _setup_launcher(ClientK8sJobLauncher)
             fl_ctx = FLContext()
@@ -851,14 +906,14 @@ class TestServerK8sJobLauncherGetModuleArgs:
         from nvflare.app_opt.job_launcher.k8s_launcher import ServerK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        _mock_open, _mock_yaml, _mock_core_cls = _enter_patches(patches)
+        _mock_open, _mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
         try:
             launcher = _setup_launcher(ServerK8sJobLauncher)
             fl_ctx = FLContext()
             job_args = {
                 JobProcessArgs.WORKSPACE: ("-w", "/workspace"),
                 JobProcessArgs.JOB_ID: ("-j", "job-1"),
-                JobProcessArgs.ROOT_URL: ("--root_url", "grpc://server:8003"),
+                JobProcessArgs.ROOT_URL: ("--root_url", "https://server:8003"),
             }
             fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args, private=True, sticky=False)
 
@@ -872,7 +927,7 @@ class TestServerK8sJobLauncherGetModuleArgs:
         from nvflare.app_opt.job_launcher.k8s_launcher import ServerK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        _mock_open, _mock_yaml, _mock_core_cls = _enter_patches(patches)
+        _mock_open, _mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
         try:
             launcher = _setup_launcher(ServerK8sJobLauncher)
             fl_ctx = FLContext()
@@ -894,10 +949,10 @@ _EXPECTED_JOB_ID = uuid4_to_rfc1123(_JOB_UUID)
 def _make_launch_job_meta(site_name="site-1", image="nvflare/nvflare:latest", gpu=None):
     meta = {
         JobConstants.JOB_ID: _JOB_UUID,
-        JobMetaKey.DEPLOY_MAP.value: {"app": [{"sites": [site_name], "image": image}]},
+        JobMetaKey.JOB_LAUNCHER_SPEC.value: {site_name: {"k8s": {"image": image}}},
     }
     if gpu is not None:
-        meta[JobMetaKey.RESOURCE_SPEC.value] = {site_name: {"num_of_gpus": gpu}}
+        meta[JobMetaKey.RESOURCE_SPEC.value] = {site_name: {"k8s": {"image": image, "num_of_gpus": gpu}}}
     return meta
 
 
@@ -910,13 +965,18 @@ def _make_launch_fl_ctx(site_name="site-1", set_items=None, app_custom_folder=""
         JobProcessArgs.JOB_ID: ("-n", "job-abc"),
     }
     fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args, private=True, sticky=False)
-    if set_items is not None:
-        args_obj = Mock()
-        args_obj.set = set_items
-        fl_ctx.set_prop(FLContextKey.ARGS, args_obj, private=False, sticky=False)
+    args_obj = Mock()
+    args_obj.workspace = "/fake/workspace"
+    args_obj.set = set_items
+    fl_ctx.set_prop(FLContextKey.ARGS, args_obj, private=False, sticky=False)
     workspace_obj = Mock()
     workspace_obj.get_app_custom_dir.return_value = app_custom_folder
+    workspace_obj.get_startup_kit_dir.return_value = "/fake/startup"
+    workspace_obj.get_site_config_dir.return_value = "/fake/local"
     fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace_obj, private=True, sticky=False)
+    engine = Mock()
+    engine.cell = Mock()
+    fl_ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
     return fl_ctx
 
 
@@ -932,13 +992,18 @@ class TestK8sJobLauncherLaunchJob:
     def _setup(self, patches, namespace="test-ns"):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
-        mock_open, mock_yaml, mock_core_cls = _enter_patches(patches)
+        mock_open, mock_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
         mock_yaml.safe_load.return_value = {"default": "data-pvc"}
         mock_api = MagicMock()
         mock_core_cls.return_value = mock_api
+        self.mock_transfer_cls = mock_transfer_cls
+        mock_transfer = MagicMock()
+        mock_transfer_cls.get_or_create.return_value = mock_transfer
+        mock_transfer.owner_fqcn = "site-1.parent"
+        mock_transfer.add_job.return_value = "transfer-token"
+        self.mock_transfer = mock_transfer
         launcher = ClientK8sJobLauncher(
             config_file_path="/fake/kube/config",
-            workspace_pvc="ws-pvc",
             study_data_pvc_file_path="/fake/data_pvc.yaml",
             namespace=namespace,
         )
@@ -1075,16 +1140,39 @@ class TestK8sJobLauncherLaunchJob:
 
     # -- pod manifest: volumes ------------------------------------------------
 
-    def test_pod_manifest_pvcs_use_launcher_pvc_names(self):
+    def test_pod_manifest_volume_structure(self):
         patches = _make_k8s_launcher_patches()
         launcher, mock_api = self._setup(patches)
         self._prime_running(mock_api)
         try:
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            claims = {v["name"]: v["persistentVolumeClaim"]["claimName"] for v in manifest["spec"]["volumes"]}
-            assert claims[PvName.WORKSPACE.value] == "ws-pvc"
-            assert claims[PvName.DATA.value] == "data-pvc"
+            volumes = manifest["spec"]["volumes"]
+            vol_map = {v["name"]: v for v in volumes}
+            # workspace uses ephemeral emptyDir (no shared PVC)
+            assert "emptyDir" in vol_map["workspace-job"]
+            # startup/ delivered via Secret
+            assert "secret" in vol_map["startup-kit"]
+            # data PVC from the PVC file
+            assert vol_map[DATA_PVC_VOLUME_NAME]["persistentVolumeClaim"]["claimName"] == "data-pvc"
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_omits_data_pvc_when_opted_out(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.RESOURCE_SPEC.value] = {
+                "site-1": {"k8s": {"image": "nvflare/nvflare:latest", "data": False}}
+            }
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            vol_names = {v["name"] for v in manifest["spec"]["volumes"]}
+            mount_names = {m["name"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
+            assert DATA_PVC_VOLUME_NAME not in vol_names
+            assert DATA_PVC_VOLUME_NAME not in mount_names
         finally:
             _exit_patches(patches)
 
@@ -1108,7 +1196,106 @@ class TestK8sJobLauncherLaunchJob:
         try:
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert "resources" not in manifest["spec"]["containers"][0]
+            resources = manifest["spec"]["containers"][0]["resources"]
+            assert "nvidia.com/gpu" not in resources.get("limits", {})
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_cpu_memory_limits_from_launcher_spec(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"].update({"cpu": "500m", "memory": "2Gi"})
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            limits = manifest["spec"]["containers"][0]["resources"]["limits"]
+            assert limits["cpu"] == "500m"
+            assert limits["memory"] == "2Gi"
+            assert "nvidia.com/gpu" not in limits
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_gpu_and_cpu_combined(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta(gpu=2)
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"].update({"cpu": "1000m", "memory": "4Gi"})
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            limits = manifest["spec"]["containers"][0]["resources"]["limits"]
+            assert limits["nvidia.com/gpu"] == 2
+            assert limits["cpu"] == "1000m"
+            assert limits["memory"] == "4Gi"
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_cpu_memory_mirrored_to_requests(self):
+        # AKS deployment safeguards require explicit cpu/memory requests.
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"].update({"cpu": "500m", "memory": "2Gi"})
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            resources = manifest["spec"]["containers"][0]["resources"]
+            assert resources["requests"]["cpu"] == "500m"
+            assert resources["requests"]["memory"] == "2Gi"
+            assert resources["limits"]["cpu"] == "500m"
+            assert resources["limits"]["memory"] == "2Gi"
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_cpu_request_override(self):
+        # cpu_request / memory_request allow request < limit (burstable QoS).
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"].update(
+                {"cpu": "2000m", "cpu_request": "500m", "memory": "8Gi", "memory_request": "2Gi"}
+            )
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            resources = manifest["spec"]["containers"][0]["resources"]
+            assert resources["limits"]["cpu"] == "2000m"
+            assert resources["requests"]["cpu"] == "500m"
+            assert resources["limits"]["memory"] == "8Gi"
+            assert resources["requests"]["memory"] == "2Gi"
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_gpu_mirrored_to_requests(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(gpu=2), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            resources = manifest["spec"]["containers"][0]["resources"]
+            assert resources["requests"]["nvidia.com/gpu"] == 2
+            assert resources["limits"]["nvidia.com/gpu"] == 2
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_no_cpu_memory_requests_when_not_specified(self):
+        # When cpu/memory are absent from launcher_spec, requests has only ephemeral-storage.
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            requests = manifest["spec"]["containers"][0]["resources"]["requests"]
+            assert "cpu" not in requests
+            assert "memory" not in requests
+            assert "ephemeral-storage" in requests
         finally:
             _exit_patches(patches)
 
@@ -1142,14 +1329,58 @@ class TestK8sJobLauncherLaunchJob:
         finally:
             _exit_patches(patches)
 
-    def test_pod_manifest_no_env_when_no_custom_folder(self):
+    def test_pod_manifest_no_pythonpath_when_no_custom_folder(self):
         patches = _make_k8s_launcher_patches()
         launcher, mock_api = self._setup(patches)
         self._prime_running(mock_api)
         try:
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx(app_custom_folder=""))
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert "env" not in manifest["spec"]["containers"][0]
+            container = manifest["spec"]["containers"][0]
+            env_map = {e["name"]: e["value"] for e in container.get("env", [])}
+            assert "PYTHONPATH" not in env_map
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_sets_workspace_owner_fqcn_env(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            env_map = {e["name"]: e["value"] for e in manifest["spec"]["containers"][0].get("env", [])}
+            assert env_map[ENV_WORKSPACE_OWNER_FQCN] == "site-1.parent"
+            assert env_map[ENV_WORKSPACE_TRANSFER_TOKEN] == "transfer-token"
+        finally:
+            _exit_patches(patches)
+
+    def test_launch_job_debug_log_does_not_include_transfer_token(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            with patch.object(launcher.logger, "debug") as debug_log:
+                launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            assert debug_log.called
+            logged_text = " ".join(str(part) for part in debug_log.call_args.args)
+            assert "transfer-token" not in logged_text
+            assert ENV_WORKSPACE_TRANSFER_TOKEN not in logged_text
+        finally:
+            _exit_patches(patches)
+
+    def test_launch_job_uses_get_or_create_with_cell(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            fl_ctx = _make_launch_fl_ctx()
+            owner_cell = fl_ctx.get_engine().cell
+
+            launcher.launch_job(_make_launch_job_meta(), fl_ctx)
+
+            self.mock_transfer_cls.get_or_create.assert_called_once_with(owner_cell)
+            self.mock_transfer.add_job.assert_called_once_with(_JOB_UUID, "/fake/workspace")
         finally:
             _exit_patches(patches)
 
@@ -1164,6 +1395,7 @@ class TestK8sJobLauncherLaunchJob:
             handle = launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             assert isinstance(handle, K8sJobHandle)
             assert handle.terminal_state == JobState.TERMINATED
+            self.mock_transfer.remove_job.assert_called_once_with(_JOB_UUID)
         finally:
             _exit_patches(patches)
 
@@ -1190,18 +1422,45 @@ class TestK8sJobLauncherLaunchJob:
         finally:
             _exit_patches(patches)
 
+    def test_startup_secret_failure_removes_transfer_record(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            with patch.object(launcher, "_ensure_startup_secret", side_effect=OSError("boom")):
+                with pytest.raises(OSError, match="boom"):
+                    launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            self.mock_transfer.remove_job.assert_called_once_with(_JOB_UUID)
+            mock_api.create_namespaced_pod.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_ensure_startup_secret_replaces_when_create_conflicts(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            launcher.core_v1 = mock_api
+            mock_api.create_namespaced_secret.side_effect = _FakeApiException(status=409, reason="Conflict")
+
+            secret_name = launcher._ensure_startup_secret("site-1", "/fake/startup")
+
+            assert secret_name == f"nvflare-startup-{site_name_to_rfc1123('site-1')}"
+            mock_api.create_namespaced_secret.assert_called_once()
+            mock_api.replace_namespaced_secret.assert_called_once()
+            mock_api.read_namespaced_secret.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
     # -- PVC file validation (lazy-loaded in launch_job) ----------------------
 
     def test_raises_on_empty_pvc_file(self):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        mock_open, mock_yaml, _mock_core_cls = _enter_patches(patches)
+        mock_open, mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
         try:
             mock_yaml.safe_load.return_value = {}
             launcher = ClientK8sJobLauncher(
                 config_file_path="/fake/kube/config",
-                workspace_pvc="ws-pvc",
                 study_data_pvc_file_path="/fake/data_pvc.yaml",
             )
             with pytest.raises(ValueError, match="empty"):
@@ -1213,12 +1472,11 @@ class TestK8sJobLauncherLaunchJob:
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        mock_open, mock_yaml, _mock_core_cls = _enter_patches(patches)
+        mock_open, mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
         try:
             mock_yaml.safe_load.return_value = "not-a-dict"
             launcher = ClientK8sJobLauncher(
                 config_file_path="/fake/kube/config",
-                workspace_pvc="ws-pvc",
                 study_data_pvc_file_path="/fake/data_pvc.yaml",
             )
             with pytest.raises(ValueError, match="dictionary"):
@@ -1230,12 +1488,11 @@ class TestK8sJobLauncherLaunchJob:
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         patches = _make_k8s_launcher_patches()
-        mock_open, mock_yaml, _mock_core_cls = _enter_patches(patches)
+        mock_open, mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
         try:
             mock_yaml.safe_load.return_value = {"study-A": "pvc-a"}  # no "default" key
             launcher = ClientK8sJobLauncher(
                 config_file_path="/fake/kube/config",
-                workspace_pvc="ws-pvc",
                 study_data_pvc_file_path="/fake/data_pvc.yaml",
             )
             with pytest.raises(ValueError, match="default"):
@@ -1245,20 +1502,24 @@ class TestK8sJobLauncherLaunchJob:
 
 
 # ---------------------------------------------------------------------------
-# VOLUME_MOUNT_LIST shape
+# Volume mount list shape (tested via _DEFAULT_VOLUME_MOUNT_LIST defined above)
 # ---------------------------------------------------------------------------
 class TestVolumeMountList:
     def test_data_mount_is_read_only(self):
-        data_mount = next(m for m in VOLUME_MOUNT_LIST if m["name"] == PvName.DATA.value)
+        data_mount = next(m for m in _DEFAULT_VOLUME_MOUNT_LIST if m["name"] == DATA_PVC_VOLUME_NAME)
         assert data_mount["readOnly"] is True
 
     def test_workspace_always_writable(self):
-        ws_mount = next(m for m in VOLUME_MOUNT_LIST if m["name"] == PvName.WORKSPACE.value)
+        ws_mount = next(m for m in _DEFAULT_VOLUME_MOUNT_LIST if m["name"] == "workspace-job")
         assert "readOnly" not in ws_mount
 
+    def test_startup_kit_is_read_only(self):
+        startup_mount = next(m for m in _DEFAULT_VOLUME_MOUNT_LIST if m["name"] == "startup-kit")
+        assert startup_mount["readOnly"] is True
+
     def test_mount_paths(self):
-        ws_mount = next(m for m in VOLUME_MOUNT_LIST if m["name"] == PvName.WORKSPACE.value)
-        data_mount = next(m for m in VOLUME_MOUNT_LIST if m["name"] == PvName.DATA.value)
+        ws_mount = next(m for m in _DEFAULT_VOLUME_MOUNT_LIST if m["name"] == "workspace-job")
+        data_mount = next(m for m in _DEFAULT_VOLUME_MOUNT_LIST if m["name"] == DATA_PVC_VOLUME_NAME)
         assert ws_mount["mountPath"] == "/var/tmp/nvflare/workspace"
         assert data_mount["mountPath"] == "/var/tmp/nvflare/data"
 

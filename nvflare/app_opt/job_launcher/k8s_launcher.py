@@ -11,8 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
+
+import base64
 import copy
+import hashlib
 import logging
+import os
 import re
 import time
 from abc import abstractmethod
@@ -25,7 +30,17 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
-from nvflare.utils.job_launcher_utils import extract_job_image, get_client_job_args, get_server_job_args
+from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
+    ENV_WORKSPACE_OWNER_FQCN,
+    ENV_WORKSPACE_TRANSFER_TOKEN,
+    WorkspaceTransferManager,
+)
+from nvflare.utils.job_launcher_utils import (
+    get_client_job_args,
+    get_job_launcher_spec,
+    get_launcher_resource_spec,
+    get_server_job_args,
+)
 
 
 class JobState(Enum):
@@ -78,15 +93,18 @@ DEFAULT_PENDING_TIMEOUT = 120
 DEFAULT_PYTHON_PATH = "/usr/local/bin/python"
 
 
-class PvName(Enum):
-    WORKSPACE = "nvflws"
-    DATA = "nvfldata"
+DATA_PVC_VOLUME_NAME = "nvfldata"
+WORKSPACE_MOUNT_PATH = "/var/tmp/nvflare/workspace"
+DEFAULT_EPHEMERAL_STORAGE = "1Gi"
+
+# Files actually read from startup/ by the job pod at runtime. Others in
+# startup/ are dropped to shrink the Secret. local/ is bundled whole with each
+# job workspace so job resource files and local custom code keep working.
+_STARTUP_KEEP_SUFFIXES = (".crt", ".key", ".pem", ".json")
 
 
-VOLUME_MOUNT_LIST = [
-    {"name": PvName.WORKSPACE.value, "mountPath": "/var/tmp/nvflare/workspace"},
-    {"name": PvName.DATA.value, "mountPath": "/var/tmp/nvflare/data", "readOnly": True},
-]
+def _keep_startup_file(fname: str) -> bool:
+    return fname.endswith(_STARTUP_KEEP_SUFFIXES)
 
 
 def uuid4_to_rfc1123(uuid_str: str) -> str:
@@ -101,6 +119,21 @@ def uuid4_to_rfc1123(uuid_str: str) -> str:
     return name[:63].rstrip("-")
 
 
+def site_name_to_rfc1123(site_name: str, max_length: int = 47) -> str:
+    """Convert a site name into a stable RFC1123-safe label with a hash suffix."""
+
+    digest = hashlib.sha256(site_name.encode("utf-8")).hexdigest()[:8]
+    name = site_name.lower()
+    name = re.sub(r"[^a-z0-9-]", "", name).strip("-")
+    if not name:
+        name = "site"
+    if name[0].isdigit():
+        name = "s" + name
+    head_max = max_length - len(digest) - 1
+    name = name[:head_max].rstrip("-") or "site"
+    return f"{name}-{digest}"
+
+
 class K8sJobHandle(JobHandleSpec):
     def __init__(
         self,
@@ -111,11 +144,15 @@ class K8sJobHandle(JobHandleSpec):
         timeout=None,
         pending_timeout=DEFAULT_PENDING_TIMEOUT,
         python_path=DEFAULT_PYTHON_PATH,
+        workspace_transfer: WorkspaceTransferManager = None,
+        workspace_job_id: str = "",
     ):
         super().__init__()
         self.job_id = job_id
         self.timeout = timeout
         self.terminal_state = None
+        self.workspace_transfer = workspace_transfer
+        self.workspace_job_id = workspace_job_id
         self.api_instance = api_instance
         self.namespace = namespace
         self.pod_manifest = {
@@ -186,11 +223,13 @@ class K8sJobHandle(JobHandleSpec):
             + self.container_args_module_args_sets
         )
         self.container_list[0]["volumeMounts"] = self.container_volume_mount_list
-        if job_config.get("resources", {}).get("limits", {}).get("nvidia.com/gpu"):
-            self.container_list[0]["resources"] = job_config.get("resources")
-        app_custom_folder = job_config.get("env", {}).get("PYTHONPATH")
-        if app_custom_folder:
-            self.container_list[0]["env"] = [{"name": "PYTHONPATH", "value": str(app_custom_folder)}]
+        # resources now always includes ephemeral-storage; GPU limits are merged
+        # into the same dict only when requested for the job.
+        if job_config.get("resources"):
+            self.container_list[0]["resources"] = job_config["resources"]
+        env_vars = {k: v for k, v in job_config.get("env", {}).items() if str(v)}
+        if env_vars:
+            self.container_list[0]["env"] = [{"name": k, "value": str(v)} for k, v in env_vars.items()]
 
     def get_manifest(self):
         return copy.deepcopy(self.pod_manifest)
@@ -211,11 +250,17 @@ class K8sJobHandle(JobHandleSpec):
                 return True
             elif pod_phase in [PodPhase.FAILED.value, PodPhase.SUCCEEDED.value]:  # terminal state
                 self.terminal_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
+                self._remove_workspace_job()
                 return False
             elif self.timeout is not None and time.time() - starting_time > self.timeout:
                 self.terminate()
                 return False
             time.sleep(1)
+
+    def _remove_workspace_job(self) -> None:
+        if self.workspace_transfer and self.workspace_job_id:
+            self.workspace_transfer.remove_job(self.workspace_job_id)
+            self.workspace_job_id = ""
 
     def terminate(self):
         from kubernetes.client.rest import ApiException
@@ -232,12 +277,18 @@ class K8sJobHandle(JobHandleSpec):
         except Exception as e:
             self.logger.error(f"unexpected error terminating job {self.job_id}: {e}")
             self.terminal_state = JobState.TERMINATED
+        self._remove_workspace_job()
         return None
 
     def poll(self):
         if self.terminal_state is not None:
             return JOB_RETURN_CODE_MAPPING.get(self.terminal_state)
         job_state = self._query_state()
+        if self.terminal_state is not None:
+            return JOB_RETURN_CODE_MAPPING.get(self.terminal_state)
+        if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
+            self.terminal_state = job_state
+            self._remove_workspace_job()
         return JOB_RETURN_CODE_MAPPING.get(job_state, JobReturnCode.UNKNOWN)
 
     def _query_phase(self):
@@ -249,6 +300,7 @@ class K8sJobHandle(JobHandleSpec):
             if getattr(e, "status", None) == 404:
                 self.logger.info(f"job {self.job_id} pod not found during querying; assuming terminated")
                 self.terminal_state = JobState.TERMINATED
+                self._remove_workspace_job()
             else:
                 self.logger.warning(f"failed to query pod phase {self.job_id}: {e}")
             return PodPhase.UNKNOWN.value
@@ -277,6 +329,7 @@ class K8sJobHandle(JobHandleSpec):
             job_state = self._query_state()
             if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
                 self.terminal_state = job_state  # persist so poll() stays accurate
+                self._remove_workspace_job()
                 return
             time.sleep(1)
 
@@ -285,27 +338,63 @@ class K8sJobLauncher(JobLauncherSpec):
     def __init__(
         self,
         config_file_path: str,
-        workspace_pvc: str,
         study_data_pvc_file_path: str,
         timeout=None,
         namespace=DEFAULT_NAMESPACE,
         pending_timeout=DEFAULT_PENDING_TIMEOUT,
         python_path=DEFAULT_PYTHON_PATH,
         security_context: dict = None,
+        ephemeral_storage: str = DEFAULT_EPHEMERAL_STORAGE,
     ):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
         self.config_file_path = config_file_path
-        self.workspace_pvc = workspace_pvc
         self.study_data_pvc_file_path = study_data_pvc_file_path
         self.timeout = timeout
         self.namespace = namespace
         self.pending_timeout = pending_timeout
         self.python_path = python_path
         self.security_context = security_context
+        self.ephemeral_storage = ephemeral_storage
         self.study_data_pvc_dict = None
         self.default_data_pvc = None
         self.core_v1 = None
+
+    def _ensure_startup_secret(self, site_name: str, startup_dir: str) -> str:
+        """Create or update a k8s Secret containing the site startup kit.
+
+        Returns the Secret name.
+        """
+        from kubernetes.client.rest import ApiException
+
+        secret_name = f"nvflare-startup-{site_name_to_rfc1123(site_name)}"
+        data = {}
+        if os.path.isdir(startup_dir):
+            for fname in os.listdir(startup_dir):
+                if not _keep_startup_file(fname):
+                    continue
+                fpath = os.path.join(startup_dir, fname)
+                if os.path.isfile(fpath):
+                    with open(fpath, "rb") as f:
+                        data[fname] = base64.b64encode(f.read()).decode()
+
+        secret_body = {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {"name": secret_name, "namespace": self.namespace},
+            "type": "Opaque",
+            "data": data,
+        }
+        try:
+            self.core_v1.create_namespaced_secret(namespace=self.namespace, body=secret_body)
+            self.logger.debug("Created startup Secret %s", secret_name)
+        except ApiException as e:
+            if getattr(e, "status", None) == 409:
+                self.core_v1.replace_namespaced_secret(name=secret_name, namespace=self.namespace, body=secret_body)
+                self.logger.debug("Updated startup Secret %s", secret_name)
+            else:
+                raise
+        return secret_name
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
         if self.default_data_pvc is None:
@@ -358,8 +447,19 @@ class K8sJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"missing {FLContextKey.WORKSPACE_OBJECT} in FLContext")
         app_custom_folder = workspace_obj.get_app_custom_dir(raw_job_id)
         args = fl_ctx.get_prop(FLContextKey.ARGS)
-        job_image = extract_job_image(job_meta, site_name)
-        site_resources = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}).get(site_name, {})
+        if args is None:
+            raise RuntimeError(f"missing {FLContextKey.ARGS} in FLContext")
+        k8s_spec = get_job_launcher_spec(job_meta, site_name, "k8s")
+        job_image = k8s_spec.get("image")
+        if not job_image:
+            raise RuntimeError(
+                f"K8sJobLauncher is configured for site '{site_name}' but no job image "
+                f"was specified in meta.json for this site. "
+                f"Set launcher_spec['{site_name}']['k8s']['image'] (preferred), "
+                f"launcher_spec['default']['k8s']['image'] (shared default), "
+                f"or resource_spec['{site_name}']['k8s']['image'] (legacy)."
+            )
+        site_resources = get_launcher_resource_spec(job_meta, site_name, "k8s")
         study = job_meta.get(JobMetaKey.STUDY.value)
         job_resource = site_resources.get("num_of_gpus", None)
         job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
@@ -370,44 +470,105 @@ class K8sJobLauncher(JobLauncherSpec):
         if not exe_module_entry:
             raise RuntimeError(f"missing {JobProcessArgs.EXE_MODULE} in {FLContextKey.JOB_PROCESS_ARGS}")
         _, job_cmd = exe_module_entry
-        data_pvc = self.study_data_pvc_dict.get(study, self.default_data_pvc)
-        job_config = {
-            "name": job_id,
-            "image": job_image,
-            "container_name": f"container-{job_id}",
-            "command": job_cmd,
-            "volume_mount_list": VOLUME_MOUNT_LIST,
-            "volume_list": [
-                {"name": PvName.WORKSPACE.value, "persistentVolumeClaim": {"claimName": self.workspace_pvc}},
-                {"name": PvName.DATA.value, "persistentVolumeClaim": {"claimName": data_pvc}},
-            ],
-            "module_args": self.get_module_args(job_id, fl_ctx),
-        }
+        # Opt out of the data PVC mount via resource_spec[<site>][k8s][data] = false.
+        # The data PVC is RWO, so mounting it blocks any second job on this site from
+        # attaching the same disk on a different node. Jobs that don't read data
+        # should set data=false so multiple can run in parallel.
+        # TODO: revisit when study and resource-spec shapes evolve.
+        mount_data_pvc = site_resources.get("data", True)
+        data_pvc = self.study_data_pvc_dict.get(study, self.default_data_pvc) if mount_data_pvc else None
+
+        env = {}
         if app_custom_folder:
-            job_config["env"] = {"PYTHONPATH": app_custom_folder}
-        if args is not None and getattr(args, "set", None) is not None:
-            job_config.update({"set_list": args.set})
-        if job_resource:
-            job_config.update({"resources": {"limits": {"nvidia.com/gpu": job_resource}}})
-        if self.security_context:
-            job_config["security_context"] = self.security_context
-        job_handle = K8sJobHandle(
-            job_id,
-            self.core_v1,
-            job_config,
-            namespace=self.namespace,
-            timeout=self.timeout,
-            pending_timeout=self.pending_timeout,
-            python_path=self.python_path,
-        )
-        pod_manifest = job_handle.get_manifest()
-        self.logger.debug(f"launch job with k8s_launcher. {pod_manifest=}")
+            env["PYTHONPATH"] = app_custom_folder
+
+        workspace_root = args.workspace
+        startup_dir = workspace_obj.get_startup_kit_dir()
+        engine = fl_ctx.get_engine()
+        owner_cell = getattr(engine, "cell", None) if engine else None
+        if owner_cell is None:
+            raise RuntimeError("missing parent CellNet cell for workspace transfer")
+
+        workspace_transfer = WorkspaceTransferManager.get_or_create(owner_cell)
+        workspace_transfer_token = workspace_transfer.add_job(raw_job_id, workspace_root)
         try:
+            startup_secret_name = self._ensure_startup_secret(site_name, startup_dir)
+
+            env[ENV_WORKSPACE_OWNER_FQCN] = workspace_transfer.owner_fqcn
+            env[ENV_WORKSPACE_TRANSFER_TOKEN] = workspace_transfer_token
+
+            volume_list = [
+                {"name": "workspace-job", "emptyDir": {"sizeLimit": self.ephemeral_storage}},
+                {"name": "startup-kit", "secret": {"secretName": startup_secret_name}},
+            ]
+            volume_mount_list = [
+                {"name": "workspace-job", "mountPath": WORKSPACE_MOUNT_PATH},
+                {"name": "startup-kit", "mountPath": f"{WORKSPACE_MOUNT_PATH}/startup", "readOnly": True},
+            ]
+            if data_pvc:
+                volume_list.append({"name": DATA_PVC_VOLUME_NAME, "persistentVolumeClaim": {"claimName": data_pvc}})
+                volume_mount_list.append(
+                    {"name": DATA_PVC_VOLUME_NAME, "mountPath": "/var/tmp/nvflare/data", "readOnly": True}
+                )
+
+            job_config = {
+                "name": job_id,
+                "image": job_image,
+                "container_name": f"container-{job_id}",
+                "command": job_cmd,
+                "volume_mount_list": volume_mount_list,
+                "volume_list": volume_list,
+                "module_args": self.get_module_args(job_id, fl_ctx),
+                "env": env,
+            }
+            if args is not None and getattr(args, "set", None) is not None:
+                job_config.update({"set_list": args.set})
+            resources = {
+                "requests": {"ephemeral-storage": self.ephemeral_storage},
+                "limits": {"ephemeral-storage": self.ephemeral_storage},
+            }
+            for key in ("cpu", "memory"):
+                limit_val = k8s_spec.get(key)
+                # cpu_request / memory_request allow request < limit; when absent,
+                # request mirrors the limit so admission webhooks that require
+                # explicit cpu/memory requests (e.g. AKS deployment safeguards) pass.
+                request_val = k8s_spec.get(f"{key}_request", limit_val)
+                if limit_val:
+                    resources["limits"][key] = limit_val
+                if request_val:
+                    resources["requests"][key] = request_val
+            if job_resource:
+                resources["limits"]["nvidia.com/gpu"] = job_resource
+                resources["requests"]["nvidia.com/gpu"] = job_resource
+            job_config["resources"] = resources
+            if self.security_context:
+                job_config["security_context"] = self.security_context
+            job_handle = K8sJobHandle(
+                job_id,
+                self.core_v1,
+                job_config,
+                namespace=self.namespace,
+                timeout=self.timeout,
+                pending_timeout=self.pending_timeout,
+                python_path=self.python_path,
+                workspace_transfer=workspace_transfer,
+                workspace_job_id=raw_job_id,
+            )
+            pod_manifest = job_handle.get_manifest()
+            self.logger.debug(
+                "launch job with k8s_launcher: pod_name=%s namespace=%s image=%s",
+                pod_manifest["metadata"]["name"],
+                self.namespace,
+                job_image,
+            )
             self.core_v1.create_namespaced_pod(body=pod_manifest, namespace=self.namespace)
         except Exception as e:
-            self.logger.error(f"failed to launch job {job_id}: {e}")
-            job_handle.terminal_state = JobState.TERMINATED
-            return job_handle
+            workspace_transfer.remove_job(raw_job_id)
+            if "job_handle" in locals():
+                self.logger.error(f"failed to launch job {job_id}: {e}")
+                job_handle.terminal_state = JobState.TERMINATED
+                return job_handle
+            raise
         try:
             entered_running = job_handle.enter_states([JobState.RUNNING])
         except BaseException:
@@ -419,10 +580,7 @@ class K8sJobLauncher(JobLauncherSpec):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
-            job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
-            job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
-            if job_image:
-                add_launcher(self, fl_ctx)
+            add_launcher(self, fl_ctx)
 
     @abstractmethod
     def get_module_args(self, job_id, fl_ctx: FLContext):

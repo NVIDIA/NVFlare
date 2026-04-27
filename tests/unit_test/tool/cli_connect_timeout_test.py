@@ -15,12 +15,27 @@
 from unittest.mock import MagicMock, patch
 
 
+def _called_active_session_mock(*mocks):
+    called = [mock for mock in mocks if mock.called]
+    assert len(called) == 1
+    return called[0]
+
+
+def _call_arg(call, name, position):
+    args, kwargs = call
+    if name in kwargs:
+        return kwargs[name]
+    if len(args) > position:
+        return args[position]
+    return None
+
+
 def test_cli_sets_connect_timeout(monkeypatch):
     from nvflare import cli as cli_mod
 
     def _fake_parse_args(_):
         args = MagicMock()
-        args.out_format = "txt"
+        args.format = "txt"
         args.connect_timeout = 7.5
         args.sub_command = None
         args.version = False
@@ -34,29 +49,42 @@ def test_cli_sets_connect_timeout(monkeypatch):
     mock_set_timeout.assert_called_once_with(7.5)
 
 
-def test_job_get_session_uses_connect_timeout_env(monkeypatch):
+def test_job_get_session_uses_active_session_with_connect_timeout(monkeypatch):
     from nvflare.tool.job import job_cli
 
-    with patch.object(job_cli, "find_admin_user_and_dir", return_value=("admin", "/tmp/startup")):
-        with patch("nvflare.tool.cli_output.get_connect_timeout", return_value=3.25):
-            with patch("nvflare.tool.job.job_cli.new_cli_session") as mock_session:
-                job_cli._get_session()
+    with (
+        patch("nvflare.tool.cli_output.get_connect_timeout", return_value=3.25),
+        patch(
+            "nvflare.tool.cli_session.new_active_cli_session",
+            return_value=MagicMock(),
+            create=True,
+        ) as shared_active,
+        patch("nvflare.tool.job.job_cli.new_active_cli_session", return_value=MagicMock(), create=True) as job_active,
+    ):
+        job_cli._get_session(study="default")
 
-    _, kwargs = mock_session.call_args
-    assert kwargs["timeout"] == 3.25
+    active_session = _called_active_session_mock(shared_active, job_active)
+    assert _call_arg(active_session.call_args, "timeout", 0) == 3.25
+    assert _call_arg(active_session.call_args, "study", 1) in (None, "default")
 
 
-def test_system_get_session_uses_connect_timeout_env(monkeypatch):
+def test_system_get_session_uses_active_session_with_connect_timeout(monkeypatch):
     from nvflare.tool.system import system_cli
 
-    with patch(
-        "nvflare.tool.job.job_cli._resolve_admin_user_and_dir_from_startup_kit",
-        return_value=("admin", "/tmp/startup"),
+    with (
+        patch("nvflare.tool.cli_output.get_connect_timeout", return_value=4.0),
+        patch(
+            "nvflare.tool.cli_session.new_active_cli_session",
+            return_value=MagicMock(),
+            create=True,
+        ) as shared_active,
+        patch(
+            "nvflare.tool.system.system_cli.new_active_cli_session",
+            return_value=MagicMock(),
+            create=True,
+        ) as system_active,
     ):
-        with patch("nvflare.utils.cli_utils.get_startup_kit_dir_for_target", return_value="/tmp/startup"):
-            with patch("nvflare.tool.cli_output.get_connect_timeout", return_value=4.0):
-                with patch("nvflare.tool.cli_session.new_cli_session") as mock_session:
-                    system_cli._get_system_session()
+        system_cli._get_system_session()
 
-    _, kwargs = mock_session.call_args
-    assert kwargs["timeout"] == 4.0
+    active_session = _called_active_session_mock(shared_active, system_active)
+    assert _call_arg(active_session.call_args, "timeout", 0) == 4.0
