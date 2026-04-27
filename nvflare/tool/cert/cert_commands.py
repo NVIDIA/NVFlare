@@ -27,6 +27,7 @@ import sys
 import tempfile
 import uuid
 import zipfile
+from typing import Optional
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -318,16 +319,19 @@ def handle_cert_init(args):
         os.makedirs(output_dir, mode=0o700, exist_ok=True)
     except OSError as e:
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
+        return 1
 
     # 5. Check write permission
     if not os.access(output_dir, os.W_OK):
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail="directory is not writable")
+        return 1
 
     # 6. Check for existing rootCA.key
     ca_key_path = os.path.join(output_dir, "rootCA.key")
     if os.path.exists(ca_key_path):
         if not force:
             output_error("CA_ALREADY_EXISTS", path=output_dir)
+            return 1
         # --force: back up existing files
         _backup_existing_ca(output_dir)
 
@@ -336,6 +340,7 @@ def handle_cert_init(args):
         pri_key, pub_key = generate_keys()
     except Exception as e:
         output_error("CERT_GENERATION_FAILED", detail=str(e))
+        return 1
 
     # 8. Generate self-signed CA certificate
     try:
@@ -350,6 +355,7 @@ def handle_cert_init(args):
         )
     except Exception as e:
         output_error("CERT_GENERATION_FAILED", detail=str(e))
+        return 1
 
     # 9. Serialize
     pem_cert = serialize_cert(cert)
@@ -381,6 +387,7 @@ def handle_cert_init(args):
             except OSError:
                 pass
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
+        return 1
 
     # 11. Compute valid_until for output
     valid_days_actual = getattr(args, "valid_days", 3650) or 3650
@@ -620,7 +627,7 @@ def _safe_zip_names(zf: zipfile.ZipFile) -> list:
     return names
 
 
-def _read_zip_member_limited(zf: zipfile.ZipFile, member: str) -> bytes:
+def _read_zip_member_limited(zf: zipfile.ZipFile, member: str) -> Optional[bytes]:
     with zf.open(member) as member_file:
         content = member_file.read(_MAX_ZIP_MEMBER_SIZE + 1)
     if len(content) > _MAX_ZIP_MEMBER_SIZE:
@@ -631,7 +638,7 @@ def _read_zip_member_limited(zf: zipfile.ZipFile, member: str) -> bytes:
             exit_code=4,
             detail=f"zip member exceeds size limit: {member}",
         )
-        return b""
+        return None
     return content
 
 
@@ -659,16 +666,16 @@ def _read_zip_source_nofollow(src_path: str) -> bytes:
         return content
 
 
-def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> None:
+def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> bool:
     if os.path.exists(zip_path) and not force:
         output_error("CERT_ALREADY_EXISTS", path=zip_path)
-        return
+        return False
     parent = os.path.dirname(os.path.abspath(zip_path)) or "."
     try:
         os.makedirs(parent, mode=0o700, exist_ok=True)
     except OSError as e:
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=parent, detail=str(e))
-        return
+        return False
 
     prepared_members = []
     for arcname, src_path in members.items():
@@ -680,7 +687,7 @@ def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> No
                 exit_code=4,
                 detail=f"zip must not contain private keys: {arcname}",
             )
-            return
+            return False
         try:
             prepared_members.append((arcname, _read_zip_source_nofollow(src_path)))
         except _UnsafeZipSourceError as e:
@@ -691,10 +698,10 @@ def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> No
                 exit_code=4,
                 detail=f"unsafe zip source: {e}",
             )
-            return
+            return False
         except OSError as e:
             output_error("OUTPUT_DIR_NOT_WRITABLE", path=src_path, detail=str(e))
-            return
+            return False
 
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     if hasattr(os, "O_NOFOLLOW"):
@@ -712,6 +719,8 @@ def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> No
         except OSError:
             pass
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=zip_path, detail=str(e))
+        return False
+    return True
 
 
 def _read_json(path: str) -> dict:
@@ -1581,7 +1590,7 @@ def handle_cert_request(args):
     try:
         _write_json_file(request_json_path, request_meta)
         _write_yaml_file(site_yaml_path, site_meta)
-        _write_zip_nofollow(
+        if not _write_zip_nofollow(
             request_zip_path,
             {
                 "request.json": request_json_path,
@@ -1589,7 +1598,8 @@ def handle_cert_request(args):
                 f"{name}.csr": csr_result["csr_path"],
             },
             force=getattr(args, "force", False),
-        )
+        ):
+            return 1
     except OSError as e:
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=request_dir, detail=str(e))
         return 1
@@ -1652,7 +1662,10 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
                     detail="request zip must contain request.json and site.yaml",
                 )
                 return None
-            request_meta = json.loads(_read_zip_member_limited(zf, "request.json").decode("utf-8"))
+            request_json = _read_zip_member_limited(zf, "request.json")
+            if request_json is None:
+                return None
+            request_meta = json.loads(request_json.decode("utf-8"))
             if not isinstance(request_meta, dict):
                 raise ValueError("request.json must be a mapping")
             name = request_meta.get("name")
@@ -1670,7 +1683,10 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
                 return None
             for member in expected:
                 target_path = os.path.join(extract_dir, member)
-                _write_file_nofollow(target_path, _read_zip_member_limited(zf, member))
+                content = _read_zip_member_limited(zf, member)
+                if content is None:
+                    return None
+                _write_file_nofollow(target_path, content)
     except zipfile.BadZipFile as e:
         output_error_message(
             "INVALID_ARGS", "Invalid arguments.", _USAGE_HINT, exit_code=4, detail=f"invalid request zip: {e}"
@@ -1975,7 +1991,7 @@ def handle_cert_approve(args):
             signed_zip_path = os.path.abspath(signed_zip_path)
         else:
             signed_zip_path = os.path.join(os.path.dirname(request_zip_path), f"{name}.signed.zip")
-        _write_zip_nofollow(
+        if not _write_zip_nofollow(
             signed_zip_path,
             {
                 "signed.json": signed_json_path,
@@ -1984,7 +2000,8 @@ def handle_cert_approve(args):
                 "rootCA.pem": sign_result["rootca"],
             },
             force=getattr(args, "force", False),
-        )
+        ):
+            return 1
 
         audit_record = {
             "schema_version": _ARTIFACT_VERSION,

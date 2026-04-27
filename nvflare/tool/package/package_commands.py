@@ -25,6 +25,7 @@ import stat
 import sys
 import tempfile
 import zipfile
+from typing import Optional
 from urllib.parse import urlparse
 
 import yaml
@@ -189,9 +190,9 @@ def _validate_participant_name(name: str, kit_type: str, *, code: str = "INVALID
     return True
 
 
-def _project_dir_under_workspace(workspace: str, project_name: str) -> str:
+def _project_dir_under_workspace(workspace: str, project_name: str) -> Optional[str]:
     if not _validate_safe_project_name(project_name):
-        return os.path.abspath(workspace)
+        return None
     workspace_abs = os.path.abspath(workspace)
     project_dir = os.path.abspath(os.path.join(workspace_abs, project_name))
     try:
@@ -206,7 +207,7 @@ def _project_dir_under_workspace(workspace: str, project_name: str) -> str:
             None,
             exit_code=4,
         )
-        return workspace_abs
+        return None
     return project_dir
 
 
@@ -376,6 +377,8 @@ def _latest_prod_dir(workspace: str, project_name: str):
     Returns None if no prod_NN directories exist.
     """
     project_dir = _project_dir_under_workspace(workspace, project_name)
+    if not project_dir:
+        return None
     if not os.path.exists(project_dir):
         return None
     dirs = [
@@ -644,7 +647,8 @@ def _build_selected_participant_package(
     workspace = os.path.abspath(getattr(args, "workspace", None) or "workspace")
     admin_port = args.admin_port if args.admin_port is not None else port
     project_name = project_name or getattr(args, "project_name", None) or "project"
-    _project_dir_under_workspace(workspace, project_name)
+    if _project_dir_under_workspace(workspace, project_name) is None:
+        return 1
 
     latest_prod = _latest_prod_dir(workspace, project_name)
     if latest_prod:

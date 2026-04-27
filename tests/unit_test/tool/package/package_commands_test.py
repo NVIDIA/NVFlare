@@ -52,9 +52,11 @@ from nvflare.tool.package.package_commands import (
     _build_selected_participant_package,
     _discover_name_from_dir,
     _handle_package_yaml_mode,
+    _latest_prod_dir,
     _load_project_from_file,
     _load_signed_zip,
     _parse_endpoint,
+    _project_dir_under_workspace,
     _read_local_request_metadata,
     _read_zip_json,
     _read_zip_member_limited,
@@ -2665,6 +2667,52 @@ class TestYamlMode:
         assert result == 1
         error.assert_called_once()
         assert error.call_args.args[0] == "BUILD_FAILED"
+
+    def test_project_dir_under_workspace_returns_none_when_error_is_mocked(self, tmp_path, monkeypatch):
+        error = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
+
+        result = _project_dir_under_workspace(str(tmp_path / "ws"), "../escape")
+
+        assert result is None
+        error.assert_called_once()
+        assert error.call_args.args[0] == "INVALID_PROJECT_NAME"
+
+    def test_latest_prod_dir_returns_none_after_invalid_project_when_error_is_mocked(self, tmp_path, monkeypatch):
+        error = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
+
+        result = _latest_prod_dir(str(tmp_path / "ws"), "../escape")
+
+        assert result is None
+        error.assert_called_once()
+        assert error.call_args.args[0] == "INVALID_PROJECT_NAME"
+
+    def test_selected_participant_invalid_project_returns_when_error_is_mocked(self, tmp_path, monkeypatch):
+        error = unittest.mock.Mock()
+        provision = unittest.mock.Mock()
+        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
+        monkeypatch.setattr(Provisioner, "provision", provision)
+        args = _make_args(workspace=str(tmp_path / "ws"))
+
+        result = _build_selected_participant_package(
+            args=args,
+            scheme="grpc",
+            host="fl-server",
+            port=8002,
+            name="hospital-1",
+            org="myorg",
+            kit_type="client",
+            cert_path=str(tmp_path / "hospital-1.crt"),
+            key_path=str(tmp_path / "hospital-1.key"),
+            rootca_path=str(tmp_path / "rootCA.pem"),
+            project_name="../escape",
+        )
+
+        assert result == 1
+        error.assert_called_once()
+        assert error.call_args.args[0] == "INVALID_PROJECT_NAME"
+        provision.assert_not_called()
 
     def test_yaml_build_error_returns_when_error_is_mocked(self, cert_env, tmp_path, monkeypatch):
         ca_key = cert_env["ca_key"]
