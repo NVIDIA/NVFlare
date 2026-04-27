@@ -313,11 +313,11 @@ class StaticFileBuilder(Builder):
             gpu_mem = capacity.get(PropKey.GPU_MEM, 0)
 
         # allow_log_streaming is rendered as a JSON literal ("true"/"false").
-        # Default is False at provision time; sites that want streaming on must
-        # opt in either by setting allow_log_streaming=true on the participant
-        # in project.yml or by editing the generated resources.json.default.
-        # Note: at runtime, code defaults to allow when the field is missing.
-        allow_log_streaming = bool(client.get_prop_fb(PropKey.ALLOW_LOG_STREAMING, default=False))
+        # Default is True at provision time; sites that want to disable
+        # streaming opt out by setting allow_log_streaming=false on the
+        # participant in project.yml or by editing the generated
+        # resources.json.default.
+        allow_log_streaming = bool(client.get_prop_fb(PropKey.ALLOW_LOG_STREAMING, default=True))
         replacement_dict = {
             "num_gpus": num_gpus,
             "gpu_mem": gpu_mem,
