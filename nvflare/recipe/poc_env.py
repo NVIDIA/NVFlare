@@ -20,6 +20,8 @@ from typing import Optional
 
 from pydantic import BaseModel, conint, model_validator
 
+from nvflare.apis.job_def import DEFAULT_STUDY
+from nvflare.apis.utils.format_check import name_check
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
@@ -52,6 +54,7 @@ class _PocEnvValidator(BaseModel):
     docker_image: Optional[str] = None
     project_conf_path: str = ""
     username: str = DEFAULT_ADMIN_USER
+    study: str = DEFAULT_STUDY
 
     @model_validator(mode="after")
     def check_client_configuration(self):
@@ -68,6 +71,11 @@ class _PocEnvValidator(BaseModel):
         # Check if num_clients is valid when clients is None
         if self.clients is None and (self.num_clients is None or self.num_clients <= 0):
             raise ValueError("num_clients must be greater than 0")
+
+        if name_check(self.study, "study")[0]:
+            raise ValueError(
+                f"study name '{self.study}' contains unsupported characters. Use only lowercase letters, numbers, and hyphens."
+            )
 
         return self
 
@@ -89,6 +97,7 @@ class PocEnv(ExecEnv):
         docker_image: Optional[str] = None,
         project_conf_path: str = "",
         username: str = DEFAULT_ADMIN_USER,
+        study: str = DEFAULT_STUDY,
         extra: Optional[dict] = None,
     ):
         """Initialize POC execution environment.
@@ -103,6 +112,7 @@ class PocEnv(ExecEnv):
             project_conf_path (str, optional): Path to the project configuration file. Defaults to "".
                 If specified, 'number_of_clients','clients' and 'docker' specific options will be ignored.
             username (str, optional): Admin user. Defaults to "admin@nvidia.com".
+            study (str, optional): Study name to tag submitted jobs. Defaults to "default".
             extra: extra env info.
         """
         super().__init__(extra)
@@ -116,6 +126,7 @@ class PocEnv(ExecEnv):
             docker_image=docker_image,
             project_conf_path=project_conf_path,
             username=username,
+            study=study,
         )
 
         self.clients = v.clients
@@ -126,6 +137,7 @@ class PocEnv(ExecEnv):
         self.project_conf_path = v.project_conf_path
         self.docker_image = v.docker_image
         self.username = v.username
+        self.study = v.study
         self._session_manager = None  # Lazy initialization
         self._session_manager_lock = threading.Lock()
 
@@ -309,6 +321,7 @@ class PocEnv(ExecEnv):
                     "username": self.username,
                     "startup_kit_location": self._get_admin_startup_kit_path(),
                     "timeout": self.get_extra_prop("login_timeout", 10),
+                    "study": self.study,
                 }
                 self._session_manager = SessionManager(session_params)
             return self._session_manager

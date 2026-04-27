@@ -15,6 +15,8 @@ clouds:
     pull_policy: Always
     helm_overrides: []
     security_context: { seLinuxOptions: { type: spc_t } }
+    pod_annotations:
+      karpenter.sh/do-not-disrupt: "true"
     pvc_config:
       nvflws:   { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }
       nvfldata: { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }
