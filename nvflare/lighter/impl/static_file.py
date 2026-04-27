@@ -312,9 +312,16 @@ class StaticFileBuilder(Builder):
             num_gpus = capacity.get(PropKey.NUM_GPUS, 0)
             gpu_mem = capacity.get(PropKey.GPU_MEM, 0)
 
+        # allow_log_streaming is rendered as a JSON literal ("true"/"false").
+        # Default is False at provision time; sites that want streaming on must
+        # opt in either by setting allow_log_streaming=true on the participant
+        # in project.yml or by editing the generated resources.json.default.
+        # Note: at runtime, code defaults to allow when the field is missing.
+        allow_log_streaming = bool(client.get_prop_fb(PropKey.ALLOW_LOG_STREAMING, default=False))
         replacement_dict = {
             "num_gpus": num_gpus,
             "gpu_mem": gpu_mem,
+            "allow_log_streaming": "true" if allow_log_streaming else "false",
         }
 
         ctx.build_from_template(
@@ -322,8 +329,6 @@ class StaticFileBuilder(Builder):
             TemplateSectionKey.LOCAL_CLIENT_RESOURCES,
             ProvFileName.RESOURCES_JSON_DEFAULT,
             replacement=replacement_dict,
-            content_modify_cb=self._modify_system_log_streamer,
-            client=client,
         )
 
         ctx.build_from_template(
@@ -413,39 +418,6 @@ class StaticFileBuilder(Builder):
         # workspace folder file
         dest_dir = ctx.get_ws_dir(client)
         ctx.build_from_template(dest_dir, TemplateSectionKey.CLIENT_README, ProvFileName.README_TXT)
-
-    def _modify_system_log_streamer(self, section: str, client: Participant) -> str:
-        """Modify the local resources section and remove the "system_log_streamer" component if necessary.
-        By default, the "system_log_streamer" component is included in local resources.
-        However, if the project does not allow errors to be sent, then this component must be removed.
-
-        Args:
-            section: the local resources section generated from template
-            client: the client being provisioned
-
-        Returns: modified section content
-
-        """
-        allow = client.get_prop_fb(PropKey.ALLOW_ERROR_SENDING, default=False)
-        if allow:
-            # error sending is allowed - so no change needed.
-            return section
-
-        # convert to dict for easy modification
-        section_dict = json.loads(section)
-        components = section_dict.get("components")
-        if not components:
-            return section
-
-        assert isinstance(components, list)
-        for c in components:
-            if c["id"] == "system_log_streamer":
-                # must remove this component
-                components.remove(c)
-                break
-
-        # Must convert to Json string
-        return json.dumps(section_dict, indent=2)
 
     @staticmethod
     def _check_host_name_against_server(host_name: str, server: Participant) -> str:
