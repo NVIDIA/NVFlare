@@ -57,7 +57,7 @@ In each example folder, install required packages for training:
 To run examples including notebooks, we recommend using [JupyterLab](https://jupyterlab.readthedocs.io).
 **You need to set up the virtual environment and install nvflare and set additional `PYTHONPATH` before launch the jupyter lab.**
 
-After activating your virtual environment, install JupyterLab:
+After activating your virtual environment, install JupyterLab.
 ```shell
 (nvflare_example)$ pip install jupyterlab
 ```
@@ -186,4 +186,4 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | Example                                                     | Framework | Summary                                                                                                                  |
 |-------------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------|
 | [Docker](./advanced/docker/README.md)                       | NA        | The notebook in this directory walks through the creation and launch of Docker containers for NVIDIA FLARE. |
-| [Monitoring](./advanced/monitoring/README.md)               | NA        | FLARE Monitoring provides a initial solution for tracking system metrics of your federated learning jobs. |
+| [Monitoring](./advanced/monitoring/README.md)               | NA        | FLARE Monitoring provides an initial solution for tracking system metrics of your federated learning jobs. |
