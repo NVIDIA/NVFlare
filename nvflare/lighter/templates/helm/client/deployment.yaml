@@ -15,6 +15,10 @@ spec:
     metadata:
       labels:
         {{- include "nvflare-client.labels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       {{- if .Values.serviceAccount.create }}
       serviceAccountName: {{ include "nvflare-client.name" . }}
