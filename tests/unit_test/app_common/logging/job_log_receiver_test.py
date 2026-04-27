@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -22,6 +22,12 @@ from nvflare.apis.storage import DataTypes, StorageSpec
 from nvflare.apis.streaming import StreamContextKey
 from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
 from nvflare.app_common.streamers.log_streamer import KEY_FILE_NAME
+
+
+def _allowed_client(name: str = "trusted_client", allow: bool = True):
+    client = Mock()
+    client.get_site_config.return_value = {"allow_log_streaming": allow} if allow is not None else None
+    return client
 
 
 @pytest.mark.parametrize(
@@ -42,6 +48,7 @@ def test_job_log_receiver_uses_trusted_peer_identity_for_storage(tmp_path, file_
     job_manager = Mock()
     engine = Mock()
     engine.get_component.return_value = job_manager
+    engine.get_client_from_name.return_value = _allowed_client()
 
     fl_ctx = FLContext()
     fl_ctx.put(key=ReservedKey.IDENTITY_NAME, value="server", private=True, sticky=False)
@@ -70,3 +77,73 @@ def test_job_log_receiver_uses_trusted_peer_identity_for_storage(tmp_path, file_
         fl_ctx,
     )
     assert StorageSpec.is_valid_component(f"{expected_data_type}_trusted_client")
+
+
+def _make_recv_fl_ctx(client_name="trusted_client", site_allows: bool = True):
+    peer_ctx = FLContext()
+    peer_ctx.put(key=ReservedKey.IDENTITY_NAME, value=client_name, private=True, sticky=False)
+    peer_ctx.put(key=ReservedKey.RUN_NUM, value="trusted_job", private=True, sticky=False)
+
+    engine = Mock()
+    engine.get_component.return_value = Mock()
+    if site_allows is None:
+        engine.get_client_from_name.return_value = None
+    else:
+        engine.get_client_from_name.return_value = _allowed_client(client_name, allow=site_allows)
+
+    fl_ctx = FLContext()
+    fl_ctx.put(key=ReservedKey.IDENTITY_NAME, value="server", private=True, sticky=False)
+    fl_ctx.put(key=ReservedKey.ENGINE, value=engine, private=True, sticky=False)
+    fl_ctx.set_peer_context(peer_ctx)
+    return fl_ctx
+
+
+def test_job_log_receiver_logs_error_once_when_site_does_not_allow(tmp_path):
+    receiver = JobLogReceiver(dest_dir=str(tmp_path))
+    fl_ctx = _make_recv_fl_ctx(site_allows=False)
+    stream_ctx = {
+        StreamCtxKey.CLIENT_NAME: "trusted_client",
+        StreamCtxKey.JOB_ID: "trusted_job",
+        KEY_FILE_NAME: WorkspaceConstants.LOG_FILE_NAME,
+        StreamContextKey.RC: ReturnCode.OK,
+    }
+
+    with patch.object(receiver, "log_error") as log_error:
+        receiver._on_chunk_received(b"a\n", stream_ctx, fl_ctx)
+        receiver._on_chunk_received(b"b\n", stream_ctx, fl_ctx)
+
+    assert log_error.call_count == 1
+    assert "allow_log_streaming" in log_error.call_args.args[1]
+
+
+def test_job_log_receiver_logs_error_once_when_client_not_registered(tmp_path):
+    receiver = JobLogReceiver(dest_dir=str(tmp_path))
+    fl_ctx = _make_recv_fl_ctx(site_allows=None)
+    stream_ctx = {
+        StreamCtxKey.CLIENT_NAME: "trusted_client",
+        StreamCtxKey.JOB_ID: "trusted_job",
+        KEY_FILE_NAME: WorkspaceConstants.LOG_FILE_NAME,
+        StreamContextKey.RC: ReturnCode.OK,
+    }
+
+    with patch.object(receiver, "log_error") as log_error:
+        receiver._on_chunk_received(b"a\n", stream_ctx, fl_ctx)
+        receiver._on_chunk_received(b"b\n", stream_ctx, fl_ctx)
+
+    assert log_error.call_count == 1
+
+
+def test_job_log_receiver_does_not_warn_when_site_allows(tmp_path):
+    receiver = JobLogReceiver(dest_dir=str(tmp_path))
+    fl_ctx = _make_recv_fl_ctx(site_allows=True)
+    stream_ctx = {
+        StreamCtxKey.CLIENT_NAME: "trusted_client",
+        StreamCtxKey.JOB_ID: "trusted_job",
+        KEY_FILE_NAME: WorkspaceConstants.LOG_FILE_NAME,
+        StreamContextKey.RC: ReturnCode.OK,
+    }
+
+    with patch.object(receiver, "log_error") as log_error:
+        receiver._on_chunk_received(b"a\n", stream_ctx, fl_ctx)
+
+    log_error.assert_not_called()

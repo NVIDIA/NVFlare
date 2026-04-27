@@ -21,7 +21,12 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ReservedKey, StreamCtxKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
-from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels
+from nvflare.app_common.logging.constants import (
+    ALLOW_LOG_STREAMING_VAR,
+    LIVE_LOG_TOPIC,
+    Channels,
+    is_log_streaming_allowed,
+)
 from nvflare.app_common.streamers.log_streamer import LogStreamer
 from nvflare.widgets.widget import Widget
 
@@ -70,6 +75,9 @@ class JobLogStreamer(Widget):
         self._poll_interval = poll_interval
         self._stop_event: threading.Event = None
         self._stream_thread: threading.Thread = None
+        # Streaming is gated per-site by allow_log_streaming in resources.json.
+        # The check is performed in _on_job_started where fl_ctx is available
+        # (ConfigService doesn't carry RESOURCES_CONF in every startup path).
         self.register_event_handler(EventType.START_RUN, self._on_job_started)
         self.register_event_handler(EventType.ABOUT_TO_END_RUN, self._on_about_to_end_run)
         self.register_event_handler(EventType.END_RUN, self._on_job_ended)
@@ -122,6 +130,13 @@ class JobLogStreamer(Widget):
             self.log_exception(fl_ctx, f"Error streaming log for {client_name} job {job_id}")
 
     def _on_job_started(self, event_type: str, fl_ctx: FLContext):
+        if not is_log_streaming_allowed(fl_ctx):
+            self.log_warning(
+                fl_ctx,
+                f"JobLogStreamer disabled: '{ALLOW_LOG_STREAMING_VAR}' is not True in resources.json; "
+                f"no live log streaming for '{self._log_file_name}'",
+            )
+            return
         job_id = fl_ctx.get_job_id()
         client_name = fl_ctx.get_identity_name()
         log_path = self._find_log_path()

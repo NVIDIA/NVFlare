@@ -20,7 +20,7 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants, ProcessType, St
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
-from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels
+from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels, is_log_streaming_allowed
 from nvflare.app_common.streamers.log_streamer import LogStreamer
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.widget import Widget
@@ -109,6 +109,33 @@ class SystemLogStreamer(Widget):
             components = []
             cfg["components"] = components
 
+        # Site-level kill switch. When the site's resources.json doesn't enable
+        # log streaming, strip any pre-declared JobLogStreamer from the deployed
+        # job config and skip injection.
+        if not is_log_streaming_allowed(fl_ctx):
+            filtered = [c for c in components if "JobLogStreamer" not in c.get("path", "")]
+            if len(filtered) != len(components):
+                cfg["components"] = filtered
+                try:
+                    with open(config_path, "w") as f:
+                        json.dump(cfg, f, indent=2)
+                    self.log_warning(
+                        fl_ctx,
+                        f"Removed JobLogStreamer from job {job_id}: site does not allow log streaming",
+                    )
+                except Exception as ex:
+                    self.log_exception(
+                        fl_ctx,
+                        f"Failed to write {config_path} after stripping JobLogStreamer: "
+                        f"{secure_format_exception(ex)}",
+                    )
+            else:
+                self.log_debug(
+                    fl_ctx,
+                    f"Job {job_id}: site does not allow log streaming; not injecting JobLogStreamer",
+                )
+            return
+
         for c in components:
             if "JobLogStreamer" in c.get("path", ""):
                 self.log_debug(fl_ctx, f"Job {job_id} already has JobLogStreamer; skipping injection")
@@ -173,6 +200,8 @@ class SystemLogStreamer(Widget):
         if self._log_file_name != WorkspaceConstants.ERROR_LOG_FILE_NAME:
             return
         if fl_ctx.get_process_type() != ProcessType.CLIENT_PARENT:
+            return
+        if not is_log_streaming_allowed(fl_ctx):
             return
 
         workspace_root = fl_ctx.get_prop(FLContextKey.WORKSPACE_ROOT)
