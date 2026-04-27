@@ -194,6 +194,14 @@ Examples:
 
 To start an admin console, specify it explicitly with ``-p``.
 
+Study notes:
+
+- Use ``--study`` only when starting an admin console.
+- Named studies require the POC workspace to be prepared from a custom
+  ``project.yml`` with ``api_version: 4`` and ``studies:``. If the workspace
+  was prepared from the default generated project, only the ``default`` study
+  is valid.
+
 *************
 Stop Services
 *************
