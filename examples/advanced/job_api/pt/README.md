@@ -7,7 +7,7 @@ All examples in this folder are based on using [PyTorch](https://pytorch.org/) a
 Furthermore, we support [PyTorch Lightning](https://lightning.ai).
 
 ## Setup environment
-First, install nvflare and dependencies:
+First, install NVFlare and its dependencies:
 ```commandline
 pip install -r requirements.txt
 ```

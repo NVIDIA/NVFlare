@@ -15,7 +15,7 @@ The example was tested using the [NeMo Docker container](https://catalog.ngc.nvi
 available with `docker pull nvcr.io/nvidia/nemo:23.06`. 
 In the following, we assume this example folder of the container is mounted to `/workspace` and all downloading, etc. operations are based on this root path.
 
-Start the docker container from **this directory** using
+Start the Docker container from **this directory** using
 ```
 # cd NVFlare/integration/nemo/examples/supervised_fine_tuning
 DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.06"
@@ -68,7 +68,7 @@ cd ..
 ```
 
 #### 2. Preprocess each dataset
-We preprocess each dataset using the following script:
+We preprocess each dataset using the following scripts:
 ``` 
 mkdir Data/Processed
 mkdir Data/Processed/alpaca

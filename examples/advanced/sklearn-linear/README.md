@@ -35,7 +35,7 @@ This dataset contains 11 million instances, each with 28 attributes. Download th
 By default, we assume the dataset is downloaded, uncompressed, and stored
 in `DATASET_ROOT/HIGGS.csv`.
 
-Please note that the UCI's website may experience occasional downtime.
+Please note that the UCI website may experience occasional downtime.
 
 To prepare the data:
 ```bash

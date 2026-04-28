@@ -35,7 +35,7 @@ Using simplified weights and metrics, you will be able to clearly see how NVIDIA
 validation across different sites with little extra work.
 
 The setup of this exercise consists of one **server** and two **clients**.
-The server side model starting with weights ``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]``.
+The server-side model starts with weights ``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]``.
 
 Cross site validation consists of the following steps:
 
@@ -141,7 +141,7 @@ You can find the running logs and results inside the simulator's workspace:
   server/  site-1/  site-2/  startup/
 
 
-The cross site validation results:
+The cross-site validation results:
 
 .. code-block:: bash
 

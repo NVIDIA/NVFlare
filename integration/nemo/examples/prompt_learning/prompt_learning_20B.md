@@ -142,7 +142,7 @@ Next, simulate the federated p-tuning using FedAvg in the terminal running the a
 ```
 submit_job /workspace/jobs/gpt_p-tuning_fedavg_20B
 ```
-You can visualize the training process using TensorBoard
+You can visualize the training process using TensorBoard.
 ```
 tensorboard --logdir /tmp/nvflare/poc
 ```

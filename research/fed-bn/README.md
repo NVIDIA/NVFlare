@@ -4,10 +4,10 @@ Welcome to the repository for FedBN, a federated learning algorithm designed to 
 
 ###### Abstract:
 
-> In this work, we propose an effective method that uses local batch normalization to alleviate the feature shift before averaging models. The resulting scheme, called FedBN, outperforms both classical FedAvg and FedProx on our extensive experiments. These empirical results are supported by a convergence analysis that shows in a simplified setting that FedBN has a faster convergence rate than FedAvg.
+> In this work, we propose an effective method that uses local batch normalization to alleviate the feature shift before averaging models. The resulting scheme, called FedBN, outperforms both classical FedAvg and FedProx in our extensive experiments. These empirical results are supported by a convergence analysis that shows in a simplified setting that FedBN has a faster convergence rate than FedAvg.
 
 ## License
-This project is open-sourced under the Apache v2 License. The codebase builds upon the initial work shared at [FedBN](https://github.com/med-air/FedBN).
+This project is open-sourced under the Apache-2.0 License. The codebase builds upon the initial work shared at [FedBN](https://github.com/med-air/FedBN).
 
 ## Setup Instructions
 
@@ -21,12 +21,12 @@ pip install -r ./requirements.txt
 
 ### Initial Configuration
 
-Ensure all shell scripts are executable:
+Ensure that all shell scripts are executable:
 ```
 find . -name ".sh" -exec chmod +x {} \;
 ``` 
 
-Set the Python path to recognize the FedBN modules:
+Set the Python path to recognize the FedBN module:
 ```
 export PYTHONPATH=${PYTHONPATH}:${PWD}/..
 ```
@@ -43,7 +43,7 @@ We first set the job template path
 ```commandline
 nvflare config -jt ../../job_templates
 ```
-We will use the in-process client API, we choose the sag_pt job template and run the following command to create the job:
+We will use the in-process client API; we choose the sag_pt job template and run the following command to create the job:
 ```
 ./create_job.sh
 ```

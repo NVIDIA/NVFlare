@@ -3,7 +3,7 @@
 ## sag_np_metrics
     name = "sag_np_metrics"
     description = "FedAvg with Scatter and Gather Workflow using NumPy and metrics relay" 
-    class_name  =  "ScatterAndGather"
+    class_name = "ScatterAndGather"
     controller_type = "server"
     executor_type = "launcher_executor"
     contributor = "NVIDIA"
