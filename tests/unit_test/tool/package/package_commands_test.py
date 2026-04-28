@@ -14,6 +14,7 @@
 
 """Unit tests for nvflare package command handler."""
 
+import copy
 import datetime
 import hashlib
 import json
@@ -26,6 +27,7 @@ import unittest.mock
 import zipfile
 
 import pytest
+import yaml
 from cryptography.hazmat.primitives import serialization
 
 from nvflare.lighter.constants import CtxKey, PropKey
@@ -49,14 +51,10 @@ from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256, normalize_sha
 from nvflare.tool.package.package_commands import (
     _DUMMY_SERVER_NAME,
     PrebuiltCertBuilder,
-    _build_selected_participant_package,
     _discover_name_from_dir,
-    _handle_package_yaml_mode,
-    _latest_prod_dir,
-    _load_project_from_file,
+    _flat_site_to_project_dict,
     _load_signed_zip,
     _parse_endpoint,
-    _project_dir_under_workspace,
     _read_local_request_metadata,
     _read_zip_json,
     _read_zip_member_limited,
@@ -64,6 +62,8 @@ from nvflare.tool.package.package_commands import (
     _safe_zip_names,
     _validate_cert_material,
     _validate_local_request_metadata,
+    _validate_local_site_identity,
+    _validate_safe_project_name,
     _validate_signed_hashes,
     _validate_signed_metadata,
     _validate_signed_public_key_hash,
@@ -128,7 +128,6 @@ def _make_args(**kwargs):
         force=True,
         output_fmt=None,
         schema=False,
-        project_file=None,
         request_dir=None,
         expected_rootca_fingerprint=None,
         confirm_rootca=False,
@@ -319,6 +318,32 @@ class TestPrebuiltCertBuilder:
 
 
 class TestSignedZipHelpers:
+    def test_validate_safe_project_name_supports_context_label(self):
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+            valid = _validate_safe_project_name("../escape", field_label="Signed zip project")
+
+        assert valid is False
+        error.assert_called_once()
+        assert "signed zip project name" in error.call_args.args[1]
+
+    def test_flat_site_project_dict_uses_identity_project_fallback(self):
+        project_dict = _flat_site_to_project_dict(
+            {
+                "name": "site-3",
+                "org": "nvidia",
+                "type": "client",
+            },
+            {
+                "project": "example_project",
+                "name": "site-3",
+                "org": "nvidia",
+                "cert_type": "client",
+            },
+        )
+
+        assert project_dict[PropKey.NAME] == "example_project"
+        assert project_dict["participants"][0]["name"] == "site-3"
+
     class _FailingFdOpen:
         def __init__(self, fd):
             self.fd = fd
@@ -356,8 +381,7 @@ class TestSignedZipHelpers:
                 names = _safe_zip_names(zf, str(zip_path))
 
         error.assert_called_once()
-        assert "nested/" not in names
-        assert names == ["signed.json"]
+        assert names is None
 
     def test_safe_zip_names_does_not_append_mode_bit_directory_when_error_is_mocked(self, tmp_path):
         zip_path = tmp_path / "signed.zip"
@@ -372,8 +396,7 @@ class TestSignedZipHelpers:
                 names = _safe_zip_names(zf, str(zip_path))
 
         error.assert_called_once()
-        assert "directory" not in names
-        assert names == ["signed.json"]
+        assert names is None
 
     def test_read_zip_json_returns_none_after_error_when_error_is_mocked(self, tmp_path):
         zip_path = tmp_path / "signed.zip"
@@ -516,6 +539,45 @@ class TestSignedZipHelpers:
         assert valid is False
         assert "Invalid signed zip kind/cert_type combination" in error.call_args.args[1]
 
+    def test_validate_signed_metadata_rejects_listening_host_when_error_is_mocked(self):
+        signed_meta = {
+            "artifact_type": "nvflare.cert.signed",
+            "schema_version": "1",
+            "request_id": "1" * 32,
+            "project": "example_project",
+            "name": "site-3",
+            "org": "nvidia",
+            "kind": "site",
+            "cert_type": "client",
+            "cert_file": "site-3.crt",
+            "rootca_file": "rootCA.pem",
+            "hashes": {
+                "csr_sha256": "1" * 64,
+                "site_yaml_sha256": "1" * 64,
+                "certificate_sha256": "1" * 64,
+                "rootca_sha256": "1" * 64,
+                "public_key_sha256": "1" * 64,
+            },
+        }
+        site_meta = {
+            "name": "example_project",
+            "participants": [
+                {
+                    "name": "site-3",
+                    "type": "client",
+                    "org": "nvidia",
+                    "listening_host": "site-3.internal",
+                }
+            ],
+        }
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+            valid = _validate_signed_metadata(signed_meta, site_meta, "site-3.crt")
+
+        error.assert_called_once()
+        assert valid is False
+        assert "listening_host" in error.call_args.args[1]
+
     def test_validate_signed_hashes_does_not_emit_spurious_mismatch_when_hash_missing(self):
         with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
             valid = _validate_signed_hashes(
@@ -549,6 +611,25 @@ class TestSignedZipHelpers:
 
         assert exc_info.value.code == 1
 
+    def test_validate_local_site_identity_reports_unsupported_participant_type(self):
+        project_dict = {PropKey.NAME: "hospital_federation"}
+        participant = {"name": "hospital-a", "type": "workspace", "org": "hospital_alpha"}
+        signed_meta = {
+            "project": "hospital_federation",
+            "name": "hospital-a",
+            "org": "hospital_alpha",
+            "kind": "site",
+            "cert_type": "client",
+            "cert_role": None,
+        }
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+            valid = _validate_local_site_identity(project_dict, participant, signed_meta)
+
+        assert valid is False
+        error.assert_called_once()
+        assert "unsupported participant type 'workspace'" in error.call_args.kwargs["detail"]
+
 
 def test_missing_endpoint_human_mode_no_help_dump(capsys, monkeypatch, tmp_path):
     import argparse
@@ -569,7 +650,7 @@ def test_missing_endpoint_human_mode_no_help_dump(capsys, monkeypatch, tmp_path)
         handle_package(args)
     assert exc_info.value.code == 4
     captured = capsys.readouterr()
-    assert "--endpoint is required" in captured.err
+    assert "Server endpoint URI is required" in captured.err
     assert "Code: INVALID_ARGS (exit 4)" in captured.err
     assert "usage:" in captured.err
 
@@ -586,15 +667,26 @@ def test_package_help_includes_working_examples():
     help_text = parser.format_help()
 
     assert "Examples:" in help_text
-    assert "nvflare package hospital-1.signed.zip -e grpc://fl-server:8002" in help_text
-    assert "--project-file ./project.yaml --request-dir ./hospital-1" in help_text
+    assert "nvflare package hospital-1.signed.zip --confirm-rootca" in help_text
+    assert "nvflare package hospital-1.signed.zip --request-dir ./hospital-1" in help_text
     assert "--cert ./signed/hospital-1/hospital-1.crt" not in help_text
     assert "--key ./csr/hospital-1.key" not in help_text
     assert "--rootca ./signed/hospital-1/rootCA.pem" not in help_text
 
 
-@pytest.mark.parametrize("old_arg", ["--dir", "--cert", "--key", "--rootca", "--project-name", "-n", "-t"])
-def test_package_parser_rejects_removed_low_level_options(old_arg, tmp_path):
+@pytest.mark.parametrize(
+    "old_args",
+    [
+        ["--admin-port", "8003"],
+        ["--dir", "VALUE"],
+        ["--cert", "VALUE"],
+        ["--key", "VALUE"],
+        ["--rootca", "VALUE"],
+        ["--project-name", "VALUE"],
+        ["-n", "VALUE"],
+    ],
+)
+def test_package_parser_rejects_removed_low_level_options(old_args, tmp_path):
     import argparse
 
     from nvflare.tool.package.package_cli import def_package_cli_parser
@@ -603,11 +695,7 @@ def test_package_parser_rejects_removed_low_level_options(old_arg, tmp_path):
     subs = root.add_subparsers(dest="sub_command")
     def_package_cli_parser(subs)
 
-    argv = ["package", "hospital-1.signed.zip", "-e", "grpc://fl-server:8002", old_arg]
-    if old_arg in {"--dir", "--cert", "--key", "--rootca", "--project-name", "-n"}:
-        argv.append(str(tmp_path))
-    elif old_arg == "-t":
-        argv.append("client")
+    argv = ["package", "hospital-1.signed.zip"] + [str(tmp_path) if value == "VALUE" else value for value in old_args]
 
     with pytest.raises(SystemExit) as exc_info:
         root.parse_args(argv)
@@ -710,7 +798,7 @@ def test_package_compat_output_alias_sets_output_format(tmp_path):
     root = argparse.ArgumentParser(prog="nvflare")
     subs = root.add_subparsers(dest="sub_command")
     def_package_cli_parser(subs)
-    args = root.parse_args(["package", "hospital-1.signed.zip", "-e", "grpc://fl-server:8002", "--output", "json"])
+    args = root.parse_args(["package", "hospital-1.signed.zip", "--output", "json"])
 
     with unittest.mock.patch("nvflare.tool.cli_output.set_output_format") as set_output_format:
         with unittest.mock.patch(
@@ -1837,10 +1925,10 @@ class TestS5RootCaPermissions:
 
 
 class TestMissingType:
-    """When -t is omitted and cert has no UNSTRUCTURED_NAME, CERT_TYPE_UNKNOWN is raised (exit 1)."""
+    """When kit type cannot be derived from the cert, CERT_TYPE_UNKNOWN is raised (exit 1)."""
 
     def test_missing_kit_type_cert_no_role_exits_1(self, cert_env, tmp_path):
-        """No -t, cert has no UNSTRUCTURED_NAME → CERT_TYPE_UNKNOWN (exit 1)."""
+        """No explicit kit type and cert has no UNSTRUCTURED_NAME -> CERT_TYPE_UNKNOWN (exit 1)."""
         work = tmp_path / "work"
         work.mkdir()
         ca_key = cert_env["ca_key"]
@@ -2476,897 +2564,15 @@ class TestProvisionPackageParity:
 
 
 # ---------------------------------------------------------------------------
-# Yaml mode tests: --project-file
-# ---------------------------------------------------------------------------
-
-
-def _write_project_yaml(path, participants, project_name="myproject", builders=None):
-    """Write a minimal api_version-3 project yaml to *path*.
-
-    ``builders`` is an optional list of dicts with ``path`` and optional ``args`` keys,
-    e.g. ``[{"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder"}]``.
-    """
-    lines = [
-        "api_version: 3",
-        f"name: {project_name}",
-        'description: ""',
-        "participants:",
-    ]
-    for p in participants:
-        lines.append(f"  - name: {p['name']}")
-        lines.append(f"    type: {p['type']}")
-        lines.append(f"    org: {p.get('org', 'myorg')}")
-        if "role" in p:
-            lines.append(f"    role: {p['role']}")
-    if builders:
-        lines.append("builders:")
-        for b in builders:
-            lines.append(f"  - path: {b['path']}")
-            if b.get("args"):
-                lines.append("    args:")
-                for k, v in b["args"].items():
-                    value = f'"{v}"' if isinstance(v, str) else v
-                    lines.append(f"      {k}: {value}")
-    path.write_text("\n".join(lines) + "\n")
-
-
-def _write_single_site_yaml(path, data):
-    lines = []
-    for k, v in data.items():
-        if isinstance(v, dict):
-            lines.append(f"{k}:")
-            for dk, dv in v.items():
-                value = f'"{dv}"' if isinstance(dv, str) else dv
-                lines.append(f"  {dk}: {value}")
-        else:
-            value = f'"{v}"' if isinstance(v, str) else v
-            lines.append(f"{k}: {value}")
-    path.write_text("\n".join(lines) + "\n")
-
-
-class TestYamlMode:
-    """Tests for _handle_package_yaml_mode (invoked via handle_package --project-file)."""
-
-    def test_load_project_missing_file_returns_when_error_is_mocked(self, tmp_path, monkeypatch):
-        error = unittest.mock.Mock()
-        load_yaml = unittest.mock.Mock()
-        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
-        monkeypatch.setattr("nvflare.tool.package.package_commands.load_yaml", load_yaml)
-
-        project, builders = _load_project_from_file(str(tmp_path / "missing.yaml"))
-
-        assert project is None
-        assert builders is None
-        assert error.call_args.args[0] == "PROJECT_FILE_NOT_FOUND"
-        load_yaml.assert_not_called()
-
-    def test_load_project_parse_failure_returns_when_error_is_mocked(self, tmp_path, monkeypatch):
-        project_yaml = tmp_path / "project.yaml"
-        project_yaml.write_text("name: project\n")
-        error = unittest.mock.Mock()
-        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
-        monkeypatch.setattr(
-            "nvflare.tool.package.package_commands.load_yaml", unittest.mock.Mock(side_effect=ValueError("bad"))
-        )
-
-        project, builders = _load_project_from_file(str(project_yaml))
-
-        assert project is None
-        assert builders is None
-        assert error.call_args.args[0] == "INVALID_PROJECT_FILE"
-
-    def test_yaml_missing_material_dir_returns_when_error_is_mocked(self, tmp_path, monkeypatch):
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
-        error = unittest.mock.Mock()
-        provision = unittest.mock.Mock()
-        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
-        monkeypatch.setattr(Provisioner, "provision", provision)
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=None,
-            workspace=str(tmp_path / "ws"),
-            project_name="myproject",
-            project_file=str(project_yaml),
-        )
-
-        result = _handle_package_yaml_mode(args, "grpc", "fl-server", 8002)
-
-        assert result == 1
-        assert error.call_args.args[0] == "INVALID_ARGS"
-        provision.assert_not_called()
-
-    def test_yaml_missing_rootca_returns_when_error_is_mocked(self, tmp_path, monkeypatch):
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
-        error = unittest.mock.Mock()
-        provision = unittest.mock.Mock()
-        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error", error)
-        monkeypatch.setattr(Provisioner, "provision", provision)
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=str(tmp_path / "ws"),
-            project_name="myproject",
-            project_file=str(project_yaml),
-        )
-
-        result = _handle_package_yaml_mode(args, "grpc", "fl-server", 8002)
-
-        assert result == 1
-        assert error.call_args.args[0] == "ROOTCA_NOT_FOUND"
-        provision.assert_not_called()
-
-    def test_yaml_missing_participant_material_returns_when_error_is_mocked(self, cert_env, tmp_path, monkeypatch):
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
-        error = unittest.mock.Mock()
-        validate = unittest.mock.Mock()
-        provision = unittest.mock.Mock()
-        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error", error)
-        monkeypatch.setattr("nvflare.tool.package.package_commands._validate_cert_material", validate)
-        monkeypatch.setattr(Provisioner, "provision", provision)
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=str(tmp_path / "ws"),
-            project_name="myproject",
-            project_file=str(project_yaml),
-        )
-
-        result = _handle_package_yaml_mode(args, "grpc", "fl-server", 8002)
-
-        assert result == 1
-        assert error.call_args.args[0] == "CERT_NOT_FOUND"
-        validate.assert_not_called()
-        provision.assert_not_called()
-
-    def test_yaml_existing_output_returns_when_error_is_mocked(self, cert_env, tmp_path, monkeypatch):
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
-        workspace = tmp_path / "ws"
-        existing = workspace / "myproject" / "prod_00" / "hospital-1"
-        existing.mkdir(parents=True)
-        error = unittest.mock.Mock()
-        provision = unittest.mock.Mock()
-        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error", error)
-        monkeypatch.setattr(Provisioner, "provision", provision)
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=str(workspace),
-            project_name="myproject",
-            project_file=str(project_yaml),
-            force=False,
-        )
-
-        result = _handle_package_yaml_mode(args, "grpc", "fl-server", 8002)
-
-        assert result == 1
-        assert error.call_args.args[0] == "OUTPUT_DIR_EXISTS"
-        provision.assert_not_called()
-
-    def test_selected_participant_build_error_returns_when_error_is_mocked(self, tmp_path, monkeypatch):
-        error = unittest.mock.Mock()
-        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
-        monkeypatch.setattr(Provisioner, "provision", lambda self, project: {CtxKey.BUILD_ERROR: True})
-        args = _make_args(workspace=str(tmp_path / "ws"))
-
-        result = _build_selected_participant_package(
-            args=args,
-            scheme="grpc",
-            host="fl-server",
-            port=8002,
-            name="hospital-1",
-            org="myorg",
-            kit_type="client",
-            cert_path=str(tmp_path / "hospital-1.crt"),
-            key_path=str(tmp_path / "hospital-1.key"),
-            rootca_path=str(tmp_path / "rootCA.pem"),
-            project_name="myproject",
-        )
-
-        assert result == 1
-        error.assert_called_once()
-        assert error.call_args.args[0] == "BUILD_FAILED"
-
-    def test_project_dir_under_workspace_returns_none_when_error_is_mocked(self, tmp_path, monkeypatch):
-        error = unittest.mock.Mock()
-        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
-
-        result = _project_dir_under_workspace(str(tmp_path / "ws"), "../escape")
-
-        assert result is None
-        error.assert_called_once()
-        assert error.call_args.args[0] == "INVALID_PROJECT_NAME"
-
-    def test_latest_prod_dir_returns_none_after_invalid_project_when_error_is_mocked(self, tmp_path, monkeypatch):
-        error = unittest.mock.Mock()
-        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
-
-        result = _latest_prod_dir(str(tmp_path / "ws"), "../escape")
-
-        assert result is None
-        error.assert_called_once()
-        assert error.call_args.args[0] == "INVALID_PROJECT_NAME"
-
-    def test_selected_participant_invalid_project_returns_when_error_is_mocked(self, tmp_path, monkeypatch):
-        error = unittest.mock.Mock()
-        provision = unittest.mock.Mock()
-        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
-        monkeypatch.setattr(Provisioner, "provision", provision)
-        args = _make_args(workspace=str(tmp_path / "ws"))
-
-        result = _build_selected_participant_package(
-            args=args,
-            scheme="grpc",
-            host="fl-server",
-            port=8002,
-            name="hospital-1",
-            org="myorg",
-            kit_type="client",
-            cert_path=str(tmp_path / "hospital-1.crt"),
-            key_path=str(tmp_path / "hospital-1.key"),
-            rootca_path=str(tmp_path / "rootCA.pem"),
-            project_name="../escape",
-        )
-
-        assert result == 1
-        error.assert_called_once()
-        assert error.call_args.args[0] == "INVALID_PROJECT_NAME"
-        provision.assert_not_called()
-
-    def test_yaml_build_error_returns_when_error_is_mocked(self, cert_env, tmp_path, monkeypatch):
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
-        error = unittest.mock.Mock()
-        monkeypatch.setattr("nvflare.tool.package.package_commands.output_error_message", error)
-        monkeypatch.setattr(Provisioner, "provision", lambda self, project: {CtxKey.BUILD_ERROR: True})
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=str(tmp_path / "ws"),
-            project_name="myproject",
-            project_file=str(project_yaml),
-        )
-
-        result = handle_package(args)
-
-        assert result == 1
-        assert error.call_args.args[0] == "BUILD_FAILED"
-
-    # ------------------------------------------------------------------
-    # 1. All participants land in the SAME prod_NN directory
-    # ------------------------------------------------------------------
-    def test_all_participants_in_same_prod_dir(self, cert_env, tmp_path):
-        """Two clients from one --project-file call must both be in prod_00, not prod_01."""
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-
-        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
-        _make_signed_cert(ca_key, ca_cert, "hospital-2", str(cert_dir), "hospital-2.crt", role="client")
-
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(
-            project_yaml,
-            [
-                {"name": "hospital-1", "type": "client"},
-                {"name": "hospital-2", "type": "client"},
-            ],
-        )
-
-        ws = str(tmp_path / "ws")
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=ws,
-            project_name="myproject",
-            project_file=str(project_yaml),
-        )
-        handle_package(args)
-
-        prod_dir = os.path.join(ws, "myproject", "prod_00")
-        assert os.path.isdir(os.path.join(prod_dir, "hospital-1")), "hospital-1 not in prod_00"
-        assert os.path.isdir(os.path.join(prod_dir, "hospital-2")), "hospital-2 not in prod_00"
-        # Neither participant should appear in a separate prod_01
-        assert not os.path.isdir(os.path.join(ws, "myproject", "prod_01")), "unexpected prod_01 created"
-
-    def test_single_site_yaml_preserves_listening_host_for_comm_config(self, cert_env, tmp_path):
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
-
-        site_yaml = tmp_path / "site.yaml"
-        _write_single_site_yaml(
-            site_yaml,
-            {
-                "name": "hospital-1",
-                "type": "client",
-                "org": "myorg",
-                "listening_host": {
-                    "scheme": "grpc",
-                    "default_host": "hospital-1",
-                    "port": 9001,
-                    "connection_security": "mtls",
-                },
-            },
-        )
-
-        ws = str(tmp_path / "ws")
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=ws,
-            project_name="myproject",
-            project_file=str(site_yaml),
-        )
-        handle_package(args)
-
-        comm_config = os.path.join(ws, "myproject", "prod_00", "hospital-1", "local", "comm_config.json")
-        assert os.path.isfile(comm_config)
-        with open(comm_config) as f:
-            cfg = json.load(f)
-        assert cfg["internal"]["scheme"] == "grpc"
-        assert cfg["internal"]["resources"]["host"] == "hospital-1"
-        assert cfg["internal"]["resources"]["port"] == 9001
-        assert cfg["internal"]["resources"]["connection_security"] == "mtls"
-
-    def test_yaml_server_participant_preserves_listening_host_for_comm_config(self, cert_env, tmp_path):
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-        _make_signed_cert(ca_key, ca_cert, "fl-server", str(cert_dir), "fl-server.crt", role="server")
-
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(
-            project_yaml,
-            [
-                {
-                    "name": "fl-server",
-                    "type": "server",
-                    "listening_host": {
-                        "scheme": "grpc",
-                        "default_host": "fl-server",
-                        "port": 8102,
-                        "connection_security": "mtls",
-                    },
-                }
-            ],
-        )
-
-        # _write_project_yaml only handles flat keys, so patch in nested listening_host.
-        project_yaml.write_text(
-            "\n".join(
-                [
-                    "api_version: 3",
-                    "name: myproject",
-                    'description: ""',
-                    "participants:",
-                    "  - name: fl-server",
-                    "    type: server",
-                    "    org: myorg",
-                    "    listening_host:",
-                    "      scheme: grpc",
-                    "      default_host: fl-server",
-                    "      port: 8102",
-                    "      connection_security: mtls",
-                ]
-            )
-            + "\n"
-        )
-
-        ws = str(tmp_path / "ws")
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=ws,
-            project_name="myproject",
-            project_file=str(project_yaml),
-        )
-        handle_package(args)
-
-        comm_config = os.path.join(ws, "myproject", "prod_00", "fl-server", "local", "comm_config.json")
-        assert os.path.isfile(comm_config)
-        with open(comm_config) as f:
-            cfg = json.load(f)
-        assert cfg["internal"]["scheme"] == "grpc"
-        assert cfg["internal"]["resources"]["host"] == "fl-server"
-        assert cfg["internal"]["resources"]["port"] == 8102
-        assert cfg["internal"]["resources"]["connection_security"] == "mtls"
-
-    # ------------------------------------------------------------------
-    # 2. -t client filter builds only clients
-    # ------------------------------------------------------------------
-    def test_type_filter_client_only(self, cert_env, tmp_path):
-        """-t client with a yaml containing server + clients should only build clients."""
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-
-        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
-        _make_signed_cert(ca_key, ca_cert, "hospital-2", str(cert_dir), "hospital-2.crt", role="client")
-        # Server cert exists in dir (not needed because filter excludes server)
-        _make_signed_cert(ca_key, ca_cert, "fl-server", str(cert_dir), "fl-server.crt", role="server")
-
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(
-            project_yaml,
-            [
-                {"name": "fl-server", "type": "server"},
-                {"name": "hospital-1", "type": "client"},
-                {"name": "hospital-2", "type": "client"},
-            ],
-        )
-
-        ws = str(tmp_path / "ws")
-        args = _make_args(
-            kit_type="client",
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=ws,
-            project_name="myproject",
-            project_file=str(project_yaml),
-        )
-        handle_package(args)
-
-        prod_dir = os.path.join(ws, "myproject", "prod_00")
-        assert os.path.isdir(os.path.join(prod_dir, "hospital-1"))
-        assert os.path.isdir(os.path.join(prod_dir, "hospital-2"))
-        # Server kit must NOT be present
-        assert not os.path.isdir(os.path.join(prod_dir, "fl-server")), "server dir unexpectedly present"
-
-    # ------------------------------------------------------------------
-    # 3. -t server on a clients-only yaml → NO_PARTICIPANTS error
-    # ------------------------------------------------------------------
-    def test_type_filter_no_match_exits(self, cert_env, tmp_path):
-        """-t server on a yaml with only clients must exit with NO_PARTICIPANTS."""
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
-
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
-
-        args = _make_args(
-            kit_type="server",
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=str(tmp_path / "ws"),
-            project_name="myproject",
-            project_file=str(project_yaml),
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            handle_package(args)
-        assert exc_info.value.code == 1
-
-    # ------------------------------------------------------------------
-    # 4. Non-existent project file → PROJECT_FILE_NOT_FOUND (exit 1)
-    # ------------------------------------------------------------------
-    def test_project_file_not_found_exits(self, cert_env, tmp_path):
-        """Passing a non-existent --project-file must exit with code 1."""
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=str(tmp_path / "ws"),
-            project_file=str(tmp_path / "nonexistent.yaml"),
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            handle_package(args)
-        assert exc_info.value.code == 1
-
-    # ------------------------------------------------------------------
-    # 5. relay participant in yaml → UNSUPPORTED_TOPOLOGY (exit 4)
-    # ------------------------------------------------------------------
-    def test_relay_participant_rejected(self, cert_env, tmp_path):
-        """A yaml containing a relay participant must exit with code 4."""
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(
-            project_yaml,
-            [
-                {"name": "hospital-1", "type": "client"},
-                {"name": "relay-1", "type": "relay"},
-            ],
-        )
-
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=str(tmp_path / "ws"),
-            project_file=str(project_yaml),
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            handle_package(args)
-        assert exc_info.value.code == 4
-
-    # ------------------------------------------------------------------
-    # 6. Cert file missing for a participant → CERT_NOT_FOUND (exit 1)
-    # ------------------------------------------------------------------
-    def test_missing_cert_exits(self, cert_env, tmp_path):
-        """If a participant cert file is absent, must exit with code 1."""
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-        # Write the key but NOT the cert
-        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
-        os.remove(str(cert_dir / "hospital-1.crt"))
-
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
-
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=str(tmp_path / "ws"),
-            project_file=str(project_yaml),
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            handle_package(args)
-        assert exc_info.value.code == 1
-
-    # ------------------------------------------------------------------
-    # 7. rootCA.pem missing from --dir → ROOTCA_NOT_FOUND (exit 1)
-    # ------------------------------------------------------------------
-    def test_missing_rootca_exits(self, cert_env, tmp_path):
-        """If rootCA.pem is absent from --dir, must exit with code 1."""
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        # Deliberately do NOT write rootCA.pem
-        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
-
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
-
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=str(tmp_path / "ws"),
-            project_file=str(project_yaml),
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            handle_package(args)
-        assert exc_info.value.code == 1
-
-    # ------------------------------------------------------------------
-    # 8. --project-file and -n/--name are mutually exclusive
-    # ------------------------------------------------------------------
-    def test_project_name_and_file_mutually_exclusive(self, cert_env, tmp_path):
-        """Setting both --project-file and -n must exit with INVALID_ARGS (exit 4)."""
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
-
-        args = _make_args(
-            kit_type=None,
-            name="hospital-1",  # mutually exclusive with project_file
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=str(tmp_path / "ws"),
-            project_file=str(project_yaml),
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            handle_package(args)
-        assert exc_info.value.code == 4
-
-    # ------------------------------------------------------------------
-    # 9. public package mode requires a signed zip
-    # ------------------------------------------------------------------
-    def test_project_file_without_signed_zip_is_missing_input(self, cert_env, tmp_path, capsys):
-        """--project-file without signed zip must not fall into hidden internal yaml mode."""
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
-
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=None,  # not provided
-            workspace=str(tmp_path / "ws"),
-            project_file=str(project_yaml),
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            handle_package(args)
-        assert exc_info.value.code == 4
-        captured = capsys.readouterr()
-        combined = captured.out + captured.err
-        assert "INVALID_ARGS" in combined
-        assert "Signed zip input is required" in combined
-
-    # ------------------------------------------------------------------
-    # 10. No dummy server dir in prod when yaml has no server participant
-    # ------------------------------------------------------------------
-    def test_no_dummy_server_dir_in_prod(self, cert_env, tmp_path):
-        """When yaml has only clients (no server), the dummy server dir must be absent from prod."""
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
-
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
-
-        ws = str(tmp_path / "ws")
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=ws,
-            project_name="myproject",
-            project_file=str(project_yaml),
-        )
-        handle_package(args)
-
-        prod_dir = os.path.join(ws, "myproject", "prod_00")
-        entries = os.listdir(prod_dir)
-        assert "hospital-1" in entries, "client kit not found in prod_00"
-        # The dummy server directory (named after the endpoint host) must have been removed
-        assert "fl-server" not in entries, "dummy server dir unexpectedly present in prod_00"
-        assert len(entries) == 1, f"unexpected extra entries in prod_00: {entries}"
-
-    # ------------------------------------------------------------------
-    # 11. Malformed rootCA.pem in YAML mode → structured error, not traceback
-    # ------------------------------------------------------------------
-    def test_malformed_rootca_exits_with_structured_error(self, cert_env, tmp_path):
-        """A corrupt rootCA.pem must produce a structured CLI error (exit 1), not a raw traceback."""
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        # Write an invalid (non-PEM) rootCA.pem
-        (cert_dir / "rootCA.pem").write_text("this is not a valid certificate\n")
-
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
-
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=str(tmp_path / "ws"),
-            project_file=str(project_yaml),
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            handle_package(args)
-        assert exc_info.value.code == 1
-
-    # ------------------------------------------------------------------
-    # 12. Empty participant list after filter → NO_PARTICIPANTS (exit 1)
-    # ------------------------------------------------------------------
-    def test_empty_participants_after_filter_exits(self, cert_env, tmp_path):
-        """yaml with only clients filtered by -t server → no participants → exit 1."""
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
-
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
-
-        args = _make_args(
-            kit_type="server",  # filter that matches nothing
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=str(tmp_path / "ws"),
-            project_file=str(project_yaml),
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            handle_package(args)
-        assert exc_info.value.code == 1
-
-    # ------------------------------------------------------------------
-    # 13. Mixed types (client + admin user) all land in same prod_NN
-    # ------------------------------------------------------------------
-    def test_mixed_types_all_in_same_prod(self, cert_env, tmp_path):
-        """client + lead admin user kits must both appear in prod_00.
-
-        Note: server kits are only built when -t server is explicit; clients
-        and admin users are built together when no type filter is given.
-        """
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
-        _make_signed_cert(ca_key, ca_cert, "alice@hospital.com", str(cert_dir), "alice@hospital.com.crt", role="lead")
-
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(
-            project_yaml,
-            [
-                {"name": "hospital-1", "type": "client"},
-                {"name": "alice@hospital.com", "type": "admin", "role": "lead"},
-            ],
-        )
-
-        ws = str(tmp_path / "ws")
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=ws,
-            project_name="myproject",
-            project_file=str(project_yaml),
-        )
-        handle_package(args)
-
-        prod_dir = os.path.join(ws, "myproject", "prod_00")
-        assert os.path.isdir(os.path.join(prod_dir, "hospital-1"))
-        assert os.path.isdir(os.path.join(prod_dir, "alice@hospital.com"))
-        assert not os.path.isdir(os.path.join(ws, "myproject", "prod_01"))
-
-    # ------------------------------------------------------------------
-    # 14. --project-name override is reflected in output path
-    # ------------------------------------------------------------------
-    def test_project_name_override_in_output_path(self, cert_env, tmp_path):
-        """--project-name sets the project directory in the workspace output path."""
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
-
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
-
-        ws = str(tmp_path / "ws")
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=ws,
-            project_name="custom-project",
-            project_file=str(project_yaml),
-        )
-        handle_package(args)
-
-        assert os.path.isdir(os.path.join(ws, "custom-project", "prod_00", "hospital-1"))
-        assert not os.path.isdir(os.path.join(ws, "myproject")), "yaml project name must not override --project-name"
-
-    # ------------------------------------------------------------------
-    # 15. --force creates new prod_NN when participant already exists
-    # ------------------------------------------------------------------
-    def test_force_creates_new_prod_dir(self, cert_env, tmp_path):
-        """Re-packaging with --force when prod_00 exists must create prod_01."""
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
-
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
-
-        ws = str(tmp_path / "ws")
-        base_args = dict(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=ws,
-            project_name="myproject",
-            project_file=str(project_yaml),
-        )
-
-        # First run → prod_00
-        handle_package(_make_args(**base_args))
-        assert os.path.isdir(os.path.join(ws, "myproject", "prod_00", "hospital-1"))
-
-        # Second run with force=True → prod_01
-        handle_package(_make_args(force=True, **base_args))
-        assert os.path.isdir(os.path.join(ws, "myproject", "prod_01", "hospital-1"))
-
-    # ------------------------------------------------------------------
-    # 16. YAML that already includes WorkspaceBuilder must not double-run finalize
-    # ------------------------------------------------------------------
-    def test_yaml_with_workspace_builder_does_not_fail(self, cert_env, tmp_path):
-        """If project.yaml already lists WorkspaceBuilder, the dedup filter must prevent
-        BUILD_FAILED from finalize() running twice."""
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
-
-        # Write a yaml that includes WorkspaceBuilder in the builders list (common in
-        # project.yaml files that were used with nvflare provision).
-        project_yaml = tmp_path / "project.yaml"
-        project_yaml.write_text(
-            "api_version: 3\n"
-            "name: myproject\n"
-            'description: ""\n'
-            "participants:\n"
-            "  - name: hospital-1\n"
-            "    type: client\n"
-            "    org: myorg\n"
-            "builders:\n"
-            "  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder\n"
-            "  - path: nvflare.lighter.impl.static_file.StaticFileBuilder\n"
-        )
-
-        ws = str(tmp_path / "ws")
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=ws,
-            project_name="myproject",
-            project_file=str(project_yaml),
-        )
-        # Must not raise SystemExit (BUILD_FAILED)
-        handle_package(args)
-        assert os.path.isdir(os.path.join(ws, "myproject", "prod_00", "hospital-1"))
-
-
-# ---------------------------------------------------------------------------
-# TestKitTypeFromCert: -t derived from cert UNSTRUCTURED_NAME
+# TestKitTypeFromCert: kit type derived from cert UNSTRUCTURED_NAME
 # ---------------------------------------------------------------------------
 
 
 class TestKitTypeFromCert:
-    """Kit type is derived from the signed cert when -t is omitted."""
+    """Kit type is derived from the signed cert when no explicit type is provided."""
 
     def test_client_kit_type_from_cert(self, cert_env, tmp_path):
-        """Cert with UNSTRUCTURED_NAME=client → client kit assembled without -t."""
+        """Cert with UNSTRUCTURED_NAME=client -> client kit assembled without explicit type."""
         work = tmp_path / "work"
         work.mkdir()
         ca_key = cert_env["ca_key"]
@@ -3393,7 +2599,7 @@ class TestKitTypeFromCert:
         assert os.path.isfile(os.path.join(out_dir, "startup", "start.sh"))
 
     def test_server_kit_type_from_cert(self, cert_env, tmp_path):
-        """Cert with UNSTRUCTURED_NAME=server → server kit assembled without -t."""
+        """Cert with UNSTRUCTURED_NAME=server -> server kit assembled without explicit type."""
         work = tmp_path / "work"
         work.mkdir()
         ca_key = cert_env["ca_key"]
@@ -3418,7 +2624,7 @@ class TestKitTypeFromCert:
         assert os.path.isfile(os.path.join(out_dir, "startup", "start.sh"))
 
     def test_admin_kit_type_from_cert(self, cert_env, tmp_path):
-        """Cert with UNSTRUCTURED_NAME=lead → admin kit assembled without -t."""
+        """Cert with UNSTRUCTURED_NAME=lead -> admin kit assembled without explicit type."""
         work = tmp_path / "work"
         work.mkdir()
         ca_key = cert_env["ca_key"]
@@ -3444,8 +2650,8 @@ class TestKitTypeFromCert:
         assert os.path.isfile(os.path.join(out_dir, "startup", "fed_admin.json"))
         assert os.path.isfile(os.path.join(out_dir, "startup", "fl_admin.sh"))
 
-    def test_explicit_t_overrides_cert_role(self, cert_env, tmp_path):
-        """Explicit -t overrides what is in the cert's UNSTRUCTURED_NAME."""
+    def test_explicit_type_overrides_cert_role(self, cert_env, tmp_path):
+        """Explicit internal kit_type overrides what is in the cert's UNSTRUCTURED_NAME."""
         work = tmp_path / "work"
         work.mkdir()
         ca_key = cert_env["ca_key"]
@@ -3472,7 +2678,7 @@ class TestKitTypeFromCert:
         assert os.path.isfile(os.path.join(out_dir, "startup", "fed_admin.json"))
 
     def test_dir_mode_kit_type_from_cert(self, cert_env, tmp_path):
-        """--dir mode: kit type derived from cert when -t not given."""
+        """--dir mode: kit type derived from cert when no explicit type is provided."""
         work = tmp_path / "work"
         work.mkdir()
         ca_key = cert_env["ca_key"]
@@ -3493,124 +2699,6 @@ class TestKitTypeFromCert:
 
         out_dir = _kit_dir(ws, "testproject", "hospital-1")
         assert os.path.isfile(os.path.join(out_dir, "startup", "fed_client.json"))
-
-
-# ---------------------------------------------------------------------------
-# Builder pipeline assembly tests (yaml mode)
-# ---------------------------------------------------------------------------
-
-
-def _capture_builders(cert_env, tmp_path, yaml_builders=None):
-    """Run handle_package in YAML mode and return the builders list passed to Provisioner.
-
-    ``yaml_builders`` is the optional list of builder dicts to embed in the project YAML.
-    """
-    ca_key = cert_env["ca_key"]
-    ca_cert = cert_env["ca_cert"]
-    cert_dir = tmp_path / "certs"
-    cert_dir.mkdir()
-    shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
-    _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt", role="client")
-
-    project_yaml = tmp_path / "project.yaml"
-    _write_project_yaml(
-        project_yaml,
-        [{"name": "hospital-1", "type": "client"}],
-        builders=yaml_builders,
-    )
-
-    captured = []
-    original_init = Provisioner.__init__
-
-    def _capturing_init(self, root_dir, builders):
-        captured.extend(builders)
-        original_init(self, root_dir, builders)
-
-    with unittest.mock.patch.object(Provisioner, "__init__", _capturing_init):
-        args = _make_args(
-            kit_type=None,
-            endpoint="grpc://fl-server:8002",
-            dir=str(cert_dir),
-            workspace=str(tmp_path / "ws"),
-            project_name="myproject",
-            project_file=str(project_yaml),
-        )
-        handle_package(args)
-
-    return captured
-
-
-class TestYamlModeBuilderPipeline:
-    """Verify that the builder pipeline in yaml mode honors YAML-declared builders."""
-
-    @pytest.fixture
-    def cert_env(self, tmp_path):
-        ca_key, ca_cert, rootca_path = _make_ca(str(tmp_path))
-        return {"ca_key": ca_key, "ca_cert": ca_cert, "rootca_path": rootca_path}
-
-    def test_no_yaml_builders_injects_defaults(self, cert_env, tmp_path):
-        """No builders in YAML → WorkspaceBuilder, PrebuiltCertBuilder, StaticFileBuilder injected."""
-        builders = _capture_builders(cert_env, tmp_path, yaml_builders=None)
-        types_ = [type(b) for b in builders]
-        assert WorkspaceBuilder in types_
-        assert PrebuiltCertBuilder in types_
-        assert StaticFileBuilder in types_
-
-    def test_yaml_workspace_builder_not_duplicated(self, cert_env, tmp_path):
-        """WorkspaceBuilder in YAML is used; no second default WorkspaceBuilder added."""
-        builders = _capture_builders(
-            cert_env,
-            tmp_path,
-            yaml_builders=[{"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder"}],
-        )
-        assert sum(isinstance(b, WorkspaceBuilder) for b in builders) == 1
-
-    def test_yaml_static_file_builder_not_duplicated(self, cert_env, tmp_path):
-        """StaticFileBuilder in YAML is used; no second default StaticFileBuilder added."""
-        builders = _capture_builders(
-            cert_env,
-            tmp_path,
-            yaml_builders=[
-                {"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder"},
-                {"path": "nvflare.lighter.impl.static_file.StaticFileBuilder", "args": {"scheme": "grpc"}},
-            ],
-        )
-        assert sum(isinstance(b, StaticFileBuilder) for b in builders) == 1
-
-    def test_yaml_cert_builder_replaced_by_prebuilt(self, cert_env, tmp_path):
-        """CertBuilder in YAML is replaced by PrebuiltCertBuilder; no CertBuilder remains."""
-        builders = _capture_builders(
-            cert_env,
-            tmp_path,
-            yaml_builders=[
-                {"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder"},
-                {"path": "nvflare.lighter.impl.cert.CertBuilder"},
-                {"path": "nvflare.lighter.impl.static_file.StaticFileBuilder", "args": {"scheme": "grpc"}},
-            ],
-        )
-        assert not any(isinstance(b, CertBuilder) for b in builders), "CertBuilder must be replaced"
-        assert any(isinstance(b, PrebuiltCertBuilder) for b in builders)
-
-    def test_yaml_static_file_builder_custom_scheme_preserved(self, cert_env, tmp_path):
-        """StaticFileBuilder from YAML keeps its scheme arg, not overridden by --endpoint scheme."""
-        builders = _capture_builders(
-            cert_env,
-            tmp_path,
-            yaml_builders=[
-                {"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder"},
-                {"path": "nvflare.lighter.impl.static_file.StaticFileBuilder", "args": {"scheme": "tcp"}},
-            ],
-        )
-        static = next(b for b in builders if isinstance(b, StaticFileBuilder))
-        assert static.scheme == "tcp"
-
-    def test_prebuilt_cert_builder_positioned_after_workspace(self, cert_env, tmp_path):
-        """PrebuiltCertBuilder comes after WorkspaceBuilder in the assembled list."""
-        builders = _capture_builders(cert_env, tmp_path, yaml_builders=None)
-        types_ = [type(b) for b in builders]
-        ws_idx = types_.index(WorkspaceBuilder)
-        cert_idx = types_.index(PrebuiltCertBuilder)
-        assert ws_idx < cert_idx
 
 
 # ---------------------------------------------------------------------------
@@ -3663,10 +2751,44 @@ def _make_signed_zip(
     )
     rootca_copy = request_dir / "rootCA.pem"
     shutil.copy2(rootca_path, str(rootca_copy))
+    participant_type = "server" if kind == "server" else "client" if cert_type == "client" else "admin"
+    participant = {
+        "name": name,
+        "type": participant_type,
+        "org": org,
+    }
+    if participant_type == "server":
+        participant.update(
+            {
+                "fed_learn_port": 8002,
+                "admin_port": 8003,
+            }
+        )
+    elif participant_type == "admin":
+        participant["role"] = cert_type
+        participant["server"] = {
+            "host": "fl-server",
+            "fed_learn_port": 8002,
+            "admin_port": 8003,
+        }
+    else:
+        participant["server"] = {
+            "host": "fl-server",
+            "fed_learn_port": 8002,
+            "admin_port": 8003,
+        }
+    local_site = {
+        "name": project_name,
+        "participants": [participant],
+    }
+    approval_site = _approval_site_from_participant_definition(local_site)
+
     site_yaml_path = request_dir / "site.yaml"
+    approval_site_yaml_path = request_dir / "approval-site.yaml"
     request_json_path = request_dir / "request.json"
     signed_json_path = request_dir / "signed.json"
-    site_yaml_path.write_text(f"name: {name}\norg: {org}\nkind: {kind}\ntype: {cert_type}\nproject: {project_name}\n")
+    site_yaml_path.write_text(yaml.safe_dump(local_site, sort_keys=False))
+    approval_site_yaml_path.write_text(yaml.safe_dump(approval_site, sort_keys=False))
     cert_sha256 = "0" * 64 if hash_mismatch else _signed_zip_sha256_file(cert_path)
     public_key_sha256 = _public_key_sha256_from_cert(cert_path)
     request_json_path.write_text(
@@ -3682,6 +2804,7 @@ def _make_signed_zip(
                 "kind": kind,
                 "cert_type": cert_type,
                 "cert_role": None,
+                "site_yaml_sha256": _signed_zip_sha256_file(approval_site_yaml_path),
                 "csr_sha256": "1" * 64,
                 "public_key_sha256": public_key_sha256,
             },
@@ -3701,6 +2824,8 @@ def _make_signed_zip(
                 "kind": kind,
                 "cert_type": cert_type,
                 "cert_role": None,
+                "scheme": "grpc",
+                "default_connection_security": "tls",
                 "certificate": {
                     "serial": "01",
                     "valid_until": "2029-04-24T00:00:00Z",
@@ -3709,7 +2834,7 @@ def _make_signed_zip(
                 "rootca_file": "rootCA.pem",
                 "hashes": {
                     "csr_sha256": "1" * 64,
-                    "site_yaml_sha256": _signed_zip_sha256_file(site_yaml_path),
+                    "site_yaml_sha256": _signed_zip_sha256_file(approval_site_yaml_path),
                     "certificate_sha256": cert_sha256,
                     "rootca_sha256": _signed_zip_sha256_file(rootca_copy),
                     "public_key_sha256": public_key_sha256,
@@ -3721,7 +2846,7 @@ def _make_signed_zip(
     signed_zip = request_dir / f"{name}.signed.zip"
     with zipfile.ZipFile(signed_zip, "w") as zf:
         zf.write(signed_json_path, "signed.json")
-        zf.write(site_yaml_path, "site.yaml")
+        zf.write(approval_site_yaml_path, "site.yaml")
         with open(cert_path, "rb") as cert_file:
             zf.writestr(cert_member or (f"../{name}.crt" if traversal else f"{name}.crt"), cert_file.read())
         zf.write(rootca_copy, "rootCA.pem")
@@ -3730,6 +2855,144 @@ def _make_signed_zip(
     os.remove(cert_path)
     os.remove(rootca_copy)
     os.remove(signed_json_path)
+    os.remove(approval_site_yaml_path)
+    return signed_zip, request_dir, key_path
+
+
+def _approval_site_from_participant_definition(participant_definition: dict) -> dict:
+    approval_site = {
+        "name": participant_definition["name"],
+        "participants": [],
+    }
+    if participant_definition.get("description"):
+        approval_site["description"] = participant_definition["description"]
+    for participant in participant_definition["participants"]:
+        approval_participant = dict(participant)
+        if approval_participant.get("type") == "server":
+            approval_participant.pop("connection_security", None)
+        approval_site["participants"].append(approval_participant)
+    return approval_site
+
+
+def _participant_request_identity(participant_definition: dict) -> dict:
+    participant = participant_definition["participants"][0]
+    if participant["type"] == "server":
+        kind = "server"
+        cert_type = "server"
+        cert_role = None
+    elif participant["type"] == "admin":
+        kind = "user"
+        cert_type = participant["role"]
+        cert_role = participant["role"]
+    else:
+        kind = "site"
+        cert_type = "client"
+        cert_role = None
+    return {
+        "project": participant_definition["name"],
+        "name": participant["name"],
+        "org": participant["org"],
+        "kind": kind,
+        "cert_type": cert_type,
+        "cert_role": cert_role,
+    }
+
+
+def _make_v2_signed_zip(
+    tmp_path,
+    participant_definition: dict,
+    *,
+    scheme="grpc",
+    default_connection_security="tls",
+    request_id="11111111111111111111111111111111",
+):
+    identity = _participant_request_identity(participant_definition)
+    name = identity["name"]
+    request_dir = tmp_path / name
+    request_dir.mkdir(exist_ok=True)
+    ca_dir = tmp_path / f"ca-{name.replace('@', '_').replace('.', '_')}"
+    ca_dir.mkdir(exist_ok=True)
+    ca_key, ca_cert, rootca_path = _make_ca(str(ca_dir), name=identity["project"], org=identity["org"])
+    key_path, cert_path = _make_signed_cert(
+        ca_key,
+        ca_cert,
+        name,
+        str(request_dir),
+        f"{name}.crt",
+        role=identity["cert_type"],
+        org=identity["org"],
+    )
+    rootca_copy = request_dir / "rootCA.pem"
+    shutil.copy2(rootca_path, str(rootca_copy))
+
+    local_site_yaml_path = request_dir / "site.yaml"
+    request_json_path = request_dir / "request.json"
+    signed_json_path = request_dir / "signed.json"
+    approval_site_yaml_path = request_dir / "approval-site.yaml"
+    with local_site_yaml_path.open("w") as f:
+        yaml.safe_dump(participant_definition, f, sort_keys=False)
+    approval_site = _approval_site_from_participant_definition(participant_definition)
+    with approval_site_yaml_path.open("w") as f:
+        yaml.safe_dump(approval_site, f, sort_keys=False)
+
+    public_key_sha256 = _public_key_sha256_from_cert(cert_path)
+    request_json = {
+        "artifact_type": "nvflare.cert.request",
+        "schema_version": "1",
+        "request_id": request_id,
+        "created_at": "2026-04-24T00:00:00Z",
+        "project": identity["project"],
+        "name": name,
+        "org": identity["org"],
+        "kind": identity["kind"],
+        "cert_type": identity["cert_type"],
+        "cert_role": identity["cert_role"],
+        "csr_sha256": "1" * 64,
+        "public_key_sha256": public_key_sha256,
+    }
+    request_json_path.write_text(json.dumps(request_json, sort_keys=True))
+    signed_json_path.write_text(
+        json.dumps(
+            {
+                "artifact_type": "nvflare.cert.signed",
+                "schema_version": "1",
+                "request_id": request_id,
+                "approved_at": "2026-04-24T00:00:00Z",
+                "project": identity["project"],
+                "name": name,
+                "org": identity["org"],
+                "kind": identity["kind"],
+                "cert_type": identity["cert_type"],
+                "cert_role": identity["cert_role"],
+                "scheme": scheme,
+                "default_connection_security": default_connection_security,
+                "certificate": {
+                    "serial": "01",
+                    "valid_until": "2029-04-24T00:00:00Z",
+                },
+                "cert_file": f"{name}.crt",
+                "rootca_file": "rootCA.pem",
+                "hashes": {
+                    "csr_sha256": "1" * 64,
+                    "site_yaml_sha256": _signed_zip_sha256_file(approval_site_yaml_path),
+                    "certificate_sha256": _signed_zip_sha256_file(cert_path),
+                    "rootca_sha256": _signed_zip_sha256_file(rootca_copy),
+                    "public_key_sha256": public_key_sha256,
+                },
+            },
+            sort_keys=True,
+        )
+    )
+    signed_zip = request_dir / f"{name}.signed.zip"
+    with zipfile.ZipFile(signed_zip, "w") as zf:
+        zf.write(signed_json_path, "signed.json")
+        zf.write(approval_site_yaml_path, "site.yaml")
+        zf.write(cert_path, f"{name}.crt")
+        zf.write(rootca_copy, "rootCA.pem")
+    os.remove(cert_path)
+    os.remove(rootca_copy)
+    os.remove(signed_json_path)
+    os.remove(approval_site_yaml_path)
     return signed_zip, request_dir, key_path
 
 
@@ -3747,10 +3010,9 @@ def _rewrite_signed_zip_metadata(signed_zip, mutate):
 def _signed_zip_args(signed_zip, tmp_path, **kwargs):
     defaults = dict(
         input=str(signed_zip),
-        endpoint="grpc://fl-server:8002",
+        endpoint=None,
         workspace=str(tmp_path / "ws"),
         force=True,
-        project_file=None,
         request_dir=None,
         project_name=None,
         dir=None,
@@ -3793,6 +3055,386 @@ def _run_signed_zip_with_captured_provisioner(args, prod_dir):
         with unittest.mock.patch.object(Provisioner, "provision", _capture_provision):
             handle_package(args)
     return captured
+
+
+class TestDistributedProvisioningV2PackageMode:
+    def test_profile_based_signed_zip_rejects_endpoint_override(self, tmp_path):
+        participant_definition = {
+            "name": "hospital_federation",
+            "participants": [
+                {
+                    "name": "hospital-a",
+                    "type": "client",
+                    "org": "hospital_alpha",
+                    "server": {
+                        "host": "server1.hospital-central.org",
+                        "fed_learn_port": 8002,
+                        "admin_port": 8003,
+                    },
+                }
+            ],
+        }
+        signed_zip, request_dir, _ = _make_v2_signed_zip(
+            tmp_path, participant_definition, scheme="grpc", default_connection_security="tls"
+        )
+        args = _signed_zip_args(
+            signed_zip,
+            tmp_path,
+            endpoint="grpc://other-server.example.com:9000",
+            request_dir=str(request_dir),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code == 4
+
+    def test_signed_zip_rejects_project_file_override(self, tmp_path):
+        participant_definition = {
+            "name": "hospital_federation",
+            "participants": [
+                {
+                    "name": "hospital-a",
+                    "type": "client",
+                    "org": "hospital_alpha",
+                    "server": {
+                        "host": "server1.hospital-central.org",
+                        "fed_learn_port": 8002,
+                        "admin_port": 8003,
+                    },
+                }
+            ],
+        }
+        signed_zip, request_dir, _ = _make_v2_signed_zip(
+            tmp_path, participant_definition, scheme="grpc", default_connection_security="tls"
+        )
+        args = _signed_zip_args(
+            signed_zip,
+            tmp_path,
+            project_file=str(tmp_path / "other-project.yaml"),
+            request_dir=str(request_dir),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code == 4
+
+    def test_signed_zip_validates_local_identity_before_endpoint_resolution(self, tmp_path):
+        participant_definition = {
+            "name": "hospital_federation",
+            "participants": [
+                {
+                    "name": "hospital-a",
+                    "type": "client",
+                    "org": "hospital_alpha",
+                    "server": {
+                        "host": "server1.hospital-central.org",
+                        "fed_learn_port": 8002,
+                        "admin_port": 8003,
+                    },
+                }
+            ],
+        }
+        signed_zip, request_dir, _ = _make_v2_signed_zip(
+            tmp_path, participant_definition, scheme="grpc", default_connection_security="tls"
+        )
+        tampered_site = copy.deepcopy(participant_definition)
+        tampered_site["participants"][0]["org"] = "other_org"
+        tampered_site["participants"][0]["server"] = {
+            "host": "malicious.example.com",
+            "fed_learn_port": 9999,
+            "admin_port": 9998,
+        }
+        (request_dir / "site.yaml").write_text(yaml.safe_dump(tampered_site, sort_keys=False))
+        args = _signed_zip_args(
+            signed_zip,
+            tmp_path,
+            request_dir=str(request_dir),
+        )
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands._resolve_packaging_endpoint") as resolve:
+            with pytest.raises(SystemExit) as exc_info:
+                handle_package(args)
+
+        assert exc_info.value.code == 4
+        resolve.assert_not_called()
+
+    def test_signed_zip_relies_on_single_public_key_hash_validator(self, tmp_path):
+        participant_definition = {
+            "name": "hospital_federation",
+            "participants": [
+                {
+                    "name": "hospital-a",
+                    "type": "client",
+                    "org": "hospital_alpha",
+                    "server": {
+                        "host": "server1.hospital-central.org",
+                        "fed_learn_port": 8002,
+                        "admin_port": 8003,
+                    },
+                }
+            ],
+        }
+        signed_zip, request_dir, _ = _make_v2_signed_zip(
+            tmp_path, participant_definition, scheme="grpc", default_connection_security="tls"
+        )
+        expected = _rootca_fingerprint_from_signed_zip(signed_zip)
+        args = _signed_zip_args(
+            signed_zip,
+            tmp_path,
+            request_dir=str(request_dir),
+            expected_rootca_fingerprint=expected,
+        )
+
+        with unittest.mock.patch(
+            "nvflare.tool.package.package_commands._validate_signed_public_key_hash", return_value=True
+        ) as validate_hash:
+            with unittest.mock.patch(
+                "nvflare.tool.package.package_commands._cert_public_key_sha256",
+                side_effect=AssertionError("duplicate public-key hash check"),
+            ):
+                handle_package(args)
+
+        validate_hash.assert_called_once()
+
+    def test_signed_zip_rejects_local_listening_host_until_listener_cert_supported(self, tmp_path, capsys):
+        participant_definition = {
+            "name": "hospital_federation",
+            "participants": [
+                {
+                    "name": "hospital-a",
+                    "type": "client",
+                    "org": "hospital_alpha",
+                    "server": {
+                        "host": "server1.hospital-central.org",
+                        "fed_learn_port": 8002,
+                        "admin_port": 8003,
+                    },
+                }
+            ],
+        }
+        signed_zip, request_dir, _ = _make_v2_signed_zip(
+            tmp_path, participant_definition, scheme="grpc", default_connection_security="tls"
+        )
+        local_site = copy.deepcopy(participant_definition)
+        local_site["participants"][0]["listening_host"] = "hospital-a.internal"
+        (request_dir / "site.yaml").write_text(yaml.safe_dump(local_site, sort_keys=False))
+        args = _signed_zip_args(
+            signed_zip,
+            tmp_path,
+            request_dir=str(request_dir),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        assert "listening_host" in captured.err
+        assert "not supported" in captured.err
+
+    def test_client_signed_zip_uses_profile_defaults_and_local_endpoint_without_override_args(self, tmp_path):
+        participant_definition = {
+            "name": "hospital_federation",
+            "participants": [
+                {
+                    "name": "hospital-a",
+                    "type": "client",
+                    "org": "hospital_alpha",
+                    "server": {
+                        "host": "server1.hospital-central.org",
+                        "fed_learn_port": 8002,
+                        "admin_port": 8003,
+                    },
+                }
+            ],
+        }
+        signed_zip, request_dir, _ = _make_v2_signed_zip(
+            tmp_path, participant_definition, scheme="grpc", default_connection_security="tls"
+        )
+        args = _signed_zip_args(
+            signed_zip,
+            tmp_path,
+            endpoint=None,
+            request_dir=str(request_dir),
+        )
+
+        handle_package(args)
+
+        kit_dir = os.path.join(str(tmp_path / "ws"), "hospital_federation", "prod_00", "hospital-a")
+        with open(os.path.join(kit_dir, "startup", "fed_client.json")) as f:
+            cfg = json.load(f)
+        assert cfg["servers"][0]["service"]["scheme"] == "grpc"
+        assert cfg["servers"][0]["identity"] == "server1.hospital-central.org"
+        assert cfg["client"]["connection_security"] == "tls"
+        assert cfg["overseer_agent"]["args"]["sp_end_point"] == "server1.hospital-central.org:8002:8003"
+        assert yaml.safe_load((request_dir / "site.yaml").read_text()) == participant_definition
+
+    def test_user_signed_zip_uses_profile_defaults_and_local_endpoint_without_override_args(self, tmp_path):
+        participant_definition = {
+            "name": "hospital_federation",
+            "participants": [
+                {
+                    "name": "alice@hospital-alpha.org",
+                    "type": "admin",
+                    "org": "hospital_alpha",
+                    "role": "lead",
+                    "server": {
+                        "host": "server1.hospital-central.org",
+                        "fed_learn_port": 8002,
+                        "admin_port": 8003,
+                    },
+                }
+            ],
+        }
+        signed_zip, request_dir, _ = _make_v2_signed_zip(
+            tmp_path, participant_definition, scheme="grpc", default_connection_security="tls"
+        )
+        args = _signed_zip_args(
+            signed_zip,
+            tmp_path,
+            endpoint=None,
+            request_dir=str(request_dir),
+        )
+
+        handle_package(args)
+
+        kit_dir = os.path.join(str(tmp_path / "ws"), "hospital_federation", "prod_00", "alice@hospital-alpha.org")
+        with open(os.path.join(kit_dir, "startup", "fed_admin.json")) as f:
+            cfg = json.load(f)
+        assert cfg["admin"]["scheme"] == "grpc"
+        assert cfg["admin"]["host"] == "server1.hospital-central.org"
+        assert cfg["admin"]["port"] == 8003
+        assert cfg["admin"]["connection_security"] == "tls"
+        assert yaml.safe_load((request_dir / "site.yaml").read_text()) == participant_definition
+
+    @pytest.mark.parametrize(
+        "local_override, expected_connection_security",
+        [
+            ("clear", "clear"),
+            (None, "tls"),
+        ],
+    )
+    def test_server_signed_zip_uses_local_connection_security_override_then_profile_default(
+        self, tmp_path, local_override, expected_connection_security
+    ):
+        server = {
+            "name": "server1.hospital-central.org",
+            "type": "server",
+            "org": "hospital_central",
+            "fed_learn_port": 8002,
+            "admin_port": 8003,
+        }
+        if local_override:
+            server["connection_security"] = local_override
+        participant_definition = {
+            "name": "hospital_federation",
+            "participants": [server],
+        }
+        signed_zip, request_dir, _ = _make_v2_signed_zip(
+            tmp_path, participant_definition, scheme="grpc", default_connection_security="tls"
+        )
+        args = _signed_zip_args(
+            signed_zip,
+            tmp_path,
+            endpoint=None,
+            request_dir=str(request_dir),
+        )
+
+        handle_package(args)
+
+        kit_dir = os.path.join(str(tmp_path / "ws"), "hospital_federation", "prod_00", "server1.hospital-central.org")
+        with open(os.path.join(kit_dir, "startup", "fed_server.json")) as f:
+            cfg = json.load(f)
+        assert cfg["servers"][0]["service"]["scheme"] == "grpc"
+        assert cfg["servers"][0]["service"]["target"] == "server1.hospital-central.org:8002"
+        assert cfg["servers"][0]["admin_port"] == 8003
+        assert cfg["servers"][0]["connection_security"] == expected_connection_security
+        assert yaml.safe_load((request_dir / "site.yaml").read_text()) == participant_definition
+
+    def test_server_package_ignores_signed_default_connection_security_when_local_override_exists(self, tmp_path):
+        server = {
+            "name": "server1.hospital-central.org",
+            "type": "server",
+            "org": "hospital_central",
+            "fed_learn_port": 8002,
+            "admin_port": 8003,
+            "connection_security": "clear",
+        }
+        participant_definition = {
+            "name": "hospital_federation",
+            "participants": [server],
+        }
+        signed_zip, request_dir, _ = _make_v2_signed_zip(
+            tmp_path, participant_definition, scheme="grpc", default_connection_security="mtls"
+        )
+        with zipfile.ZipFile(signed_zip) as zf:
+            signed_meta = json.loads(zf.read("signed.json"))
+            signed_site = yaml.safe_load(zf.read("site.yaml"))
+        assert signed_meta["default_connection_security"] == "mtls"
+        assert "connection_security" not in signed_site["participants"][0]
+
+        args = _signed_zip_args(
+            signed_zip,
+            tmp_path,
+            endpoint=None,
+            request_dir=str(request_dir),
+        )
+
+        handle_package(args)
+
+        kit_dir = os.path.join(str(tmp_path / "ws"), "hospital_federation", "prod_00", "server1.hospital-central.org")
+        with open(os.path.join(kit_dir, "startup", "fed_server.json")) as f:
+            cfg = json.load(f)
+        assert cfg["servers"][0]["connection_security"] == "clear"
+        assert yaml.safe_load((request_dir / "site.yaml").read_text()) == participant_definition
+
+    def test_signed_zip_uses_builders_from_local_participant_definition(self, tmp_path):
+        participant_definition = {
+            "name": "hospital_federation",
+            "participants": [
+                {
+                    "name": "hospital-a",
+                    "type": "client",
+                    "org": "hospital_alpha",
+                    "server": {
+                        "host": "server1.hospital-central.org",
+                        "fed_learn_port": 8002,
+                        "admin_port": 8003,
+                    },
+                }
+            ],
+            "builders": [
+                {"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder"},
+                {
+                    "path": "nvflare.lighter.impl.static_file.StaticFileBuilder",
+                    "args": {"config_folder": "custom_config"},
+                },
+                {"path": "nvflare.lighter.impl.signature.SignatureBuilder"},
+            ],
+        }
+        signed_zip, request_dir, _ = _make_v2_signed_zip(
+            tmp_path, participant_definition, scheme="grpc", default_connection_security="tls"
+        )
+        args = _signed_zip_args(
+            signed_zip,
+            tmp_path,
+            endpoint=None,
+            request_dir=str(request_dir),
+        )
+
+        captured = _run_signed_zip_with_captured_provisioner(args, tmp_path / "ws" / "hospital_federation" / "prod_00")
+
+        assert captured["project"].name == "hospital_federation"
+        assert _participant_names(captured["project"]) == ["hospital-a"]
+        assert sum(isinstance(b, WorkspaceBuilder) for b in captured["builders"]) == 1
+        assert any(isinstance(b, PrebuiltCertBuilder) for b in captured["builders"])
+        static_builder = next(b for b in captured["builders"] if isinstance(b, StaticFileBuilder))
+        assert static_builder.config_folder == "custom_config"
+        assert static_builder.scheme == "grpc"
+        assert not any(isinstance(b, SignatureBuilder) for b in captured["builders"])
+        assert yaml.safe_load((request_dir / "site.yaml").read_text()) == participant_definition
 
 
 class TestSignedZipPackagePublicSurface:
@@ -4579,23 +4221,18 @@ class TestSignedZipPackageMode:
         assert output_error.call_args.args[0] == "CERT_TYPE_UNKNOWN"
         output_error_message.assert_not_called()
 
-    def test_signed_zip_metadata_public_key_mismatch_returns_after_error_when_error_is_mocked(self, tmp_path):
+    def test_signed_zip_public_key_validator_failure_returns_before_provision(self, tmp_path):
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
         args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
 
         with unittest.mock.patch(
-            "nvflare.tool.package.package_commands._validate_signed_public_key_hash", return_value=True
-        ):
-            with unittest.mock.patch(
-                "nvflare.tool.package.package_commands._cert_public_key_sha256", return_value="0" * 64
-            ):
-                with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as output_error:
-                    with unittest.mock.patch.object(Provisioner, "provision") as provision:
-                        rc = handle_package(args)
+            "nvflare.tool.package.package_commands._validate_signed_public_key_hash", return_value=False
+        ) as validate_hash:
+            with unittest.mock.patch.object(Provisioner, "provision") as provision:
+                rc = handle_package(args)
 
         assert rc == 1
-        output_error.assert_called_once()
-        assert output_error.call_args.args[0] == "KEY_CERT_MISMATCH"
+        validate_hash.assert_called_once()
         provision.assert_not_called()
 
     @pytest.mark.skipif(
@@ -4704,99 +4341,3 @@ class TestSignedZipPackageMode:
         captured = capsys.readouterr()
         assert "INVALID_SIGNED_ZIP" in captured.err
         assert "blocked" in captured.err
-
-    def test_single_site_project_file_uses_project_field(self, tmp_path):
-        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
-        site_yaml = tmp_path / "site.yaml"
-        site_yaml.write_text("name: site-3\norg: nvidia\ntype: client\nproject: example_project\n")
-        args = _signed_zip_args(signed_zip, tmp_path, project_file=str(site_yaml), request_dir=str(request_dir))
-
-        captured = _run_signed_zip_with_captured_provisioner(args, tmp_path / "ws" / "example_project" / "prod_00")
-
-        assert captured["project"].name == "example_project"
-        assert _participant_names(captured["project"]) == ["site-3"]
-
-    def test_project_file_custom_builders_apply_to_signed_identity_only_and_endpoint_scheme_wins(self, tmp_path):
-        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
-        project_yaml = tmp_path / "project.yaml"
-        project_yaml.write_text(
-            "api_version: 3\n"
-            "name: example_project\n"
-            'description: ""\n'
-            "participants:\n"
-            "  - name: site-3\n"
-            "    type: client\n"
-            "    org: nvidia\n"
-            "    listening_host:\n"
-            "      scheme: grpc\n"
-            "      default_host: site-3.local\n"
-            "      port: 9001\n"
-            "  - name: site-4\n"
-            "    type: client\n"
-            "    org: nvidia\n"
-            "builders:\n"
-            "  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder\n"
-            "  - path: nvflare.lighter.impl.static_file.StaticFileBuilder\n"
-            "    args:\n"
-            "      scheme: tcp\n"
-            "  - path: nvflare.lighter.impl.signature.SignatureBuilder\n"
-        )
-        args = _signed_zip_args(signed_zip, tmp_path, project_file=str(project_yaml), request_dir=str(request_dir))
-
-        captured = _run_signed_zip_with_captured_provisioner(args, tmp_path / "ws" / "example_project" / "prod_00")
-
-        assert _participant_names(captured["project"]) == ["site-3"]
-        participant = captured["project"].get_clients()[0]
-        assert participant.org == "nvidia"
-        assert participant.props["listening_host"]["default_host"] == "site-3.local"
-        assert any(isinstance(b, StaticFileBuilder) and b.scheme == "grpc" for b in captured["builders"])
-        assert not any(isinstance(b, SignatureBuilder) for b in captured["builders"])
-
-    def test_project_file_missing_signed_participant_warns_and_builds_signed_identity(
-        self, tmp_path, capsys, monkeypatch
-    ):
-        monkeypatch.setattr(cli_output, "_output_format", "txt")
-        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "site-4", "type": "client", "org": "nvidia"}], "example_project")
-        args = _signed_zip_args(signed_zip, tmp_path, project_file=str(project_yaml), request_dir=str(request_dir))
-
-        captured = _run_signed_zip_with_captured_provisioner(args, tmp_path / "ws" / "example_project" / "prod_00")
-
-        assert _participant_names(captured["project"]) == ["site-3"]
-        captured_output = capsys.readouterr()
-        combined = captured_output.out + captured_output.err
-        assert "Warning" in combined
-        assert "site-3 was not found" in combined
-
-    def test_project_file_identity_conflict_fails_before_build(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(cli_output, "_output_format", "txt")
-        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(project_yaml, [{"name": "site-3", "type": "client", "org": "other-org"}], "example_project")
-        args = _signed_zip_args(signed_zip, tmp_path, project_file=str(project_yaml), request_dir=str(request_dir))
-
-        with unittest.mock.patch.object(Provisioner, "provision") as provision:
-            with pytest.raises(SystemExit) as exc_info:
-                handle_package(args)
-
-        assert exc_info.value.code != 0
-        provision.assert_not_called()
-
-    def test_signed_zip_builds_one_participant_when_project_file_lists_many(self, tmp_path):
-        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
-        project_yaml = tmp_path / "project.yaml"
-        _write_project_yaml(
-            project_yaml,
-            [
-                {"name": "site-3", "type": "client", "org": "nvidia"},
-                {"name": "site-4", "type": "client", "org": "nvidia"},
-                {"name": "alice@nvidia.com", "type": "admin", "role": "lead", "org": "nvidia"},
-            ],
-            "example_project",
-        )
-        args = _signed_zip_args(signed_zip, tmp_path, project_file=str(project_yaml), request_dir=str(request_dir))
-
-        captured = _run_signed_zip_with_captured_provisioner(args, tmp_path / "ws" / "example_project" / "prod_00")
-
-        assert _participant_names(captured["project"]) == ["site-3"]

@@ -34,6 +34,7 @@ import types
 import unittest.mock
 
 import pytest
+import yaml
 
 from nvflare.lighter.provision import provision
 from nvflare.tool.cert.cert_commands import handle_cert_approve, handle_cert_init, handle_cert_request
@@ -70,8 +71,9 @@ _PARTICIPANTS = [
 ]
 
 _SERVER_NAME = "localhost"
-_ENDPOINT = "grpc://localhost:8002"
 _PROJECT = "myfl"
+_FED_PORT = 8002
+_ADMIN_PORT = 8003
 
 # Files expected in every startup/ directory
 _STARTUP_CERTS = {"rootCA.pem"}
@@ -91,32 +93,62 @@ def _ns(**kwargs):
     return types.SimpleNamespace(**defaults)
 
 
-def _request_kind_and_values(name: str, cert_type: str):
+def _request_participant(project: str, name: str, cert_type: str, org: str = "myorg") -> dict:
+    _server_ref = {"host": _SERVER_NAME, "fed_learn_port": _FED_PORT, "admin_port": _ADMIN_PORT}
     if cert_type == "client":
-        return "site", [name]
-    if cert_type == "server":
-        return "server", [name]
-    if cert_type == "org_admin":
-        return "user", ["org-admin", name]
-    if cert_type in {"lead", "member"}:
-        return "user", [cert_type, name]
-    raise ValueError(f"unsupported cert_type: {cert_type}")
+        participant = {"name": name, "type": "client", "org": org, "server": _server_ref}
+    elif cert_type == "server":
+        participant = {
+            "name": name,
+            "type": "server",
+            "org": org,
+            "fed_learn_port": _FED_PORT,
+            "admin_port": _ADMIN_PORT,
+        }
+    elif cert_type == "org_admin":
+        participant = {"name": name, "type": "admin", "org": org, "role": "org_admin", "server": _server_ref}
+    elif cert_type in {"lead", "member"}:
+        participant = {"name": name, "type": "admin", "org": org, "role": cert_type, "server": _server_ref}
+    else:
+        raise ValueError(f"unsupported cert_type: {cert_type}")
+    return {
+        "name": project,
+        "participants": [participant],
+    }
+
+
+def _write_project_profile(path: str, project: str) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(
+            {
+                "name": project,
+                "scheme": "grpc",
+                "connection_security": "mtls",
+            },
+            f,
+            sort_keys=False,
+        )
 
 
 def _run_request(name: str, cert_type: str, project: str, request_root: str, org: str = "myorg"):
-    kind, values = _request_kind_and_values(name, cert_type)
     request_dir = os.path.join(request_root, name)
-    handle_cert_request(_ns(kind=kind, values=values, org=org, project=project, output_dir=request_dir))
+    participant_path = os.path.join(request_root, f"{name}.yaml")
+    os.makedirs(request_root, exist_ok=True)
+    with open(participant_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(_request_participant(project, name, cert_type, org), f, sort_keys=False)
+    handle_cert_request(_ns(participant=participant_path, output_dir=request_dir))
     return request_dir, os.path.join(request_dir, f"{name}.request.zip")
 
 
-def _run_approve(name: str, request_zip: str, ca_dir: str, signed_dir: str):
+def _run_approve(name: str, request_zip: str, ca_dir: str, signed_dir: str, profile: str):
     signed_zip = os.path.join(signed_dir, f"{name}.signed.zip")
-    handle_cert_approve(_ns(request_zip=request_zip, ca_dir=ca_dir, signed_zip=signed_zip, valid_days=1095))
+    handle_cert_approve(
+        _ns(request_zip=request_zip, ca_dir=ca_dir, profile=profile, signed_zip=signed_zip, valid_days=1095)
+    )
     return signed_zip
 
 
-def _run_package(signed_zip: str, request_dir: str, workspace: str, endpoint: str = _ENDPOINT):
+def _run_package(signed_zip: str, request_dir: str, workspace: str, endpoint: str = None):
     """Call handle_package signed-zip mode and return the output result dict."""
     result = {}
 
@@ -130,10 +162,8 @@ def _run_package(signed_zip: str, request_dir: str, workspace: str, endpoint: st
         endpoint=endpoint,
         request_dir=request_dir,
         workspace=workspace,
-        project_file=None,
         expected_rootca_fingerprint=None,
         confirm_rootca=False,
-        admin_port=None,
     )
     with unittest.mock.patch("nvflare.tool.package.package_commands.output_ok", side_effect=_capture):
         handle_package(args)
@@ -151,9 +181,11 @@ def provisioned(tmp_path):
     request_root = str(tmp_path / "requests")
     signed_dir = str(tmp_path / "signed")
     ws = str(tmp_path / "ws")
+    profile = str(tmp_path / "project_profile.yaml")
 
     # Step 1 — cert init
     handle_cert_init(_ns(project=_PROJECT, output_dir=ca_dir))
+    _write_project_profile(profile, _PROJECT)
 
     request_dirs = {}
     request_zips = {}
@@ -164,7 +196,7 @@ def provisioned(tmp_path):
 
     # Step 3 — cert approve for each request zip.
     for name, _ in _PARTICIPANTS:
-        signed_zips[name] = _run_approve(name, request_zips[name], ca_dir, signed_dir)
+        signed_zips[name] = _run_approve(name, request_zips[name], ca_dir, signed_dir, profile)
 
     # Step 4 — nvflare package signed zip for each participant.
     kit_dirs = {}
@@ -204,9 +236,11 @@ class TestDistributedProvisioningWorkflow:
         ca_dir = str(tmp_path / "ca")
         request_root = str(tmp_path / "requests")
         signed_dir = str(tmp_path / "signed")
+        profile = str(tmp_path / "project_profile.yaml")
         handle_cert_init(_ns(project=_PROJECT, output_dir=ca_dir))
+        _write_project_profile(profile, _PROJECT)
         _request_dir, request_zip = _run_request("site-1", "client", _PROJECT, request_root)
-        signed_zip = _run_approve("site-1", request_zip, ca_dir, signed_dir)
+        signed_zip = _run_approve("site-1", request_zip, ca_dir, signed_dir, profile)
         assert os.path.isfile(signed_zip)
 
     # ------------------------------------------------------------------
@@ -486,9 +520,9 @@ class TestDistributedProvisioningE2E:
 # Kit parity test: centralized (`nvflare provision`) vs distributed
 # ---------------------------------------------------------------------------
 
-# Participants shared by both workflows.  The server name is "localhost" so
-# that the --endpoint grpc://localhost:8002 aligns with the provision-generated
-# fed_server.json target field.
+# Participants shared by both workflows. The server name is "localhost" so
+# distributed package output aligns with the provision-generated fed_server.json
+# target field.
 _PARITY_PARTICIPANTS = [
     ("localhost", "server"),
     ("site-1", "client"),
@@ -496,9 +530,8 @@ _PARITY_PARTICIPANTS = [
     ("admin@myfl.com", "lead"),
 ]
 _PARITY_PROJECT = "myfl"
-_PARITY_ENDPOINT = "grpc://localhost:8002"
 _PARITY_FED_PORT = 8002
-_PARITY_ADMIN_PORT = 8002
+_PARITY_ADMIN_PORT = 8003
 
 # Files that are cert/key material — content will differ between runs (different CAs).
 _BINARY_CERT_FILES = {"server.crt", "client.crt", "server.key", "client.key", "rootCA.pem"}
@@ -529,7 +562,7 @@ def _run_centralized_provision(workspace: str) -> dict:
             },
             {"name": "site-1", "type": "client", "org": "myorg"},
             {"name": "site-2", "type": "client", "org": "myorg"},
-            {"name": "admin@myfl.com", "type": "admin", "org": "myorg", "role": "project_admin"},
+            {"name": "admin@myfl.com", "type": "admin", "org": "myorg", "role": "lead"},
         ],
         # Standard non-CC/non-HE builders — no SignatureBuilder so file sets are identical.
         "builders": [
@@ -556,8 +589,10 @@ def _run_distributed_provision(workspace: str) -> dict:
     request_root = os.path.join(workspace, "requests")
     signed_dir = os.path.join(workspace, "signed")
     kits_ws = os.path.join(workspace, "kits")
+    profile = os.path.join(workspace, "project_profile.yaml")
 
     handle_cert_init(_ns(project=_PARITY_PROJECT, output_dir=ca_dir))
+    _write_project_profile(profile, _PARITY_PROJECT)
 
     request_dirs = {}
     request_zips = {}
@@ -566,7 +601,7 @@ def _run_distributed_provision(workspace: str) -> dict:
         request_dirs[name], request_zips[name] = _run_request(name, cert_type, _PARITY_PROJECT, request_root)
 
     for name, _ in _PARITY_PARTICIPANTS:
-        signed_zips[name] = _run_approve(name, request_zips[name], ca_dir, signed_dir)
+        signed_zips[name] = _run_approve(name, request_zips[name], ca_dir, signed_dir, profile)
 
     kit_dirs = {}
     for name, _ in _PARITY_PARTICIPANTS:
@@ -574,7 +609,6 @@ def _run_distributed_provision(workspace: str) -> dict:
             signed_zip=signed_zips[name],
             request_dir=request_dirs[name],
             workspace=kits_ws,
-            endpoint=_PARITY_ENDPOINT,
         )
         kit_dirs[name] = result["output_dir"]
 

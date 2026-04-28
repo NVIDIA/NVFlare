@@ -36,6 +36,7 @@ from cryptography.x509.oid import NameOID
 
 # Ensure parsers are initialized by importing cert_cli (registers module-level parser refs)
 import nvflare.tool.cert.cert_cli  # noqa: F401
+from nvflare.lighter.impl.cert import CertBuilder
 from nvflare.lighter.utils import load_crt, load_private_key_file, serialize_cert
 from nvflare.tool import cli_output
 from nvflare.tool.cert.cert_commands import (
@@ -45,9 +46,9 @@ from nvflare.tool.cert.cert_commands import (
     _load_yaml_file,
     _read_request_zip,
     _read_zip_member_limited,
-    _resolve_request_identity,
     _resolve_sign_cert_type,
     _safe_zip_names,
+    _server_cert_san_fields,
     _UnsafeZipSourceError,
     _validate_identity_name,
     _validate_request_id,
@@ -95,6 +96,21 @@ def _csr_args(**kwargs):
         org=None,
         cert_type=None,
         project_file=None,
+        force=False,
+        schema=False,
+    )
+    defaults.update(kwargs)
+    return argparse.Namespace(**defaults)
+
+
+def _request_args(**kwargs):
+    defaults = dict(
+        participant=None,
+        output_dir=None,
+        org=None,
+        project=None,
+        name=None,
+        cert_type=None,
         force=False,
         schema=False,
     )
@@ -206,6 +222,14 @@ def test_write_private_key_removes_created_file_when_write_fails(tmp_path):
     assert not path.exists()
 
 
+def test_write_private_key_forces_owner_only_mode(tmp_path):
+    path = tmp_path / "site-3.key"
+
+    _write_private_key(str(path), b"private key")
+
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+
+
 # ---------------------------------------------------------------------------
 # cert init tests
 # ---------------------------------------------------------------------------
@@ -313,12 +337,14 @@ class TestCertValidationHelpers:
             with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
                 names = _safe_zip_names(zf)
 
-        assert output_error.call_count == 2
-        assert names == ["request.json"]
+        output_error.assert_called_once()
+        assert names is None
 
     def test_request_metadata_returns_after_missing_fields_when_error_is_mocked(self, tmp_path):
         with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
-            result = _validate_request_metadata({"name": "site-3"}, {}, str(tmp_path / "site-3.csr"))
+            result = _validate_request_metadata(
+                {"name": "site-3"}, {}, str(tmp_path / "site.yaml"), str(tmp_path / "site-3.csr")
+            )
 
         assert result is None
         output_error.assert_called_once()
@@ -336,9 +362,12 @@ class TestCertValidationHelpers:
             "cert_type": "client",
             "csr_sha256": "1" * 64,
             "public_key_sha256": "1" * 64,
+            "site_yaml_sha256": "1" * 64,
         }
         with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
-            result = _validate_request_metadata(request_meta, {}, str(tmp_path / "site-3.csr"))
+            result = _validate_request_metadata(
+                request_meta, {}, str(tmp_path / "site.yaml"), str(tmp_path / "site-3.csr")
+            )
 
         assert result is None
         output_error.assert_called_once()
@@ -356,9 +385,12 @@ class TestCertValidationHelpers:
             "cert_type": "workspace",
             "csr_sha256": "1" * 64,
             "public_key_sha256": "1" * 64,
+            "site_yaml_sha256": "1" * 64,
         }
         with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
-            result = _validate_request_metadata(request_meta, {}, str(tmp_path / "site-3.csr"))
+            result = _validate_request_metadata(
+                request_meta, {}, str(tmp_path / "site.yaml"), str(tmp_path / "site-3.csr")
+            )
 
         assert result is None
         output_error.assert_called_once()
@@ -984,6 +1016,15 @@ def _setup_csr(tmp_path, name="hospital-1"):
     return os.path.join(csr_dir, f"{name}.csr")
 
 
+def _public_key_der(public_key) -> bytes:
+    return public_key.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+
+
+def _san_dns_and_ips(cert: x509.Certificate) -> tuple:
+    san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    return san.get_values_for_type(x509.DNSName), [str(ip) for ip in san.get_values_for_type(x509.IPAddress)]
+
+
 def _overwrite_ca_cert(ca_dir: str, not_before, not_after, ca: bool = True) -> None:
     ca_cert_path = os.path.join(ca_dir, "rootCA.pem")
     ca_key_path = os.path.join(ca_dir, "rootCA.key")
@@ -1472,6 +1513,70 @@ class TestCertSign:
         cert = load_crt(os.path.join(out_dir, "fl-server.crt"))
         eku = cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
         assert list(eku) == [x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]
+
+    def test_sign_uses_centralized_cert_generation_for_common_x509_content(self, tmp_path):
+        ca_dir = _setup_ca(tmp_path)
+        csr_dir = str(tmp_path / "csr-server")
+        os.makedirs(csr_dir, exist_ok=True)
+        handle_cert_csr(_csr_args(name="fl-server", org="hospital-central", output_dir=csr_dir, cert_type="server"))
+        csr_path = os.path.join(csr_dir, "fl-server.csr")
+        out_dir = str(tmp_path / "signed-server")
+        server_default_host = "server-public.hospital-central.org"
+        server_additional_hosts = ["server1.hospital-central.org", "10.0.1.50"]
+
+        original_generate_cert = CertBuilder._generate_cert
+        with patch(
+            "nvflare.tool.cert.cert_commands.CertBuilder._generate_cert",
+            wraps=original_generate_cert,
+        ) as generate_cert:
+            result = sign_csr_files(
+                csr_path=csr_path,
+                ca_dir=ca_dir,
+                output_dir=out_dir,
+                cert_type="server",
+                server_default_host=server_default_host,
+                server_additional_hosts=server_additional_hosts,
+            )
+
+        assert result is not None
+        generate_cert.assert_called_once()
+        _, call_kwargs = generate_cert.call_args
+        assert call_kwargs["subject"] == "fl-server"
+        assert call_kwargs["subject_org"] == "hospital-central"
+        assert call_kwargs["role"] == "server"
+        assert call_kwargs["server_default_host"] == server_default_host
+        assert call_kwargs["server_additional_hosts"] == server_additional_hosts
+        assert len(call_kwargs["extra_extensions"]) == 3
+
+        distributed_cert = load_crt(os.path.join(out_dir, "fl-server.crt"))
+        ca_cert = load_crt(os.path.join(ca_dir, "rootCA.pem"))
+        ca_key = load_private_key_file(os.path.join(ca_dir, "rootCA.key"))
+        csr = _load_and_validate_csr(csr_path)
+        centralized_equivalent = original_generate_cert(
+            subject="fl-server",
+            subject_org="hospital-central",
+            issuer=ca_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value,
+            signing_pri_key=ca_key,
+            subject_pub_key=csr.public_key(),
+            role="server",
+            server_default_host=server_default_host,
+            server_additional_hosts=server_additional_hosts,
+        )
+
+        assert distributed_cert.subject == centralized_equivalent.subject
+        assert distributed_cert.issuer == centralized_equivalent.issuer
+        assert _public_key_der(distributed_cert.public_key()) == _public_key_der(centralized_equivalent.public_key())
+        assert _san_dns_and_ips(distributed_cert) == _san_dns_and_ips(centralized_equivalent)
+        assert (
+            distributed_cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value.digest
+            == centralized_equivalent.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value.digest
+        )
+        assert (
+            distributed_cert.extensions.get_extension_for_class(x509.AuthorityKeyIdentifier).value.key_identifier
+            == centralized_equivalent.extensions.get_extension_for_class(
+                x509.AuthorityKeyIdentifier
+            ).value.key_identifier
+        )
 
     def test_valid_days_custom(self, tmp_path):
         """--valid-days controls certificate not_valid_after."""
@@ -2011,6 +2116,19 @@ class TestCertCsrProjectFile:
             handle_cert_csr(args)
         assert exc_info.value.code == 1
 
+    def test_project_file_loader_none_stops_without_missing_flag_fallthrough(self, tmp_path):
+        args = _csr_args(name=None, project_file=str(tmp_path / "bad.yml"), output_dir=str(tmp_path / "out"))
+
+        with patch("nvflare.tool.cert.cert_commands._load_single_site_yaml", return_value=None) as load_site:
+            with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+                with patch("nvflare.tool.cert.cert_commands.generate_csr_files") as generate_csr:
+                    result = handle_cert_csr(args)
+
+        assert result == 1
+        load_site.assert_called_once_with(str(tmp_path / "bad.yml"))
+        output_error.assert_not_called()
+        generate_csr.assert_not_called()
+
     def test_force_allowed_with_project_file(self, tmp_path):
         site_file = self._write_site_yaml(tmp_path, name="h1")
         out_dir = tmp_path / "out"
@@ -2146,6 +2264,57 @@ def _sha256_file(path) -> str:
         return _sha256_bytes(f.read())
 
 
+def _write_participant_definition(path, data: dict) -> None:
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+
+def _write_project_profile(path, project="example_project", scheme="grpc", connection_security="tls") -> None:
+    _write_participant_definition(
+        path,
+        {
+            "name": project,
+            "scheme": scheme,
+            "connection_security": connection_security,
+        },
+    )
+
+
+def _participant_request_args(participant_path):
+    return ["request", "--participant", str(participant_path)]
+
+
+def _request_participant_definition(
+    project="example_project",
+    name="site-3",
+    participant_type="client",
+    org="nvidia",
+    role=None,
+):
+    participant = {
+        "name": name,
+        "type": participant_type,
+        "org": org,
+    }
+    if participant_type == "server":
+        participant.update({"fed_learn_port": 8002, "admin_port": 8003})
+    else:
+        participant["server"] = {
+            "host": "fl-server",
+            "fed_learn_port": 8002,
+            "admin_port": 8003,
+        }
+    if role:
+        participant["role"] = role
+    return {
+        "name": project,
+        "participants": [participant],
+    }
+
+
+def _write_request_participant(path, **kwargs):
+    _write_participant_definition(path, _request_participant_definition(**kwargs))
+
+
 def _public_key_sha256_from_csr(csr_path) -> str:
     csr = _load_csr_file(str(csr_path))
     public_key_der = csr.public_key().public_bytes(
@@ -2180,9 +2349,16 @@ def _write_request_zip(
     request_json_path = request_dir / "request.json"
     key_path.write_bytes(key_pem)
     csr_path.write_bytes(csr_pem)
+    participant_type = "server" if kind == "server" else "client" if cert_type == "client" else "admin"
+    participant = {"name": name, "type": participant_type, "org": org}
+    if participant_type == "admin":
+        participant["role"] = cert_type
     site_yaml_path.write_text(
         yaml.safe_dump(
-            {"name": name, "org": org, "type": cert_type, "project": project, "kind": kind},
+            {
+                "name": project,
+                "participants": [participant],
+            },
             sort_keys=False,
         )
     )
@@ -2199,6 +2375,7 @@ def _write_request_zip(
         "cert_role": None,
         "csr_sha256": "0" * 64 if hash_mismatch else _sha256_file(csr_path),
         "public_key_sha256": _public_key_sha256_from_csr(csr_path),
+        "site_yaml_sha256": _sha256_file(site_yaml_path),
     }
     if metadata_updates:
         request_metadata.update(metadata_updates)
@@ -2235,25 +2412,506 @@ class TestDistributedCertPublicSurface:
         assert exc_info.value.code == 2
 
 
+class TestDistributedCertParticipantWorkflow:
+    def test_request_parser_accepts_participant_definition_without_legacy_identity_args(self, tmp_path):
+        participant_path = tmp_path / "hospital-a.yaml"
+        _write_participant_definition(
+            participant_path,
+            {
+                "name": "hospital_federation",
+                "participants": [
+                    {
+                        "name": "hospital-a",
+                        "type": "client",
+                        "org": "hospital_alpha",
+                        "server": {
+                            "host": "server1.hospital-central.org",
+                            "fed_learn_port": 8002,
+                            "admin_port": 8003,
+                        },
+                    }
+                ],
+            },
+        )
+        parser, _ = _cert_root_parser()
+
+        args = parser.parse_args(["cert"] + _participant_request_args(participant_path))
+
+        assert args.cert_sub_command == "request"
+        assert args.participant == str(participant_path)
+
+    def test_request_parser_requires_participant_definition(self, capsys):
+        parser, _ = _cert_root_parser()
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["cert", "request"])
+
+        assert exc_info.value.code == 2
+        assert "--participant" in capsys.readouterr().err
+
+    def test_request_from_client_participant_definition_derives_identity_and_sanitizes_zip(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.chdir(tmp_path)
+        participant_definition = {
+            "name": "hospital_federation",
+            "description": "Site A - Hospital Alpha",
+            "participants": [
+                {
+                    "name": "hospital-a",
+                    "type": "client",
+                    "org": "hospital_alpha",
+                    "server": {
+                        "host": "server1.hospital-central.org",
+                        "fed_learn_port": 8002,
+                        "admin_port": 8003,
+                    },
+                }
+            ],
+            "builders": [
+                {"path": "nvflare.lighter.impl.workspace.WorkspaceBuilder"},
+                {
+                    "path": "nvflare.lighter.impl.static_file.StaticFileBuilder",
+                    "args": {"config_folder": "custom_config"},
+                },
+            ],
+        }
+        participant_path = tmp_path / "hospital-a.yaml"
+        _write_participant_definition(participant_path, participant_definition)
+
+        _run_cert_cli(_participant_request_args(participant_path))
+
+        request_dir = tmp_path / "hospital-a"
+        assert yaml.safe_load((request_dir / "site.yaml").read_text()) == participant_definition
+        with zipfile.ZipFile(request_dir / "hospital-a.request.zip") as zf:
+            request_json = json.loads(zf.read("request.json"))
+            approval_site = yaml.safe_load(zf.read("site.yaml"))
+
+        assert request_json["project"] == "hospital_federation"
+        assert request_json["name"] == "hospital-a"
+        assert request_json["org"] == "hospital_alpha"
+        assert request_json["kind"] == "site"
+        assert request_json["cert_type"] == "client"
+        assert request_json.get("cert_role") is None
+        assert approval_site["name"] == "hospital_federation"
+        assert approval_site["participants"] == participant_definition["participants"]
+        assert "builders" not in approval_site
+        capsys.readouterr()
+
+    def test_request_accepts_localhost_server_name_like_centralized_provisioning(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.chdir(tmp_path)
+        participant_path = tmp_path / "server.yaml"
+        _write_participant_definition(
+            participant_path,
+            {
+                "name": "hospital_federation",
+                "participants": [
+                    {
+                        "name": "localhost",
+                        "type": "server",
+                        "org": "hospital_central",
+                        "fed_learn_port": 8002,
+                        "admin_port": 8003,
+                    }
+                ],
+            },
+        )
+
+        rc = _run_cert_cli(_participant_request_args(participant_path))
+
+        assert rc == 0
+        assert (tmp_path / "localhost" / "localhost.request.zip").exists()
+        capsys.readouterr()
+
+    def test_server_request_uses_centralized_long_name_cert_convention(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.chdir(tmp_path)
+        long_name = f"server-{'a' * 70}.hospital-central.org"
+        ca_dir = tmp_path / "ca"
+        profile_path = tmp_path / "project_profile.yaml"
+        signed_zip = tmp_path / f"{long_name}.signed.zip"
+        participant_path = tmp_path / "server.yaml"
+        _write_participant_definition(
+            participant_path,
+            {
+                "name": "hospital_federation",
+                "participants": [
+                    {
+                        "name": long_name,
+                        "type": "server",
+                        "org": "hospital_central",
+                        "fed_learn_port": 8002,
+                        "admin_port": 8003,
+                        "host_names": ["server-alias.hospital-central.org"],
+                    }
+                ],
+            },
+        )
+        _write_participant_definition(
+            profile_path,
+            {
+                "name": "hospital_federation",
+                "scheme": "grpc",
+                "connection_security": "tls",
+            },
+        )
+
+        handle_cert_init(_init_args(project="hospital_federation", org="hospital_central", output_dir=str(ca_dir)))
+        _run_cert_cli(_participant_request_args(participant_path))
+        request_dir = tmp_path / long_name
+        _run_cert_cli(
+            [
+                "approve",
+                str(request_dir / f"{long_name}.request.zip"),
+                "--ca-dir",
+                str(ca_dir),
+                "--profile",
+                str(profile_path),
+                "--out",
+                str(signed_zip),
+            ]
+        )
+
+        with zipfile.ZipFile(signed_zip) as zf:
+            signed_json = json.loads(zf.read("signed.json"))
+            signed_cert = x509.load_pem_x509_certificate(zf.read(f"{long_name}.crt"), default_backend())
+
+        assert signed_json["name"] == long_name
+        assert signed_json["cert_file"] == f"{long_name}.crt"
+        subject_cn = signed_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+        assert subject_cn == long_name[:64]
+        san = signed_cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+        assert long_name in san.get_values_for_type(x509.DNSName)
+        assert "server-alias.hospital-central.org" in san.get_values_for_type(x509.DNSName)
+        capsys.readouterr()
+
+    def test_request_rejects_invalid_server_host_names_with_centralized_validation(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.chdir(tmp_path)
+        participant_path = tmp_path / "server.yaml"
+        _write_participant_definition(
+            participant_path,
+            {
+                "name": "hospital_federation",
+                "participants": [
+                    {
+                        "name": "server1.hospital-central.org",
+                        "type": "server",
+                        "org": "hospital_central",
+                        "fed_learn_port": 8002,
+                        "admin_port": 8003,
+                        "host_names": ["bad host name"],
+                    }
+                ],
+            },
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_cert_cli(_participant_request_args(participant_path))
+
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        assert "INVALID_ARGS" in captured.err
+        assert "host_names" in captured.err
+
+    def test_request_rejects_client_listening_host_until_listener_cert_supported(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.chdir(tmp_path)
+        participant_path = tmp_path / "site-1.yaml"
+        _write_participant_definition(
+            participant_path,
+            {
+                "name": "hospital_federation",
+                "participants": [
+                    {
+                        "name": "hospital-a",
+                        "type": "client",
+                        "org": "hospital_alpha",
+                        "server": {
+                            "host": "server1.hospital-central.org",
+                            "fed_learn_port": 8002,
+                            "admin_port": 8003,
+                        },
+                        "listening_host": "hospital-a.internal",
+                    }
+                ],
+            },
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_cert_cli(_participant_request_args(participant_path))
+
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        assert "listening_host" in captured.err
+        assert "not supported" in captured.err
+
+    def test_request_from_user_participant_definition_derives_role(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.chdir(tmp_path)
+        participant_definition = {
+            "name": "hospital_federation",
+            "participants": [
+                {
+                    "name": "alice@hospital-alpha.org",
+                    "type": "admin",
+                    "org": "hospital_alpha",
+                    "role": "lead",
+                    "server": {
+                        "host": "server1.hospital-central.org",
+                        "fed_learn_port": 8002,
+                        "admin_port": 8003,
+                    },
+                }
+            ],
+        }
+        participant_path = tmp_path / "alice.yaml"
+        _write_participant_definition(participant_path, participant_definition)
+
+        _run_cert_cli(_participant_request_args(participant_path))
+
+        request_dir = tmp_path / "alice@hospital-alpha.org"
+        with zipfile.ZipFile(request_dir / "alice@hospital-alpha.org.request.zip") as zf:
+            request_json = json.loads(zf.read("request.json"))
+            approval_site = yaml.safe_load(zf.read("site.yaml"))
+
+        assert request_json["project"] == "hospital_federation"
+        assert request_json["name"] == "alice@hospital-alpha.org"
+        assert request_json["org"] == "hospital_alpha"
+        assert request_json["kind"] == "user"
+        assert request_json["cert_type"] == "lead"
+        assert request_json["cert_role"] == "lead"
+        assert approval_site["participants"][0]["role"] == "lead"
+        capsys.readouterr()
+
+    def test_server_connection_security_override_stays_local_and_approve_injects_profile(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.chdir(tmp_path)
+        ca_dir = tmp_path / "ca"
+        signed_zip = tmp_path / "server1.hospital-central.org.signed.zip"
+        participant_definition = {
+            "name": "hospital_federation",
+            "participants": [
+                {
+                    "name": "server1.hospital-central.org",
+                    "type": "server",
+                    "org": "hospital_central",
+                    "fed_learn_port": 8002,
+                    "admin_port": 8003,
+                    "default_host": "server-public.hospital-central.org",
+                    "host_names": ["server1.hospital-central.org", "10.0.1.50", "fl-server.internal"],
+                    "connection_security": "clear",
+                }
+            ],
+        }
+        profile = {
+            "name": "hospital_federation",
+            "scheme": "grpc",
+            "connection_security": "tls",
+        }
+        participant_path = tmp_path / "server.yaml"
+        profile_path = tmp_path / "project_profile.yaml"
+        _write_participant_definition(participant_path, participant_definition)
+        _write_participant_definition(profile_path, profile)
+
+        handle_cert_init(_init_args(project="hospital_federation", org="hospital_central", output_dir=str(ca_dir)))
+        _run_cert_cli(_participant_request_args(participant_path))
+        request_dir = tmp_path / "server1.hospital-central.org"
+        capsys.readouterr()
+
+        local_site = yaml.safe_load((request_dir / "site.yaml").read_text())
+        assert local_site["participants"][0]["connection_security"] == "clear"
+        with zipfile.ZipFile(request_dir / "server1.hospital-central.org.request.zip") as zf:
+            request_site = yaml.safe_load(zf.read("site.yaml"))
+        assert "connection_security" not in request_site["participants"][0]
+
+        _run_cert_cli(
+            [
+                "approve",
+                str(request_dir / "server1.hospital-central.org.request.zip"),
+                "--ca-dir",
+                str(ca_dir),
+                "--profile",
+                str(profile_path),
+                "--out",
+                str(signed_zip),
+            ]
+        )
+
+        with zipfile.ZipFile(signed_zip) as zf:
+            signed_json = json.loads(zf.read("signed.json"))
+            signed_site = yaml.safe_load(zf.read("site.yaml"))
+            signed_cert = x509.load_pem_x509_certificate(zf.read("server1.hospital-central.org.crt"), default_backend())
+        assert signed_json["scheme"] == "grpc"
+        assert signed_json["default_connection_security"] == "tls"
+        assert "connection_security" not in signed_site["participants"][0]
+        san = signed_cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+        assert "server-public.hospital-central.org" in san.get_values_for_type(x509.DNSName)
+        assert "server1.hospital-central.org" in san.get_values_for_type(x509.DNSName)
+        assert "fl-server.internal" in san.get_values_for_type(x509.DNSName)
+        assert "10.0.1.50" in [str(ip) for ip in san.get_values_for_type(x509.IPAddress)]
+        capsys.readouterr()
+
+    def test_client_signed_cert_keeps_subject_name_san_like_centralized(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.chdir(tmp_path)
+        ca_dir = tmp_path / "ca"
+        request_dir = tmp_path / "site-3"
+        signed_zip = tmp_path / "site-3.signed.zip"
+        participant_path = tmp_path / "site-3.yaml"
+        profile_path = tmp_path / "project_profile.yaml"
+
+        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        _write_project_profile(profile_path)
+        _write_request_participant(participant_path)
+        _run_cert_cli(["request", "-p", str(participant_path), "--out", str(request_dir)])
+        capsys.readouterr()
+
+        _run_cert_cli(
+            [
+                "approve",
+                str(request_dir / "site-3.request.zip"),
+                "--ca-dir",
+                str(ca_dir),
+                "--profile",
+                str(profile_path),
+                "--out",
+                str(signed_zip),
+            ]
+        )
+
+        with zipfile.ZipFile(signed_zip) as zf:
+            signed_cert = x509.load_pem_x509_certificate(zf.read("site-3.crt"), default_backend())
+
+        san = signed_cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+        assert san.get_values_for_type(x509.DNSName) == ["site-3"]
+        assert san.get_values_for_type(x509.IPAddress) == []
+        capsys.readouterr()
+
+    @pytest.mark.parametrize(
+        "extra_kwargs,expected_flag",
+        [
+            ({"org": "myorg"}, "--org"),
+            ({"project": "myproject"}, "--project"),
+            ({"name": "myname"}, "--name"),
+            ({"cert_type": "client"}, "--type"),
+        ],
+    )
+    def test_request_rejects_legacy_identity_arg_alongside_participant(
+        self, tmp_path, capsys, monkeypatch, extra_kwargs, expected_flag
+    ):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        participant_path = tmp_path / "participant.yaml"
+        participant_path.write_text("name: p\nparticipants:\n- name: p\n")
+        args = _request_args(participant=str(participant_path), **extra_kwargs)
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_request(args)
+
+        assert exc_info.value.code == 4
+        assert expected_flag in capsys.readouterr().err
+
+    def test_approve_requires_project_profile(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        ca_dir = tmp_path / "ca"
+        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        request_zip = _write_request_zip(tmp_path)
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir)])
+
+        assert exc_info.value.code == 2
+        assert "--profile" in capsys.readouterr().err
+
+    def test_approve_server_san_fields_use_centralized_participant_validation(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        site_meta = {
+            "name": "hospital_federation",
+            "participants": [
+                {
+                    "name": "server1.hospital-central.org",
+                    "type": "server",
+                    "org": "hospital_central",
+                    "fed_learn_port": 8002,
+                    "admin_port": 8003,
+                    "host_names": ["bad host name"],
+                }
+            ],
+        }
+
+        with pytest.raises(SystemExit) as exc_info:
+            _server_cert_san_fields(site_meta, {"cert_type": "server"})
+
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        assert "host_names" in captured.err
+
+    def test_server_san_field_validation_raises_even_when_error_helper_is_mocked(self):
+        site_meta = {
+            "name": "hospital_federation",
+            "participants": [
+                {
+                    "name": "server1.hospital-central.org",
+                    "type": "server",
+                    "org": "hospital_central",
+                    "fed_learn_port": 8002,
+                    "admin_port": 8003,
+                    "host_names": ["bad host name"],
+                }
+            ],
+        }
+
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            with pytest.raises(SystemExit) as exc_info:
+                _server_cert_san_fields(site_meta, {"cert_type": "server"})
+
+        assert exc_info.value.code == 4
+        output_error.assert_called_once()
+
+    def test_approve_nonexistent_profile_reports_file_not_found(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        ca_dir = tmp_path / "ca"
+        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        request_zip = _write_request_zip(tmp_path)
+        missing_profile = str(tmp_path / "does_not_exist.yaml")
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir), "--profile", missing_profile])
+
+        assert exc_info.value.code == 4
+        assert "file not found" in capsys.readouterr().err
+
+
 class TestDistributedCertRequestApprove:
-    def test_request_missing_flags_returns_when_error_is_mocked(self, tmp_path):
+    def test_request_missing_participant_returns_when_error_is_mocked(self, tmp_path):
         args = argparse.Namespace(
             schema=False,
-            kind="site",
-            identity_args=["site-3"],
-            org=None,
-            project="example_project",
+            participant=None,
             output_dir=str(tmp_path / "site-3"),
             force=False,
         )
 
         with patch("nvflare.tool.cert.cert_commands.output_usage_error") as output_error:
-            with patch("nvflare.tool.cert.cert_commands._validate_request_kind") as validate_kind:
-                result = handle_cert_request(args)
+            result = handle_cert_request(args)
 
         assert result == 1
         output_error.assert_called_once()
-        validate_kind.assert_not_called()
         assert not (tmp_path / "site-3").exists()
 
     def test_resolve_sign_cert_type_returns_after_conflicting_modes_when_error_is_mocked(self):
@@ -2263,24 +2921,6 @@ class TestDistributedCertRequestApprove:
         output_error.assert_called_once()
         assert cert_type is None
         assert "use either -t/--type or --accept-csr-role" in output_error.call_args.kwargs["detail"]
-
-    def test_resolve_request_identity_returns_none_after_site_arg_error_when_error_is_mocked(self):
-        args = argparse.Namespace(kind="site", identity_args=[])
-
-        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
-            identity = _resolve_request_identity(args)
-
-        output_error.assert_called_once()
-        assert identity is None
-
-    def test_resolve_request_identity_returns_none_after_user_arg_error_when_error_is_mocked(self):
-        args = argparse.Namespace(kind="user", identity_args=["lead"])
-
-        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
-            identity = _resolve_request_identity(args)
-
-        output_error.assert_called_once()
-        assert identity is None
 
     def test_validate_request_kind_cert_type_returns_after_invalid_kind_when_error_is_mocked(self):
         with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
@@ -2349,12 +2989,11 @@ class TestDistributedCertRequestApprove:
 
     def test_request_returns_after_zip_write_error_when_error_is_mocked(self, tmp_path):
         request_dir = tmp_path / "site-3"
+        participant_path = tmp_path / "site-3.yaml"
+        _write_request_participant(participant_path)
         args = argparse.Namespace(
             schema=False,
-            kind="site",
-            identity_args=["site-3"],
-            org="nvidia",
-            project="example_project",
+            participant=str(participant_path),
             output_dir=str(request_dir),
             force=False,
         )
@@ -2371,12 +3010,11 @@ class TestDistributedCertRequestApprove:
 
     def test_request_returns_when_zip_writer_reports_failure_under_mocked_error(self, tmp_path):
         request_dir = tmp_path / "site-3"
+        participant_path = tmp_path / "site-3.yaml"
+        _write_request_participant(participant_path)
         args = argparse.Namespace(
             schema=False,
-            kind="site",
-            identity_args=["site-3"],
-            org="nvidia",
-            project="example_project",
+            participant=str(participant_path),
             output_dir=str(request_dir),
             force=False,
         )
@@ -2394,16 +3032,14 @@ class TestDistributedCertRequestApprove:
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         monkeypatch.setenv("HOME", str(tmp_path / "home"))
         request_dir = tmp_path / "site-3"
+        participant_path = tmp_path / "site-3.yaml"
+        _write_request_participant(participant_path)
 
         _run_cert_cli(
             [
                 "request",
-                "site",
-                "site-3",
-                "--org",
-                "nvidia",
-                "--project",
-                "example_project",
+                "-p",
+                str(participant_path),
                 "--out",
                 str(request_dir),
             ]
@@ -2450,17 +3086,14 @@ class TestDistributedCertRequestApprove:
         monkeypatch.setenv("HOME", str(tmp_path / "home"))
         email = f"{cert_role}@nvidia.com"
         request_dir = tmp_path / email
+        participant_path = tmp_path / f"{cert_role}.yaml"
+        _write_request_participant(participant_path, name=email, participant_type="admin", role=cert_role)
 
         _run_cert_cli(
             [
                 "request",
-                "user",
-                cert_role,
-                email,
-                "--org",
-                "nvidia",
-                "--project",
-                "example_project",
+                "-p",
+                str(participant_path),
                 "--out",
                 str(request_dir),
             ]
@@ -2468,31 +3101,31 @@ class TestDistributedCertRequestApprove:
 
         with zipfile.ZipFile(request_dir / f"{email}.request.zip") as zf:
             request_json = json.loads(zf.read("request.json"))
-            site_yaml = zf.read("site.yaml").decode("utf-8")
+            site_yaml = yaml.safe_load(zf.read("site.yaml"))
 
         assert request_json["kind"] == "user"
         assert request_json["name"] == email
-        assert request_json["cert_role"] == cert_role
+        assert request_json["cert_role"] == expected_cert_type
         assert request_json["cert_type"] == expected_cert_type
-        assert f"cert_role: {cert_role}" in site_yaml
-        assert f"type: {expected_cert_type}" in site_yaml
+        assert site_yaml["participants"][0]["role"] == expected_cert_type
+        assert site_yaml["participants"][0]["type"] == "admin"
         capsys.readouterr()
 
     def test_request_user_invalid_role_fails(self, tmp_path, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
+        participant_path = tmp_path / "alice.yaml"
+        _write_request_participant(
+            participant_path,
+            name="alice@nvidia.com",
+            participant_type="admin",
+            role="study-lead",
+        )
         with pytest.raises(SystemExit) as exc_info:
             _run_cert_cli(
                 [
                     "request",
-                    "user",
-                    "study-lead",
-                    "alice@nvidia.com",
-                    "--org",
-                    "nvidia",
-                    "--project",
-                    "example_project",
-                    "--out",
-                    str(tmp_path / "alice@nvidia.com"),
+                    "-p",
+                    str(participant_path),
                 ]
             )
 
@@ -2500,19 +3133,14 @@ class TestDistributedCertRequestApprove:
 
     def test_request_user_requires_email_identity(self, tmp_path, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
+        participant_path = tmp_path / "alice.yaml"
+        _write_request_participant(participant_path, name="alice", participant_type="admin", role="lead")
         with pytest.raises(SystemExit) as exc_info:
             _run_cert_cli(
                 [
                     "request",
-                    "user",
-                    "lead",
-                    "alice",
-                    "--org",
-                    "nvidia",
-                    "--project",
-                    "example_project",
-                    "--out",
-                    str(tmp_path / "alice"),
+                    "-p",
+                    str(participant_path),
                 ]
             )
 
@@ -2520,18 +3148,14 @@ class TestDistributedCertRequestApprove:
 
     def test_request_rejects_unsafe_project_name(self, tmp_path, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
+        participant_path = tmp_path / "site-3.yaml"
+        _write_request_participant(participant_path, project="../escape")
         with pytest.raises(SystemExit) as exc_info:
             _run_cert_cli(
                 [
                     "request",
-                    "site",
-                    "site-3",
-                    "--org",
-                    "nvidia",
-                    "--project",
-                    "../escape",
-                    "--out",
-                    str(tmp_path / "site-3"),
+                    "-p",
+                    str(participant_path),
                 ]
             )
 
@@ -2539,18 +3163,14 @@ class TestDistributedCertRequestApprove:
 
     def test_request_rejects_invalid_org_name(self, tmp_path, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
+        participant_path = tmp_path / "site-3.yaml"
+        _write_request_participant(participant_path, org="bad-org")
         with pytest.raises(SystemExit) as exc_info:
             _run_cert_cli(
                 [
                     "request",
-                    "site",
-                    "site-3",
-                    "--org",
-                    "bad-org",
-                    "--project",
-                    "example_project",
-                    "--out",
-                    str(tmp_path / "site-3"),
+                    "-p",
+                    str(participant_path),
                 ]
             )
 
@@ -2564,17 +3184,17 @@ class TestDistributedCertRequestApprove:
         ca_dir = tmp_path / "ca"
         request_dir = tmp_path / "site-3"
         signed_zip = tmp_path / "site-3.signed.zip"
+        profile_path = tmp_path / "project_profile.yaml"
+        participant_path = tmp_path / "site-3.yaml"
 
         handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        _write_project_profile(profile_path)
+        _write_request_participant(participant_path)
         _run_cert_cli(
             [
                 "request",
-                "site",
-                "site-3",
-                "--org",
-                "nvidia",
-                "--project",
-                "example_project",
+                "-p",
+                str(participant_path),
                 "--out",
                 str(request_dir),
             ]
@@ -2586,7 +3206,16 @@ class TestDistributedCertRequestApprove:
             side_effect=AssertionError("site.yaml should be written with nofollow semantics"),
         ):
             _run_cert_cli(
-                ["approve", str(request_dir / "site-3.request.zip"), "--ca-dir", str(ca_dir), "--out", str(signed_zip)]
+                [
+                    "approve",
+                    str(request_dir / "site-3.request.zip"),
+                    "--ca-dir",
+                    str(ca_dir),
+                    "--profile",
+                    str(profile_path),
+                    "--out",
+                    str(signed_zip),
+                ]
             )
 
         assert signed_zip.is_file()
@@ -2641,6 +3270,7 @@ class TestDistributedCertRequestApprove:
             {"hash_mismatch": True},
             {"omit_fields": ("csr_sha256",)},
             {"omit_fields": ("public_key_sha256",)},
+            {"omit_fields": ("site_yaml_sha256",)},
             {"csr_member": "subdir/site-3.csr"},
             {"project": "../escape"},
             {"request_id": "../escape"},
@@ -2655,16 +3285,52 @@ class TestDistributedCertRequestApprove:
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         monkeypatch.setenv("HOME", str(tmp_path / "home"))
         ca_dir = tmp_path / "ca"
+        profile_path = tmp_path / "project_profile.yaml"
         handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        _write_project_profile(profile_path)
         request_zip = _write_request_zip(tmp_path, **zip_kwargs)
         capsys.readouterr()
 
         with pytest.raises(SystemExit) as exc_info:
-            _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir)])
+            _run_cert_cli(
+                [
+                    "approve",
+                    str(request_zip),
+                    "--ca-dir",
+                    str(ca_dir),
+                    "--profile",
+                    str(profile_path),
+                ]
+            )
 
         assert exc_info.value.code != 0
         assert not (tmp_path / "home" / ".nvflare" / "escape.json").exists()
+        assert "required for distributed provisioning approvals" not in capsys.readouterr().err
+
+    def test_approve_rejects_tampered_site_yaml_hash(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        ca_dir = tmp_path / "ca"
+        profile_path = tmp_path / "project_profile.yaml"
+        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        _write_project_profile(profile_path)
+        request_zip = _write_request_zip(tmp_path, metadata_updates={"site_yaml_sha256": "0" * 64})
         capsys.readouterr()
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_cert_cli(
+                [
+                    "approve",
+                    str(request_zip),
+                    "--ca-dir",
+                    str(ca_dir),
+                    "--profile",
+                    str(profile_path),
+                ]
+            )
+
+        assert exc_info.value.code == 4
+        assert "site.yaml hash does not match request metadata" in capsys.readouterr().err
 
     def test_approve_rejects_request_for_different_ca_project(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
@@ -2674,10 +3340,26 @@ class TestDistributedCertRequestApprove:
         capsys.readouterr()
 
         with pytest.raises(SystemExit) as exc_info:
-            _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir)])
+            _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir), "--profile", str(tmp_path / "p.yaml")])
 
         assert exc_info.value.code == 4
         assert "does not match CA project" in capsys.readouterr().err
+
+    def test_approve_rejects_profile_project_mismatch(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        ca_dir = tmp_path / "ca"
+        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        request_zip = _write_request_zip(tmp_path, project="example_project")
+        profile_path = tmp_path / "project_profile.yaml"
+        _write_project_profile(profile_path, project="other_project")
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir), "--profile", str(profile_path)])
+
+        assert exc_info.value.code == 4
+        assert "does not match project profile" in capsys.readouterr().err
 
     def test_approve_request_zip_read_error_returns_cli_error(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
@@ -2688,12 +3370,37 @@ class TestDistributedCertRequestApprove:
 
         with patch("nvflare.tool.cert.cert_commands.zipfile.ZipFile", side_effect=PermissionError("blocked")):
             with pytest.raises(SystemExit) as exc_info:
-                _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir)])
+                _run_cert_cli(
+                    ["approve", str(request_zip), "--ca-dir", str(ca_dir), "--profile", str(tmp_path / "p.yaml")]
+                )
 
         assert exc_info.value.code == 4
         captured = capsys.readouterr()
         assert "failed to read request zip" in captured.err
         assert "blocked" in captured.err
+
+    def test_approve_missing_request_zip_uses_request_zip_error_code(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = tmp_path / "ca"
+        profile_path = tmp_path / "project_profile.yaml"
+        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        _write_project_profile(profile_path)
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_cert_cli(
+                [
+                    "approve",
+                    str(tmp_path / "missing.request.zip"),
+                    "--ca-dir",
+                    str(ca_dir),
+                    "--profile",
+                    str(profile_path),
+                ]
+            )
+
+        assert exc_info.value.code == 1
+        assert "REQUEST_ZIP_NOT_FOUND" in capsys.readouterr().err
 
     @pytest.mark.parametrize("large_member", ["request.json", "site-3.csr"])
     def test_read_request_zip_rejects_member_exceeding_read_limit(self, tmp_path, capsys, monkeypatch, large_member):
@@ -2722,14 +3429,16 @@ class TestDistributedCertRequestApprove:
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         ca_dir = tmp_path / "ca"
         request_zip = _write_request_zip(tmp_path)
+        profile_path = tmp_path / "project_profile.yaml"
         handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        _write_project_profile(profile_path)
         capsys.readouterr()
 
         from nvflare.tool.cert import cert_commands
 
         original_load_csr = cert_commands._load_and_validate_csr
         with patch("nvflare.tool.cert.cert_commands._load_and_validate_csr", wraps=original_load_csr) as load_csr:
-            _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir)])
+            _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir), "--profile", str(profile_path)])
 
         assert load_csr.call_count == 1
         capsys.readouterr()
@@ -2742,7 +3451,9 @@ class TestDistributedCertRequestApprove:
 
         with patch("nvflare.tool.cert.cert_commands._validate_request_metadata", return_value=None):
             with patch("nvflare.tool.cert.cert_commands.sign_csr_files") as sign_csr:
-                _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir)])
+                _run_cert_cli(
+                    ["approve", str(request_zip), "--ca-dir", str(ca_dir), "--profile", str(tmp_path / "p.yaml")]
+                )
 
         sign_csr.assert_not_called()
 
@@ -2752,11 +3463,24 @@ class TestDistributedCertRequestApprove:
         ca_dir = tmp_path / "ca"
         request_zip = _write_request_zip(tmp_path)
         signed_zip = tmp_path / "site-3.signed.zip"
+        profile_path = tmp_path / "project_profile.yaml"
         handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        _write_project_profile(profile_path)
 
         with patch("nvflare.tool.cert.cert_commands._write_zip_nofollow", return_value=False):
             with patch("nvflare.tool.cert.cert_commands._try_write_approve_audit") as write_audit:
-                rc = _run_cert_cli(["approve", str(request_zip), "--ca-dir", str(ca_dir), "--out", str(signed_zip)])
+                rc = _run_cert_cli(
+                    [
+                        "approve",
+                        str(request_zip),
+                        "--ca-dir",
+                        str(ca_dir),
+                        "--profile",
+                        str(profile_path),
+                        "--out",
+                        str(signed_zip),
+                    ]
+                )
 
         assert rc == 1
         write_audit.assert_not_called()

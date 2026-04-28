@@ -14,9 +14,9 @@
 
 """nvflare cert subcommand handlers: init, request, approve, and internal csr/sign helpers."""
 
+import copy
 import datetime
 import hashlib
-import ipaddress
 import json
 import os
 import posixpath
@@ -35,6 +35,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import NameOID
 
 from nvflare.apis.utils.format_check import name_check
+from nvflare.lighter.constants import PropKey
+from nvflare.lighter.entity import participant_from_dict
 from nvflare.lighter.impl.cert import CertBuilder
 from nvflare.lighter.utils import generate_keys, load_private_key_file, serialize_cert, serialize_pri_key, x509_name
 from nvflare.tool import cli_output
@@ -51,6 +53,8 @@ from nvflare.tool.cli_output import (
 from nvflare.tool.cli_schema import handle_schema_flag
 
 _VALID_CERT_TYPES = set(VALID_CERT_TYPES)
+_VALID_SCHEMES = {"grpc", "tcp", "http"}
+_VALID_CONNECTION_SECURITY = {"clear", "tls", "mtls"}
 _USAGE_HINT = "Run the command with -h for usage."
 _SAFE_CERT_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@-]*")
 _SAFE_PROJECT_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -79,14 +83,19 @@ class _UnsafeZipSourceError(Exception):
     pass
 
 
-def _validate_safe_cert_name(name: str, *, field_label: str) -> bool:
+def _validate_safe_cert_name(name: str, *, field_label: str, max_length: Optional[int] = 64) -> bool:
     if not isinstance(name, str) or not name.strip():
         output_error(
             "INVALID_NAME", exit_code=4, name=name, reason=f"{field_label} must not be empty or whitespace only."
         )
         return False
-    if len(name) > 64:
-        output_error("INVALID_NAME", exit_code=4, name=name, reason=f"{field_label} must be 64 characters or fewer.")
+    if max_length is not None and len(name) > max_length:
+        output_error(
+            "INVALID_NAME",
+            exit_code=4,
+            name=name,
+            reason=f"{field_label} must be {max_length} characters or fewer.",
+        )
         return False
     if os.sep in name or (os.altsep and os.altsep in name) or name.startswith("."):
         output_error(
@@ -105,6 +114,16 @@ def _validate_safe_cert_name(name: str, *, field_label: str) -> bool:
         )
         return False
     return True
+
+
+def _cert_name_max_length(cert_type: str):
+    # Centralized provisioning truncates long server CNs and keeps the full host
+    # as default_host/SAN. Keep distributed server requests consistent with it.
+    return None if cert_type == "server" else 64
+
+
+def _csr_subject_name(name: str, cert_type: str) -> str:
+    return name[:64] if cert_type == "server" and len(name) > 64 else name
 
 
 def _validate_safe_project_name(project: str, *, field_label: str = "Project") -> bool:
@@ -439,6 +458,16 @@ def _write_private_key(path: str, pem_bytes: bytes) -> None:
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     fd = os.open(path, flags, 0o600)
+    try:
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
+    except Exception:
+        os.close(fd)
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        raise
     with os.fdopen(fd, "wb") as f:
         try:
             f.write(pem_bytes)
@@ -612,7 +641,7 @@ def _safe_zip_names(zf: zipfile.ZipFile) -> list:
                 exit_code=4,
                 detail=f"unsafe zip member or path traversal: {name}",
             )
-            continue
+            return None
         if name.lower().endswith(".key"):
             output_error_message(
                 "INVALID_ARGS",
@@ -621,7 +650,7 @@ def _safe_zip_names(zf: zipfile.ZipFile) -> list:
                 exit_code=4,
                 detail=f"request zip must not contain private keys: {name}",
             )
-            continue
+            return None
         seen.add(name)
         names.append(name)
     return names
@@ -849,8 +878,6 @@ def _load_single_site_yaml(path: str) -> dict:
 def generate_csr_files(name: str, org: str, cert_type: str, output_dir: str, force: bool = False) -> dict:
     """Generate a participant private key and CSR using the existing cert logic."""
     name = name.strip()
-    if not _validate_safe_cert_name(name, field_label="Name"):
-        return {}
     if cert_type not in _VALID_CERT_TYPES:
         output_error_message(
             "INVALID_ARGS",
@@ -859,6 +886,8 @@ def generate_csr_files(name: str, org: str, cert_type: str, output_dir: str, for
             exit_code=4,
             detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
         )
+        return {}
+    if not _validate_safe_cert_name(name, field_label="Name", max_length=_cert_name_max_length(cert_type)):
         return {}
 
     out_dir = os.path.abspath(output_dir)
@@ -883,7 +912,7 @@ def generate_csr_files(name: str, org: str, cert_type: str, output_dir: str, for
         _backup_existing_csr(out_dir, name)
 
     try:
-        pem_key, pem_csr = _generate_csr(name, org, cert_type)
+        pem_key, pem_csr = _generate_csr(_csr_subject_name(name, cert_type), org, cert_type)
     except Exception as e:
         output_error("CSR_GENERATION_FAILED", detail=str(e))
         return {}
@@ -938,6 +967,8 @@ def handle_cert_csr(args):
             )
             return 1
         site = _load_single_site_yaml(args.project_file)
+        if site is None:
+            return 1
 
     # 3. Validate required args (-o is required in all modes; -n/-t only without --project-file)
     missing_flags = []
@@ -1042,6 +1073,8 @@ def _build_signed_cert(
     cert_type: str,
     now: datetime.datetime,
     not_valid_after: datetime.datetime,
+    server_default_host: str = None,
+    server_additional_hosts=None,
 ) -> x509.Certificate:
     """Build and sign a certificate from a CSR using the CA key.
 
@@ -1092,58 +1125,37 @@ def _build_signed_cert(
         NameOID.STATE_OR_PROVINCE_NAME,
         NameOID.LOCALITY_NAME,
     }
-    safe_attrs = []
     seen_oids = set()
+    subject_org = None
     for attr in csr.subject:
         if attr.oid not in _SAFE_OIDS:
             continue
         if attr.oid in seen_oids:
             raise ValueError(f"CSR contains duplicate subject attribute for OID '{attr.oid._name}'")
         seen_oids.add(attr.oid)
-        safe_attrs.append(attr)
-    safe_attrs.append(x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, cert_type))
-    safe_subject = x509.Name(safe_attrs)
-    try:
-        issuer_ski = ca_cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value.digest
-        authority_key_identifier = x509.AuthorityKeyIdentifier(
-            key_identifier=issuer_ski,
-            authority_cert_issuer=None,
-            authority_cert_serial_number=None,
-        )
-    except x509.ExtensionNotFound:
-        authority_key_identifier = x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key())
+        if attr.oid == NameOID.ORGANIZATION_NAME:
+            subject_org = attr.value
 
-    builder = (
-        x509.CertificateBuilder()
-        .subject_name(safe_subject)
-        .issuer_name(ca_cert.subject)
-        .public_key(csr.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now)
-        .not_valid_after(not_valid_after)
-        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-        .add_extension(x509.KeyUsage(**key_usage_kwargs), critical=True)
-        .add_extension(x509.ExtendedKeyUsage(eku_oids), critical=False)
-        .add_extension(
-            x509.SubjectKeyIdentifier.from_public_key(csr.public_key()),
-            critical=False,
-        )
-        .add_extension(
-            authority_key_identifier,
-            critical=False,
-        )
+    issuer_cn = ca_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+    extra_extensions = [
+        (x509.BasicConstraints(ca=False, path_length=None), True),
+        (x509.KeyUsage(**key_usage_kwargs), True),
+        (x509.ExtendedKeyUsage(eku_oids), False),
+    ]
+    return CertBuilder._generate_cert(
+        subject=subject_cn,
+        subject_org=subject_org,
+        issuer=issuer_cn,
+        signing_pri_key=ca_key,
+        subject_pub_key=csr.public_key(),
+        ca=False,
+        role=cert_type,
+        server_default_host=server_default_host if cert_type == "server" else None,
+        server_additional_hosts=server_additional_hosts if cert_type == "server" else None,
+        not_valid_before=now,
+        not_valid_after=not_valid_after,
+        extra_extensions=extra_extensions,
     )
-    if cert_type == "server" and subject_cn:
-        try:
-            ip = ipaddress.ip_address(subject_cn)
-            san_entry = x509.IPAddress(ip)
-        except ValueError:
-            san_entry = x509.DNSName(subject_cn)
-        builder = builder.add_extension(
-            x509.SubjectAlternativeName([san_entry]),
-            critical=False,
-        )
-    return builder.sign(ca_key, hashes.SHA256(), default_backend())
 
 
 def _load_and_validate_csr(csr_path: str) -> x509.CertificateSigningRequest:
@@ -1206,7 +1218,7 @@ def _resolve_sign_cert_type(csr: x509.CertificateSigningRequest, cert_type: str,
                 exit_code=4,
                 detail=(
                     "CSR does not contain a proposed role; provide -t/--type for this internal signing helper "
-                    "or create a public request with 'nvflare cert request user <role> <email>'"
+                    "or create a public request with 'nvflare cert request --participant <user.yaml>'"
                 ),
             )
             return None
@@ -1241,6 +1253,8 @@ def sign_csr_files(
     valid_days: int = 1095,
     force: bool = False,
     csr: x509.CertificateSigningRequest = None,
+    server_default_host: str = None,
+    server_additional_hosts=None,
 ) -> dict:
     """Sign a CSR using the existing cert signing logic and write cert/rootCA files."""
     ca_key_path = os.path.join(ca_dir, "rootCA.key")
@@ -1309,6 +1323,8 @@ def sign_csr_files(
             cert_type=cert_type,
             now=now,
             not_valid_after=leaf_not_valid_after,
+            server_default_host=server_default_host,
+            server_additional_hosts=server_additional_hosts,
         )
     except Exception as e:
         output_error("CERT_SIGNING_FAILED", reason=str(e))
@@ -1408,9 +1424,9 @@ def handle_cert_sign(args):
     next_step = (
         "This internal command writes a signed certificate and rootCA.pem.\n"
         "For the public distributed provisioning workflow, use:\n"
-        "  nvflare cert request ...\n"
-        "  nvflare cert approve <request.zip> --ca-dir <ca-dir>\n"
-        "  nvflare package <signed.zip> -e grpc://<server>:<port>"
+        "  nvflare cert request --participant <participant.yaml>\n"
+        "  nvflare cert approve <request.zip> --ca-dir <ca-dir> --profile <project_profile.yaml>\n"
+        "  nvflare package <signed.zip>"
     )
     result = {
         "signed_cert": sign_result["signed_cert"],
@@ -1430,60 +1446,269 @@ def handle_cert_sign(args):
 # ---------------------------------------------------------------------------
 
 
-def _resolve_request_identity(args) -> dict:
-    kind = getattr(args, "kind", None)
-    identity_args = list(getattr(args, "identity_args", None) or getattr(args, "values", []) or [])
-    if kind in _REQUEST_KIND_TO_CERT_TYPE:
-        if len(identity_args) != 1:
+def _normalize_cert_role(role: str) -> str:
+    if not isinstance(role, str):
+        return None
+    return _USER_ROLE_TO_CERT_TYPE.get(role.strip())
+
+
+def _validate_port(value, field_label: str) -> bool:
+    if not isinstance(value, int) or isinstance(value, bool) or not (1 <= value <= 65535):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"{field_label} must be an integer from 1 to 65535",
+        )
+        return False
+    return True
+
+
+def _copy_mapping(value: dict) -> dict:
+    return copy.deepcopy(value)
+
+
+def _derive_identity_from_participant(project_name: str, participant: dict) -> dict:
+    if not isinstance(participant, dict):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="participant definition participants[0] must be a mapping",
+        )
+        return None
+    name = participant.get("name")
+    org = participant.get("org")
+    participant_type = participant.get("type")
+    if not name or not org or not participant_type:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="participant definition participants[0] must contain: name, org, type",
+        )
+        return None
+    if not _validate_safe_project_name(project_name):
+        return None
+    if not _validate_org_name(org):
+        return None
+
+    if participant_type == "client":
+        identity = {"kind": "site", "name": name, "cert_role": None, "cert_type": "client"}
+    elif participant_type == "server":
+        identity = {"kind": "server", "name": name, "cert_role": None, "cert_type": "server"}
+    elif participant_type == "admin":
+        cert_role = _normalize_cert_role(participant.get("role"))
+        if not cert_role:
             output_error_message(
                 "INVALID_ARGS",
                 "Invalid arguments.",
                 _USAGE_HINT,
                 exit_code=4,
-                detail=f"cert request {kind} requires exactly one NAME argument",
+                detail="admin participant role must be one of: org_admin, lead, member",
             )
             return None
+        identity = {"kind": "user", "name": name, "cert_role": cert_role, "cert_type": cert_role}
+    else:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="participant type must be one of: client, server, admin",
+        )
+        return None
+
+    name = str(identity["name"]).strip()
+    if not _validate_safe_cert_name(name, field_label="Name", max_length=_cert_name_max_length(identity["cert_type"])):
+        return None
+    if not _validate_identity_name(name, identity["cert_type"]):
+        return None
+    identity["name"] = name
+    return identity
+
+
+def _validate_participant_connection_fields(participant: dict, identity: dict) -> bool:
+    if PropKey.LISTENING_HOST in participant:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=(
+                "listening_host is not supported by distributed provisioning yet; "
+                "use centralized provisioning for third-party listener certificates"
+            ),
+        )
+        return False
+
+    if identity["kind"] == "server":
+        if not _validate_port(participant.get("fed_learn_port"), "server fed_learn_port"):
+            return False
+        if not _validate_port(participant.get("admin_port"), "server admin_port"):
+            return False
+        conn_sec = participant.get("connection_security")
+        if conn_sec is not None and (
+            not isinstance(conn_sec, str) or conn_sec.strip().lower() not in _VALID_CONNECTION_SECURITY
+        ):
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail="server connection_security must be one of: clear, tls, mtls",
+            )
+            return False
+        return True
+
+    server = participant.get("server")
+    if not isinstance(server, dict):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="client and admin participant definitions must contain a server mapping",
+        )
+        return False
+    host = server.get("host")
+    if not isinstance(host, str) or not host.strip():
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="server.host must be a non-empty string",
+        )
+        return False
+    if not _validate_port(server.get("fed_learn_port"), "server.fed_learn_port"):
+        return False
+    if not _validate_port(server.get("admin_port"), "server.admin_port"):
+        return False
+    return True
+
+
+def _validate_participant_with_centralized_rules(participant: dict) -> bool:
+    try:
+        participant_from_dict(_copy_mapping(participant))
+        return True
+    except Exception as e:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"participant definition is invalid: {e}",
+        )
+        return False
+
+
+def _load_participant_definition(path: str):
+    data = _load_yaml_file(path)
+    if data is None:
+        return None, None
+    project_name = data.get("name")
+    participants = data.get("participants")
+    if not project_name or not isinstance(participants, list):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="participant definition must contain top-level name and participants",
+        )
+        return None, None
+    if len(participants) != 1:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="participant definition must contain exactly one participants[0] entry",
+        )
+        return None, None
+
+    normalized = _copy_mapping(data)
+    participant = _copy_mapping(participants[0])
+    identity = _derive_identity_from_participant(project_name, participant)
+    if identity is None:
+        return None, None
+    if identity["kind"] == "user":
+        participant["role"] = identity["cert_role"]
+    if not _validate_participant_with_centralized_rules(participant):
+        return None, None
+    if not _validate_participant_connection_fields(participant, identity):
+        return None, None
+    normalized["name"] = project_name
+    normalized["participants"] = [participant]
+    return normalized, identity
+
+
+def _is_project_shaped_site_meta(site_meta: dict) -> bool:
+    return isinstance(site_meta, dict) and isinstance(site_meta.get("participants"), list)
+
+
+def _site_identity_from_metadata(site_meta: dict) -> dict:
+    if not isinstance(site_meta, dict):
+        return {}
+    if _is_project_shaped_site_meta(site_meta):
+        participants = site_meta.get("participants") or []
+        if len(participants) != 1 or not isinstance(participants[0], dict):
+            return {}
+        participant = participants[0]
+        project_name = site_meta.get("name")
+        identity = _derive_identity_from_participant(project_name, participant)
+        if identity is None:
+            return {}
         return {
-            "kind": kind,
-            "name": identity_args[0],
-            "cert_role": None,
-            "cert_type": _REQUEST_KIND_TO_CERT_TYPE[kind],
+            "project": project_name,
+            "name": identity["name"],
+            "org": participant.get("org"),
+            "kind": identity["kind"],
+            "cert_type": identity["cert_type"],
+            "cert_role": identity["cert_role"],
         }
-    if kind == "user":
-        if len(identity_args) != 2:
-            output_error_message(
-                "INVALID_ARGS",
-                "Invalid arguments.",
-                _USAGE_HINT,
-                exit_code=4,
-                detail="cert request user requires ROLE and NAME arguments",
-            )
-            return None
-        role = identity_args[0]
-        cert_type = _USER_ROLE_TO_CERT_TYPE.get(role)
-        if not cert_type:
-            output_error_message(
-                "INVALID_ARGS",
-                "Invalid arguments.",
-                _USAGE_HINT,
-                exit_code=4,
-                detail="user role must be one of: org-admin, lead, member",
-            )
-            return None
-        return {
-            "kind": "user",
-            "name": identity_args[1],
-            "cert_role": role,
-            "cert_type": cert_type,
-        }
-    output_error_message(
-        "INVALID_ARGS",
-        "Invalid arguments.",
-        _USAGE_HINT,
-        exit_code=4,
-        detail="cert request kind must be one of: site, server, user",
-    )
-    return None
+
+    return {
+        "project": site_meta.get("project"),
+        "name": site_meta.get("name"),
+        "org": site_meta.get("org"),
+        "kind": site_meta.get("kind"),
+        "cert_type": site_meta.get("type") or site_meta.get("cert_type"),
+        "cert_role": site_meta.get("cert_role"),
+    }
+
+
+def _build_sanitized_approval_site(local_site: dict) -> dict:
+    if not _is_project_shaped_site_meta(local_site):
+        return _copy_mapping(local_site)
+    sanitized = _copy_mapping(local_site)
+    sanitized.pop("builders", None)
+    sanitized.pop("packager", None)
+    participant = sanitized["participants"][0]
+    participant.pop("connection_security", None)
+    return sanitized
+
+
+def _server_cert_san_fields(site_meta: dict, request_meta: dict) -> tuple:
+    if request_meta.get("cert_type") != "server" or not _is_project_shaped_site_meta(site_meta):
+        return None, None
+    participant = site_meta["participants"][0]
+    try:
+        server = participant_from_dict(_copy_mapping(participant))
+    except Exception as e:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"server participant definition is invalid: {e}",
+        )
+        raise SystemExit(4)
+    return server.get_default_host(), server.get_prop(PropKey.HOST_NAMES)
 
 
 def _build_site_metadata(request_meta: dict) -> dict:
@@ -1507,37 +1732,42 @@ def handle_cert_request(args):
         _cert_cli._cert_request_parser,
         "nvflare cert request",
         [
-            "nvflare cert request site site-3 --org nvidia --project example_project",
-            "nvflare cert request user org-admin alice@nvidia.com --org nvidia --project example_project",
+            "nvflare cert request --participant hospital-a.yaml",
+            "nvflare cert request -p alice.yaml --out ./requests/alice",
         ],
         sys.argv[1:],
     )
 
-    missing_flags = [
-        flag for flag, attr in (("--org", "org"), ("--project", "project")) if not getattr(args, attr, None)
-    ]
-    if missing_flags:
+    participant_path = getattr(args, "participant", None)
+    if not participant_path:
         output_usage_error(
             _cert_cli._cert_request_parser,
-            f"missing required argument(s): {', '.join(missing_flags)}",
+            "missing required argument: -p/--participant",
             exit_code=4,
         )
         return 1
-    if not _validate_request_kind(getattr(args, "kind", None)):
-        return 1
-    if not _validate_safe_project_name(args.project):
-        return 1
-    if not _validate_org_name(args.org):
+
+    # These attrs are not registered in the CLI parser; the check only fires when
+    # handle_cert_request is called programmatically with a hand-built args namespace.
+    conflicting = [
+        flag
+        for flag, attr in (("--org", "org"), ("--project", "project"), ("--name", "name"), ("--type", "cert_type"))
+        if getattr(args, attr, None)
+    ]
+    if conflicting:
+        output_usage_error(
+            _cert_cli._cert_request_parser,
+            f"--participant is incompatible with: {', '.join(conflicting)}",
+            exit_code=4,
+        )
         return 1
 
-    identity = _resolve_request_identity(args)
-    if identity is None:
+    local_site, identity = _load_participant_definition(participant_path)
+    if local_site is None or identity is None:
         return 1
+    project = local_site["name"]
+    org = local_site["participants"][0]["org"]
     name = identity["name"].strip()
-    if not _validate_safe_cert_name(name, field_label="Name"):
-        return 1
-    if not _validate_identity_name(name, identity["cert_type"]):
-        return 1
 
     request_dir = os.path.abspath(getattr(args, "output_dir", None) or os.path.join(".", name))
     if os.path.exists(request_dir) and not os.path.isdir(request_dir):
@@ -1557,7 +1787,7 @@ def handle_cert_request(args):
 
     csr_result = generate_csr_files(
         name=name,
-        org=args.org,
+        org=org,
         cert_type=identity["cert_type"],
         output_dir=request_dir,
         force=getattr(args, "force", False),
@@ -1572,32 +1802,38 @@ def handle_cert_request(args):
         "schema_version": _ARTIFACT_VERSION,
         "request_id": request_id,
         "created_at": created_at,
-        "project": args.project,
+        "project": project,
         "name": name,
-        "org": args.org,
+        "org": org,
         "kind": identity["kind"],
         "cert_type": identity["cert_type"],
         "cert_role": identity["cert_role"],
         "csr_sha256": csr_result["csr_sha256"],
         "public_key_sha256": csr_result["public_key_sha256"],
     }
-    site_meta = _build_site_metadata(request_meta)
+    site_meta = local_site or _build_site_metadata(request_meta)
+    approval_site_meta = _build_sanitized_approval_site(site_meta)
 
     request_json_path = os.path.join(request_dir, "request.json")
     site_yaml_path = os.path.join(request_dir, "site.yaml")
     try:
-        _write_json_file(request_json_path, request_meta)
-        _write_yaml_file(site_yaml_path, site_meta)
-        if not _write_zip_nofollow(
-            request_zip_path,
-            {
-                "request.json": request_json_path,
-                "site.yaml": site_yaml_path,
-                f"{name}.csr": csr_result["csr_path"],
-            },
-            force=getattr(args, "force", False),
-        ):
-            return 1
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            approval_site_yaml_path = os.path.join(tmp_dir, "site.yaml")
+            _write_yaml_file(approval_site_yaml_path, approval_site_meta)
+            approval_site_yaml_sha256 = _sha256_file(approval_site_yaml_path)
+            request_meta["site_yaml_sha256"] = approval_site_yaml_sha256
+            _write_json_file(request_json_path, request_meta)
+            _write_yaml_file(site_yaml_path, site_meta)
+            if not _write_zip_nofollow(
+                request_zip_path,
+                {
+                    "request.json": request_json_path,
+                    "site.yaml": approval_site_yaml_path,
+                    f"{name}.csr": csr_result["csr_path"],
+                },
+                force=getattr(args, "force", False),
+            ):
+                return 1
     except OSError as e:
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=request_dir, detail=str(e))
         return 1
@@ -1612,7 +1848,8 @@ def handle_cert_request(args):
         "site_yaml_path": site_yaml_path,
         "hashes": {
             "request_json_sha256": _sha256_file(request_json_path),
-            "site_yaml_sha256": _sha256_file(site_yaml_path),
+            "site_yaml_sha256": approval_site_yaml_sha256,
+            "local_site_yaml_sha256": _sha256_file(site_yaml_path),
             "csr_sha256": _sha256_file(csr_result["csr_path"]),
             "request_zip_sha256": _sha256_file(request_zip_path),
             "public_key_sha256": csr_result["public_key_sha256"],
@@ -1623,7 +1860,7 @@ def handle_cert_request(args):
     output_ok(
         {
             "name": name,
-            "project": args.project,
+            "project": project,
             "request_zip": request_zip_path,
             "request_id": request_id,
             "audit": audit_path or "(not written)",
@@ -1635,7 +1872,7 @@ def handle_cert_request(args):
 
 def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
     if not os.path.exists(request_zip_path):
-        output_error("CSR_NOT_FOUND", path=request_zip_path)
+        output_error("REQUEST_ZIP_NOT_FOUND", path=request_zip_path)
         return None
     if not os.path.isfile(request_zip_path):
         output_error_message(
@@ -1651,6 +1888,8 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
     try:
         with zipfile.ZipFile(request_zip_path, "r") as zf:
             names = _safe_zip_names(zf)
+            if names is None:
+                return None
             if "request.json" not in names or "site.yaml" not in names:
                 output_error_message(
                     "INVALID_ARGS",
@@ -1666,8 +1905,9 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
             request_meta = json.loads(request_json.decode("utf-8"))
             if not isinstance(request_meta, dict):
                 raise ValueError("request.json must be a mapping")
+            cert_type = request_meta.get("cert_type")
             name = request_meta.get("name")
-            if not _validate_safe_cert_name(name, field_label="Name"):
+            if not _validate_safe_cert_name(name, field_label="Name", max_length=_cert_name_max_length(cert_type)):
                 return None
             expected = {"request.json", "site.yaml", f"{name}.csr"}
             if set(names) != expected:
@@ -1711,7 +1951,9 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
     return request_meta
 
 
-def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: str) -> x509.CertificateSigningRequest:
+def _validate_request_metadata(
+    request_meta: dict, site_meta: dict, site_yaml_path: str, csr_path: str
+) -> x509.CertificateSigningRequest:
     required = (
         "artifact_type",
         "schema_version",
@@ -1723,6 +1965,7 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
         "cert_type",
         "csr_sha256",
         "public_key_sha256",
+        "site_yaml_sha256",
     )
     missing = [field for field in required if not request_meta.get(field)]
     if missing:
@@ -1748,8 +1991,6 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
     if not _validate_safe_project_name(request_meta["project"]):
         return None
     name = request_meta["name"]
-    if not _validate_safe_cert_name(name, field_label="Name"):
-        return None
     if not _validate_org_name(request_meta["org"]):
         return None
     cert_type = request_meta["cert_type"]
@@ -1762,22 +2003,34 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             detail=f"invalid cert type '{cert_type}'; valid types: {', '.join(sorted(VALID_CERT_TYPES))}",
         )
         return None
+    if not _validate_safe_cert_name(name, field_label="Name", max_length=_cert_name_max_length(cert_type)):
+        return None
     if not _validate_request_kind_cert_type(request_meta["kind"], cert_type, request_meta.get("cert_role")):
         return None
     if not _validate_identity_name(name, cert_type):
         return None
 
-    for meta_field, site_field in (("name", "name"), ("org", "org"), ("cert_type", "type"), ("project", "project")):
-        if site_meta.get(site_field) != request_meta.get(meta_field):
+    site_identity = _site_identity_from_metadata(site_meta)
+    if not site_identity:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="site.yaml must identify exactly one participant",
+        )
+        return None
+    for field in ("name", "org", "cert_type", "project"):
+        if site_identity.get(field) != request_meta.get(field):
             output_error_message(
                 "INVALID_ARGS",
                 "Invalid arguments.",
                 _USAGE_HINT,
                 exit_code=4,
-                detail=f"site.yaml field '{site_field}' does not match request metadata",
+                detail=f"site.yaml field '{field}' does not match request metadata",
             )
             return None
-    if site_meta.get("kind") != request_meta.get("kind"):
+    if site_identity.get("kind") != request_meta.get("kind"):
         output_error_message(
             "INVALID_ARGS",
             "Invalid arguments.",
@@ -1786,7 +2039,7 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             detail="site.yaml field 'kind' does not match request metadata",
         )
         return None
-    if (site_meta.get("cert_role") or None) != (request_meta.get("cert_role") or None):
+    if (site_identity.get("cert_role") or None) != (request_meta.get("cert_role") or None):
         output_error_message(
             "INVALID_ARGS",
             "Invalid arguments.",
@@ -1795,11 +2048,40 @@ def _validate_request_metadata(request_meta: dict, site_meta: dict, csr_path: st
             detail="site.yaml field 'cert_role' does not match request metadata",
         )
         return None
+    if _is_project_shaped_site_meta(site_meta):
+        participant = site_meta["participants"][0]
+        if "connection_security" in participant:
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail="approval site.yaml must not contain participant connection_security overrides",
+            )
+            return None
+        if PropKey.LISTENING_HOST in participant:
+            output_error_message(
+                "INVALID_ARGS",
+                "Invalid arguments.",
+                _USAGE_HINT,
+                exit_code=4,
+                detail="approval site.yaml must not contain listening_host; distributed provisioning does not support listener certificates yet",
+            )
+            return None
+    if request_meta["site_yaml_sha256"] != _sha256_file(site_yaml_path):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="site.yaml hash does not match request metadata",
+        )
+        return None
 
     csr = _load_and_validate_csr(csr_path)
     if csr is None:
         return None
-    if _get_cn(csr.subject) != name:
+    if _get_cn(csr.subject) != _csr_subject_name(name, cert_type):
         output_error_message(
             "INVALID_ARGS",
             "Invalid arguments.",
@@ -1892,6 +2174,68 @@ def _validate_request_project_matches_ca(ca_dir: str, project: str) -> dict:
     return ca_meta
 
 
+def _load_project_profile(profile_path: str, request_project: str) -> dict:
+    if not os.path.isfile(profile_path):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"project profile file not found: {profile_path}",
+        )
+        return None
+    profile = _load_yaml_file(profile_path)
+    if profile is None:
+        return None
+    missing = [field for field in ("name", "scheme", "connection_security") if not profile.get(field)]
+    if missing:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"project profile missing required field(s): {', '.join(missing)}",
+        )
+        return None
+    profile_project = profile.get("name")
+    if not _validate_safe_project_name(profile_project, field_label="Project profile name"):
+        return None
+    if profile_project != request_project:
+        output_error_message(
+            "PROJECT_PROFILE_MISMATCH",
+            f"Request project {request_project!r} does not match project profile {profile_project!r}.",
+            "Use the project_profile.yaml for the same federation as the request.",
+            None,
+            exit_code=4,
+        )
+        return None
+    scheme = profile.get("scheme")
+    if not isinstance(scheme, str) or scheme.strip().lower() not in _VALID_SCHEMES:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="project profile scheme must be one of: grpc, tcp, http",
+        )
+        return None
+    conn_sec = profile.get("connection_security")
+    if not isinstance(conn_sec, str) or conn_sec.strip().lower() not in _VALID_CONNECTION_SECURITY:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="project profile connection_security must be one of: clear, tls, mtls",
+        )
+        return None
+    return {
+        "name": profile_project,
+        "scheme": scheme.strip().lower(),
+        "default_connection_security": conn_sec.strip().lower(),
+    }
+
+
 def handle_cert_approve(args):
     import nvflare.tool.cert.cert_cli as _cert_cli
 
@@ -1900,8 +2244,8 @@ def handle_cert_approve(args):
         _cert_cli._cert_approve_parser,
         "nvflare cert approve",
         [
-            "nvflare cert approve site-3.request.zip --ca-dir ./ca",
-            "nvflare cert approve site-3.request.zip --ca-dir ./ca --out site-3.signed.zip",
+            "nvflare cert approve site-3.request.zip --ca-dir ./ca --profile project_profile.yaml",
+            "nvflare cert approve site-3.request.zip --ca-dir ./ca --profile project_profile.yaml --out site-3.signed.zip",
         ],
         sys.argv[1:],
     )
@@ -1913,6 +2257,14 @@ def handle_cert_approve(args):
         output_usage_error(
             _cert_cli._cert_approve_parser,
             f"missing required argument(s): {', '.join(missing_flags)}",
+            exit_code=4,
+        )
+        return 1
+
+    if not getattr(args, "profile", None):
+        output_usage_error(
+            _cert_cli._cert_approve_parser,
+            "--profile is required for distributed provisioning approvals",
             exit_code=4,
         )
         return 1
@@ -1933,13 +2285,22 @@ def handle_cert_approve(args):
         site_meta = _load_yaml_file(site_yaml_path)
         if site_meta is None:
             return 1
-        csr = _validate_request_metadata(request_meta, site_meta, csr_path)
+        csr = _validate_request_metadata(request_meta, site_meta, site_yaml_path, csr_path)
         if csr is None:
             return 1
         ca_meta = _validate_request_project_matches_ca(args.ca_dir, request_meta["project"])
         if ca_meta is None:
             return 1
+        project_profile = _load_project_profile(args.profile, request_meta["project"])
+        if project_profile is None:
+            return 1
 
+        # The values used below survive the tempdir cleanup: output paths are
+        # written into the final signed zip location, and metadata is copied.
+        server_san_fields = _server_cert_san_fields(site_meta, request_meta)
+        if server_san_fields is None:
+            return 1
+        server_default_host, server_additional_hosts = server_san_fields
         sign_result = sign_csr_files(
             csr_path=csr_path,
             ca_dir=args.ca_dir,
@@ -1949,6 +2310,8 @@ def handle_cert_approve(args):
             valid_days=getattr(args, "valid_days", 1095),
             force=True,
             csr=csr,
+            server_default_host=server_default_host,
+            server_additional_hosts=server_additional_hosts,
         )
         if sign_result is None:
             return 1
@@ -1978,6 +2341,8 @@ def handle_cert_approve(args):
                 "public_key_sha256": _csr_public_key_sha256(csr),
             },
         }
+        signed_meta["scheme"] = project_profile["scheme"]
+        signed_meta["default_connection_security"] = project_profile["default_connection_security"]
         if request_meta.get("cert_role"):
             signed_meta["cert_role"] = request_meta["cert_role"]
         signed_json_path = os.path.join(signed_dir, "signed.json")
@@ -1985,7 +2350,7 @@ def handle_cert_approve(args):
         signed_site_yaml_path = os.path.join(signed_dir, "site.yaml")
         _write_file_nofollow(signed_site_yaml_path, _read_file_nofollow(site_yaml_path))
 
-        signed_zip_path = getattr(args, "out", None) or getattr(args, "signed_zip", None)
+        signed_zip_path = getattr(args, "signed_zip", None)
         if signed_zip_path:
             signed_zip_path = os.path.abspath(signed_zip_path)
         else:
@@ -2011,6 +2376,7 @@ def handle_cert_approve(args):
             "ca": {
                 "ca_dir": os.path.abspath(args.ca_dir),
                 "metadata": ca_meta,
+                "project_profile": project_profile,
                 "rootca_path": os.path.abspath(os.path.join(args.ca_dir, "rootCA.pem")),
             },
             "hashes": {
@@ -2030,6 +2396,11 @@ def handle_cert_approve(args):
         {
             "name": name,
             "project": request_meta["project"],
+            "org": request_meta["org"],
+            "kind": request_meta["kind"],
+            "cert_role": request_meta.get("cert_role"),
+            "cert_type": request_meta["cert_type"],
+            "csr_sha256": request_meta["csr_sha256"],
             "signed_zip": signed_zip_path,
             "request_id": request_meta["request_id"],
             "rootca_fingerprint_sha256": sign_result["rootca_fingerprint_sha256"],

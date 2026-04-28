@@ -1,0 +1,12 @@
+name: fed_project
+description: Dynamically added admin user
+
+participants:
+  - name: bob@nvidia.com
+    type: admin
+    org: nvidia
+    role: member
+    server:
+      host: server.example.com
+      fed_learn_port: 8002
+      admin_port: 8003

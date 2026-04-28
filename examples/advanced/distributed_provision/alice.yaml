@@ -1,0 +1,12 @@
+name: fed_project
+description: Lead user for the example federation
+
+participants:
+  - name: alice@nvidia.com
+    type: admin
+    org: nvidia
+    role: lead
+    server:
+      host: server.example.com
+      fed_learn_port: 8002
+      admin_port: 8003

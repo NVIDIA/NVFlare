@@ -1,71 +1,92 @@
 # Distributed Provisioning - Scripted Mode
 
-This directory demonstrates how to automate the public distributed provisioning
-workflow with JSON CLI output:
+This demo automates the same federation shown in `../interactive_mode`.
 
-```bash
-nvflare cert init
-nvflare cert request
-nvflare cert approve
-nvflare package
-```
-
-The demo script runs every role on one machine so it is easy to try. In a real
-deployment, the same command sequence is usually split across machines:
-
-- requester side: `cert request`, then later `package`
-- Project Admin side: `cert init`, `cert approve`
-
-The script keeps those role boundaries visible in comments and output events so
-it can be used as an automation template.
+The script is intentionally small and explicit. It automates the distributed
+request, approve, and package process with the shared YAML files checked in the
+parent `distributed_provision` directory.
 
 ## Run
 
-```bash
-./scripted_mode_demo.sh <project_name> <server_endpoint> <work_dir> <site_yaml...>
-```
-
-Example with one server and one client:
+Run the script from the parent `distributed_provision` directory:
 
 ```bash
-cat > server.yml <<'EOF'
-name: server1
-org: nvidia
-type: server
-EOF
-
-cat > site-1.yml <<'EOF'
-name: site-1
-org: nvidia
-type: client
-EOF
-
-./scripted_mode_demo.sh example_project grpc://server1:8002 ./distprov_demo \
-  ./server.yml ./site-1.yml
+cd examples/advanced/distributed_provision
+./scripted_mode/scripted_mode_demo.sh
 ```
 
-Notes:
+The shared YAML inputs live in that parent directory. By default, the script
+writes to `./distprov_demo` relative to the directory where you run it, so the
+commands above create `examples/advanced/distributed_provision/distprov_demo`.
+To choose a different output directory:
 
-- Each `site.yml` is a single-participant identity file with `name`, `org`,
-  and `type`.
-- `org` must match `^[A-Za-z0-9_]+$` with no hyphens or spaces.
-- `type: client` maps to `cert request site`.
-- `type: server` maps to `cert request server`.
-- `type: org_admin`, `lead`, or `member` maps to `cert request user`.
-- The script saves each CLI JSON response under `<work_dir>` and emits compact
-  newline-delimited JSON progress/results on stdout.
-- The script reads `rootca_fingerprint_sha256` from `cert approve` output and
-  passes it to `package --expected-rootca-fingerprint`.
+```bash
+./scripted_mode/scripted_mode_demo.sh ./my_distprov_run
+```
 
-Output layout:
+The work directory must not already exist, so each run has clean output.
+
+## What Is Automated
+
+The script uses `project_profile.yaml` and the participant YAML files from the
+parent directory.
+
+Setup:
+
+1. Project Admin initializes the CA with `nvflare cert init`.
+
+Automated distributed provisioning flow:
+
+1. Each requester creates a request zip with `nvflare cert request --participant`.
+2. The script copies only `*.request.zip` files to simulate handoff to the Project Admin.
+3. Project Admin approves each request with `nvflare cert approve`.
+4. Each requester packages its startup kit with `nvflare package`.
+
+For automation, the package step uses `--expected-rootca-fingerprint` from the
+approval JSON output. The interactive demo uses `--confirm-rootca` instead
+because a human is expected to compare the fingerprint out of band.
+
+## Dynamic Provisioning
+
+After the initial project has started, use `--add` to automate
+request/approve/package for one new participant with the existing CA. This does
+not rerun `cert init` and does not repackage existing participants.
+
+Add a new client site:
+
+```bash
+./scripted_mode/scripted_mode_demo.sh --add site-3 site-3.yaml ./distprov_demo
+```
+
+Add a new admin user:
+
+```bash
+./scripted_mode/scripted_mode_demo.sh --add bob@nvidia.com bob.yaml ./distprov_demo
+```
+
+The `--add` mode uses `site-3.yaml` or `bob.yaml` from the parent directory,
+approves with `./distprov_demo/ca`, and packages the new startup kit under
+`./distprov_demo/workspace/fed_project/prod_NN/<name>/`.
+
+## Output
 
 ```text
-<work_dir>/
+distprov_demo/
   ca/
-  requests/<name>/
-  signed/<name>.signed.zip
+  server.example.com/
+  site-1/
+  site-2/
+  alice@nvidia.com/
+  *.request.zip
+  *.signed.zip
   workspace/
-  request_<name>.json
-  approve_<name>.json
-  package_<name>.json
+  01_cert_init.json
+  02_request_<name>.json
+  03_approve_<name>.json
+  04_package_<name>.json
+  05_startup_dirs.txt
+  06_dynamic_request_<name>.json
+  07_dynamic_approve_<name>.json
+  08_dynamic_package_<name>.json
+  09_dynamic_startup_dirs.txt
 ```

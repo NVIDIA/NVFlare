@@ -1,0 +1,3 @@
+name: fed_project
+scheme: grpc
+connection_security: tls

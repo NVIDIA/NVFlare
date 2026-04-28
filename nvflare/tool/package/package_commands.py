@@ -14,6 +14,7 @@
 
 """nvflare package command handler."""
 
+import copy
 import datetime
 import hashlib
 import json
@@ -58,6 +59,7 @@ from nvflare.tool.cli_output import (
 from nvflare.tool.cli_schema import handle_schema_flag
 
 _VALID_SCHEMES = {"grpc", "tcp", "http"}
+_VALID_CONNECTION_SECURITY = {"clear", "tls", "mtls"}
 _ADMIN_ROLES = set(ADMIN_CERT_TYPES)
 _VALID_CERT_TYPES = set(VALID_CERT_TYPES)
 _KIT_TYPE_TO_ROLE = KIT_TYPE_TO_ROLE
@@ -75,29 +77,33 @@ _SIGNED_KIND_TO_CERT_TYPE = {
 _SIGNED_USER_CERT_TYPES = _VALID_CERT_TYPES - {"client", "server"}
 
 
-def _reject_invalid_project_name(project_name: str, *, code: str, hint: str) -> None:
+def _reject_invalid_project_name(project_name: str, *, code: str, hint: str, field_label: str = "Project") -> None:
     output_error_message(
         code,
-        f"Invalid project name: {project_name!r}.",
+        f"Invalid {field_label.lower()} name: {project_name!r}.",
         hint,
         None,
         exit_code=4,
     )
 
 
-def _validate_safe_project_name(project_name: str, *, code: str = "INVALID_PROJECT_NAME") -> bool:
+def _validate_safe_project_name(
+    project_name: str, *, code: str = "INVALID_PROJECT_NAME", field_label: str = "Project"
+) -> bool:
     hint = "Project names must match [A-Za-z0-9][A-Za-z0-9._-]* and must not contain path separators."
     if not project_name or not isinstance(project_name, str) or not project_name.strip():
-        _reject_invalid_project_name(project_name, code=code, hint=hint)
+        _reject_invalid_project_name(project_name, code=code, hint=hint, field_label=field_label)
         return False
     if len(project_name) > 64:
-        _reject_invalid_project_name(project_name, code=code, hint="Project names must be 64 characters or fewer.")
+        _reject_invalid_project_name(
+            project_name, code=code, hint="Project names must be 64 characters or fewer.", field_label=field_label
+        )
         return False
     if os.sep in project_name or (os.altsep and os.altsep in project_name) or project_name.startswith("."):
-        _reject_invalid_project_name(project_name, code=code, hint=hint)
+        _reject_invalid_project_name(project_name, code=code, hint=hint, field_label=field_label)
         return False
     if not _SAFE_PROJECT_NAME_PATTERN.fullmatch(project_name):
-        _reject_invalid_project_name(project_name, code=code, hint=hint)
+        _reject_invalid_project_name(project_name, code=code, hint=hint, field_label=field_label)
         return False
     return True
 
@@ -451,6 +457,9 @@ def _load_project_from_file(path: str) -> tuple:
             PropKey.NAME: project_dict.get("project") or project_dict.get("project_name", "project"),
             "participants": [participant],
         }
+    elif isinstance(project_dict, dict) and "participants" in project_dict and PropKey.API_VERSION not in project_dict:
+        project_dict = copy.deepcopy(project_dict)
+        project_dict[PropKey.API_VERSION] = 3
 
     try:
         project = prepare_project(project_dict)
@@ -555,9 +564,9 @@ def _build_package_builders(custom_builders, cert_builder, scheme):
             all_builders.append(cert_builder)
             has_cert = True
         elif isinstance(b, StaticFileBuilder):
-            # The signed-zip package endpoint is supplied at package time. Keep
-            # any custom StaticFileBuilder instance from the project file, but
-            # make its connection scheme match -e/--endpoint.
+            # Keep any custom StaticFileBuilder instance from the participant
+            # definition, but make its connection scheme match the approved
+            # project profile.
             b.scheme = scheme
             all_builders.append(b)
         else:
@@ -605,6 +614,7 @@ def _build_selected_participant_package(
     scheme: str,
     host: str,
     port: int,
+    admin_port: int = None,
     name: str,
     org: str,
     kit_type: str,
@@ -613,6 +623,7 @@ def _build_selected_participant_package(
     rootca_path: str,
     project_name: str,
     participant_props: dict = None,
+    project_props: dict = None,
     custom_builders=None,
 ):
     """Build exactly one participant through the existing provisioner/builders."""
@@ -640,14 +651,14 @@ def _build_selected_participant_package(
         output_error_message(
             "INVALID_ARGS",
             f"Participant name {name!r} collides with the server endpoint hostname.",
-            "Use a participant name that is distinct from the server hostname in --endpoint.",
+            "Use a participant name that is distinct from the configured server hostname.",
             None,
             exit_code=4,
         )
         return 1
 
     workspace = os.path.abspath(getattr(args, "workspace", None) or "workspace")
-    admin_port = args.admin_port if args.admin_port is not None else port
+    admin_port = admin_port if admin_port is not None else port
     project_name = project_name or getattr(args, "project_name", None) or "project"
     if _project_dir_under_workspace(workspace, project_name) is None:
         return 1
@@ -665,7 +676,7 @@ def _build_selected_participant_package(
         PropKey.ADMIN_PORT: admin_port,
     }
 
-    project = Project(name=project_name, description="")
+    project = Project(name=project_name, description="", props=project_props)
     participant_props = dict(participant_props or {})
     if is_server:
         server_props_with_yaml = dict(participant_props)
@@ -704,224 +715,9 @@ def _build_selected_participant_package(
     prod_dir = ctx[CtxKey.CURRENT_PROD_DIR]
     if not is_server:
         shutil.rmtree(os.path.join(prod_dir, host), ignore_errors=True)
+        project.remove_server()
 
-    return _make_package_result(prod_dir, name, kit_type, args.endpoint)
-
-
-def _handle_package_yaml_mode(args, scheme, host, port):
-    """Build kits for all participants defined in a project yaml file.
-
-    Internal helper for project-file mode. The cert/key for each participant is
-    resolved from a material directory by participant name; rootCA is read from
-    the same directory.
-    """
-    project_from_yaml, custom_builders = _load_project_from_file(args.project_file)
-    if project_from_yaml is None:
-        return 1
-
-    # A material directory is required in internal yaml mode (no single key auto-discovery).
-    if not getattr(args, "dir", None):
-        output_error_message(
-            "INVALID_ARGS",
-            "A material directory is required when using internal project-file packaging.",
-            "Provide the directory containing cert files named by participant CN.",
-            None,
-            exit_code=4,
-        )
-        return 1
-
-    rootca_path = os.path.join(args.dir, "rootCA.pem")
-    if not os.path.isfile(rootca_path):
-        output_error(
-            "ROOTCA_NOT_FOUND",
-            exit_code=1,
-            path=rootca_path,
-            detail=f"Place the rootCA.pem from the Project Admin into {args.dir}.",
-        )
-        return 1
-
-    workspace = os.path.abspath(getattr(args, "workspace", None) or "workspace")
-    project_name = getattr(args, "project_name", None) or project_from_yaml.name or "project"
-    admin_port = args.admin_port if args.admin_port is not None else port
-
-    # Collect participants to build: clients, admins (server handled separately when requested).
-    # Each entry is (kit_type_str, participant).
-    all_participants = []
-    server = project_from_yaml.get_server()
-    if server and getattr(args, "kit_type", None) == "server":
-        all_participants.append(("server", server))
-    for p in project_from_yaml.get_clients():
-        all_participants.append(("client", p))
-    for p in project_from_yaml.get_admins():
-        role = p.get_prop(PropKey.ROLE, AdminRole.LEAD)
-        # Map canonical role names to the kit_type strings used by the provisioner
-        kit_type = role if role in _ADMIN_ROLES else AdminRole.LEAD
-        all_participants.append((kit_type, p))
-
-    # Include server if this is a server-only project and no type filter was given.
-    if not all_participants and server and not getattr(args, "kit_type", None):
-        all_participants.append(("server", server))
-
-    # Apply internal type filter when given.
-    kit_type_filter = getattr(args, "kit_type", None)
-    if kit_type_filter:
-        if kit_type_filter == "server":
-            all_participants = [(t, p) for t, p in all_participants if t == "server"]
-        elif kit_type_filter == "client":
-            all_participants = [(t, p) for t, p in all_participants if t == "client"]
-        else:
-            # admin role filter
-            all_participants = [(t, p) for t, p in all_participants if t == kit_type_filter]
-
-    if not all_participants:
-        output_error_message(
-            "NO_PARTICIPANTS",
-            "No participants to build after applying type filter.",
-            "Check the project file and participant type filter.",
-            None,
-            exit_code=1,
-        )
-        return 1
-
-    server_props = {
-        PropKey.FED_LEARN_PORT: port,
-        PropKey.ADMIN_PORT: admin_port,
-    }
-
-    # Validate all cert/key files up front before building anything.
-    cert_map = {}
-    for kit_type, participant in all_participants:
-        p_name = participant.name
-        cert_path = os.path.join(args.dir, f"{p_name}.crt")
-        key_path = os.path.join(args.dir, f"{p_name}.key")
-
-        if not os.path.isfile(cert_path):
-            output_error(
-                "CERT_NOT_FOUND",
-                exit_code=1,
-                path=cert_path,
-                detail=f"Drop {p_name}.crt from the Project Admin into {args.dir}.",
-            )
-            return 1
-        if not os.path.isfile(key_path):
-            output_error(
-                "KEY_NOT_FOUND",
-                exit_code=1,
-                path=key_path,
-                detail=f"Use the private key generated by 'nvflare cert request' for {p_name}.",
-            )
-            return 1
-
-        cert = _validate_cert_material(cert_path, key_path, rootca_path, validate_key_match=True)
-        if cert is None:
-            return 1
-
-        cert_map[p_name] = (cert_path, key_path)
-
-    # Pre-check: if any participant already exists in the latest prod dir, reject unless --force.
-    latest_prod = _latest_prod_dir(workspace, project_name)
-    if latest_prod:
-        for _, participant in all_participants:
-            existing_path = os.path.join(latest_prod, participant.name)
-            if os.path.exists(existing_path) and not args.force:
-                output_error("OUTPUT_DIR_EXISTS", exit_code=1, path=existing_path)
-                return 1
-
-    # Build all participants in a single provisioner call so they land in the same prod_NN.
-    has_server = any(kt == "server" for kt, _ in all_participants)
-    project = Project(name=project_name, description="")
-    if has_server:
-        server_participant = next(p for kt, p in all_participants if kt == "server")
-        server_props_with_yaml = dict(server_participant.props)
-        server_props_with_yaml.update(server_props)
-        project.set_server(server_participant.name, server_participant.org, server_props_with_yaml)
-    else:
-        project.set_server(host, _DUMMY_ORG, server_props)
-
-    for kit_type, participant in all_participants:
-        if kit_type == "server":
-            continue
-        participant_props = dict(participant.props)
-        if kit_type == "client":
-            project.add_client(participant.name, participant.org, participant_props)
-        else:
-            project.add_admin(participant.name, participant.org, participant_props)
-
-    cert_builder = PrebuiltCertBuilder(rootca_path=rootca_path, cert_map=cert_map)
-
-    # Build the builder list from site.yaml, replacing any CertBuilder with PrebuiltCertBuilder.
-    # WorkspaceBuilder and StaticFileBuilder from the YAML are honored as-is.
-    # Defaults are injected only when absent from the YAML.
-    has_cert = False
-    all_builders = []
-    for b in custom_builders:
-        if isinstance(b, CertBuilder):
-            all_builders.append(cert_builder)
-            has_cert = True
-        else:
-            all_builders.append(b)
-
-    if not has_cert:
-        # Inject after WorkspaceBuilder, or at the front if none.
-        ws_pos = next((i for i, b in enumerate(all_builders) if isinstance(b, WorkspaceBuilder)), -1)
-        all_builders.insert(ws_pos + 1, cert_builder)
-
-    if not any(isinstance(b, WorkspaceBuilder) for b in all_builders):
-        all_builders.insert(0, WorkspaceBuilder())
-
-    if not any(isinstance(b, StaticFileBuilder) for b in all_builders):
-        cert_pos = next((i for i, b in enumerate(all_builders) if isinstance(b, PrebuiltCertBuilder)), None)
-        if cert_pos is None:
-            raise RuntimeError("PrebuiltCertBuilder missing from builder list; this is a bug")
-        all_builders.insert(cert_pos + 1, StaticFileBuilder(scheme=scheme))
-
-    provisioner = Provisioner(root_dir=workspace, builders=all_builders)
-    ctx = provisioner.provision(project)
-
-    if ctx.get(CtxKey.BUILD_ERROR):
-        output_error_message(
-            "BUILD_FAILED",
-            "Kit assembly failed.",
-            "See error output above for details.",
-            None,
-            exit_code=1,
-        )
-        return 1
-
-    prod_dir = ctx[CtxKey.CURRENT_PROD_DIR]
-
-    # Remove placeholder server directory if we added a dummy server.
-    if not has_server:
-        shutil.rmtree(os.path.join(prod_dir, host), ignore_errors=True)
-
-    results = []
-    for kit_type, participant in all_participants:
-        p_name = participant.name
-        output_dir = os.path.join(prod_dir, p_name)
-        is_server = kit_type == "server"
-        is_admin = kit_type in _ADMIN_ROLES
-        cert_filename = "server.crt" if is_server else "client.crt"
-        key_filename = "server.key" if is_server else "client.key"
-        startup_script = "fl_admin.sh" if is_admin else "start.sh"
-        results.append(
-            {
-                "output_dir": output_dir,
-                "name": p_name,
-                "type": kit_type,
-                "endpoint": args.endpoint,
-                "cert": os.path.join(output_dir, "startup", cert_filename),
-                "key": os.path.join(output_dir, "startup", key_filename) + "  (permissions: 0600)",
-                "rootca": os.path.join(output_dir, "startup", "rootCA.pem"),
-                "transfer_dir": os.path.join(output_dir, "transfer"),
-                "next_step": f"cd {output_dir} && ./startup/{startup_script}",
-            }
-        )
-
-    if len(results) == 1:
-        output_ok(results[0])
-    else:
-        output_ok(results)
-    return 0
+    return _make_package_result(prod_dir, name, kit_type, f"{scheme}://{host}:{port}")
 
 
 def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
@@ -930,6 +726,7 @@ def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
     for info in zf.infolist():
         name = info.filename
         norm = posixpath.normpath(name)
+        parts = norm.split("/")
         mode = info.external_attr >> 16
         if (
             not name
@@ -937,7 +734,8 @@ def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
             or os.path.isabs(name)
             or "\\" in name
             or norm != name
-            or norm.startswith("..")
+            or norm.startswith("../")
+            or ".." in parts
             or posixpath.basename(name) != name
             or name in seen
             or info.is_dir()
@@ -951,7 +749,7 @@ def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
                 None,
                 exit_code=4,
             )
-            continue
+            return None
         if name.lower().endswith(".key"):
             output_error_message(
                 "INVALID_SIGNED_ZIP",
@@ -960,7 +758,7 @@ def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
                 None,
                 exit_code=4,
             )
-            continue
+            return None
         seen.add(name)
         names.append(name)
     return names
@@ -1123,6 +921,59 @@ def _expected_hash(meta: dict, *names):
     return ""
 
 
+def _is_project_shaped_site_meta(site_meta: dict) -> bool:
+    return isinstance(site_meta, dict) and isinstance(site_meta.get("participants"), list)
+
+
+def _role_to_cert_type(role: str) -> str:
+    if role == "org-admin":
+        return "org_admin"
+    return role if role in _ADMIN_ROLES else ""
+
+
+def _resolve_participant_type(participant: dict):
+    """Return (kind, cert_type, cert_role) from a participant dict, or None if the type is unrecognised."""
+    p_type = participant.get("type")
+    if p_type == "client":
+        return "site", "client", None
+    if p_type == "server":
+        return "server", "server", None
+    if p_type == "admin":
+        cert_role = _role_to_cert_type(participant.get("role"))
+        return "user", cert_role, cert_role
+    return None
+
+
+def _site_identity_from_metadata(site_meta: dict) -> dict:
+    if not isinstance(site_meta, dict):
+        return {}
+    if _is_project_shaped_site_meta(site_meta):
+        participants = site_meta.get("participants") or []
+        if len(participants) != 1 or not isinstance(participants[0], dict):
+            return {}
+        participant = participants[0]
+        resolved = _resolve_participant_type(participant)
+        if resolved is None:
+            return {}
+        kind, cert_type, cert_role = resolved
+        return {
+            "project": site_meta.get("name"),
+            "name": participant.get("name"),
+            "org": participant.get("org"),
+            "kind": kind,
+            "cert_type": cert_type,
+            "cert_role": cert_role,
+        }
+    return {
+        "project": site_meta.get("project"),
+        "name": site_meta.get("name"),
+        "org": site_meta.get("org"),
+        "kind": site_meta.get("kind"),
+        "cert_type": site_meta.get("type") or site_meta.get("cert_type"),
+        "cert_role": site_meta.get("cert_role"),
+    }
+
+
 def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str) -> bool:
     if not isinstance(signed_meta, dict):
         output_error_message(
@@ -1183,18 +1034,50 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             exit_code=4,
         )
         return False
+    scheme = signed_meta.get("scheme")
+    if scheme is not None and (not isinstance(scheme, str) or scheme.strip().lower() not in _VALID_SCHEMES):
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            f"Invalid signed zip scheme: {scheme!r}.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+        return False
+    default_conn_sec = signed_meta.get("default_connection_security")
+    if default_conn_sec is not None and (
+        not isinstance(default_conn_sec, str) or default_conn_sec.strip().lower() not in _VALID_CONNECTION_SECURITY
+    ):
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            f"Invalid signed zip default_connection_security: {default_conn_sec!r}.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+        return False
 
-    for meta_field, site_field in (("name", "name"), ("org", "org"), ("cert_type", "type"), ("project", "project")):
-        if site_meta.get(site_field) != signed_meta.get(meta_field):
+    site_identity = _site_identity_from_metadata(site_meta)
+    if not site_identity:
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            "site.yaml must identify exactly one participant.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+        return False
+    for field in ("name", "org", "cert_type", "project"):
+        if site_identity.get(field) != signed_meta.get(field):
             output_error_message(
                 "INVALID_SIGNED_ZIP",
-                f"site.yaml field '{site_field}' does not match signed metadata.",
+                f"site.yaml field '{field}' does not match signed metadata.",
                 "Ask the Project Admin to regenerate the signed zip.",
                 None,
                 exit_code=4,
             )
             return False
-    if site_meta.get("kind") != signed_meta.get("kind"):
+    if site_identity.get("kind") != signed_meta.get("kind"):
         output_error_message(
             "INVALID_SIGNED_ZIP",
             "site.yaml field 'kind' does not match signed metadata.",
@@ -1203,11 +1086,29 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             exit_code=4,
         )
         return False
-    if (site_meta.get("cert_role") or None) != (signed_meta.get("cert_role") or None):
+    if (site_identity.get("cert_role") or None) != (signed_meta.get("cert_role") or None):
         output_error_message(
             "INVALID_SIGNED_ZIP",
             "site.yaml field 'cert_role' does not match signed metadata.",
             "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+        return False
+    if _is_project_shaped_site_meta(site_meta) and "connection_security" in site_meta["participants"][0]:
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            "Signed zip site.yaml must not contain participant connection_security overrides.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+        return False
+    if _is_project_shaped_site_meta(site_meta) and PropKey.LISTENING_HOST in site_meta["participants"][0]:
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            "Signed zip site.yaml must not contain listening_host.",
+            "Distributed provisioning does not support listener certificates yet; use centralized provisioning.",
             None,
             exit_code=4,
         )
@@ -1333,7 +1234,10 @@ def _load_signed_zip(input_path: str):
     file_contents = {}
     try:
         with zipfile.ZipFile(input_path, "r") as zf:
-            names = set(_safe_zip_names(zf, input_path))
+            safe_names = _safe_zip_names(zf, input_path)
+            if safe_names is None:
+                return signed_meta, site_meta, cert_name, file_contents
+            names = set(safe_names)
             required = {"signed.json", "site.yaml", "rootCA.pem"}
             missing = required - names
             if missing:
@@ -1579,6 +1483,296 @@ def _read_local_request_metadata(request_dir: str) -> dict:
     return request_meta
 
 
+def _read_yaml_file_nofollow(path: str, *, code: str, hint: str):
+    if not os.path.isfile(path):
+        output_error_message(
+            code,
+            f"Local participant definition was not found: {path}.",
+            hint,
+            None,
+            exit_code=1,
+        )
+        return None
+    try:
+        data = yaml.safe_load(_read_file_nofollow(path).decode("utf-8"))
+    except Exception as e:
+        output_error_message(
+            code,
+            f"Local participant definition could not be read: {e}.",
+            hint,
+            None,
+            exit_code=4,
+        )
+        return None
+    if not isinstance(data, dict):
+        output_error_message(
+            code,
+            "Local participant definition must be a YAML mapping.",
+            hint,
+            None,
+            exit_code=4,
+        )
+        return None
+    return data
+
+
+def _participant_cert_identity(project_name: str, participant: dict) -> dict:
+    if not isinstance(participant, dict):
+        return {}
+    resolved = _resolve_participant_type(participant)
+    if resolved is None:
+        return {}
+    kind, cert_type, cert_role = resolved
+    return {
+        "project": project_name,
+        "name": participant.get("name"),
+        "org": participant.get("org"),
+        "kind": kind,
+        "cert_type": cert_type,
+        "cert_role": cert_role,
+    }
+
+
+def _flat_site_to_project_dict(site_meta: dict, identity: dict) -> dict:
+    kit_type = identity.get("cert_type") or site_meta.get("type")
+    participant = {k: v for k, v in site_meta.items() if k not in {"project", "project_name", "kind", "cert_role"}}
+    participant["name"] = site_meta.get("name") or identity.get("name")
+    participant["org"] = site_meta.get("org") or identity.get("org")
+    if kit_type in _ADMIN_ROLES:
+        participant["type"] = "admin"
+        participant[PropKey.ROLE] = _KIT_TYPE_TO_ROLE[kit_type]
+    else:
+        participant["type"] = kit_type
+    return {
+        PropKey.API_VERSION: 3,
+        PropKey.NAME: site_meta.get("project") or site_meta.get("project_name") or identity.get("project"),
+        "participants": [participant],
+    }
+
+
+def _local_project_dict_from_site(site_meta: dict, identity: dict) -> dict:
+    if _is_project_shaped_site_meta(site_meta):
+        project_dict = copy.deepcopy(site_meta)
+        if PropKey.API_VERSION not in project_dict:
+            project_dict[PropKey.API_VERSION] = 3
+        return project_dict
+    return _flat_site_to_project_dict(site_meta, identity)
+
+
+def _find_participant_def(project_dict: dict, identity: dict):
+    participants = project_dict.get("participants")
+    if not isinstance(participants, list):
+        return None
+    for participant in participants:
+        if isinstance(participant, dict) and participant.get("name") == identity.get("name"):
+            return participant
+    return participants[0] if len(participants) == 1 and isinstance(participants[0], dict) else None
+
+
+def _find_project_participant(project: Project, name: str):
+    for participant in project.get_all_participants():
+        if participant.name == name:
+            return participant
+    return None
+
+
+def _local_site_mismatch(detail: str) -> None:
+    output_error_message(
+        "LOCAL_SITE_MISMATCH",
+        "Local participant definition does not match the signed zip.",
+        "Use the original request folder created for this signed zip.",
+        None,
+        exit_code=4,
+        detail=detail,
+    )
+
+
+def _local_site_unsupported_feature(detail: str) -> None:
+    output_error_message(
+        "LOCAL_SITE_UNSUPPORTED_FEATURE",
+        "Local participant definition uses a feature unsupported by distributed provisioning.",
+        "Use centralized provisioning for this participant, or remove the unsupported field and request a new signed zip.",
+        None,
+        exit_code=4,
+        detail=detail,
+    )
+
+
+def _validate_local_site_identity(project_dict: dict, participant_def: dict, signed_meta: dict) -> bool:
+    project_name = project_dict.get(PropKey.NAME)
+    if isinstance(participant_def, dict):
+        participant_type = participant_def.get("type")
+        if participant_type not in {"client", "server", "admin"}:
+            _local_site_mismatch(
+                f"unsupported participant type {participant_type!r}; expected client, server, or admin"
+            )
+            return False
+        if PropKey.LISTENING_HOST in participant_def:
+            _local_site_unsupported_feature(
+                "listening_host is not supported by distributed provisioning packaging yet; "
+                "the signed zip contains only one participant certificate/key pair"
+            )
+            return False
+    site_identity = _participant_cert_identity(project_name, participant_def)
+    if not site_identity:
+        _local_site_mismatch("site.yaml must identify one client, server, or admin participant")
+        return False
+    expected = {
+        "project": signed_meta.get("project"),
+        "name": signed_meta.get("name"),
+        "org": signed_meta.get("org"),
+        "kind": signed_meta.get("kind"),
+        "cert_type": signed_meta.get("cert_type"),
+        "cert_role": signed_meta.get("cert_role") or None,
+    }
+    for field, expected_value in expected.items():
+        if (site_identity.get(field) or None) != (expected_value or None):
+            _local_site_mismatch(f"field {field!r} differs")
+            return False
+    return True
+
+
+def _load_local_participant_context(request_dir: str, identity: dict, signed_meta: dict, kit_type: str):
+    site_yaml_path = os.path.join(request_dir, "site.yaml")
+    site_meta = _read_yaml_file_nofollow(
+        site_yaml_path,
+        code="LOCAL_SITE_INVALID",
+        hint="Use the original request folder created by 'nvflare cert request'.",
+    )
+    if site_meta is None:
+        return None, None, None, None
+    project_dict = _local_project_dict_from_site(site_meta, identity)
+    participant_def = _find_participant_def(project_dict, identity)
+    if participant_def is None:
+        _local_site_mismatch(f"participant {identity.get('name')!r} was not found")
+        return None, None, None, None
+    if not _validate_local_site_identity(project_dict, participant_def, signed_meta):
+        return None, None, None, None
+    try:
+        project = prepare_project(copy.deepcopy(project_dict))
+        custom_builders = prepare_builders(project_dict)
+    except Exception as ex:
+        output_error_message(
+            "LOCAL_SITE_INVALID",
+            f"Invalid local participant definition: {ex}",
+            "Use the original request folder created by 'nvflare cert request'.",
+            None,
+            exit_code=4,
+        )
+        return None, None, None, None
+    participant = _find_project_participant(project, identity["name"])
+    if not participant:
+        _local_site_mismatch(f"participant {identity.get('name')!r} was not found")
+        return None, None, None, None
+    participant_kit_type = _participant_kit_type(participant)
+    if participant_kit_type != kit_type:
+        _local_site_mismatch(f"participant type {participant_kit_type!r} differs from signed type {kit_type!r}")
+        return None, None, None, None
+    return project, participant, custom_builders, participant_def
+
+
+def _validate_signed_scheme_and_security(signed_meta: dict) -> tuple:
+    scheme = signed_meta.get("scheme")
+    if scheme is not None:
+        scheme = scheme.strip().lower()
+        if scheme not in _VALID_SCHEMES:
+            output_error_message(
+                "INVALID_SIGNED_ZIP",
+                f"Invalid signed zip scheme: {signed_meta.get('scheme')!r}.",
+                "Ask the Project Admin to regenerate the signed zip.",
+                None,
+                exit_code=4,
+            )
+            return None, None
+    default_conn_sec = signed_meta.get("default_connection_security")
+    if default_conn_sec is not None:
+        default_conn_sec = default_conn_sec.strip().lower()
+        if default_conn_sec not in _VALID_CONNECTION_SECURITY:
+            output_error_message(
+                "INVALID_SIGNED_ZIP",
+                f"Invalid signed zip default_connection_security: {signed_meta.get('default_connection_security')!r}.",
+                "Ask the Project Admin to regenerate the signed zip.",
+                None,
+                exit_code=4,
+            )
+            return None, None
+    return scheme, default_conn_sec
+
+
+def _port_from_value(value, label: str):
+    if not isinstance(value, int) or isinstance(value, bool) or not (1 <= value <= 65535):
+        output_error_message(
+            "LOCAL_SITE_INVALID",
+            f"{label} must be an integer from 1 to 65535.",
+            "Use the original participant definition created for this request.",
+            None,
+            exit_code=4,
+        )
+        return None
+    return value
+
+
+def _resolve_packaging_endpoint(args, signed_meta: dict, participant_def: dict, kit_type: str):
+    signed_scheme, default_conn_sec = _validate_signed_scheme_and_security(signed_meta)
+    if signed_scheme is None and signed_meta.get("scheme") is not None:
+        return None
+    if default_conn_sec is None and signed_meta.get("default_connection_security") is not None:
+        return None
+
+    if not signed_scheme:
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            "Signed approval metadata does not contain a communication scheme.",
+            "Ask the Project Admin to regenerate the signed zip with a project profile.",
+            None,
+            exit_code=4,
+        )
+        return None
+
+    scheme = signed_scheme
+    if kit_type == "server":
+        host = participant_def.get("name")
+        if not isinstance(host, str) or not host.strip():
+            output_error_message(
+                "LOCAL_SITE_INVALID",
+                "participant name must be a non-empty string.",
+                "Use the original participant definition created for this request.",
+                None,
+                exit_code=4,
+            )
+            return None
+        host = host.strip()
+        port = _port_from_value(participant_def.get("fed_learn_port"), "fed_learn_port")
+        admin_port = _port_from_value(participant_def.get("admin_port"), "admin_port")
+    else:
+        server = participant_def.get("server")
+        if not isinstance(server, dict):
+            output_error_message(
+                "LOCAL_SITE_INVALID",
+                "Local participant definition is missing the server connection block.",
+                "Add server.host, server.fed_learn_port, and server.admin_port to the participant definition.",
+                None,
+                exit_code=4,
+            )
+            return None
+        host = server.get("host")
+        if not isinstance(host, str) or not host.strip():
+            output_error_message(
+                "LOCAL_SITE_INVALID",
+                "server.host must be a non-empty string.",
+                "Use the original participant definition created for this request.",
+                None,
+                exit_code=4,
+            )
+            return None
+        host = host.strip()
+        port = _port_from_value(server.get("fed_learn_port"), "server.fed_learn_port")
+        admin_port = _port_from_value(server.get("admin_port"), "server.admin_port")
+    if port is None or admin_port is None:
+        return None
+    return scheme, host, port, admin_port, default_conn_sec
+
+
 def _request_metadata_mismatch(detail: str) -> None:
     output_error_message(
         "REQUEST_METADATA_MISMATCH",
@@ -1622,7 +1816,9 @@ def _write_materialized_signed_files(
         _write_file_nofollow(
             os.path.join(request_dir, "signed.json"), json.dumps(signed_meta, indent=2).encode("utf-8")
         )
-        _write_file_nofollow(os.path.join(request_dir, "site.yaml"), yaml.safe_dump(site_meta).encode("utf-8"))
+        site_yaml_path = os.path.join(request_dir, "site.yaml")
+        if not os.path.exists(site_yaml_path):
+            _write_file_nofollow(site_yaml_path, yaml.safe_dump(site_meta).encode("utf-8"))
         _write_file_nofollow(os.path.join(request_dir, f"{identity['name']}.crt"), file_contents["cert"])
         _write_file_nofollow(os.path.join(request_dir, "rootCA.pem"), file_contents["rootCA.pem"])
     except OSError as e:
@@ -1631,67 +1827,27 @@ def _write_materialized_signed_files(
     return True
 
 
-def _find_project_participant(project, name: str):
-    for participant in project.get_all_participants():
-        if participant.name == name:
-            return participant
-    return None
-
-
-def _selected_project_context(args, identity: dict, kit_type: str):
-    if not getattr(args, "project_file", None):
-        return None, None, identity.get("project_name") or getattr(args, "project_name", None) or "project"
-
-    project_from_yaml, custom_builders = _load_project_from_file(args.project_file)
-    if project_from_yaml is None:
-        return None, None, None
-    signed_project = identity.get("project_name")
-    if signed_project and project_from_yaml.name and signed_project != project_from_yaml.name:
-        output_error_message(
-            "PROJECT_IDENTITY_CONFLICT",
-            f"Signed zip project {signed_project!r} conflicts with project file project {project_from_yaml.name!r}.",
-            "Use a project file for the same federation as the signed zip.",
-            None,
-            exit_code=4,
-        )
-        return None, None, None
-
-    participant = _find_project_participant(project_from_yaml, identity["name"])
-    if not participant:
-        if not is_json_mode():
-            print_human(
-                f"Warning: {identity['name']} was not found in {args.project_file} participants; "
-                "using signed zip identity and project builders."
-            )
-        return None, custom_builders, signed_project or getattr(args, "project_name", None) or project_from_yaml.name
-
-    if identity.get("org") and participant.org and identity["org"] != participant.org:
-        output_error_message(
-            "PROJECT_IDENTITY_CONFLICT",
-            f"Signed zip org {identity['org']!r} conflicts with project file org {participant.org!r}.",
-            "Use a project file whose participant identity matches the signed zip.",
-            None,
-            exit_code=4,
-        )
-        return None, None, None
-
-    participant_kit_type = _participant_kit_type(participant)
-    if participant_kit_type != kit_type:
-        output_error_message(
-            "PROJECT_IDENTITY_CONFLICT",
-            f"Signed zip type {kit_type!r} conflicts with project file type {participant_kit_type!r}.",
-            "Use a project file whose participant identity matches the signed zip.",
-            None,
-            exit_code=4,
-        )
-        return None, None, None
-
-    return participant, custom_builders, signed_project or getattr(args, "project_name", None) or project_from_yaml.name
-
-
-def _handle_signed_zip_package(args, scheme, host, port):
+def _handle_signed_zip_package(args):
     signed_meta, site_meta, cert_name, file_contents = _load_signed_zip(args.input)
     if not signed_meta or not site_meta or not cert_name or not file_contents:
+        return 1
+    if getattr(args, "endpoint", None) or getattr(args, "admin_port", None) is not None:
+        output_error_message(
+            "INVALID_ARGS",
+            "Endpoint overrides are not supported for signed zip packaging.",
+            "Use the endpoint information stored in the local participant definition, or regenerate the request.",
+            None,
+            exit_code=4,
+        )
+        return 1
+    if getattr(args, "project_file", None):
+        output_error_message(
+            "INVALID_ARGS",
+            "Project file override cannot be combined with signed zip packaging.",
+            "Use the local participant definition stored in the original request folder.",
+            None,
+            exit_code=4,
+        )
         return 1
     with tempfile.TemporaryDirectory() as tmp_dir:
         temp_cert = os.path.join(tmp_dir, cert_name)
@@ -1820,21 +1976,37 @@ def _handle_signed_zip_package(args, scheme, host, port):
         cert = _validate_cert_material(temp_cert, key_path, temp_rootca, validate_key_match=True)
         if cert is None:
             return 1
-        expected_public_key_hash = _expected_hash(signed_meta, "public_key")
-        if expected_public_key_hash and _cert_public_key_sha256(cert) != expected_public_key_hash:
-            output_error_message(
-                "KEY_CERT_MISMATCH",
-                "The signed certificate public key does not match signed metadata.",
-                "Ask the Project Admin to regenerate the signed zip.",
-                None,
-                exit_code=1,
-            )
+
+        local_project = None
+        local_participant = None
+        local_custom_builders = None
+        local_participant_def = None
+        (
+            local_project,
+            local_participant,
+            local_custom_builders,
+            local_participant_def,
+        ) = _load_local_participant_context(resolved_request_dir, identity, signed_meta, cert_kit_type)
+        if local_project is None:
             return 1
+
+        endpoint_info = _resolve_packaging_endpoint(args, signed_meta, local_participant_def or {}, cert_kit_type)
+        if endpoint_info is None:
+            return 1
+        scheme, host, port, admin_port, default_conn_sec = endpoint_info
+
         identity["org"] = identity.get("org") or _read_cert_org(cert) or _DUMMY_ORG
-        participant, custom_builders, project_name = _selected_project_context(args, identity, cert_kit_type)
-        if participant is None and custom_builders is None and project_name is None:
-            return 1
+        participant = local_participant
+        custom_builders = local_custom_builders
+        project_name = local_project.name
         participant_props = dict(participant.props) if participant else {}
+        project_props = {}
+        if default_conn_sec:
+            project_props[PropKey.CONN_SECURITY] = default_conn_sec
+        if cert_kit_type not in ("server",):
+            participant_props.pop(PropKey.CONN_SECURITY, None)
+        elif default_conn_sec and not participant_props.get(PropKey.CONN_SECURITY):
+            participant_props[PropKey.CONN_SECURITY] = default_conn_sec
 
         if not _write_materialized_signed_files(resolved_request_dir, identity, signed_meta, site_meta, file_contents):
             return 1
@@ -1846,6 +2018,7 @@ def _handle_signed_zip_package(args, scheme, host, port):
             scheme=scheme,
             host=host,
             port=port,
+            admin_port=admin_port,
             name=identity["name"],
             org=identity.get("org") or _DUMMY_ORG,
             kit_type=cert_kit_type,
@@ -1854,6 +2027,7 @@ def _handle_signed_zip_package(args, scheme, host, port):
             rootca_path=rootca_path,
             project_name=project_name,
             participant_props=participant_props,
+            project_props=project_props,
             custom_builders=custom_builders,
         )
         if not isinstance(result, dict):
@@ -1863,89 +2037,14 @@ def _handle_signed_zip_package(args, scheme, host, port):
     return 0
 
 
-def handle_package(args):
-    """Assemble a startup kit from locally generated key + Project Admin cert + rootCA.pem."""
-
-    # Step 1: --schema check (before any other work)
-    from nvflare.tool.package.package_cli import _PACKAGE_EXAMPLES, _package_parser
-
-    handle_schema_flag(_package_parser, "nvflare package", _PACKAGE_EXAMPLES, sys.argv[1:])
-
-    # Step 2: Validate required args and endpoint up front (before any file I/O)
-    input_path = getattr(args, "input", None)
-    has_signed_zip_input = bool(input_path)
-    has_project_file = bool(getattr(args, "project_file", None))
-    has_dir = bool(getattr(args, "dir", None))
-    has_explicit = any(getattr(args, attr, None) for attr in ("cert", "key", "rootca"))
-
-    if has_signed_zip_input and not str(input_path).lower().endswith(".signed.zip"):
-        output_error_message(
-            "INVALID_ARGS",
-            f"Unsupported package input: {input_path}.",
-            "Provide a .signed.zip file produced by 'nvflare cert approve'.",
-            None,
-            exit_code=4,
-        )
-        return 1
-
-    if has_signed_zip_input and any(getattr(args, attr, None) for attr in ("name", "dir", "cert", "key", "rootca")):
-        output_error_message(
-            "INVALID_ARGS",
-            "Positional signed zip input cannot be combined with legacy material inputs.",
-            "Use --request-dir to point to the local request folder for signed zip mode.",
-            None,
-            exit_code=4,
-        )
-        return 1
-
-    if not has_signed_zip_input and not has_dir and not has_explicit:
-        output_error_message(
-            "INVALID_ARGS",
-            "Signed zip input is required.",
-            "Use: nvflare package <identity>.signed.zip -e <endpoint>",
-            None,
-            exit_code=4,
-        )
-        return 1
-
-    has_rootca_verify_option = bool(getattr(args, "expected_rootca_fingerprint", None)) or bool(
-        getattr(args, "confirm_rootca", False)
-    )
-    if has_rootca_verify_option and not has_signed_zip_input:
-        output_error_message(
-            "INVALID_ARGS",
-            "Root CA fingerprint verification options require signed zip input.",
-            "Use the distributed provisioning form: nvflare package <signed.zip> -e <endpoint>.",
-            None,
-            exit_code=4,
-        )
-        return 1
-
-    if has_project_file and getattr(args, "name", None):
-        output_error_message(
-            "INVALID_ARGS",
-            "--project-file and participant name are mutually exclusive.",
-            "Use signed zip mode for the public distributed provisioning workflow.",
-            None,
-            exit_code=4,
-        )
-        return 1
-
-    if has_project_file and any(getattr(args, attr, None) for attr in ("cert", "key", "rootca")):
-        output_error_message(
-            "INVALID_ARGS",
-            "--project-file and explicit material files are mutually exclusive.",
-            "In internal yaml mode, cert files are discovered from the material directory by participant name.",
-            None,
-            exit_code=4,
-        )
-        return 1
+def _handle_internal_material_package(args, has_dir: bool, has_explicit: bool):
+    from nvflare.tool.package.package_cli import _package_parser
 
     if not getattr(args, "endpoint", None):
         detail = "for this command"
         output_usage_error(
             _package_parser if not is_json_mode() else None,
-            f"--endpoint is required {detail}.",
+            f"Server endpoint URI is required {detail}.",
             exit_code=4,
             hint="Provide the server endpoint URI, e.g. grpc://server.example.com:8002",
         )
@@ -1956,17 +2055,6 @@ def handle_package(args):
         output_error("INVALID_ENDPOINT", exit_code=4, endpoint=args.endpoint)
         return 1
 
-    if has_signed_zip_input:
-        return _handle_signed_zip_package(args, scheme, host, port)
-
-    # -----------------------------------------------------------------------
-    # Internal YAML mode: build kits for all participants defined in the yaml file
-    # using a material directory with per-participant certs named by CN.
-    # -----------------------------------------------------------------------
-    if has_project_file:
-        return _handle_package_yaml_mode(args, scheme, host, port)
-
-    # Step 4: Resolve internal material-directory mode vs explicit material files.
     if has_dir and has_explicit:
         output_error_message(
             "INVALID_ARGS",
@@ -1987,15 +2075,12 @@ def handle_package(args):
         return 1
 
     if has_dir:
-        # Auto-detect name from *.key if the internal caller did not provide it.
         if not args.name:
             args.name = _discover_name_from_dir(args.dir)
-        # Resolve paths by convention: all files are named after the participant
         args.cert = os.path.join(args.dir, f"{args.name}.crt")
         args.key = os.path.join(args.dir, f"{args.name}.key")
         args.rootca = os.path.join(args.dir, "rootCA.pem")
     else:
-        # Explicit internal material mode: all three paths and participant name are required.
         missing = [f"--{f}" for f in ("cert", "key", "rootca") if not getattr(args, f, None)]
         if missing:
             output_error_message(
@@ -2016,7 +2101,6 @@ def handle_package(args):
             )
             return 1
 
-    # Step 5: Guard sentinel name collision (host collision check happens after kit_type is known).
     if args.name == _DUMMY_SERVER_NAME:
         output_error_message(
             "INVALID_ARGS",
@@ -2027,7 +2111,6 @@ def handle_package(args):
         )
         return 1
 
-    # Step 6: Validate resolved cert/key/rootca exist
     if not os.path.isfile(args.cert):
         if has_dir:
             hint = (
@@ -2074,6 +2157,7 @@ def handle_package(args):
         scheme=scheme,
         host=host,
         port=port,
+        admin_port=getattr(args, "admin_port", None),
         name=args.name,
         org=_DUMMY_ORG,
         kit_type=args.kit_type,
@@ -2086,3 +2170,66 @@ def handle_package(args):
         return result
     output_ok(result)
     return 0
+
+
+def handle_package(args):
+    """Assemble a startup kit from locally generated key + Project Admin cert + rootCA.pem."""
+
+    # Step 1: --schema check (before any other work)
+    from nvflare.tool.package.package_cli import _PACKAGE_EXAMPLES, _package_parser
+
+    handle_schema_flag(_package_parser, "nvflare package", _PACKAGE_EXAMPLES, sys.argv[1:])
+
+    # Step 2: Validate required args and endpoint up front (before any file I/O)
+    input_path = getattr(args, "input", None)
+    has_signed_zip_input = bool(input_path)
+    has_dir = bool(getattr(args, "dir", None))
+    has_explicit = any(getattr(args, attr, None) for attr in ("cert", "key", "rootca"))
+
+    if has_signed_zip_input and not str(input_path).lower().endswith(".signed.zip"):
+        output_error_message(
+            "INVALID_ARGS",
+            f"Unsupported package input: {input_path}.",
+            "Provide a .signed.zip file produced by 'nvflare cert approve'.",
+            None,
+            exit_code=4,
+        )
+        return 1
+
+    if has_signed_zip_input and any(getattr(args, attr, None) for attr in ("name", "dir", "cert", "key", "rootca")):
+        output_error_message(
+            "INVALID_ARGS",
+            "Positional signed zip input cannot be combined with material inputs.",
+            "Use --request-dir to point to the local request folder for signed zip mode.",
+            None,
+            exit_code=4,
+        )
+        return 1
+
+    if not has_signed_zip_input and not has_dir and not has_explicit:
+        output_error_message(
+            "INVALID_ARGS",
+            "Signed zip input is required.",
+            "Use: nvflare package <identity>.signed.zip",
+            None,
+            exit_code=4,
+        )
+        return 1
+
+    has_rootca_verify_option = bool(getattr(args, "expected_rootca_fingerprint", None)) or bool(
+        getattr(args, "confirm_rootca", False)
+    )
+    if has_rootca_verify_option and not has_signed_zip_input:
+        output_error_message(
+            "INVALID_ARGS",
+            "Root CA fingerprint verification options require signed zip input.",
+            "Use the distributed provisioning form: nvflare package <signed.zip>.",
+            None,
+            exit_code=4,
+        )
+        return 1
+
+    if has_signed_zip_input:
+        return _handle_signed_zip_package(args)
+
+    return _handle_internal_material_package(args, has_dir, has_explicit)

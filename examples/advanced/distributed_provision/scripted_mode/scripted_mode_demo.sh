@@ -1,292 +1,259 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Scripted-mode demo for automating distributed provisioning.
+# Simple scripted-mode demo for the same federation used by interactive_mode.
 #
-# This file intentionally uses only the public CLI commands that an automation
-# service should call:
-#   1. nvflare cert init
-#   2. nvflare cert request
-#   3. nvflare cert approve
-#   4. nvflare package
+# Initial setup:
+#   1. Project Admin initializes the CA.
 #
-# The demo runs all roles on one machine so it can be executed end-to-end. In a
-# real deployment, "cert request" and "package" usually run on the requester
-# side, while "cert init" and "cert approve" run on the Project Admin side.
+# What the default mode automates:
+#   1. Requesters create request zips from the checked-in participant YAML files.
+#   2. The local demo copies request zips to simulate handoff to Project Admin.
+#   3. Project Admin approves each request zip.
+#   4. Requesters package startup kits with an expected root CA fingerprint.
 #
-# Artifacts written under <work_dir>:
-#   ca/                         Project Admin CA material
-#   requests/<name>/            Requester private key, CSR, metadata, request zip
-#   signed/<name>.signed.zip    Project Admin signed response zip
-#   workspace/                  Generated startup kits
-#   request_<name>.json         JSON output from cert request
-#   approve_<name>.json         JSON output from cert approve
-#   package_<name>.json         JSON output from package
-#
-# Usage:
-#   ./scripted_mode_demo.sh <project_name> <server_endpoint> <work_dir> <site_yaml...>
-# Each site YAML is a single-participant identity file with: name, org, type.
+# What --add mode automates:
+#   1. Add one new participant after the project has started.
+#   2. Reuse the existing CA and skip cert init.
+#   3. Run request, approve, and package for only that new participant.
 
-json_error() {
-  local exit_code="$1"
-  local error_code="$2"
-  local message="$3"
-  if command -v jq >/dev/null 2>&1; then
-    jq -n -c \
-      --argjson exit_code "${exit_code}" \
-      --arg error_code "${error_code}" \
-      --arg message "${message}" \
-      '{status:"error", exit_code:$exit_code, error_code:$error_code, message:$message}'
-  else
-    printf '{"status":"error","exit_code":%s,"error_code":"%s","message":"%s"}\n' \
-      "${exit_code}" "${error_code}" "${message}"
-  fi
-  exit "${exit_code}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_NAME="fed_project"
+
+# Demo inputs. These YAML files are checked in the parent example directory.
+PARTICIPANTS=(
+  "server.example.com:server.yaml"
+  "site-1:site-1.yaml"
+  "site-2:site-2.yaml"
+  "alice@nvidia.com:alice.yaml"
+)
+
+# Helper functions used by the setup and automation steps.
+usage() {
+  cat <<EOF
+Usage:
+  $0 [work_dir]
+  $0 --add <name> <participant_yaml> [work_dir]
+
+Runs the scripted distributed provisioning demo with the same inputs as
+the parent distributed_provision directory.
+
+Run from:
+  examples/advanced/distributed_provision
+
+Example:
+  ./scripted_mode/scripted_mode_demo.sh
+
+Default work_dir: ./distprov_demo, relative to your current directory.
+EOF
 }
 
 require_command() {
-  command -v "$1" >/dev/null 2>&1 || json_error 2 "MISSING_DEPENDENCY" "Missing $1"
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Missing required command: $1" >&2
+    exit 2
+  fi
 }
 
-json_event() {
-  local step="$1"
-  local message="$2"
-  jq -n -c --arg step "${step}" --arg message "${message}" '{step:$step, message:$message}'
-}
-
-parse_site_yaml() {
-  # Translate the small single-participant YAML used by this example into the
-  # public cert request command shape. This keeps the example input simple while
-  # still covering sites, servers, and admin users.
-  python3 - "$1" <<'PY'
+json_field() {
+  python3 - "$1" "$2" <<'PY'
+import json
 import sys
 
-import yaml
-
 path = sys.argv[1]
+field_path = sys.argv[2].split(".")
+
 with open(path, "r", encoding="utf-8") as f:
-    data = yaml.safe_load(f)
+    value = json.load(f)
 
-if not isinstance(data, dict):
-    raise SystemExit(f"{path}: site yaml must be a mapping")
+for field in field_path:
+    value = value[field]
 
-name = data.get("name")
-org = data.get("org")
-site_type = data.get("type")
-missing = [field for field, value in (("name", name), ("org", org), ("type", site_type)) if not value]
-if missing:
-    raise SystemExit(f"{path}: missing required field(s): {', '.join(missing)}")
-
-role = ""
-if site_type == "client":
-    kind = "site"
-elif site_type == "server":
-    kind = "server"
-elif site_type == "org_admin":
-    kind = "user"
-    role = "org-admin"
-elif site_type in ("lead", "member"):
-    kind = "user"
-    role = site_type
-else:
-    raise SystemExit(f"{path}: unsupported type {site_type!r}")
-
-print(f"{name}\t{org}\t{site_type}\t{kind}\t{role}")
+print(value)
 PY
 }
 
-run_cert_request() {
-  local site_yaml="$1"
-  local site_info site_name site_org site_type request_kind request_role
-  local site_request_dir request_json request_zip
-
-  site_info="$(parse_site_yaml "${site_yaml}")" || json_error 1 "INVALID_SITE_YAML" "Failed to parse ${site_yaml}"
-  IFS=$'\t' read -r site_name site_org site_type request_kind request_role <<<"${site_info}"
-
-  if [[ "${site_name}" == "null" || -z "${site_name}" ]]; then
-    json_error 1 "INVALID_SITE_YAML" "site yaml did not include a valid participant name: ${site_yaml}"
-  fi
-  if [[ "${SEEN_SITE_NAMES}" == *" ${site_name} "* ]]; then
-    json_error 1 "DUPLICATE_SITE_NAME" "duplicate participant name in scripted mode input: ${site_name}"
-  fi
-
-  site_request_dir="${REQUESTS_DIR}/${site_name}"
-  request_json="${WORK_DIR}/request_${site_name}.json"
-  mkdir -m 0700 -p "${site_request_dir}"
-
-  jq -n -c \
-    --arg site "${site_name}" \
-    --arg file "${site_yaml}" \
-    --arg dir "${site_request_dir}" \
-    '{
-      step:"cert request",
-      site:$site,
-      site_yaml:$file,
-      request_dir:$dir,
-      note:"Requester creates a private key locally and sends only the request zip to the Project Admin."
-    }'
-
-  if [[ "${request_kind}" == "user" ]]; then
-    nvflare cert request user "${request_role}" "${site_name}" \
-      --org "${site_org}" \
-      --project "${PROJECT_NAME}" \
-      --out "${site_request_dir}" \
-      --force \
-      --format json >"${request_json}"
-  else
-    nvflare cert request "${request_kind}" "${site_name}" \
-      --org "${site_org}" \
-      --project "${PROJECT_NAME}" \
-      --out "${site_request_dir}" \
-      --force \
-      --format json >"${request_json}"
-  fi
-
-  request_zip="$(jq -r '.data.request_zip' <"${request_json}")"
-  if [[ "${request_zip}" == "null" || -z "${request_zip}" ]]; then
-    json_error 1 "INVALID_REQUEST_OUTPUT" "cert request output did not include a valid request_zip path."
-  fi
-
-  SITE_NAMES+=("${site_name}")
-  REQUEST_DIRS+=("${site_request_dir}")
-  REQUEST_ZIPS+=("${request_zip}")
-  SEEN_SITE_NAMES+="${site_name} "
+show() {
+  printf '\n== %s ==\n' "$1"
 }
 
-run_cert_approve() {
-  local index="$1"
-  local site_name request_zip signed_zip approve_json rootca_fp
-
-  site_name="${SITE_NAMES[$index]}"
-  request_zip="${REQUEST_ZIPS[$index]}"
-  signed_zip="${SIGNED_DIR}/${site_name}.signed.zip"
-  approve_json="${WORK_DIR}/approve_${site_name}.json"
-
-  jq -n -c \
-    --arg site "${site_name}" \
-    --arg request_zip "${request_zip}" \
-    --arg signed_zip "${signed_zip}" \
-    '{
-      step:"cert approve",
-      site:$site,
-      request_zip:$request_zip,
-      signed_zip:$signed_zip,
-      note:"Project Admin validates the request zip, signs the CSR, and returns a signed zip."
-    }'
-
-  nvflare cert approve "${request_zip}" \
-    -c "${CA_DIR}" \
-    --out "${signed_zip}" \
-    --force \
-    --format json >"${approve_json}"
-
-  rootca_fp="$(jq -r '.data.rootca_fingerprint_sha256' <"${approve_json}")"
-  if [[ "${rootca_fp}" == "null" || -z "${rootca_fp}" ]]; then
-    json_error 1 "INVALID_APPROVE_OUTPUT" "cert approve output did not include rootca_fingerprint_sha256."
-  fi
-
-  SIGNED_ZIPS+=("${signed_zip}")
-  ROOTCA_FPS+=("${rootca_fp}")
+run_logged() {
+  echo "+ $*"
+  "$@"
 }
 
-run_package() {
-  local index="$1"
-  local site_name site_request_dir signed_zip package_json
-
-  site_name="${SITE_NAMES[$index]}"
-  site_request_dir="${REQUEST_DIRS[$index]}"
-  signed_zip="${SIGNED_ZIPS[$index]}"
-  package_json="${WORK_DIR}/package_${site_name}.json"
-
-  jq -n -c \
-    --arg site "${site_name}" \
-    --arg signed_zip "${signed_zip}" \
-    --arg request_dir "${site_request_dir}" \
-    '{
-      step:"package",
-      site:$site,
-      signed_zip:$signed_zip,
-      request_dir:$request_dir,
-      note:"Requester combines signed zip, local private key, endpoint, and expected root CA fingerprint."
-    }'
-
-  nvflare package "${signed_zip}" \
-    -e "${SERVER_ENDPOINT}" \
-    --request-dir "${site_request_dir}" \
-    --expected-rootca-fingerprint "${ROOTCA_FPS[$index]}" \
-    -w "${WORKSPACE_DIR}" \
-    --force \
-    --format json >"${package_json}"
+run_logged_to_file() {
+  local output_file="$1"
+  shift
+  echo "+ $* > ${output_file}"
+  "$@" >"${output_file}"
 }
 
-emit_summary() {
-  # Emit compact newline-delimited JSON so automation can pipe the script output
-  # into jq, a log collector, or a CI system.
-  jq -c '{step:"cert init result", data:.data}' <"${WORK_DIR}/ca.json"
-  for i in "${!SITE_NAMES[@]}"; do
-    local site_name="${SITE_NAMES[$i]}"
-    jq -c --arg site "${site_name}" '{step:"cert request result", site:$site, data:.data}' \
-      <"${WORK_DIR}/request_${site_name}.json"
-    jq -c --arg site "${site_name}" '{step:"cert approve result", site:$site, data:.data}' \
-      <"${WORK_DIR}/approve_${site_name}.json"
-    jq -n -c --arg site "${site_name}" --arg fp "${ROOTCA_FPS[$i]}" \
-      '{step:"rootca verification input", site:$site, expected_rootca_fingerprint_sha256:$fp}'
-    jq -c --arg site "${site_name}" '{step:"package result", site:$site, data:.data}' \
-      <"${WORK_DIR}/package_${site_name}.json"
-  done
+yaml_path() {
+  case "$1" in
+    /*) printf '%s\n' "$1" ;;
+    *) printf '%s/%s\n' "${BASE_DIR}" "$1" ;;
+  esac
 }
 
-PROJECT_NAME="${1:-}"
-SERVER_ENDPOINT="${2:-}"
-WORK_DIR="${3:-}"
-if [[ $# -ge 3 ]]; then
-  shift 3
+request_participant() {
+  local name="$1"
+  local yaml="$2"
+  local output_file="$3"
+
+  run_logged_to_file "${output_file}" \
+    nvflare cert request --participant "$(yaml_path "${yaml}")" --out "${name}" --force --format json
+}
+
+approve_participant() {
+  local name="$1"
+  local output_file="$2"
+
+  run_logged_to_file "${output_file}" \
+    nvflare cert approve "${name}.request.zip" --ca-dir ca --profile "${BASE_DIR}/project_profile.yaml" --force --format json
+}
+
+package_participant() {
+  local name="$1"
+  local approve_json="$2"
+  local output_file="$3"
+  local rootca_fp
+
+  rootca_fp="$(json_field "${approve_json}" data.rootca_fingerprint_sha256)"
+  run_logged_to_file "${output_file}" \
+    nvflare package "${name}.signed.zip" --expected-rootca-fingerprint "${rootca_fp}" --force --format json
+}
+
+# Process command-line arguments and check required commands.
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
 fi
-SITE_YAMLS=("$@")
 
-if [[ -z "${PROJECT_NAME}" || -z "${SERVER_ENDPOINT}" || -z "${WORK_DIR}" || ${#SITE_YAMLS[@]} -eq 0 ]]; then
-  json_error 2 "INVALID_ARGS" "Usage: $0 <project_name> <server_endpoint> <work_dir> <site_yaml...>"
+MODE="initial"
+WORK_DIR="${1:-./distprov_demo}"
+DYNAMIC_NAME=""
+DYNAMIC_YAML=""
+
+if [[ "${1:-}" == "--add" ]]; then
+  if [[ -z "${2:-}" || -z "${3:-}" ]]; then
+    usage >&2
+    exit 2
+  fi
+  MODE="add"
+  DYNAMIC_NAME="$2"
+  DYNAMIC_YAML="$3"
+  WORK_DIR="${4:-./distprov_demo}"
 fi
 
 require_command nvflare
-require_command jq
 require_command python3
 
-CA_DIR="${WORK_DIR}/ca"
-REQUESTS_DIR="${WORK_DIR}/requests"
-SIGNED_DIR="${WORK_DIR}/signed"
-WORKSPACE_DIR="${WORK_DIR}/workspace"
+if [[ "${MODE}" == "initial" ]]; then
+  # Setup the output directory. The initial demo requires a fresh work directory
+  # so a run does not mix old request, signed zip, or prod_NN artifacts with new
+  # output.
+  if [[ -e "${WORK_DIR}" ]]; then
+    echo "Work directory already exists: ${WORK_DIR}" >&2
+    echo "Choose a new path or remove the existing directory first." >&2
+    exit 1
+  fi
 
-mkdir -m 0700 -p "${CA_DIR}"
-mkdir -m 0700 -p "${REQUESTS_DIR}" "${SIGNED_DIR}" "${WORKSPACE_DIR}"
+  umask 077
+  mkdir -p "${WORK_DIR}"
+else
+  # Dynamic add mode is intentionally run against an existing project work
+  # directory. It reuses ca/ and skips cert init.
+  if [[ ! -d "${WORK_DIR}" ]]; then
+    echo "Work directory does not exist: ${WORK_DIR}" >&2
+    echo "Run the initial demo first, or pass the existing work directory." >&2
+    exit 1
+  fi
+  if [[ ! -d "${WORK_DIR}/ca" ]]; then
+    echo "Missing CA directory: ${WORK_DIR}/ca" >&2
+    echo "Dynamic add mode requires an existing CA from the initial setup." >&2
+    exit 1
+  fi
+fi
 
-SITE_NAMES=()
-REQUEST_DIRS=()
-REQUEST_ZIPS=()
-SIGNED_ZIPS=()
-ROOTCA_FPS=()
-SEEN_SITE_NAMES=" "
+WORK_DIR="$(cd "${WORK_DIR}" && pwd)"
 
-# Phase 1: Project Admin creates or refreshes the project CA.
-json_event "cert init" "Project Admin initializes the project CA. --force replaces existing CA material in this demo work directory."
-nvflare cert init --project "${PROJECT_NAME}" -o "${CA_DIR}" --force --format json >"${WORK_DIR}/ca.json"
+cd "${WORK_DIR}"
+echo "Working directory: ${WORK_DIR}"
 
-# Phase 2: each requester creates a request zip. The private key remains under
-# requests/<name>/ and is never copied into the request zip.
-for site_yaml in "${SITE_YAMLS[@]}"; do
-  run_cert_request "${site_yaml}"
+if [[ "${MODE}" == "add" ]]; then
+  # Dynamic provisioning process for one participant added after project start.
+  show "Dynamic add: requester creates request zip"
+  request_participant "${DYNAMIC_NAME}" "${DYNAMIC_YAML}" "06_dynamic_request_${DYNAMIC_NAME}.json"
+
+  show "Dynamic add: local demo handoff copies request zip"
+  run_logged cp "${DYNAMIC_NAME}/${DYNAMIC_NAME}.request.zip" .
+
+  show "Dynamic add: Project Admin approves request zip"
+  approve_participant "${DYNAMIC_NAME}" "07_dynamic_approve_${DYNAMIC_NAME}.json"
+
+  show "Dynamic add: requester packages startup kit"
+  package_participant "${DYNAMIC_NAME}" "07_dynamic_approve_${DYNAMIC_NAME}.json" "08_dynamic_package_${DYNAMIC_NAME}.json"
+
+  run_logged_to_file 09_dynamic_startup_dirs.txt \
+    find workspace/fed_project -path "*/startup" -type d
+
+  show "Result"
+  echo "Startup kits:"
+  sort 09_dynamic_startup_dirs.txt
+  echo
+  echo "Done. New participant kit generated under: ${WORK_DIR}/workspace"
+  exit 0
+fi
+
+# Setup step: Project Admin creates the CA material needed to approve requests.
+show "Project Admin initializes CA"
+run_logged_to_file 01_cert_init.json \
+  nvflare cert init --project "${PROJECT_NAME}" -o ca --force --format json
+
+# Start of the automated distributed provisioning process.
+#
+# Requester side: each participant creates a request zip. The local request
+# folder contains the private key and stays with that requester.
+show "Requesters create request zips"
+for item in "${PARTICIPANTS[@]}"; do
+  name="${item%%:*}"
+  yaml="${item#*:}"
+  request_participant "${name}" "${yaml}" "02_request_${name}.json"
 done
 
-# Phase 3: Project Admin approves each request zip and captures the root CA
-# fingerprint that requesters should verify out-of-band.
-for i in "${!SITE_NAMES[@]}"; do
-  run_cert_approve "${i}"
+# Local demo handoff: copy only request zips into the Project Admin's working
+# location. This models the artifact transfer; private keys remain in the
+# participant request folders.
+show "Local demo handoff copies request zips"
+for item in "${PARTICIPANTS[@]}"; do
+  name="${item%%:*}"
+  run_logged cp "${name}/${name}.request.zip" .
 done
 
-# Phase 4: each requester packages its own startup kit. Automation should use
-# --expected-rootca-fingerprint; interactive humans can use --confirm-rootca.
-for i in "${!SITE_NAMES[@]}"; do
-  run_package "${i}"
+# Project Admin side: approve each received request zip with the CA and project
+# profile, then return the generated signed zip to the matching requester.
+show "Project Admin approves request zips"
+for item in "${PARTICIPANTS[@]}"; do
+  name="${item%%:*}"
+  approve_participant "${name}" "03_approve_${name}.json"
 done
 
-emit_summary
+# Requester side: package each startup kit. Automation passes the root CA
+# fingerprint from the approval output instead of prompting a human.
+show "Requesters package startup kits"
+for item in "${PARTICIPANTS[@]}"; do
+  name="${item%%:*}"
+  package_participant "${name}" "03_approve_${name}.json" "04_package_${name}.json"
+done
+
+# Summarize the generated startup-kit directories for quick inspection.
+run_logged_to_file 05_startup_dirs.txt \
+  find workspace/fed_project -path "*/startup" -type d
+
+show "Result"
+echo "Startup kits:"
+sort 05_startup_dirs.txt
+echo
+echo "Done. Inspect JSON command outputs and generated kits under: ${WORK_DIR}"

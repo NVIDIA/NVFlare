@@ -4,8 +4,8 @@
 Cert Command
 ############
 
-The ``nvflare cert`` command family manages certificate material for distributed
-provisioning. It is used by both requesters and the Project Admin.
+The ``nvflare cert`` command family manages certificate material for
+distributed provisioning. It is used by both requesters and the Project Admin.
 
 The public subcommands are:
 
@@ -28,7 +28,7 @@ The Project Admin runs ``cert init`` once per federation:
 
 .. code-block:: shell
 
-   nvflare cert init --project example_project --org nvidia -o ./ca
+   nvflare cert init --project hospital_federation -o ./ca
 
 This creates:
 
@@ -36,11 +36,19 @@ This creates:
 - ``./ca/rootCA.key``: root CA private key; keep this secret
 - ``./ca/ca.json``: CA metadata
 
-Common options:
+The Project Admin also creates a project profile for approvals:
 
-- ``--project``: project name. Required. Must be a path-safe identifier
-  matching ``[A-Za-z0-9][A-Za-z0-9._-]*``.
-- ``--org``: organization name.
+.. code-block:: yaml
+
+   name: hospital_federation
+   scheme: grpc
+   connection_security: tls
+
+Common ``init`` options:
+
+- ``--project``: project name. Required. Must match the project profile
+  ``name``.
+- ``--org``: optional organization name for the root CA certificate's O field.
 - ``-o, --output-dir``: CA output directory. Required.
 - ``--valid-days``: root CA validity in days. Default: ``3650``.
 - ``--force``: overwrite existing CA files after backing them up.
@@ -51,50 +59,63 @@ Create a Request Zip
 ********************
 
 The requester runs ``cert request`` on the machine that should own the private
-key. The command creates a private key, CSR, metadata, and request zip.
+key. The command reads one participant definition file, creates a private key,
+CSR, metadata, and request zip.
 
 Client site request:
 
 .. code-block:: shell
 
-   nvflare cert request site site-3 --org nvidia --project example_project
+   nvflare cert request --participant hospital-a.yaml
 
 Server request:
 
 .. code-block:: shell
 
-   nvflare cert request server server1 --org nvidia --project example_project
+   nvflare cert request --participant server.yaml
 
 User request:
 
 .. code-block:: shell
 
-   nvflare cert request user org-admin org_admin@nvidia.com --org nvidia --project example_project
-   nvflare cert request user lead lead@nvidia.com --org nvidia --project example_project
-   nvflare cert request user member member@nvidia.com --org nvidia --project example_project
+   nvflare cert request --participant alice.yaml
 
-By default, ``cert request`` writes to ``./<name>/``. For ``site-3``:
+A participant definition contains the project name and one participant entry:
+
+.. code-block:: yaml
+
+   name: hospital_federation
+
+   participants:
+     - name: hospital-a
+       type: client
+       org: hospital_alpha
+       server:
+         host: server1.hospital-central.org
+         fed_learn_port: 8002
+         admin_port: 8003
+
+For users, use ``type: admin`` and set ``role`` to ``org_admin``, ``lead``, or
+``member``.
+
+By default, ``cert request`` writes to ``./<name>/``. For ``hospital-a``:
 
 .. code-block:: text
 
-   site-3/
-     site-3.key
-     site-3.csr
+   hospital-a/
+     hospital-a.key
+     hospital-a.csr
      site.yaml
      request.json
-     site-3.request.zip
+     hospital-a.request.zip
 
-Send only ``site-3.request.zip`` to the Project Admin. The private key remains
-local and is not included in the zip.
+Send only ``hospital-a.request.zip`` to the Project Admin. The private key
+remains local and is not included in the zip.
 
-Common options:
+Common ``request`` options:
 
-- ``kind``: ``site``, ``server``, or ``user``.
-- ``values``: for ``site`` and ``server``, the identity name; for ``user``,
-  ``<cert-role> <email>``.
-- ``--org``: organization name. Required.
-- ``--project``: project name. Required.
-- ``--out``: request folder. Default: ``./<name>``.
+- ``-p, --participant``: participant definition file. Required.
+- ``--out``: request folder. Default: ``./<participant-name>``.
 - ``--force``: overwrite existing request files.
 - ``--schema``: print JSON schema for this command.
 
@@ -102,18 +123,19 @@ Common options:
 Approve a Request Zip
 *********************
 
-The Project Admin runs ``cert approve`` with the project CA:
+The Project Admin runs ``cert approve`` with the project CA and project
+profile:
 
 .. code-block:: shell
 
-   nvflare cert approve site-3.request.zip --ca-dir ./ca
+   nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 This validates the request zip, verifies that the request project matches the
-CA metadata and root CA subject, signs the CSR, and creates:
+CA and project profile, signs the CSR, and creates:
 
 .. code-block:: text
 
-   site-3.signed.zip
+   hospital-a.signed.zip
 
 Return the signed zip to the requester.
 
@@ -125,13 +147,18 @@ Use ``--out`` to choose the signed zip location:
 
 .. code-block:: shell
 
-   nvflare cert approve site-3.request.zip --ca-dir ./ca --out ./signed/site-3.signed.zip
+   nvflare cert approve hospital-a.request.zip \
+       --ca-dir ./ca \
+       --profile project_profile.yaml \
+       --out ./signed/hospital-a.signed.zip
 
-Common options:
+Common ``approve`` options:
 
 - ``request_zip``: request zip produced by ``nvflare cert request``. Required.
 - ``-c, --ca-dir``: directory containing ``rootCA.pem``, ``rootCA.key``, and
   ``ca.json``. Required.
+- ``--profile``: Project Admin's ``project_profile.yaml`` containing
+  ``name``, ``scheme``, and ``connection_security``. Required.
 - ``--out``: signed zip output path. Default: ``<name>.signed.zip`` next to the
   request zip.
 - ``--valid-days``: participant certificate validity in days. Default:
@@ -147,19 +174,26 @@ Requester:
 
 .. code-block:: shell
 
-   nvflare cert request site site-3 --org nvidia --project example_project
+   nvflare cert request --participant hospital-a.yaml
 
 Project Admin:
 
 .. code-block:: shell
 
-   nvflare cert approve site-3.request.zip --ca-dir ./ca
+   nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 Requester:
 
 .. code-block:: shell
 
-   nvflare package site-3.signed.zip -e grpc://server1:8002 --request-dir ./site-3 --confirm-rootca
+   nvflare package hospital-a.signed.zip --confirm-rootca
 
-For the full workflow, including package options and artifact layout, see
-:ref:`distributed_provisioning`.
+For the full workflow, including participant definition examples and artifact
+layout, see :ref:`distributed_provisioning`.
+
+.. note::
+
+   **Compatibility:** Request zips produced before this release do not contain
+   a ``site_yaml_sha256`` integrity field and will be rejected by
+   ``nvflare cert approve``. Regenerate the request zip with
+   ``nvflare cert request`` before running approve.

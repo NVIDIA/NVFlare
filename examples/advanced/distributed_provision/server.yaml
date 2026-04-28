@@ -1,0 +1,9 @@
+name: fed_project
+description: FL server for the example federation
+
+participants:
+  - name: server.example.com
+    type: server
+    org: nvidia
+    fed_learn_port: 8002
+    admin_port: 8003
