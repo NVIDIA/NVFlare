@@ -1655,7 +1655,41 @@ def _validate_local_site_identity(project_dict: dict, participant_def: dict, sig
     return True
 
 
-def _load_local_participant_context(request_dir: str, identity: dict, signed_meta: dict, kit_type: str):
+def _connection_fields_for_signed_compare(participant_def: dict, kit_type: str) -> dict:
+    if not isinstance(participant_def, dict):
+        return {}
+    if kit_type == "server":
+        return {
+            "fed_learn_port": participant_def.get("fed_learn_port"),
+            "admin_port": participant_def.get("admin_port"),
+        }
+    server = participant_def.get("server")
+    if not isinstance(server, dict):
+        return {"server": server}
+    return {
+        "server": {
+            "host": server.get("host"),
+            "fed_learn_port": server.get("fed_learn_port"),
+            "admin_port": server.get("admin_port"),
+        }
+    }
+
+
+def _validate_local_connection_fields(participant_def: dict, signed_participant_def: dict, kit_type: str) -> bool:
+    local_connection = _connection_fields_for_signed_compare(participant_def, kit_type)
+    signed_connection = _connection_fields_for_signed_compare(signed_participant_def, kit_type)
+    if local_connection != signed_connection:
+        _local_site_mismatch(
+            "connection endpoint fields differ from the signed zip; "
+            "regenerate the request and approval if the server endpoint changed"
+        )
+        return False
+    return True
+
+
+def _load_local_participant_context(
+    request_dir: str, identity: dict, signed_meta: dict, signed_site_meta: dict, kit_type: str
+):
     site_yaml_path = os.path.join(request_dir, "site.yaml")
     site_meta = _read_yaml_file_nofollow(
         site_yaml_path,
@@ -1670,6 +1704,13 @@ def _load_local_participant_context(request_dir: str, identity: dict, signed_met
         _local_site_mismatch(f"participant {identity.get('name')!r} was not found")
         return None, None, None, None
     if not _validate_local_site_identity(project_dict, participant_def, signed_meta):
+        return None, None, None, None
+    signed_project_dict = _local_project_dict_from_site(signed_site_meta, identity)
+    signed_participant_def = _find_participant_def(signed_project_dict, identity)
+    if signed_participant_def is None:
+        _local_site_mismatch(f"signed zip participant {identity.get('name')!r} was not found")
+        return None, None, None, None
+    if not _validate_local_connection_fields(participant_def, signed_participant_def, kit_type):
         return None, None, None, None
     try:
         project = prepare_project(copy.deepcopy(project_dict))
@@ -2009,7 +2050,7 @@ def _handle_signed_zip_package(args):
             local_participant,
             local_custom_builders,
             local_participant_def,
-        ) = _load_local_participant_context(resolved_request_dir, identity, signed_meta, cert_kit_type)
+        ) = _load_local_participant_context(resolved_request_dir, identity, signed_meta, site_meta, cert_kit_type)
         if local_project is None:
             return 1
 

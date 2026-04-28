@@ -502,6 +502,9 @@ Signed zip:
 The ``site.yaml`` in the local request folder is the full participant
 definition used later by ``nvflare package``. It can contain local
 package-time fields, such as the server-side ``connection_security`` override.
+Endpoint fields that are present in the signed zip, such as server host and
+ports, must still match the signed approval copy. If they are edited locally
+after approval, ``nvflare package`` fails with ``LOCAL_SITE_MISMATCH``.
 
 The ``site.yaml`` inside the request zip and signed zip is sanitized approval
 metadata. It contains the identity and connection fields needed for approval

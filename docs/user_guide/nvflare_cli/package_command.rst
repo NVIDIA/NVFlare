@@ -60,6 +60,8 @@ The command validates that:
 - the local private key matches the signed certificate;
 - the certificate chains to ``rootCA.pem``;
 - local ``request.json`` metadata and signed metadata match.
+- identity and connection endpoint fields in the local request-folder
+  ``site.yaml`` match the signed zip.
 
 The command always prints ``rootca_fingerprint_sha256`` in its result. Without
 ``--confirm-rootca`` or ``--expected-rootca-fingerprint``, packaging does not
@@ -90,6 +92,18 @@ Connection values are resolved from:
   ``scheme`` and default ``connection_security`` from ``project_profile.yaml``;
 - the original local participant definition in the request folder, which
   contains client and user ``server`` endpoint blocks.
+
+The server host and port fields are part of the signed approval metadata.
+During packaging, ``nvflare package`` compares those signed endpoint fields
+against the local request-folder ``site.yaml``. If a requester edits
+``server.host``, ``server.fed_learn_port``, or ``server.admin_port`` after
+approval, packaging fails with ``LOCAL_SITE_MISMATCH``. If the server endpoint
+really changed after approval, regenerate the request and signed zip instead of
+editing the local request folder.
+
+Local package-time fields that are intentionally excluded from the signed zip,
+such as custom builders and the server-side ``connection_security`` override,
+remain local packaging inputs.
 
 Client and user participant definitions include the server endpoint:
 

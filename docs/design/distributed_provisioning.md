@@ -745,8 +745,12 @@ The command validates:
 - The local private key matches the public key in the signed certificate.
 - The certificate chains to `rootCA.pem`.
 - Certificate CN, organization, project, and certificate type match the approved metadata.
-- Identity fields in the local participant definition match the approved metadata. Package-time
-  connection fields remain local site configuration and are not approved by the Project Admin.
+- Identity fields in the local participant definition match the approved metadata.
+- Local endpoint fields that are present in the signed approval `site.yaml` match the local
+  request-folder `site.yaml`. If host or port values changed after approval, packaging fails
+  and the requester must regenerate the request and signed zip.
+- Package-time fields intentionally excluded from the signed zip, such as custom builders and
+  the server-side `connection_security` override, remain local site configuration.
 
 **`connection_security` resolution is role-specific:**
 

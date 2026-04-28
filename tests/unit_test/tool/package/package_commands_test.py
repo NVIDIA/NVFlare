@@ -3161,6 +3161,72 @@ class TestDistributedProvisioningV2PackageMode:
         assert exc_info.value.code == 4
         resolve.assert_not_called()
 
+    @pytest.mark.parametrize(
+        "mutate",
+        [
+            lambda site: site["participants"][0]["server"].update({"host": "other-server.example.com"}),
+            lambda site: site["participants"][0]["server"].update({"fed_learn_port": 9002}),
+            lambda site: site["participants"][0]["server"].update({"admin_port": 9003}),
+        ],
+    )
+    def test_signed_zip_rejects_local_client_endpoint_changes_after_approval(self, tmp_path, capsys, mutate):
+        participant_definition = {
+            "name": "hospital_federation",
+            "participants": [
+                {
+                    "name": "hospital-a",
+                    "type": "client",
+                    "org": "hospital_alpha",
+                    "server": {
+                        "host": "server1.hospital-central.org",
+                        "fed_learn_port": 8002,
+                        "admin_port": 8003,
+                    },
+                }
+            ],
+        }
+        signed_zip, request_dir, _ = _make_v2_signed_zip(
+            tmp_path, participant_definition, scheme="grpc", default_connection_security="tls"
+        )
+        local_site = copy.deepcopy(participant_definition)
+        mutate(local_site)
+        (request_dir / "site.yaml").write_text(yaml.safe_dump(local_site, sort_keys=False))
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code == 4
+        assert "connection endpoint fields differ" in capsys.readouterr().err
+
+    def test_signed_zip_rejects_local_server_port_changes_after_approval(self, tmp_path, capsys):
+        participant_definition = {
+            "name": "hospital_federation",
+            "participants": [
+                {
+                    "name": "server1.hospital-central.org",
+                    "type": "server",
+                    "org": "hospital_central",
+                    "fed_learn_port": 8002,
+                    "admin_port": 8003,
+                    "connection_security": "clear",
+                }
+            ],
+        }
+        signed_zip, request_dir, _ = _make_v2_signed_zip(
+            tmp_path, participant_definition, scheme="grpc", default_connection_security="tls"
+        )
+        local_site = copy.deepcopy(participant_definition)
+        local_site["participants"][0]["fed_learn_port"] = 9002
+        (request_dir / "site.yaml").write_text(yaml.safe_dump(local_site, sort_keys=False))
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code == 4
+        assert "connection endpoint fields differ" in capsys.readouterr().err
+
     def test_signed_zip_relies_on_single_public_key_hash_validator(self, tmp_path):
         participant_definition = {
             "name": "hospital_federation",
