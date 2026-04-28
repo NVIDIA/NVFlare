@@ -34,14 +34,16 @@ Startup Kit Resolution
 All ``nvflare study`` commands connect to the server through an admin startup kit. Resolution
 is identical to all other server-connected ``nvflare`` commands (``job``, ``system``, etc.):
 
-1. ``--startup-kit <path>`` — explicit path to the startup kit directory or its ``startup/``
-   subdirectory.
-2. ``NVFLARE_STARTUP_KIT_DIR`` environment variable.
-3. ``~/.nvflare/config.conf`` — reads the ``poc`` target by default; reads ``prod`` when
-   ``--startup-target prod`` is given. Written by ``nvflare config``.
+1. ``NVFLARE_STARTUP_KIT_DIR`` environment variable.
+2. ``startup_kits.active`` from ``~/.nvflare/config.conf``.
+3. If neither resolves to a valid admin startup kit, the command fails before connecting.
 
-A user who has run ``nvflare config`` once does not need to pass any flag — the config file
-is consulted automatically. ``--startup-kit`` and ``--startup-target`` are mutually exclusive.
+A user can register and activate a startup kit once with :ref:`kit_command`:
+
+.. code-block:: shell
+
+   nvflare config kit add project_admin /path/to/admin@nvidia.com
+   nvflare config kit use project_admin
 
 If no source resolves, the command exits with error code 4 and ``"error_code": "STARTUP_KIT_MISSING"``.
 
@@ -74,16 +76,16 @@ Register a new study and enroll its initial set of sites.
        --site-org org_b:clinic-1
 
    # org_admin: register and enroll own org's sites
-   nvflare study register cancer-research --sites hospital-1,hospital-2
+   nvflare study register cancer-research --sites hospital-1 hospital-2
 
 Options:
 
 - ``<name>`` (required positional): name of the study to create.
 - ``--site-org <org>:<site>`` (project_admin): one or more ``org:site`` pairs; repeat the flag
   for multiple entries.
-- ``--sites <site>[,<site>...]`` (org_admin): comma-separated list of sites in the caller's
-  organisation.
-- ``--startup-target``, ``--startup-kit``: startup kit resolution (see above).
+- ``--sites <site> [<site> ...]`` (org_admin): one or more sites in the caller's
+  organisation. Comma-separated input such as ``--sites hospital-1,hospital-2`` is also
+  accepted.
 
 *********************
 Show a Study

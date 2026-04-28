@@ -223,6 +223,7 @@ Best suited for:
 * ``use_he`` (bool, optional): Whether to use HE. Defaults to ``False``.
 * ``docker_image`` (str, optional): Docker image to use for POC.
 * ``project_conf_path`` (str, optional): Path to the project configuration file.
+* ``study`` (str, optional): The study context for this execution environment. Jobs will be submitted and monitored within this study. Defaults to ``"default"``. Named studies require ``project_conf_path`` to point to a project with ``api_version: 4`` and ``studies:``. See :ref:`multi_study_guide`.
 
 Let's first set the path to the POC environment:
 
@@ -244,6 +245,18 @@ Let's first set the path to the POC environment:
    run.get_result()
 
 The result is stored under the directory ``/tmp/nvflare/poc``.
+
+To use a named study, point ``PocEnv`` to a custom project file that defines ``studies:``:
+
+.. code-block:: python
+
+   env = PocEnv(
+       num_clients=2,
+       project_conf_path="/tmp/nvflare/poc_project.yml",
+       study="cancer-research"  # omit for the default study
+   )
+
+If ``project_conf_path`` is not specified, or if the project does not define ``studies:``, the POC deployment behaves as single-tenant and only the ``default`` study is valid.
 
 ProdEnv – Production Environment
 --------------------------------

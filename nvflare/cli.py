@@ -30,6 +30,7 @@ from nvflare.private.fed.app.simulator.simulator import define_simulator_parser,
 from nvflare.private.fed.app.utils import version_check
 from nvflare.tool.cert.cert_cli import def_cert_cli_parser, handle_cert_cmd
 from nvflare.tool.job.job_cli import def_job_cli_parser, handle_job_cli_cmd
+from nvflare.tool.kit.kit_cli import def_kit_cli_parser, handle_kit_cmd
 from nvflare.tool.package.package_cli import def_package_cli_parser, handle_package_cmd
 from nvflare.tool.poc.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
@@ -37,15 +38,13 @@ from nvflare.tool.recipe.recipe_cli import def_recipe_parser, handle_recipe_cmd
 from nvflare.tool.study.study_cli import def_study_cli_parser, handle_study_cmd
 from nvflare.tool.system.system_cli import def_system_cli_parser, handle_system_cmd
 from nvflare.utils.cli_utils import (
-    TARGET_POC,
-    TARGET_PROD,
+    CONFIG_VERSION,
+    CURRENT_CONFIG_VERSION,
     backup_hidden_config_file,
-    create_job_template_config,
     create_poc_workspace_config,
-    create_startup_kit_config,
-    ensure_hidden_config_migrated,
+    find_startup_kit_config_keys,
     load_hidden_config_state,
-    print_hidden_config_migration_notice,
+    remove_startup_kit_config_keys,
     save_config,
 )
 
@@ -150,33 +149,8 @@ _config_parser = None
 def def_config_parser(sub_cmd):
     global _config_parser
     cmd = "config"
-    config_parser = sub_cmd.add_parser(cmd, help="configure local NVFlare settings (startup kit path, POC workspace)")
+    config_parser = sub_cmd.add_parser(cmd, help="configure local NVFlare settings")
     _config_parser = config_parser
-    config_parser.add_argument(
-        "--poc.startup_kit",
-        dest="poc_startup_kit_dir",
-        type=str,
-        nargs="?",
-        default=None,
-        help="POC startup kit location",
-    )
-    config_parser.add_argument(
-        "--prod.startup_kit",
-        dest="prod_startup_kit_dir",
-        type=str,
-        nargs="?",
-        default=None,
-        help="production startup kit location",
-    )
-    config_parser.add_argument(
-        "-d",
-        "--startup_kit_dir",
-        dest="legacy_startup_kit_dir",
-        type=str,
-        nargs="?",
-        default=None,
-        help=argparse.SUPPRESS,
-    )
     config_parser.add_argument(
         "-pw",
         "--poc.workspace",
@@ -186,11 +160,10 @@ def def_config_parser(sub_cmd):
         default=None,
         help="POC workspace location",
     )
-    config_parser.add_argument(
-        "-jt", "--job_templates_dir", type=str, nargs="?", default=None, help="job templates location"
-    )
     config_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     config_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    config_subparser = config_parser.add_subparsers(title="config subcommands", metavar="", dest="config_sub_cmd")
+    def_kit_cli_parser(config_subparser)
     return {cmd: config_parser}
 
 
@@ -198,90 +171,65 @@ def handle_config_cmd(args):
     from nvflare.tool.cli_output import output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
+    if getattr(args, "config_sub_cmd", None) == "kit":
+        handle_kit_cmd(args)
+        return
+
     handle_schema_flag(
         _config_parser,
         "nvflare config",
         [
-            "nvflare config --poc.startup_kit /path/to/poc_startup",
-            "nvflare config --prod.startup_kit /path/to/prod_startup",
             "nvflare config --poc.workspace /path/to/poc_workspace",
+            "nvflare config kit add project_admin /path/to/startup-kit",
+            "nvflare config kit use project_admin",
         ],
         sys.argv[1:],
     )
 
-    config_file_path, loaded_config, migration_needed = load_hidden_config_state()
+    config_file_path, loaded_config, _migration_needed = load_hidden_config_state()
     nvflare_config = loaded_config or CF.parse_string("{}")
-    requested_poc_startup = args.poc_startup_kit_dir
-    requested_prod_startup = args.prod_startup_kit_dir
     requested_poc_workspace = args.poc_workspace_dir
-    legacy_startup_kit_dir = getattr(args, "legacy_startup_kit_dir", None)
 
-    if legacy_startup_kit_dir is not None:
-        if requested_poc_startup is not None or requested_prod_startup is not None:
-            output_error(
-                "INVALID_ARGS",
-                exit_code=4,
-                detail="--startup_kit_dir cannot be used together with --poc.startup_kit or --prod.startup_kit",
-            )
-            raise SystemExit(4)
-        requested_poc_startup = legacy_startup_kit_dir
-        print_human(
-            "WARNING: 'nvflare config -d/--startup_kit_dir' is deprecated. "
-            "Use '--poc.startup_kit' for the same setting."
-        )
-
-    if (
-        requested_poc_startup is None
-        and requested_prod_startup is None
-        and requested_poc_workspace is None
-        and args.job_templates_dir is None
-    ):
+    if requested_poc_workspace is None:
         # Read-only: print existing config
-        poc_startup_kit_dir = nvflare_config.get("poc.startup_kit", None) if nvflare_config else None
-        prod_startup_kit_dir = nvflare_config.get("prod.startup_kit", None) if nvflare_config else None
-        startup_kit_dir = poc_startup_kit_dir or prod_startup_kit_dir
         poc_workspace_dir = nvflare_config.get("poc.workspace", None) if nvflare_config else None
-        job_templates_dir = nvflare_config.get("job_template.path", None) if nvflare_config else None
+        active_startup_kit = nvflare_config.get("startup_kits.active", None) if nvflare_config else None
         output_ok(
             {
                 "config_file": config_file_path,
-                "startup_kit_dir": startup_kit_dir,
-                "poc_startup_kit_dir": poc_startup_kit_dir,
-                "prod_startup_kit_dir": prod_startup_kit_dir,
                 "poc_workspace_dir": poc_workspace_dir,
-                "job_templates_dir": job_templates_dir,
+                "active_startup_kit": active_startup_kit,
             }
         )
         return
 
     try:
-        nvflare_config = create_startup_kit_config(nvflare_config, TARGET_POC, requested_poc_startup)
-        nvflare_config = create_startup_kit_config(nvflare_config, TARGET_PROD, requested_prod_startup)
         nvflare_config = create_poc_workspace_config(nvflare_config, requested_poc_workspace)
-        nvflare_config = create_job_template_config(nvflare_config, args.job_templates_dir)
+        removed_startup_kit_keys = find_startup_kit_config_keys(nvflare_config)
+        nvflare_config = remove_startup_kit_config_keys(nvflare_config)
     except ValueError as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
 
-    backup_path = backup_hidden_config_file(config_file_path) if migration_needed else None
+    nvflare_config.put(CONFIG_VERSION, CURRENT_CONFIG_VERSION)
+    backup_path = backup_hidden_config_file(config_file_path) if removed_startup_kit_keys else None
     save_config(nvflare_config, config_file_path)
-    if backup_path:
-        print_hidden_config_migration_notice(config_file_path, backup_path)
+    if removed_startup_kit_keys:
+        message = "Warning: removed startup kit config keys now managed by 'nvflare config kit': " + ", ".join(
+            removed_startup_kit_keys
+        )
+        if backup_path:
+            message += f"; backup saved to {backup_path}"
+        print_human(message)
 
-    poc_startup_kit_dir = nvflare_config.get("poc.startup_kit", None) if nvflare_config else requested_poc_startup
-    prod_startup_kit_dir = nvflare_config.get("prod.startup_kit", None) if nvflare_config else requested_prod_startup
-    startup_kit_dir = poc_startup_kit_dir or prod_startup_kit_dir
     poc_workspace_dir = nvflare_config.get("poc.workspace", None) if nvflare_config else requested_poc_workspace
-    job_templates_dir = nvflare_config.get("job_template.path", None) if nvflare_config else args.job_templates_dir
+    active_startup_kit = nvflare_config.get("startup_kits.active", None) if nvflare_config else None
 
     output_ok(
         {
             "config_file": config_file_path,
-            "startup_kit_dir": startup_kit_dir,
-            "poc_startup_kit_dir": poc_startup_kit_dir,
-            "prod_startup_kit_dir": prod_startup_kit_dir,
             "poc_workspace_dir": poc_workspace_dir,
-            "job_templates_dir": job_templates_dir,
+            "active_startup_kit": active_startup_kit,
         }
     )
 
@@ -441,6 +389,11 @@ def parse_args(prog_name: str):
         ns.poc_sub_cmd = sub_sub
         ns.system_sub_cmd = sub_sub
         ns.study_sub_cmd = sub_sub
+        ns.config_sub_cmd = sub_sub
+        if raw_cmd == CMD_CONFIG and sub_sub == "kit":
+            ns.kit_sub_cmd = positionals[2] if len(positionals) > 2 else None
+        else:
+            ns.kit_sub_cmd = sub_sub
         ns.cert_sub_command = sub_sub
         ns.recipe_sub_cmd = sub_sub or "list"
         ns.format = global_args.format
@@ -594,7 +547,6 @@ def print_nvflare_version():
 def main():
     if "--schema" not in sys.argv:
         version_check()
-        ensure_hidden_config_migrated()
     run("nvflare")
 
 

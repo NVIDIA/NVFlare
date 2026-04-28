@@ -287,17 +287,22 @@ class SessionSpec(ABC):
 
     @abstractmethod
     def get_job_logs(
-        self, job_id: str, target: str = "server", tail_lines: int = None, grep_pattern: str = None
+        self,
+        job_id: str,
+        target: str = "server",
+        tail_lines: Optional[int] = None,
+        grep_pattern: Optional[str] = None,
     ) -> dict:
         """Retrieve logs for the specified job.
 
         Args:
             job_id: ID of the job
-            target: target site name. Only ``server`` is currently supported
-            tail_lines: optional number of tail lines to retrieve
-            grep_pattern: optional substring filter
+            target: ``server``, ``all``, or a client site name
+            tail_lines: deprecated compatibility option to return the last N lines
+            grep_pattern: deprecated compatibility option to return matching lines
 
-        Returns: dict with ``logs`` mapping site names to log content.
+        Returns: dict with ``logs`` mapping site names to log content, and
+            optional ``unavailable`` mapping site names to reasons.
 
         """
         pass
