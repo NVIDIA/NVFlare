@@ -40,6 +40,62 @@ portable artifacts exchanged are zip files:
 The resulting startup kits are structurally identical to those produced by
 `nvflare provision` and are fully compatible with FLARE runtime components.
 
+### Key Design Decisions
+
+- **Distributed provisioning is request/approve/package.**
+  Requesters generate their own private key and CSR locally. The Project Admin
+  approves a request zip and returns a signed zip. The requester packages the signed
+  zip into a normal FLARE startup kit.
+
+- **Private keys stay with the participant.**
+  Request zips and signed zips never contain private keys. Only CSR, signed
+  certificate, root CA, and approval metadata are exchanged.
+
+- **Participant definition files are the request input.**
+  `nvflare cert request -p/--participant <participant.yaml>` reads identity and
+  package-time metadata from one participant definition file. The file uses a
+  project-style structure: top-level project `name` and one `participants` entry.
+  This keeps request input auditable, reusable, and consistent with existing
+  provisioning concepts.
+
+- **Project Admin approves against a project profile.**
+  `project_profile.yaml` defines project `name`, communication `scheme`, and default
+  `connection_security`. `nvflare cert approve --profile <project_profile.yaml>`
+  verifies project identity and records approved communication defaults in the
+  signed metadata.
+
+- **Communication scheme is Project Admin-owned and consistent.**
+  The communication `scheme` is defined once in `project_profile.yaml`. Requester
+  participant files do not choose or override `scheme`. Approval signs the approved
+  `scheme` into `signed.json`, and packaging uses the signed `scheme` when
+  generating startup kits. This ensures all participants in the approved project use
+  the same protocol, such as `grpc` or `http`.
+
+- **Connection configuration is split by ownership.**
+  Project-wide defaults come from the Project Admin profile. Client and user
+  startup-kit server endpoints come from the requester's local participant
+  definition. Server-side `connection_security` may be resolved locally during
+  packaging for deployments behind proxies, load balancers, or ingress. Server-local
+  connection overrides are excluded from sanitized approval metadata because they are
+  local package-time behavior, not Project Admin policy.
+
+- **Generated startup kits remain compatible with existing FLARE runtime.**
+  The output layout and runtime startup behavior match centrally provisioned kits.
+  Certificate generation reuses centralized provisioning logic to keep certificate
+  contents and validation behavior consistent. Server certificate SAN/default-host
+  behavior follows centralized provisioning conventions, including `localhost`
+  support for local/demo workflows.
+
+- **Root CA trust is explicit.**
+  Interactive packaging can use `--confirm-rootca`. Automation can use
+  `--expected-rootca-fingerprint`. If neither is provided, packaging warns that the
+  root CA fingerprint was not verified out-of-band.
+
+- **Custom startup-kit builders are supported.**
+  Participant definition files may include a `builders:` section. Packaging honors
+  those builders for the signed participant while preserving one-participant-at-a-time
+  distributed provisioning.
+
 ### Canonical Step-by-Step Workflow
 
 The public workflow always uses zip artifacts. Remote production and local automation use
