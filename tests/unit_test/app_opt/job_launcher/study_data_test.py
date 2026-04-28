@@ -30,6 +30,19 @@ def test_load_missing_file_returns_empty_mapping(tmp_path):
     assert load_study_data_file(str(tmp_path / "missing.yaml")) == {}
 
 
+def test_load_unreadable_file_raises_value_error(monkeypatch, tmp_path):
+    path = tmp_path / "study_data.yaml"
+    path.write_text("{}")
+
+    def _raise_permission_error(*args, **kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr("builtins.open", _raise_permission_error)
+
+    with pytest.raises(ValueError, match="Could not read study data file"):
+        load_study_data_file(str(path))
+
+
 def test_load_accepts_nested_study_dataset_mapping(tmp_path):
     path = tmp_path / "study_data.yaml"
     data = {"study-a": {"training": {"source": "/data/train", "mode": "ro"}}}

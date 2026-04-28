@@ -121,10 +121,16 @@ def _parse_kubeconfig(kc_path: Path, cloud: str) -> dict:
 
 
 def _normalize_study_data(study_data: dict | None) -> dict:
-    return {
-        study: {dataset: {"source": cfg["pvc"], "mode": cfg["mode"]} for dataset, cfg in datasets.items()}
-        for study, datasets in (study_data or {}).items()
-    }
+    result = {}
+    for study, datasets in (study_data or {}).items():
+        result[study] = {}
+        for dataset, cfg in datasets.items():
+            pvc = cfg.get("pvc")
+            mode = cfg.get("mode")
+            if not pvc or not mode:
+                raise ValueError(f"study_data entry '{study}/{dataset}' must define pvc and mode.")
+            result[study][dataset] = {"source": pvc, "mode": mode}
+    return result
 
 
 def load_config(config_path: Path) -> DeployConfig:

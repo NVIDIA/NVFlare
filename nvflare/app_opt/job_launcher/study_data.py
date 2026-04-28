@@ -54,6 +54,8 @@ def load_study_data_file(file_path: str) -> dict:
             study_data = yaml.safe_load(f)
     except FileNotFoundError:
         return {}
+    except OSError as e:
+        raise ValueError(f"Could not read study data file '{file_path}': {e}") from e
 
     if study_data is None:
         study_data = {}

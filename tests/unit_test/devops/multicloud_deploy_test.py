@@ -119,7 +119,8 @@ class TestPatchResourcesJson:
 class TestLoadConfig:
     def test_translates_study_data_pvc_to_runtime_source(self, tmp_path):
         config_path = tmp_path / "deploy.yaml"
-        config_path.write_text("""
+        config_path.write_text(
+            """
 clouds:
   gcp:
     kubeconfig: missing-kubeconfig.yaml
@@ -132,11 +133,35 @@ clouds:
         data: {pvc: nvfldata, mode: ro}
 participants:
   - {name: gcp-server, cloud: gcp, namespace: nvflare-server, role: server}
-""")
+"""
+        )
 
         config = DEPLOY_MODULE.load_config(config_path)
 
         assert config.participants[0].study_data == {"default": {"data": {"source": "nvfldata", "mode": "ro"}}}
+
+    @pytest.mark.parametrize("entry", [{"mode": "ro"}, {"pvc": "nvfldata"}])
+    def test_rejects_study_data_without_pvc_or_mode(self, tmp_path, entry):
+        config_path = tmp_path / "deploy.yaml"
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "clouds": {
+                        "gcp": {
+                            "kubeconfig": "missing-kubeconfig.yaml",
+                            "image": "repo/image:tag",
+                            "study_data": {"default": {"data": entry}},
+                        }
+                    },
+                    "participants": [
+                        {"name": "gcp-server", "cloud": "gcp", "namespace": "nvflare-server", "role": "server"}
+                    ],
+                }
+            )
+        )
+
+        with pytest.raises(ValueError, match="must define pvc and mode"):
+            DEPLOY_MODULE.load_config(config_path)
 
 
 class TestHelmDeployFlow:
