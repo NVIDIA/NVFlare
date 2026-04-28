@@ -91,13 +91,13 @@ def should_mount_study_data(study: Optional[str]) -> bool:
 
 
 def resolve_study_dataset_mounts(study_data: dict, study: str, file_path: str) -> list[StudyDatasetMount]:
-    _validate_path_component(study, "study name", file_path)
     datasets = study_data.get(study)
     if datasets is None:
         return []
     if not datasets:
         return []
 
+    _validate_path_component(study, "study name", file_path)
     return [
         StudyDatasetMount(study=study, dataset=dataset, source=entry["source"], mode=entry["mode"])
         for dataset, entry in datasets.items()

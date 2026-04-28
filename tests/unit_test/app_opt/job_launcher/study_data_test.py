@@ -102,6 +102,10 @@ def test_resolve_returns_empty_when_study_mapping_is_missing():
     assert resolve_study_dataset_mounts({}, "study-a", "study_data.yaml") == []
 
 
+def test_resolve_returns_empty_for_unmapped_invalid_study_name():
+    assert resolve_study_dataset_mounts({}, "Study_A", "study_data.yaml") == []
+
+
 def test_resolve_returns_empty_when_study_mapping_is_empty():
     assert resolve_study_dataset_mounts({"study-a": {}}, "study-a", "study_data.yaml") == []
 
