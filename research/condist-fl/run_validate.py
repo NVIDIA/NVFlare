@@ -24,7 +24,7 @@ from src.validator import Validator
 
 
 def load_ckpt(app: str, model: torch.nn.Module, ckpt_path: str):
-    ckpt = torch.load(ckpt_path)
+    ckpt = torch.load(ckpt_path, weights_only=True)
     state_dict = ckpt["model"]
     model.load_state_dict(state_dict)
     return model

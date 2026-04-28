@@ -39,7 +39,7 @@ def run_convert(args):
             config = json.load(f)
             config = config["model"]
 
-    ckpt = torch.load(args.weights)
+    ckpt = torch.load(args.weights, weights_only=True)
     state_dict = ckpt["model"]
 
     model = get_model(config)
