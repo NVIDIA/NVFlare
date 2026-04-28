@@ -180,7 +180,7 @@ JupyterLab with your virtual environment for Notebooks
 ------------------------------------------------------
 To run examples including notebooks, we recommend using `JupyterLab <https://jupyterlab.readthedocs.io>`_.
 
-After activating your virtual environment, install JupyterLab:
+After activating your virtual environment, install JupyterLab.
 
 .. code-block:: bash
 

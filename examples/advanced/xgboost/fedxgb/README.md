@@ -18,7 +18,7 @@ as required to optimize tree node splitting when building the successive boosted
 The shared information is in the form of quantile sketches of feature values as well as corresponding sample gradient and sample Hessian histograms.
 
 Under federated histogram-based collaboration, precisely the same information is exchanged among the clients.
-The main differences are that the data is partitioned across the workers according to client data ownership, rather than being arbitrarily partionable, and all communication is via an aggregating federated [gRPC](https://grpc.io) server instead of direct client-to-client communication.
+The main differences are that the data is partitioned across the workers according to client data ownership, rather than being arbitrarily partitionable, and all communication is via an aggregating federated [gRPC](https://grpc.io) server instead of direct client-to-client communication.
 Histograms from different clients, in particular, are aggregated in the server and then communicated back to the clients.
 
 ### Tree-based Collaboration
@@ -35,7 +35,7 @@ next round's boosting. Such training scheme have been proposed in literatures [1
 
 #### Bagging Aggregation
 
-"Bagging XGBoost" is another way of performing tree-based federated boosting with multiple sites: at each round of tree boosting, all sites start from the same "global model", and boost a number of trees (in current example, 1 tree) based on their local data. The resulting trees are then send to server. A bagging aggregation scheme is applied to all the submitted trees to update the global model, which is further distributed to all clients for next round's boosting.
+"Bagging XGBoost" is another way of performing tree-based federated boosting with multiple sites: at each round of tree boosting, all sites start from the same "global model", and boost a number of trees (in current example, 1 tree) based on their local data. The resulting trees are then sent to the server. A bagging aggregation scheme is applied to all the submitted trees to update the global model, which is further distributed to all clients for next round's boosting.
 
 This scheme bears certain similarity to the [Random Forest mode](https://xgboost.readthedocs.io/en/stable/tutorials/rf.html) of XGBoost, where a `num_parallel_tree` is boosted based on random row/col splits, rather than a single tree. Under federated learning setting, such split is fixed to clients rather than random and without column subsampling.
 

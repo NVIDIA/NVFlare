@@ -3,7 +3,7 @@
 FLARE Monitoring provides an initial solution for tracking system metrics of your federated learning jobs.
 Different from Machine learning experiment tracking, where it focused on the training metrics, the monitoring here focused on the FL system: i.e. job and system lifecycle metrics.
 
-This guide describes how to set up NVFLARE metrics publishing to StatsD Exporter, which then can be scraped by Prometheus and visualized with Grafana.
+This guide describes how to set up NVFLARE metrics publishing to StatsD Exporter, which can then be scraped by Prometheus and visualized with Grafana.
 
 ## Setup Types
 
@@ -118,8 +118,7 @@ These metrics can be separated into Job Metrics and System Metrics. System Metri
 
 ### Components Overview
 
-We have several components to use depending on the type of metrics as well as the setups:
-We have several components to use depending on the type of metrics and the setup:
+We have several components to use, depending on the type of metrics and the setup:
 1. **StatsDReporter**: This component will post the collected metrics to StatsD Exporter service.
 2. **JobMetricsCollector**: This component collects job-level metrics and publishes them to the databus. It can be added to the workflow components on both client and server sites.
 3. **SysMetricsCollector**: This component collects system-level metrics running in the parent process of the server and clients. The metrics will be published to the databus.
@@ -132,7 +131,6 @@ We will describe the component configuration in the following sections, but note
 
 >> sidebar note:
 
-> The NVIDIA FLARE json component configration is very simple, it consists the following patterns 
 > The NVIDIA FLARE JSON component configuration is very simple. It consists of the following patterns:
 ```{ 
    "id": "<any string to represent component>"
@@ -143,8 +141,7 @@ We will describe the component configuration in the following sections, but note
 
 #### 1. Shared Monitoring System for All Sites
 
-In this setup, all sites post the metrics to the common StatsD Exporter service. Therefore, all sites will need StatsD Exporter with the same host and port. Additionally, all sites will need both JobMetricsCollector and SysMetricsCollector components. 
-In this setup, all sites post the metrics to the common StatsD Exporter service. Therefore, all sites will need StatsD Exporter with the same host and port. Additionally, all sites will need both JobMetricsCollector and SysMetricsCollector components.
+In this setup, all sites post metrics to the common StatsD Exporter service. Therefore, all sites will need StatsD Exporter with the same host and port. Additionally, all sites will need both JobMetricsCollector and SysMetricsCollector components.
 We don't need streaming metrics, so the ConvertToFedEvent and RemoteMetricsReceiver components are not needed.
 
 To add Job Metrics Collector, we will add component in job configurations ```fed_config_client.json``` and ```fed_config_server.json```. For example
@@ -201,7 +198,6 @@ tags can be key, value pair, they are used for group metrics in the report. Here
 Tags can be key-value pairs used for grouping metrics in the report. Here we used "site" to indicate the origin of the metrics and "env" to indicate the development environment.
 
 
-The `SysMetricsCollector` is for the client and server parent process and must be configured in the local resources configuration file for each site. This cannot be specified from the Job API.
 The `SysMetricsCollector` is for the client and server parent processes and must be configured in the local resources configuration file for each site. This cannot be specified from the Job API.
 In the ```<startup>/<site-name>/local/resources.json.default```
 
@@ -241,7 +237,6 @@ Replace `<statsd_exporter_host>` and `<statsd_exporter_port>` with the appropria
 
 
 #### 2. Clients Forward Metrics to Server Site
-In this setup, all client-side metrics will not directly post to the StatsD Exporter. Instead, the metrics are streamed to the server site. Therefore, the client side will need the following components:
 In this setup, all client-side metrics will not be directly posted to the StatsD Exporter. Instead, the metrics are streamed to the server site. Therefore, the client side will need the following components:
 - **JobMetricsCollector**
 - **SysMetricsCollector**
