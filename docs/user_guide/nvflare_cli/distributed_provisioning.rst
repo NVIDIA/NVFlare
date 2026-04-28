@@ -19,20 +19,66 @@ independently. The public workflow uses three commands:
 
 At a high level:
 
-1. The Project Admin initializes the project CA and creates
-   ``project_profile.yaml``.
-2. The requester creates a participant definition file for one site, server, or
-   user.
-3. The requester runs ``nvflare cert request`` and sends only the generated
+1. The Project Admin creates ``project_profile.yaml`` and initializes the
+   project CA from that explicit profile file.
+2. The server admin decides the server host name and ports and shares them with
+   the Project Admin.
+3. The Project Admin publishes the project name and server connection details to
+   all requesters through a trusted out-of-band channel.
+4. The requester creates a participant definition file using the published
+   project name and server details.
+5. The requester runs ``nvflare cert request`` and sends only the generated
    request zip to the Project Admin.
-4. The Project Admin approves the request zip and returns the signed zip.
-5. The Project Admin shares ``rootca_fingerprint_sha256`` through a trusted
+6. The Project Admin approves the request zip and returns the signed zip.
+7. The Project Admin shares ``rootca_fingerprint_sha256`` through a trusted
    out-of-band channel.
-6. The requester packages the signed zip on the machine that owns the local
+8. The requester packages the signed zip on the machine that owns the local
    private key.
 
 The resulting startup kit is used the same way as a centrally provisioned
 startup kit.
+
+*******************************************
+Before You Start: Share Connection Details
+*******************************************
+
+Before any requester can write a participant definition file, two pieces of
+information must be collected and shared out-of-band:
+
+**1. Project name**
+
+The Project Admin chooses the project name when writing
+``project_profile.yaml``. Every participant definition file must use this exact
+name in its ``name:`` field. The Project Admin distributes the project name to
+all requesters.
+
+**2. Server host and ports**
+
+The server admin decides the FL server's host name (or DNS name), the
+``fed_learn_port``, and the ``admin_port`` before any provisioning begins. The
+server admin communicates these values to the Project Admin, who then
+distributes them to all client sites and users through a trusted out-of-band
+channel such as email, a shared wiki, or a secure messaging tool.
+
+These values go into the ``server:`` block of every client and user participant
+definition file. They are not in the project profile and are not derived from
+any approval artifact; each requester must fill them in manually based on what
+the Project Admin tells them.
+
+Typical communication before provisioning begins:
+
+.. code-block:: text
+
+   From the Project Admin to all requesters:
+
+     Project name:   hospital_federation
+     Server host:    server1.hospital-central.org
+     fed_learn_port: 8002
+     admin_port:     8003
+
+The server admin alone creates ``server.yaml`` and can use any valid host and
+ports. The Project Admin does not set server connection parameters; they only
+relay the values that the server admin chose.
 
 *********************
 Project Profile
@@ -140,12 +186,6 @@ Quick Start: Add a Site
 This example provisions a client site named ``hospital-a`` for project
 ``hospital_federation``.
 
-Project Admin initializes the project CA once:
-
-.. code-block:: shell
-
-   nvflare cert init --project hospital_federation -o ./ca
-
 Project Admin creates ``project_profile.yaml``:
 
 .. code-block:: yaml
@@ -154,7 +194,29 @@ Project Admin creates ``project_profile.yaml``:
    scheme: grpc
    connection_security: tls
 
-Site Admin creates ``hospital-a.yaml``:
+Project Admin initializes the project CA once:
+
+.. code-block:: shell
+
+   nvflare cert init --profile project_profile.yaml -o ./ca
+
+Project Admin communicates the following to all requesters out-of-band (email,
+wiki, secure channel):
+
+.. code-block:: text
+
+   Project name:   hospital_federation
+   Server host:    server1.hospital-central.org
+   fed_learn_port: 8002
+   admin_port:     8003
+
+.. note::
+
+   The server host and ports are chosen by the server admin. The Project Admin
+   relays them to client sites and users. These values must be agreed upon
+   before any participant definition file is written.
+
+Site Admin creates ``hospital-a.yaml`` using those published values:
 
 .. code-block:: yaml
 
@@ -222,7 +284,8 @@ Start the site:
 Quick Start: Add a User
 ********************************
 
-Requester creates ``alice.yaml``:
+Requester receives the project name and server details from the Project Admin
+(see `Before You Start: Share Connection Details`_) and creates ``alice.yaml``:
 
 .. code-block:: yaml
 
@@ -270,6 +333,10 @@ The generated user startup kit contains ``startup/fl_admin.sh``.
 Quick Start: Add a Server
 ******************************
 
+The server admin first decides the host name and ports, then communicates
+those values to the Project Admin so they can be shared with all client sites
+and users before they write their participant definition files.
+
 Server Admin creates ``server.yaml``:
 
 .. code-block:: yaml
@@ -286,6 +353,17 @@ Server Admin creates ``server.yaml``:
          - 10.0.1.50
          - fl-server.internal
        connection_security: mtls
+
+Server Admin tells the Project Admin (out-of-band):
+
+.. code-block:: text
+
+   Server host:    server1.hospital-central.org
+   fed_learn_port: 8002
+   admin_port:     8003
+
+The Project Admin relays these values to all client sites and users so they can
+fill in the ``server:`` block of their own participant definition files.
 
 Then use the same request, approval, and package workflow:
 
@@ -375,8 +453,8 @@ different command shape:
 
 .. code-block:: shell
 
-   nvflare cert init --project hospital_federation -o ./ca
    # create project_profile.yaml and participant definition files
+   nvflare cert init --profile project_profile.yaml -o ./ca
    nvflare cert request --participant hospital-a.yaml
    nvflare cert approve hospital-a/hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
    nvflare package hospital-a/hospital-a.signed.zip --confirm-rootca
@@ -437,8 +515,8 @@ Project Admin:
 
 .. code-block:: shell
 
-   nvflare cert init --project hospital_federation -o ./ca
    # create project_profile.yaml
+   nvflare cert init --profile project_profile.yaml -o ./ca
    nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 Requester:

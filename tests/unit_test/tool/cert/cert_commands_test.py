@@ -643,6 +643,19 @@ class TestCertInit:
         assert meta["project"] == "MyProject"
         assert "created_at" in meta
 
+    def test_init_uses_project_profile_name(self, tmp_path):
+        profile_path = tmp_path / "project_profile.yaml"
+        ca_dir = tmp_path / "ca"
+        _write_participant_definition(profile_path, {"name": "ProfileProject"})
+
+        rc = handle_cert_init(_init_args(project=None, profile=str(profile_path), output_dir=str(ca_dir)))
+
+        assert rc == 0
+        with open(str(ca_dir / "ca.json")) as f:
+            meta = json.load(f)
+        assert meta["project"] == "ProfileProject"
+        assert meta["project_profile"] == os.path.abspath(str(profile_path))
+
     def test_existing_ca_no_force(self, tmp_path):
         # Pre-create rootCA.key
         (tmp_path / "rootCA.key").write_bytes(b"fake-key")
@@ -702,7 +715,7 @@ class TestCertInit:
         assert exc_info.value.code == 4
         captured = capsys.readouterr()
         assert "INVALID_ARGS" in captured.err
-        assert "missing required argument(s): --project, -o/--output-dir" in captured.err
+        assert "missing required argument(s): --profile, -o/--output-dir" in captured.err
         assert "usage:" in captured.err
 
     def test_agent_mode_json_envelope(self, tmp_path, capsys, monkeypatch):
@@ -2223,7 +2236,11 @@ class TestHandleCertCmdRouting:
         parser = ArgumentParser(prog="nvflare")
         subparsers = parser.add_subparsers(dest="sub_command")
         def_cert_cli_parser(subparsers)
-        args = parser.parse_args(["cert", "init", "--project", "Demo", "-o", str(tmp_path), "--output", "json"])
+        profile_path = tmp_path / "project_profile.yaml"
+        _write_project_profile(profile_path, project="Demo")
+        args = parser.parse_args(
+            ["cert", "init", "--profile", str(profile_path), "-o", str(tmp_path), "--output", "json"]
+        )
 
         with patch("nvflare.tool.cli_output.set_output_format") as set_output_format:
             with patch("nvflare.tool.cert.cert_commands.handle_cert_init", return_value=0) as handle_init:

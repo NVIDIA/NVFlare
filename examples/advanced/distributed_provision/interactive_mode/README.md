@@ -15,7 +15,7 @@ cd examples/advanced/distributed_provision
 
 The shared demo input files are checked in the parent directory:
 
-- `project_profile.yaml`: Project Admin profile used for approvals.
+- `project_profile.yaml`: Project Admin profile used for CA initialization and approvals.
 - `project.yaml`: Equivalent centralized provisioning project file for comparison.
 - `server.yaml`: server requester participant definition.
 - `site-1.yaml`: client requester participant definition.
@@ -39,7 +39,7 @@ The shared demo input files are checked in the parent directory:
 ## Step 1 - Project Admin: Initialize Root CA
 
 ```bash
-nvflare cert init --project fed_project -o ca
+nvflare cert init --profile project_profile.yaml -o ca
 ```
 
 This creates `ca/rootCA.pem`, `ca/rootCA.key`, and `ca/ca.json`.

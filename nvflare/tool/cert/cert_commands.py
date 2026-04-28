@@ -309,24 +309,35 @@ def handle_cert_init(args):
         _cert_cli._cert_init_parser,
         "nvflare cert init",
         [
-            "nvflare cert init --project MyProject -o ./ca",
-            "nvflare cert init --project MyProject -o ./ca --org NVIDIA --force",
+            "nvflare cert init --profile project_profile.yaml -o ./ca",
+            "nvflare cert init --profile project_profile.yaml -o ./ca --org NVIDIA --force",
         ],
         sys.argv[1:],
     )
 
     # 2. Validate required args
+    profile_path = getattr(args, "profile", None)
+    project = getattr(args, "project", None)
     missing_flags = [
         flag
-        for flag, attr in (("--project", "project"), ("-o/--output-dir", "output_dir"))
-        if not getattr(args, attr, None)
+        for flag, is_missing in (
+            ("--profile", not profile_path and not project),
+            ("-o/--output-dir", not args.output_dir),
+        )
+        if is_missing
     ]
     if missing_flags:
         output_usage_error(
             _cert_cli._cert_init_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
         )
         return 1
-    if not _validate_safe_project_name(args.project):
+    project_profile_name = None
+    if profile_path:
+        project_profile_name = _load_project_name_from_profile(profile_path)
+        if project_profile_name is None:
+            return 1
+        project = project_profile_name
+    elif not _validate_safe_project_name(project):
         return 1
 
     # 3. Resolve force
@@ -364,9 +375,9 @@ def handle_cert_init(args):
     # 8. Generate self-signed CA certificate
     try:
         cert = CertBuilder._generate_cert(
-            subject=args.project,
+            subject=project,
             subject_org=args.org,
-            issuer=args.project,  # self-signed: issuer == subject
+            issuer=project,  # self-signed: issuer == subject
             signing_pri_key=pri_key,
             subject_pub_key=pub_key,
             valid_days=getattr(args, "valid_days", 3650) or 3650,
@@ -393,9 +404,11 @@ def handle_cert_init(args):
 
         created_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         ca_meta = {
-            "project": args.project,
+            "project": project,
             "created_at": created_at,
         }
+        if profile_path:
+            ca_meta["project_profile"] = os.path.abspath(profile_path)
         written_paths.append(ca_json_path)
         _write_json_file(ca_json_path, ca_meta)
     except OSError as e:
@@ -416,10 +429,12 @@ def handle_cert_init(args):
     # 12. Output result
     result = {
         "ca_cert": rootca_path,
-        "project": args.project,
-        "subject_cn": args.project,
+        "project": project,
+        "subject_cn": project,
         "valid_until": valid_until_str,
     }
+    if project_profile_name is not None:
+        result["project_profile"] = os.path.abspath(profile_path)
     output_ok(result)
     return 0
 
@@ -599,6 +614,34 @@ def _load_yaml_file(path: str) -> dict:
         )
         return None
     return data
+
+
+def _load_project_name_from_profile(profile_path: str) -> str:
+    if not os.path.isfile(profile_path):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"project profile file not found: {profile_path}",
+        )
+        return None
+    profile = _load_yaml_file(profile_path)
+    if profile is None:
+        return None
+    project_name = profile.get("name")
+    if not project_name:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="project profile missing required field: name",
+        )
+        return None
+    if not _validate_safe_project_name(project_name, field_label="Project profile name"):
+        return None
+    return project_name
 
 
 def _safe_zip_names(zf: zipfile.ZipFile) -> list:
@@ -2180,7 +2223,7 @@ def _validate_request_project_matches_ca(ca_dir: str, project: str) -> dict:
     return ca_meta
 
 
-def _load_project_profile(profile_path: str, request_project: str) -> dict:
+def _load_project_profile(profile_path: str, request_project: str = None) -> dict:
     if not os.path.isfile(profile_path):
         output_error_message(
             "INVALID_ARGS",
@@ -2206,7 +2249,7 @@ def _load_project_profile(profile_path: str, request_project: str) -> dict:
     profile_project = profile.get("name")
     if not _validate_safe_project_name(profile_project, field_label="Project profile name"):
         return None
-    if profile_project != request_project:
+    if request_project and profile_project != request_project:
         output_error_message(
             "PROJECT_PROFILE_MISMATCH",
             f"Request project {request_project!r} does not match project profile {profile_project!r}.",

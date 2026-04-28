@@ -59,13 +59,12 @@ def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         help="Initialize root CA for a distributed provisioning federation (Project Admin only).",
     )
     p.add_argument(
-        "--project",
+        "--profile",
         required=False,
         default=None,
-        type=_name_type,
-        dest="project",
-        metavar="PROJECT_NAME",
-        help="Project name. Used as the CN of the root CA certificate. Max 64 chars.",
+        dest="profile",
+        metavar="PROJECT_PROFILE",
+        help="Project profile yaml file. The profile name is used as the CN of the root CA certificate.",
     )
     p.add_argument(
         "-o",

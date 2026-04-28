@@ -24,19 +24,7 @@ The public subcommands are:
 Initialize the Root CA
 **********************
 
-The Project Admin runs ``cert init`` once per federation:
-
-.. code-block:: shell
-
-   nvflare cert init --project hospital_federation -o ./ca
-
-This creates:
-
-- ``./ca/rootCA.pem``: root CA certificate
-- ``./ca/rootCA.key``: root CA private key; keep this secret
-- ``./ca/ca.json``: CA metadata
-
-The Project Admin also creates a project profile for approvals:
+The Project Admin first creates a project profile:
 
 .. code-block:: yaml
 
@@ -44,10 +32,25 @@ The Project Admin also creates a project profile for approvals:
    scheme: grpc
    connection_security: tls
 
+Then the Project Admin runs ``cert init`` once per federation and passes the
+profile file explicitly:
+
+.. code-block:: shell
+
+   nvflare cert init --profile project_profile.yaml -o ./ca
+
+This creates:
+
+- ``./ca/rootCA.pem``: root CA certificate
+- ``./ca/rootCA.key``: root CA private key; keep this secret
+- ``./ca/ca.json``: CA metadata
+
 Common ``init`` options:
 
-- ``--project``: project name. Required. Must match the project profile
-  ``name``.
+- ``--profile``: project profile yaml file. Required. ``cert init`` reads only
+  the profile ``name`` and uses it as the root CA certificate subject; it does
+  not search for profile files automatically. ``cert approve`` validates the
+  profile ``scheme`` and ``connection_security`` fields later.
 - ``--org``: optional organization name for the root CA certificate's O field.
 - ``-o, --output-dir``: CA output directory. Required.
 - ``--valid-days``: root CA validity in days. Default: ``3650``.
@@ -94,6 +97,24 @@ A participant definition contains the project name and one participant entry:
          host: server1.hospital-central.org
          fed_learn_port: 8002
          admin_port: 8003
+
+.. note::
+
+   The values in this file are not generated automatically. Before writing the
+   participant definition, the requester must obtain the following from the
+   Project Admin through a trusted out-of-band channel (email, wiki, secure
+   messaging):
+
+   - **Project name** (``name:``): matches the ``name:`` in the Project Admin's
+     ``project_profile.yaml``. Every participant definition must use the same
+     project name.
+   - **Server host and ports** (``server.host``, ``fed_learn_port``,
+     ``admin_port``): chosen by the server admin and relayed by the Project
+     Admin to all client sites and users. These values must be known before any
+     client or user participant definition can be written.
+
+   Server admins do not need a ``server:`` block; they set their own host and
+   ports directly in their participant definition.
 
 For users, use ``type: admin`` and set ``role`` to ``org_admin``, ``lead``, or
 ``member``.

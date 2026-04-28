@@ -210,7 +210,7 @@ fi
 # Setup step: Project Admin creates the CA material needed to approve requests.
 show "Project Admin initializes CA"
 run_logged_to_file 01_cert_init.json \
-  nvflare cert init --project "${PROJECT_NAME}" -o ca --force --format json
+  nvflare cert init --profile "${BASE_DIR}/project_profile.yaml" -o ca --force --format json
 
 # Start of the automated distributed provisioning process.
 #
