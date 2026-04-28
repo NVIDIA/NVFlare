@@ -43,6 +43,14 @@ def test_load_unreadable_file_raises_value_error(monkeypatch, tmp_path):
         load_study_data_file(str(path))
 
 
+def test_load_malformed_yaml_raises_value_error(tmp_path):
+    path = tmp_path / "study_data.yaml"
+    path.write_text("study-a: [")
+
+    with pytest.raises(ValueError, match="Could not parse study data file"):
+        load_study_data_file(str(path))
+
+
 def test_load_accepts_nested_study_dataset_mapping(tmp_path):
     path = tmp_path / "study_data.yaml"
     data = {"study-a": {"training": {"source": "/data/train", "mode": "ro"}}}

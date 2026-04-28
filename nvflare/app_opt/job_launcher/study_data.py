@@ -56,6 +56,8 @@ def load_study_data_file(file_path: str) -> dict:
         return {}
     except OSError as e:
         raise ValueError(f"Could not read study data file '{file_path}': {e}") from e
+    except yaml.YAMLError as e:
+        raise ValueError(f"Could not parse study data file '{file_path}': {e}") from e
 
     if study_data is None:
         study_data = {}
