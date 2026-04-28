@@ -83,7 +83,12 @@ User request:
 
    nvflare cert request --participant alice.yaml
 
-A participant definition contains the project name and one participant entry:
+A participant definition uses the same top-level shape as a centralized
+``project.yaml``: a ``name`` field for the project and a ``participants`` list.
+For distributed provisioning the ``participants`` list must contain **exactly one
+entry** — one file, one identity, one request. The key is plural to stay
+consistent with the centralized format, but ``cert request`` will reject the
+file if the list has zero or more than one entry.
 
 .. code-block:: yaml
 
@@ -97,6 +102,10 @@ A participant definition contains the project name and one participant entry:
          host: server1.hospital-central.org
          fed_learn_port: 8002
          admin_port: 8003
+
+To request a second participant such as ``hospital-b``, create a separate
+``hospital-b.yaml`` file with its own single entry and run ``cert request``
+again. Each participant has its own private key and request zip.
 
 .. note::
 
