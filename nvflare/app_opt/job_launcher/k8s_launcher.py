@@ -19,7 +19,6 @@ import hashlib
 import logging
 import os
 import re
-import threading
 import time
 from abc import abstractmethod
 from enum import Enum
@@ -359,15 +358,7 @@ class K8sJobLauncher(JobLauncherSpec):
         self.security_context = security_context
         self.ephemeral_storage = ephemeral_storage
         self.study_data_pvc_dict = None
-        self._study_data_pvc_lock = threading.Lock()
         self.core_v1 = None
-
-    def _get_study_data_pvc_dict(self) -> dict:
-        if self.study_data_pvc_dict is None:
-            with self._study_data_pvc_lock:
-                if self.study_data_pvc_dict is None:
-                    self.study_data_pvc_dict = load_study_data_file(self.study_data_pvc_file_path)
-        return self.study_data_pvc_dict
 
     def _ensure_startup_secret(self, site_name: str, startup_dir: str) -> str:
         """Create or update a k8s Secret containing the site startup kit.
@@ -447,9 +438,9 @@ class K8sJobLauncher(JobLauncherSpec):
         study = job_meta.get(JobMetaKey.STUDY.value)
         data_mounts = []
         if should_mount_study_data(study):
-            data_mounts = resolve_study_dataset_mounts(
-                self._get_study_data_pvc_dict(), study, self.study_data_pvc_file_path
-            )
+            if self.study_data_pvc_dict is None:
+                self.study_data_pvc_dict = load_study_data_file(self.study_data_pvc_file_path)
+            data_mounts = resolve_study_dataset_mounts(self.study_data_pvc_dict, study, self.study_data_pvc_file_path)
         site_resources = (job_meta.get(JobMetaKey.RESOURCE_SPEC.value) or {}).get(site_name) or {}
         flat_gpu_count = (
             0

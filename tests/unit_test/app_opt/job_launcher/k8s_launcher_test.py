@@ -861,30 +861,6 @@ class TestK8sJobLauncherInit:
         # study_data.yaml is populated lazily
         assert launcher.study_data_pvc_dict is None
 
-    def test_study_data_cache_load_is_thread_safe(self):
-        from concurrent.futures import ThreadPoolExecutor
-        from time import sleep
-
-        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
-
-        launcher = ClientK8sJobLauncher(
-            config_file_path="/fake/kube/config",
-            study_data_pvc_file_path="/fake/study_data.yaml",
-        )
-        calls = []
-
-        def _load_study_data(file_path):
-            calls.append(file_path)
-            sleep(0.05)
-            return {"study-a": {"training": {"source": "data-pvc", "mode": "ro"}}}
-
-        with patch("nvflare.app_opt.job_launcher.k8s_launcher.load_study_data_file", side_effect=_load_study_data):
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                results = list(executor.map(lambda _: launcher._get_study_data_pvc_dict(), range(2)))
-
-        assert calls == ["/fake/study_data.yaml"]
-        assert results == [launcher.study_data_pvc_dict, launcher.study_data_pvc_dict]
-
 
 # ---------------------------------------------------------------------------
 # ClientK8sJobLauncher.get_module_args
