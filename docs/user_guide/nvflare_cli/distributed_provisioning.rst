@@ -258,8 +258,9 @@ Project Admin approves the request:
    nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 This creates ``hospital-a.signed.zip`` and prints
-``rootca_fingerprint_sha256``. Return the signed zip to the Site Admin and
-share the fingerprint through a trusted out-of-band channel.
+``rootca_fingerprint_sha256``. The signed zip already includes ``rootCA.pem``;
+return the signed zip to the Site Admin and share only the fingerprint through
+a trusted out-of-band channel.
 
 Site Admin packages the startup kit:
 
@@ -430,6 +431,10 @@ Root CA Fingerprint Check
 SHA256 certificate fingerprint for the project ``rootCA.pem``. The Project
 Admin should send this value to the requester through a trusted out-of-band
 channel.
+
+The signed zip already contains ``rootCA.pem``. The requester does not need a
+separate root CA file before running ``nvflare package``; the out-of-band value
+is only the fingerprint used to verify the root CA inside the signed zip.
 
 ``nvflare package`` always prints the fingerprint computed from the signed zip.
 Use one of these options to make the package command verify it:

@@ -166,12 +166,20 @@ CA and project profile, signs the CSR, and creates:
 .. code-block:: text
 
    hospital-a.signed.zip
+     signed.json
+     site.yaml
+     hospital-a.crt
+     rootCA.pem
 
 Return the signed zip to the requester.
 
-The command output includes ``rootca_fingerprint_sha256``. Share that value
-with the requester through a trusted out-of-band channel so they can verify the
-signed zip root CA during ``nvflare package``.
+The signed zip already includes ``rootCA.pem``. The requester does not need to
+receive or place a separate ``rootCA.pem`` file before running
+``nvflare package``.
+
+The command output includes ``rootca_fingerprint_sha256``. Share only that
+fingerprint value with the requester through a trusted out-of-band channel so
+they can verify the signed zip root CA during ``nvflare package``.
 
 Use ``--out`` to choose the signed zip location:
 
