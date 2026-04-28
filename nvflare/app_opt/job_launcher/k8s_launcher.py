@@ -23,24 +23,22 @@ import time
 from abc import abstractmethod
 from enum import Enum
 
-import yaml
-
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
+from nvflare.app_opt.job_launcher.study_data import (
+    load_study_data_file,
+    resolve_study_dataset_mounts,
+    should_mount_study_data,
+)
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     ENV_WORKSPACE_OWNER_FQCN,
     ENV_WORKSPACE_TRANSFER_TOKEN,
     WorkspaceTransferManager,
 )
-from nvflare.utils.job_launcher_utils import (
-    get_client_job_args,
-    get_job_launcher_spec,
-    get_launcher_resource_spec,
-    get_server_job_args,
-)
+from nvflare.utils.job_launcher_utils import get_client_job_args, get_job_launcher_spec, get_server_job_args
 
 
 class JobState(Enum):
@@ -93,7 +91,6 @@ DEFAULT_PENDING_TIMEOUT = 120
 DEFAULT_PYTHON_PATH = "/usr/local/bin/python"
 
 
-DATA_PVC_VOLUME_NAME = "nvfldata"
 WORKSPACE_MOUNT_PATH = "/var/tmp/nvflare/workspace"
 DEFAULT_EPHEMERAL_STORAGE = "1Gi"
 
@@ -132,6 +129,10 @@ def site_name_to_rfc1123(site_name: str, max_length: int = 47) -> str:
     head_max = max_length - len(digest) - 1
     name = name[:head_max].rstrip("-") or "site"
     return f"{name}-{digest}"
+
+
+def study_dataset_volume_name(study: str, dataset: str) -> str:
+    return site_name_to_rfc1123(f"data-{study}-{dataset}", max_length=63)
 
 
 class K8sJobHandle(JobHandleSpec):
@@ -357,7 +358,6 @@ class K8sJobLauncher(JobLauncherSpec):
         self.security_context = security_context
         self.ephemeral_storage = ephemeral_storage
         self.study_data_pvc_dict = None
-        self.default_data_pvc = None
         self.core_v1 = None
 
     def _ensure_startup_secret(self, site_name: str, startup_dir: str) -> str:
@@ -397,30 +397,6 @@ class K8sJobLauncher(JobLauncherSpec):
         return secret_name
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
-        if self.default_data_pvc is None:
-            with open(self.study_data_pvc_file_path, "rt") as f:
-                study_data_pvc_dict = yaml.safe_load(f)
-            if not study_data_pvc_dict:
-                raise ValueError(
-                    f"study_data_pvc_file_path '{self.study_data_pvc_file_path}' is empty or contains no PVC entries."
-                )
-            # study_data_pvc_file_path file is
-            # a yaml file with this format
-            # study_name_1: data_pvc_1
-            # study_name_2: data_pvc_2
-            # ...
-            # ...
-            # default: default_data_pvc
-            # currently, support one pvc and always mount to /var/tmp/nvflare/data
-            if not isinstance(study_data_pvc_dict, dict):
-                raise ValueError(
-                    f"file at study_data_pvc_file_path '{self.study_data_pvc_file_path}' does not contain a dictionary."
-                )
-            default_data_pvc = study_data_pvc_dict.get("default")
-            if default_data_pvc is None:
-                raise ValueError(f"No default PVC found in '{self.study_data_pvc_file_path}'.")
-            self.default_data_pvc = default_data_pvc
-            self.study_data_pvc_dict = study_data_pvc_dict
         if self.core_v1 is None:
             from kubernetes import config
             from kubernetes.client import Configuration
@@ -459,9 +435,19 @@ class K8sJobLauncher(JobLauncherSpec):
                 f"launcher_spec['default']['k8s']['image'] (shared default), "
                 f"or resource_spec['{site_name}']['k8s']['image'] (legacy)."
             )
-        site_resources = get_launcher_resource_spec(job_meta, site_name, "k8s")
         study = job_meta.get(JobMetaKey.STUDY.value)
-        job_resource = site_resources.get("num_of_gpus", None)
+        data_mounts = []
+        if should_mount_study_data(study):
+            if self.study_data_pvc_dict is None:
+                self.study_data_pvc_dict = load_study_data_file(self.study_data_pvc_file_path)
+            data_mounts = resolve_study_dataset_mounts(self.study_data_pvc_dict, study, self.study_data_pvc_file_path)
+        site_resources = (job_meta.get(JobMetaKey.RESOURCE_SPEC.value) or {}).get(site_name) or {}
+        flat_gpu_count = (
+            0
+            if any(k in site_resources for k in ("process", "docker", "k8s"))
+            else site_resources.get("num_of_gpus", 0)
+        )
+        job_resource = k8s_spec["num_of_gpus"] if "num_of_gpus" in k8s_spec else flat_gpu_count
         job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
         if not job_args:
             raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
@@ -470,13 +456,6 @@ class K8sJobLauncher(JobLauncherSpec):
         if not exe_module_entry:
             raise RuntimeError(f"missing {JobProcessArgs.EXE_MODULE} in {FLContextKey.JOB_PROCESS_ARGS}")
         _, job_cmd = exe_module_entry
-        # Opt out of the data PVC mount via resource_spec[<site>][k8s][data] = false.
-        # The data PVC is RWO, so mounting it blocks any second job on this site from
-        # attaching the same disk on a different node. Jobs that don't read data
-        # should set data=false so multiple can run in parallel.
-        # TODO: revisit when study and resource-spec shapes evolve.
-        mount_data_pvc = site_resources.get("data", True)
-        data_pvc = self.study_data_pvc_dict.get(study, self.default_data_pvc) if mount_data_pvc else None
 
         env = {}
         if app_custom_folder:
@@ -505,10 +484,15 @@ class K8sJobLauncher(JobLauncherSpec):
                 {"name": "workspace-job", "mountPath": WORKSPACE_MOUNT_PATH},
                 {"name": "startup-kit", "mountPath": f"{WORKSPACE_MOUNT_PATH}/startup", "readOnly": True},
             ]
-            if data_pvc:
-                volume_list.append({"name": DATA_PVC_VOLUME_NAME, "persistentVolumeClaim": {"claimName": data_pvc}})
+            for dataset_mount in data_mounts:
+                volume_name = study_dataset_volume_name(dataset_mount.study, dataset_mount.dataset)
+                volume_list.append({"name": volume_name, "persistentVolumeClaim": {"claimName": dataset_mount.source}})
                 volume_mount_list.append(
-                    {"name": DATA_PVC_VOLUME_NAME, "mountPath": "/var/tmp/nvflare/data", "readOnly": True}
+                    {
+                        "name": volume_name,
+                        "mountPath": dataset_mount.mount_path,
+                        "readOnly": dataset_mount.read_only,
+                    }
                 )
 
             job_config = {

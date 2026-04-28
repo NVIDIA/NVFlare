@@ -67,6 +67,7 @@ class Participant:
     pending_timeout: int | None = None
     pvc_config: dict = field(default_factory=dict)
     pod_annotations: dict = field(default_factory=dict)
+    study_data: dict = field(default_factory=dict)
     # Kubernetes imagePullPolicy override. `None` keeps whatever the helm chart
     # defaults to (typically IfNotPresent). Set to "Always" on mutable dev tags.
     pull_policy: str | None = None
@@ -119,6 +120,19 @@ def _parse_kubeconfig(kc_path: Path, cloud: str) -> dict:
     return {}
 
 
+def _normalize_study_data(study_data: dict | None) -> dict:
+    result = {}
+    for study, datasets in (study_data or {}).items():
+        result[study] = {}
+        for dataset, cfg in datasets.items():
+            pvc = cfg.get("pvc")
+            mode = cfg.get("mode")
+            if not pvc or not mode:
+                raise ValueError(f"study_data entry '{study}/{dataset}' must define pvc and mode.")
+            result[study][dataset] = {"source": pvc, "mode": mode}
+    return result
+
+
 def load_config(config_path: Path) -> DeployConfig:
     config_path = config_path.resolve()
     raw = yaml.safe_load(config_path.read_text())
@@ -161,6 +175,8 @@ def load_config(config_path: Path) -> DeployConfig:
         if not image:
             raise ValueError(f"{config_path}: participant {entry['name']} has no image (set on cloud or entry)")
         kc_path = (config_path.parent / kubeconfig).resolve()
+        pvc_config = merged.get("pvc_config") or {}
+        study_data = _normalize_study_data(merged.get("study_data"))
 
         participants.append(
             Participant(
@@ -174,8 +190,9 @@ def load_config(config_path: Path) -> DeployConfig:
                 helm_overrides=list(merged.get("helm_overrides") or []),
                 security_context=merged.get("security_context"),
                 pending_timeout=merged.get("pending_timeout"),
-                pvc_config=merged.get("pvc_config") or {},
+                pvc_config=pvc_config,
                 pod_annotations=merged.get("pod_annotations") or {},
+                study_data=study_data,
                 pull_policy=merged.get("pull_policy"),
             )
         )
@@ -665,6 +682,7 @@ def patch_resources_json(
     launcher_class: str,
     security_context: dict | None = None,
     pending_timeout: int | None = None,
+    study_data: dict | None = None,
 ):
     src = kit_dir / "local" / "resources.json.default"
     dst = kit_dir / "local" / "resources.json"
@@ -674,8 +692,11 @@ def patch_resources_json(
             preview["security_context"] = security_context
         if pending_timeout is not None:
             preview["pending_timeout"] = pending_timeout
+        if study_data:
+            preview["study_data"] = study_data
         print(f"  Would patch {dst}: {json.dumps(preview)}")
-        print(f"  Would write {kit_dir / 'local' / 'study_data_pvc.yaml'}: default: nvfldata")
+        if study_data:
+            print(f"  Would write {kit_dir / 'local' / 'study_data.yaml'}: {yaml.safe_dump(study_data)}")
         return
     r = json.loads(src.read_text())
     replaced = False
@@ -683,7 +704,7 @@ def patch_resources_json(
         if "process_launcher" in c.get("id", "") or "ProcessJobLauncher" in c.get("path", ""):
             args = {
                 "config_file_path": None,
-                "study_data_pvc_file_path": "/var/tmp/nvflare/workspace/local/study_data_pvc.yaml",
+                "study_data_pvc_file_path": "/var/tmp/nvflare/workspace/local/study_data.yaml",
                 "namespace": namespace,
                 "python_path": "/usr/local/bin/python3",
             }
@@ -697,9 +718,8 @@ def patch_resources_json(
         raise RuntimeError(f"No ProcessJobLauncher component found in {src}; cannot inject K8sJobLauncher.")
     dst.write_text(json.dumps(r, indent=4))
 
-    local_dir = kit_dir / "local"
-    local_dir.mkdir(exist_ok=True)
-    (local_dir / "study_data_pvc.yaml").write_text("default: nvfldata\n")
+    if study_data:
+        (kit_dir / "local" / "study_data.yaml").write_text(yaml.safe_dump(study_data, sort_keys=False))
 
 
 # ---------------------------------------------------------------------------
@@ -969,6 +989,7 @@ def cmd_up(args):
             p.launcher_class,
             p.security_context,
             p.pending_timeout,
+            p.study_data,
         )
 
     # Deploy each participant

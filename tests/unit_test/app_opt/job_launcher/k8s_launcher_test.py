@@ -57,7 +57,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobReturnCode
 from nvflare.app_opt.job_launcher.k8s_launcher import (
-    DATA_PVC_VOLUME_NAME,
     DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT,
     JOB_RETURN_CODE_MAPPING,
     POD_STATE_MAPPING,
@@ -67,20 +66,23 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     PodPhase,
     _job_args_dict,
     site_name_to_rfc1123,
+    study_dataset_volume_name,
     uuid4_to_rfc1123,
 )
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_WORKSPACE_OWNER_FQCN, ENV_WORKSPACE_TRANSFER_TOKEN
 
+_DEFAULT_DATA_VOLUME_NAME = study_dataset_volume_name("study-a", "training")
+
 _DEFAULT_VOLUME_MOUNT_LIST = [
     {"name": "workspace-job", "mountPath": WORKSPACE_MOUNT_PATH},
     {"name": "startup-kit", "mountPath": f"{WORKSPACE_MOUNT_PATH}/startup", "readOnly": True},
-    {"name": DATA_PVC_VOLUME_NAME, "mountPath": "/var/tmp/nvflare/data", "readOnly": True},
+    {"name": _DEFAULT_DATA_VOLUME_NAME, "mountPath": "/data/study-a/training", "readOnly": True},
 ]
 
 _DEFAULT_VOLUME_LIST = [
     {"name": "workspace-job", "emptyDir": {}},
     {"name": "startup-kit", "secret": {"secretName": f"nvflare-startup-{site_name_to_rfc1123('site1')}"}},
-    {"name": DATA_PVC_VOLUME_NAME, "persistentVolumeClaim": {"claimName": "data-pvc"}},
+    {"name": _DEFAULT_DATA_VOLUME_NAME, "persistentVolumeClaim": {"claimName": "data-pvc"}},
 ]
 
 
@@ -281,7 +283,7 @@ class TestK8sJobHandle:
         vol_map = {v["name"]: v for v in volumes}
         assert "emptyDir" in vol_map["workspace-job"]
         assert "secret" in vol_map["startup-kit"]
-        assert vol_map[DATA_PVC_VOLUME_NAME]["persistentVolumeClaim"]["claimName"] == "data-pvc"
+        assert vol_map[_DEFAULT_DATA_VOLUME_NAME]["persistentVolumeClaim"]["claimName"] == "data-pvc"
 
     def test_manifest_volume_mounts(self):
         cfg = _make_job_config()
@@ -761,14 +763,14 @@ class TestJobArgsDict:
 def _make_k8s_launcher_patches():
     # kubernetes is imported inside launch_job (not at module level), so we rely
     # on the sys.modules stubs injected at the top of this file.  The only
-    # module-level name we need to intercept is yaml (used at module scope via
-    # import) and builtins.open (for reading the PVC file).  CoreV1Api on the
+    # YAML dependency we need to intercept is in the shared study_data helper,
+    # plus builtins.open for reading the study-data file. CoreV1Api on the
     # already-stubbed _k8s_core module is patched with patch.object so each
     # test gets a fresh, controllable mock and the original stub is restored.
     # WorkspaceTransferManager is patched so tests don't register real CellNet handlers.
     return [
         patch("builtins.open", create=True),
-        patch("nvflare.app_opt.job_launcher.k8s_launcher.yaml"),
+        patch("nvflare.app_opt.job_launcher.study_data.yaml"),
         patch.object(_k8s_core, "CoreV1Api"),
         patch("nvflare.app_opt.job_launcher.k8s_launcher.WorkspaceTransferManager"),
     ]
@@ -789,7 +791,7 @@ def _setup_launcher(launcher_cls):
     # PVC file are loaded lazily inside launch_job, so no mocks are needed here.
     return launcher_cls(
         config_file_path="/fake/kube/config",
-        study_data_pvc_file_path="/fake/data_pvc.yaml",
+        study_data_pvc_file_path="/fake/study_data.yaml",
     )
 
 
@@ -848,16 +850,16 @@ class TestK8sJobLauncherInit:
 
         launcher = ClientK8sJobLauncher(
             config_file_path="/fake/kube/config",
-            study_data_pvc_file_path="/fake/data_pvc.yaml",
+            study_data_pvc_file_path="/fake/study_data.yaml",
             timeout=60,
             namespace="test-ns",
         )
 
-        assert launcher.study_data_pvc_file_path == "/fake/data_pvc.yaml"
+        assert launcher.study_data_pvc_file_path == "/fake/study_data.yaml"
         assert launcher.timeout == 60
         assert launcher.namespace == "test-ns"
-        # PVC dict is populated lazily
-        assert launcher.default_data_pvc is None
+        # study_data.yaml is populated lazily
+        assert launcher.study_data_pvc_dict is None
 
 
 # ---------------------------------------------------------------------------
@@ -946,13 +948,16 @@ _JOB_UUID = "550e8400-e29b-41d4-a716-446655440000"
 _EXPECTED_JOB_ID = uuid4_to_rfc1123(_JOB_UUID)
 
 
-def _make_launch_job_meta(site_name="site-1", image="nvflare/nvflare:latest", gpu=None):
+def _make_launch_job_meta(site_name="site-1", image="nvflare/nvflare:latest", gpu=None, study=None):
+    k8s_spec = {"image": image}
+    if gpu is not None:
+        k8s_spec["num_of_gpus"] = gpu
     meta = {
         JobConstants.JOB_ID: _JOB_UUID,
-        JobMetaKey.JOB_LAUNCHER_SPEC.value: {site_name: {"k8s": {"image": image}}},
+        JobMetaKey.JOB_LAUNCHER_SPEC.value: {site_name: {"k8s": k8s_spec}},
     }
-    if gpu is not None:
-        meta[JobMetaKey.RESOURCE_SPEC.value] = {site_name: {"k8s": {"image": image, "num_of_gpus": gpu}}}
+    if study is not None:
+        meta[JobMetaKey.STUDY.value] = study
     return meta
 
 
@@ -989,11 +994,15 @@ class TestK8sJobLauncherLaunchJob:
     enter_states returns True on the first iteration without sleeping.
     """
 
-    def _setup(self, patches, namespace="test-ns"):
+    def _setup(self, patches, namespace="test-ns", study_data_pvc_dict=None):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         mock_open, mock_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
-        mock_yaml.safe_load.return_value = {"default": "data-pvc"}
+        if study_data_pvc_dict is None:
+            study_data_pvc_dict = {"study-a": {"training": {"source": "data-pvc", "mode": "ro"}}}
+        mock_yaml.safe_load.return_value = study_data_pvc_dict
+        self.mock_open = mock_open
+        self.mock_yaml = mock_yaml
         mock_api = MagicMock()
         mock_core_cls.return_value = mock_api
         self.mock_transfer_cls = mock_transfer_cls
@@ -1004,7 +1013,7 @@ class TestK8sJobLauncherLaunchJob:
         self.mock_transfer = mock_transfer
         launcher = ClientK8sJobLauncher(
             config_file_path="/fake/kube/config",
-            study_data_pvc_file_path="/fake/data_pvc.yaml",
+            study_data_pvc_file_path="/fake/study_data.yaml",
             namespace=namespace,
         )
         return launcher, mock_api
@@ -1153,26 +1162,139 @@ class TestK8sJobLauncherLaunchJob:
             assert "emptyDir" in vol_map["workspace-job"]
             # startup/ delivered via Secret
             assert "secret" in vol_map["startup-kit"]
-            # data PVC from the PVC file
-            assert vol_map[DATA_PVC_VOLUME_NAME]["persistentVolumeClaim"]["claimName"] == "data-pvc"
+            # no study in meta means no study-data mounts
+            assert len(volumes) == 2
         finally:
             _exit_patches(patches)
 
-    def test_pod_manifest_omits_data_pvc_when_opted_out(self):
+    def test_pod_manifest_uses_study_dataset_pvcs(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(
+            patches,
+            study_data_pvc_dict={
+                "study-a": {
+                    "training": {"source": "study-train-pvc", "mode": "ro"},
+                    "output": {"source": "study-output-pvc", "mode": "rw"},
+                }
+            },
+        )
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            vol_map = {v["name"]: v for v in manifest["spec"]["volumes"]}
+            mount_map = {m["mountPath"]: m for m in manifest["spec"]["containers"][0]["volumeMounts"]}
+            training_volume = study_dataset_volume_name("study-a", "training")
+            output_volume = study_dataset_volume_name("study-a", "output")
+            assert vol_map[training_volume]["persistentVolumeClaim"]["claimName"] == "study-train-pvc"
+            assert vol_map[output_volume]["persistentVolumeClaim"]["claimName"] == "study-output-pvc"
+            assert mount_map["/data/study-a/training"] == {
+                "name": training_volume,
+                "mountPath": "/data/study-a/training",
+                "readOnly": True,
+            }
+            assert mount_map["/data/study-a/output"] == {
+                "name": output_volume,
+                "mountPath": "/data/study-a/output",
+                "readOnly": False,
+            }
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_omits_data_pvc_when_no_study_in_job_meta(self):
         patches = _make_k8s_launcher_patches()
         launcher, mock_api = self._setup(patches)
         self._prime_running(mock_api)
         try:
-            meta = _make_launch_job_meta()
-            meta[JobMetaKey.RESOURCE_SPEC.value] = {
-                "site-1": {"k8s": {"image": "nvflare/nvflare:latest", "data": False}}
-            }
-            launcher.launch_job(meta, _make_launch_fl_ctx())
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             vol_names = {v["name"] for v in manifest["spec"]["volumes"]}
             mount_names = {m["name"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
-            assert DATA_PVC_VOLUME_NAME not in vol_names
-            assert DATA_PVC_VOLUME_NAME not in mount_names
+            assert vol_names == {"workspace-job", "startup-kit"}
+            assert mount_names == {"workspace-job", "startup-kit"}
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_omits_data_pvc_for_default_study(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(study="default"), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            vol_names = {v["name"] for v in manifest["spec"]["volumes"]}
+            mount_names = {m["name"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
+            assert vol_names == {"workspace-job", "startup-kit"}
+            assert mount_names == {"workspace-job", "startup-kit"}
+            self.mock_open.assert_called_once_with("/fake/study_data.yaml", "rt")
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_uses_default_study_mapping_when_present(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(
+            patches,
+            study_data_pvc_dict={"default": {"training": {"source": "default-train-pvc", "mode": "ro"}}},
+        )
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(study="default"), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            vol_map = {v["name"]: v for v in manifest["spec"]["volumes"]}
+            mount_map = {m["mountPath"]: m for m in manifest["spec"]["containers"][0]["volumeMounts"]}
+            training_volume = study_dataset_volume_name("default", "training")
+            assert vol_map[training_volume]["persistentVolumeClaim"]["claimName"] == "default-train-pvc"
+            assert mount_map["/data/default/training"] == {
+                "name": training_volume,
+                "mountPath": "/data/default/training",
+                "readOnly": True,
+            }
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_omits_data_pvc_when_study_mapping_is_missing(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, study_data_pvc_dict={"other-study": {}})
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            vol_names = {v["name"] for v in manifest["spec"]["volumes"]}
+            mount_names = {m["name"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
+            assert vol_names == {"workspace-job", "startup-kit"}
+            assert mount_names == {"workspace-job", "startup-kit"}
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_omits_data_pvc_when_study_data_file_missing_for_study_job(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self.mock_open.side_effect = FileNotFoundError("/fake/study_data.yaml")
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            vol_names = {v["name"] for v in manifest["spec"]["volumes"]}
+            mount_names = {m["name"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
+            assert vol_names == {"workspace-job", "startup-kit"}
+            assert mount_names == {"workspace-job", "startup-kit"}
+            self.mock_yaml.safe_load.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_omits_data_pvc_when_study_data_file_missing_without_study(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self.mock_open.side_effect = FileNotFoundError("/fake/study_data.yaml")
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            vol_names = {v["name"] for v in manifest["spec"]["volumes"]}
+            mount_names = {m["name"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
+            assert vol_names == {"workspace-job", "startup-kit"}
+            assert mount_names == {"workspace-job", "startup-kit"}
+            self.mock_open.assert_not_called()
         finally:
             _exit_patches(patches)
 
@@ -1186,6 +1308,62 @@ class TestK8sJobLauncherLaunchJob:
             launcher.launch_job(_make_launch_job_meta(gpu=2), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_gpu_limit_from_flat_resource_spec(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.RESOURCE_SPEC.value] = {"site-1": {"num_of_gpus": 2}}
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_gpu_limit_from_legacy_nested_resource_spec(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            meta = {
+                JobConstants.JOB_ID: _JOB_UUID,
+                JobMetaKey.RESOURCE_SPEC.value: {
+                    "site-1": {"k8s": {"image": "nvflare/nvflare:latest", "num_of_gpus": 2}}
+                },
+            }
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_launcher_spec_gpu_overrides_flat_resource_spec_gpu(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta(gpu=3)
+            meta[JobMetaKey.RESOURCE_SPEC.value] = {"site-1": {"num_of_gpus": 2}}
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 3
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_flat_gpu_ignored_when_resource_spec_has_mode_keys(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.RESOURCE_SPEC.value] = {"site-1": {"k8s": {"image": "unused"}, "num_of_gpus": 2}}
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert "nvidia.com/gpu" not in manifest["spec"]["containers"][0]["resources"]["limits"]
         finally:
             _exit_patches(patches)
 
@@ -1452,22 +1630,6 @@ class TestK8sJobLauncherLaunchJob:
 
     # -- PVC file validation (lazy-loaded in launch_job) ----------------------
 
-    def test_raises_on_empty_pvc_file(self):
-        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
-
-        patches = _make_k8s_launcher_patches()
-        mock_open, mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
-        try:
-            mock_yaml.safe_load.return_value = {}
-            launcher = ClientK8sJobLauncher(
-                config_file_path="/fake/kube/config",
-                study_data_pvc_file_path="/fake/data_pvc.yaml",
-            )
-            with pytest.raises(ValueError, match="empty"):
-                launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
-        finally:
-            _exit_patches(patches)
-
     def test_raises_on_non_dict_pvc_file(self):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
@@ -1477,26 +1639,21 @@ class TestK8sJobLauncherLaunchJob:
             mock_yaml.safe_load.return_value = "not-a-dict"
             launcher = ClientK8sJobLauncher(
                 config_file_path="/fake/kube/config",
-                study_data_pvc_file_path="/fake/data_pvc.yaml",
+                study_data_pvc_file_path="/fake/study_data.yaml",
             )
             with pytest.raises(ValueError, match="dictionary"):
-                launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
         finally:
             _exit_patches(patches)
 
-    def test_raises_on_missing_default_pvc_key(self):
-        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
-
+    def test_raises_on_flat_study_data_map(self):
         patches = _make_k8s_launcher_patches()
-        mock_open, mock_yaml, _mock_core_cls, _mock_ws_cls, *_ = _enter_patches(patches)
+        launcher, mock_api = self._setup(patches, study_data_pvc_dict={"study-a": "pvc-a"})
+        self._prime_running(mock_api)
         try:
-            mock_yaml.safe_load.return_value = {"study-A": "pvc-a"}  # no "default" key
-            launcher = ClientK8sJobLauncher(
-                config_file_path="/fake/kube/config",
-                study_data_pvc_file_path="/fake/data_pvc.yaml",
-            )
-            with pytest.raises(ValueError, match="default"):
-                launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            with pytest.raises(ValueError, match="study -> dataset"):
+                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+            mock_api.create_namespaced_pod.assert_not_called()
         finally:
             _exit_patches(patches)
 
@@ -1506,7 +1663,7 @@ class TestK8sJobLauncherLaunchJob:
 # ---------------------------------------------------------------------------
 class TestVolumeMountList:
     def test_data_mount_is_read_only(self):
-        data_mount = next(m for m in _DEFAULT_VOLUME_MOUNT_LIST if m["name"] == DATA_PVC_VOLUME_NAME)
+        data_mount = next(m for m in _DEFAULT_VOLUME_MOUNT_LIST if m["name"] == _DEFAULT_DATA_VOLUME_NAME)
         assert data_mount["readOnly"] is True
 
     def test_workspace_always_writable(self):
@@ -1519,9 +1676,9 @@ class TestVolumeMountList:
 
     def test_mount_paths(self):
         ws_mount = next(m for m in _DEFAULT_VOLUME_MOUNT_LIST if m["name"] == "workspace-job")
-        data_mount = next(m for m in _DEFAULT_VOLUME_MOUNT_LIST if m["name"] == DATA_PVC_VOLUME_NAME)
+        data_mount = next(m for m in _DEFAULT_VOLUME_MOUNT_LIST if m["name"] == _DEFAULT_DATA_VOLUME_NAME)
         assert ws_mount["mountPath"] == "/var/tmp/nvflare/workspace"
-        assert data_mount["mountPath"] == "/var/tmp/nvflare/data"
+        assert data_mount["mountPath"] == "/data/study-a/training"
 
 
 # ---------------------------------------------------------------------------

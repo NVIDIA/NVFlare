@@ -10,6 +10,9 @@ clouds:
     pvc_config:
       nvflws:   { sc: managed-csi,   access: ReadWriteOnce, size: 10Gi }
       nvfldata: { sc: managed-csi,   access: ReadWriteOnce, size: 1Gi  }
+    study_data:
+      default:
+        data: { pvc: nvfldata, mode: ro }
 
 participants:
   - { name: azure-server,   cloud: azure, namespace: nvflare-server,   role: server }

@@ -114,10 +114,13 @@ class TestGetOrCreate:
 
 
 class TestWorkspaceTransferManager:
-    def test_workspace_bundle_excludes_internal_study_data_pvc_map(self):
+    def test_workspace_bundle_excludes_internal_study_data_map(self):
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
             _make_workspace(ws_root, JOB_ID)
-            _write_file(os.path.join(ws_root, "local", "study_data_pvc.yaml"), b"default: nvfldata\n")
+            _write_file(
+                os.path.join(ws_root, "local", "study_data.yaml"),
+                b"study-a:\n  training:\n    source: nvfldata\n    mode: ro\n",
+            )
             _write_file(os.path.join(ws_root, "local", "custom", "helper.py"), b"VALUE = 1\n")
             zip_path = os.path.join(tmp, "workspace.zip")
 
@@ -128,7 +131,7 @@ class TestWorkspaceTransferManager:
             assert "local/resources.json" in names
             assert "local/custom/helper.py" in names
             assert f"{JOB_ID}/app/config/config_train.json" in names
-            assert "local/study_data_pvc.yaml" not in names
+            assert "local/study_data.yaml" not in names
 
     def test_prepare_download_returns_ref_for_valid_token(self, monkeypatch):
         with tempfile.TemporaryDirectory() as ws_root:
