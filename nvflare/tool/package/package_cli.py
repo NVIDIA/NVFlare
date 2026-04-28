@@ -20,21 +20,20 @@ from typing import Optional
 _package_parser: Optional[argparse.ArgumentParser] = None
 
 _PACKAGE_EXAMPLES = [
-    "nvflare package hospital-1.signed.zip -e grpc://fl-server:8002",
-    "nvflare package hospital-1.signed.zip -e grpc://fl-server:8002 --confirm-rootca",
-    "nvflare package hospital-1.signed.zip -e grpc://fl-server:8002 --project-file ./project.yaml --request-dir ./hospital-1",
+    "nvflare package hospital-1.signed.zip --confirm-rootca",
+    "nvflare package hospital-1.signed.zip --request-dir ./hospital-1 --expected-rootca-fingerprint <sha256>",
 ]
 
 _PACKAGE_HELP_EXAMPLES = """Examples:
   Build one kit from an approved signed zip:
-    nvflare package hospital-1.signed.zip -e grpc://fl-server:8002
+    nvflare package hospital-1.signed.zip --confirm-rootca
 
-  Build after interactively confirming the Project Admin's root CA fingerprint:
-    nvflare package hospital-1.signed.zip -e grpc://fl-server:8002 --confirm-rootca
+  Build with an explicit local request directory and non-interactive root CA verification:
+    nvflare package hospital-1.signed.zip --request-dir ./hospital-1 \\
+      --expected-rootca-fingerprint <sha256>
 
-  Build one signed-zip kit with project builders:
-    nvflare package hospital-1.signed.zip -e grpc://fl-server:8002 \\
-      --project-file ./project.yaml --request-dir ./hospital-1
+  Custom builders are honored when they are present in the local participant definition
+  saved by nvflare cert request.
 """
 
 
@@ -55,7 +54,7 @@ def def_package_cli_parser(sub_cmd) -> dict:
         "package",
         description=(
             "Assemble a startup kit from a distributed provisioning signed zip. "
-            "No signature.json is generated; mTLS is the trust anchor."
+            "No signature.json is generated; certificate-based connection security is the trust anchor."
         ),
         help="Assemble a startup kit from a signed approval zip.",
         epilog=_PACKAGE_HELP_EXAMPLES,
@@ -66,34 +65,12 @@ def def_package_cli_parser(sub_cmd) -> dict:
         help="Approved signed zip returned by 'nvflare cert approve' (for example hospital-1.signed.zip).",
     )
     p.add_argument(
-        "-e",
-        "--endpoint",
-        required=False,
-        default=None,
-        help="Server endpoint URI (grpc://host:port, tcp://host:port, or http://host:port). Required for all kit types.",
-    )
-    p.add_argument(
         "-w",
         "--workspace",
         required=False,
         default="workspace",
         dest="workspace",
         help="Workspace root directory. Output goes to <workspace>/<project-name>/prod_NN/<name>/. Default: workspace",
-    )
-    p.add_argument(
-        "-p",
-        "--project-file",
-        required=False,
-        default=None,
-        dest="project_file",
-        help=(
-            "Project YAML defining participants and optional custom builders "
-            "(schema-compatible with 'nvflare provision' project.yaml), "
-            "or a single-site YAML with name/org/type. "
-            "Signed zip mode builds only the signed participant. "
-            "Custom builders are honored; if StaticFileBuilder is present, its scheme is forced "
-            "from --endpoint while other builder args are retained."
-        ),
     )
     p.add_argument(
         "--request-dir",
@@ -118,14 +95,6 @@ def def_package_cli_parser(sub_cmd) -> dict:
         default=False,
         dest="confirm_rootca",
         help="Prompt to confirm the signed zip root CA fingerprint was verified out-of-band before packaging.",
-    )
-    p.add_argument(
-        "--admin-port",
-        required=False,
-        type=int,
-        default=None,
-        dest="admin_port",
-        help="Server admin port. Default: same as service port (single-port mode).",
     )
     p.add_argument(
         "--force",

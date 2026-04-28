@@ -3571,6 +3571,18 @@ class TestSignedZipPackageMode:
 
         prompt.assert_not_called()
 
+    def test_signed_zip_warns_when_rootca_fingerprint_is_not_verified(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
+
+        assert handle_package(args) == 0
+
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out)
+        assert payload["status"] == "ok"
+        assert "Root CA SHA256 fingerprint was not verified" in captured.err
+
     def test_signed_zip_rejects_mismatched_expected_rootca_fingerprint(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)

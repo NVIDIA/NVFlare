@@ -8,199 +8,341 @@ Distributed provisioning lets each participant create and keep its own private
 key. The Project Admin signs certificate requests, but never receives any
 participant private key.
 
-Use this workflow when the federation is not using Confidential Computing or HE
-startup-kit signing requirements, and when sites or users should be provisioned
-independently.
-
-The public workflow has three commands:
+Use this workflow when sites, servers, or users should be provisioned
+independently. The public workflow uses three commands:
 
 .. code-block:: shell
 
-   nvflare cert request ...
-   nvflare cert approve ...
-   nvflare package ...
+   nvflare cert request --participant <participant.yaml>
+   nvflare cert approve <request.zip> --ca-dir <ca-dir> --profile <project_profile.yaml>
+   nvflare package <signed.zip> --confirm-rootca
 
 At a high level:
 
-1. The requester creates a local request folder and request zip.
-2. The requester sends only the request zip to the Project Admin.
-3. The Project Admin approves the request zip and returns a signed zip.
-4. The Project Admin shares the ``rootca_fingerprint_sha256`` value through a
-   trusted out-of-band channel.
-5. The requester packages the signed zip with their local private key and
-   verifies the root CA fingerprint.
+1. The Project Admin initializes the project CA and creates
+   ``project_profile.yaml``.
+2. The requester creates a participant definition file for one site, server, or
+   user.
+3. The requester runs ``nvflare cert request`` and sends only the generated
+   request zip to the Project Admin.
+4. The Project Admin approves the request zip and returns the signed zip.
+5. The Project Admin shares ``rootca_fingerprint_sha256`` through a trusted
+   out-of-band channel.
+6. The requester packages the signed zip on the machine that owns the local
+   private key.
 
 The resulting startup kit is used the same way as a centrally provisioned
 startup kit.
+
+*********************
+Project Profile
+*********************
+
+The Project Admin creates ``project_profile.yaml`` once per federation. This is
+a lightweight project profile, not the full centralized provisioning
+``project.yaml``.
+
+.. code-block:: yaml
+
+   name: hospital_federation
+   scheme: grpc
+   connection_security: tls
+
+Fields:
+
+- ``name``: project name. Requests must match this value.
+- ``scheme``: FLARE communication driver, such as ``grpc``, ``tcp``, or
+  ``http``.
+- ``connection_security``: project default connection security, such as
+  ``tls``, ``mtls``, or ``clear``.
+
+The Project Admin keeps this file local. During approval, ``scheme`` and the
+default ``connection_security`` are copied into the signed zip metadata so
+participants do not need the profile file.
+
+********************************
+Participant Definition Files
+********************************
+
+Each requester creates a participant definition file for one identity. The file
+uses the same ``participants`` structure as centralized ``project.yaml``, but it
+contains only the local participant.
+
+Client site example:
+
+.. code-block:: yaml
+
+   name: hospital_federation
+   description: Site A - Hospital Alpha
+
+   participants:
+     - name: hospital-a
+       type: client
+       org: hospital_alpha
+       server:
+         host: server1.hospital-central.org
+         fed_learn_port: 8002
+         admin_port: 8003
+
+User example:
+
+.. code-block:: yaml
+
+   name: hospital_federation
+
+   participants:
+     - name: alice@hospital-alpha.org
+       type: admin
+       org: hospital_alpha
+       role: lead
+       server:
+         host: server1.hospital-central.org
+         fed_learn_port: 8002
+         admin_port: 8003
+
+Server example:
+
+.. code-block:: yaml
+
+   name: hospital_federation
+   description: Central FL server for hospital network
+
+   participants:
+     - name: server1.hospital-central.org
+       type: server
+       org: hospital_central
+       fed_learn_port: 8002
+       admin_port: 8003
+       host_names:
+         - 10.0.1.50
+         - fl-server.internal
+       connection_security: mtls
+
+For clients and users, the ``server`` block tells ``nvflare package`` which FL
+server endpoint to place in the startup kit. Because this endpoint is in the
+participant definition, the new package flow does not require a separate
+an endpoint option.
+
+For servers, ``connection_security`` is an optional local override. It is used
+only when the server startup kit is packaged from the local request folder. It
+is not approved by the Project Admin and is not distributed as federation
+policy. If the server definition does not set it, package uses the project
+default from the signed zip.
+
+User roles are certificate roles. Supported values are ``org_admin``, ``lead``,
+and ``member``. Study-specific roles and study membership are assigned later by
+study commands.
 
 ****************************
 Quick Start: Add a Site
 ****************************
 
-This example provisions a client site named ``site-3`` in organization
-``nvidia`` for project ``example_project``.
+This example provisions a client site named ``hospital-a`` for project
+``hospital_federation``.
 
 Project Admin initializes the project CA once:
 
 .. code-block:: shell
 
-   nvflare cert init --project example_project --org nvidia -o ./ca
+   nvflare cert init --project hospital_federation -o ./ca
+
+Project Admin creates ``project_profile.yaml``:
+
+.. code-block:: yaml
+
+   name: hospital_federation
+   scheme: grpc
+   connection_security: tls
+
+Site Admin creates ``hospital-a.yaml``:
+
+.. code-block:: yaml
+
+   name: hospital_federation
+
+   participants:
+     - name: hospital-a
+       type: client
+       org: hospital_alpha
+       server:
+         host: server1.hospital-central.org
+         fed_learn_port: 8002
+         admin_port: 8003
 
 Site Admin creates the request:
 
 .. code-block:: shell
 
-   nvflare cert request site site-3 --org nvidia --project example_project
+   nvflare cert request --participant hospital-a.yaml
 
 This creates:
 
 .. code-block:: text
 
-   site-3/
-     site-3.key
-     site-3.csr
+   hospital-a/
+     hospital-a.key
+     hospital-a.csr
      site.yaml
      request.json
-     site-3.request.zip
+     hospital-a.request.zip
 
-Send ``site-3/site-3.request.zip`` to the Project Admin. Do not send
-``site-3.key``. The request zip does not include the private key.
+Send ``hospital-a/hospital-a.request.zip`` to the Project Admin. Do not send
+``hospital-a.key``. The request zip does not include the private key.
 
 Project Admin approves the request:
 
 .. code-block:: shell
 
-   nvflare cert approve site-3.request.zip --ca-dir ./ca
+   nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
 
-This creates ``site-3.signed.zip`` and prints ``rootca_fingerprint_sha256``.
-Return the signed zip to the Site Admin and share the fingerprint through a
-trusted out-of-band channel.
+This creates ``hospital-a.signed.zip`` and prints
+``rootca_fingerprint_sha256``. Return the signed zip to the Site Admin and
+share the fingerprint through a trusted out-of-band channel.
 
 Site Admin packages the startup kit:
 
 .. code-block:: shell
 
-   nvflare package site-3.signed.zip -e grpc://server1:8002 --confirm-rootca
+   nvflare package hospital-a.signed.zip --confirm-rootca
 
 The output goes under:
 
 .. code-block:: text
 
-   workspace/example_project/prod_00/site-3/
+   workspace/hospital_federation/prod_00/hospital-a/
 
 Start the site:
 
 .. code-block:: shell
 
-   cd workspace/example_project/prod_00/site-3
+   cd workspace/hospital_federation/prod_00/hospital-a
    ./startup/start.sh
 
 ********************************
-Quick Start: Add an Org Admin
+Quick Start: Add a User
 ********************************
 
-User certificates use ``kind=user`` and include a certificate role. Supported
-roles are ``org-admin``, ``lead``, and ``member``.
+Requester creates ``alice.yaml``:
 
-Requester creates the org-admin request:
+.. code-block:: yaml
+
+   name: hospital_federation
+
+   participants:
+     - name: alice@hospital-alpha.org
+       type: admin
+       org: hospital_alpha
+       role: lead
+       server:
+         host: server1.hospital-central.org
+         fed_learn_port: 8002
+         admin_port: 8003
+
+Requester creates the user request:
 
 .. code-block:: shell
 
-   nvflare cert request user org-admin org_admin@nvidia.com --org nvidia --project example_project
+   nvflare cert request --participant alice.yaml
 
-Send ``org_admin@nvidia.com/org_admin@nvidia.com.request.zip`` to the Project
-Admin.
+Send ``alice@hospital-alpha.org/alice@hospital-alpha.org.request.zip`` to the
+Project Admin.
 
 Project Admin approves it:
 
 .. code-block:: shell
 
-   nvflare cert approve org_admin@nvidia.com.request.zip --ca-dir ./ca
+   nvflare cert approve alice@hospital-alpha.org.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 Requester packages the returned signed zip:
 
 .. code-block:: shell
 
-   nvflare package org_admin@nvidia.com.signed.zip -e grpc://server1:8002 --confirm-rootca
+   nvflare package alice@hospital-alpha.org.signed.zip --confirm-rootca
 
 The generated user startup kit contains ``startup/fl_admin.sh``.
 
 .. code-block:: shell
 
-   cd workspace/example_project/prod_00/org_admin@nvidia.com
+   cd workspace/hospital_federation/prod_00/alice@hospital-alpha.org
    ./startup/fl_admin.sh
-
-For a study lead certificate, use:
-
-.. code-block:: shell
-
-   nvflare cert request user lead lead@nvidia.com --org nvidia --project example_project
-   nvflare cert approve lead@nvidia.com.request.zip --ca-dir ./ca
-   nvflare package lead@nvidia.com.signed.zip -e grpc://server1:8002 --confirm-rootca
-
-.. note::
-
-   Certificate roles are runtime certificate roles. Study-specific roles and
-   study membership are assigned later by study commands, not by
-   ``cert request``.
 
 ******************************
 Quick Start: Add a Server
 ******************************
 
-Server identity is also requested through the same workflow:
+Server Admin creates ``server.yaml``:
+
+.. code-block:: yaml
+
+   name: hospital_federation
+
+   participants:
+     - name: server1.hospital-central.org
+       type: server
+       org: hospital_central
+       fed_learn_port: 8002
+       admin_port: 8003
+       host_names:
+         - 10.0.1.50
+         - fl-server.internal
+       connection_security: mtls
+
+Then use the same request, approval, and package workflow:
 
 .. code-block:: shell
 
-   nvflare cert request server server1 --org nvidia --project example_project
-   nvflare cert approve server1.request.zip --ca-dir ./ca
-   nvflare package server1.signed.zip -e grpc://server1:8002 --confirm-rootca
+   nvflare cert request --participant server.yaml
+   nvflare cert approve server1.hospital-central.org.request.zip --ca-dir ./ca --profile project_profile.yaml
+   nvflare package server1.hospital-central.org.signed.zip --confirm-rootca
 
-The server certificate common name should match the hostname used in the
-endpoint. For ``grpc://server1:8002``, the server identity should be
-``server1``.
+The server participant name follows the same validation convention as
+centralized ``project.yaml`` server participants. A DNS name is recommended for
+production, and ``localhost`` remains valid for local/demo workflows.
+Additional DNS names or IP addresses can be added with ``host_names``.
 
 ********************
 Remote Transfer Flow
 ********************
 
-When the Project Admin and requester are on different machines, the path names
-in examples are usually flat because the zip has been copied into the current
-directory.
+When the Project Admin and requester are on different machines, the zip files
+are copied between machines. The private key remains on the requester machine.
 
 Requester machine:
 
 .. code-block:: shell
 
-   nvflare cert request site site-3 --org nvidia --project example_project
+   nvflare cert request --participant hospital-a.yaml
 
 Transfer this file to the Project Admin:
 
 .. code-block:: text
 
-   site-3/site-3.request.zip
+   hospital-a/hospital-a.request.zip
 
 Project Admin machine:
 
 .. code-block:: shell
 
-   nvflare cert approve site-3.request.zip --ca-dir ./ca
+   nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 Transfer this file back to the requester:
 
 .. code-block:: text
 
-   site-3.signed.zip
+   hospital-a.signed.zip
 
 Requester machine:
 
 .. code-block:: shell
 
-   nvflare package site-3.signed.zip -e grpc://server1:8002 --request-dir ./site-3 --confirm-rootca
+   nvflare package hospital-a.signed.zip --confirm-rootca
 
-``--request-dir`` points to the local request folder that contains
-``site-3.key`` and ``request.json``. If the signed zip is next to the request
-folder, the command can usually find the request folder automatically.
+If the signed zip is not next to the local request folder and package cannot
+find the folder from local request state, specify it:
+
+.. code-block:: shell
+
+   nvflare package hospital-a.signed.zip --request-dir ./hospital-a --confirm-rootca
 
 *****************************
 Root CA Fingerprint Check
@@ -216,9 +358,8 @@ Use one of these options to make the package command verify it:
 
 .. code-block:: shell
 
-   nvflare package site-3.signed.zip -e grpc://server1:8002 --confirm-rootca
-   nvflare package site-3.signed.zip \
-       -e grpc://server1:8002 \
+   nvflare package hospital-a.signed.zip --confirm-rootca
+   nvflare package hospital-a.signed.zip \
        --expected-rootca-fingerprint SHA256:AA:BB:...
 
 Without either option, packaging still validates the signed zip, metadata,
@@ -234,43 +375,14 @@ different command shape:
 
 .. code-block:: shell
 
-   nvflare cert init --project example_project --org nvidia -o ./ca
-   nvflare cert request site site-3 --org nvidia --project example_project
-   nvflare cert approve site-3/site-3.request.zip --ca-dir ./ca
-   nvflare package site-3/site-3.signed.zip -e grpc://server1:8002 --confirm-rootca
+   nvflare cert init --project hospital_federation -o ./ca
+   # create project_profile.yaml and participant definition files
+   nvflare cert request --participant hospital-a.yaml
+   nvflare cert approve hospital-a/hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
+   nvflare package hospital-a/hospital-a.signed.zip --confirm-rootca
 
 This is the same workflow as remote approval. The only difference is that the
 zip files are not copied between machines.
-
-********************
-Using a Project File
-********************
-
-``cert request`` and ``cert approve`` do not need the project file. They only
-deal with identity and certificate approval.
-
-Use ``--project-file`` at package time when you need custom builders or
-project-level packaging configuration:
-
-.. code-block:: shell
-
-   nvflare package site-3.signed.zip \
-       -e grpc://server1:8002 \
-       --project-file ./project.yml \
-       --request-dir ./site-3 \
-       --confirm-rootca
-
-In signed-zip mode, the signed zip is the source of truth for participant
-identity. The project file supplies custom builders and non-identity package
-configuration. Only the signed participant is built, even if the project file
-lists many participants.
-
-If the signed participant appears in the project file, identity fields such as
-name, organization, kind, certificate type, and certificate role must match the
-signed zip. If they conflict, packaging fails.
-
-If the signed participant is not found in the project file, packaging continues
-with the signed identity and project builders, and prints a warning.
 
 ****************
 Artifacts
@@ -280,12 +392,12 @@ Request folder:
 
 .. code-block:: text
 
-   site-3/
-     site-3.key          # private key, stays local
-     site-3.csr          # CSR
-     site.yaml           # request identity metadata
-     request.json        # request metadata and hashes
-     site-3.request.zip  # sent to Project Admin
+   hospital-a/
+     hospital-a.key          # private key, stays local
+     hospital-a.csr          # CSR
+     site.yaml               # full local participant definition
+     request.json            # request metadata and hashes
+     hospital-a.request.zip  # sent to Project Admin
 
 Request zip:
 
@@ -293,9 +405,7 @@ Request zip:
 
    request.json
    site.yaml
-   site-3.csr
-
-The request zip must not contain ``*.key``.
+   hospital-a.csr
 
 Signed zip:
 
@@ -303,102 +413,21 @@ Signed zip:
 
    signed.json
    site.yaml
-   site-3.crt
+   hospital-a.crt
    rootCA.pem
 
-The signed zip must not contain ``*.key``. It is not a startup kit. It is an
-approval response used by ``nvflare package``.
+The ``site.yaml`` in the local request folder is the full participant
+definition used later by ``nvflare package``. It can contain local
+package-time fields, such as the server-side ``connection_security`` override.
 
-``site.yaml`` appears in both the request zip and the signed zip. It records
-the requested identity in a small human-readable form.
+The ``site.yaml`` inside the request zip and signed zip is sanitized approval
+metadata. It contains the identity and connection fields needed for approval
+and packaging, but it does not contain private keys. Server-side
+``connection_security`` overrides are excluded from this sanitized copy because
+they are local package-time behavior.
 
-For a site:
-
-.. code-block:: yaml
-
-   name: site-3
-   org: nvidia
-   type: client
-   project: example_project
-   kind: site
-
-For a server:
-
-.. code-block:: yaml
-
-   name: server1
-   org: nvidia
-   type: server
-   project: example_project
-   kind: server
-
-For a user:
-
-.. code-block:: yaml
-
-   name: org_admin@nvidia.com
-   org: nvidia
-   type: org_admin
-   project: example_project
-   kind: user
-   cert_role: org-admin
-
-Audit state:
-
-- ``cert request`` records request audit metadata under
-  ``~/.nvflare/cert_requests``.
-- ``cert approve`` records approval audit metadata under
-  ``~/.nvflare/cert_approves``.
-
-Audit records store paths, metadata, and hashes. They do not copy private keys.
-
-****************
-Roles
-****************
-
-``nvflare cert request`` starts with an identity kind:
-
-.. code-block:: shell
-
-   nvflare cert request site <site-name> --org <org> --project <project>
-   nvflare cert request server <server-name> --org <org> --project <project>
-   nvflare cert request user <cert-role> <email> --org <org> --project <project>
-
-Kinds:
-
-.. list-table::
-   :header-rows: 1
-
-   * - Kind
-     - Startup kit
-     - Example
-   * - ``site``
-     - Client site kit with ``startup/start.sh``
-     - ``nvflare cert request site site-3 --org nvidia --project example_project``
-   * - ``server``
-     - Server kit with ``startup/start.sh``
-     - ``nvflare cert request server server1 --org nvidia --project example_project``
-   * - ``user``
-     - Admin API user kit with ``startup/fl_admin.sh``
-     - ``nvflare cert request user lead lead@nvidia.com --org nvidia --project example_project``
-
-User certificate roles:
-
-.. list-table::
-   :header-rows: 1
-
-   * - Role
-     - Intended use
-   * - ``org-admin``
-     - Organization administrator
-   * - ``lead``
-     - Lead researcher or job submitter
-   * - ``member``
-     - Read-only or limited user
-
-Project names must be path-safe identifiers matching
-``[A-Za-z0-9][A-Za-z0-9._-]*``. During approval, the request project must
-match the CA metadata and the root CA certificate subject.
+The request zip and signed zip must not contain ``*.key`` files. The signed zip
+is not a startup kit; it is the approval response used by ``nvflare package``.
 
 ****************
 Command Summary
@@ -408,25 +437,28 @@ Project Admin:
 
 .. code-block:: shell
 
-   nvflare cert init --project example_project --org nvidia -o ./ca
-   nvflare cert approve site-3.request.zip --ca-dir ./ca
+   nvflare cert init --project hospital_federation -o ./ca
+   # create project_profile.yaml
+   nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 Requester:
 
 .. code-block:: shell
 
-   nvflare cert request site site-3 --org nvidia --project example_project
-   nvflare package site-3.signed.zip -e grpc://server1:8002 --confirm-rootca
+   nvflare cert request --participant hospital-a.yaml
+   nvflare package hospital-a.signed.zip --confirm-rootca
 
 With explicit locations:
 
 .. code-block:: shell
 
-   nvflare cert request site site-3 --org nvidia --project example_project --out ./requests/site-3
-   nvflare cert approve ./requests/site-3/site-3.request.zip --ca-dir ./ca --out ./signed/site-3.signed.zip
-   nvflare package ./signed/site-3.signed.zip \
-       -e grpc://server1:8002 \
-       --request-dir ./requests/site-3 \
+   nvflare cert request --participant ./defs/hospital-a.yaml --out ./requests/hospital-a
+   nvflare cert approve ./requests/hospital-a/hospital-a.request.zip \
+       --ca-dir ./ca \
+       --profile ./project_profile.yaml \
+       --out ./signed/hospital-a.signed.zip
+   nvflare package ./signed/hospital-a.signed.zip \
+       --request-dir ./requests/hospital-a \
        -w ./workspace \
        --confirm-rootca
 
@@ -436,9 +468,12 @@ Notes
 
 - The private key stays in the request folder and is never sent to the Project
   Admin.
-- The server endpoint belongs to ``nvflare package``, not ``cert request``.
-  Endpoint changes do not require a new certificate. Re-run ``nvflare package``
-  with a new ``-e`` value.
+- Client and user server endpoints come from the local participant definition
+  file's ``server`` block.
+- Project-wide ``scheme`` and default ``connection_security`` come from the
+  Project Admin's profile through the signed zip.
+- Server ``connection_security`` overrides are resolved locally at package time
+  from the original server participant definition.
 - Use ``--confirm-rootca`` for interactive root CA fingerprint confirmation or
   ``--expected-rootca-fingerprint`` for non-interactive automation.
 - Startup kits generated from signed zips are compatible with the normal

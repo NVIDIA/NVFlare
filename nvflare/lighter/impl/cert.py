@@ -329,10 +329,12 @@ class CertBuilder(Builder):
         ca=False,
         role=None,
         server: Participant = None,
+        server_default_host=None,
+        server_additional_hosts=None,
+        not_valid_before=None,
+        not_valid_after=None,
+        extra_extensions=None,
     ):
-        server_default_host = None
-        server_additional_hosts = None
-
         if server:
             # This is to generate a server cert.
             # Use SubjectAlternativeName for all host names
@@ -348,6 +350,9 @@ class CertBuilder(Builder):
             ca=ca,
             server_default_host=server_default_host,
             server_additional_hosts=server_additional_hosts,
+            not_valid_before=not_valid_before,
+            not_valid_after=not_valid_after,
+            extra_extensions=extra_extensions,
         )
 
     def finalize(self, project: Project, ctx: ProvisionContext):

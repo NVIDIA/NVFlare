@@ -658,7 +658,8 @@ class TestCertInit:
         rc = _run_init(tmp_path, force=True)
         assert rc == 0
         new_key = (tmp_path / "rootCA.key").read_bytes()
-        # Key should be different (new key pair generated)
+        # A new key pair is generated on force re-init
+        assert original_key != new_key
         # .bak directory should exist
         bak_dirs = list((tmp_path / ".bak").iterdir())
         assert len(bak_dirs) >= 1
@@ -2860,7 +2861,7 @@ class TestDistributedCertParticipantWorkflow:
         captured = capsys.readouterr()
         assert "host_names" in captured.err
 
-    def test_server_san_field_validation_raises_even_when_error_helper_is_mocked(self):
+    def test_server_san_field_validation_returns_none_when_error_helper_is_mocked(self):
         site_meta = {
             "name": "hospital_federation",
             "participants": [
@@ -2876,10 +2877,9 @@ class TestDistributedCertParticipantWorkflow:
         }
 
         with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
-            with pytest.raises(SystemExit) as exc_info:
-                _server_cert_san_fields(site_meta, {"cert_type": "server"})
+            result = _server_cert_san_fields(site_meta, {"cert_type": "server"})
 
-        assert exc_info.value.code == 4
+        assert result is None
         output_error.assert_called_once()
 
     def test_approve_nonexistent_profile_reports_file_not_found(self, tmp_path, capsys, monkeypatch):
@@ -3111,7 +3111,7 @@ class TestDistributedCertRequestApprove:
         assert site_yaml["participants"][0]["type"] == "admin"
         capsys.readouterr()
 
-    def test_request_user_invalid_role_fails(self, tmp_path, monkeypatch):
+    def test_request_user_invalid_role_fails(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         participant_path = tmp_path / "alice.yaml"
         _write_request_participant(
@@ -3130,6 +3130,10 @@ class TestDistributedCertRequestApprove:
             )
 
         assert exc_info.value.code == 4
+        err = capsys.readouterr().err
+        assert "admin participant role must be one of:" in err
+        assert "org-admin" in err
+        assert "org_admin" in err
 
     def test_request_user_requires_email_identity(self, tmp_path, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")

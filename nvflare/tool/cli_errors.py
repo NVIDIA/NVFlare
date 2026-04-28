@@ -144,6 +144,10 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "CSR file not found: {path}.",
         "hint": "Check the path to the .csr file.",
     },
+    "REQUEST_ZIP_NOT_FOUND": {
+        "message": "Request zip not found: {path}.",
+        "hint": "Provide the .request.zip file created by 'nvflare cert request'.",
+    },
     "INVALID_CSR": {
         "message": "Invalid or corrupt CSR file: {path}.",
         "hint": "Create a new request with 'nvflare cert request'.",
@@ -212,6 +216,89 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     "AMBIGUOUS_KEY": {
         "message": "Multiple *.key files found in {path}: {files}",
         "hint": "Select one participant key for this internal packaging operation.",
+    },
+    # --- Distributed provisioning: signed zip validation ---
+    "INVALID_SIGNED_ZIP": {
+        "message": "Invalid signed zip.",
+        "hint": "Use the .signed.zip returned by 'nvflare cert approve'.",
+    },
+    "INVALID_PROJECT_NAME": {
+        "message": "Invalid project name.",
+        "hint": "Project name must start with a letter or digit and contain only letters, digits, hyphens, underscores, or dots.",
+    },
+    "INVALID_ROOTCA_FINGERPRINT": {
+        "message": "Invalid root CA SHA256 fingerprint.",
+        "hint": "Use SHA256:AA:BB:... or OpenSSL output such as 'sha256 Fingerprint=AA:BB:...'.",
+    },
+    "ROOTCA_FINGERPRINT_MISMATCH": {
+        "message": "Root CA SHA256 fingerprint does not match the expected out-of-band value.",
+        "hint": "Verify that the signed zip came from the intended Project Admin.",
+    },
+    "SIGNED_ZIP_IDENTITY_CONFLICT": {
+        "message": "Signed zip identity conflict.",
+        "hint": "The signed zip project/org/name does not match the local request material.",
+    },
+    # --- Distributed provisioning: local site yaml ---
+    "LOCAL_SITE_MISMATCH": {
+        "message": "Local site.yaml does not match the signed zip identity.",
+        "hint": "Use the site.yaml created by 'nvflare cert request' for this participant.",
+    },
+    "LOCAL_SITE_INVALID": {
+        "message": "Local site.yaml is invalid or missing required fields.",
+        "hint": "Use the site.yaml created by 'nvflare cert request', or re-run 'nvflare cert request'.",
+    },
+    "LOCAL_SITE_UNSUPPORTED_FEATURE": {
+        "message": "Local site.yaml contains an unsupported feature.",
+        "hint": "Remove or update the unsupported configuration in your participant definition file.",
+    },
+    # --- Distributed provisioning: key/cert ---
+    "KEY_INVALID": {
+        "message": "Private key is invalid or corrupt.",
+        "hint": "Re-run 'nvflare cert request' to generate a new key pair.",
+    },
+    "KEY_CERT_MISMATCH": {
+        "message": "Private key does not match the signed certificate.",
+        "hint": "Ensure the private key from 'nvflare cert request' matches the signed zip from 'nvflare cert approve'.",
+    },
+    # --- Distributed provisioning: request directory ---
+    "REQUEST_DIR_NOT_FOUND": {
+        "message": "Request directory not found: {path}.",
+        "hint": "Provide the directory created by 'nvflare cert request', or omit --request-dir to auto-discover.",
+    },
+    "REQUEST_DIR_INCOMPLETE": {
+        "message": "Request directory is missing required local material.",
+        "hint": "Re-run 'nvflare cert request' to regenerate the request directory.",
+    },
+    "REQUEST_DIR_MISMATCH": {
+        "message": "Request directory does not match the signed zip request_id.",
+        "hint": "Use the directory created by 'nvflare cert request' for this signed zip.",
+    },
+    # --- Distributed provisioning: request metadata ---
+    "REQUEST_METADATA_NOT_FOUND": {
+        "message": "Request metadata (request.json) not found in the request directory.",
+        "hint": "Re-run 'nvflare cert request' to regenerate the request directory.",
+    },
+    "REQUEST_METADATA_INVALID": {
+        "message": "Request metadata (request.json) is invalid or corrupted.",
+        "hint": "Re-run 'nvflare cert request' to regenerate the request directory.",
+    },
+    "REQUEST_METADATA_MISMATCH": {
+        "message": "Request metadata does not match the signed zip.",
+        "hint": "Ensure the request directory matches the signed zip from 'nvflare cert approve'.",
+    },
+    # --- Distributed provisioning: project/CA binding ---
+    "PROJECT_CA_MISMATCH": {
+        "message": "Request project does not match the CA project.",
+        "hint": "Use a CA directory initialized for the same project as this request.",
+    },
+    "PROJECT_PROFILE_MISMATCH": {
+        "message": "Request project does not match the project profile.",
+        "hint": "Use the project_profile.yaml for the same project as this request.",
+    },
+    # --- Package build ---
+    "BUILD_FAILED": {
+        "message": "Package build failed.",
+        "hint": "Check builder configuration and logs for details.",
     },
     "UNSIGNED_JOB_REJECTED": {
         "message": "Unsigned job rejected — require_signed_jobs is enabled.",

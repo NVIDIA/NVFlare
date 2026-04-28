@@ -241,22 +241,17 @@ def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
     try:
         if hasattr(os, "fchmod"):
             os.fchmod(fd, mode)
+        with os.fdopen(fd, "wb") as f:
+            fd = -1  # ownership transferred to f
+            f.write(content)
     except Exception:
-        os.close(fd)
+        if fd != -1:
+            os.close(fd)
         try:
             os.unlink(path)
         except OSError:
             pass
         raise
-    with os.fdopen(fd, "wb") as f:
-        try:
-            f.write(content)
-        except Exception:
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
-            raise
 
 
 def _read_file_nofollow(path: str, max_size: int = _MAX_ZIP_MEMBER_SIZE) -> bytes:
@@ -731,6 +726,7 @@ def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
         if (
             not name
             or name == "."
+            or name.endswith("/")
             or os.path.isabs(name)
             or "\\" in name
             or norm != name
@@ -908,6 +904,11 @@ def _verify_rootca_fingerprint_options(args, actual_fingerprint: str) -> bool:
         if not prompt_yn("Fingerprint verified out-of-band?"):
             print_human("Cancelled.")
             return False
+    elif not expected:
+        print_human(
+            "Warning: Root CA SHA256 fingerprint was not verified. "
+            "Use --expected-rootca-fingerprint or --confirm-rootca to verify it out-of-band."
+        )
 
     return True
 
@@ -1134,6 +1135,11 @@ def _validate_signed_hashes(signed_meta: dict, file_contents: dict) -> bool:
     # Hash aliases are resolved as hashes[alias] or hashes[f"{alias}_sha256"];
     # this keeps canonical keys like certificate_sha256 readable while allowing
     # older short names such as cert_sha256 during schema tightening.
+    # Note: csr_sha256 is required in signed_meta["hashes"] (validated by _validate_signed_metadata)
+    # but is not verified here because the CSR is not included in the signed zip.
+    # Equivalent security is provided by public_key_sha256: the cert's public key is verified
+    # against the CSR's public key hash in _validate_signed_public_key_hash and then against
+    # the local private key via validate_key_match=True in _validate_cert_material.
     checks = [
         (("site_yaml", "site", "site.yaml"), "site.yaml"),
         (("cert", "certificate", "crt"), "cert"),
@@ -1386,7 +1392,16 @@ def _resolve_request_dir(args, signed_zip_path: str, identity: dict):
         if request_id:
             validated = _validated_audit_request_dir(candidate, request_id)
             if not validated:
-                missing = _missing_request_material(candidate, identity["name"]) if os.path.isdir(candidate) else []
+                if not os.path.isdir(candidate):
+                    output_error_message(
+                        "REQUEST_DIR_NOT_FOUND",
+                        f"Request directory not found: {candidate}.",
+                        "Provide the directory created by 'nvflare cert request', or omit --request-dir to auto-discover.",
+                        None,
+                        exit_code=4,
+                    )
+                    return None
+                missing = _missing_request_material(candidate, identity["name"])
                 if missing:
                     output_error_message(
                         "REQUEST_DIR_INCOMPLETE",
@@ -1417,15 +1432,23 @@ def _resolve_request_dir(args, signed_zip_path: str, identity: dict):
             return validated
         if _has_request_material(candidate, identity["name"]):
             return candidate
-        if os.path.isdir(candidate):
-            missing = _missing_request_material(candidate, identity["name"])
+        if not os.path.isdir(candidate):
             output_error_message(
-                "REQUEST_DIR_INCOMPLETE",
-                "The specified --request-dir is missing local request material.",
-                f"Expected file(s): {', '.join(missing)}.",
+                "REQUEST_DIR_NOT_FOUND",
+                f"Request directory not found: {candidate}.",
+                "Provide the directory created by 'nvflare cert request', or omit --request-dir to auto-discover.",
                 None,
-                exit_code=1,
+                exit_code=4,
             )
+            return None
+        missing = _missing_request_material(candidate, identity["name"])
+        output_error_message(
+            "REQUEST_DIR_INCOMPLETE",
+            "The specified --request-dir is missing local request material.",
+            f"Expected file(s): {', '.join(missing)}.",
+            None,
+            exit_code=1,
+        )
         return None
 
     audit_dir = _audit_request_dir(identity.get("request_id"))
@@ -2077,6 +2100,8 @@ def _handle_internal_material_package(args, has_dir: bool, has_explicit: bool):
     if has_dir:
         if not args.name:
             args.name = _discover_name_from_dir(args.dir)
+            if not args.name:
+                return 1
         args.cert = os.path.join(args.dir, f"{args.name}.crt")
         args.key = os.path.join(args.dir, f"{args.name}.key")
         args.rootca = os.path.join(args.dir, "rootCA.pem")

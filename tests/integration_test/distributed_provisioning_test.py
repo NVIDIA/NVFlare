@@ -88,7 +88,7 @@ _STARTUP_ADMIN = {"client.crt", "client.key", "fed_admin.json", "fl_admin.sh"}
 
 def _ns(**kwargs):
     """Build a SimpleNamespace with common defaults for CLI args."""
-    defaults = dict(force=True, output_fmt=None, schema=False, org=None, accept_csr_role=False)
+    defaults = dict(force=True, output_fmt=None, schema=False, org=None)
     defaults.update(kwargs)
     return types.SimpleNamespace(**defaults)
 

@@ -461,22 +461,17 @@ def _write_private_key(path: str, pem_bytes: bytes) -> None:
     try:
         if hasattr(os, "fchmod"):
             os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            fd = -1  # ownership transferred to f
+            f.write(pem_bytes)
     except Exception:
-        os.close(fd)
+        if fd != -1:
+            os.close(fd)
         try:
             os.unlink(path)
         except OSError:
             pass
         raise
-    with os.fdopen(fd, "wb") as f:
-        try:
-            f.write(pem_bytes)
-        except Exception:
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
-            raise
 
 
 def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
@@ -487,22 +482,17 @@ def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
     try:
         if hasattr(os, "fchmod"):
             os.fchmod(fd, mode)
+        with os.fdopen(fd, "wb") as f:
+            fd = -1  # ownership transferred to f
+            f.write(content)
     except Exception:
-        os.close(fd)
+        if fd != -1:
+            os.close(fd)
         try:
             os.unlink(path)
         except OSError:
             pass
         raise
-    with os.fdopen(fd, "wb") as f:
-        try:
-            f.write(content)
-        except Exception:
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
-            raise
 
 
 def _read_file_nofollow(path: str, max_size: int = _MAX_ZIP_MEMBER_SIZE) -> bytes:
@@ -623,7 +613,7 @@ def _safe_zip_names(zf: zipfile.ZipFile) -> list:
             not name
             or name == "."
             or name.endswith("/")
-            or name.startswith("/")
+            or os.path.isabs(name)
             or "\\" in name
             or normalized != name
             or normalized.startswith("../")
@@ -1452,6 +1442,10 @@ def _normalize_cert_role(role: str) -> str:
     return _USER_ROLE_TO_CERT_TYPE.get(role.strip())
 
 
+def _valid_user_role_names() -> str:
+    return ", ".join(sorted(_USER_ROLE_TO_CERT_TYPE))
+
+
 def _validate_port(value, field_label: str) -> bool:
     if not isinstance(value, int) or isinstance(value, bool) or not (1 <= value <= 65535):
         output_error_message(
@@ -1508,7 +1502,7 @@ def _derive_identity_from_participant(project_name: str, participant: dict) -> d
                 "Invalid arguments.",
                 _USAGE_HINT,
                 exit_code=4,
-                detail="admin participant role must be one of: org_admin, lead, member",
+                detail=f"admin participant role must be one of: {_valid_user_role_names()}",
             )
             return None
         identity = {"kind": "user", "name": name, "cert_role": cert_role, "cert_type": cert_role}
@@ -1693,7 +1687,7 @@ def _build_sanitized_approval_site(local_site: dict) -> dict:
     return sanitized
 
 
-def _server_cert_san_fields(site_meta: dict, request_meta: dict) -> tuple:
+def _server_cert_san_fields(site_meta: dict, request_meta: dict):
     if request_meta.get("cert_type") != "server" or not _is_project_shaped_site_meta(site_meta):
         return None, None
     participant = site_meta["participants"][0]
@@ -1707,7 +1701,7 @@ def _server_cert_san_fields(site_meta: dict, request_meta: dict) -> tuple:
             exit_code=4,
             detail=f"server participant definition is invalid: {e}",
         )
-        raise SystemExit(4)
+        return None
     return server.get_default_host(), server.get_prop(PropKey.HOST_NAMES)
 
 
@@ -1834,6 +1828,15 @@ def handle_cert_request(args):
                 force=getattr(args, "force", False),
             ):
                 return 1
+    except _UnsafeZipSourceError as e:
+        output_error_message(
+            "INVALID_ARGS",
+            "Request file too large to process.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=str(e),
+        )
+        return 1
     except OSError as e:
         output_error("OUTPUT_DIR_NOT_WRITABLE", path=request_dir, detail=str(e))
         return 1
@@ -2065,7 +2068,10 @@ def _validate_request_metadata(
                 "Invalid arguments.",
                 _USAGE_HINT,
                 exit_code=4,
-                detail="approval site.yaml must not contain listening_host; distributed provisioning does not support listener certificates yet",
+                detail=(
+                    "approval site.yaml must not contain listening_host; "
+                    "distributed provisioning does not support listener certificates yet"
+                ),
             )
             return None
     if request_meta["site_yaml_sha256"] != _sha256_file(site_yaml_path):
@@ -2245,7 +2251,8 @@ def handle_cert_approve(args):
         "nvflare cert approve",
         [
             "nvflare cert approve site-3.request.zip --ca-dir ./ca --profile project_profile.yaml",
-            "nvflare cert approve site-3.request.zip --ca-dir ./ca --profile project_profile.yaml --out site-3.signed.zip",
+            "nvflare cert approve site-3.request.zip --ca-dir ./ca --profile project_profile.yaml"
+            " --out site-3.signed.zip",
         ],
         sys.argv[1:],
     )
@@ -2298,6 +2305,8 @@ def handle_cert_approve(args):
         # The values used below survive the tempdir cleanup: output paths are
         # written into the final signed zip location, and metadata is copied.
         server_san_fields = _server_cert_san_fields(site_meta, request_meta)
+        # Returns (None, None) for non-server certs, (host, hosts) for server certs,
+        # or bare None on validation error (output_error_message already emitted).
         if server_san_fields is None:
             return 1
         server_default_host, server_additional_hosts = server_san_fields

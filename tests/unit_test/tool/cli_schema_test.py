@@ -63,6 +63,15 @@ class TestParserToSchema:
         assert "--help" not in names
         assert "-h" not in names
 
+    def test_suppressed_action_excluded(self):
+        parser = _make_parser()
+        parser.add_argument("--visible", help="Visible.")
+        parser.add_argument("--hidden", help=argparse.SUPPRESS, default=argparse.SUPPRESS)
+        schema = parser_to_schema(parser, "cmd")
+        names = [a["name"] for a in schema["args"]]
+        assert "--visible" in names
+        assert "--hidden" not in names
+
     def test_store_true_inferred_as_boolean(self):
         parser = _make_parser()
         parser.add_argument("--force", action="store_true", default=False, help="Force overwrite.")
@@ -318,6 +327,30 @@ class TestSchemaWithMissingRequiredArgs:
         schema = json.loads(captured.out)
         assert schema["command"] == "nvflare cert request"
         assert schema["schema_version"] == "1"
+        args_by_name = {arg["name"]: arg for arg in schema["args"]}
+        assert args_by_name["--participant"]["required"] is True
+        assert "error" not in captured.err.lower()
+
+    def test_cert_approve_schema_marks_required_v2_args(self, capsys, monkeypatch):
+        """nvflare cert approve --schema must mark request zip, --ca-dir, and --profile as required."""
+        import sys
+
+        from nvflare.cli import parse_args
+
+        monkeypatch.setattr(sys, "argv", ["nvflare", "cert", "approve", "--schema"])
+        _parser, args, _ = parse_args("nvflare")
+        from nvflare.tool.cert.cert_commands import handle_cert_approve
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_approve(args)
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        schema = json.loads(captured.out)
+        assert schema["command"] == "nvflare cert approve"
+        args_by_name = {arg["name"]: arg for arg in schema["args"]}
+        assert args_by_name["request_zip"]["required"] is True
+        assert args_by_name["--ca-dir"]["required"] is True
+        assert args_by_name["--profile"]["required"] is True
         assert "error" not in captured.err.lower()
 
 

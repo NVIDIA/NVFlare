@@ -118,17 +118,12 @@ def _def_cert_request_parser(cert_sub: argparse._SubParsersAction) -> argparse.A
         help="Create a distributed provisioning request zip.",
     )
     p.add_argument(
-        "kind",
-        choices=["site", "server", "user"],
-        help="Identity kind to request.",
+        "-p",
+        "--participant",
+        required=True,
+        dest="participant",
+        help="Participant definition YAML with top-level name and participants[0].",
     )
-    p.add_argument(
-        "values",
-        nargs="+",
-        help="For site/server: <name>. For user: <cert-role> <email>.",
-    )
-    p.add_argument("--org", required=False, default=None, dest="org", help="Organization name. Required.")
-    p.add_argument("--project", required=False, default=None, dest="project", help="Project name. Required.")
     p.add_argument(
         "--out",
         required=False,
@@ -154,8 +149,7 @@ def _def_cert_approve_parser(cert_sub: argparse._SubParsersAction) -> argparse.A
     p.add_argument(
         "-c",
         "--ca-dir",
-        required=False,
-        default=None,
+        required=True,
         dest="ca_dir",
         help="Directory containing rootCA.pem, rootCA.key, and ca.json.",
     )
@@ -165,6 +159,12 @@ def _def_cert_approve_parser(cert_sub: argparse._SubParsersAction) -> argparse.A
         default=None,
         dest="signed_zip",
         help="Signed zip output path. Default: <name>.signed.zip.",
+    )
+    p.add_argument(
+        "--profile",
+        required=True,
+        dest="profile",
+        help="Project profile YAML containing name, scheme, and connection_security.",
     )
     p.add_argument(
         "--valid-days",
