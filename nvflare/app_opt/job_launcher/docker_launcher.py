@@ -285,7 +285,17 @@ class DockerJobLauncher(JobLauncherSpec):
         self.python_path = python_path
         self.timeout = timeout
         default_job_container_kwargs = default_job_container_kwargs or {}
-        _RESERVED_KWARGS = {"volumes", "network", "environment", "command", "name", "detach", "user", "working_dir"}
+        _RESERVED_KWARGS = {
+            "volumes",
+            "mounts",
+            "network",
+            "environment",
+            "command",
+            "name",
+            "detach",
+            "user",
+            "working_dir",
+        }
         reserved_used = _RESERVED_KWARGS & set(default_job_container_kwargs.keys())
         if reserved_used:
             raise ValueError(
@@ -407,7 +417,17 @@ class DockerJobLauncher(JobLauncherSpec):
         _site_rs = (job_meta.get(JobMetaKey.RESOURCE_SPEC.value) or {}).get(site_name) or {}
         _flat_gpus = 0 if any(k in _site_rs for k in ("process", "docker", "k8s")) else _site_rs.get("num_of_gpus", 0)
         num_gpus = docker_spec["num_of_gpus"] if "num_of_gpus" in docker_spec else _flat_gpus
-        _RESERVED_KWARGS = {"volumes", "network", "environment", "command", "name", "detach", "user", "working_dir"}
+        _RESERVED_KWARGS = {
+            "volumes",
+            "mounts",
+            "network",
+            "environment",
+            "command",
+            "name",
+            "detach",
+            "user",
+            "working_dir",
+        }
         _NON_CONTAINER_KEYS = {"num_of_gpus", "image"} | _RESERVED_KWARGS
         reserved_in_spec = _RESERVED_KWARGS & set(docker_spec.keys())
         if reserved_in_spec:
@@ -428,10 +448,8 @@ class DockerJobLauncher(JobLauncherSpec):
         if num_gpus and "device_requests" not in job_container_kwargs:
             merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
 
-        # Volumes: always mount workspace; mount study datasets only when the job declares a study.
-        volumes = {
-            workspace: {"bind": self.WORKSPACE_MOUNT, "mode": "rw"},
-        }
+        # Mounts: always mount workspace; mount study datasets only when the job declares a study.
+        mounts = [docker.types.Mount(target=self.WORKSPACE_MOUNT, source=workspace, type="bind", read_only=False)]
         # Read study data map from workspace/local/study_data.yaml.
         # Must use WORKSPACE_MOUNT (container-internal path) for the file read because launch_job
         # runs inside the SP/CP container. The host path (workspace) does not exist in the container
@@ -444,7 +462,14 @@ class DockerJobLauncher(JobLauncherSpec):
             study_data_map = load_study_data_file(study_data_file)
             data_mounts = resolve_study_dataset_mounts(study_data_map, study, study_data_file)
             for dataset_mount in data_mounts:
-                volumes[dataset_mount.source] = {"bind": dataset_mount.mount_path, "mode": dataset_mount.mode}
+                mounts.append(
+                    docker.types.Mount(
+                        target=dataset_mount.mount_path,
+                        source=dataset_mount.source,
+                        type="bind",
+                        read_only=dataset_mount.read_only,
+                    )
+                )
                 self.logger.info(
                     "mounting study '%s' dataset '%s' from %s -> %s",
                     study,
@@ -464,7 +489,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 network=self.network,
                 detach=True,
                 environment=environment if environment else None,
-                volumes=volumes,
+                mounts=mounts,
                 working_dir=self.WORKSPACE_MOUNT,
                 # Run as the same user as SP/CP so job-written files are accessible to SP/CP
                 # (e.g. cross_val_results.json written by SJ must be readable/deletable by SP).
