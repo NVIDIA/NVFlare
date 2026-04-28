@@ -125,14 +125,18 @@ class JobLogReceiver(Widget):
         if f is None:
             client, job_id = self._get_trusted_stream_identity(fl_ctx)
             if not self._is_site_allowed_to_stream(client, fl_ctx):
+                # Drop the chunk: the site has explicitly disabled streaming.
+                # Log once per (client, job_id) so the operator can see it
+                # without flooding the server log.
                 key = (client, job_id)
                 if key not in self._unauthorized_logged:
                     self._unauthorized_logged.add(key)
                     self.log_error(
                         fl_ctx,
-                        f"Received live log chunk from {client} for job {job_id} but the site has "
+                        f"Dropping live log chunk from {client} for job {job_id}: site has "
                         f"'{ALLOW_LOG_STREAMING_VAR}' disabled in its resources.json",
                     )
+                return
             log_file_name = self._sanitize_path_component(LogStreamer.get_file_name(stream_ctx) or "log.txt")
             path = os.path.join(self._effective_dest_dir(), job_id, client, log_file_name)
             os.makedirs(os.path.dirname(path), exist_ok=True)

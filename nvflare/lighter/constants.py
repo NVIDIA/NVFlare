@@ -56,6 +56,9 @@ class PropKey:
     OVERSEER_END_POINT = "overseer_end_point"
     ADMIN_PORT = "admin_port"
     FED_LEARN_PORT = "fed_learn_port"
+    # Renamed from the never-publicly-released "allow_error_sending"; no
+    # backward-compat shim is required because no project.yml in the wild
+    # ever shipped with the previous name.
     ALLOW_LOG_STREAMING = "allow_log_streaming"
     CONN_SECURITY = "connection_security"
     CUSTOM_CA_CERT = "custom_ca_cert"
