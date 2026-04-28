@@ -12,7 +12,7 @@ example trainer are all FLComponents now.
     :lines: 28-90
 
 Each ``FLComponent`` is automatically added as an event handler in the system when a new instance is created.
-You can implement the :meth:`handle_event<handle_event>` to plugin additional customized actions to the FL workflows.
+You can implement the :meth:`handle_event<handle_event>` to plug in additional customized actions to the FL workflows.
 
 To fire events, :meth:`fire_event<fire_event>` can be used, and :meth:`fire_fed_event<fire_fed_event>` can be used to
 fire an event across participants.

@@ -30,30 +30,12 @@ CMD_SYSTEM_LOG_CONFIG = "log-config"
 _system_sub_cmd_parsers = {}
 
 
-def _add_system_connection_args(parser):
-    parser.add_argument(
-        "--startup-kit",
-        dest="startup_kit",
-        default=None,
-        help="path to the admin startup kit directory (overrides target-based config lookup)",
-    )
-    parser.add_argument(
-        "--startup-target",
-        choices=["poc", "prod"],
-        default=None,
-        dest="startup_target",
-        help="startup kit target to use from config.conf when --startup-kit is not supplied",
-    )
-
-
 def def_system_cli_parser(system_parser):
     """system_parser is already created in cli.py — add subcommands here."""
-    _add_system_connection_args(system_parser)
     sub = system_parser.add_subparsers(title="system subcommands", metavar="", dest="system_sub_cmd")
 
     # status
     p = sub.add_parser(CMD_SYSTEM_STATUS, help="show server and client status")
-    _add_system_connection_args(p)
     p.add_argument("target", nargs="?", choices=["server", "client"], default=None)
     p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--schema", action="store_true")
@@ -61,7 +43,6 @@ def def_system_cli_parser(system_parser):
 
     # resources
     p = sub.add_parser(CMD_SYSTEM_RESOURCES, help="show server and client resource usage")
-    _add_system_connection_args(p)
     p.add_argument("target", nargs="?", choices=["server", "client"], default=None)
     p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--schema", action="store_true")
@@ -69,7 +50,6 @@ def def_system_cli_parser(system_parser):
 
     # shutdown
     p = sub.add_parser(CMD_SYSTEM_SHUTDOWN, help="shut down server, clients, or all")
-    _add_system_connection_args(p)
     p.add_argument("target", choices=["server", "client", "all"])
     p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--force", action="store_true")
@@ -78,7 +58,6 @@ def def_system_cli_parser(system_parser):
 
     # restart
     p = sub.add_parser(CMD_SYSTEM_RESTART, help="restart server, clients, or all")
-    _add_system_connection_args(p)
     p.add_argument("target", choices=["server", "client", "all"])
     p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--force", action="store_true")
@@ -87,7 +66,6 @@ def def_system_cli_parser(system_parser):
 
     # remove-client
     p = sub.add_parser(CMD_SYSTEM_REMOVE_CLIENT, help="remove a client from the federation")
-    _add_system_connection_args(p)
     p.add_argument("client_name", help="name of the client to remove")
     p.add_argument("--force", action="store_true")
     p.add_argument("--schema", action="store_true")
@@ -95,14 +73,12 @@ def def_system_cli_parser(system_parser):
 
     # version
     p = sub.add_parser(CMD_SYSTEM_VERSION, help="show NVFlare version on each remote site")
-    _add_system_connection_args(p)
     p.add_argument("--site", default="all", help="server, a client name, or all")
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_VERSION] = p
 
     # log-config
     p = sub.add_parser(CMD_SYSTEM_LOG_CONFIG, help="change logging level on server or client sites")
-    _add_system_connection_args(p)
     p.add_argument(
         "level",
         nargs="?",
@@ -136,32 +112,13 @@ def _confirm_or_force(prompt, args):
 def _get_system_session(args=None):
     """Create a secure session using the startup kit."""
     from nvflare.tool.cli_output import get_connect_timeout
-    from nvflare.tool.cli_session import new_cli_session
-    from nvflare.utils.cli_utils import get_startup_kit_dir_for_target
-
-    username = None
-    startup = None
+    from nvflare.tool.cli_session import new_active_cli_session
 
     try:
-        from nvflare.tool.job.job_cli import _resolve_admin_user_and_dir_from_startup_kit
-
-        startup_target = getattr(args, "startup_target", None) or "poc"
-        startup_override = getattr(args, "startup_kit", None)
-        startup = get_startup_kit_dir_for_target(startup_kit_dir=startup_override, target=startup_target)
-        username, startup = _resolve_admin_user_and_dir_from_startup_kit(startup)
+        return new_active_cli_session(timeout=get_connect_timeout())
     except ValueError as e:
         output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e))
         raise SystemExit(4)
-    except Exception:
-        output_error(
-            "STARTUP_KIT_MISSING",
-            exit_code=4,
-            detail="admin username could not be resolved from the startup kit",
-        )
-        raise SystemExit(4)
-
-    timeout = get_connect_timeout()
-    return new_cli_session(username=username, startup_kit_location=startup, timeout=timeout)
 
 
 @contextmanager

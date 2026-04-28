@@ -13,12 +13,13 @@
 # limitations under the License.
 
 import datetime
+import io
 import json
 import os
 import shutil
 import uuid
-from collections import deque
-from typing import Dict, List
+from typing import Dict, List, Optional, Set
+from zipfile import BadZipFile, ZipFile
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.event_type import EventType
@@ -34,7 +35,17 @@ from nvflare.apis.job_def import (
 )
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.storage import DATA, JOB_ZIP, META, META_JSON, WORKSPACE, WORKSPACE_ZIP, StorageSpec
+from nvflare.apis.storage import (
+    DATA,
+    JOB_ZIP,
+    META,
+    META_JSON,
+    WORKSPACE,
+    WORKSPACE_ZIP,
+    DataTypes,
+    StorageException,
+    StorageSpec,
+)
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -87,8 +98,7 @@ def _create_list_job_cmd_parser():
 def _create_get_job_log_cmd_parser():
     parser = SafeArgumentParser(prog=AdminCommandNames.GET_JOB_LOG)
     parser.add_argument("job_id", help="Job ID")
-    parser.add_argument("-n", dest="tail_lines", type=int, help="Tail line count")
-    parser.add_argument("-g", dest="grep_pattern", help="Filter log lines containing the substring pattern")
+    parser.add_argument("target", nargs="?", default=SERVER_SITE_NAME, help="server, all, or a client site name")
     return parser
 
 
@@ -96,7 +106,6 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     """Command module with commands for job management."""
 
     MAX_RETURNED_JOB_LOG_BYTES = 5 * 1024 * 1024
-    MAX_RETURNED_JOB_LOG_LINES = 10000
 
     def __init__(self):
         super().__init__()
@@ -131,8 +140,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 ),
                 CommandSpec(
                     name=AdminCommandNames.GET_JOB_LOG,
-                    description="get server log text for a job",
-                    usage=f"{AdminCommandNames.GET_JOB_LOG} job_id [-n tail_lines] [-g grep_pattern]",
+                    description="get job log text from the server-side log store",
+                    usage=f"{AdminCommandNames.GET_JOB_LOG} job_id [server|all|client_name]",
                     handler_func=self.get_job_log,
                     authz_func=self.authorize_job_id,
                 ),
@@ -489,92 +498,360 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         if not isinstance(engine, ServerEngine):
             raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
 
+        target = parsed_args.target
+        target_lower = target.lower() if isinstance(target, str) else target
+        payload = {"logs": {}}
+
+        # Accept the protocol token "@ALL" and the CLI/API spelling "all".
+        all_targets = {ALL_SITES.lower(), "all"}
+        workspace_zip = None
+        workspace_zip_loaded = False
+        if target_lower in all_targets:
+            workspace_zip = self._read_stored_workspace_zip(conn, job_id)
+            workspace_zip_loaded = True
+
+        if target_lower in {SERVER_SITE_NAME, *all_targets}:
+            server_log = self._read_server_job_log(
+                conn, job_id, workspace_zip=workspace_zip, workspace_zip_loaded=workspace_zip_loaded
+            )
+            if server_log is not None or target_lower == SERVER_SITE_NAME:
+                payload["logs"][SERVER_SITE_NAME] = server_log or ""
+            else:
+                payload.setdefault("unavailable", {})[SERVER_SITE_NAME] = "server log not available for this job"
+
+        try:
+            if target_lower not in {SERVER_SITE_NAME, *all_targets}:
+                self._add_client_job_log(conn, payload, job_id, target)
+            elif target_lower in all_targets:
+                self._add_all_client_job_logs(
+                    conn, payload, job_id, workspace_zip=workspace_zip, workspace_zip_loaded=workspace_zip_loaded
+                )
+        except TypeError as e:
+            error = secure_format_exception(e)
+            conn.append_error(error, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, error))
+            return
+
+        conn.append_dict(payload, meta=make_meta(MetaStatusValue.OK))
+
+    def _read_server_job_log(
+        self, conn: Connection, job_id: str, workspace_zip: bytes = None, workspace_zip_loaded: bool = False
+    ) -> Optional[str]:
+        engine = conn.app_ctx
+        log_text = self._read_live_server_job_log(engine, job_id)
+        if log_text is not None:
+            return log_text
+        if workspace_zip_loaded:
+            return self._extract_server_log_from_workspace_zip(workspace_zip)
+        return self._read_stored_server_job_log(conn, job_id)
+
+    def _read_live_server_job_log(self, engine, job_id: str) -> Optional[str]:
         workspace = engine.get_workspace()
         log_file = os.path.join(workspace.get_log_root(job_id), WorkspaceConstants.LOG_FILE_NAME)
-        log_lines = []
         try:
             if os.path.exists(log_file):
-                if parsed_args.tail_lines is not None and parsed_args.tail_lines <= 0:
-                    conn.append_error(
-                        "tail_lines must be greater than 0",
-                        meta=make_meta(MetaStatusValue.SYNTAX_ERROR, "tail_lines must be greater than 0"),
-                    )
-                    return
-
-                log_lines = self._collect_job_log_lines(
-                    log_file, tail_lines=parsed_args.tail_lines, grep_pattern=parsed_args.grep_pattern
-                )
+                return "".join(self._collect_job_log_lines(log_file))
         except FileNotFoundError:
             # The log file can disappear between the existence check and the open() if the
-            # active run rotates or cleans up the workspace. Treat that as an empty live-log
-            # read rather than surfacing an internal error to the admin client.
-            log_lines = []
+            # active run rotates or cleans up the workspace. Treat that as unavailable
+            # rather than surfacing an internal error to the admin client.
+            return None
+        return None
 
-        conn.append_dict({"logs": {SERVER_SITE_NAME: "".join(log_lines)}}, meta=make_meta(MetaStatusValue.OK))
+    def _read_stored_server_job_log(self, conn: Connection, job_id: str) -> Optional[str]:
+        workspace_zip = self._read_stored_workspace_zip(conn, job_id)
+        return self._extract_server_log_from_workspace_zip(workspace_zip)
 
-    def _collect_job_log_lines(self, log_file: str, tail_lines=None, grep_pattern=None):
-        if tail_lines is not None:
-            # Bound tail mode by both requested lines and an internal safety cap so an
-            # extreme `-n` on a file with very short lines cannot grow server memory
-            # without limit before the byte cap has a chance to kick in.
-            max_tail_lines = min(tail_lines, self.MAX_RETURNED_JOB_LOG_LINES)
-            capped_by_line_limit = tail_lines > self.MAX_RETURNED_JOB_LOG_LINES
-            lines = deque()
+    def _read_stored_workspace_zip(self, conn: Connection, job_id: str) -> Optional[bytes]:
+        engine = conn.app_ctx
+        job_def_manager = engine.job_def_manager
+        if not isinstance(job_def_manager, JobDefManagerSpec):
+            return None
+
+        with engine.new_context() as fl_ctx:
+            try:
+                workspace_zip = job_def_manager.get_storage_component(jid=job_id, component=WORKSPACE, fl_ctx=fl_ctx)
+            except StorageException:
+                return None
+
+        return workspace_zip
+
+    def _extract_server_log_from_workspace_zip(self, workspace_zip: bytes) -> Optional[str]:
+        if not workspace_zip:
+            return None
+
+        try:
+            with ZipFile(io.BytesIO(workspace_zip), "r") as zip_file:
+                log_name = self._find_server_log_member(zip_file.namelist())
+                if not log_name:
+                    return None
+                with zip_file.open(log_name, "r") as log_file:
+                    data = log_file.read(self.MAX_RETURNED_JOB_LOG_BYTES + 1)
+        except (BadZipFile, KeyError, OSError, TypeError):
+            return None
+
+        return self._decode_job_log_data(data)
+
+    @staticmethod
+    def _find_server_log_member(member_names: List[str]) -> Optional[str]:
+        log_file_name = WorkspaceConstants.LOG_FILE_NAME
+        if log_file_name in member_names:
+            return log_file_name
+        server_log_name = f"{SERVER_SITE_NAME}/{log_file_name}"
+        if server_log_name in member_names:
+            return server_log_name
+        suffix = f"/{server_log_name}"
+        for member_name in member_names:
+            if not member_name.endswith("/") and member_name.endswith(suffix):
+                return member_name
+        return None
+
+    def _add_client_job_log(self, conn: Connection, payload: dict, job_id: str, client_name: str):
+        text = self._read_client_job_log(conn, job_id, client_name)
+        if text is None:
+            payload.setdefault("unavailable", {})[client_name] = "client log stream not available for this job"
         else:
-            capped_by_line_limit = False
-            lines = []
+            payload["logs"][client_name] = text
+
+    def _add_all_client_job_logs(
+        self,
+        conn: Connection,
+        payload: dict,
+        job_id: str,
+        workspace_zip: bytes = None,
+        workspace_zip_loaded: bool = False,
+    ):
+        engine = conn.app_ctx
+        job_def_manager = engine.job_def_manager
+        if not isinstance(job_def_manager, JobDefManagerSpec):
+            raise TypeError(
+                f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+            )
+
+        with engine.new_context() as fl_ctx:
+            available_sites = self._get_available_client_log_sites(job_def_manager, job_id, fl_ctx)
+            if workspace_zip_loaded:
+                workspace_client_logs = self._extract_client_logs_from_workspace_zip(workspace_zip)
+            else:
+                # Defensive path for direct helper calls. get_job_log preloads the workspace
+                # ZIP before calling this for --site all.
+                workspace_client_logs = self._read_workspace_client_job_logs(job_def_manager, job_id, fl_ctx)
+            available_sites.update(workspace_client_logs.keys())
+
+        known_sites = self._get_job_client_targets(conn.get_prop(self.JOB))
+        for client_name in sorted(known_sites | available_sites):
+            text = self._read_live_client_job_log(engine, job_id, client_name)
+            if text is None:
+                text = workspace_client_logs.get(client_name)
+            if text is None:
+                with engine.new_context() as fl_ctx:
+                    data = job_def_manager.get_client_data(
+                        jid=job_id,
+                        client_name=client_name,
+                        data_type=self._client_log_data_type(),
+                        fl_ctx=fl_ctx,
+                    )
+                text = self._decode_job_log_data(data)
+            if text is not None:
+                payload["logs"][client_name] = text
+
+        missing_sites = known_sites - set(payload["logs"].keys()) - {SERVER_SITE_NAME}
+        if missing_sites:
+            unavailable = payload.setdefault("unavailable", {})
+            for client_name in sorted(missing_sites):
+                unavailable[client_name] = "client log stream not available for this job"
+
+    def _read_client_job_log(self, conn: Connection, job_id: str, client_name: str) -> Optional[str]:
+        engine = conn.app_ctx
+        job_def_manager = engine.job_def_manager
+        if not isinstance(job_def_manager, JobDefManagerSpec):
+            raise TypeError(
+                f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+            )
+
+        text = self._read_live_client_job_log(engine, job_id, client_name)
+        if text is not None:
+            return text
+
+        text = self._read_stored_client_job_log(conn, job_id, client_name)
+        if text is not None:
+            return text
+
+        with engine.new_context() as fl_ctx:
+            data = job_def_manager.get_client_data(
+                jid=job_id,
+                client_name=client_name,
+                data_type=self._client_log_data_type(),
+                fl_ctx=fl_ctx,
+            )
+        return self._decode_job_log_data(data)
+
+    def _read_live_client_job_log(self, engine, job_id: str, client_name: str) -> Optional[str]:
+        workspace = engine.get_workspace()
+        log_file = os.path.join(workspace.get_log_root(job_id), client_name, WorkspaceConstants.LOG_FILE_NAME)
+        try:
+            if os.path.exists(log_file):
+                return "".join(self._collect_job_log_lines(log_file))
+        except FileNotFoundError:
+            return None
+        return None
+
+    def _read_stored_client_job_log(self, conn: Connection, job_id: str, client_name: str) -> Optional[str]:
+        engine = conn.app_ctx
+        job_def_manager = engine.job_def_manager
+        if not isinstance(job_def_manager, JobDefManagerSpec):
+            return None
+
+        with engine.new_context() as fl_ctx:
+            try:
+                workspace_zip = job_def_manager.get_storage_component(jid=job_id, component=WORKSPACE, fl_ctx=fl_ctx)
+            except StorageException:
+                return None
+
+        return self._extract_client_log_from_workspace_zip(workspace_zip, client_name)
+
+    def _extract_client_log_from_workspace_zip(self, workspace_zip: bytes, client_name: str) -> Optional[str]:
+        if not workspace_zip:
+            return None
+
+        try:
+            with ZipFile(io.BytesIO(workspace_zip), "r") as zip_file:
+                log_name = self._find_client_log_member(zip_file.namelist(), client_name)
+                if not log_name:
+                    return None
+                with zip_file.open(log_name, "r") as log_file:
+                    data = log_file.read(self.MAX_RETURNED_JOB_LOG_BYTES + 1)
+        except (BadZipFile, KeyError, OSError, TypeError):
+            return None
+
+        return self._decode_job_log_data(data)
+
+    @staticmethod
+    def _find_client_log_member(member_names: List[str], client_name: str) -> Optional[str]:
+        log_file_name = WorkspaceConstants.LOG_FILE_NAME
+        client_log_name = f"{client_name}/{log_file_name}"
+        if client_log_name in member_names:
+            return client_log_name
+        suffix = f"/{client_log_name}"
+        for member_name in member_names:
+            if not member_name.endswith("/") and member_name.endswith(suffix):
+                return member_name
+        return None
+
+    @staticmethod
+    def _client_log_data_type() -> str:
+        return f"{DataTypes.LOG.value}_{WorkspaceConstants.LOG_FILE_NAME}"
+
+    def _get_available_client_log_sites(self, job_def_manager, job_id: str, fl_ctx) -> Set[str]:
+        component_prefix = f"{self._client_log_data_type()}_"
+        components = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx) or []
+        return {
+            component[len(component_prefix) :]
+            for component in components
+            if component.startswith(component_prefix) and component[len(component_prefix) :]
+        }
+
+    def _read_workspace_client_job_logs(self, job_def_manager, job_id: str, fl_ctx) -> Dict[str, str]:
+        try:
+            workspace_zip = job_def_manager.get_storage_component(jid=job_id, component=WORKSPACE, fl_ctx=fl_ctx)
+        except StorageException:
+            return {}
+
+        return self._extract_client_logs_from_workspace_zip(workspace_zip)
+
+    def _extract_client_logs_from_workspace_zip(self, workspace_zip: bytes) -> Dict[str, str]:
+        if not workspace_zip:
+            return {}
+
+        try:
+            with ZipFile(io.BytesIO(workspace_zip), "r") as zip_file:
+                log_members = self._find_workspace_client_log_members(zip_file.namelist())
+                logs = {}
+                for client_name, log_name in log_members.items():
+                    try:
+                        with zip_file.open(log_name, "r") as log_file:
+                            data = log_file.read(self.MAX_RETURNED_JOB_LOG_BYTES + 1)
+                    except (KeyError, OSError):
+                        continue
+                    text = self._decode_job_log_data(data)
+                    if text is not None:
+                        logs[client_name] = text
+                return logs
+        except (BadZipFile, OSError, TypeError):
+            return {}
+
+    @staticmethod
+    def _find_workspace_client_log_sites(member_names: List[str]) -> Set[str]:
+        return set(JobCommandModule._find_workspace_client_log_members(member_names))
+
+    @staticmethod
+    def _find_workspace_client_log_members(member_names: List[str]) -> Dict[str, str]:
+        members = {}
+        exact_members = {}
+        log_file_name = WorkspaceConstants.LOG_FILE_NAME
+        for member_name in member_names:
+            if member_name.endswith("/") or not member_name.endswith(f"/{log_file_name}"):
+                continue
+            parts = member_name.split("/")
+            if len(parts) >= 2 and parts[-2] and parts[-2] != SERVER_SITE_NAME:
+                if len(parts) == 2:
+                    exact_members[parts[-2]] = member_name
+                elif parts[-2] not in members:
+                    members[parts[-2]] = member_name
+        # Prefer exact two-part paths (client_name/fl.log) over deeper paths
+        # (run_1/client_name/fl.log) by letting exact_members overwrite members.
+        members.update(exact_members)
+        return members
+
+    @staticmethod
+    def _get_job_client_targets(job) -> Set[str]:
+        if not job or not getattr(job, "meta", None):
+            return set()
+
+        deploy_map = job.meta.get(JobMetaKey.DEPLOY_MAP.value, {})
+        if not isinstance(deploy_map, dict):
+            return set()
+
+        targets = set()
+        for deployments in deploy_map.values():
+            for site_name in extract_participants(deployments):
+                if not site_name or site_name == SERVER_SITE_NAME or site_name.upper() == ALL_SITES:
+                    continue
+                targets.add(site_name)
+        return targets
+
+    def _decode_job_log_data(self, data) -> Optional[str]:
+        if data is None:
+            return None
+        if isinstance(data, str):
+            raw_data = data.encode("utf-8", errors="replace")
+        else:
+            raw_data = bytes(data)
+
+        truncated = len(raw_data) > self.MAX_RETURNED_JOB_LOG_BYTES
+        if truncated:
+            raw_data = raw_data[: self.MAX_RETURNED_JOB_LOG_BYTES]
+        text = raw_data.decode("utf-8", errors="replace")
+        if truncated:
+            text += f"\n... output truncated after {self.MAX_RETURNED_JOB_LOG_BYTES} bytes ...\n"
+        return text
+
+    def _collect_job_log_lines(self, log_file: str):
+        lines = []
         collected_bytes = 0
         truncated_by_bytes = False
-        truncated_by_lines = False
 
         with open(log_file, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
-                if grep_pattern and grep_pattern not in line:
-                    continue
-
                 line_len = len(line.encode("utf-8", errors="replace"))
-                if tail_lines is None:
-                    if collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
-                        truncated_by_bytes = True
-                        break
-                    collected_bytes += line_len
-                    lines.append(line)
-                else:
-                    if line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
-                        truncated_by_bytes = True
-                        continue
+                if collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
+                    truncated_by_bytes = True
+                    break
+                collected_bytes += line_len
+                lines.append(line)
 
-                    while lines and len(lines) >= max_tail_lines:
-                        _removed_line, removed_len = lines.popleft()
-                        collected_bytes -= removed_len
-                        if capped_by_line_limit:
-                            truncated_by_lines = True
-
-                    while lines and collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
-                        _removed_line, removed_len = lines.popleft()
-                        collected_bytes -= removed_len
-                        truncated_by_bytes = True
-
-                    # If a single retained line would still exceed the byte budget after
-                    # eviction, drop it and report truncation rather than returning a
-                    # response that exceeds the server-side safety limit.
-                    if collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
-                        truncated_by_bytes = True
-                        continue
-
-                    lines.append((line, line_len))
-                    collected_bytes += line_len
-
-        result = [line for line, _ in lines] if tail_lines is not None else list(lines)
-        if truncated_by_bytes or truncated_by_lines:
-            if truncated_by_bytes and truncated_by_lines:
-                limit_text = f"{self.MAX_RETURNED_JOB_LOG_BYTES} bytes and {self.MAX_RETURNED_JOB_LOG_LINES} lines"
-            elif truncated_by_bytes:
-                limit_text = f"{self.MAX_RETURNED_JOB_LOG_BYTES} bytes"
-            else:
-                limit_text = f"{self.MAX_RETURNED_JOB_LOG_LINES} lines"
-            result.append(f"... output truncated after {limit_text}; use -n/-g to narrow results ...\n")
-        return result
+        if truncated_by_bytes:
+            lines.append(f"... output truncated after {self.MAX_RETURNED_JOB_LOG_BYTES} bytes ...\n")
+        return lines
 
     def list_job_components(self, conn: Connection, args: List[str]):
         if len(args) < 2:

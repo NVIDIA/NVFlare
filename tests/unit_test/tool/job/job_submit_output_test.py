@@ -35,8 +35,6 @@ class TestJobSubmitOutput:
         args.debug = False
         args.job_folder = kwargs.get("job_folder", "/fake/job")
         args.config_file = None
-        args.target = kwargs.get("target", None)
-        args.startup_kit = kwargs.get("startup_kit", None)
         return args
 
     def test_json_envelope_on_success(self, capsys):
@@ -174,24 +172,50 @@ class TestJobSubmitOutput:
         with pytest.raises(SystemExit):
             parser.parse_args(["submit", "-j", "./my_job", "-f", "config_fed_server.conf", "num_rounds=1"])
 
-    def test_submit_parser_accepts_startup_target_or_startup_kit(self):
-        root = argparse.ArgumentParser()
-        parser = def_job_cli_parser(root.add_subparsers(dest="sub_command"))["job"]
-
-        args = parser.parse_args(["submit", "-j", "./my_job", "--startup-target", "prod"])
-        assert args.startup_target == "prod"
-        assert args.startup_kit is None
-
-        args = parser.parse_args(["submit", "-j", "./my_job", "--startup-kit", "/tmp/startup"])
-        assert args.startup_kit == "/tmp/startup"
-        assert args.startup_target is None
-
-    def test_submit_parser_rejects_startup_target_with_startup_kit(self):
+    @pytest.mark.parametrize(
+        ("selector", "value"),
+        [
+            ("--startup-target", "prod"),
+            ("--startup_target", "prod"),
+            ("--startup-kit", "/tmp/startup"),
+            ("--startup_kit", "/tmp/startup"),
+        ],
+    )
+    def test_submit_parser_rejects_old_startup_selectors(self, selector, value):
         root = argparse.ArgumentParser()
         parser = def_job_cli_parser(root.add_subparsers(dest="sub_command"))["job"]
 
         with pytest.raises(SystemExit):
-            parser.parse_args(["submit", "-j", "./my_job", "--startup-target", "prod", "--startup-kit", "/tmp/startup"])
+            parser.parse_args(["submit", "-j", "./my_job", selector, value])
+
+    def test_submit_help_omits_old_startup_selectors(self):
+        root = argparse.ArgumentParser()
+        def_job_cli_parser(root.add_subparsers(dest="sub_command"))
+
+        from nvflare.tool.job.job_cli import job_sub_cmd_parser
+
+        help_text = job_sub_cmd_parser["submit"].format_help()
+        assert "--startup-target" not in help_text
+        assert "--startup_target" not in help_text
+        assert "--startup-kit" not in help_text
+        assert "--startup_kit" not in help_text
+
+    def test_submit_schema_omits_old_startup_selectors(self, capsys):
+        root = argparse.ArgumentParser()
+        def_job_cli_parser(root.add_subparsers(dest="sub_command"))
+
+        from nvflare.tool.job.job_cli import submit_job
+
+        with patch("sys.argv", ["nvflare", "job", "submit", "--schema"]):
+            with pytest.raises(SystemExit) as exc_info:
+                submit_job(MagicMock())
+
+        assert exc_info.value.code == 0
+        schema_text = capsys.readouterr().out
+        assert "--startup-target" not in schema_text
+        assert "--startup_target" not in schema_text
+        assert "--startup-kit" not in schema_text
+        assert "--startup_kit" not in schema_text
 
     def test_submit_parser_rejects_legacy_target_alias(self):
         root = argparse.ArgumentParser()

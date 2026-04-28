@@ -3,7 +3,7 @@
 ## sag_tf
     name = "sag_tf"
     description = "FedAvg with Scatter and Gather Workflow using TensorFlow using subprocess client API" 
-    class_name  =  "ScatterAndGather"
+    class_name = "ScatterAndGather"
     controller_type = "server"
     executor_type = "launcher_executor"
     contributor = "NVIDIA"

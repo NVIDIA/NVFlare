@@ -3,7 +3,7 @@
 ## sag_nemo
     name = "sag_nemo"
     description = "FedAvg with Scatter and Gather Workflow for NeMo" 
-    class_name  =  "ScatterAndGather"
+    class_name = "ScatterAndGather"
     controller_type = "server"
     executor_type = "launcher_executor"
     contributor = "NVIDIA"

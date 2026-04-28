@@ -33,7 +33,7 @@ FedHCA² addresses the challenge of federated learning across heterogeneous clie
 - **Flexible Configuration**: Easy modification of client setups and hyperparameters
 - 
 ## License
-This project is open-sourced under the Apache v2 License. The codebase builds upon the initial work shared at [FedHCA2](https://github.com/innovator-zero/FedHCA2).
+This project is open-sourced under the Apache-2.0 License. The codebase builds upon the initial work shared at [FedHCA2](https://github.com/innovator-zero/FedHCA2).
 
 ## Requirements
 

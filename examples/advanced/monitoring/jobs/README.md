@@ -1,5 +1,5 @@
 # FLARE Monitoring
-FLARE Monitoring provides a initial solution for tracking system metrics of your federated learning jobs.
+FLARE Monitoring provides an initial solution for tracking system metrics of your federated learning jobs.
 Different from Machine learning experiment tracking, where it focused on the training metrics, the monitoring here focused on the FL system: i.e. job and system lifecycle metrics. 
 
 This guide will walk you through the steps to set up and use the monitoring system effectively.

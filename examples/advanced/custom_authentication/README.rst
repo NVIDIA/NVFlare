@@ -10,19 +10,19 @@ The purpose of this example is to demonstrate following features of NVFlare,
 1. Run NVFlare in secure mode
 2. Demonstrate custom authentication policy
 
-During the client registering to the server process, customer can build an event handler to listen to the EventType.CLIENT_REGISTERED event, and inject additional logic to verify and process the client registration. 
+During the client registering to the server process, customers can build an event handler to listen to the EventType.CLIENT_REGISTERED event, and inject additional logic to verify and process the client registration. 
 If a particular client does not meet certain criteria, the server can reject the client registration.
 In this example, we create two clients, `site_a` and `site_b`. `site_b` is rejected by the server.
 
 System Requirements
 -------------------
 
-1. Install Python and Virtual Environment,
+1. Install Python and a virtual environment,
 ::
     python3 -m venv nvflare-env
     source nvflare-env/bin/activate
 
-2. Install NVFlare
+2. Install NVFlare.
 ::
     pip install -r requirements.txt
 
@@ -30,7 +30,7 @@ System Requirements
 ::
     git clone https://github.com/NVIDIA/NVFlare.git
 
-4. TLS requires domain names. Please add following line in :code:`/etc/hosts` file,
+4. TLS requires domain names. Please add the following line to the :code:`/etc/hosts` file:
 ::
     127.0.0.1	server1
 
@@ -42,12 +42,12 @@ Setup
     cd NVFlare/examples/advanced/custom_authentication
     ./setup.sh
 
-All the startup kits will be generated in this folder,
+All the startup kits will be generated in this folder.
 ::
     /tmp/nvflare/poc/custom_authentication/prod_00
 
 .. note::
-   :code:`workspace` folder is removed everytime :code:`setup.sh` is run. Please do not save customized
+   The :code:`workspace` folder is removed every time :code:`setup.sh` is run. Please do not save customized
    files in this folder.
 
 Starting NVFlare

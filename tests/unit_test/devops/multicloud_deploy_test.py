@@ -100,6 +100,7 @@ class TestHelmDeployFlow:
             launcher_class="launcher",
             image="repo/image:tag",
             pvc_config={"nvflws": {"sc": "sc", "access": "ReadWriteMany", "size": "10Gi"}},
+            pod_annotations={"karpenter.sh/do-not-disrupt": r"value,with=helm\chars"},
         )
 
         kubectl_calls = []
@@ -125,6 +126,8 @@ class TestHelmDeployFlow:
         kubeconfig, helm_args = helm_calls[0]
         assert kubeconfig == "/tmp/kubeconfig"
         assert helm_args[:4] == ("upgrade", "--install", "site-1", str(chart_dir))
+        assert "--set-string" in helm_args
+        assert r"podAnnotations.karpenter\.sh\/do-not-disrupt=value\,with\=helm\\chars" in helm_args
 
 
 class TestAzureIpValidation:

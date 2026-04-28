@@ -2,8 +2,8 @@
 
 ## sag_pt_mlflow
     name = "sag_pt_mlflow"
-    description = "FedAvg Scatter and Gather Workflow using pytorch with MLflow tracking, and sub-process Client API" 
-    class_name  =  "ScatterAndGather"
+    description = "FedAvg Scatter and Gather workflow using PyTorch with MLflow tracking and subprocess Client API" 
+    class_name = "ScatterAndGather"
     controller_type = "server"
     executor_type = "launcher_executor"
     contributor = "NVIDIA"

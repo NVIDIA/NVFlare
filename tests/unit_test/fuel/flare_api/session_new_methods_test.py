@@ -510,83 +510,89 @@ class TestGetJobLogs:
         with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
             session.get_job_logs("job1")
         cmd = mock_cmd.call_args[0][0]
-        assert "get_job_log" in cmd
-        assert "job1" in cmd
+        assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "server"]
 
-    def test_includes_tail_lines_flag(self):
+    def test_sends_client_target(self):
         session = _make_session()
         from nvflare.fuel.hci.client.api import APIStatus
 
         reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
         with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
-            session.get_job_logs("job1", tail_lines=50)
+            session.get_job_logs("job1", target="site-1")
         cmd = mock_cmd.call_args[0][0]
-        assert "-n" in cmd
-        assert "50" in cmd
+        assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "site-1"]
 
-    @pytest.mark.parametrize("tail_lines", [0, -1])
-    def test_rejects_non_positive_tail_lines(self, tail_lines):
-        session = _make_session()
-
-        with pytest.raises(ValueError, match="greater than 0"):
-            session.get_job_logs("job1", tail_lines=tail_lines)
-
-    def test_rejects_non_integer_tail_lines(self):
-        session = _make_session()
-
-        with pytest.raises(ValueError, match="tail_lines must be int"):
-            session.get_job_logs("job1", tail_lines=2.5)
-
-    def test_includes_grep_pattern_flag(self):
+    def test_sends_all_target(self):
         session = _make_session()
         from nvflare.fuel.hci.client.api import APIStatus
 
         reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
         with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
-            session.get_job_logs("job1", grep_pattern="ERROR")
+            session.get_job_logs("job1", target="all")
         cmd = mock_cmd.call_args[0][0]
-        assert "-g" in cmd
-        assert "ERROR" in cmd
+        assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "all"]
 
-    def test_quotes_multi_word_grep_pattern(self):
+    def test_accepts_legacy_tail_and_grep_keywords_without_changing_command(self):
         session = _make_session()
         from nvflare.fuel.hci.client.api import APIStatus
 
-        reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
+        reply = {
+            ResultKey.STATUS: APIStatus.SUCCESS,
+            ResultKey.META: None,
+            "data": [
+                {
+                    "type": "dict",
+                    "data": {
+                        "logs": {
+                            "server": "INFO first\nERROR second\nINFO third\nERROR fourth\n",
+                            "site-1": "INFO site\nERROR site\n",
+                        }
+                    },
+                }
+            ],
+        }
         with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
-            session.get_job_logs("job1", grep_pattern="CUDA out of memory")
-        cmd = mock_cmd.call_args[0][0]
-        assert split_to_args(cmd) == [
-            AdminCommandNames.GET_JOB_LOG,
-            "job1",
-            "-g",
-            "CUDA out of memory",
-        ]
+            result = session.get_job_logs("job1", tail_lines=1, grep_pattern="ERROR")
 
-    def test_quotes_grep_pattern_with_embedded_double_quote(self):
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "server"]
+        assert result == {
+            "logs": {
+                "server": "ERROR fourth\n",
+                "site-1": "ERROR site\n",
+            }
+        }
+
+    def test_accepts_legacy_positional_tail_and_grep_arguments(self):
         session = _make_session()
         from nvflare.fuel.hci.client.api import APIStatus
 
-        reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
+        reply = {
+            ResultKey.STATUS: APIStatus.SUCCESS,
+            ResultKey.META: None,
+            "data": [
+                {
+                    "type": "dict",
+                    "data": {
+                        "logs": {
+                            "site-1": "ERROR first\nINFO second\nERROR third\n",
+                        }
+                    },
+                }
+            ],
+        }
         with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
-            session.get_job_logs("job1", grep_pattern='foo"bar')
-        cmd = mock_cmd.call_args[0][0]
-        assert split_to_args(cmd) == [
-            AdminCommandNames.GET_JOB_LOG,
-            "job1",
-            "-g",
-            'foo"bar',
-        ]
+            result = session.get_job_logs("job1", "site-1", 2, "ERROR")
 
-    def test_ignores_empty_grep_pattern(self):
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "site-1"]
+        assert result == {"logs": {"site-1": "ERROR third\n"}}
+
+    def test_rejects_empty_target(self):
         session = _make_session()
-        from nvflare.fuel.hci.client.api import APIStatus
 
-        reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
-        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
-            session.get_job_logs("job1", grep_pattern="")
-        cmd = mock_cmd.call_args[0][0]
-        assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1"]
+        with pytest.raises(ValueError, match="target must be a non-empty str"):
+            session.get_job_logs("job1", target="")
 
     def test_grep_target_quotes_pattern_with_embedded_double_quote(self):
         session = _make_session()
@@ -604,20 +610,29 @@ class TestGetJobLogs:
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == ["grep", "server", 'foo"bar', "log.txt"]
 
-    def test_returns_logs_dict(self):
+    def test_returns_logs_dict_and_unavailable(self):
         session = _make_session()
         from nvflare.fuel.hci.client.api import APIStatus
 
-        reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
+        reply = {
+            ResultKey.STATUS: APIStatus.SUCCESS,
+            ResultKey.META: None,
+            "data": [
+                {
+                    "type": "dict",
+                    "data": {
+                        "logs": {"server": "server log\n"},
+                        "unavailable": {"site-1": "client log stream not available for this job"},
+                    },
+                }
+            ],
+        }
         with patch.object(session, "_do_command", return_value=reply):
             result = session.get_job_logs("job1")
-        assert "logs" in result
-
-    def test_rejects_non_server_target(self):
-        session = _make_session()
-
-        with pytest.raises(ValueError, match="only supports target='server'"):
-            session.get_job_logs("job1", target="all")
+        assert result == {
+            "logs": {"server": "server log\n"},
+            "unavailable": {"site-1": "client log stream not available for this job"},
+        }
 
 
 class TestConfigureJobLog:
