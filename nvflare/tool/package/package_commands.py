@@ -851,7 +851,7 @@ def _cert_public_key_sha256(cert) -> str:
 def _normalize_hash(value: str) -> str:
     if not isinstance(value, str):
         return ""
-    return value.removeprefix("sha256:").lower()
+    return value.strip().lower().removeprefix("sha256:")
 
 
 def _verify_rootca_fingerprint_options(args, actual_fingerprint: str) -> bool:

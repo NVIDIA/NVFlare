@@ -54,6 +54,7 @@ from nvflare.tool.package.package_commands import (
     _discover_name_from_dir,
     _flat_site_to_project_dict,
     _load_signed_zip,
+    _normalize_hash,
     _parse_endpoint,
     _read_local_request_metadata,
     _read_zip_json,
@@ -3470,6 +3471,19 @@ class TestSignedZipPackagePublicSurface:
 
 
 class TestSignedZipPackageMode:
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            ("sha256:aabbcc", "aabbcc"),
+            ("SHA256:AABBCC", "aabbcc"),
+            ("  SHA256:AABBCC  ", "aabbcc"),
+            ("AABBCC", "aabbcc"),
+            (None, ""),
+        ],
+    )
+    def test_normalize_hash_accepts_case_insensitive_prefix(self, value, expected):
+        assert _normalize_hash(value) == expected
+
     @pytest.mark.parametrize(
         "value",
         [
