@@ -14,6 +14,8 @@
 import os
 import shutil
 import tempfile
+import threading
+from collections import OrderedDict
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ReturnCode, SystemComponents, WorkspaceConstants
@@ -27,6 +29,13 @@ from nvflare.widgets.widget import Widget
 # Keys for per-stream state stored in StreamContext
 _KEY_RECV_FILE = "JobLogReceiver.recv_file"
 _KEY_RECV_PATH = "JobLogReceiver.recv_path"
+
+# Cap on the number of (client, job_id) pairs we remember for "log once"
+# tracking. The receiver is a long-lived server-side widget; without a cap,
+# the set would grow without bound across job churn. When the cap is hit,
+# the oldest entry is evicted (FIFO), at the cost of possibly re-logging a
+# repeat violation from a long-quiescent job.
+_UNAUTHORIZED_LOG_CAP = 4096
 
 
 class JobLogReceiver(Widget):
@@ -72,7 +81,10 @@ class JobLogReceiver(Widget):
         self._registered = False
         # Tracks (client, job_id) pairs we've already logged a "site does not allow
         # streaming" error for, so the warning is emitted at most once per job.
-        self._unauthorized_logged: set = set()
+        # Bounded with FIFO eviction (see _UNAUTHORIZED_LOG_CAP) and guarded by a
+        # lock so the check-then-add is atomic across concurrent stream chunks.
+        self._unauthorized_logged: OrderedDict = OrderedDict()
+        self._unauthorized_lock = threading.Lock()
         self.register_event_handler([EventType.SYSTEM_START, EventType.START_RUN], self._register)
 
     def _effective_dest_dir(self) -> str:
@@ -120,6 +132,22 @@ class JobLogReceiver(Widget):
         site_config = client.get_site_config() or {}
         return bool(site_config.get(ALLOW_LOG_STREAMING_VAR, True))
 
+    def _record_unauthorized(self, key: tuple) -> bool:
+        """Atomically record an unauthorized (client, job_id) pair.
+
+        Returns True if this is the first time we've seen this key (caller
+        should emit the once-per-job log line). Bounds the bookkeeping with
+        FIFO eviction so the receiver can run for the lifetime of the
+        server without unbounded memory growth.
+        """
+        with self._unauthorized_lock:
+            if key in self._unauthorized_logged:
+                return False
+            if len(self._unauthorized_logged) >= _UNAUTHORIZED_LOG_CAP:
+                self._unauthorized_logged.popitem(last=False)
+            self._unauthorized_logged[key] = None
+            return True
+
     def _on_chunk_received(self, data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext):
         f = stream_ctx.get(_KEY_RECV_FILE)
         if f is None:
@@ -128,9 +156,7 @@ class JobLogReceiver(Widget):
                 # Drop the chunk: the site has explicitly disabled streaming.
                 # Log once per (client, job_id) so the operator can see it
                 # without flooding the server log.
-                key = (client, job_id)
-                if key not in self._unauthorized_logged:
-                    self._unauthorized_logged.add(key)
+                if self._record_unauthorized((client, job_id)):
                     self.log_error(
                         fl_ctx,
                         f"Dropping live log chunk from {client} for job {job_id}: site has "

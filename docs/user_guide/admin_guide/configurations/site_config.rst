@@ -154,3 +154,16 @@ allowing streaming. Likewise, if ``resources.json`` cannot be read, or no
 ``Client`` is registered yet for the sender, the receiver falls back to
 allow rather than deny — an explicit ``false`` is the only thing that
 disables the stream.
+
+.. note::
+
+   **Migration note for early adopters.** During development, a related
+   provisioning property was briefly named ``allow_error_sending`` (default
+   ``False``, meaning streaming was disabled unless explicitly enabled).
+   That name was never publicly released. The current property is
+   ``allow_log_streaming`` with the inverse default of ``True``. If you are
+   re-provisioning a workspace that you set up against a pre-release build,
+   note that streaming is now **on by default** — set
+   ``allow_log_streaming: false`` on the participant in ``project.yml`` (or
+   in the generated ``resources.json.default``) to preserve the previous
+   "off by default" posture.
