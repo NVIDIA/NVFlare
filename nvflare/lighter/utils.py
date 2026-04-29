@@ -117,6 +117,8 @@ def generate_cert(
         )
 
     if extra_extensions:
+        # Callers must not pass extensions added by this function below.
+        # cryptography rejects duplicate SubjectKeyIdentifier, AuthorityKeyIdentifier, or SAN extensions.
         for extension, critical in extra_extensions:
             builder = builder.add_extension(extension, critical=critical)
 

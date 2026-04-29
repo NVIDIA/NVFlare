@@ -375,6 +375,19 @@ class TestCertValidationHelpers:
         output_error.assert_called_once()
         assert names is None
 
+    def test_request_zip_safe_names_rejects_control_characters_when_error_is_mocked(self, tmp_path):
+        zip_path = tmp_path / "request.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("request.json", "{}")
+            zf.writestr("bad\nname", "csr")
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+                names = _safe_zip_names(zf)
+
+        output_error.assert_called_once()
+        assert names is None
+
     def test_request_metadata_returns_after_missing_fields_when_error_is_mocked(self, tmp_path):
         with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
             result = _validate_request_metadata(
@@ -464,6 +477,33 @@ class TestCertValidationHelpers:
         with zipfile.ZipFile(zip_path, "r") as zf:
             assert zf.namelist() == ["sentinel.txt"]
             assert zf.read("sentinel.txt") == b"keep"
+
+    def test_write_zip_returns_false_when_no_overwrite_create_races_existing_file(self, tmp_path):
+        source_path = tmp_path / "request.json"
+        source_path.write_text("{}")
+        zip_path = tmp_path / "request.zip"
+        real_exists = os.path.exists
+        real_open = os.open
+
+        def exists_spy(path):
+            if path == str(zip_path):
+                return False
+            return real_exists(path)
+
+        def open_spy(path, flags, *args):
+            if path == str(zip_path):
+                raise FileExistsError("exists")
+            return real_open(path, flags, *args)
+
+        with patch("nvflare.tool.cert.cert_commands.os.path.exists", side_effect=exists_spy):
+            with patch("nvflare.tool.cert.cert_commands.os.open", side_effect=open_spy):
+                with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
+                    result = _write_zip_nofollow(str(zip_path), {"request.json": str(source_path)}, force=False)
+
+        assert result is False
+        output_error.assert_called_once()
+        assert output_error.call_args.args[0] == "CERT_ALREADY_EXISTS"
+        assert not zip_path.exists()
 
     def test_write_zip_returns_after_makedirs_error_when_error_is_mocked(self, tmp_path):
         source_path = tmp_path / "request.json"
@@ -3537,6 +3577,21 @@ class TestDistributedCertRequestApprove:
         assert exc_info.value.code == 4
         assert "zip member exceeds size limit" in capsys.readouterr().err
 
+    def test_read_request_zip_reuses_validated_request_json_member(self, tmp_path):
+        request_zip = _write_request_zip(tmp_path)
+        extract_dir = tmp_path / "extract"
+        extract_dir.mkdir()
+
+        with patch(
+            "nvflare.tool.cert.cert_commands._read_zip_member_limited", wraps=_read_zip_member_limited
+        ) as read_member:
+            request_meta = _read_request_zip(str(request_zip), str(extract_dir))
+
+        assert request_meta["name"] == "site-3"
+        assert (extract_dir / "request.json").exists()
+        request_json_reads = [call for call in read_member.call_args_list if call.args[1] == "request.json"]
+        assert len(request_json_reads) == 1
+
     def test_approve_reuses_validated_csr(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         ca_dir = tmp_path / "ca"
@@ -3571,6 +3626,25 @@ class TestDistributedCertRequestApprove:
                     ["approve", str(request_zip), "--ca-dir", str(ca_dir), "--profile", str(tmp_path / "p.yaml")]
                 )
 
+        sign_csr.assert_not_called()
+
+    def test_approve_returns_when_server_san_validation_returns_bare_none(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = tmp_path / "ca"
+        request_zip = _write_request_zip(tmp_path)
+        profile_path = tmp_path / "project_profile.yaml"
+        handle_cert_init(
+            _init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir))
+        )
+        _write_project_profile(profile_path)
+
+        with patch("nvflare.tool.cert.cert_commands._server_cert_san_fields", return_value=None):
+            with patch("nvflare.tool.cert.cert_commands.sign_csr_files") as sign_csr:
+                rc = _run_cert_cli(
+                    ["approve", str(request_zip), "--ca-dir", str(ca_dir), "--profile", str(profile_path)]
+                )
+
+        assert rc == 1
         sign_csr.assert_not_called()
 
     def test_approve_returns_when_signed_zip_writer_reports_failure_under_mocked_error(self, tmp_path, monkeypatch):

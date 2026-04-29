@@ -735,6 +735,7 @@ def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
             or name.endswith("/")
             or os.path.isabs(name)
             or "\\" in name
+            or any(ord(ch) < 32 for ch in name)
             or norm != name
             or norm.startswith("../")
             or ".." in parts
@@ -951,7 +952,7 @@ def _resolve_participant_type(participant: dict):
     return None
 
 
-def _site_identity_from_metadata(site_meta: dict) -> dict:
+def _site_identity_from_signed_metadata(site_meta: dict) -> dict:
     if not isinstance(site_meta, dict):
         return {}
     if _is_project_shaped_site_meta(site_meta):
@@ -1078,7 +1079,7 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
     if _signed_server_endpoint(signed_meta) is None:
         return False
 
-    site_identity = _site_identity_from_metadata(site_meta)
+    site_identity = _site_identity_from_signed_metadata(site_meta)
     if not site_identity:
         output_error_message(
             "INVALID_SIGNED_ZIP",

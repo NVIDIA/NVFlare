@@ -663,6 +663,7 @@ def _safe_zip_names(zf: zipfile.ZipFile) -> list:
             or name.endswith("/")
             or os.path.isabs(name)
             or "\\" in name
+            or any(ord(ch) < 32 for ch in name)
             or normalized != name
             or normalized.startswith("../")
             or ".." in parts
@@ -777,6 +778,8 @@ def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> bo
             return False
 
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if not force and hasattr(os, "O_EXCL"):
+        flags |= os.O_EXCL
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     fd = -1
@@ -787,6 +790,11 @@ def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> bo
             with zipfile.ZipFile(f, "w", compression=zipfile.ZIP_DEFLATED) as zf:
                 for arcname, content in prepared_members:
                     zf.writestr(arcname, content)
+    except FileExistsError:
+        if fd != -1:
+            os.close(fd)
+        output_error("CERT_ALREADY_EXISTS", path=zip_path)
+        return False
     except Exception as e:
         if fd != -1:
             os.close(fd)
@@ -1704,7 +1712,7 @@ def _is_project_shaped_site_meta(site_meta: dict) -> bool:
     return isinstance(site_meta, dict) and isinstance(site_meta.get("participants"), list)
 
 
-def _site_identity_from_metadata(site_meta: dict) -> dict:
+def _site_identity_from_request_metadata(site_meta: dict) -> dict:
     if not isinstance(site_meta, dict):
         return {}
     if _is_project_shaped_site_meta(site_meta):
@@ -1981,9 +1989,12 @@ def _read_request_zip(request_zip_path: str, extract_dir: str) -> dict:
                     detail=f"request zip must contain only: {', '.join(sorted(expected))}",
                 )
                 return None
+            cached_members = {"request.json": request_json}
             for member in expected:
                 target_path = os.path.join(extract_dir, member)
-                content = _read_zip_member_limited(zf, member)
+                content = cached_members.get(member)
+                if content is None:
+                    content = _read_zip_member_limited(zf, member)
                 if content is None:
                     return None
                 _write_file_nofollow(target_path, content)
@@ -2072,7 +2083,7 @@ def _validate_request_metadata(
     if not _validate_identity_name(name, cert_type):
         return None
 
-    site_identity = _site_identity_from_metadata(site_meta)
+    site_identity = _site_identity_from_request_metadata(site_meta)
     if not site_identity:
         output_error_message(
             "INVALID_ARGS",

@@ -406,6 +406,19 @@ class TestSignedZipHelpers:
         error.assert_called_once()
         assert names is None
 
+    def test_safe_zip_names_rejects_control_characters_when_error_is_mocked(self, tmp_path):
+        zip_path = tmp_path / "signed.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("signed.json", "{}")
+            zf.writestr("bad\nname", "cert")
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+                names = _safe_zip_names(zf, str(zip_path))
+
+        error.assert_called_once()
+        assert names is None
+
     def test_read_zip_json_returns_none_after_error_when_error_is_mocked(self, tmp_path):
         zip_path = tmp_path / "signed.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
