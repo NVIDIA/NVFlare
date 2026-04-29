@@ -18,7 +18,7 @@ docker_launcher_cln_sh: |
   echo "Starting NVFlare client {~~client_name~~} with image $DOCKER_IMAGE"
   echo "Host workspace: $HOST_WORKSPACE"
 
-  NETWORK_NAME="nvflare-network"
+  NETWORK_NAME="{~~network~~}"
   if ! docker network ls --filter name=$NETWORK_NAME --format "{{.Name}}" | grep -wq $NETWORK_NAME; then
       docker network create $NETWORK_NAME
       echo "Created Docker network: $NETWORK_NAME"
@@ -67,7 +67,7 @@ docker_launcher_svr_sh: |
   echo "Starting NVFlare server with image $DOCKER_IMAGE"
   echo "Host workspace: $HOST_WORKSPACE"
 
-  NETWORK_NAME="nvflare-network"
+  NETWORK_NAME="{~~network~~}"
   if ! docker network ls --filter name=$NETWORK_NAME --format "{{.Name}}" | grep -wq $NETWORK_NAME; then
       docker network create $NETWORK_NAME
       echo "Created Docker network: $NETWORK_NAME"

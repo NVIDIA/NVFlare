@@ -45,7 +45,7 @@ spec:
             {{- toYaml .Values.command | nindent 12 }}
           args:
             {{- toYaml .Values.args | nindent 12 }}
-            - uid={{ .Values.name }}
+            - uid={{ default .Values.name .Values.siteName }}
           volumeMounts:
             - name: {{ .Values.persistence.workspace.friendlyName }}
               mountPath: {{ .Values.persistence.workspace.mountPath }}
