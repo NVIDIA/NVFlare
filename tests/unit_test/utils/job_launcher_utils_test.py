@@ -121,6 +121,15 @@ class TestValidateLauncherSpec:
 
 
 class TestRefreshCustomDirImportPath:
+    def test_logs_when_custom_dir_is_missing(self, tmp_path, caplog):
+        custom_path = str(tmp_path / "missing" / "custom")
+
+        with caplog.at_level(logging.DEBUG, logger="nvflare.utils.job_launcher_utils"):
+            refresh_custom_dir_import_path(custom_path)
+
+        assert "custom dir not found" in caplog.text
+        assert custom_path in caplog.text
+
     def test_refreshes_importer_cache_for_dir_created_after_startup(self, tmp_path):
         module_name = "nvflare_refresh_path_probe"
         custom_dir = tmp_path / "app" / "custom"

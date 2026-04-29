@@ -1508,6 +1508,17 @@ class TestK8sJobLauncherLaunchJob:
         finally:
             _exit_patches(patches)
 
+    def test_pod_manifest_rejects_custom_folder_outside_workspace(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, _mock_api = self._setup(patches)
+        self._prime_running(_mock_api)
+        try:
+            fl_ctx = _make_launch_fl_ctx(app_custom_folder=f"/tmp/fake/workspace/{_JOB_UUID}/app_site-1/custom")
+            with pytest.raises(RuntimeError, match="custom folder .* is not under workspace"):
+                launcher.launch_job(_make_launch_job_meta(), fl_ctx)
+        finally:
+            _exit_patches(patches)
+
     def test_pod_manifest_no_pythonpath_when_no_custom_folder(self):
         patches = _make_k8s_launcher_patches()
         launcher, mock_api = self._setup(patches)
