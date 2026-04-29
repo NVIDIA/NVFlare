@@ -1740,8 +1740,13 @@ def _build_sanitized_approval_site(local_site: dict) -> dict:
 
 
 def _server_cert_san_fields(site_meta: dict, request_meta: dict, project_profile: dict = None):
-    if request_meta.get("cert_type") != "server" or not _is_project_shaped_site_meta(site_meta):
+    if request_meta.get("cert_type") != "server":
         return None, None
+    if not _is_project_shaped_site_meta(site_meta):
+        # Flat site.yaml (no participants list): fall back to project_profile server host
+        # so the signed cert SAN covers the approved server hostname.
+        default_host = (project_profile or {}).get("server", {}).get("host") or None
+        return default_host, None
     participant = site_meta["participants"][0]
     try:
         server = participant_from_dict(_copy_mapping(participant))

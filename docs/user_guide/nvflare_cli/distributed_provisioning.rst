@@ -38,6 +38,19 @@ At a high level:
 The resulting startup kit is used the same way as a centrally provisioned
 startup kit.
 
+.. note::
+
+   The Project Admin's approval covers only what is inside the signed zip:
+   participant identity, the signed certificate, ``rootCA.pem``, and the
+   federation connection parameters (server endpoint, ``scheme``,
+   ``connection_security``). ``builders:`` blocks in participant definition
+   files are **not** included in the request zip or signed zip, are not
+   approved by the Project Admin, and remain local, package-time behavior
+   applied on the requester's machine. Features that require coordinated
+   builder configuration across all participants (such as homomorphic
+   encryption) are not directly supported; use centralized
+   ``nvflare provision`` for those deployments.
+
 *******************************************
 Before You Start: Record Connection Details
 *******************************************
