@@ -519,8 +519,14 @@ def _read_file_nofollow(path: str, max_size: int = _MAX_ZIP_MEMBER_SIZE) -> byte
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     fd = os.open(path, flags)
-    with os.fdopen(fd, "rb") as f:
-        content = f.read(max_size + 1)
+    try:
+        with os.fdopen(fd, "rb") as f:
+            fd = -1  # ownership transferred to f
+            content = f.read(max_size + 1)
+    except BaseException:
+        if fd != -1:
+            os.close(fd)
+        raise
     if len(content) > max_size:
         raise _UnsafeZipSourceError(f"zip source too large: {path}")
     return content
@@ -538,22 +544,17 @@ def _write_json_file(path: str, data: dict) -> None:
     try:
         if hasattr(os, "fchmod"):
             os.fchmod(fd, 0o600)
-    except Exception:
-        os.close(fd)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            fd = -1  # ownership transferred to f
+            json.dump(data, f, indent=2)
+    except BaseException:
+        if fd != -1:
+            os.close(fd)
         try:
             os.unlink(path)
         except OSError:
             pass
         raise
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        try:
-            json.dump(data, f, indent=2)
-        except Exception:
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
-            raise
 
 
 def _utc_now() -> datetime.datetime:
@@ -716,20 +717,26 @@ def _read_zip_source_nofollow(src_path: str) -> bytes:
     if hasattr(os, "O_NOFOLLOW"):
         read_flags |= os.O_NOFOLLOW
     src_fd = os.open(src_path, read_flags)
-    with os.fdopen(src_fd, "rb") as src_file:
-        opened_stat = os.fstat(src_file.fileno())
-        if (
-            src_stat.st_ino != opened_stat.st_ino
-            or src_stat.st_dev != opened_stat.st_dev
-            or not stat.S_ISREG(opened_stat.st_mode)
-        ):
-            raise _UnsafeZipSourceError(f"unsafe zip source changed while reading: {src_path}")
-        if opened_stat.st_size > _MAX_ZIP_MEMBER_SIZE:
-            raise _UnsafeZipSourceError(f"zip source too large: {src_path}")
-        content = src_file.read(_MAX_ZIP_MEMBER_SIZE + 1)
-        if len(content) > _MAX_ZIP_MEMBER_SIZE:
-            raise _UnsafeZipSourceError(f"zip source too large: {src_path}")
-        return content
+    try:
+        with os.fdopen(src_fd, "rb") as src_file:
+            src_fd = -1  # ownership transferred to src_file
+            opened_stat = os.fstat(src_file.fileno())
+            if (
+                src_stat.st_ino != opened_stat.st_ino
+                or src_stat.st_dev != opened_stat.st_dev
+                or not stat.S_ISREG(opened_stat.st_mode)
+            ):
+                raise _UnsafeZipSourceError(f"unsafe zip source changed while reading: {src_path}")
+            if opened_stat.st_size > _MAX_ZIP_MEMBER_SIZE:
+                raise _UnsafeZipSourceError(f"zip source too large: {src_path}")
+            content = src_file.read(_MAX_ZIP_MEMBER_SIZE + 1)
+            if len(content) > _MAX_ZIP_MEMBER_SIZE:
+                raise _UnsafeZipSourceError(f"zip source too large: {src_path}")
+            return content
+    except BaseException:
+        if src_fd != -1:
+            os.close(src_fd)
+        raise
 
 
 def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> bool:
@@ -772,13 +779,17 @@ def _write_zip_nofollow(zip_path: str, members: dict, force: bool = False) -> bo
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
+    fd = -1
     try:
         fd = os.open(zip_path, flags, 0o600)
         with os.fdopen(fd, "wb") as f:
+            fd = -1  # ownership transferred to f
             with zipfile.ZipFile(f, "w", compression=zipfile.ZIP_DEFLATED) as zf:
                 for arcname, content in prepared_members:
                     zf.writestr(arcname, content)
     except Exception as e:
+        if fd != -1:
+            os.close(fd)
         try:
             if os.path.exists(zip_path) and not os.path.islink(zip_path):
                 os.remove(zip_path)
@@ -801,7 +812,7 @@ def _read_json(path: str) -> dict:
             exit_code=4,
             detail=f"failed to parse json {path}: {e}",
         )
-        return data
+        return None
     if not isinstance(data, dict):
         output_error_message(
             "INVALID_ARGS",

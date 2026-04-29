@@ -259,8 +259,14 @@ def _read_file_nofollow(path: str, max_size: int = _MAX_ZIP_MEMBER_SIZE) -> byte
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     fd = os.open(path, flags)
-    with os.fdopen(fd, "rb") as f:
-        content = f.read(max_size + 1)
+    try:
+        with os.fdopen(fd, "rb") as f:
+            fd = -1  # ownership transferred to f
+            content = f.read(max_size + 1)
+    except BaseException:
+        if fd != -1:
+            os.close(fd)
+        raise
     if len(content) > max_size:
         raise ValueError(f"file exceeds maximum size: {path}")
     return content
@@ -2033,6 +2039,8 @@ def _handle_signed_zip_package(args):
 
         resolved_request_dir = _resolve_request_dir(args, args.input, identity)
         if not resolved_request_dir:
+            if getattr(args, "request_dir", None):
+                return 1
             output_error_message(
                 "REQUEST_DIR_NOT_FOUND",
                 "Local request directory was not found.",

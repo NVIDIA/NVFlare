@@ -86,16 +86,22 @@ def require_signed_jobs(workspace: Workspace) -> bool:
             if hasattr(os, "O_NOFOLLOW"):
                 _open_flags |= os.O_NOFOLLOW
             fd = os.open(server_config_path, _open_flags)
-            with os.fdopen(fd) as f:
-                st = os.fstat(f.fileno())
-                if st.st_mode & (_stat.S_IWGRP | _stat.S_IWOTH):
-                    _warn_once(
-                        logger,
-                        f"writable:{server_config_path}",
-                        "fed_server.json is group/world-writable — require_signed_jobs policy "
-                        "can be altered by other local users (TOCTOU risk)",
-                    )
-                cfg = json.load(f)
+            try:
+                with os.fdopen(fd) as f:
+                    fd = -1  # ownership transferred to f
+                    st = os.fstat(f.fileno())
+                    if st.st_mode & (_stat.S_IWGRP | _stat.S_IWOTH):
+                        _warn_once(
+                            logger,
+                            f"writable:{server_config_path}",
+                            "fed_server.json is group/world-writable — require_signed_jobs policy "
+                            "can be altered by other local users (TOCTOU risk)",
+                        )
+                    cfg = json.load(f)
+            except BaseException:
+                if fd != -1:
+                    os.close(fd)
+                raise
             if "require_signed_jobs" in cfg:
                 value = bool(cfg["require_signed_jobs"])
                 logger.debug("require_signed_jobs=%s (explicit config)", value)

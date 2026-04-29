@@ -41,6 +41,7 @@ from nvflare.tool import cli_output
 from nvflare.tool.cert.cert_commands import (
     _generate_csr,
     _load_and_validate_csr,
+    _load_project_profile,
     _load_single_site_yaml,
     _load_yaml_file,
     _read_request_zip,
@@ -177,12 +178,31 @@ def test_write_file_nofollow_sets_requested_mode_despite_umask(tmp_path):
     assert stat.S_IMODE(os.stat(path).st_mode) == 0o644
 
 
+@pytest.mark.skipif(not hasattr(os, "fchmod"), reason="fchmod support required")
 def test_write_json_file_removes_created_file_when_fchmod_fails(tmp_path):
     path = tmp_path / "request.json"
     with patch("nvflare.tool.cert.cert_commands.os.fchmod", side_effect=OSError("chmod failed")):
         with pytest.raises(OSError):
             _write_json_file(str(path), {"ok": True})
 
+    assert not path.exists()
+
+
+def test_write_json_file_closes_fd_when_fdopen_fails(tmp_path):
+    path = tmp_path / "request.json"
+    real_close = os.close
+    closed_fds = []
+
+    def close_spy(fd):
+        closed_fds.append(fd)
+        real_close(fd)
+
+    with patch("nvflare.tool.cert.cert_commands.os.fdopen", side_effect=OSError("fdopen failed")):
+        with patch("nvflare.tool.cert.cert_commands.os.close", side_effect=close_spy):
+            with pytest.raises(OSError):
+                _write_json_file(str(path), {"ok": True})
+
+    assert closed_fds
     assert not path.exists()
 
 
@@ -2490,6 +2510,17 @@ class TestDistributedCertParticipantWorkflow:
 
         assert exc_info.value.code == 2
         assert "--participant" in capsys.readouterr().err
+
+    def test_load_project_profile_rejects_invalid_server_host(self, tmp_path):
+        profile_path = tmp_path / "project_profile.yaml"
+        _write_project_profile(profile_path, server_host="bad host name")
+
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            profile = _load_project_profile(str(profile_path))
+
+        assert profile is None
+        output_error.assert_called_once()
+        assert "server.host is invalid" in output_error.call_args.kwargs["detail"]
 
     def test_request_from_client_participant_definition_derives_identity_and_sanitizes_zip(
         self, tmp_path, capsys, monkeypatch

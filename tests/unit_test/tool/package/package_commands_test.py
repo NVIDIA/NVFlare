@@ -3931,6 +3931,20 @@ class TestSignedZipPackageMode:
         assert "site-3.key" in captured.err
         assert "REQUEST_DIR_NOT_FOUND" not in captured.err
 
+    def test_signed_zip_explicit_request_dir_error_emits_once_when_error_is_mocked(self, tmp_path):
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        incomplete_dir = tmp_path / "incomplete-request"
+        incomplete_dir.mkdir()
+        shutil.copy2(str(request_dir / "request.json"), str(incomplete_dir / "request.json"))
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(incomplete_dir))
+
+        with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as output_error:
+            result = handle_package(args)
+
+        assert result == 1
+        output_error.assert_called_once()
+        assert output_error.call_args.args[0] == "REQUEST_DIR_INCOMPLETE"
+
     @pytest.mark.parametrize(
         "zip_kwargs",
         [
