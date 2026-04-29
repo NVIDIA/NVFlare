@@ -103,6 +103,8 @@ class TestPocOutput:
         assert data["exit_code"] == 0
         assert data["data"]["workspace"] == poc_ws
         assert data["data"]["clients"] == ["site-1", "site-2"]
+        assert data["data"]["startup_kit"]["changed"] is False
+        assert data["data"]["port_preflight"]["checked"] is False
 
     def test_prepare_poc_falls_back_to_requested_clients_if_project_reread_fails(self, capsys, tmp_path):
         from nvflare.tool.poc.poc_commands import prepare_poc
@@ -123,6 +125,59 @@ class TestPocOutput:
         data = json.loads(capsys.readouterr().out)
         assert data["status"] == "ok"
         assert data["data"]["clients"] == ["site-a", "site-b"]
+        assert data["data"]["port_preflight"]["checked"] is False
+
+    def test_prepare_poc_reports_startup_kit_transition_and_port_conflicts(self, capsys, tmp_path):
+        from nvflare.tool.poc.poc_commands import prepare_poc
+
+        args = self._make_prepare_args(force=True)
+        poc_ws = str(tmp_path / "poc")
+        project_config = {
+            "participants": [
+                {"name": "server", "type": "server", "fed_learn_port": 8002, "admin_port": 8003},
+                {"name": "site-1", "type": "client"},
+                {"name": "site-2", "type": "client"},
+            ]
+        }
+
+        def fake_port_available(port, host="127.0.0.1"):
+            return (False, "in_use") if port == 8002 else (True, None)
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=poc_ws),
+            patch("nvflare.tool.poc.poc_commands._prepare_poc", return_value=True),
+            patch("nvflare.tool.install_skills.install_skills", return_value=None),
+            patch("nvflare.tool.poc.poc_commands.load_yaml", return_value=project_config),
+            patch(
+                "nvflare.tool.poc.poc_commands._get_active_startup_kit_id_safely",
+                side_effect=["prod-admin", "admin@nvidia.com"],
+            ),
+            patch("nvflare.tool.poc.poc_commands._is_local_port_available", side_effect=fake_port_available),
+        ):
+            prepare_poc(args)
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "ok"
+        assert data["data"]["clients"] == ["site-1", "site-2"]
+        assert data["data"]["startup_kit"] == {
+            "prior_active": "prod-admin",
+            "active": "admin@nvidia.com",
+            "changed": True,
+        }
+        port_preflight = data["data"]["port_preflight"]
+        assert port_preflight["checked"] is True
+        assert port_preflight["host"] == "127.0.0.1"
+        assert port_preflight["conflicts"] == [
+            {
+                "name": "fed_learn_port",
+                "port": 8002,
+                "available": False,
+                "conflict": True,
+                "reason": "in_use",
+                "message": "Port 8002 is not available on 127.0.0.1: in_use",
+            }
+        ]
+        assert {item["port"]: item["available"] for item in port_preflight["ports"]} == {8002: False, 8003: True}
 
     def test_prepare_poc_malformed_participants_returns_invalid_args(self, capsys, tmp_path):
         from nvflare.tool.poc.poc_commands import prepare_poc
@@ -369,6 +424,7 @@ class TestPocOutput:
             patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
             patch("nvflare.tool.poc.poc_commands._start_poc", return_value=None),
             patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(project_config, service_config)),
+            patch("nvflare.tool.poc.poc_commands._is_local_port_available", return_value=(True, None)),
             patch("nvflare.tool.poc.poc_commands._wait_for_poc_system_ready", return_value=True),
         ):
             start_poc(args)
@@ -377,8 +433,135 @@ class TestPocOutput:
         data = json.loads(captured.out)
         assert data["status"] == "ok"
         assert data["data"]["server_url"] == "grpc://localhost:9443"
+        assert data["data"]["server_address"] == "localhost:9443"
+        assert data["data"]["admin_address"] == "localhost:9443"
+        assert data["data"]["default_port"] == 8002
+        assert data["data"]["default_server_port"] == 8002
+        assert data["data"]["default_admin_port"] == 8003
+        assert data["data"]["port_conflict"] is False
+        assert data["data"]["warnings"] == []
+        assert data["data"]["port_preflight"]["checked"] is True
         assert data["data"]["clients"] == ["site-1", "site-2"]
         assert data["data"]["ready"] is True
+
+    def test_start_poc_reports_bound_addresses_and_port_conflicts(self, capsys, tmp_path):
+        from nvflare.lighter.constants import PropKey
+        from nvflare.tool.poc.poc_commands import start_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        args = MagicMock()
+        args.service = "all"
+        args.exclude = ""
+        args.gpu = None
+        args.study = None
+        args.no_wait = False
+
+        project_config = {
+            "participants": [
+                {
+                    "name": "server",
+                    "type": "server",
+                    PropKey.FED_LEARN_PORT: 8002,
+                    PropKey.ADMIN_PORT: 8003,
+                },
+                {"name": "site-1", "type": "client"},
+            ]
+        }
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_CLIENTS: ["site-1"],
+        }
+
+        def fake_port_available(port, host="127.0.0.1"):
+            return (False, "in_use") if port == 8002 else (True, None)
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands._start_poc", return_value=None),
+            patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(project_config, service_config)),
+            patch("nvflare.tool.poc.poc_commands._is_local_port_available", side_effect=fake_port_available),
+            patch("nvflare.tool.poc.poc_commands._wait_for_poc_system_ready", return_value=True),
+        ):
+            start_poc(args)
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "ok"
+        assert data["data"]["server_url"] == "grpc://localhost:8002"
+        assert data["data"]["server_address"] == "localhost:8002"
+        assert data["data"]["admin_address"] == "localhost:8003"
+        assert data["data"]["port_conflict"] is True
+        assert data["data"]["warnings"] == ["Port 8002 is not available on 127.0.0.1: in_use"]
+        assert data["data"]["port_preflight"]["checked"] is True
+        assert data["data"]["port_preflight"]["conflicts"] == [
+            {
+                "name": "fed_learn_port",
+                "port": 8002,
+                "available": False,
+                "conflict": True,
+                "reason": "in_use",
+                "message": "Port 8002 is not available on 127.0.0.1: in_use",
+            }
+        ]
+        assert {item["port"]: item["available"] for item in data["data"]["port_preflight"]["ports"]} == {
+            8002: False,
+            8003: True,
+        }
+        assert data["data"]["ready"] is True
+
+    def test_start_poc_error_includes_port_conflict_metadata(self, capsys, tmp_path):
+        from nvflare.cli_exception import CLIException
+        from nvflare.lighter.constants import PropKey
+        from nvflare.tool.poc.poc_commands import start_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        args = MagicMock()
+        args.service = "all"
+        args.exclude = ""
+        args.gpu = None
+        args.study = None
+        args.no_wait = False
+
+        project_config = {
+            "participants": [
+                {
+                    "name": "server",
+                    "type": "server",
+                    PropKey.FED_LEARN_PORT: 8002,
+                    PropKey.ADMIN_PORT: 8003,
+                }
+            ]
+        }
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_CLIENTS: [],
+        }
+
+        def fake_port_available(port, host="127.0.0.1"):
+            return (False, "in_use") if port == 8002 else (True, None)
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands._start_poc", side_effect=CLIException("port already in use")),
+            patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(project_config, service_config)),
+            patch("nvflare.tool.poc.poc_commands._is_local_port_available", side_effect=fake_port_available),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                start_poc(args)
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["data"]["port_conflict"] is True
+        assert data["data"]["warnings"] == ["Port 8002 is not available on 127.0.0.1: in_use"]
+        assert data["data"]["port_preflight"]["conflicts"][0]["port"] == 8002
 
     def test_start_poc_no_wait_reports_starting_and_skips_readiness(self, capsys, tmp_path):
         from nvflare.tool.poc.poc_commands import start_poc
@@ -405,6 +588,7 @@ class TestPocOutput:
             patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
             patch("nvflare.tool.poc.poc_commands._start_poc", return_value=None),
             patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(project_config, service_config)),
+            patch("nvflare.tool.poc.poc_commands._is_local_port_available", return_value=(True, None)),
             patch("nvflare.tool.poc.poc_commands._wait_for_poc_system_ready") as wait_ready,
         ):
             start_poc(args)
@@ -413,6 +597,10 @@ class TestPocOutput:
         data = json.loads(capsys.readouterr().out)
         assert data["data"]["status"] == "starting"
         assert data["data"]["ready"] is False
+        assert data["data"]["server_address"] == "localhost:8002"
+        assert data["data"]["admin_address"] == "localhost:8002"
+        assert data["data"]["default_admin_port"] == 8003
+        assert data["data"]["port_conflict"] is False
 
     def test_start_poc_readiness_timeout_exits_connection_failed(self, capsys, tmp_path):
         from nvflare.tool.api_utils import SystemStartTimeout
@@ -440,6 +628,7 @@ class TestPocOutput:
             patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
             patch("nvflare.tool.poc.poc_commands._start_poc", return_value=None),
             patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(project_config, service_config)),
+            patch("nvflare.tool.poc.poc_commands._is_local_port_available", return_value=(True, None)),
             patch(
                 "nvflare.tool.poc.poc_commands._wait_for_poc_system_ready",
                 side_effect=SystemStartTimeout("cannot connect to server with 1 clients within 30 sec"),

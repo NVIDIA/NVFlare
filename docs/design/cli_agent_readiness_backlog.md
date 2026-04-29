@@ -9,6 +9,8 @@ This backlog tracks the remaining larger CLI enhancement groups after the
 - `job logs --tail`, `--since`, and `--max-bytes`
 - `job submit --submit-token` and `job list --submit-token`
 - `nvflare job wait`
+- `poc prepare` port and startup-kit preflight
+- `poc start` readiness, bound addresses, and port conflict metadata
 
 ## 1. CLI Contract
 
@@ -26,9 +28,8 @@ This backlog tracks the remaining larger CLI enhancement groups after the
 
 ## 3. POC Workflow
 
-- `poc prepare` port and startup-kit preflight.
-- `poc start` readiness and actual bound addresses.
-- `poc wait-ready` if `poc start` remains asynchronous.
+- `poc wait-ready` as an explicit readiness command for workflows that start with
+  `poc start --no-wait`.
 - `poc stop --restore-kit`.
 
 ## 4. Recipe Discovery

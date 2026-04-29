@@ -185,8 +185,17 @@ Behavior changes:
 - By default, the command waits until the admin server accepts connections and
   selected clients are registered before returning ``status: running``.
 - With ``--no-wait``, the command returns immediately with ``status: starting``.
-- The command returns JSON with ``status``, ``server_url``, ``clients``, and,
-  when readiness was checked or explicitly skipped, ``ready``.
+- The command returns JSON with ``status``, ``server_url``, ``server_address``,
+  ``admin_address``, ``clients``, ``port_conflict``, ``port_preflight``,
+  ``warnings``, and, when readiness was checked or explicitly skipped,
+  ``ready``.
+- Use ``data.server_address`` and ``data.admin_address`` as the machine-readable
+  endpoint addresses for subsequent automation. ``data.server_url`` is kept for
+  compatibility with existing clients.
+- ``data.port_conflict`` is a best-effort pre-start warning based on local port
+  checks. When true, inspect ``data.port_preflight.conflicts`` and
+  ``data.warnings`` before submitting jobs to avoid connecting to a different
+  running POC system.
 
 Examples:
 
@@ -284,6 +293,26 @@ service management.
 The default Project Admin startup kit becomes active, so server-connected
 commands such as ``nvflare job list`` and ``nvflare system status`` work
 without extra startup-kit flags.
+
+In JSON mode, ``nvflare poc prepare`` reports the active-kit transition:
+``data.startup_kit.prior_active`` is the startup-kit ID that was active before
+prepare, ``data.startup_kit.active`` is the ID active after prepare, and
+``data.startup_kit.changed`` indicates whether prepare changed the default
+identity. Agents can use this information to restore the user's previous
+identity after the POC workflow.
+
+``nvflare poc prepare`` also reports a best-effort local server port preflight
+under ``data.port_preflight``. The command checks the generated POC server ports
+when the project configuration can be read and lists unavailable ports in
+``data.port_preflight.conflicts``. These conflicts are warnings for the later
+``nvflare poc start`` step; they do not make ``poc prepare`` fail.
+
+In JSON mode, ``nvflare poc start`` reports the bound POC endpoints under
+``data.server_address`` and ``data.admin_address``. The command waits for
+readiness by default unless ``--no-wait`` is used. It also repeats a best-effort
+local server port preflight before startup and reports unavailable configured
+ports under ``data.port_preflight.conflicts`` with ``data.port_conflict`` set to
+``true``.
 
 Use :ref:`kit_command` to inspect generated POC startup kit registrations or
 switch between POC-generated user startup kits.

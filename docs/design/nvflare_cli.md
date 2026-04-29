@@ -483,6 +483,14 @@ nvflare job submit -j ./job
 ```
 
 `poc prepare` registers the generated Project Admin startup kit and makes it active.
+Its JSON payload reports the prior active startup-kit ID, the active POC startup-kit ID,
+and whether the active kit changed. Agents use this to restore the user's original
+identity after POC workflows.
+
+`poc prepare` also performs a best-effort local preflight for the generated server ports
+before `poc start` is run. The preflight reports unavailable ports as warnings in the
+success payload; it does not fail preparation because the actual bind happens later in
+`poc start`.
 
 Production flow:
 
@@ -991,7 +999,14 @@ All commands need `--schema` and always emit a JSON envelope unless marked other
 
 On success, auto-invoke `install_skills()`; exit 0 on failure because skills are optional.
 It also registers generated admin/user startup kits in `startup_kits.entries` and
-activates the first Project Admin kit.
+activates the first Project Admin kit. The JSON success payload includes:
+
+- `startup_kit.prior_active`: startup-kit ID that was active before prepare, or `null`.
+- `startup_kit.active`: startup-kit ID active after prepare, or `null`.
+- `startup_kit.changed`: whether prepare changed the active startup-kit ID.
+- `port_preflight.checked`: whether server port preflight could be performed.
+- `port_preflight.ports`: checked local server ports and availability.
+- `port_preflight.conflicts`: unavailable ports that may prevent `poc start`.
 
 #### `nvflare poc start`
 
@@ -1000,10 +1015,30 @@ activates the first Project Admin kit.
 | `-p`, `--service` | str | No | `"all"` | Participant to start |
 | `-ex`, `--exclude` | str | No | `""` | Exclude service directory |
 | `-gpu`, `--gpu` | int... | No | `None` | GPU device IDs |
+| `--no-wait` | flag | No | — | Return after process start without readiness wait |
 | `-debug`, `--debug` | flag | No | — | Debug mode |
 | `--schema` | flag | No | — | Print command schema and exit |
 
-Must emit `server_url` in the JSON data field when server accepts connections.
+Starts server and clients by default and excludes admin console participants unless one is
+explicitly selected. In JSON mode, success data includes:
+
+- `status`: `running` after readiness wait, or `starting` with `--no-wait`.
+- `ready`: present when readiness was checked or explicitly skipped.
+- `server_url`: compatibility URL for the FL server endpoint.
+- `server_address`: bound FL server address, for example `localhost:8002`.
+- `admin_address`: bound admin endpoint address, for example `localhost:8003`.
+- `default_port`, `default_server_port`, `default_admin_port`: POC defaults used for
+  comparison and diagnostics.
+- `port_conflict`: true when the pre-start local port check found unavailable configured
+  server ports.
+- `port_preflight`: checked ports and conflict details.
+- `warnings`: human-readable warning strings derived from `port_preflight.conflicts`.
+- `clients`: configured POC client names.
+
+`server_address` and `admin_address` are the source of truth for follow-on automation.
+`port_conflict` is advisory: POC does not currently auto-rebind to alternate ports, so a
+conflict usually means startup will fail or another local POC system is already using the
+configured endpoint.
 
 #### `nvflare poc stop`
 

@@ -76,6 +76,10 @@ POC_KEY = "poc"
 STARTUP_KIT_KEY = "startup_kit"
 WORKSPACE_KEY = "workspace"
 POC_START_READY_TIMEOUT = 30
+POC_DEFAULT_FED_LEARN_PORT = 8002
+POC_DEFAULT_ADMIN_PORT = 8003
+POC_LOCAL_HOST = "localhost"
+POC_PORT_PREFLIGHT_HOST = "127.0.0.1"
 
 
 class AuthorizationError(PermissionError):
@@ -649,6 +653,205 @@ def _restore_poc_active_kit(previous_active: Optional[str], preferred_active: Op
         save_cli_config(config)
 
 
+def _get_active_startup_kit_id_safely() -> Optional[str]:
+    try:
+        return get_active_startup_kit_id(load_cli_config())
+    except Exception:
+        return None
+
+
+def _is_local_port_available(port: int, host: str = POC_PORT_PREFLIGHT_HOST) -> Tuple[bool, Optional[str]]:
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        return False, "invalid_port"
+
+    if port < 1 or port > 65535:
+        return False, "invalid_port"
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind((host, port))
+    except OSError as e:
+        if e.errno == errno.EADDRINUSE:
+            return False, "in_use"
+        return False, e.strerror or str(e)
+
+    return True, None
+
+
+def _get_poc_server_port_specs(project_config: Dict) -> List[Dict]:
+    if not isinstance(project_config, dict):
+        return []
+
+    try:
+        server_name = get_fl_server_name(project_config)
+    except Exception:
+        server_name = None
+
+    participants = project_config.get("participants", [])
+    if not isinstance(participants, list):
+        return []
+
+    for participant in participants:
+        if not isinstance(participant, dict) or participant.get("type") != "server":
+            continue
+        if server_name and participant.get("name") != server_name:
+            continue
+
+        fed_learn_port = participant.get(PropKey.FED_LEARN_PORT, POC_DEFAULT_FED_LEARN_PORT)
+        admin_port = participant.get(PropKey.ADMIN_PORT, fed_learn_port)
+        specs = [
+            {"name": PropKey.FED_LEARN_PORT, "port": fed_learn_port},
+            {"name": PropKey.ADMIN_PORT, "port": admin_port},
+        ]
+        deduped_specs = []
+        seen_ports = set()
+        for spec in specs:
+            port = spec.get("port")
+            if port in seen_ports:
+                continue
+            seen_ports.add(port)
+            deduped_specs.append(spec)
+        return deduped_specs
+
+    return []
+
+
+def _build_poc_port_preflight(project_config: Dict, host: str = POC_PORT_PREFLIGHT_HOST) -> Dict:
+    port_specs = _get_poc_server_port_specs(project_config)
+    if not port_specs:
+        return {
+            "checked": False,
+            "host": host,
+            "ports": [],
+            "conflicts": [],
+            "message": "server port configuration is not available",
+        }
+
+    checked_ports = []
+    conflicts = []
+    for spec in port_specs:
+        port = spec.get("port")
+        available, reason = _is_local_port_available(port, host=host)
+        checked = {
+            "name": spec.get("name"),
+            "port": port,
+            "available": available,
+            "conflict": not available,
+        }
+        if reason:
+            checked["reason"] = reason
+        checked_ports.append(checked)
+
+        if not available:
+            conflict = dict(checked)
+            conflict["message"] = f"Port {port} is not available on {host}: {reason}"
+            conflicts.append(conflict)
+
+    return {
+        "checked": True,
+        "host": host,
+        "ports": checked_ports,
+        "conflicts": conflicts,
+    }
+
+
+def _get_poc_server_participant(project_config: Dict, service_config: Dict = None) -> Optional[Dict]:
+    if not isinstance(project_config, dict):
+        return None
+
+    server_name = service_config.get(SC.FLARE_SERVER) if service_config else None
+    if not server_name:
+        try:
+            server_name = get_fl_server_name(project_config)
+        except Exception:
+            server_name = None
+
+    participants = project_config.get("participants", [])
+    if not isinstance(participants, list):
+        return None
+
+    for participant in participants:
+        if not isinstance(participant, dict) or participant.get("type") != "server":
+            continue
+        if server_name and participant.get("name") != server_name:
+            continue
+        return participant
+    return None
+
+
+def _get_poc_server_ports(project_config: Dict, service_config: Dict = None) -> Tuple[int, int]:
+    server_participant = _get_poc_server_participant(project_config, service_config)
+    if not server_participant:
+        return POC_DEFAULT_FED_LEARN_PORT, POC_DEFAULT_ADMIN_PORT
+
+    fed_learn_port = server_participant.get(PropKey.FED_LEARN_PORT, POC_DEFAULT_FED_LEARN_PORT)
+    try:
+        fed_learn_port = int(fed_learn_port)
+    except (TypeError, ValueError):
+        fed_learn_port = POC_DEFAULT_FED_LEARN_PORT
+
+    admin_port = server_participant.get(PropKey.ADMIN_PORT, fed_learn_port)
+    try:
+        admin_port = int(admin_port)
+    except (TypeError, ValueError):
+        admin_port = fed_learn_port
+
+    return fed_learn_port, admin_port
+
+
+def _build_poc_endpoint_info(project_config: Dict, service_config: Dict = None) -> Dict:
+    fed_learn_port, admin_port = _get_poc_server_ports(project_config, service_config)
+    server_address = f"{POC_LOCAL_HOST}:{fed_learn_port}"
+    admin_address = f"{POC_LOCAL_HOST}:{admin_port}"
+    return {
+        "server_url": f"grpc://{server_address}",
+        "server_address": server_address,
+        "admin_address": admin_address,
+        "default_port": POC_DEFAULT_FED_LEARN_PORT,
+        "default_server_port": POC_DEFAULT_FED_LEARN_PORT,
+        "default_admin_port": POC_DEFAULT_ADMIN_PORT,
+    }
+
+
+def _build_poc_start_port_preflight(
+    project_config: Dict, service_config: Dict, services_list: List[str], excluded: List[str]
+) -> Dict:
+    if not project_config or not service_config:
+        return {
+            "checked": False,
+            "host": POC_PORT_PREFLIGHT_HOST,
+            "ports": [],
+            "conflicts": [],
+            "message": "server port configuration is not available",
+        }
+
+    starts_server, _ = _get_started_readiness_participants(service_config, services_list, excluded)
+    if not starts_server:
+        return {
+            "checked": False,
+            "host": POC_PORT_PREFLIGHT_HOST,
+            "ports": [],
+            "conflicts": [],
+            "message": "server was not selected for startup",
+        }
+
+    return _build_poc_port_preflight(project_config)
+
+
+def _poc_port_warnings(port_preflight: Dict) -> List[str]:
+    return [conflict.get("message") for conflict in port_preflight.get("conflicts", []) if conflict.get("message")]
+
+
+def _build_poc_port_diagnostics(port_preflight: Dict) -> Dict:
+    return {
+        "port_conflict": bool(port_preflight.get("conflicts")),
+        "port_preflight": port_preflight,
+        "warnings": _poc_port_warnings(port_preflight),
+    }
+
+
 def _get_existing_poc_prod_dir(poc_workspace: str, project_name: str) -> str:
     prod_dirs = _get_prod_dirs(poc_workspace, project_name)
     if not prod_dirs:
@@ -992,6 +1195,7 @@ def prepare_poc(cmd_args):
             )
             raise SystemExit(4)
         # Interactive: let _prepare_poc handle the prompt
+    prior_active_startup_kit = _get_active_startup_kit_id_safely()
     try:
         result = _prepare_poc(
             cmd_args.clients,
@@ -1014,12 +1218,14 @@ def prepare_poc(cmd_args):
 
     # Gather client names
     project_file = os.path.join(poc_workspace, "project.yml")
+    project_config = None
     clients = (
         list(cmd_args.clients) if cmd_args.clients else [f"site-{i + 1}" for i in range(cmd_args.number_of_clients)]
     )
     try:
         pc = load_yaml(project_file)
         if pc:
+            project_config = pc
             participants = pc.get("participants", [])
             if not isinstance(participants, list):
                 raise CLIException("project.yml participants must be a list")
@@ -1040,7 +1246,19 @@ def prepare_poc(cmd_args):
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
 
-    output_ok({"workspace": poc_workspace, "clients": clients})
+    active_startup_kit = _get_active_startup_kit_id_safely()
+    output_ok(
+        {
+            "workspace": poc_workspace,
+            "clients": clients,
+            "startup_kit": {
+                "prior_active": prior_active_startup_kit,
+                "active": active_startup_kit,
+                "changed": prior_active_startup_kit != active_startup_kit,
+            },
+            "port_preflight": _build_poc_port_preflight(project_config),
+        }
+    )
     from nvflare.tool.cli_output import print_human
 
     print_human(f"\nPOC workspace ready at: {poc_workspace}")
@@ -1249,7 +1467,7 @@ def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> List[int]:
 
 
 def start_poc(cmd_args):
-    from nvflare.tool.cli_output import output_error, output_error_message, output_ok
+    from nvflare.tool.cli_output import is_json_mode, output_error, output_error_message, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -1267,19 +1485,37 @@ def start_poc(cmd_args):
     no_wait = getattr(cmd_args, "no_wait", False)
     no_wait = no_wait if isinstance(no_wait, bool) else False
 
+    port_preflight = {
+        "checked": False,
+        "host": POC_PORT_PREFLIGHT_HOST,
+        "ports": [],
+        "conflicts": [],
+        "message": "server port configuration is not available",
+    }
+    try:
+        pre_project_config, pre_service_config = setup_service_config(poc_workspace)
+        port_preflight = _build_poc_start_port_preflight(
+            pre_project_config, pre_service_config, services_list, excluded
+        )
+    except Exception:
+        pass
+
     try:
         _start_poc(poc_workspace, gpu_ids, excluded, services_list, study=study)
     except CLIException as e:
-        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+        error_data = _build_poc_port_diagnostics(port_preflight) if is_json_mode() else None
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e), data=error_data)
         raise SystemExit(4)
     except Exception as e:
-        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
+        error_data = _build_poc_port_diagnostics(port_preflight) if is_json_mode() else None
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e), data=error_data)
         raise SystemExit(5)
 
     # Get client names from project config
     clients = []
-    server_url = "grpc://localhost:8002"
+    project_config = None
     service_config = None
+    endpoint_info = _build_poc_endpoint_info(project_config, service_config)
     try:
         project_config, service_config = setup_service_config(poc_workspace)
         if project_config:
@@ -1294,7 +1530,7 @@ def start_poc(cmd_args):
                     name = p.get("name")
                     if name:
                         clients.append(name)
-            server_url = _get_server_url(project_config, service_config)
+            endpoint_info = _build_poc_endpoint_info(project_config, service_config)
     except (OSError, IOError, yaml.YAMLError):
         pass
     except CLIException as e:
@@ -1322,7 +1558,19 @@ def start_poc(cmd_args):
             )
             raise SystemExit(2)
 
-    result = {"status": "starting" if no_wait else "running", "server_url": server_url, "clients": clients}
+    port_diagnostics = _build_poc_port_diagnostics(port_preflight)
+    server_url = endpoint_info["server_url"]
+    result = {
+        "status": "starting" if no_wait else "running",
+        "server_url": server_url,
+        "server_address": endpoint_info["server_address"],
+        "admin_address": endpoint_info["admin_address"],
+        "default_port": endpoint_info["default_port"],
+        "default_server_port": endpoint_info["default_server_port"],
+        "default_admin_port": endpoint_info["default_admin_port"],
+        "clients": clients,
+    }
+    result.update(port_diagnostics)
     if no_wait or wait_performed:
         result["ready"] = ready
     output_ok(result)
@@ -1332,8 +1580,12 @@ def start_poc(cmd_args):
         print_human(f"\nPOC system start requested. Server: {server_url}")
     else:
         print_human(f"\nPOC system started. Server: {server_url}")
+    print_human(f"  Server address: {endpoint_info['server_address']}")
+    print_human(f"  Admin address: {endpoint_info['admin_address']}")
     if clients:
         print_human(f"  Clients: {', '.join(clients)}")
+    for warning in port_diagnostics["warnings"]:
+        print_human(f"  Warning: {warning}")
     if service_config:
         proj_admin = service_config.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
         print_human(f"  Admin console not started by default. Start with: nvflare poc start -p {proj_admin}")
@@ -1402,14 +1654,7 @@ def get_service_list(cmd_args):
 
 
 def _get_server_url(project_config, service_config) -> str:
-    server_name = service_config.get(SC.FLARE_SERVER, "server") if service_config else "server"
-    participants = project_config.get("participants", []) if project_config else []
-    port = 8002
-    for participant in participants:
-        if participant.get("type") == "server" and participant.get("name") == server_name:
-            port = participant.get(PropKey.FED_LEARN_PORT, 8002)
-            break
-    return f"grpc://localhost:{port}"
+    return _build_poc_endpoint_info(project_config, service_config)["server_url"]
 
 
 def _start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_list=None, study: Optional[str] = None):
