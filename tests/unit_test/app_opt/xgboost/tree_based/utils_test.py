@@ -82,6 +82,14 @@ class TestUpdateModel(unittest.TestCase):
         n = len(result["learner"]["gradient_booster"]["model"]["trees"])
         self.assertEqual(n, 30)
 
+    def test_iteration_indptr_multiclass(self):
+        """iteration_indptr must advance by add_num_trees (not num_parallel_tree)."""
+        num_class, num_parallel_tree = 6, 5
+        client = _make_client_model(num_class=num_class, num_parallel_tree=num_parallel_tree)
+        trees_per_client = num_class * num_parallel_tree
+        merged = update_model(copy.deepcopy(client), copy.deepcopy(client))
+        indptr = merged["learner"]["gradient_booster"]["model"]["iteration_indptr"]
+        self.assertEqual(indptr, [0, trees_per_client, 2 * trees_per_client])
 
 if __name__ == "__main__":
     unittest.main()
