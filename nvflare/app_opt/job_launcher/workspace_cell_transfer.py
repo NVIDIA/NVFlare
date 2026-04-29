@@ -22,6 +22,7 @@ Launched job pods create short-lived bootstrap child cells to:
 The actual payload transfer uses the existing F3 file downloader infrastructure,
 so large bundles move in chunks instead of being buffered into a single message.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -66,7 +67,7 @@ BOOTSTRAP_CONNECT_TIMEOUT = 30.0
 BOOTSTRAP_CONNECT_POLL_INTERVAL = 0.1
 
 _BOOTSTRAP_CELL_PREFIX = "ws_transfer_"
-_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data_pvc.yaml"})
+_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data.yaml"})
 
 
 @dataclass
