@@ -87,31 +87,32 @@ python run_validate.py -w workspace -o cross_site_validate.json
 
 ### Inference
 
-The inference script requires torchscript format model to work. User can use `convert_to_torchscript.py` to convert existing checkpoints.
+The inference script requires a TorchScript model. Use `convert_to_torchscript.py` to convert an existing checkpoint; a `.ts` suffix on the output file is a useful convention so it is not confused with the training checkpoint (`.pt`).
+
 ```
 # For server checkpoint
 python convert_to_torchscript.py \
-  --config workspace/simulate_job/app_server/config/config_fed_server.json \
-  --weights workspace/simulate_job/app_server/best_FL_global_model.pt \
+  --config workspace/server/simulate_job/app_server/config/config_fed_server.json \
+  --weights workspace/server/simulate_job/app_server/best_FL_global_model.pt \
   --app server \
-  --output best_FL_global_model.pt
+  --output best_FL_global_model.ts
 
-# For client checkpoint
+# For client checkpoint (example: spleen site after local simulation)
 python convert_to_torchscript.py \
-  --config workspace/simulate_job/app_pancreas/config/config_task.json \
-  --weights workspace/simulate_job/app_pancreas/models/best_model.pt \
-  --app pancreas \
-  --output best_pancreas_model.pt
+  --config workspace/spleen/simulate_job/app_spleen/config/config_task.json \
+  --weights workspace/spleen/models/best_model.pt \
+  --app spleen \
+  --output best_spleen_model.ts
 ```
 
-Once the torchscript model is available, use `run_infer.py` to run inference. 
-The following example is how to run inference using the best global model on the liver test set.
+Once the TorchScript model is available, use `run_infer.py` to run inference.
+The following example is how to run inference using the best global model on the spleen test set.
 ```
 python run_infer.py \
-  --data_root data/Liver \
-  --data_list data/Liver/datalist.json \
+  --data_root data/Spleen \
+  --data_list data/Spleen/datalist.json \
   --data_list_key testing \
-  --model best_global_model.pt \
+  --model best_FL_global_model.ts \
   --output infer
 ```
 The inference results will be saved in the output directory in NIfTI format.
