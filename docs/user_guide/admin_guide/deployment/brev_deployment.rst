@@ -140,6 +140,10 @@ After both Kubernetes environments are running, open the server environment's
 ``Access`` page. In the ``Using Ports`` section, expose the FLARE federated
 learning port, ``fed_learn_port`` ``8002``:
 
+This guide does not set ``admin_port`` in ``project.yml``. When ``admin_port``
+is omitted, NVFlare uses the same value as ``fed_learn_port``. Therefore, the
+Brev server environment only needs to expose ``fed_learn_port`` ``8002``.
+
 #. Find ``TCP/UDP Ports``.
 #. In ``Expose Port(s)``, enter ``8002``.
 #. Select the access scope. ``Allow All IPs`` is convenient for a quick test;
@@ -248,6 +252,8 @@ Edit ``project.yml`` with these deployment-specific goals:
    client cluster will use.
 #. Include the same DNS name in ``host_names`` so the server certificate is
    valid for that endpoint.
+#. Leave ``admin_port`` unset so it defaults to ``fed_learn_port``. The Brev
+   server only needs to expose the ``fed_learn_port`` value.
 #. Add ``HelmChartBuilder`` after ``StaticFileBuilder``.
 #. Use the container image that both clusters can pull.
 
