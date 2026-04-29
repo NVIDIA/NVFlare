@@ -45,6 +45,7 @@ from nvflare.lighter.utils import (
     load_crt_bytes,
     serialize_cert,
     serialize_pri_key,
+    sign_content,
 )
 from nvflare.tool import cli_output
 from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256, normalize_sha256_fingerprint
@@ -77,6 +78,12 @@ from nvflare.tool.package.package_commands import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+_SIGNED_SERVER_ENDPOINT = {
+    "host": "server1.hospital-central.org",
+    "fed_learn_port": 8002,
+    "admin_port": 8003,
+}
 
 
 def _make_ca(tmp_dir, name="test-ca", org="TestOrg"):
@@ -441,6 +448,9 @@ class TestSignedZipHelpers:
             "cert_type": "client",
             "cert_file": "other.crt",
             "rootca_file": "rootCA.pem",
+            "scheme": "grpc",
+            "default_connection_security": "tls",
+            "server": _SIGNED_SERVER_ENDPOINT,
             "hashes": {
                 "csr_sha256": "1" * 64,
                 "site_yaml_sha256": "1" * 64,
@@ -476,6 +486,9 @@ class TestSignedZipHelpers:
             "cert_type": "client",
             "cert_file": "site-3.crt",
             "rootca_file": "rootCA.pem",
+            "scheme": "grpc",
+            "default_connection_security": "tls",
+            "server": _SIGNED_SERVER_ENDPOINT,
             "hashes": {
                 "csr_sha256": "1" * 64,
                 "site_yaml_sha256": "1" * 64,
@@ -504,6 +517,9 @@ class TestSignedZipHelpers:
             "cert_type": "workspace",
             "cert_file": "site-3.crt",
             "rootca_file": "rootCA.pem",
+            "scheme": "grpc",
+            "default_connection_security": "tls",
+            "server": _SIGNED_SERVER_ENDPOINT,
         }
         with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
             valid = _validate_signed_metadata(signed_meta, {}, "site-3.crt")
@@ -524,6 +540,9 @@ class TestSignedZipHelpers:
             "cert_type": "client",
             "cert_file": "site-3.crt",
             "rootca_file": "rootCA.pem",
+            "scheme": "grpc",
+            "default_connection_security": "tls",
+            "server": _SIGNED_SERVER_ENDPOINT,
             "hashes": {
                 "csr_sha256": "1" * 64,
                 "site_yaml_sha256": "1" * 64,
@@ -552,6 +571,9 @@ class TestSignedZipHelpers:
             "cert_type": "client",
             "cert_file": "site-3.crt",
             "rootca_file": "rootCA.pem",
+            "scheme": "grpc",
+            "default_connection_security": "tls",
+            "server": _SIGNED_SERVER_ENDPOINT,
             "hashes": {
                 "csr_sha256": "1" * 64,
                 "site_yaml_sha256": "1" * 64,
@@ -2725,6 +2747,9 @@ def _public_key_sha256_from_cert(cert_path) -> str:
     return _signed_zip_sha256_bytes(public_key_der)
 
 
+_SIGNED_ZIP_CA_KEYS = {}
+
+
 def _make_signed_zip(
     tmp_path,
     *,
@@ -2767,17 +2792,6 @@ def _make_signed_zip(
         )
     elif participant_type == "admin":
         participant["role"] = cert_type
-        participant["server"] = {
-            "host": "fl-server",
-            "fed_learn_port": 8002,
-            "admin_port": 8003,
-        }
-    else:
-        participant["server"] = {
-            "host": "fl-server",
-            "fed_learn_port": 8002,
-            "admin_port": 8003,
-        }
     local_site = {
         "name": project_name,
         "participants": [participant],
@@ -2827,6 +2841,11 @@ def _make_signed_zip(
                 "cert_role": None,
                 "scheme": "grpc",
                 "default_connection_security": "tls",
+                "server": {
+                    "host": "fl-server",
+                    "fed_learn_port": 8002,
+                    "admin_port": 8003,
+                },
                 "certificate": {
                     "serial": "01",
                     "valid_until": "2029-04-24T00:00:00Z",
@@ -2844,9 +2863,12 @@ def _make_signed_zip(
             sort_keys=True,
         )
     )
+    signed_sig_path = request_dir / "signed.json.sig"
+    signed_sig_path.write_text(sign_content(signed_json_path.read_bytes(), ca_key))
     signed_zip = request_dir / f"{name}.signed.zip"
     with zipfile.ZipFile(signed_zip, "w") as zf:
         zf.write(signed_json_path, "signed.json")
+        zf.write(signed_sig_path, "signed.json.sig")
         zf.write(approval_site_yaml_path, "site.yaml")
         with open(cert_path, "rb") as cert_file:
             zf.writestr(cert_member or (f"../{name}.crt" if traversal else f"{name}.crt"), cert_file.read())
@@ -2856,7 +2878,9 @@ def _make_signed_zip(
     os.remove(cert_path)
     os.remove(rootca_copy)
     os.remove(signed_json_path)
+    os.remove(signed_sig_path)
     os.remove(approval_site_yaml_path)
+    _SIGNED_ZIP_CA_KEYS[str(signed_zip)] = ca_key
     return signed_zip, request_dir, key_path
 
 
@@ -2869,8 +2893,10 @@ def _approval_site_from_participant_definition(participant_definition: dict) -> 
         approval_site["description"] = participant_definition["description"]
     for participant in participant_definition["participants"]:
         approval_participant = dict(participant)
-        if approval_participant.get("type") == "server":
-            approval_participant.pop("connection_security", None)
+        approval_participant.pop("connection_security", None)
+        approval_participant.pop("server", None)
+        approval_participant.pop("fed_learn_port", None)
+        approval_participant.pop("admin_port", None)
         approval_site["participants"].append(approval_participant)
     return approval_site
 
@@ -2905,6 +2931,7 @@ def _make_v2_signed_zip(
     *,
     scheme="grpc",
     default_connection_security="tls",
+    server_endpoint=None,
     request_id="11111111111111111111111111111111",
 ):
     identity = _participant_request_identity(participant_definition)
@@ -2937,6 +2964,8 @@ def _make_v2_signed_zip(
         yaml.safe_dump(approval_site, f, sort_keys=False)
 
     public_key_sha256 = _public_key_sha256_from_cert(cert_path)
+    if server_endpoint is None:
+        server_endpoint = _SIGNED_SERVER_ENDPOINT
     request_json = {
         "artifact_type": "nvflare.cert.request",
         "schema_version": "1",
@@ -2967,6 +2996,7 @@ def _make_v2_signed_zip(
                 "cert_role": identity["cert_role"],
                 "scheme": scheme,
                 "default_connection_security": default_connection_security,
+                "server": server_endpoint,
                 "certificate": {
                     "serial": "01",
                     "valid_until": "2029-04-24T00:00:00Z",
@@ -2984,16 +3014,21 @@ def _make_v2_signed_zip(
             sort_keys=True,
         )
     )
+    signed_sig_path = request_dir / "signed.json.sig"
+    signed_sig_path.write_text(sign_content(signed_json_path.read_bytes(), ca_key))
     signed_zip = request_dir / f"{name}.signed.zip"
     with zipfile.ZipFile(signed_zip, "w") as zf:
         zf.write(signed_json_path, "signed.json")
+        zf.write(signed_sig_path, "signed.json.sig")
         zf.write(approval_site_yaml_path, "site.yaml")
         zf.write(cert_path, f"{name}.crt")
         zf.write(rootca_copy, "rootCA.pem")
     os.remove(cert_path)
     os.remove(rootca_copy)
     os.remove(signed_json_path)
+    os.remove(signed_sig_path)
     os.remove(approval_site_yaml_path)
+    _SIGNED_ZIP_CA_KEYS[str(signed_zip)] = ca_key
     return signed_zip, request_dir, key_path
 
 
@@ -3003,6 +3038,9 @@ def _rewrite_signed_zip_metadata(signed_zip, mutate):
     metadata = json.loads(members["signed.json"])
     mutate(metadata)
     members["signed.json"] = json.dumps(metadata, sort_keys=True).encode("utf-8")
+    ca_key = _SIGNED_ZIP_CA_KEYS.get(str(signed_zip))
+    if ca_key:
+        members["signed.json.sig"] = sign_content(members["signed.json"], ca_key).encode("utf-8")
     with zipfile.ZipFile(signed_zip, "w") as zf:
         for name, content in members.items():
             zf.writestr(name, content)
@@ -3067,11 +3105,6 @@ class TestDistributedProvisioningV2PackageMode:
                     "name": "hospital-a",
                     "type": "client",
                     "org": "hospital_alpha",
-                    "server": {
-                        "host": "server1.hospital-central.org",
-                        "fed_learn_port": 8002,
-                        "admin_port": 8003,
-                    },
                 }
             ],
         }
@@ -3098,11 +3131,6 @@ class TestDistributedProvisioningV2PackageMode:
                     "name": "hospital-a",
                     "type": "client",
                     "org": "hospital_alpha",
-                    "server": {
-                        "host": "server1.hospital-central.org",
-                        "fed_learn_port": 8002,
-                        "admin_port": 8003,
-                    },
                 }
             ],
         }
@@ -3129,11 +3157,6 @@ class TestDistributedProvisioningV2PackageMode:
                     "name": "hospital-a",
                     "type": "client",
                     "org": "hospital_alpha",
-                    "server": {
-                        "host": "server1.hospital-central.org",
-                        "fed_learn_port": 8002,
-                        "admin_port": 8003,
-                    },
                 }
             ],
         }
@@ -3142,11 +3165,6 @@ class TestDistributedProvisioningV2PackageMode:
         )
         tampered_site = copy.deepcopy(participant_definition)
         tampered_site["participants"][0]["org"] = "other_org"
-        tampered_site["participants"][0]["server"] = {
-            "host": "malicious.example.com",
-            "fed_learn_port": 9999,
-            "admin_port": 9998,
-        }
         (request_dir / "site.yaml").write_text(yaml.safe_dump(tampered_site, sort_keys=False))
         args = _signed_zip_args(
             signed_zip,
@@ -3161,15 +3179,7 @@ class TestDistributedProvisioningV2PackageMode:
         assert exc_info.value.code == 4
         resolve.assert_not_called()
 
-    @pytest.mark.parametrize(
-        "mutate",
-        [
-            lambda site: site["participants"][0]["server"].update({"host": "other-server.example.com"}),
-            lambda site: site["participants"][0]["server"].update({"fed_learn_port": 9002}),
-            lambda site: site["participants"][0]["server"].update({"admin_port": 9003}),
-        ],
-    )
-    def test_signed_zip_rejects_local_client_endpoint_changes_after_approval(self, tmp_path, capsys, mutate):
+    def test_client_signed_zip_uses_signed_server_endpoint_without_local_server_block(self, tmp_path):
         participant_definition = {
             "name": "hospital_federation",
             "participants": [
@@ -3177,29 +3187,32 @@ class TestDistributedProvisioningV2PackageMode:
                     "name": "hospital-a",
                     "type": "client",
                     "org": "hospital_alpha",
-                    "server": {
-                        "host": "server1.hospital-central.org",
-                        "fed_learn_port": 8002,
-                        "admin_port": 8003,
-                    },
                 }
             ],
         }
         signed_zip, request_dir, _ = _make_v2_signed_zip(
-            tmp_path, participant_definition, scheme="grpc", default_connection_security="tls"
+            tmp_path,
+            participant_definition,
+            scheme="grpc",
+            default_connection_security="tls",
+            server_endpoint={
+                "host": "profile-server.hospital-central.org",
+                "fed_learn_port": 9002,
+                "admin_port": 9003,
+            },
         )
-        local_site = copy.deepcopy(participant_definition)
-        mutate(local_site)
-        (request_dir / "site.yaml").write_text(yaml.safe_dump(local_site, sort_keys=False))
         args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
 
-        with pytest.raises(SystemExit) as exc_info:
-            handle_package(args)
+        handle_package(args)
 
-        assert exc_info.value.code == 4
-        assert "connection endpoint fields differ" in capsys.readouterr().err
+        kit_dir = os.path.join(str(tmp_path / "ws"), "hospital_federation", "prod_00", "hospital-a")
+        with open(os.path.join(kit_dir, "startup", "fed_client.json")) as f:
+            cfg = json.load(f)
+        assert cfg["servers"][0]["identity"] == "profile-server.hospital-central.org"
+        assert cfg["overseer_agent"]["args"]["sp_end_point"] == "profile-server.hospital-central.org:9002:9003"
+        assert yaml.safe_load((request_dir / "site.yaml").read_text()) == participant_definition
 
-    def test_signed_zip_rejects_local_server_port_changes_after_approval(self, tmp_path, capsys):
+    def test_server_signed_zip_uses_signed_endpoint_without_local_endpoint_fields(self, tmp_path):
         participant_definition = {
             "name": "hospital_federation",
             "participants": [
@@ -3207,25 +3220,31 @@ class TestDistributedProvisioningV2PackageMode:
                     "name": "server1.hospital-central.org",
                     "type": "server",
                     "org": "hospital_central",
-                    "fed_learn_port": 8002,
-                    "admin_port": 8003,
                     "connection_security": "clear",
                 }
             ],
         }
         signed_zip, request_dir, _ = _make_v2_signed_zip(
-            tmp_path, participant_definition, scheme="grpc", default_connection_security="tls"
+            tmp_path,
+            participant_definition,
+            scheme="grpc",
+            default_connection_security="tls",
+            server_endpoint={
+                "host": "server1.hospital-central.org",
+                "fed_learn_port": 8002,
+                "admin_port": 8003,
+            },
         )
-        local_site = copy.deepcopy(participant_definition)
-        local_site["participants"][0]["fed_learn_port"] = 9002
-        (request_dir / "site.yaml").write_text(yaml.safe_dump(local_site, sort_keys=False))
         args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
 
-        with pytest.raises(SystemExit) as exc_info:
-            handle_package(args)
+        handle_package(args)
 
-        assert exc_info.value.code == 4
-        assert "connection endpoint fields differ" in capsys.readouterr().err
+        kit_dir = os.path.join(str(tmp_path / "ws"), "hospital_federation", "prod_00", "server1.hospital-central.org")
+        with open(os.path.join(kit_dir, "startup", "fed_server.json")) as f:
+            cfg = json.load(f)
+        assert cfg["servers"][0]["service"]["target"] == "server1.hospital-central.org:8002"
+        assert cfg["servers"][0]["admin_port"] == 8003
+        assert cfg["servers"][0]["connection_security"] == "clear"
 
     def test_signed_zip_relies_on_single_public_key_hash_validator(self, tmp_path):
         participant_definition = {
@@ -3235,11 +3254,6 @@ class TestDistributedProvisioningV2PackageMode:
                     "name": "hospital-a",
                     "type": "client",
                     "org": "hospital_alpha",
-                    "server": {
-                        "host": "server1.hospital-central.org",
-                        "fed_learn_port": 8002,
-                        "admin_port": 8003,
-                    },
                 }
             ],
         }
@@ -3273,11 +3287,6 @@ class TestDistributedProvisioningV2PackageMode:
                     "name": "hospital-a",
                     "type": "client",
                     "org": "hospital_alpha",
-                    "server": {
-                        "host": "server1.hospital-central.org",
-                        "fed_learn_port": 8002,
-                        "admin_port": 8003,
-                    },
                 }
             ],
         }
@@ -3301,7 +3310,7 @@ class TestDistributedProvisioningV2PackageMode:
         assert "listening_host" in captured.err
         assert "not supported" in captured.err
 
-    def test_client_signed_zip_uses_profile_defaults_and_local_endpoint_without_override_args(self, tmp_path):
+    def test_client_signed_zip_uses_profile_defaults_and_signed_endpoint_without_override_args(self, tmp_path):
         participant_definition = {
             "name": "hospital_federation",
             "participants": [
@@ -3309,11 +3318,6 @@ class TestDistributedProvisioningV2PackageMode:
                     "name": "hospital-a",
                     "type": "client",
                     "org": "hospital_alpha",
-                    "server": {
-                        "host": "server1.hospital-central.org",
-                        "fed_learn_port": 8002,
-                        "admin_port": 8003,
-                    },
                 }
             ],
         }
@@ -3338,7 +3342,7 @@ class TestDistributedProvisioningV2PackageMode:
         assert cfg["overseer_agent"]["args"]["sp_end_point"] == "server1.hospital-central.org:8002:8003"
         assert yaml.safe_load((request_dir / "site.yaml").read_text()) == participant_definition
 
-    def test_user_signed_zip_uses_profile_defaults_and_local_endpoint_without_override_args(self, tmp_path):
+    def test_user_signed_zip_uses_profile_defaults_and_signed_endpoint_without_override_args(self, tmp_path):
         participant_definition = {
             "name": "hospital_federation",
             "participants": [
@@ -3347,11 +3351,6 @@ class TestDistributedProvisioningV2PackageMode:
                     "type": "admin",
                     "org": "hospital_alpha",
                     "role": "lead",
-                    "server": {
-                        "host": "server1.hospital-central.org",
-                        "fed_learn_port": 8002,
-                        "admin_port": 8003,
-                    },
                 }
             ],
         }
@@ -3390,8 +3389,6 @@ class TestDistributedProvisioningV2PackageMode:
             "name": "server1.hospital-central.org",
             "type": "server",
             "org": "hospital_central",
-            "fed_learn_port": 8002,
-            "admin_port": 8003,
         }
         if local_override:
             server["connection_security"] = local_override
@@ -3425,8 +3422,6 @@ class TestDistributedProvisioningV2PackageMode:
             "name": "server1.hospital-central.org",
             "type": "server",
             "org": "hospital_central",
-            "fed_learn_port": 8002,
-            "admin_port": 8003,
             "connection_security": "clear",
         }
         participant_definition = {
@@ -3465,11 +3460,6 @@ class TestDistributedProvisioningV2PackageMode:
                     "name": "hospital-a",
                     "type": "client",
                     "org": "hospital_alpha",
-                    "server": {
-                        "host": "server1.hospital-central.org",
-                        "fed_learn_port": 8002,
-                        "admin_port": 8003,
-                    },
                 }
             ],
             "builders": [
@@ -3963,6 +3953,43 @@ class TestSignedZipPackageMode:
         assert exc_info.value.code != 0
         capsys.readouterr()
 
+    def test_signed_zip_rejects_missing_signed_metadata_signature(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        with zipfile.ZipFile(signed_zip, "r") as zf:
+            contents = {name: zf.read(name) for name in zf.namelist() if name != "signed.json.sig"}
+        with zipfile.ZipFile(signed_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for name, content in contents.items():
+                zf.writestr(name, content)
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code == 4
+        assert "missing required file(s): signed.json.sig" in capsys.readouterr().err
+        assert not (request_dir / "signed.json").exists()
+
+    def test_signed_zip_rejects_tampered_signed_metadata_signature(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
+        with zipfile.ZipFile(signed_zip, "r") as zf:
+            contents = {name: zf.read(name) for name in zf.namelist()}
+        signed_meta = json.loads(contents["signed.json"])
+        signed_meta["server"]["host"] = "attacker.example.com"
+        contents["signed.json"] = json.dumps(signed_meta, sort_keys=True).encode("utf-8")
+        with zipfile.ZipFile(signed_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for name, content in contents.items():
+                zf.writestr(name, content)
+        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+
+        assert exc_info.value.code == 4
+        assert "Signed approval metadata signature is invalid" in capsys.readouterr().err
+        assert not (request_dir / "signed.json").exists()
+
     @pytest.mark.parametrize("large_member", ["signed.json", "site-3.crt"])
     def test_signed_zip_rejects_member_exceeding_read_limit(self, tmp_path, capsys, monkeypatch, large_member):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
@@ -3976,7 +4003,7 @@ class TestSignedZipPackageMode:
         monkeypatch.setattr("nvflare.tool.package.package_commands._MAX_ZIP_MEMBER_SIZE", 512)
         monkeypatch.setattr(
             "nvflare.tool.package.package_commands._safe_zip_names",
-            lambda _zf, _zip_path: ["signed.json", "site.yaml", "rootCA.pem", "site-3.crt"],
+            lambda _zf, _zip_path: ["signed.json", "signed.json.sig", "site.yaml", "rootCA.pem", "site-3.crt"],
         )
         args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir))
 
@@ -3997,7 +4024,7 @@ class TestSignedZipPackageMode:
         monkeypatch.setattr("nvflare.tool.package.package_commands._MAX_ZIP_MEMBER_SIZE", 512)
         monkeypatch.setattr(
             "nvflare.tool.package.package_commands._safe_zip_names",
-            lambda _zf, _zip_path: ["signed.json", "site.yaml", "rootCA.pem", "site-3.crt"],
+            lambda _zf, _zip_path: ["signed.json", "signed.json.sig", "site.yaml", "rootCA.pem", "site-3.crt"],
         )
 
         with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as output_error:

@@ -9,8 +9,10 @@ set -euo pipefail
 # What the default mode automates:
 #   1. Requesters create request zips from the checked-in participant YAML files.
 #   2. The local demo copies request zips to simulate handoff to Project Admin.
-#   3. Project Admin approves each request zip.
-#   4. Requesters package startup kits with an expected root CA fingerprint.
+#   3. Project Admin approves each request zip, adding the server endpoint from
+#      project_profile.yaml to the signed zip.
+#   4. Requesters package startup kits from the signed zip and local request
+#      material, with an expected root CA fingerprint for verification.
 #
 # What --add mode automates:
 #   1. Add one new participant after the project has started.
@@ -233,7 +235,8 @@ for item in "${PARTICIPANTS[@]}"; do
 done
 
 # Project Admin side: approve each received request zip with the CA and project
-# profile, then return the generated signed zip to the matching requester.
+# profile. Approval writes the approved server endpoint into the signed zip,
+# then the signed zip is returned to the matching requester.
 show "Project Admin approves request zips"
 for item in "${PARTICIPANTS[@]}"; do
   name="${item%%:*}"

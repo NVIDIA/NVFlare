@@ -29,7 +29,9 @@ The work directory must not already exist, so each run has clean output.
 ## What Is Automated
 
 The script uses `project_profile.yaml` and the participant YAML files from the
-parent directory.
+parent directory. `project_profile.yaml` is the only distributed input that
+contains the server endpoint fields: `server.host`, `server.fed_learn_port`,
+and `server.admin_port`.
 
 Setup:
 
@@ -39,12 +41,16 @@ Automated distributed provisioning flow:
 
 1. Each requester creates a request zip with `nvflare cert request --participant`.
 2. The script copies only `*.request.zip` files to simulate handoff to the Project Admin.
-3. Project Admin approves each request with `nvflare cert approve`.
-4. Each requester packages its startup kit with `nvflare package`.
+3. Project Admin approves each request with `nvflare cert approve`, which writes
+   the server endpoint information into the signed zip.
+4. Each requester packages its startup kit with `nvflare package` using only the
+   signed zip and local request material.
 
 For automation, the package step uses `--expected-rootca-fingerprint` from the
-approval JSON output. The interactive demo uses `--confirm-rootca` instead
-because a human is expected to compare the fingerprint out of band.
+approval JSON output. The package command does not pass an endpoint, project
+file, or template argument; those values come from the signed zip. The
+interactive demo uses `--confirm-rootca` instead because a human is expected to
+compare the fingerprint out of band.
 
 ## Dynamic Provisioning
 

@@ -31,6 +31,10 @@ The Project Admin first creates a project profile:
    name: hospital_federation
    scheme: grpc
    connection_security: tls
+   server:
+     host: server1.hospital-central.org
+     fed_learn_port: 8002
+     admin_port: 8003
 
 Then the Project Admin runs ``cert init`` once per federation and passes the
 profile file explicitly:
@@ -98,10 +102,6 @@ file if the list has zero or more than one entry.
      - name: hospital-a
        type: client
        org: hospital_alpha
-       server:
-         host: server1.hospital-central.org
-         fed_learn_port: 8002
-         admin_port: 8003
 
 To request a second participant such as ``hospital-b``, create a separate
 ``hospital-b.yaml`` file with its own single entry and run ``cert request``
@@ -109,21 +109,16 @@ again. Each participant has its own private key and request zip.
 
 .. note::
 
-   The values in this file are not generated automatically. Before writing the
-   participant definition, the requester must obtain the following from the
-   Project Admin through a trusted out-of-band channel (email, wiki, secure
-   messaging):
+   Before writing the participant definition, the requester must know the
+   project name:
 
    - **Project name** (``name:``): matches the ``name:`` in the Project Admin's
      ``project_profile.yaml``. Every participant definition must use the same
      project name.
-   - **Server host and ports** (``server.host``, ``fed_learn_port``,
-     ``admin_port``): chosen by the server admin and relayed by the Project
-     Admin to all client sites and users. These values must be known before any
-     client or user participant definition can be written.
 
-   Server admins do not need a ``server:`` block; they set their own host and
-   ports directly in their participant definition.
+   Server host and ports are chosen by the server admin, recorded by the
+   Project Admin in ``project_profile.yaml``, and signed into the approval zip.
+   Client and user participant definitions do not include a ``server:`` block.
 
 For users, use ``type: admin`` and set ``role`` to ``org_admin``, ``lead``, or
 ``member``.
@@ -161,17 +156,23 @@ profile:
    nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 This validates the request zip, verifies that the request project matches the
-CA and project profile, signs the CSR, and creates:
+CA and project profile, signs the CSR, injects the Project Admin-approved
+server endpoint from ``project_profile.yaml``, and creates:
 
 .. code-block:: text
 
    hospital-a.signed.zip
      signed.json
+     signed.json.sig
      site.yaml
      hospital-a.crt
      rootCA.pem
 
 Return the signed zip to the requester.
+
+``signed.json.sig`` is a Project Admin CA signature over ``signed.json``.
+``nvflare package`` verifies this signature before trusting the approved
+server endpoint, scheme, and connection security fields.
 
 The signed zip already includes ``rootCA.pem``. The requester does not need to
 receive or place a separate ``rootCA.pem`` file before running
@@ -196,7 +197,8 @@ Common ``approve`` options:
 - ``-c, --ca-dir``: directory containing ``rootCA.pem``, ``rootCA.key``, and
   ``ca.json``. Required.
 - ``--profile``: Project Admin's ``project_profile.yaml`` containing
-  ``name``, ``scheme``, and ``connection_security``. Required.
+  ``name``, ``scheme``, ``connection_security``, and the ``server`` endpoint.
+  Required.
 - ``--out``: signed zip output path. Default: ``<name>.signed.zip`` next to the
   request zip.
 - ``--valid-days``: participant certificate validity in days. Default:

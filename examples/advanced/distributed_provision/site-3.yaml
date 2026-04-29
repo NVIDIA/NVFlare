@@ -5,7 +5,3 @@ participants:
   - name: site-3
     type: client
     org: org3
-    server:
-      host: server.example.com
-      fed_learn_port: 8002
-      admin_port: 8003

@@ -3,10 +3,11 @@
 These examples use the public distributed provisioning CLI workflow:
 
 1. `nvflare cert init` creates the project CA.
-2. The Project Admin keeps a `project_profile.yaml` with `name`, `scheme`, and `connection_security`.
+2. The Project Admin keeps a `project_profile.yaml` with `name`, `scheme`,
+   `connection_security`, and the server endpoint fields.
 3. Each requester creates one participant definition file.
 4. `nvflare cert request --participant <participant.yaml>` creates a local private key, CSR, metadata, and request zip.
-5. `nvflare cert approve <request.zip> --ca-dir <dir> --profile <project_profile.yaml>` signs the request zip, returns a signed zip, and prints `rootca_fingerprint_sha256`.
+5. `nvflare cert approve <request.zip> --ca-dir <dir> --profile <project_profile.yaml>` signs the request zip, adds the server endpoint information from the profile to the signed zip, and prints `rootca_fingerprint_sha256`.
 6. `nvflare package <signed.zip> --confirm-rootca` combines the signed zip with the local request material to build a startup kit.
 
 Interactive examples use `package --confirm-rootca` so the site admin can
@@ -44,8 +45,10 @@ Two example modes are provided:
 
 Participant definition files use the same top-level shape as a single-participant
 `project.yaml`: top-level `name`, optional `description`, and exactly one entry
-under `participants`. Client and admin user definitions include a `server` block
-with the server host and ports used when packaging. Server definitions carry their
+under `participants`. Client and admin user definitions do not include server
+endpoint information. The Project Admin controls the server endpoint in
+`project_profile.yaml`, approval writes it into the signed zip, and
+`nvflare package` uses the signed zip directly. Server definitions carry their
 own ports and may optionally include a local `connection_security` override only
 for deployments where the server process is behind a proxy, load balancer, or
 ingress that handles the external TLS boundary.

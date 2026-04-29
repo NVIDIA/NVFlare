@@ -15,7 +15,7 @@ cd examples/advanced/distributed_provision
 
 The shared demo input files are checked in the parent directory:
 
-- `project_profile.yaml`: Project Admin profile used for CA initialization and approvals.
+- `project_profile.yaml`: Project Admin profile used for CA initialization and approvals; includes the approved server endpoint.
 - `project.yaml`: Equivalent centralized provisioning project file for comparison.
 - `server.yaml`: server requester participant definition.
 - `site-1.yaml`: client requester participant definition.
@@ -26,13 +26,13 @@ The shared demo input files are checked in the parent directory:
 
 ## Example Scenario
 
-| Role | Name | Type | Org | Server endpoint fields |
+| Role | Name | Type | Org | Server endpoint source |
 |---|---|---|---|---|
 | Project Admin | - | - | - | - |
-| Server | `server.example.com` | `server` | nvidia | `server.example.com:8002`, admin `8003` |
-| Client 1 | `site-1` | `client` | org1 | connects to `server.example.com:8002` |
-| Client 2 | `site-2` | `client` | org2 | connects to `server.example.com:8002` |
-| User | `alice@nvidia.com` | `admin` | nvidia | connects to `server.example.com:8003` |
+| Server | `server.example.com` | `server` | nvidia | `project_profile.yaml` |
+| Client 1 | `site-1` | `client` | org1 | signed zip from approval |
+| Client 2 | `site-2` | `client` | org2 | signed zip from approval |
+| User | `alice@nvidia.com` | `admin` | nvidia | signed zip from approval |
 
 `org` is required and is validated by NVFlare as an organization name.
 
@@ -66,7 +66,8 @@ The requester keeps the folder and `.key` private, and sends only the
 ## Step 3 - Project Admin: Approve Request Zips
 
 The Project Admin approves the received zip files directly with the local
-`project_profile.yaml`.
+`project_profile.yaml`. The profile is the source of the server endpoint:
+`server.host`, `server.fed_learn_port`, and `server.admin_port`.
 
 ```bash
 nvflare cert approve server.example.com/server.example.com.request.zip --ca-dir ca --profile project_profile.yaml
@@ -76,7 +77,8 @@ nvflare cert approve alice@nvidia.com/alice@nvidia.com.request.zip --ca-dir ca -
 ```
 
 Each approval command creates a `<name>.signed.zip` next to the request zip.
-Return only this signed zip to the matching requester.
+The signed zip includes the approved server endpoint information from
+`project_profile.yaml`. Return only this signed zip to the matching requester.
 
 The approval command prints `rootca_fingerprint_sha256`. Share this value with
 the requester through a trusted out-of-band channel so they can verify it before
@@ -93,8 +95,9 @@ nvflare package site-2/site-2.signed.zip --confirm-rootca
 nvflare package alice@nvidia.com/alice@nvidia.com.signed.zip --confirm-rootca
 ```
 
-`nvflare package` uses the signed zip and the local request folder containing
-the private key. The startup kits are written under
+`nvflare package` uses the signed zip endpoint information and the local request
+folder containing the private key. No endpoint, project-file, or template
+argument is needed. The startup kits are written under
 `workspace/<project>/prod_NN/<name>/`.
 
 ## Dynamic Provisioning - Add Participants Later
@@ -102,7 +105,8 @@ the private key. The startup kits are written under
 After the project has started, do not run `cert init` again and do not
 repackage existing participants. A new participant repeats the same
 request/approve/package flow with the existing Project Admin `ca/` directory and
-`project_profile.yaml`.
+`project_profile.yaml`, so the new signed zip receives the same approved server
+endpoint.
 
 Example: add a new client site:
 

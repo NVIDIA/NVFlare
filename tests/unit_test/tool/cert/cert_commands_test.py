@@ -2286,13 +2286,26 @@ def _write_participant_definition(path, data: dict) -> None:
     path.write_text(yaml.safe_dump(data, sort_keys=False))
 
 
-def _write_project_profile(path, project="example_project", scheme="grpc", connection_security="tls") -> None:
+def _write_project_profile(
+    path,
+    project="example_project",
+    scheme="grpc",
+    connection_security="tls",
+    server_host="fl-server",
+    fed_learn_port=8002,
+    admin_port=8003,
+) -> None:
     _write_participant_definition(
         path,
         {
             "name": project,
             "scheme": scheme,
             "connection_security": connection_security,
+            "server": {
+                "host": server_host,
+                "fed_learn_port": fed_learn_port,
+                "admin_port": admin_port,
+            },
         },
     )
 
@@ -2313,14 +2326,6 @@ def _request_participant_definition(
         "type": participant_type,
         "org": org,
     }
-    if participant_type == "server":
-        participant.update({"fed_learn_port": 8002, "admin_port": 8003})
-    else:
-        participant["server"] = {
-            "host": "fl-server",
-            "fed_learn_port": 8002,
-            "admin_port": 8003,
-        }
     if role:
         participant["role"] = role
     return {
@@ -2442,11 +2447,6 @@ class TestDistributedCertParticipantWorkflow:
                         "name": "hospital-a",
                         "type": "client",
                         "org": "hospital_alpha",
-                        "server": {
-                            "host": "server1.hospital-central.org",
-                            "fed_learn_port": 8002,
-                            "admin_port": 8003,
-                        },
                     }
                 ],
             },
@@ -2481,11 +2481,6 @@ class TestDistributedCertParticipantWorkflow:
                     "name": "hospital-a",
                     "type": "client",
                     "org": "hospital_alpha",
-                    "server": {
-                        "host": "server1.hospital-central.org",
-                        "fed_learn_port": 8002,
-                        "admin_port": 8003,
-                    },
                 }
             ],
             "builders": [
@@ -2532,8 +2527,6 @@ class TestDistributedCertParticipantWorkflow:
                         "name": "localhost",
                         "type": "server",
                         "org": "hospital_central",
-                        "fed_learn_port": 8002,
-                        "admin_port": 8003,
                     }
                 ],
             },
@@ -2563,8 +2556,6 @@ class TestDistributedCertParticipantWorkflow:
                         "name": long_name,
                         "type": "server",
                         "org": "hospital_central",
-                        "fed_learn_port": 8002,
-                        "admin_port": 8003,
                         "host_names": ["server-alias.hospital-central.org"],
                     }
                 ],
@@ -2576,6 +2567,11 @@ class TestDistributedCertParticipantWorkflow:
                 "name": "hospital_federation",
                 "scheme": "grpc",
                 "connection_security": "tls",
+                "server": {
+                    "host": long_name,
+                    "fed_learn_port": 8002,
+                    "admin_port": 8003,
+                },
             },
         )
 
@@ -2622,8 +2618,6 @@ class TestDistributedCertParticipantWorkflow:
                         "name": "server1.hospital-central.org",
                         "type": "server",
                         "org": "hospital_central",
-                        "fed_learn_port": 8002,
-                        "admin_port": 8003,
                         "host_names": ["bad host name"],
                     }
                 ],
@@ -2652,11 +2646,6 @@ class TestDistributedCertParticipantWorkflow:
                         "name": "hospital-a",
                         "type": "client",
                         "org": "hospital_alpha",
-                        "server": {
-                            "host": "server1.hospital-central.org",
-                            "fed_learn_port": 8002,
-                            "admin_port": 8003,
-                        },
                         "listening_host": "hospital-a.internal",
                     }
                 ],
@@ -2683,11 +2672,6 @@ class TestDistributedCertParticipantWorkflow:
                     "type": "admin",
                     "org": "hospital_alpha",
                     "role": "lead",
-                    "server": {
-                        "host": "server1.hospital-central.org",
-                        "fed_learn_port": 8002,
-                        "admin_port": 8003,
-                    },
                 }
             ],
         }
@@ -2725,9 +2709,6 @@ class TestDistributedCertParticipantWorkflow:
                     "name": "server1.hospital-central.org",
                     "type": "server",
                     "org": "hospital_central",
-                    "fed_learn_port": 8002,
-                    "admin_port": 8003,
-                    "default_host": "server-public.hospital-central.org",
                     "host_names": ["server1.hospital-central.org", "10.0.1.50", "fl-server.internal"],
                     "connection_security": "clear",
                 }
@@ -2737,6 +2718,11 @@ class TestDistributedCertParticipantWorkflow:
             "name": "hospital_federation",
             "scheme": "grpc",
             "connection_security": "tls",
+            "server": {
+                "host": "server1.hospital-central.org",
+                "fed_learn_port": 8002,
+                "admin_port": 8003,
+            },
         }
         participant_path = tmp_path / "server.yaml"
         profile_path = tmp_path / "project_profile.yaml"
@@ -2773,9 +2759,13 @@ class TestDistributedCertParticipantWorkflow:
             signed_cert = x509.load_pem_x509_certificate(zf.read("server1.hospital-central.org.crt"), default_backend())
         assert signed_json["scheme"] == "grpc"
         assert signed_json["default_connection_security"] == "tls"
+        assert signed_json["server"] == {
+            "host": "server1.hospital-central.org",
+            "fed_learn_port": 8002,
+            "admin_port": 8003,
+        }
         assert "connection_security" not in signed_site["participants"][0]
         san = signed_cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
-        assert "server-public.hospital-central.org" in san.get_values_for_type(x509.DNSName)
         assert "server1.hospital-central.org" in san.get_values_for_type(x509.DNSName)
         assert "fl-server.internal" in san.get_values_for_type(x509.DNSName)
         assert "10.0.1.50" in [str(ip) for ip in san.get_values_for_type(x509.IPAddress)]
@@ -3241,7 +3231,7 @@ class TestDistributedCertRequestApprove:
 
         assert signed_zip.is_file()
         with zipfile.ZipFile(signed_zip) as zf:
-            assert sorted(zf.namelist()) == ["rootCA.pem", "signed.json", "site-3.crt", "site.yaml"]
+            assert sorted(zf.namelist()) == ["rootCA.pem", "signed.json", "signed.json.sig", "site-3.crt", "site.yaml"]
             assert not any(name.endswith(".key") for name in zf.namelist())
             signed_json = json.loads(zf.read("signed.json"))
             cert_bytes = zf.read("site-3.crt")
@@ -3252,6 +3242,11 @@ class TestDistributedCertRequestApprove:
         assert signed_json["kind"] == "site"
         assert signed_json["cert_type"] == "client"
         assert signed_json["project"] == "example_project"
+        assert signed_json["server"] == {
+            "host": "fl-server",
+            "fed_learn_port": 8002,
+            "admin_port": 8003,
+        }
         assert "request" not in signed_json
         assert "project_name" not in signed_json
         assert "serial_number" not in signed_json

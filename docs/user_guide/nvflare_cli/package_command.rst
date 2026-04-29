@@ -54,14 +54,16 @@ folder from local request state, specify it:
 
 The command validates that:
 
-- the signed zip contains ``signed.json``, ``site.yaml``, one signed
-  certificate, and ``rootCA.pem``;
+- the signed zip contains ``signed.json``, ``signed.json.sig``, ``site.yaml``,
+  one signed certificate, and ``rootCA.pem``;
+- ``signed.json.sig`` verifies against ``rootCA.pem`` before the signed
+  endpoint, scheme, or connection security fields are trusted;
 - the signed zip does not contain private keys;
 - the local private key matches the signed certificate;
 - the certificate chains to ``rootCA.pem``;
 - local ``request.json`` metadata and signed metadata match.
-- identity and connection endpoint fields in the local request-folder
-  ``site.yaml`` match the signed zip.
+- identity fields in the local request-folder ``site.yaml`` match the signed
+  zip.
 
 The command always prints ``rootca_fingerprint_sha256`` in its result. Without
 ``--confirm-rootca`` or ``--expected-rootca-fingerprint``, packaging does not
@@ -89,23 +91,22 @@ provisioning flow.
 Connection values are resolved from:
 
 - ``signed.json`` in the signed zip, which contains the Project Admin-approved
-  ``scheme`` and default ``connection_security`` from ``project_profile.yaml``;
+  ``scheme``, default ``connection_security``, and ``server`` endpoint from
+  ``project_profile.yaml``;
 - the original local participant definition in the request folder, which
-  contains client and user ``server`` endpoint blocks.
+  contains participant identity and package-time fields.
 
 The server host and port fields are part of the signed approval metadata.
-During packaging, ``nvflare package`` compares those signed endpoint fields
-against the local request-folder ``site.yaml``. If a requester edits
-``server.host``, ``server.fed_learn_port``, or ``server.admin_port`` after
-approval, packaging fails with ``LOCAL_SITE_MISMATCH``. If the server endpoint
-really changed after approval, regenerate the request and signed zip instead of
-editing the local request folder.
+``nvflare package`` uses the signed ``server`` endpoint to generate startup
+kits. Client and user request folders do not provide local endpoint overrides.
+If the server endpoint changes after approval, update ``project_profile.yaml``
+and regenerate affected signed zips.
 
 Local package-time fields that are intentionally excluded from the signed zip,
 such as custom builders and the server-side ``connection_security`` override,
 remain local packaging inputs.
 
-Client and user participant definitions include the server endpoint:
+Client and user participant definitions do not include the server endpoint:
 
 .. code-block:: yaml
 
@@ -113,12 +114,8 @@ Client and user participant definitions include the server endpoint:
      - name: hospital-a
        type: client
        org: hospital_alpha
-       server:
-         host: server1.hospital-central.org
-         fed_learn_port: 8002
-         admin_port: 8003
 
-For user startup kits, the same ``server`` block is used:
+For user startup kits, the same signed endpoint from ``signed.json`` is used:
 
 .. code-block:: yaml
 
@@ -127,10 +124,6 @@ For user startup kits, the same ``server`` block is used:
        type: admin
        org: hospital_alpha
        role: lead
-       server:
-         host: server1.hospital-central.org
-         fed_learn_port: 8002
-         admin_port: 8003
 
 For server kits, ``connection_security`` may be set in the server participant
 definition:
@@ -141,8 +134,6 @@ definition:
      - name: server1.hospital-central.org
        type: server
        org: hospital_central
-       fed_learn_port: 8002
-       admin_port: 8003
        connection_security: mtls
 
 This server-side value is a local package-time override. It is read from the

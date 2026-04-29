@@ -44,7 +44,7 @@ from nvflare.lighter.prov_utils import prepare_builders
 from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Builder
-from nvflare.lighter.utils import load_crt_bytes, load_yaml, verify_cert
+from nvflare.lighter.utils import load_crt_bytes, load_yaml, verify_cert, verify_content
 from nvflare.tool.cert.cert_constants import ADMIN_CERT_TYPES, KIT_TYPE_TO_ROLE, VALID_CERT_TYPES
 from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256, normalize_sha256_fingerprint
 from nvflare.tool.cli_output import (
@@ -995,7 +995,19 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
         )
         return False
 
-    required = ("request_id", "project", "name", "org", "kind", "cert_type", "cert_file", "rootca_file")
+    required = (
+        "request_id",
+        "project",
+        "name",
+        "org",
+        "kind",
+        "cert_type",
+        "cert_file",
+        "rootca_file",
+        "scheme",
+        "default_connection_security",
+        "server",
+    )
     missing = [field for field in required if not signed_meta.get(field)]
     if missing:
         output_error_message(
@@ -1057,6 +1069,8 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             exit_code=4,
         )
         return False
+    if _signed_server_endpoint(signed_meta) is None:
+        return False
 
     site_identity = _site_identity_from_metadata(site_meta)
     if not site_identity:
@@ -1105,6 +1119,18 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             exit_code=4,
         )
         return False
+    if _is_project_shaped_site_meta(site_meta):
+        participant = site_meta["participants"][0]
+        endpoint_fields = [field for field in ("server", "fed_learn_port", "admin_port") if field in participant]
+        if endpoint_fields:
+            output_error_message(
+                "INVALID_SIGNED_ZIP",
+                f"Signed zip site.yaml must not contain endpoint field(s): {', '.join(endpoint_fields)}.",
+                "Use the endpoint information stored in signed.json.",
+                None,
+                exit_code=4,
+            )
+            return False
     if _is_project_shaped_site_meta(site_meta) and PropKey.LISTENING_HOST in site_meta["participants"][0]:
         output_error_message(
             "INVALID_SIGNED_ZIP",
@@ -1233,6 +1259,23 @@ def _signed_identity_from_metadata(signed_meta: dict, site_meta: dict, cert):
     }
 
 
+def _verify_signed_metadata_signature(file_contents: dict) -> bool:
+    try:
+        rootca = load_crt_bytes(file_contents["rootCA.pem"])
+        signature = file_contents["signed.json.sig"].decode("utf-8")
+        verify_content(file_contents["signed.json"], signature, rootca.public_key())
+        return True
+    except Exception as e:
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            f"Signed approval metadata signature is invalid: {e}.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+        return False
+
+
 def _load_signed_zip(input_path: str):
     signed_meta = None
     site_meta = None
@@ -1244,7 +1287,7 @@ def _load_signed_zip(input_path: str):
             if safe_names is None:
                 return signed_meta, site_meta, cert_name, file_contents
             names = set(safe_names)
-            required = {"signed.json", "site.yaml", "rootCA.pem"}
+            required = {"signed.json", "signed.json.sig", "site.yaml", "rootCA.pem"}
             missing = required - names
             if missing:
                 output_error_message(
@@ -1279,6 +1322,7 @@ def _load_signed_zip(input_path: str):
                 return signed_meta, site_meta, cert_name, file_contents
             for content_name, member_name in (
                 ("signed.json", "signed.json"),
+                ("signed.json.sig", "signed.json.sig"),
                 ("site.yaml", "site.yaml"),
                 ("rootCA.pem", "rootCA.pem"),
                 ("cert", cert_name),
@@ -1287,6 +1331,8 @@ def _load_signed_zip(input_path: str):
                 if content is None:
                     return None, None, None, {}
                 file_contents[content_name] = content
+            if not _verify_signed_metadata_signature(file_contents):
+                return None, None, None, {}
             signed_meta = _decode_zip_json(file_contents["signed.json"], "signed.json", input_path)
             site_meta = _decode_zip_yaml(file_contents["site.yaml"], "site.yaml", input_path)
             if signed_meta is None or site_meta is None:
@@ -1655,41 +1701,7 @@ def _validate_local_site_identity(project_dict: dict, participant_def: dict, sig
     return True
 
 
-def _connection_fields_for_signed_compare(participant_def: dict, kit_type: str) -> dict:
-    if not isinstance(participant_def, dict):
-        return {}
-    if kit_type == "server":
-        return {
-            "fed_learn_port": participant_def.get("fed_learn_port"),
-            "admin_port": participant_def.get("admin_port"),
-        }
-    server = participant_def.get("server")
-    if not isinstance(server, dict):
-        return {"server": server}
-    return {
-        "server": {
-            "host": server.get("host"),
-            "fed_learn_port": server.get("fed_learn_port"),
-            "admin_port": server.get("admin_port"),
-        }
-    }
-
-
-def _validate_local_connection_fields(participant_def: dict, signed_participant_def: dict, kit_type: str) -> bool:
-    local_connection = _connection_fields_for_signed_compare(participant_def, kit_type)
-    signed_connection = _connection_fields_for_signed_compare(signed_participant_def, kit_type)
-    if local_connection != signed_connection:
-        _local_site_mismatch(
-            "connection endpoint fields differ from the signed zip; "
-            "regenerate the request and approval if the server endpoint changed"
-        )
-        return False
-    return True
-
-
-def _load_local_participant_context(
-    request_dir: str, identity: dict, signed_meta: dict, signed_site_meta: dict, kit_type: str
-):
+def _load_local_participant_context(request_dir: str, identity: dict, signed_meta: dict, kit_type: str):
     site_yaml_path = os.path.join(request_dir, "site.yaml")
     site_meta = _read_yaml_file_nofollow(
         site_yaml_path,
@@ -1704,13 +1716,6 @@ def _load_local_participant_context(
         _local_site_mismatch(f"participant {identity.get('name')!r} was not found")
         return None, None, None, None
     if not _validate_local_site_identity(project_dict, participant_def, signed_meta):
-        return None, None, None, None
-    signed_project_dict = _local_project_dict_from_site(signed_site_meta, identity)
-    signed_participant_def = _find_participant_def(signed_project_dict, identity)
-    if signed_participant_def is None:
-        _local_site_mismatch(f"signed zip participant {identity.get('name')!r} was not found")
-        return None, None, None, None
-    if not _validate_local_connection_fields(participant_def, signed_participant_def, kit_type):
         return None, None, None, None
     try:
         project = prepare_project(copy.deepcopy(project_dict))
@@ -1763,17 +1768,56 @@ def _validate_signed_scheme_and_security(signed_meta: dict) -> tuple:
     return scheme, default_conn_sec
 
 
-def _port_from_value(value, label: str):
+def _port_from_value(value, label: str, code: str = "LOCAL_SITE_INVALID", hint: str = None):
     if not isinstance(value, int) or isinstance(value, bool) or not (1 <= value <= 65535):
         output_error_message(
-            "LOCAL_SITE_INVALID",
+            code,
             f"{label} must be an integer from 1 to 65535.",
-            "Use the original participant definition created for this request.",
+            hint or "Use the original participant definition created for this request.",
             None,
             exit_code=4,
         )
         return None
     return value
+
+
+def _signed_server_endpoint(signed_meta: dict):
+    server = signed_meta.get("server")
+    if not isinstance(server, dict):
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            "Signed approval metadata does not contain a server endpoint.",
+            "Ask the Project Admin to regenerate the signed zip with a project profile server block.",
+            None,
+            exit_code=4,
+        )
+        return None
+    host = server.get("host")
+    if not isinstance(host, str) or not host.strip():
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            "Signed approval metadata server.host must be a non-empty string.",
+            "Ask the Project Admin to regenerate the signed zip with a valid project profile server block.",
+            None,
+            exit_code=4,
+        )
+        return None
+    invalid, reason = name_check(host.strip(), "host_name")
+    if invalid:
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            f"Signed approval metadata server.host is invalid: {reason}.",
+            "Ask the Project Admin to regenerate the signed zip with a valid project profile server block.",
+            None,
+            exit_code=4,
+        )
+        return None
+    hint = "Ask the Project Admin to regenerate the signed zip with a valid project profile server block."
+    port = _port_from_value(server.get("fed_learn_port"), "server.fed_learn_port", "INVALID_SIGNED_ZIP", hint)
+    admin_port = _port_from_value(server.get("admin_port"), "server.admin_port", "INVALID_SIGNED_ZIP", hint)
+    if port is None or admin_port is None:
+        return None
+    return host.strip(), port, admin_port
 
 
 def _resolve_packaging_endpoint(args, signed_meta: dict, participant_def: dict, kit_type: str):
@@ -1794,9 +1838,13 @@ def _resolve_packaging_endpoint(args, signed_meta: dict, participant_def: dict, 
         return None
 
     scheme = signed_scheme
+    signed_endpoint = _signed_server_endpoint(signed_meta)
+    if signed_endpoint is None:
+        return None
+    host, port, admin_port = signed_endpoint
     if kit_type == "server":
-        host = participant_def.get("name")
-        if not isinstance(host, str) or not host.strip():
+        participant_name = participant_def.get("name")
+        if not isinstance(participant_name, str) or not participant_name.strip():
             output_error_message(
                 "LOCAL_SITE_INVALID",
                 "participant name must be a non-empty string.",
@@ -1805,35 +1853,6 @@ def _resolve_packaging_endpoint(args, signed_meta: dict, participant_def: dict, 
                 exit_code=4,
             )
             return None
-        host = host.strip()
-        port = _port_from_value(participant_def.get("fed_learn_port"), "fed_learn_port")
-        admin_port = _port_from_value(participant_def.get("admin_port"), "admin_port")
-    else:
-        server = participant_def.get("server")
-        if not isinstance(server, dict):
-            output_error_message(
-                "LOCAL_SITE_INVALID",
-                "Local participant definition is missing the server connection block.",
-                "Add server.host, server.fed_learn_port, and server.admin_port to the participant definition.",
-                None,
-                exit_code=4,
-            )
-            return None
-        host = server.get("host")
-        if not isinstance(host, str) or not host.strip():
-            output_error_message(
-                "LOCAL_SITE_INVALID",
-                "server.host must be a non-empty string.",
-                "Use the original participant definition created for this request.",
-                None,
-                exit_code=4,
-            )
-            return None
-        host = host.strip()
-        port = _port_from_value(server.get("fed_learn_port"), "server.fed_learn_port")
-        admin_port = _port_from_value(server.get("admin_port"), "server.admin_port")
-    if port is None or admin_port is None:
-        return None
     return scheme, host, port, admin_port, default_conn_sec
 
 
@@ -2050,7 +2069,7 @@ def _handle_signed_zip_package(args):
             local_participant,
             local_custom_builders,
             local_participant_def,
-        ) = _load_local_participant_context(resolved_request_dir, identity, signed_meta, site_meta, cert_kit_type)
+        ) = _load_local_participant_context(resolved_request_dir, identity, signed_meta, cert_kit_type)
         if local_project is None:
             return 1
 

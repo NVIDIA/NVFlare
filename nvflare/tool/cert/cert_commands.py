@@ -38,7 +38,14 @@ from nvflare.apis.utils.format_check import name_check
 from nvflare.lighter.constants import PropKey
 from nvflare.lighter.entity import participant_from_dict
 from nvflare.lighter.impl.cert import CertBuilder
-from nvflare.lighter.utils import generate_keys, load_private_key_file, serialize_cert, serialize_pri_key, x509_name
+from nvflare.lighter.utils import (
+    generate_keys,
+    load_private_key_file,
+    serialize_cert,
+    serialize_pri_key,
+    sign_content,
+    x509_name,
+)
 from nvflare.tool import cli_output
 from nvflare.tool.cert.cert_constants import ADMIN_CERT_TYPES, VALID_CERT_TYPES
 from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256
@@ -1583,9 +1590,11 @@ def _validate_participant_connection_fields(participant: dict, identity: dict) -
         return False
 
     if identity["kind"] == "server":
-        if not _validate_port(participant.get("fed_learn_port"), "server fed_learn_port"):
+        fed_learn_port = participant.get("fed_learn_port")
+        if fed_learn_port is not None and not _validate_port(fed_learn_port, "server fed_learn_port"):
             return False
-        if not _validate_port(participant.get("admin_port"), "server admin_port"):
+        admin_port = participant.get("admin_port")
+        if admin_port is not None and not _validate_port(admin_port, "server admin_port"):
             return False
         conn_sec = participant.get("connection_security")
         if conn_sec is not None and (
@@ -1602,13 +1611,15 @@ def _validate_participant_connection_fields(participant: dict, identity: dict) -
         return True
 
     server = participant.get("server")
+    if server is None:
+        return True
     if not isinstance(server, dict):
         output_error_message(
             "INVALID_ARGS",
             "Invalid arguments.",
             _USAGE_HINT,
             exit_code=4,
-            detail="client and admin participant definitions must contain a server mapping",
+            detail="server must be a mapping when provided",
         )
         return False
     host = server.get("host")
@@ -1727,10 +1738,13 @@ def _build_sanitized_approval_site(local_site: dict) -> dict:
     sanitized.pop("packager", None)
     participant = sanitized["participants"][0]
     participant.pop("connection_security", None)
+    participant.pop("server", None)
+    participant.pop("fed_learn_port", None)
+    participant.pop("admin_port", None)
     return sanitized
 
 
-def _server_cert_san_fields(site_meta: dict, request_meta: dict):
+def _server_cert_san_fields(site_meta: dict, request_meta: dict, project_profile: dict = None):
     if request_meta.get("cert_type") != "server" or not _is_project_shaped_site_meta(site_meta):
         return None, None
     participant = site_meta["participants"][0]
@@ -1745,7 +1759,8 @@ def _server_cert_san_fields(site_meta: dict, request_meta: dict):
             detail=f"server participant definition is invalid: {e}",
         )
         return None
-    return server.get_default_host(), server.get_prop(PropKey.HOST_NAMES)
+    default_host = (project_profile or {}).get("server", {}).get("host") or server.get_default_host()
+    return default_host, server.get_prop(PropKey.HOST_NAMES)
 
 
 def _build_site_metadata(request_meta: dict) -> dict:
@@ -2236,7 +2251,7 @@ def _load_project_profile(profile_path: str, request_project: str = None) -> dic
     profile = _load_yaml_file(profile_path)
     if profile is None:
         return None
-    missing = [field for field in ("name", "scheme", "connection_security") if not profile.get(field)]
+    missing = [field for field in ("name", "scheme", "connection_security", "server") if not profile.get(field)]
     if missing:
         output_error_message(
             "INVALID_ARGS",
@@ -2278,10 +2293,49 @@ def _load_project_profile(profile_path: str, request_project: str = None) -> dic
             detail="project profile connection_security must be one of: clear, tls, mtls",
         )
         return None
+    server = profile.get("server")
+    if not isinstance(server, dict):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="project profile server must be a mapping with host, fed_learn_port, and admin_port",
+        )
+        return None
+    server_host = server.get("host")
+    if not isinstance(server_host, str) or not server_host.strip():
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail="project profile server.host must be a non-empty string",
+        )
+        return None
+    invalid, reason = name_check(server_host.strip(), "host_name")
+    if invalid:
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"project profile server.host is invalid: {reason}",
+        )
+        return None
+    if not _validate_port(server.get("fed_learn_port"), "project profile server.fed_learn_port"):
+        return None
+    if not _validate_port(server.get("admin_port"), "project profile server.admin_port"):
+        return None
     return {
         "name": profile_project,
         "scheme": scheme.strip().lower(),
         "default_connection_security": conn_sec.strip().lower(),
+        "server": {
+            "host": server_host.strip(),
+            "fed_learn_port": server["fed_learn_port"],
+            "admin_port": server["admin_port"],
+        },
     }
 
 
@@ -2347,7 +2401,7 @@ def handle_cert_approve(args):
 
         # The values used below survive the tempdir cleanup: output paths are
         # written into the final signed zip location, and metadata is copied.
-        server_san_fields = _server_cert_san_fields(site_meta, request_meta)
+        server_san_fields = _server_cert_san_fields(site_meta, request_meta, project_profile)
         # Returns (None, None) for non-server certs, (host, hosts) for server certs,
         # or bare None on validation error (output_error_message already emitted).
         if server_san_fields is None:
@@ -2368,6 +2422,9 @@ def handle_cert_approve(args):
         if sign_result is None:
             return 1
 
+        signed_site_meta = _build_sanitized_approval_site(site_meta)
+        signed_site_yaml_path = os.path.join(signed_dir, "site.yaml")
+        _write_yaml_file(signed_site_yaml_path, signed_site_meta)
         approved_at = _utc_ts()
         signed_meta = {
             "artifact_type": _SIGNED_ARTIFACT_TYPE,
@@ -2387,7 +2444,7 @@ def handle_cert_approve(args):
             "rootca_file": "rootCA.pem",
             "hashes": {
                 "csr_sha256": _sha256_file(csr_path),
-                "site_yaml_sha256": _sha256_file(site_yaml_path),
+                "site_yaml_sha256": _sha256_file(signed_site_yaml_path),
                 "certificate_sha256": sign_result["certificate_sha256"],
                 "rootca_sha256": sign_result["rootca_sha256"],
                 "public_key_sha256": _csr_public_key_sha256(csr),
@@ -2395,12 +2452,25 @@ def handle_cert_approve(args):
         }
         signed_meta["scheme"] = project_profile["scheme"]
         signed_meta["default_connection_security"] = project_profile["default_connection_security"]
+        signed_meta["server"] = project_profile["server"]
         if request_meta.get("cert_role"):
             signed_meta["cert_role"] = request_meta["cert_role"]
         signed_json_path = os.path.join(signed_dir, "signed.json")
         _write_json_file(signed_json_path, signed_meta)
-        signed_site_yaml_path = os.path.join(signed_dir, "site.yaml")
-        _write_file_nofollow(signed_site_yaml_path, _read_file_nofollow(site_yaml_path))
+        signature_path = os.path.join(signed_dir, "signed.json.sig")
+        try:
+            ca_key = load_private_key_file(os.path.join(args.ca_dir, "rootCA.key"))
+            signature = sign_content(_read_file_nofollow(signed_json_path), ca_key)
+            _write_file_nofollow(signature_path, signature.encode("utf-8"))
+        except Exception as e:
+            output_error_message(
+                "CERT_SIGNING_FAILED",
+                f"Failed to sign approval metadata: {e}.",
+                "Check that the CA key is valid and readable.",
+                None,
+                exit_code=1,
+            )
+            return 1
 
         signed_zip_path = getattr(args, "signed_zip", None)
         if signed_zip_path:
@@ -2411,6 +2481,7 @@ def handle_cert_approve(args):
             signed_zip_path,
             {
                 "signed.json": signed_json_path,
+                "signed.json.sig": signature_path,
                 "site.yaml": signed_site_yaml_path,
                 f"{name}.crt": sign_result["signed_cert"],
                 "rootCA.pem": sign_result["rootca"],

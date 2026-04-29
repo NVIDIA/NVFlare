@@ -1,7 +1,7 @@
 # FLARE Distributed Provisioning
 
 Created: 2026-03-27
-Updated: 2026-04-27
+Updated: 2026-04-28
 
 ---
 
@@ -60,9 +60,11 @@ The resulting startup kits are structurally identical to those produced by
 
 - **Project Admin approves against a project profile.**
   `project_profile.yaml` defines project `name`, communication `scheme`, and default
-  `connection_security`. `nvflare cert approve --profile <project_profile.yaml>`
-  verifies project identity and records approved communication defaults in the
-  signed metadata.
+  `connection_security`, plus the approved FL server endpoint. The Server Admin gives
+  the endpoint to the Project Admin before approvals begin, and the Project Admin records
+  it in `project_profile.yaml`. `nvflare cert approve --profile <project_profile.yaml>`
+  verifies project identity and records approved communication defaults and endpoint info
+  in the signed metadata.
 
 - **Communication scheme is Project Admin-owned and consistent.**
   The communication `scheme` is defined once in `project_profile.yaml`. Requester
@@ -72,12 +74,13 @@ The resulting startup kits are structurally identical to those produced by
   the same protocol, such as `grpc` or `http`.
 
 - **Connection configuration is split by ownership.**
-  Project-wide defaults come from the Project Admin profile. Client and user
-  startup-kit server endpoints come from the requester's local participant
-  definition. Server-side `connection_security` may be resolved locally during
-  packaging for deployments behind proxies, load balancers, or ingress. Server-local
-  connection overrides are excluded from sanitized approval metadata because they are
-  local package-time behavior, not Project Admin policy.
+  Project-wide defaults and the FL server endpoint come from the Project Admin profile.
+  Client and user participant definition files do not include `server` blocks. Approval
+  signs the server endpoint into `signed.json`, and packaging uses that signed endpoint
+  to generate startup kits. Server-side `connection_security` may be resolved locally
+  during packaging for deployments behind proxies, load balancers, or ingress.
+  Server-local connection overrides are excluded from sanitized approval metadata because
+  they are local package-time behavior, not Project Admin policy.
 
 - **Generated startup kits remain compatible with existing FLARE runtime.**
   The output layout and runtime startup behavior match centrally provisioned kits.
@@ -105,9 +108,10 @@ Data Flow section uses a concrete hospital federation example.
 
 | Step | Who | Action |
 |------|-----|--------|
-| 1 | Project Admin | Create `project_profile.yaml` with `name`, `scheme`, and `connection_security` *(one-time per federation)* |
+| 0 | Server Admin | Provide the FL server endpoint (`server.host`, `server.fed_learn_port`, `server.admin_port`) to the Project Admin *(one-time per federation, before approvals)* |
+| 1 | Project Admin | Create `project_profile.yaml` with `name`, `scheme`, `connection_security`, and `server` endpoint info *(one-time per federation)* |
 | 1a | Project Admin | `nvflare cert init --profile project_profile.yaml -o ./ca` *(one-time per federation)* |
-| 2 | Requester | Create participant definition file (e.g. `hospital-a.yaml`) with identity and connection fields |
+| 2 | Requester | Create participant definition file (e.g. `hospital-a.yaml`) with participant identity fields |
 | 3 | Requester | `nvflare cert request --participant hospital-a.yaml` |
 | 4 | Requester | Send generated `hospital-a/hospital-a.request.zip` to Project Admin |
 | 5 | Project Admin | `nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml` |
@@ -181,12 +185,13 @@ Distributed provisioning separates identity approval from startup-kit assembly. 
 request` and `cert approve` do not read custom builders.
 
 The participant definition file uses the same top-level structure as `project.yaml` —
-`name`, `description`, `participants`, and an optional `builders:` section — with the
-addition of distributed-provisioning endpoint fields (the `server:` block in client and
-user definitions) that `nvflare package` uses to generate startup configs. When a participant definition contains custom builders,
-`nvflare package` honors them when building the startup kit. The assumption is that custom
-builders operate on a single participant's artifacts and do not require information about
-other participants — in signed-zip mode, only the signed participant is built.
+`name`, `description`, `participants`, and an optional `builders:` section. Client and
+user definitions do not include server endpoint blocks; `nvflare package` uses the
+Project Admin-approved endpoint from the signed zip to generate startup configs. When a
+participant definition contains custom builders, `nvflare package` honors them when
+building the startup kit. The assumption is that custom builders operate on a single
+participant's artifacts and do not require information about other participants — in
+signed-zip mode, only the signed participant is built.
 
 ```yaml
 name: hospital_federation
@@ -195,10 +200,6 @@ participants:
   - name: hospital-a
     type: client
     org: hospital_alpha
-    server:
-      host: server1.hospital-central.org
-      fed_learn_port: 8002
-      admin_port: 8003
 
 builders:
   - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
@@ -214,16 +215,18 @@ If no `builders:` section is present, `package` uses the default FLARE builders.
 ## Project Profile File
 
 **Owner:** Project Admin — kept exclusively by the Project Admin. It is never distributed
-to site admins. Site admins receive `scheme` and the project default
-`connection_security` through the signed zip returned after approval, avoiding an extra
-out-of-band distribution step.
+to site admins. Site admins receive `scheme`, the project default
+`connection_security`, and the approved FL server endpoint through the signed zip returned
+after approval. The only value shared separately for requester verification is
+`rootca_fingerprint_sha256`.
 
-**Purpose:** Defines the project-wide identity and default connection parameters. This is a
-lightweight file — not the full `project.yaml` used in centralized provisioning. `name`
-uses the same field name and convention as `project.yaml`. `connection_security` follows
-the existing project-level default semantics. `scheme` is a new top-level field introduced
-for distributed provisioning; in centralized provisioning, scheme is a `StaticFileBuilder`
-arg or a `listening_host` sub-field, not a top-level project field.
+**Purpose:** Defines the project-wide identity, default connection parameters, and FL
+server endpoint approved for the federation. This is a lightweight file — not the full
+`project.yaml` used in centralized provisioning. `name` uses the same field name and
+convention as `project.yaml`. `connection_security` follows the existing project-level
+default semantics. `scheme` is a new top-level field introduced for distributed
+provisioning; in centralized provisioning, scheme is a `StaticFileBuilder` arg or a
+`listening_host` sub-field, not a top-level project field.
 
 **Fields:**
 
@@ -232,6 +235,9 @@ arg or a `listening_host` sub-field, not a top-level project field.
 | `name` | Yes | Project name. All requests must match this exactly. |
 | `scheme` | Yes | FLARE communication driver. Allowed values: `grpc`, `tcp`, `http`. Matches the supported driver names in FLARE's communication layer. |
 | `connection_security` | Yes | Default connection security. e.g. `tls`, `mtls`, `clear` |
+| `server.host` | Yes | Hostname/address of the FL server participants connect to. The Server Admin provides this to the Project Admin before approvals. |
+| `server.fed_learn_port` | Yes | Port for federated learning traffic. |
+| `server.admin_port` | Yes | Port for admin console connections. |
 
 **Example (`project_profile.yaml`):**
 
@@ -239,12 +245,21 @@ arg or a `listening_host` sub-field, not a top-level project field.
 name: hospital_federation
 scheme: grpc
 connection_security: tls
+server:
+  host: server1.hospital-central.org
+  fed_learn_port: 8002
+  admin_port: 8003
 ```
 
 `scheme` and `connection_security` are independent. For example, `scheme: grpc` may be
 paired with `connection_security: tls`, `mtls`, or `clear`; the selected
 `connection_security` value in the project profile is the authority for generated startup
 configs.
+
+The `server` block is the Project Admin-approved endpoint source for distributed
+provisioning. The Server Admin provides these values to the Project Admin before approval,
+and `cert approve` injects them into the signed zip so requesters do not need to receive or
+maintain local endpoint blocks.
 
 **Rationale for name `project_profile.yaml`:** Avoids confusion with the full `project.yaml`
 used in centralized provisioning, while making clear it is project-scoped, not
@@ -266,10 +281,10 @@ defaults needed by this workflow.
 > 1. **`connection_security`** (server definition only, optional override) — a site-local
 >    packaging value resolved by `nvflare package`. It is not approved or resolved by the
 >    Project Admin.
-> 2. **`server` block** (client and user definitions only) — distributed-provisioning
->    endpoint data used by `nvflare package` to generate client/admin startup configs.
->    Centralized provisioning does not need this block because the server participant is
->    available in the same full `project.yaml`.
+> 2. **`server` block in `project_profile.yaml`** — Project Admin-approved
+>    distributed-provisioning endpoint data used by `nvflare package` to generate
+>    startup configs. Client and user participant definitions do not contain server
+>    endpoint blocks.
 >
 > `scheme` in `project_profile.yaml` is also new as a top-level field. In centralized
 > provisioning, scheme is a `StaticFileBuilder` arg or a `listening_host` sub-field — not a
@@ -304,11 +319,13 @@ and scheme.**
 | `name` | Yes | Server name using the same validation convention as centralized `project.yaml` server participants. A DNS name is recommended for production, and `localhost` remains valid for local/demo workflows. Used as the certificate CN, the primary SAN, and the default hostname clients connect to unless `default_host` is set. Also used as the request folder name and startup kit directory name, so it must be a valid directory name on the host OS. |
 | `type` | Yes | Must be `server` |
 | `org` | Yes | Organization name |
-| `fed_learn_port` | Yes | Port for federated learning traffic (e.g. `8002`) |
-| `admin_port` | Yes | Port for admin console connections (e.g. `8003`) |
 | `host_names` | No | Additional hostnames or IP addresses added as Subject Alternative Names (SANs) in the server certificate. Allows clients to connect via multiple addresses (e.g. internal IP, load-balancer hostname, localhost). Each entry is auto-detected as a DNS name or IP address. |
 | `default_host` | No | Override the default hostname used in the server certificate. Useful when clients should connect through a hostname different from the participant `name`. |
 | `connection_security` | No | Server-side override of the project default. The server deployment may be behind a proxy, load balancer, or ingress where TLS terminates before traffic reaches the FLARE server. The server admin owns this local deployment decision. |
+
+The server startup endpoint is not taken from `server.yaml`. The Server Admin provides
+`server.host`, `server.fed_learn_port`, and `server.admin_port` to the Project Admin, who
+records them in `project_profile.yaml`; `cert approve` signs them into the approval zip.
 
 **Example:**
 
@@ -320,8 +337,6 @@ participants:
   - name: server1.hospital-central.org   # server name — primary hostname and cert CN
     type: server
     org: hospital_central
-    fed_learn_port: 8002
-    admin_port: 8003
     host_names:                          # optional: additional SANs in the server cert
       - 10.0.1.50                        #   IP address SAN
       - fl-server.internal               #   internal DNS SAN
@@ -358,10 +373,12 @@ front of a client). `tcp` is not typical over the internet.
 | `name` | Yes | Participant name — any meaningful identifier for this client site (e.g. `site-1`, `hospital-a`, `org-west`). Not required to be a hostname. Used as the participant identity in the certificate and startup kit, and as the request folder and startup kit directory name, so it must be a valid directory name on the host OS. |
 | `type` | Yes | Must be `client` |
 | `org` | Yes | Organization name. Identifies which organization this client belongs to. |
-| `server.host` | Yes | Hostname/address of the FL server this client connects to, using the same host-name validation convention as centralized provisioning. Used by `nvflare package` to generate the client startup config. Not present in centralized `project.yaml` because the server participant is in the same file. |
-| `server.fed_learn_port` | Yes | Federated learning port on the server. |
-| `server.admin_port` | Yes | Admin port on the server. |
 | `listening_host` | No | Not supported by the v2 distributed request/approve/package flow yet. The field is rejected because v2 signs one participant CSR and does not yet return the extra server-side listener certificate/key pair needed for 3rd-party integration. Use centralized provisioning for participants that need listener certificates. |
+
+Client participant definitions do not include server endpoint fields. The approved
+endpoint comes from `project_profile.yaml`, is signed into the approval zip by
+`cert approve`, and is used by `nvflare package` when generating the client startup
+config.
 
 **Example (`hospital-a.yaml`):**
 
@@ -373,10 +390,6 @@ participants:
   - name: hospital-a                # organization participant name — unique site identity
     type: client
     org: hospital_alpha
-    server:
-      host: server1.hospital-central.org
-      fed_learn_port: 8002
-      admin_port: 8003
     # listening_host is intentionally omitted. Use centralized provisioning if this
     # client needs a 3rd-party listener certificate/key pair.
 ```
@@ -404,9 +417,10 @@ conventions as the `admin` participant entry in `project.yaml`. No `scheme` or
 | `type` | Yes | Must be `admin` (same as `project.yaml` convention) |
 | `org` | Yes | Organization name |
 | `role` | Yes | User certificate role. Allowed values: `org_admin`, `lead`, `member` |
-| `server.host` | Yes | Hostname/address of the FL server this user connects to, using the same host-name validation convention as centralized provisioning. Used by `nvflare package` to generate the admin startup config. Not present in centralized `project.yaml` admin entries because the server participant is in the same file. |
-| `server.fed_learn_port` | Yes | Federated learning port on the server. |
-| `server.admin_port` | Yes | Admin port on the server. |
+
+User participant definitions do not include server endpoint fields. The approved endpoint
+comes from `project_profile.yaml`, is signed into the approval zip by `cert approve`, and
+is used by `nvflare package` when generating the admin startup config.
 
 **Role mapping:**
 
@@ -426,10 +440,6 @@ participants:
     type: admin
     org: hospital_alpha
     role: lead
-    server:
-      host: server1.hospital-central.org
-      fed_learn_port: 8002
-      admin_port: 8003
 ```
 
 ---
@@ -451,6 +461,10 @@ participants:
 name: hospital_federation
 scheme: grpc
 connection_security: tls
+server:
+  host: server1.hospital-central.org
+  fed_learn_port: 8002
+  admin_port: 8003
 ```
 
 ```bash
@@ -471,13 +485,13 @@ Data flow:
 - `rootCA.key` stays only with the Project Admin.
 - `rootCA.pem` is copied into signed responses.
 - `ca.json` records CA metadata used by signing.
-- `project_profile.yaml` stays exclusively with the Project Admin; `scheme` and the project
-  default `connection_security` reach participants only through the signed zip.
+- `project_profile.yaml` stays exclusively with the Project Admin; `scheme`, the project
+  default `connection_security`, and the server endpoint reach participants only through
+  the signed zip.
 
 ### Step 1: Requester Creates a Request
 
-Each requester creates a participant definition file describing their identity and
-connection fields, then runs:
+Each requester creates a participant definition file describing their identity, then runs:
 
 ```bash
 nvflare cert request --participant hospital-a.yaml
@@ -527,10 +541,10 @@ Data flow:
 - `hospital-a.csr` contains public key, subject identity, organization, and optional
   certificate-role hint.
 - `site.yaml` in the local request folder is the full normalized participant definition
-  used later by `package`; it may include non-secret package-time connection fields.
+  used later by `package`; it may include non-secret package-time fields.
 - `site.yaml` inside the request zip is a sanitized approval copy generated from the local
-  definition. It contains identity, certificate-approval fields, and endpoint fields needed
-  by other participants to connect. **Server-side `connection_security` overrides are
+  definition. It contains identity and certificate-approval fields. **Server-side
+  `connection_security` overrides are
   local deployment decisions and must not appear in the sanitized approval copy — they are
   never approved by the Project Admin and are applied at package time from the local
   participant definition only.**
@@ -663,15 +677,19 @@ chain back to the root CA and by the hashes in `signed.json`.
 The signed zip contains:
 
 ```text
-signed.json        # approval metadata: scheme, default_connection_security, hashes
+signed.json        # approval metadata: scheme, default_connection_security, endpoint, hashes
+signed.json.sig    # Project Admin CA signature over signed.json
 site.yaml          # sanitized approval metadata copied from the request
 hospital-a.crt     # signed participant certificate
 rootCA.pem         # project root CA certificate
 ```
 
 No private key is included. `project_profile.yaml` is never distributed — its
-`scheme` and `default_connection_security` values are copied into `signed.json` at
-approval time so the requester receives them without needing the profile file.
+`scheme`, `default_connection_security`, and `server` endpoint values are copied into
+`signed.json` at approval time so the requester receives approved connection information
+without needing the profile file.
+`nvflare package` verifies `signed.json.sig` with `rootCA.pem` before trusting any
+fields in `signed.json`.
 
 The Project Admin also shares the `rootca_fingerprint_sha256` value from the
 `cert approve` output through a separate trusted channel (email, ticket, verbal
@@ -714,16 +732,16 @@ On the requester machine:
 nvflare package hospital-a.signed.zip --confirm-rootca
 ```
 
-Connection info — scheme, security, and server address — comes from `signed.json` and the
-full participant definition stored in the local request folder. All connection
-configuration is resolved from these two sources.
+Connection info — scheme, security, and server address — comes from `signed.json`. The full
+participant definition stored in the local request folder supplies participant identity and
+local package-time fields.
 
 The command reads:
 
 ```text
 hospital-a.signed.zip
 hospital-a/hospital-a.key
-hospital-a/site.yaml               (full local participant definition, for server host/port)
+hospital-a/site.yaml               (full local participant definition)
 ```
 
 The command finds the private key by:
@@ -746,9 +764,8 @@ The command validates:
 - The certificate chains to `rootCA.pem`.
 - Certificate CN, organization, project, and certificate type match the approved metadata.
 - Identity fields in the local participant definition match the approved metadata.
-- Local endpoint fields that are present in the signed approval `site.yaml` match the local
-  request-folder `site.yaml`. If host or port values changed after approval, packaging fails
-  and the requester must regenerate the request and signed zip.
+- Signed endpoint fields from `signed.json` are used as the authority for generated startup
+  configs. Client and user request folders do not provide local server endpoint overrides.
 - Package-time fields intentionally excluded from the signed zip, such as custom builders and
   the server-side `connection_security` override, remain local site configuration.
 
@@ -765,8 +782,7 @@ The command validates:
 `scheme` is read exclusively from `signed.json` — the project admin's value is
 authoritative for all participants.
 
-Server host and port for client and user kits come from the `server` block in the
-participant definition.
+Server host and port for startup kits come from the signed `server` block in `signed.json`.
 
 `package` may materialize returned approval files into the request folder:
 
@@ -778,6 +794,7 @@ hospital-a/
   hospital-a.csr
   hospital-a.request.zip
   signed.json
+  signed.json.sig
   hospital-a.crt
   rootCA.pem
   hospital-a.signed.zip
@@ -887,9 +904,10 @@ hospital-a.csr
 ```
 
 `site.yaml` in the request zip is a sanitized approval copy generated from the local
-participant definition. It contains identity, certificate-approval fields, and the server
-endpoint information needed for participants to connect. The full local participant
-definition remains in the request folder and is used later by `package`. Server-side
+participant definition. It contains identity and certificate-approval fields. The full
+local participant definition remains in the request folder and is used later by `package`.
+The approved server endpoint is not taken from participant definition files; it comes from
+`project_profile.yaml` and is injected into the signed zip during approval. Server-side
 `connection_security` overrides are excluded from this copy — they are local deployment
 decisions, not Project Admin-approved fields, and are applied at package time from the
 local participant definition.
@@ -903,10 +921,6 @@ participants:
   - name: hospital-a
     type: client
     org: hospital_alpha
-    server:
-      host: server1.hospital-central.org
-      fed_learn_port: 8002
-      admin_port: 8003
 ```
 
 For a server:
@@ -918,8 +932,6 @@ participants:
   - name: server1.hospital-central.org
     type: server
     org: hospital_central
-    fed_learn_port: 8002
-    admin_port: 8003
     host_names:
       - 10.0.1.50
       - fl-server.internal
@@ -935,10 +947,6 @@ participants:
     type: admin
     org: hospital_alpha
     role: org_admin
-    server:
-      host: server1.hospital-central.org
-      fed_learn_port: 8002
-      admin_port: 8003
 ```
 
 `request.json` contains metadata needed for review, matching, and error messages:
@@ -985,10 +993,9 @@ rootCA.pem          # project root CA certificate
 ```
 
 `signed.json` contains enough information for `nvflare package` to match the approval
-to the local request. The Project Admin injects `scheme` and `default_connection_security`
-from `project_profile.yaml` into `signed.json`. These are project-wide defaults only. The
-Project Admin does not validate or resolve local package-time fields — `signed.json` does
-not carry the final server-resolved value.
+to the local request. The Project Admin injects `scheme`, `default_connection_security`,
+and `server` endpoint info from `project_profile.yaml` into `signed.json`. The Project
+Admin does not validate or resolve local package-time fields.
 
 ```json
 {
@@ -1004,6 +1011,11 @@ not carry the final server-resolved value.
   "cert_role": null,
   "scheme": "grpc",
   "default_connection_security": "tls",
+  "server": {
+    "host": "server1.hospital-central.org",
+    "fed_learn_port": 8002,
+    "admin_port": 8003
+  },
   "certificate": {
     "serial": "<hex>",
     "valid_until": "2029-04-24T00:00:00Z"
@@ -1025,6 +1037,8 @@ Field sources:
 - `default_connection_security` — from project admin's `project_profile.yaml`; used as
   fallback by `nvflare package` if the participant definition provides no override (server only;
   clients and users always use this value)
+- `server` — from project admin's `project_profile.yaml`; authoritative endpoint for generated
+  server, client, and user startup configs
 - `site_yaml_sha256` — hash of the sanitized approval `site.yaml` in the request/signed zip.
   Local-only package fields excluded from this copy are validated from the local request
   folder during packaging.
@@ -1201,7 +1215,7 @@ the presence of valid startup integrity metadata in the startup kit.
 | `nvflare cert init ...` | Project Admin initializes the CA (one-time per federation). |
 | `nvflare cert request -p/--participant <path>` | Create local key, CSR, metadata, and request zip from a participant definition file. |
 | `nvflare cert approve <request.zip> --ca-dir <dir> --profile <project_profile.yaml>` | Project Admin signs a request zip and creates a signed zip. Validates project name against profile. |
-| `nvflare package <signed.zip> [-w <workspace>] [--request-dir <dir>] [--expected-rootca-fingerprint <fp> | --confirm-rootca]` | Requester combines signed approval with local private key and creates startup kit. Connection info comes from the signed zip and local participant definition. |
+| `nvflare package <signed.zip> [-w <workspace>] [--request-dir <dir>] [--expected-rootca-fingerprint <fp> | --confirm-rootca]` | Requester combines signed approval with local private key and creates startup kit. Connection info comes from the signed zip; local participant definitions provide identity and package-time fields. |
 
 The implementation should reuse existing CSR generation, certificate signing, and package
 builder logic behind these commands. Public help and customer docs should expose this final
@@ -1398,7 +1412,7 @@ nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_prof
 |---|---|---|
 | `<request.zip>` | Yes | Request zip received from the site admin |
 | `--ca-dir` | Yes | Directory containing `rootCA.key`, `rootCA.pem`, and `ca.json` |
-| `--profile` | Yes | `project_profile.yaml` — authoritative source for project name, scheme, and default `connection_security` |
+| `--profile` | Yes | `project_profile.yaml` — authoritative source for project name, scheme, default `connection_security`, and server endpoint |
 | `--out` | No | Output path for the signed zip. Default: same directory as request zip, named `<name>.signed.zip` |
 | `--valid-days` | No | Certificate validity in days. Default: 1095 (3 years) |
 
@@ -1412,13 +1426,16 @@ The signed zip contains:
 
 ```text
 signed.json
+signed.json.sig # Project Admin CA signature over signed.json
 site.yaml
 <name>.crt      # signed participant certificate
 rootCA.pem      # project root CA certificate
 ```
 
-It does not include the private key. `signed.json` includes `scheme` and
-`default_connection_security` injected from `project_profile.yaml`.
+It does not include the private key. `signed.json` includes `scheme`,
+`default_connection_security`, and the signed server endpoint injected from
+`project_profile.yaml`. `nvflare package` verifies `signed.json.sig` before
+using those fields.
 
 The command output includes `rootca_fingerprint_sha256`; the Project Admin
 shares this value through a trusted out-of-band channel.
@@ -1437,10 +1454,8 @@ nvflare package hospital-a.signed.zip --expected-rootca-fingerprint SHA256:AA:BB
 nvflare package server1.hospital-central.org.signed.zip --confirm-rootca
 ```
 
-Connection info comes from two sources:
-- `signed.json`: `scheme`, `default_connection_security` (project admin defaults)
-- Participant definition in the request folder: server gets host/ports from its own
-  definition; client/user get server host/ports from the `server` block in their definition
+Connection info comes from `signed.json`: `scheme`, `default_connection_security`, and the
+Project Admin-approved `server` endpoint injected from `project_profile.yaml`.
 
 Server endpoint changes are coordinated configuration changes, not casual package-time
 overrides. Re-packaging is sufficient only when the existing certificates remain valid for
@@ -1491,9 +1506,9 @@ will be fully compatible with the distributed provisioning workflow.
   characters. Metadata remains the source of truth if filename normalization is needed
   later.
 - **Project profile is kept exclusively by the Project Admin.** It is never distributed to
-  site admins. Site admins receive `scheme` and the project default
-  `connection_security` through the signed zip returned after approval, avoiding an extra
-  out-of-band distribution step.
+  site admins. Site admins receive `scheme`, the project default `connection_security`, and
+  the approved server endpoint through the signed zip returned after approval. Only
+  `rootca_fingerprint_sha256` is shared out-of-band for root CA verification.
 - **Clients cannot override `connection_security`.** The client initiates the federation
   connection and must match the federation-approved protocol. Only the server may override
   the project default to accommodate proxy, load balancer, or ingress deployments.
@@ -1516,3 +1531,7 @@ will be fully compatible with the distributed provisioning workflow.
   top-level project field. It is placed at the top level of `project_profile.yaml` because
   it is a project-wide decision that must be communicated back to all sites through the
   signed zip.
+- **Server endpoint fields live in `project_profile.yaml`.** The Server Admin provides the
+  approved endpoint to the Project Admin before approvals, and `cert approve` signs that
+  endpoint into the approval zip. Client and user participant definition files do not carry
+  local `server` blocks.

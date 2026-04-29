@@ -32,6 +32,7 @@ import sys
 import time
 import types
 import unittest.mock
+import zipfile
 
 import pytest
 import yaml
@@ -94,21 +95,14 @@ def _ns(**kwargs):
 
 
 def _request_participant(project: str, name: str, cert_type: str, org: str = "myorg") -> dict:
-    _server_ref = {"host": _SERVER_NAME, "fed_learn_port": _FED_PORT, "admin_port": _ADMIN_PORT}
     if cert_type == "client":
-        participant = {"name": name, "type": "client", "org": org, "server": _server_ref}
+        participant = {"name": name, "type": "client", "org": org}
     elif cert_type == "server":
-        participant = {
-            "name": name,
-            "type": "server",
-            "org": org,
-            "fed_learn_port": _FED_PORT,
-            "admin_port": _ADMIN_PORT,
-        }
+        participant = {"name": name, "type": "server", "org": org}
     elif cert_type == "org_admin":
-        participant = {"name": name, "type": "admin", "org": org, "role": "org_admin", "server": _server_ref}
+        participant = {"name": name, "type": "admin", "org": org, "role": "org_admin"}
     elif cert_type in {"lead", "member"}:
-        participant = {"name": name, "type": "admin", "org": org, "role": cert_type, "server": _server_ref}
+        participant = {"name": name, "type": "admin", "org": org, "role": cert_type}
     else:
         raise ValueError(f"unsupported cert_type: {cert_type}")
     return {
@@ -124,6 +118,11 @@ def _write_project_profile(path: str, project: str) -> None:
                 "name": project,
                 "scheme": "grpc",
                 "connection_security": "mtls",
+                "server": {
+                    "host": _SERVER_NAME,
+                    "fed_learn_port": _FED_PORT,
+                    "admin_port": _ADMIN_PORT,
+                },
             },
             f,
             sort_keys=False,
@@ -242,6 +241,26 @@ class TestDistributedProvisioningWorkflow:
         _request_dir, request_zip = _run_request("site-1", "client", _PROJECT, request_root)
         signed_zip = _run_approve("site-1", request_zip, ca_dir, signed_dir, profile)
         assert os.path.isfile(signed_zip)
+        with zipfile.ZipFile(signed_zip) as zf:
+            signed_json = json.loads(zf.read("signed.json"))
+        assert signed_json["server"] == {
+            "host": _SERVER_NAME,
+            "fed_learn_port": _FED_PORT,
+            "admin_port": _ADMIN_PORT,
+        }
+
+    @pytest.mark.parametrize("name,cert_type", [("site-1", "client"), ("admin@myfl.com", "lead")])
+    def test_client_and_user_request_site_yaml_do_not_need_server_blocks(self, tmp_path, name, cert_type):
+        request_root = str(tmp_path / "requests")
+        request_dir, request_zip = _run_request(name, cert_type, _PROJECT, request_root)
+
+        with open(os.path.join(request_dir, "site.yaml"), encoding="utf-8") as f:
+            local_site = yaml.safe_load(f)
+        with zipfile.ZipFile(request_zip) as zf:
+            request_site = yaml.safe_load(zf.read("site.yaml"))
+
+        assert "server" not in local_site["participants"][0]
+        assert "server" not in request_site["participants"][0]
 
     # ------------------------------------------------------------------
     # Kit structure tests
