@@ -27,6 +27,7 @@ Command Usage
 
    job subcommands:
      submit          submit job
+     wait            wait for a job and return one final JSON envelope
      monitor         wait for a job and stream progress to stderr
      list            list jobs on the server
      abort           abort a running job
@@ -47,7 +48,8 @@ Common Workflow
 
 1. Export or prepare a job folder.
 2. Submit the job with ``nvflare job submit -j <job_folder>``.
-3. Monitor it with ``nvflare job monitor <job_id>``.
+3. In automation, wait for completion with ``nvflare job wait <job_id>``.
+   For interactive progress output, use ``nvflare job monitor <job_id>``.
 4. Inspect metadata, stats, or logs as needed.
 5. Download, clone, abort, or delete the job when appropriate.
 
@@ -163,12 +165,53 @@ After a client-side timeout or session loss, recover the accepted job with
 download, abort, delete, or clone the recovered job, first resolve the
 ``job_id`` with ``job list --submit-token`` and then use the normal job command.
 
-****************
-Monitor a Job
-****************
+***********************
+Wait or Monitor a Job
+***********************
 
-Use ``nvflare job monitor`` to wait for a running job and stream progress to
-stderr:
+Use ``nvflare job wait`` when a script or agent needs one final command result
+after the job reaches a terminal state:
+
+.. code-block:: shell
+
+   nvflare job wait <job_id>
+   nvflare job wait <job_id> --study cancer_research
+   nvflare job wait <job_id> --timeout 3600 --interval 5 --format json
+
+``job wait`` accepts:
+
+- ``job_id``: job ID to wait for.
+- ``--timeout``: max seconds to wait; must be greater than or equal to ``0``.
+  Default: ``0`` (no timeout).
+- ``--interval``: poll interval in seconds; must be greater than ``0``.
+  Default: ``2``.
+- ``--study``: wait for a job in a named study. Use the same study name used at
+  submission time. If omitted, the literal study name ``default`` is used.
+- ``--schema``: print the command schema as JSON and exit.
+
+Unlike ``job monitor``, ``job wait`` is the single-envelope automation command.
+It does not stream progress lines. In JSON mode, stdout contains exactly one
+final JSON envelope with the terminal job status and metadata; human-readable
+diagnostics still go to stderr.
+
+Exit behavior:
+
+- exit code ``0``: job finished successfully.
+- exit code ``1``: job reached a terminal failure state, such as ``FAILED``,
+  ``FINISHED_EXCEPTION``, ``ABORTED``, or ``ABANDONED``.
+- exit code ``2``: connection, authentication, or authorization failure prevented waiting.
+- exit code ``3``: wait timeout.
+
+This enables CI/CD-style chaining without parsing progress output:
+
+.. code-block:: shell
+
+   JOB=$(nvflare job submit -j ./my_job --format json | jq -r .data.job_id)
+   nvflare job wait $JOB --format json && nvflare job download $JOB
+
+Use ``nvflare job monitor`` when a human wants progress updates while waiting.
+It streams status lines to stderr and returns the final result when the job
+reaches a terminal state:
 
 .. code-block:: shell
 
@@ -178,27 +221,22 @@ stderr:
 Monitor options:
 
 - ``job_id``: job ID to monitor.
-- ``--timeout``: max seconds to wait. Default: ``0`` (no timeout).
-- ``--interval``: poll interval in seconds. Default: ``2``.
+- ``--timeout``: max seconds to wait; must be greater than or equal to ``0``.
+  Default: ``0`` (no timeout).
+- ``--interval``: poll interval in seconds; must be greater than ``0``.
+  Default: ``2``.
 - ``--study``: monitor a job in a named study. Use the same study name used
   at submission time. If omitted, the literal study name ``default`` is used.
 - ``--stats-target``: where to fetch stats from. Choices: ``server``, ``client``, ``all``. Default: ``server``.
 - ``--metric``: extra metric key to surface from stats. Repeatable.
 - ``--schema``: print the command schema as JSON and exit.
 
-Exit behavior:
+``job monitor`` exit behavior matches ``job wait``:
 
 - exit code ``0``: job finished successfully
 - exit code ``1``: job reached a terminal failure state: ``FAILED``, ``FINISHED_EXCEPTION``, ``ABORTED``, or ``ABANDONED``
-- exit code ``2``: connection or authentication failure prevented monitoring
+- exit code ``2``: connection, authentication, or authorization failure prevented monitoring
 - exit code ``3``: monitor timeout
-
-This enables CI/CD-style chaining:
-
-.. code-block:: shell
-
-   JOB=$(nvflare job submit -j ./my_job --format json | jq -r .data.job_id)
-   nvflare job monitor $JOB && nvflare job download $JOB
 
 *********************
 List and Inspect Jobs
@@ -432,6 +470,7 @@ returns JSON regardless of ``--format``, so the flag is not needed with it:
 .. code-block:: shell
 
    nvflare job submit --schema
+   nvflare job wait --schema
    nvflare job monitor --schema
 
 Human-readable argument errors print command help first, followed by the

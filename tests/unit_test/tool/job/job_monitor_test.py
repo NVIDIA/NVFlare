@@ -20,15 +20,13 @@ import pytest
 
 from nvflare.fuel.flare_api.api_spec import (
     AuthenticationError,
+    AuthorizationError,
     JobNotFound,
     MonitorReturnCode,
     NoConnection,
 )
 from nvflare.tool import cli_output
-from nvflare.tool.job.job_cli import (
-    _parse_monitor_duration_seconds,
-    _parse_monitor_start_ts,
-)
+from nvflare.tool.job.job_cli import _parse_monitor_duration_seconds, _parse_monitor_start_ts
 
 
 def _configure_active_startup_kit(tmp_path, monkeypatch):
@@ -202,11 +200,7 @@ class TestJobMonitorOutput:
     def test_monitor_help_and_schema_include_scoped_startup_selectors(self, capsys):
         import argparse
 
-        from nvflare.tool.job.job_cli import (
-            cmd_job_monitor,
-            def_job_cli_parser,
-            job_sub_cmd_parser,
-        )
+        from nvflare.tool.job.job_cli import cmd_job_monitor, def_job_cli_parser, job_sub_cmd_parser
 
         root = argparse.ArgumentParser()
         def_job_cli_parser(root.add_subparsers())
@@ -357,6 +351,19 @@ class TestJobMonitorOutput:
             from nvflare.tool.job.job_cli import cmd_job_monitor
 
             with pytest.raises(AuthenticationError):
+                cmd_job_monitor(_make_args())
+
+    def test_authorization_error_propagates_to_top_level_handler(self):
+        @contextmanager
+        def _fake_session(*args, **kwargs):
+            sess = MagicMock()
+            sess.monitor_job_and_return_job_meta.side_effect = AuthorizationError("not authorized")
+            yield sess
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            with pytest.raises(AuthorizationError):
                 cmd_job_monitor(_make_args())
 
     def test_missing_meta_exits_internal_error(self, capsys):

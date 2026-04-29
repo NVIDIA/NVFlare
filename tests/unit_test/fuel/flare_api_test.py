@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.apis.fl_exception import FLCommunicationError
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.flare_api.api_spec import (
     AuthenticationError,
     ClientInfo,
@@ -24,6 +25,7 @@ from nvflare.fuel.flare_api.api_spec import (
     InvalidArgumentError,
     InvalidJobDefinition,
     JobNotFound,
+    MonitorReturnCode,
     NoConnection,
     ServerInfo,
 )
@@ -123,6 +125,56 @@ def test_list_jobs_rejects_invalid_submit_token(token):
         session.list_jobs(submit_token=token)
 
     session._do_command.assert_not_called()
+
+
+@pytest.mark.parametrize("status", ["FINISHED:COMPLETED", "FAILED", "ABORTED", "ABANDONED", "FINISHED_EXCEPTION"])
+def test_monitor_job_stops_on_terminal_statuses(status):
+    session = Session.__new__(Session)
+    meta = {JobMetaKey.STATUS.value: status}
+    session.get_job_meta = MagicMock(return_value=meta)
+
+    with patch("nvflare.fuel.flare_api.flare_api.time.sleep") as sleep:
+        rc, returned_meta = session.monitor_job_and_return_job_meta("job-1", timeout=60, poll_interval=10)
+
+    assert rc == MonitorReturnCode.JOB_FINISHED
+    assert returned_meta is meta
+    session.get_job_meta.assert_called_once_with("job-1")
+    sleep.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"timeout": -1}, "timeout must be >= 0"),
+        ({"poll_interval": 0}, "poll_interval must be > 0"),
+        ({"poll_interval": -1}, "poll_interval must be > 0"),
+    ],
+)
+def test_monitor_job_rejects_invalid_polling_options(kwargs, match):
+    session = Session.__new__(Session)
+    session.get_job_meta = MagicMock()
+
+    with pytest.raises(InvalidArgumentError, match=match):
+        session.monitor_job_and_return_job_meta("job-1", **kwargs)
+
+    session.get_job_meta.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"timeout": -1}, "timeout must be >= 0"),
+        ({"poll_interval": 0}, "poll_interval must be > 0"),
+    ],
+)
+def test_wait_for_job_rejects_invalid_polling_options(kwargs, match):
+    session = Session.__new__(Session)
+    session.get_job_meta = MagicMock()
+
+    with pytest.raises(InvalidArgumentError, match=match):
+        session.wait_for_job("job-1", **kwargs)
+
+    session.get_job_meta.assert_not_called()
 
 
 def test_do_command_includes_syntax_error_details():

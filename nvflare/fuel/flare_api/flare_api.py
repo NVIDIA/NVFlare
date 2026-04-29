@@ -71,6 +71,24 @@ _STATE_CHANGE_POLL_INTERVAL = 0.5
 _STATE_CHANGE_CONNECT_TIMEOUT = 1.0
 _SUBMIT_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _SUBMIT_TOKEN_CONFLICT_STATUS = "submit_token_conflict"
+_LEGACY_TERMINAL_JOB_STATUSES = {
+    "FINISHED_OK",
+    "FINISHED_EXCEPTION",
+    "ABORTED",
+    "ABANDONED",
+    "FAILED",
+}
+
+
+def _is_terminal_job_status(status: str) -> bool:
+    return isinstance(status, str) and (status.startswith("FINISHED") or status in _LEGACY_TERMINAL_JOB_STATUSES)
+
+
+def _validate_job_polling_options(timeout: float, poll_interval: float) -> None:
+    if timeout < 0:
+        raise InvalidArgumentError("timeout must be >= 0")
+    if poll_interval <= 0:
+        raise InvalidArgumentError("poll_interval must be > 0")
 
 
 def _validate_submit_token(submit_token: Optional[str]) -> Optional[str]:
@@ -1541,6 +1559,7 @@ class Session(SessionSpec):
         should continue. If False, this method ends.
 
         """
+        _validate_job_polling_options(timeout, poll_interval)
         start_time = time.time()
         while True:
             if 0 < timeout < time.time() - start_time:
@@ -1557,7 +1576,7 @@ class Session(SessionSpec):
             if not job_status:
                 raise InternalError(f"missing status in job {job_id}")
 
-            if job_status.startswith("FINISHED"):
+            if _is_terminal_job_status(job_status):
                 return MonitorReturnCode.JOB_FINISHED, job_meta
 
             time.sleep(poll_interval)

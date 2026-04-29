@@ -123,6 +123,7 @@ The JSON output shape and error codes defined here become the MCP tool schemas i
 | --- | --- | --- |
 | `create` | No | Deprecated — retain with stderr warning; use `python job.py --export --export-dir <job_folder>` + `nvflare job submit` instead |
 | `submit` | Yes | Needs JSON output, exit codes, structured errors; returns `job_id` immediately |
+| `wait` | Yes | Single-envelope automation wait; no progress stream |
 | `list-templates` | No | Deprecated — retain with stderr warning; use `nvflare recipe list`. Underscore alias `list_templates` kept. |
 | `show-variables` | No | Deprecated — retain with stderr warning; use Job Recipe API. Underscore alias `show_variables` kept. |
 
@@ -404,16 +405,30 @@ Example:
 ```
 
 
-## Monitor / Poll
+## Wait / Monitor / Poll
 
-`nvflare job monitor <job_id>` polls until the job reaches a terminal state via `monitor_job_and_return_job_meta()` callback. Status lines print to stderr; final JSON to stdout. For named-study jobs, pass the same `--study` value used at submit/list time so the monitor opens the correct study session.
+`nvflare job wait <job_id>` is the automation-oriented wait command. It polls until the
+job reaches a terminal state and returns one final command result envelope. It must not
+stream progress events or status lines as command output. With `--format json`, stdout
+contains exactly one JSON envelope after completion, failure, or timeout; diagnostics go
+to stderr following the normal CLI output contract.
+
+`nvflare job monitor <job_id>` is the interactive/progress command. It also polls until
+the job reaches a terminal state via `monitor_job_and_return_job_meta()` callback, but
+status lines print to stderr before the final result. For named-study jobs, pass the same
+`--study` value used at submit/list time so wait or monitor opens the correct study
+session.
 
 ```bash
 JOB=$(nvflare job submit -j ./my_job | jq -r .data.job_id)
-nvflare job monitor $JOB && nvflare job download $JOB
+nvflare job wait $JOB --format json && nvflare job download $JOB
 ```
 
-Exit code 0 on `FINISHED_OK`, exit code 1 on `FAILED` / `ABORTED`.
+Both commands accept `--timeout`, `--interval`, and `--study`. `--timeout 0` means no
+timeout, `--interval` controls the polling interval in seconds, and omitted `--study`
+means the literal default study. Exit code 0 on successful terminal status such as
+`FINISHED:COMPLETED` or `FINISHED_OK`, exit code 1 on terminal job failure such as
+`FAILED` / `ABORTED`, and exit code 3 on timeout.
 
 
 ## Study Selector Semantics
@@ -1195,19 +1210,49 @@ server resolves it through study-scoped submit records owned by the current subm
 must not scan job `meta.json`, because submit tokens are server-owned submission metadata
 and are not part of job execution metadata.
 
+#### `nvflare job wait`
+
+Waits for a running job to reach a terminal state and returns one final command envelope.
+This is the preferred command for scripts, CI/CD, and agents because it has no progress
+stream to parse.
+
+| Argument | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `job_id` | str | Yes | — | Job ID to wait for |
+| `--timeout` | number | No | 0 | Max seconds to wait; must be >= 0; 0 means no timeout |
+| `--interval` | number | No | 2 | Poll interval in seconds; must be > 0 |
+| `--study` | str | No | `"default"` | Study containing the job |
+| `--schema` | flag | No | — | Print command schema and exit |
+
+Output contract:
+
+- Human mode: print a concise final status summary only after the job is terminal or the
+  wait times out.
+- JSON mode: stdout contains exactly one JSON envelope after completion, failure, or
+  timeout.
+- Progress updates are intentionally omitted. Use `nvflare job monitor` when progress
+  updates are desired.
+
+Exit code 0 on successful terminal status such as `FINISHED:COMPLETED` or
+`FINISHED_OK`, exit code 1 on terminal job failure such as `FAILED`,
+`FINISHED_EXCEPTION`, `ABORTED`, or `ABANDONED`, exit code 2 on connection,
+authentication, or authorization failure, and exit code 3 on timeout.
+
 #### `nvflare job monitor`
 
-Polls a running job until it reaches a terminal state. Prints status updates to stderr; final JSON to stdout.
+Polls a running job until it reaches a terminal state. This is the progress-oriented
+variant: it prints status updates to stderr before the final result. For single-envelope
+automation, use `nvflare job wait`.
 
 | Argument | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `job_id` | str | Yes | — | Job ID to monitor |
-| `--timeout` | int | No | 0 | Max seconds to wait |
-| `--interval` | int | No | 2 | Poll interval in seconds |
+| `--timeout` | int | No | 0 | Max seconds to wait; must be >= 0 |
+| `--interval` | int | No | 2 | Poll interval in seconds; must be > 0 |
 | `--study` | str | No | `"default"` | Study containing the job |
 | `--schema` | flag | No | — | Print command schema and exit |
 
-Exit code 0 on `FINISHED_OK`, exit code 1 on `FAILED` / `ABORTED`.
+Exit behavior matches `nvflare job wait`.
 
 #### `nvflare job list-templates` — deprecated
 
@@ -1301,7 +1346,8 @@ Retain with stderr warning. Underscore alias `authz_preview` accepted for backwa
 | `config add/use/show/list/remove` | Add | Add | Add | Manage local startup kit registry; no server connection |
 | `job create` | — | — | — | Deprecated |
 | `job submit` | Add | Add | Add | Returns `job_id` immediately |
-| `job monitor` | Add | Add | Add | Standalone wait/poll |
+| `job wait` | Add | Add | Add | Single-envelope automation wait/poll |
+| `job monitor` | Add | Add | Add | Interactive progress wait/poll |
 | `study register/show/list/remove/add-site/remove-site/add-user/remove-user` | Add | Add | Add | Manage multi-study lifecycle through active startup kit |
 | `provision` | Add | Add | Add | Restore pre-2.7.0 default; add `--force` |
 | `preflight-check` | Add | Add | Fix | 0=pass, 1=fail; alias `preflight_check` kept |
@@ -1325,6 +1371,7 @@ the active-kit registry or `NVFLARE_STARTUP_KIT_DIR`.
 ```text
 # Job lifecycle (server must be running)
 nvflare job submit    -j <job_folder> [--study name] [--submit-token token]
+nvflare job wait      <job_id> [--study name] [--timeout N] [--interval N]
 nvflare job monitor   <job_id> [--study name] [--timeout N] [--interval N]
 nvflare job list      [-n prefix] [-i id_prefix] [-r] [-m num] [--study name] [--submit-token token]
 nvflare job meta      <job_id>

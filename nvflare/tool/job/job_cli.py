@@ -95,6 +95,7 @@ CMD_JOB_LOGS = "logs"
 
 # Job lifecycle helpers
 CMD_JOB_MONITOR = "monitor"
+CMD_JOB_WAIT = "wait"
 CMD_JOB_LOG_CONFIG = "log-config"
 CMD_JOB_LOG_ALIAS = "log"
 
@@ -603,6 +604,7 @@ job_sub_cmd_handlers = {
     CMD_JOB_STATS: None,
     CMD_JOB_LOGS: None,
     CMD_JOB_MONITOR: None,
+    CMD_JOB_WAIT: None,
     CMD_JOB_LOG_CONFIG: None,
 }
 
@@ -620,6 +622,7 @@ job_sub_cmd_parser = {
     CMD_JOB_STATS: None,
     CMD_JOB_LOGS: None,
     CMD_JOB_MONITOR: None,
+    CMD_JOB_WAIT: None,
     CMD_JOB_LOG_CONFIG: None,
 }
 
@@ -649,6 +652,7 @@ def def_job_cli_parser(sub_cmd):
     job_subparser = parser.add_subparsers(title="job subcommands", metavar="", dest="job_sub_cmd")
     define_submit_job_parser(job_subparser)
     define_job_monitor_parser(job_subparser)
+    define_job_wait_parser(job_subparser)
     define_list_jobs_parser(job_subparser)
     define_abort_job_parser(job_subparser)
     define_job_meta_parser(job_subparser)
@@ -1879,8 +1883,43 @@ def _build_monitor_output_data(
     return data
 
 
+def _job_terminal_failure_error(status: str):
+    if status == "FAILED":
+        return (
+            "JOB_FAILED",
+            "Use 'nvflare job logs <job_id>' and 'nvflare job meta <job_id>' to inspect the failure.",
+        )
+    if status == "FINISHED_EXCEPTION" or status.startswith("FINISHED:EXECUTION_EXCEPTION"):
+        return (
+            "JOB_FINISHED_EXCEPTION",
+            "Use 'nvflare job logs <job_id>' and 'nvflare job meta <job_id>' to inspect the failure.",
+        )
+    if status == "ABORTED" or status.startswith("FINISHED:ABORTED"):
+        return (
+            "JOB_ABORTED",
+            "Use 'nvflare job meta <job_id>' to see abort details.",
+        )
+    if status == "ABANDONED" or status.startswith("FINISHED:ABANDONED"):
+        return (
+            "JOB_ABANDONED",
+            "Use 'nvflare job meta <job_id>' to inspect the abandonment details.",
+        )
+    if status.startswith("FINISHED:") and not status.startswith("FINISHED:COMPLETED"):
+        return (
+            "JOB_FAILED",
+            "Use 'nvflare job logs <job_id>' and 'nvflare job meta <job_id>' to inspect the failure.",
+        )
+    return None
+
+
 def cmd_job_monitor(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, MonitorReturnCode, NoConnection
+    from nvflare.fuel.flare_api.api_spec import (
+        AuthenticationError,
+        AuthorizationError,
+        JobNotFound,
+        MonitorReturnCode,
+        NoConnection,
+    )
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1900,6 +1939,12 @@ def cmd_job_monitor(cmd_args):
     start_ts_holder = {"value": None}
     timeout = getattr(cmd_args, "timeout", 0)
     interval = getattr(cmd_args, "interval", 2)
+    if timeout < 0:
+        output_error("INVALID_ARGUMENT", exit_code=4, detail="--timeout must be >= 0")
+        return
+    if interval <= 0:
+        output_error("INVALID_ARGUMENT", exit_code=4, detail="--interval must be > 0")
+        return
     cb_state = _make_monitor_state()
     emit_interval = max(interval, 5)
     stats_interval = max(interval, 10)
@@ -1928,7 +1973,7 @@ def cmd_job_monitor(cmd_args):
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         return
-    except (AuthenticationError, NoConnection):
+    except (AuthenticationError, AuthorizationError, NoConnection):
         raise
     except Exception as e:
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
@@ -1966,26 +2011,91 @@ def cmd_job_monitor(cmd_args):
         json_mode=is_json_mode(),
     )
 
-    if status in ("FAILED", "FINISHED_EXCEPTION", "ABORTED", "ABANDONED"):
-        error_envelopes = {
-            "FAILED": (
-                "JOB_FAILED",
-                "Use 'nvflare job logs <job_id>' and 'nvflare job meta <job_id>' to inspect the failure.",
-            ),
-            "FINISHED_EXCEPTION": (
-                "JOB_FINISHED_EXCEPTION",
-                "Use 'nvflare job logs <job_id>' and 'nvflare job meta <job_id>' to inspect the failure.",
-            ),
-            "ABORTED": (
-                "JOB_ABORTED",
-                "Use 'nvflare job meta <job_id>' to see abort details.",
-            ),
-            "ABANDONED": (
-                "JOB_ABANDONED",
-                "Use 'nvflare job meta <job_id>' to inspect the abandonment details.",
-            ),
-        }
-        error_code, hint = error_envelopes[status]
+    failure = _job_terminal_failure_error(status)
+    if failure:
+        error_code, hint = failure
+        output_error(error_code, exit_code=1, hint=hint, data=data, job_id=cmd_args.job_id)
+    else:
+        output_ok(data)
+
+
+def cmd_job_wait(cmd_args):
+    from nvflare.apis.job_def import JobMetaKey
+    from nvflare.fuel.flare_api.api_spec import (
+        AuthenticationError,
+        AuthorizationError,
+        JobNotFound,
+        JobTimeout,
+        NoConnection,
+    )
+    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_WAIT],
+        "nvflare job wait",
+        [
+            "nvflare job wait abc123",
+            "nvflare job wait abc123 --timeout 3600",
+            "nvflare job wait abc123 --study cancer",
+        ],
+        sys.argv[1:],
+    )
+
+    study = _get_arg_value(cmd_args, "study", "default")
+    start = time.time()
+    timeout = getattr(cmd_args, "timeout", 0)
+    interval = getattr(cmd_args, "interval", 2)
+    if timeout < 0:
+        output_error("INVALID_ARGUMENT", exit_code=4, detail="--timeout must be >= 0")
+        return
+    if interval <= 0:
+        output_error("INVALID_ARGUMENT", exit_code=4, detail="--interval must be > 0")
+        return
+
+    try:
+        with _job_session_for_args(cmd_args, study=study) as sess:
+            meta = sess.wait_for_job(cmd_args.job_id, timeout=timeout, poll_interval=interval)
+    except JobTimeout as e:
+        output_error(
+            "TIMEOUT",
+            exit_code=3,
+            detail=str(e),
+        )
+        return
+    except JobNotFound:
+        output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        return
+    except (AuthenticationError, AuthorizationError) as e:
+        output_error("AUTH_FAILED", exit_code=2, detail=str(e))
+        return
+    except NoConnection as e:
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
+    except Exception as e:
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
+        return
+
+    if not meta:
+        output_error("INTERNAL_ERROR", exit_code=5, detail="wait returned no job metadata")
+        return
+
+    start_ts = _parse_monitor_start_ts(
+        meta,
+        JobMetaKey.START_TIME.value,
+        JobMetaKey.SUBMIT_TIME_ISO.value,
+    )
+    data = _build_monitor_output_data(
+        job_id=cmd_args.job_id,
+        meta=meta,
+        start=start,
+        start_ts=start_ts,
+        cb_state=_make_monitor_state(),
+        json_mode=is_json_mode(),
+    )
+    failure = _job_terminal_failure_error(data["status"])
+    if failure:
+        error_code, hint = failure
         output_error(error_code, exit_code=1, hint=hint, data=data, job_id=cmd_args.job_id)
     else:
         output_ok(data)
@@ -2098,6 +2208,18 @@ def define_job_monitor_parser(job_subparser):
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_MONITOR] = p
     job_sub_cmd_handlers[CMD_JOB_MONITOR] = cmd_job_monitor
+
+
+def define_job_wait_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_WAIT, help="wait for a job to finish")
+    p.add_argument("job_id", type=str, help="job ID")
+    p.add_argument("--timeout", type=float, default=0, help="seconds to wait (0 = no timeout)")
+    p.add_argument("--interval", type=float, default=2, help="poll interval in seconds")
+    p.add_argument("--study", type=str, default="default", help="study to wait for the job in")
+    add_startup_kit_selection_args(p)
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_WAIT] = p
+    job_sub_cmd_handlers[CMD_JOB_WAIT] = cmd_job_wait
 
 
 def define_job_log_parser(job_subparser):
