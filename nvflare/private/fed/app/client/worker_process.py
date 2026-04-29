@@ -40,6 +40,7 @@ from nvflare.private.fed.utils.fed_utils import (
     set_stats_pool_config_for_job,
 )
 from nvflare.security.logging import secure_format_exception
+from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
 
 
 def main(args):
@@ -59,6 +60,7 @@ def main(args):
     args.env = os.path.join("config", "environment.json")
     download_workspace(args, secure_train)
     workspace = Workspace(args.workspace, args.client_name, config_folder)
+    refresh_custom_dir_import_path(workspace.get_app_custom_dir(args.job_id))
     set_stats_pool_config_for_job(workspace, args.job_id)
 
     try:
