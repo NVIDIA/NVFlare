@@ -235,6 +235,9 @@ Retrieve job logs from the server-side log store:
    nvflare job logs <job_id>
    nvflare job logs <job_id> --site site-1
    nvflare job logs <job_id> --site all
+   nvflare job logs <job_id> --site all --tail 200
+   nvflare job logs <job_id> --site site-1 --since 2026-04-28T10:00:00
+   nvflare job logs <job_id> --site all --max-bytes 200000
 
 ``job logs`` accepts:
 
@@ -246,14 +249,23 @@ Retrieve job logs from the server-side log store:
   content, the JSON response includes it under ``unavailable``.
 - ``--sites`` is accepted as an alias for ``--site`` but still selects one
   target value.
+- ``--tail N``: return at most the last N log lines per site.
+- ``--since timestamp``: return timestamped log lines at or after the timestamp
+  when line timestamps are parseable. Continuation lines following an included
+  timestamped line are included.
+- ``--max-bytes N``: return at most N UTF-8 bytes per site.
 - ``job logs`` also supports ``--schema``.
+
+If no explicit bound is provided, ``job logs`` returns at most the last 500
+lines per site. JSON output includes ``logs_truncated``, per-site availability
+and line/byte counts under ``sites``, and the applied ``filters``.
 
 In normal human output mode, ``job logs`` prints the log text directly. With
 ``--site all``, each site is separated by a short header. Use ``--format json``
 when a structured ``logs`` dictionary is needed for automation.
 
-``job logs`` does not provide built-in ``tail`` or ``grep`` options. Pipe or
-post-process the returned content when filtering is needed.
+``job logs`` does not provide a built-in ``grep`` option. Pipe or post-process
+the returned content when text matching is needed.
 
 Client logs are not fetched from client machines at command time. The command
 asks the server for logs that were already streamed to the server during the

@@ -22,10 +22,13 @@ from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, No
 from nvflare.tool import cli_output
 
 
-def _make_args(job_id="abc123", site="server"):
+def _make_args(job_id="abc123", site="server", tail=None, since=None, max_bytes=None):
     args = MagicMock()
     args.job_id = job_id
     args.site = site
+    args.tail = tail
+    args.since = since
+    args.max_bytes = max_bytes
     return args
 
 
@@ -170,9 +173,89 @@ class TestJobLogs:
         mock_sess.get_job_logs.return_value = {"logs": {}}
 
         with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
-            cmd_job_logs(_make_args())
+            cmd_job_logs(_make_args(tail=10, since="2026-04-28T10:00:00", max_bytes=100))
 
         mock_sess.get_job_logs.assert_called_once_with("abc123", target="server")
+
+    def test_logs_default_caps_each_site_to_500_lines(self, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.return_value = {"logs": {"server": "".join(f"line-{i}\n" for i in range(501))}}
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            cmd_job_logs(_make_args())
+
+        data = json.loads(capsys.readouterr().out)["data"]
+        assert data["logs"]["server"].splitlines()[0] == "line-1"
+        assert len(data["logs"]["server"].splitlines()) == 500
+        assert data["logs_truncated"] is True
+        assert data["sites"]["server"]["logs_truncated"] is True
+        assert data["filters"]["default_tail_applied"] is True
+
+    def test_logs_tail_filters_each_site(self, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.return_value = {"logs": {"server": "line1\nline2\nline3\n"}}
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            cmd_job_logs(_make_args(tail=2))
+
+        data = json.loads(capsys.readouterr().out)["data"]
+        assert data["logs"] == {"server": "line2\nline3\n"}
+        assert data["logs_truncated"] is True
+        assert data["filters"]["tail"] == 2
+        assert data["filters"]["default_tail_applied"] is False
+
+    def test_logs_since_filters_timestamped_lines_and_continuations(self, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        log_text = (
+            "2026-04-28 09:59:59 old\n"
+            "old continuation\n"
+            "2026-04-28 10:00:00 keep\n"
+            "keep continuation\n"
+            "2026-04-28 10:00:01 keep2\n"
+        )
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.return_value = {"logs": {"server": log_text}}
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            cmd_job_logs(_make_args(since="2026-04-28T10:00:00"))
+
+        data = json.loads(capsys.readouterr().out)["data"]
+        assert data["logs"]["server"] == "2026-04-28 10:00:00 keep\nkeep continuation\n2026-04-28 10:00:01 keep2\n"
+        assert data["logs_truncated"] is False
+        assert data["filters"]["since_applied"] is True
+
+    def test_logs_max_bytes_caps_each_site(self, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.return_value = {"logs": {"server": "abcdef"}}
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            cmd_job_logs(_make_args(max_bytes=3))
+
+        data = json.loads(capsys.readouterr().out)["data"]
+        assert data["logs"] == {"server": "abc"}
+        assert data["logs_truncated"] is True
+        assert data["sites"]["server"]["bytes"] == 3
+
+    def test_logs_invalid_since_exits_4(self, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        mock_sess = MagicMock()
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_logs(_make_args(since="not-a-time"))
+
+        assert exc_info.value.code == 4
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "INVALID_ARGS"
+        mock_sess.get_job_logs.assert_not_called()
 
     def test_logs_client_site_calls_session_with_target(self, capsys):
         """--site with a client name is passed through to the session API."""
@@ -250,7 +333,13 @@ class TestJobLogs:
         args = parser.parse_args(["--sites", "server", "abc123"])
         assert args.job_id == "abc123"
         assert args.site == "server"
-        with pytest.raises(SystemExit):
-            parser.parse_args(["abc123", "--tail", "100"])
+        args = parser.parse_args(["abc123", "--tail", "100", "--since", "2026-04-28T10:00:00", "--max-bytes", "1024"])
+        assert args.tail == 100
+        assert args.since == "2026-04-28T10:00:00"
+        assert args.max_bytes == 1024
         with pytest.raises(SystemExit):
             parser.parse_args(["abc123", "--grep", "OOM"])
+        with pytest.raises(SystemExit):
+            parser.parse_args(["abc123", "--tail", "-1"])
+        with pytest.raises(SystemExit):
+            parser.parse_args(["abc123", "--max-bytes", "-1"])

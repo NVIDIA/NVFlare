@@ -215,10 +215,12 @@ recipe.job.to_server(JobLogReceiver())
 ### `nvflare job logs`
 
 ```text
-nvflare job logs <job_id> [--site server|<client_name>|all]
+nvflare job logs <job_id> [--site server|<client_name>|all] [--tail N] [--since timestamp] [--max-bytes N]
 ```
 
 `--site` defaults to `server` for bounded output and backward-compatible behavior.
+If no explicit bound is provided, the CLI returns at most the last 500 lines per
+site and reports whether the output was truncated.
 
 Site target behavior:
 
@@ -226,7 +228,17 @@ Site target behavior:
 - `--site <client_name>`: return that client's job log as streamed to and stored by the server.
 - `--site all`: return the server log plus all client logs available in the server-side job log store.
 
-The command never applies local filtering such as `tail` or `grep`; users can pipe or post-process the returned log content if needed.
+Bound options are applied by the CLI after retrieving the server-side stored log
+content:
+
+- `--tail N`: return at most the last N lines per site.
+- `--since timestamp`: return timestamped log lines at or after the timestamp
+  when line timestamps are parseable. Continuation lines following an included
+  timestamped line are included.
+- `--max-bytes N`: return at most N UTF-8 bytes per site.
+
+`grep` is intentionally not a CLI flag; users can pipe or post-process the
+returned content when text matching is needed.
 
 Human output prints log text directly. For a single `--site server` or
 `--site <client_name>` target, no JSON envelope or dict wrapper is printed. For
@@ -246,6 +258,19 @@ Example:
       "server": "2026-03-27 10:01:00 INFO ...\n...",
       "site-1": "2026-03-27 10:01:05 ERROR ...\n...",
       "site-2": "2026-03-27 10:01:05 INFO ...\n..."
+    },
+    "logs_truncated": false,
+    "sites": {
+      "server": {"available": true, "lines": 500, "bytes": 12000, "logs_truncated": false},
+      "site-1": {"available": true, "lines": 200, "bytes": 9000, "logs_truncated": false},
+      "site-2": {"available": true, "lines": 150, "bytes": 7000, "logs_truncated": false}
+    },
+    "filters": {
+      "tail": 500,
+      "since": null,
+      "since_applied": false,
+      "max_bytes": null,
+      "default_tail_applied": true
     }
   }
 }
@@ -264,6 +289,12 @@ If `--site all` is requested and some known job sites do not have stored log con
       "server": "2026-03-27 10:01:00 INFO ...\n...",
       "site-1": "2026-03-27 10:01:05 ERROR ...\n..."
     },
+    "logs_truncated": false,
+    "sites": {
+      "server": {"available": true, "lines": 500, "bytes": 12000, "logs_truncated": false},
+      "site-1": {"available": true, "lines": 200, "bytes": 9000, "logs_truncated": false},
+      "site-2": {"available": false, "reason": "client log stream not available for this job"}
+    },
     "unavailable": {
       "site-2": "client log stream not available for this job"
     }
@@ -281,7 +312,7 @@ Code: LOG_NOT_FOUND (exit 1)
 
 Server-side behavior: `get_job_log <job_id> [server|all|client_name]` returns structured data from server-side stored artifacts. Server logs are read from the live server workspace when available, then from the saved job-store `workspace` component after the run workspace has been archived. Client logs are read from the server's live job workspace at `<job_id>/<client_name>/log.txt` when available, then from the saved job-store `workspace` component member `<client_name>/log.txt`. For compatibility with existing stored receiver outputs, the command can also fall back to client-data components such as `LOG_log.txt_<client_name>`. `tail_target_log` / `grep_target` are insufficient and are not used for this command.
 
-Session API: `Session.get_job_logs(job_id, target, tail_lines=None, grep_pattern=None)` sends the structured server command and returns `logs` plus optional `unavailable`. `tail_lines` and `grep_pattern` are retained as deprecated compatibility arguments for existing Python callers; the CLI no longer exposes these options, and any filtering is applied locally by the session wrapper after retrieving the server-side stored logs.
+Session API: `Session.get_job_logs(job_id, target, tail_lines=None, grep_pattern=None)` sends the structured server command and returns `logs` plus optional `unavailable`. `tail_lines` and `grep_pattern` are retained as deprecated compatibility arguments for existing Python callers. The CLI applies `--tail`, `--since`, and `--max-bytes` locally after retrieving server-side stored logs so the JSON response can include truncation metadata.
 
 ### `nvflare job log-config`
 
@@ -883,8 +914,10 @@ Manual production registrations remain untouched.
 
 - `poc prepare` activates the default POC Project Admin startup kit automatically.
 - `poc prepare` writes POC admin/user startup kits into `startup_kits.entries`.
-- Normal server-connected commands do not expose `--startup-target` or `--startup-kit`.
-- Commands resolve the startup kit through `NVFLARE_STARTUP_KIT_DIR` first, then
+- Normal server-connected commands do not expose `--startup-target`.
+- Commands resolve the startup kit through `--kit-id` / `--startup-kit` first, then
+  `NVFLARE_STARTUP_KIT_DIR`, then `startup_kits.active`.
+- `--kit-id` and `--startup-kit` are scoped to one command and must not mutate
   `startup_kits.active`.
 - `nvflare config` is the user-facing startup kit management interface.
 - `nvflare config` is the parent command namespace; the normal user workflow in this
@@ -1150,7 +1183,7 @@ nvflare job delete    <job_id> [--force]
 
 # Observability (server must be running)
 nvflare job stats     <job_id> [--site server|<name>|all]
-nvflare job logs      <job_id> [--site server|<name>|all]
+nvflare job logs      <job_id> [--site server|<name>|all] [--tail N] [--since timestamp] [--max-bytes N]
 nvflare job log-config <job_id> [--site server|<name>|all] <level>
 ```
 

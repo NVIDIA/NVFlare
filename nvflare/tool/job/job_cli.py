@@ -15,6 +15,7 @@
 import argparse
 import datetime
 import os
+import re
 import shutil
 import sys
 import time
@@ -30,11 +31,7 @@ from pyhocon import ConfigTree
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
-from nvflare.tool.cli_session import (
-    add_startup_kit_selection_args,
-    new_cli_session,
-    new_cli_session_for_args,
-)
+from nvflare.tool.cli_session import add_startup_kit_selection_args, new_cli_session, new_cli_session_for_args
 from nvflare.tool.job.config.configer import (
     build_config_file_indices,
     filter_indices,
@@ -96,6 +93,18 @@ _ACTIVE_STARTUP_KIT_HINT = (
     "Run 'nvflare config list' and 'nvflare config use <id>', pass --kit-id <id> or --startup-kit <path>, "
     "or set NVFLARE_STARTUP_KIT_DIR for automation."
 )
+_DEFAULT_JOB_LOG_TAIL_LINES = 500
+_JOB_LOG_TS_RE = re.compile(r"^\[?(?P<ts>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[\.,]\d+)?)")
+
+
+def _non_negative_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(str(e))
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("value must be >= 0")
+    return parsed
 
 
 def find_filename_basename(f: str):
@@ -417,7 +426,8 @@ def display_available_templates(template_index_conf):
         name = fix_length_format(name, name_fix_length)
         description = fix_length_format(template_info.get(JOB_INFO_DESC_KEY), description_fix_length)
         execution_api_type = fix_length_format(
-            template_info.get(JOB_INFO_EXECUTION_API_TYPE_KEY), execution_api_type_fix_length
+            template_info.get(JOB_INFO_EXECUTION_API_TYPE_KEY),
+            execution_api_type_fix_length,
         )
         controller_type = fix_length_format(template_info.get(JOB_INFO_CONTROLLER_TYPE_KEY), controller_type_fix_length)
         print_human(" " * left_margin, name, description, controller_type, execution_api_type)
@@ -512,7 +522,9 @@ def submit_job(cmd_args):
                 shutil.rmtree(temp_job_dir)
 
 
-def _resolve_admin_user_and_dir_from_startup_kit(startup_kit_dir: str) -> Tuple[str, str]:
+def _resolve_admin_user_and_dir_from_startup_kit(
+    startup_kit_dir: str,
+) -> Tuple[str, str]:
     from nvflare.tool.kit.kit_config import resolve_admin_user_and_dir_from_startup_kit
 
     return resolve_admin_user_and_dir_from_startup_kit(startup_kit_dir)
@@ -599,7 +611,11 @@ def handle_job_cli_cmd(cmd_args):
 
 def def_job_cli_parser(sub_cmd):
     cmd = "job"
-    parser = sub_cmd.add_parser(cmd, help="submit, manage, and monitor FL jobs", formatter_class=_JOB_HELP_FORMATTER)
+    parser = sub_cmd.add_parser(
+        cmd,
+        help="submit, manage, and monitor FL jobs",
+        formatter_class=_JOB_HELP_FORMATTER,
+    )
     job_subparser = parser.add_subparsers(title="job subcommands", metavar="", dest="job_sub_cmd")
     define_submit_job_parser(job_subparser)
     define_job_monitor_parser(job_subparser)
@@ -1092,7 +1108,11 @@ def cmd_job_abort(cmd_args):
 
     if not cmd_args.force:
         if not sys.stdin.isatty():
-            output_error("INVALID_ARGS", exit_code=4, detail="use --force in non-interactive mode")
+            output_error(
+                "INVALID_ARGS",
+                exit_code=4,
+                detail="use --force in non-interactive mode",
+            )
             raise SystemExit(4)
         from nvflare.tool.cli_output import print_human, prompt_yn
 
@@ -1153,7 +1173,10 @@ def cmd_job_download(cmd_args):
     handle_schema_flag(
         job_sub_cmd_parser[CMD_JOB_DOWNLOAD],
         "nvflare job download",
-        ["nvflare job download <job_id>", "nvflare job download <job_id> -o /path/to/results"],
+        [
+            "nvflare job download <job_id>",
+            "nvflare job download <job_id> -o /path/to/results",
+        ],
         sys.argv[1:],
     )
 
@@ -1190,7 +1213,11 @@ def cmd_job_delete(cmd_args):
 
     if not cmd_args.force:
         if not sys.stdin.isatty():
-            output_error("INVALID_ARGS", exit_code=4, detail="use --force in non-interactive mode")
+            output_error(
+                "INVALID_ARGS",
+                exit_code=4,
+                detail="use --force in non-interactive mode",
+            )
             raise SystemExit(4)
         from nvflare.tool.cli_output import print_human, prompt_yn
 
@@ -1296,11 +1323,7 @@ _TERMINAL_JOB_STATES = {
 
 
 def cmd_job_stats(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import (
-        AuthenticationError,
-        JobNotFound,
-        NoConnection,
-    )
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1337,6 +1360,114 @@ def cmd_job_stats(cmd_args):
     output_ok({"job_id": cmd_args.job_id, "stats": result})
 
 
+def _normalize_log_timestamp(value: str) -> datetime.datetime:
+    text = (value or "").strip()
+    if not text:
+        raise ValueError("--since must be a non-empty timestamp")
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    text = text.replace(" ", "T", 1).replace(",", ".")
+    try:
+        ts = datetime.datetime.fromisoformat(text)
+    except ValueError as e:
+        raise ValueError(f"invalid --since timestamp: {value}") from e
+    if ts.tzinfo is not None:
+        ts = ts.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+    return ts
+
+
+def _parse_log_line_timestamp(line: str):
+    match = _JOB_LOG_TS_RE.match(line)
+    if not match:
+        return None
+    try:
+        return _normalize_log_timestamp(match.group("ts"))
+    except ValueError:
+        return None
+
+
+def _filter_log_since(text: str, since_ts: datetime.datetime):
+    lines = text.splitlines(keepends=True)
+    if not lines:
+        return text, False, False
+
+    filtered = []
+    keep_current = False
+    saw_timestamp = False
+    for line in lines:
+        line_ts = _parse_log_line_timestamp(line)
+        if line_ts is not None:
+            saw_timestamp = True
+            keep_current = line_ts >= since_ts
+        if keep_current:
+            filtered.append(line)
+
+    if not saw_timestamp:
+        return text, False, False
+    return "".join(filtered), True, len(filtered) != len(lines)
+
+
+def _tail_log_text(text: str, tail_lines: int):
+    lines = text.splitlines(keepends=True)
+    if tail_lines is None or len(lines) <= tail_lines:
+        return text, False
+    if tail_lines == 0:
+        return "", bool(lines)
+    return "".join(lines[-tail_lines:]), True
+
+
+def _truncate_log_bytes(text: str, max_bytes: int):
+    if max_bytes is None:
+        return text, False
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text, False
+    return encoded[:max_bytes].decode("utf-8", errors="ignore"), True
+
+
+def _line_count(text: str) -> int:
+    return len(text.splitlines()) if text else 0
+
+
+def _apply_job_log_bounds(logs: dict, tail_lines, since_ts, max_bytes):
+    bounded_logs = {}
+    sites = {}
+    any_truncated = False
+    since_applied_any = False
+
+    for site_name, log_text in logs.items():
+        if not isinstance(log_text, str):
+            bounded_logs[site_name] = log_text
+            sites[site_name] = {
+                "available": True,
+                "lines": None,
+                "logs_truncated": False,
+            }
+            continue
+
+        bounded = log_text
+        site_truncated = False
+        since_applied = False
+        if since_ts is not None:
+            bounded, since_applied, _since_filtered = _filter_log_since(bounded, since_ts)
+            since_applied_any = since_applied_any or since_applied
+
+        bounded, tail_truncated = _tail_log_text(bounded, tail_lines)
+        bounded, byte_truncated = _truncate_log_bytes(bounded, max_bytes)
+        site_truncated = tail_truncated or byte_truncated
+        any_truncated = any_truncated or site_truncated
+
+        bounded_logs[site_name] = bounded
+        sites[site_name] = {
+            "available": True,
+            "lines": _line_count(bounded),
+            "bytes": len(bounded.encode("utf-8")),
+            "logs_truncated": site_truncated,
+        }
+
+    return bounded_logs, sites, any_truncated, since_applied_any
+
+
 def cmd_job_logs(cmd_args):
     from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
@@ -1349,11 +1480,23 @@ def cmd_job_logs(cmd_args):
             "nvflare job logs abc123",
             "nvflare job logs abc123 --site site-1",
             "nvflare job logs abc123 --site all",
+            "nvflare job logs abc123 --site all --tail 200",
         ],
         sys.argv[1:],
     )
 
     site = getattr(cmd_args, "site", "server")
+    tail_lines = getattr(cmd_args, "tail", None)
+    since_value = getattr(cmd_args, "since", None)
+    max_bytes = getattr(cmd_args, "max_bytes", None)
+    default_tail_applied = tail_lines is None and since_value is None and max_bytes is None
+    if default_tail_applied:
+        tail_lines = _DEFAULT_JOB_LOG_TAIL_LINES
+    try:
+        since_ts = _normalize_log_timestamp(since_value) if since_value else None
+    except ValueError as e:
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+        return
 
     try:
         with _job_session_for_args(cmd_args) as sess:
@@ -1381,7 +1524,20 @@ def cmd_job_logs(cmd_args):
         )
         return
 
+    logs, sites, logs_truncated, since_applied = _apply_job_log_bounds(logs, tail_lines, since_ts, max_bytes)
+    for site_name, reason in unavailable.items():
+        sites[site_name] = {"available": False, "reason": reason}
+
     payload = {"job_id": cmd_args.job_id, "target": site, "logs": logs}
+    payload["logs_truncated"] = logs_truncated
+    payload["sites"] = sites
+    payload["filters"] = {
+        "tail": tail_lines,
+        "since": since_value,
+        "since_applied": since_applied,
+        "max_bytes": max_bytes,
+        "default_tail_applied": default_tail_applied,
+    }
     if unavailable:
         payload["unavailable"] = unavailable
     if not is_json_mode():
@@ -1439,6 +1595,23 @@ def define_job_logs_parser(job_subparser):
         dest="site",
         default="server",
         help="target site name, server, or all. Client logs must have been streamed to the server.",
+    )
+    p.add_argument(
+        "--tail",
+        type=_non_negative_int,
+        default=None,
+        help="return at most the last N log lines per site",
+    )
+    p.add_argument(
+        "--since",
+        default=None,
+        help="return log lines at or after this timestamp when timestamps are parseable",
+    )
+    p.add_argument(
+        "--max-bytes",
+        type=_non_negative_int,
+        default=None,
+        help="return at most N bytes per site",
     )
     add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
@@ -1513,7 +1686,14 @@ def _parse_monitor_duration_seconds(value) -> float:
 
 def _build_monitor_key_aliases(extra_metrics: list) -> dict:
     aliases = {
-        "round": ["round", "global_round", "current_round", "iteration", "iter", "epoch"],
+        "round": [
+            "round",
+            "global_round",
+            "current_round",
+            "iteration",
+            "iter",
+            "epoch",
+        ],
         "accuracy": ["accuracy", "acc", "val_acc", "test_acc"],
         "loss": ["loss", "train_loss", "val_loss", "test_loss"],
     }
@@ -1603,7 +1783,12 @@ def _emit_monitor_progress(job_id: str, job_meta: dict, state: dict, now: float,
 
 
 def _build_monitor_status_callback(
-    start: float, start_ts_holder: dict, emit_interval: int, stats_interval: int, stats_target: str, key_aliases: dict
+    start: float,
+    start_ts_holder: dict,
+    emit_interval: int,
+    stats_interval: int,
+    stats_target: str,
+    key_aliases: dict,
 ):
     def _status_cb(sess, job_id, job_meta, state):
         from nvflare.apis.job_def import JobMetaKey
@@ -1706,13 +1891,21 @@ def cmd_job_monitor(cmd_args):
         return
 
     if rc == MonitorReturnCode.TIMEOUT:
-        output_error("TIMEOUT", exit_code=3, detail="job did not reach terminal state within timeout")
+        output_error(
+            "TIMEOUT",
+            exit_code=3,
+            detail="job did not reach terminal state within timeout",
+        )
         return
 
     if rc == MonitorReturnCode.ENDED_BY_CB:
         meta = cb_state.get("last_meta")
         if meta is None:
-            output_error("INTERNAL_ERROR", exit_code=5, detail="monitoring stopped before job metadata was available")
+            output_error(
+                "INTERNAL_ERROR",
+                exit_code=5,
+                detail="monitoring stopped before job metadata was available",
+            )
             return
 
     if not meta:
@@ -1827,7 +2020,14 @@ def cmd_job_log(cmd_args):
         return
 
     sites = [site] if site != "all" else ["all"]
-    output_ok({"job_id": cmd_args.job_id, "config": level, "sites": sites, "status": "applied"})
+    output_ok(
+        {
+            "job_id": cmd_args.job_id,
+            "config": level,
+            "sites": sites,
+            "status": "applied",
+        }
+    )
 
 
 def define_job_monitor_parser(job_subparser):
