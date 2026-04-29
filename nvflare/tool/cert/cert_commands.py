@@ -1750,6 +1750,10 @@ def _build_sanitized_approval_site(local_site: dict) -> dict:
 
 
 def _server_cert_san_fields(site_meta: dict, request_meta: dict, project_profile: dict = None):
+    # Returns (None, None) for non-server certs, (default_host, additional_hosts) for server certs,
+    # or bare None on validation error (output_error_message already emitted). The caller must
+    # guard with `if server_san_fields is None` before destructuring — bare None signals error
+    # while (None, None) signals a valid non-server cert.
     if request_meta.get("cert_type") != "server":
         return None, None
     if not _is_project_shaped_site_meta(site_meta):
@@ -1771,19 +1775,6 @@ def _server_cert_san_fields(site_meta: dict, request_meta: dict, project_profile
         return None
     default_host = (project_profile or {}).get("server", {}).get("host") or server.get_default_host()
     return default_host, server.get_prop(PropKey.HOST_NAMES)
-
-
-def _build_site_metadata(request_meta: dict) -> dict:
-    site_meta = {
-        "name": request_meta["name"],
-        "org": request_meta["org"],
-        "type": request_meta["cert_type"],
-        "project": request_meta["project"],
-        "kind": request_meta["kind"],
-    }
-    if request_meta.get("cert_role"):
-        site_meta["cert_role"] = request_meta["cert_role"]
-    return site_meta
 
 
 def handle_cert_request(args):
@@ -1873,7 +1864,7 @@ def handle_cert_request(args):
         "csr_sha256": csr_result["csr_sha256"],
         "public_key_sha256": csr_result["public_key_sha256"],
     }
-    site_meta = local_site or _build_site_metadata(request_meta)
+    site_meta = local_site
     approval_site_meta = _build_sanitized_approval_site(site_meta)
 
     request_json_path = os.path.join(request_dir, "request.json")

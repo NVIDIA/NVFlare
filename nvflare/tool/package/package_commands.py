@@ -1920,7 +1920,7 @@ def _handle_signed_zip_package(args):
     signed_meta, site_meta, cert_name, file_contents = _load_signed_zip(args.input)
     if not signed_meta or not site_meta or not cert_name or not file_contents:
         return 1
-    if getattr(args, "endpoint", None) or getattr(args, "admin_port", None) is not None:
+    if getattr(args, "endpoint", None) or (getattr(args, "admin_port", None) is not None):
         output_error_message(
             "INVALID_ARGS",
             "Endpoint overrides are not supported for signed zip packaging.",
