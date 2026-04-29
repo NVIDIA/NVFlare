@@ -14,13 +14,16 @@
 
 import concurrent.futures
 import copy
+import os
 import threading
 import uuid
 from typing import Dict, List, Union
 
+from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell, TargetMessage
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, MessagePropKey, MessageType, ReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, make_reply
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
@@ -50,6 +53,15 @@ def _is_stream_channel(channel: str) -> bool:
         return False
     # if not excluded, all channels supporting streaming capabilities
     return True
+
+
+def _is_server_job_cell(my_info) -> bool:
+    fqcn = getattr(my_info, "fqcn", "")
+    if not fqcn:
+        return False
+
+    path = FQCN.split(fqcn)
+    return len(path) == 2 and path[0] == FQCN.ROOT_SERVER
 
 
 class SimpleWaiter:
@@ -82,13 +94,26 @@ class Adapter:
         # activates LazyDownloadRef decode so tensors are not downloaded at
         # this hop.
         channel = request.get_header(StreamHeaderKey.CHANNEL)
+        topic = request.get_header(StreamHeaderKey.TOPIC)
         passthrough = bool(request.get_header(MessageHeaderKey.PASS_THROUGH, False))
         if channel in self.cell.decode_pass_through_channels:
             passthrough = True
         decode_ctx = self.cell.get_fobs_context(props={FOBSContextKey.PASS_THROUGH: passthrough})
-        decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=decode_ctx)
+        try:
+            decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=decode_ctx)
+        except Exception as ex:
+            if (
+                channel == CellChannel.SERVER_COMMAND
+                and topic == ServerCommandNames.SUBMIT_UPDATE
+                and _is_server_job_cell(self.my_info)
+            ):
+                self.logger.critical(
+                    f"failed to decode streamed submit_update in server job cell {self.my_info.fqcn}; "
+                    f"exiting job process to fail the job: {secure_format_exception(ex)}"
+                )
+                os._exit(1)
+            raise
         request.set_header(MessageHeaderKey.CHANNEL, channel)
-        topic = request.get_header(StreamHeaderKey.TOPIC)
         request.set_header(MessageHeaderKey.TOPIC, topic)
         self.logger.debug(f"Call back on {stream_req_id=}: {channel=}, {topic=}")
 
