@@ -12,11 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
 import logging
+import os
 import re
+import tempfile
 import threading
 import time
 import uuid
+import weakref
 from itertools import permutations
 from unittest.mock import Mock
 
@@ -30,6 +34,7 @@ from nvflare.apis.impl.wf_comm_server import WFCommServer
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.signal import Signal
+from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -51,6 +56,18 @@ def create_task(name, data=None, timeout=0, before_task_sent_cb=None, result_rec
 def create_client(name, token=None):
     token = str(uuid.uuid4()) if token is None else token
     return Client(name=name, token=token)
+
+
+def attach_lazy_result(client_task: ClientTask, base_dir):
+    temp_dir = tempfile.mkdtemp(prefix="nvflare_tensors_test_finalize_", dir=str(base_dir))
+    file_path = os.path.join(temp_dir, "chunk_0.safetensors")
+    with open(file_path, "wb"):
+        pass
+    lazy_tensors = LazyTensorDict(key_to_file={"w": (file_path, "w")}, temp_dir=temp_dir)
+    lazy_ref = lazy_tensors.make_lazy_ref("w")
+    lazy_ref_ref = weakref.ref(lazy_ref)
+    client_task.result = Shareable({"params": {"w": lazy_ref}})
+    return temp_dir, lazy_ref_ref
 
 
 def assert_task_data_valid(data, input_data, method):
@@ -1122,6 +1139,29 @@ class TestBasic(TestController):
         assert task1.completion_status == TaskCompletionStatus.CANCELLED
         launch_thread.join()
         self.teardown_system(controller, fl_ctx)
+
+    def test_finalize_run_releases_client_task_results(self, tmp_path):
+        controller, fl_ctx, clients = self.setup_system()
+        client = clients[0]
+        task = create_task("__test_task")
+
+        controller.broadcast(task=task, fl_ctx=fl_ctx, targets=[client])
+        _, task_id, _ = controller.communicator.process_task_request(client=client, fl_ctx=fl_ctx)
+        client_task = controller.communicator._client_task_map[task_id]
+        temp_dir, lazy_ref_ref = attach_lazy_result(client_task, tmp_path)
+
+        assert os.path.exists(temp_dir)
+        assert controller.get_num_standing_tasks() == 1
+
+        controller.communicator.finalize_run(fl_ctx=fl_ctx)
+        gc.collect()
+
+        assert controller.get_num_standing_tasks() == 0
+        assert controller.communicator._client_task_map == {}
+        assert client_task.result is None
+        assert client_task.task is None
+        assert lazy_ref_ref() is None
+        assert not os.path.exists(temp_dir)
 
 
 @pytest.mark.parametrize("method", ["broadcast", "broadcast_and_wait"])
