@@ -1386,6 +1386,30 @@ nvflare job logs      <job_id> [--site server|<name>|all] [--tail N] [--since ti
 nvflare job log-config <job_id> [--site server|<name>|all] <level>
 ```
 
+#### `nvflare job download` JSON contract
+
+`nvflare job download <job_id> --format json` keeps the existing server download
+protocol unchanged. The CLI downloads the job result through the current transfer API,
+then discovers common artifacts under the final local destination on the CLI machine.
+It must not expose server workspace, job-store, or transfer temporary paths.
+
+The success envelope's `data` object includes:
+
+- `job_id`: requested job ID.
+- `download_path`: final local directory returned by the download API on the CLI
+  machine. This may differ from the requested destination if collision handling or the
+  transfer layer chooses a different final directory.
+- `path`: compatibility alias for `download_path` when present.
+- `artifacts`: discovered local artifact paths under `download_path`, such as global
+  model, metrics summary, and client log paths.
+- `missing_artifacts`: expected artifact categories that were not found locally.
+
+`missing_artifacts` is informational. The command must still succeed when expected
+model, metrics, or log artifacts are absent, as long as the download operation itself
+succeeded. Agents must use `data.artifacts.*` as the source of truth for consumable
+files instead of inferring paths from server locations or assuming a fixed layout under
+`download_path`.
+
 ### Add `nvflare study`
 
 All `nvflare study` commands connect to the server and require a startup kit to be

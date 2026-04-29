@@ -106,6 +106,16 @@ _ACTIVE_STARTUP_KIT_HINT = (
 )
 _DEFAULT_JOB_LOG_TAIL_LINES = 500
 _JOB_LOG_TS_RE = re.compile(r"^\[?(?P<ts>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[\.,]\d+)?)")
+_JOB_DOWNLOAD_GLOBAL_MODEL_NAMES = (
+    "FL_global_model.pt",
+    "global_model.pt",
+    "global_model.pth",
+    "best_FL_global_model.pt",
+    "best_global_model.pt",
+    "model_global.json",
+    "model_global.joblib",
+)
+_JOB_DOWNLOAD_EXPECTED_ARTIFACTS = ("global_model", "metrics_summary", "client_logs")
 
 
 def _non_negative_int(value: str) -> int:
@@ -1064,6 +1074,108 @@ def _job_session_for_args(cmd_args=None, study="default"):
     return _session()
 
 
+def _job_download_destination(job_id: str, output_dir: Optional[str]) -> str:
+    if not output_dir:
+        # download_job_result treats destination as the parent directory and moves
+        # the downloaded job folder under it. Passing cwd gives the default
+        # final local path ./<job_id> without nesting ./<job_id>/<job_id>.
+        output_dir = "."
+    return os.path.abspath(output_dir)
+
+
+def _is_remote_download_location(location: str) -> bool:
+    return bool(location and re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", location))
+
+
+def _local_download_path(location: str) -> Optional[str]:
+    if not location:
+        return None
+    location = str(location)
+    if _is_remote_download_location(location):
+        return None
+    return os.path.abspath(location)
+
+
+def _is_path_within(root_real_path: str, candidate_path: str) -> bool:
+    try:
+        return os.path.commonpath([root_real_path, os.path.realpath(candidate_path)]) == root_real_path
+    except ValueError:
+        return False
+
+
+def _iter_files_under(path: str):
+    if not path or not os.path.isdir(path):
+        return
+
+    root_real_path = os.path.realpath(path)
+    for root, dirs, files in os.walk(path):
+        dirs[:] = sorted(
+            d
+            for d in dirs
+            if not os.path.islink(os.path.join(root, d)) and _is_path_within(root_real_path, os.path.join(root, d))
+        )
+        for file_name in sorted(files):
+            file_path = os.path.join(root, file_name)
+            if os.path.islink(file_path) or not _is_path_within(root_real_path, file_path):
+                continue
+            yield file_path
+    return None
+
+
+def _is_identifiable_server_log(rel_parts: List[str]) -> bool:
+    return any(part.lower() in {"server", "app_server"} for part in rel_parts[:-1])
+
+
+def _site_name_from_log_path(download_path: str, log_path: str) -> Optional[str]:
+    try:
+        rel_path = os.path.relpath(log_path, download_path)
+    except ValueError:
+        return None
+
+    rel_parts = rel_path.split(os.sep)
+    if len(rel_parts) < 2 or _is_identifiable_server_log(rel_parts):
+        return None
+
+    parent_parts = rel_parts[:-1]
+    for part in parent_parts:
+        if part.startswith("app_site-"):
+            return part[len("app_") :]
+
+    for part in parent_parts:
+        if part.startswith("site-"):
+            return part
+
+    parent = parent_parts[-1]
+    if parent.lower() in {"local", "logs", "simulate_job", "startup", "workspace"}:
+        return None
+    return parent
+
+
+def _discover_job_download_artifacts(download_path: str) -> Tuple[dict, List[str]]:
+    artifacts = {}
+    client_logs = {}
+
+    for file_path in _iter_files_under(download_path):
+        file_name = os.path.basename(file_path)
+        if file_name in _JOB_DOWNLOAD_GLOBAL_MODEL_NAMES and "global_model" not in artifacts:
+            artifacts["global_model"] = file_path
+            continue
+        elif file_name == "metrics_summary.json" and "metrics_summary" not in artifacts:
+            artifacts["metrics_summary"] = file_path
+            continue
+        elif file_name != "log.txt":
+            continue
+
+        site_name = _site_name_from_log_path(download_path, file_path)
+        if site_name and site_name not in client_logs:
+            client_logs[site_name] = file_path
+    if client_logs:
+        artifacts["client_logs"] = client_logs
+
+    missing_artifacts = [name for name in _JOB_DOWNLOAD_EXPECTED_ARTIFACTS if name not in artifacts]
+    return artifacts, missing_artifacts
+
+
 def cmd_job_list(cmd_args):
     from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
@@ -1222,7 +1334,7 @@ def cmd_job_download(cmd_args):
         sys.argv[1:],
     )
 
-    destination = os.path.abspath(getattr(cmd_args, "output_dir", "./"))
+    destination = _job_download_destination(cmd_args.job_id, getattr(cmd_args, "output_dir", None))
     print_human(f"Downloading job {cmd_args.job_id} ...")
     try:
         with _job_session_for_args(cmd_args) as sess:
@@ -1236,9 +1348,19 @@ def cmd_job_download(cmd_args):
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
 
-    final_path = path or destination
-    print_human(f"Job result downloaded to: {final_path}")
-    output_ok({"job_id": cmd_args.job_id, "path": final_path})
+    path = str(path or destination)
+    download_path = _local_download_path(path)
+    artifacts, missing_artifacts = _discover_job_download_artifacts(download_path)
+    print_human(f"Job result downloaded to: {download_path or path}")
+    output_ok(
+        {
+            "job_id": cmd_args.job_id,
+            "download_path": download_path,
+            "path": download_path,
+            "artifacts": artifacts,
+            "missing_artifacts": missing_artifacts,
+        }
+    )
 
 
 def cmd_job_delete(cmd_args):
@@ -1342,8 +1464,8 @@ def define_download_job_parser(job_subparser):
         "--output-dir",
         dest="output_dir",
         type=str,
-        default="./",
-        help="destination directory",
+        default=None,
+        help="destination directory, default to ./<job_id>",
     )
     add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")

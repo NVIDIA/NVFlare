@@ -283,6 +283,50 @@ Download job results:
 
    nvflare job download <job_id> -o ./downloads
 
+For automation, use JSON output:
+
+.. code-block:: shell
+
+   nvflare job download <job_id> -o ./downloads --format json
+
+The JSON success response reports local paths on the machine running the CLI:
+
+.. code-block:: json
+
+   {
+     "schema_version": "1",
+     "status": "ok",
+     "exit_code": 0,
+     "data": {
+       "job_id": "abc123",
+       "download_path": "/abs/path/downloads/abc123",
+       "path": "/abs/path/downloads/abc123",
+       "artifacts": {
+         "global_model": "/abs/path/downloads/abc123/workspace/FL_global_model.pt",
+         "metrics_summary": "/abs/path/downloads/abc123/workspace/metrics_summary.json",
+         "client_logs": {
+           "site-1": "/abs/path/downloads/abc123/workspace/site-1/log.txt"
+         }
+       },
+       "missing_artifacts": []
+     }
+   }
+
+``download_path`` is the final local directory returned by the download API.
+It may differ from the requested ``--output-dir`` if the transfer layer chooses
+a collision-safe destination. ``path`` is a backward-compatible alias for
+``download_path`` when present.
+
+``artifacts`` contains local paths discovered under ``download_path``. Agents
+and scripts should use ``data.artifacts.*`` as the source of truth for
+consumable files instead of assuming a server workspace layout or constructing
+paths from ``download_path``. ``missing_artifacts`` lists expected categories,
+such as model, metrics, or client logs, that were not found locally. Missing
+artifacts do not make the command fail when the download itself succeeds.
+
+The server download protocol is unchanged; artifact discovery is a local CLI
+post-processing step after the result has been downloaded.
+
 Clone an existing job:
 
 .. code-block:: shell
@@ -311,7 +355,9 @@ Delete a job:
 Notes:
 
 - ``abort`` and ``delete`` support ``--force`` to skip the confirmation prompt.
-- ``download`` supports ``-o, --output-dir`` to choose the destination directory. Default: current working directory (``./``).
+- ``download`` supports ``-o, --output-dir`` to choose the destination
+  directory. Default: job-specific directory under the current working
+  directory (``./<job_id>``).
 - ``clone``, ``download``, ``abort``, and ``delete`` all support ``--schema``.
 
 **************
