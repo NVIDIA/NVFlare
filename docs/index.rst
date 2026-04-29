@@ -84,6 +84,7 @@ NVIDIA FLARE
    user_guide/admin_guide/deployment/aws_eks
    Running FLARE in Docker <user_guide/admin_guide/deployment/containerized_deployment>
    Running FLARE in Kubernetes <user_guide/admin_guide/deployment/helm_chart>
+   Brev Kubernetes Helm Deployment <user_guide/admin_guide/deployment/brev_deployment>
    Preflight Check <user_guide/nvflare_cli/preflight_check>
    user_guide/admin_guide/deployment/operation
    user_guide/admin_guide/monitoring
