@@ -28,6 +28,7 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.app_common.utils.tensor_disk_offload_context import (
     apply_enable_tensor_disk_offload,
+    cleanup_all_outstanding_offload_temps,
     restore_enable_tensor_disk_offload,
 )
 from nvflare.fuel.utils import fobs
@@ -246,6 +247,15 @@ class FedAvg(BaseFedAvg):
                 engine=getattr(self, "engine", None),
                 previous_value=previous_disk_offload,
             )
+            # Safety-net cleanup for any disk-offload temp dirs still
+            # registered. On normal completion these are typically already
+            # gone (cleaned by _TempDirRef.__del__ as scope exits); on
+            # abort_signal early return or unhandled exception the partial
+            # state held by self._aggr_helper / self.aggregator can keep
+            # LazyTensorDict references reachable, blocking GC. Without this
+            # sweep, those temp dirs leak on every aborted job.
+            if self.enable_tensor_disk_offload:
+                cleanup_all_outstanding_offload_temps()
 
     def _aggregate_one_result(self, result: FLModel) -> None:
         """Callback: aggregate ONE client result immediately (InTime aggregation)."""

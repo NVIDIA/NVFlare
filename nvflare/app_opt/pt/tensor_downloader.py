@@ -21,6 +21,7 @@ import torch
 from safetensors.torch import load as load_tensors
 from safetensors.torch import save as save_tensors
 
+from nvflare.app_common.utils.tensor_disk_offload_context import register_offload_temp_dir
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.streaming.cacheable import CacheableObject, ItemConsumer
 from nvflare.fuel.f3.streaming.download_service import download_object
@@ -213,6 +214,9 @@ def download_tensors_to_disk(
     Returns: tuple of (error message if any, LazyTensorDict for lazy access).
     """
     temp_dir = tempfile.mkdtemp(prefix="nvflare_tensors_")
+    # Register so the workflow's finally block can sweep this up if natural
+    # _TempDirRef.__del__ does not fire (e.g., on abort_signal early return).
+    register_offload_temp_dir(temp_dir)
 
     consumer = DiskTensorConsumer(temp_dir)
     try:

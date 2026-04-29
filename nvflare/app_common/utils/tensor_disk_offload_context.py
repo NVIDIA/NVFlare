@@ -12,9 +12,61 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
+import shutil
+import threading
 from typing import Any, Tuple
 
+logger = logging.getLogger(__name__)
+
 _ENABLE_TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"
+
+# Module-level registry of disk-offload temp dirs created during the current
+# process lifetime. Used as a safety net for cleanup paths where the natural
+# GC of _TempDirRef does not fire (notably FedAvg.run() returning early on
+# abort_signal — the partial state held by the controller's aggregation
+# helper keeps LazyTensorDict references reachable, blocking GC).
+_outstanding_temp_dirs = set()
+_outstanding_lock = threading.Lock()
+
+
+def register_offload_temp_dir(path: str) -> None:
+    """Track a disk-offload temp dir so it can be swept up on workflow exit.
+
+    Called by download_tensors_to_disk right after tempfile.mkdtemp().
+    """
+    with _outstanding_lock:
+        _outstanding_temp_dirs.add(path)
+
+
+def unregister_offload_temp_dir(path: str) -> None:
+    """Remove a temp dir from the registry once it has been cleaned up via
+    the natural _TempDirRef.__del__ / DiskTensorConsumer.download_failed
+    path. Idempotent.
+    """
+    with _outstanding_lock:
+        _outstanding_temp_dirs.discard(path)
+
+
+def cleanup_all_outstanding_offload_temps() -> None:
+    """Sweep any registered offload temp dirs that have not yet been cleaned.
+
+    Intended to be called from a workflow's ``finally`` block as a safety net
+    for exit paths where natural GC does not fire (abort_signal early return,
+    unhandled exceptions, etc.). On normal completion the registry is
+    typically empty by the time this runs because _TempDirRef.__del__ has
+    already cleaned and unregistered each dir.
+    """
+    with _outstanding_lock:
+        dirs = list(_outstanding_temp_dirs)
+        _outstanding_temp_dirs.clear()
+    for d in dirs:
+        try:
+            shutil.rmtree(d)
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logger.warning("failed to cleanup outstanding offload temp dir '%s': %s", d, e)
 
 
 def apply_enable_tensor_disk_offload(

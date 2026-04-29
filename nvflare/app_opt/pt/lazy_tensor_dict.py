@@ -28,6 +28,8 @@ import shutil
 
 from safetensors import safe_open
 
+from nvflare.app_common.utils.tensor_disk_offload_context import unregister_offload_temp_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,9 +37,14 @@ def _cleanup_temp_dir(path: str) -> None:
     try:
         shutil.rmtree(path)
     except FileNotFoundError:
-        return
+        pass
     except Exception as e:
         logger.warning("failed to cleanup tensor offload temp dir '%s': %s", path, e)
+    finally:
+        # Always unregister, even if rmtree failed — the registry's purpose is
+        # the safety-net sweep, and a failed rmtree here means a future sweep
+        # will retry rather than us tracking it forever.
+        unregister_offload_temp_dir(path)
 
 
 class _TempDirRef:

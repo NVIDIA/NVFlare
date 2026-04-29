@@ -12,9 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import tempfile
+
+import nvflare.app_common.utils.tensor_disk_offload_context as ctx
 from nvflare.app_common.utils.tensor_disk_offload_context import (
     apply_enable_tensor_disk_offload,
+    cleanup_all_outstanding_offload_temps,
+    register_offload_temp_dir,
     restore_enable_tensor_disk_offload,
+    unregister_offload_temp_dir,
 )
 
 
@@ -102,3 +109,101 @@ def test_apply_and_restore_use_run_manager_cell_when_available():
 
     restore_enable_tensor_disk_offload(engine, previous)
     assert run_cell.ctx["enable_tensor_disk_offload"] is False
+
+
+def _isolate_registry():
+    """Snapshot + clear the module-level registry so each test starts clean."""
+    with ctx._outstanding_lock:
+        snapshot = set(ctx._outstanding_temp_dirs)
+        ctx._outstanding_temp_dirs.clear()
+    return snapshot
+
+
+def _restore_registry(snapshot):
+    with ctx._outstanding_lock:
+        ctx._outstanding_temp_dirs.clear()
+        ctx._outstanding_temp_dirs.update(snapshot)
+
+
+def test_register_and_unregister_offload_temp_dir():
+    saved = _isolate_registry()
+    try:
+        register_offload_temp_dir("/tmp/nvflare_tensors_aaa")
+        register_offload_temp_dir("/tmp/nvflare_tensors_bbb")
+        assert ctx._outstanding_temp_dirs == {"/tmp/nvflare_tensors_aaa", "/tmp/nvflare_tensors_bbb"}
+
+        unregister_offload_temp_dir("/tmp/nvflare_tensors_aaa")
+        assert ctx._outstanding_temp_dirs == {"/tmp/nvflare_tensors_bbb"}
+
+        # Unregister a path that's not present should be a noop, not raise.
+        unregister_offload_temp_dir("/tmp/nvflare_tensors_never_added")
+        assert ctx._outstanding_temp_dirs == {"/tmp/nvflare_tensors_bbb"}
+    finally:
+        _restore_registry(saved)
+
+
+def test_cleanup_all_outstanding_removes_existing_dirs_and_clears_registry():
+    saved = _isolate_registry()
+    created = []
+    try:
+        for _ in range(3):
+            d = tempfile.mkdtemp(prefix="nvflare_tensors_test_")
+            created.append(d)
+            register_offload_temp_dir(d)
+            # Drop a sentinel file so we can verify rmtree actually ran.
+            with open(os.path.join(d, "sentinel"), "w") as f:
+                f.write("x")
+
+        for d in created:
+            assert os.path.isdir(d)
+
+        cleanup_all_outstanding_offload_temps()
+
+        for d in created:
+            assert not os.path.exists(d), f"{d} should have been removed"
+        assert ctx._outstanding_temp_dirs == set()
+    finally:
+        for d in created:
+            if os.path.exists(d):
+                import shutil
+
+                shutil.rmtree(d, ignore_errors=True)
+        _restore_registry(saved)
+
+
+def test_cleanup_all_outstanding_is_idempotent_and_handles_missing_dirs():
+    saved = _isolate_registry()
+    try:
+        # Register a path that does not exist — cleanup should not raise.
+        register_offload_temp_dir("/tmp/nvflare_tensors_nonexistent_1234567890")
+        cleanup_all_outstanding_offload_temps()
+        assert ctx._outstanding_temp_dirs == set()
+
+        # Second call on empty registry — also a noop.
+        cleanup_all_outstanding_offload_temps()
+        assert ctx._outstanding_temp_dirs == set()
+    finally:
+        _restore_registry(saved)
+
+
+def test_unregister_via_natural_cleanup_removes_from_registry():
+    """When _cleanup_temp_dir runs (the natural path), the registry entry
+    must also be removed so the safety-net sweep does not double-clean."""
+    from nvflare.app_opt.pt.lazy_tensor_dict import _cleanup_temp_dir
+
+    saved = _isolate_registry()
+    d = None
+    try:
+        d = tempfile.mkdtemp(prefix="nvflare_tensors_test_natural_")
+        register_offload_temp_dir(d)
+        assert d in ctx._outstanding_temp_dirs
+
+        _cleanup_temp_dir(d)
+        assert not os.path.exists(d)
+        assert d not in ctx._outstanding_temp_dirs
+    finally:
+        if d and os.path.exists(d):
+            import shutil
+
+            shutil.rmtree(d, ignore_errors=True)
+        _restore_registry(saved)
