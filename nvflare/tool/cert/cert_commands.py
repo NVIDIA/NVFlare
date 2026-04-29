@@ -39,6 +39,8 @@ from nvflare.lighter.constants import PropKey
 from nvflare.lighter.entity import participant_from_dict
 from nvflare.lighter.impl.cert import CertBuilder
 from nvflare.lighter.utils import (
+    Identity,
+    generate_cert,
     generate_keys,
     load_private_key_file,
     serialize_cert,
@@ -1106,7 +1108,7 @@ def _build_signed_cert(
     ca_cert: x509.Certificate,
     ca_key,
     cert_type: str,
-    now: datetime.datetime,
+    not_valid_before: datetime.datetime,
     not_valid_after: datetime.datetime,
     server_default_host: str = None,
     server_additional_hosts=None,
@@ -1177,17 +1179,14 @@ def _build_signed_cert(
         (x509.KeyUsage(**key_usage_kwargs), True),
         (x509.ExtendedKeyUsage(eku_oids), False),
     ]
-    return CertBuilder._generate_cert(
-        subject=subject_cn,
-        subject_org=subject_org,
-        issuer=issuer_cn,
+    return generate_cert(
+        subject=Identity(subject_cn, subject_org, cert_type),
+        issuer=Identity(issuer_cn),
         signing_pri_key=ca_key,
         subject_pub_key=csr.public_key(),
-        ca=False,
-        role=cert_type,
         server_default_host=server_default_host if cert_type == "server" else None,
         server_additional_hosts=server_additional_hosts if cert_type == "server" else None,
-        not_valid_before=now,
+        not_valid_before=not_valid_before,
         not_valid_after=not_valid_after,
         extra_extensions=extra_extensions,
     )
@@ -1356,7 +1355,7 @@ def sign_csr_files(
             ca_cert=ca_cert,
             ca_key=ca_key,
             cert_type=cert_type,
-            now=now,
+            not_valid_before=now,
             not_valid_after=leaf_not_valid_after,
             server_default_host=server_default_host,
             server_additional_hosts=server_additional_hosts,

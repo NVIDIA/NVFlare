@@ -58,6 +58,8 @@ def build_subject_alt_names(server_default_host=None, server_additional_hosts=No
                     sans.append(_host_to_subject_alt_name(h))
         return sans
 
+    if not fallback_subject_name:
+        raise ValueError("fallback_subject_name is required when server_default_host is not set")
     return [x509.DNSName(fallback_subject_name)]
 
 

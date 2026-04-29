@@ -36,7 +36,6 @@ from cryptography.x509.oid import NameOID
 
 # Ensure parsers are initialized by importing cert_cli (registers module-level parser refs)
 import nvflare.tool.cert.cert_cli  # noqa: F401
-from nvflare.lighter.impl.cert import CertBuilder
 from nvflare.lighter.utils import load_crt, load_private_key_file, serialize_cert
 from nvflare.tool import cli_output
 from nvflare.tool.cert.cert_commands import (
@@ -1554,6 +1553,9 @@ class TestCertSign:
         assert list(eku) == [x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]
 
     def test_sign_uses_centralized_cert_generation_for_common_x509_content(self, tmp_path):
+        from nvflare.lighter.utils import Identity
+        from nvflare.lighter.utils import generate_cert as utils_generate_cert
+
         ca_dir = _setup_ca(tmp_path)
         csr_dir = str(tmp_path / "csr-server")
         os.makedirs(csr_dir, exist_ok=True)
@@ -1563,11 +1565,10 @@ class TestCertSign:
         server_default_host = "server-public.hospital-central.org"
         server_additional_hosts = ["server1.hospital-central.org", "10.0.1.50"]
 
-        original_generate_cert = CertBuilder._generate_cert
         with patch(
-            "nvflare.tool.cert.cert_commands.CertBuilder._generate_cert",
-            wraps=original_generate_cert,
-        ) as generate_cert:
+            "nvflare.tool.cert.cert_commands.generate_cert",
+            wraps=utils_generate_cert,
+        ) as mock_generate_cert:
             result = sign_csr_files(
                 csr_path=csr_path,
                 ca_dir=ca_dir,
@@ -1578,11 +1579,11 @@ class TestCertSign:
             )
 
         assert result is not None
-        generate_cert.assert_called_once()
-        _, call_kwargs = generate_cert.call_args
-        assert call_kwargs["subject"] == "fl-server"
-        assert call_kwargs["subject_org"] == "hospital-central"
-        assert call_kwargs["role"] == "server"
+        mock_generate_cert.assert_called_once()
+        _, call_kwargs = mock_generate_cert.call_args
+        assert call_kwargs["subject"].name == "fl-server"
+        assert call_kwargs["subject"].org == "hospital-central"
+        assert call_kwargs["subject"].role == "server"
         assert call_kwargs["server_default_host"] == server_default_host
         assert call_kwargs["server_additional_hosts"] == server_additional_hosts
         assert len(call_kwargs["extra_extensions"]) == 3
@@ -1591,13 +1592,11 @@ class TestCertSign:
         ca_cert = load_crt(os.path.join(ca_dir, "rootCA.pem"))
         ca_key = load_private_key_file(os.path.join(ca_dir, "rootCA.key"))
         csr = _load_and_validate_csr(csr_path)
-        centralized_equivalent = original_generate_cert(
-            subject="fl-server",
-            subject_org="hospital-central",
-            issuer=ca_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value,
+        centralized_equivalent = utils_generate_cert(
+            subject=Identity("fl-server", "hospital-central", "server"),
+            issuer=Identity(ca_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value),
             signing_pri_key=ca_key,
             subject_pub_key=csr.public_key(),
-            role="server",
             server_default_host=server_default_host,
             server_additional_hosts=server_additional_hosts,
         )

@@ -331,8 +331,6 @@ class CertBuilder(Builder):
         server: Participant = None,
         server_default_host=None,
         server_additional_hosts=None,
-        not_valid_before=None,
-        not_valid_after=None,
         extra_extensions=None,
     ):
         if server:
@@ -350,8 +348,6 @@ class CertBuilder(Builder):
             ca=ca,
             server_default_host=server_default_host,
             server_additional_hosts=server_additional_hosts,
-            not_valid_before=not_valid_before,
-            not_valid_after=not_valid_after,
             extra_extensions=extra_extensions,
         )
 
