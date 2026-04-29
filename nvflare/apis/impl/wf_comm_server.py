@@ -793,6 +793,10 @@ class WFCommServer(FLComponent, WFCommSpec):
         task.before_task_sent_cb = None
         task.after_task_sent_cb = None
         task.result_received_cb = None
+        # finalize_run is called after controller.run has exited and the
+        # communicator is being torn down. Normal task-exit callbacks are run
+        # by the task monitor drain path; finalization only releases any task
+        # references still owned by this communicator.
         task.task_done_cb = None
 
     def _clear_standing_tasks(
@@ -1139,7 +1143,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                 self.cancel_task(task, fl_ctx=None, completion_status=TaskCompletionStatus.ABORTED)
                 break
 
-            task_done = task.props[_TASK_KEY_DONE]
+            task_done = task.props.get(_TASK_KEY_DONE, False)
             if task_done:
                 break
             time.sleep(self._task_check_period)

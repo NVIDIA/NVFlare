@@ -34,7 +34,6 @@ from nvflare.apis.impl.wf_comm_server import WFCommServer
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -59,11 +58,14 @@ def create_client(name, token=None):
 
 
 def attach_lazy_result(client_task: ClientTask, base_dir):
+    lazy_tensor_dict = pytest.importorskip(
+        "nvflare.app_opt.pt.lazy_tensor_dict", reason="lazy tensor cleanup test requires safetensors"
+    )
     temp_dir = tempfile.mkdtemp(prefix="nvflare_tensors_test_finalize_", dir=str(base_dir))
     file_path = os.path.join(temp_dir, "chunk_0.safetensors")
     with open(file_path, "wb"):
         pass
-    lazy_tensors = LazyTensorDict(key_to_file={"w": (file_path, "w")}, temp_dir=temp_dir)
+    lazy_tensors = lazy_tensor_dict.LazyTensorDict(key_to_file={"w": (file_path, "w")}, temp_dir=temp_dir)
     lazy_ref = lazy_tensors.make_lazy_ref("w")
     lazy_ref_ref = weakref.ref(lazy_ref)
     client_task.result = Shareable({"params": {"w": lazy_ref}})
