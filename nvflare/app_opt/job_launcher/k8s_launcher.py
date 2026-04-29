@@ -457,11 +457,17 @@ class K8sJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"missing {JobProcessArgs.EXE_MODULE} in {FLContextKey.JOB_PROCESS_ARGS}")
         _, job_cmd = exe_module_entry
 
+        workspace_root = args.workspace
         env = {}
         if app_custom_folder:
-            env["PYTHONPATH"] = app_custom_folder
+            workspace_root_abs = os.path.abspath(workspace_root)
+            custom_folder_abs = os.path.abspath(app_custom_folder)
+            if os.path.commonpath([workspace_root_abs, custom_folder_abs]) != workspace_root_abs:
+                raise RuntimeError(f"custom folder {app_custom_folder} is not under workspace {workspace_root}")
+            env["PYTHONPATH"] = os.path.join(
+                WORKSPACE_MOUNT_PATH, os.path.relpath(custom_folder_abs, workspace_root_abs)
+            )
 
-        workspace_root = args.workspace
         startup_dir = workspace_obj.get_startup_kit_dir()
         engine = fl_ctx.get_engine()
         owner_cell = getattr(engine, "cell", None) if engine else None
