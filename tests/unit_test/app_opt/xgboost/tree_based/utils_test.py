@@ -64,6 +64,8 @@ class TestUpdateModel(unittest.TestCase):
                          f"Expected {expected} trees, got {len(model_body['trees'])} "
                          f"(num_class blindness bug)")
         self.assertEqual(int(model_body["gbtree_model_param"]["num_trees"]), expected)
+        indptr = model_body["iteration_indptr"]
+        self.assertEqual(indptr[-1], expected)
 
     def test_tree_ids_are_sequential(self):
         """After merging, tree ids must be 0..N-1 with no gaps."""
