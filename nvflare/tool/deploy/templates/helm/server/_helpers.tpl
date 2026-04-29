@@ -2,7 +2,7 @@
 NVFlare server chart helpers
 */}}
 {{- define "nvflare-server.name" -}}
-{{- default .Chart.Name .Values.name | trunc 63 | trimSuffix "-" }}
+{{- default (default .Chart.Name .Values.name) .Values.serviceName | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{- define "nvflare-server.labels" -}}
