@@ -33,7 +33,7 @@ from nvflare.app_common.utils.tensor_disk_offload_context import unregister_offl
 logger = logging.getLogger(__name__)
 
 
-def _cleanup_temp_dir(path: str) -> None:
+def _cleanup_temp_dir(path: str, registry_token: str = "") -> None:
     try:
         shutil.rmtree(path)
     except FileNotFoundError:
@@ -41,10 +41,12 @@ def _cleanup_temp_dir(path: str) -> None:
     except Exception as e:
         logger.warning("failed to cleanup tensor offload temp dir '%s': %s", path, e)
     finally:
-        # Always unregister, even if rmtree failed — the registry's purpose is
-        # the safety-net sweep, and a failed rmtree here means a future sweep
-        # will retry rather than us tracking it forever.
-        unregister_offload_temp_dir(path)
+        # Always unregister, even if rmtree failed. On rmtree failure the
+        # path is silently abandoned (logged via the except handler above)
+        # rather than retried by the registry sweep — the registry's purpose
+        # is to track outstanding cleanups, and once we have made a cleanup
+        # attempt the registry should reflect that.
+        unregister_offload_temp_dir(path, registry_token)
 
 
 class _TempDirRef:
@@ -54,14 +56,15 @@ class _TempDirRef:
     The directory is deleted only when ALL holders are garbage collected.
     """
 
-    def __init__(self, temp_dir: str):
+    def __init__(self, temp_dir: str, registry_token: str = ""):
         self.path = temp_dir
+        self.registry_token = registry_token
         self._deleted = False
 
     def cleanup(self):
         if not self._deleted:
             self._deleted = True
-            _cleanup_temp_dir(self.path)
+            _cleanup_temp_dir(self.path, self.registry_token)
 
     def __del__(self):
         self.cleanup()
@@ -97,9 +100,9 @@ class LazyTensorDict:
     via safetensors safe_open (mmap) on access.
     """
 
-    def __init__(self, key_to_file: dict[str, tuple[str, str]], temp_dir: str):
+    def __init__(self, key_to_file: dict[str, tuple[str, str]], temp_dir: str, registry_token: str = ""):
         self._key_to_file = key_to_file
-        self._temp_ref = _TempDirRef(temp_dir)
+        self._temp_ref = _TempDirRef(temp_dir, registry_token)
 
     def __getitem__(self, key):
         file_path, st_key = self._key_to_file[key]

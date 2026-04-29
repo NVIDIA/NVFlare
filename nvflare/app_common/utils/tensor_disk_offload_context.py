@@ -15,51 +15,75 @@
 import logging
 import shutil
 import threading
+import uuid
 from typing import Any, Tuple
 
 logger = logging.getLogger(__name__)
 
 _ENABLE_TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"
+_DISK_OFFLOAD_REGISTRY_TOKEN = "tensor_disk_offload_registry_token"
 
-# Module-level registry of disk-offload temp dirs created during the current
-# process lifetime. Used as a safety net for cleanup paths where the natural
-# GC of _TempDirRef does not fire (notably FedAvg.run() returning early on
-# abort_signal — the partial state held by the controller's aggregation
-# helper keeps LazyTensorDict references reachable, blocking GC).
-_outstanding_temp_dirs = set()
+# Module-level registry mapping an opaque scope token to the set of disk-offload
+# temp dirs created within that scope. Used as a safety net for cleanup paths
+# where the natural GC of _TempDirRef does not fire (notably FedAvg.run()
+# returning early on abort_signal). The per-token scoping is important so that
+# in environments where multiple FedAvg instances run concurrently in one
+# Python process (e.g., NVFlare simulator mode), one instance's cleanup does
+# not delete another instance's still-live temp dirs.
+_outstanding_temp_dirs = {}  # type: dict; token (str) -> set[str]
 _outstanding_lock = threading.Lock()
 
 
-def register_offload_temp_dir(path: str) -> None:
-    """Track a disk-offload temp dir so it can be swept up on workflow exit.
+def new_registry_token() -> str:
+    """Generate a fresh opaque token for a workflow run's registry scope."""
+    return uuid.uuid4().hex
 
-    Called by download_tensors_to_disk right after tempfile.mkdtemp().
+
+def register_offload_temp_dir(path: str, token: str) -> None:
+    """Track a disk-offload temp dir under the given scope token.
+
+    Called by download_tensors_to_disk right after tempfile.mkdtemp(). The
+    token is read from the cell's FOBS context (set by
+    apply_enable_tensor_disk_offload at the start of the workflow's run()).
+    No-op if token is empty, allowing direct callers that do not opt into
+    the registry (e.g., in tests) to skip tracking.
     """
+    if not token:
+        return
     with _outstanding_lock:
-        _outstanding_temp_dirs.add(path)
+        _outstanding_temp_dirs.setdefault(token, set()).add(path)
 
 
-def unregister_offload_temp_dir(path: str) -> None:
-    """Remove a temp dir from the registry once it has been cleaned up via
-    the natural _TempDirRef.__del__ / DiskTensorConsumer.download_failed
-    path. Idempotent.
+def unregister_offload_temp_dir(path: str, token: str) -> None:
+    """Remove a temp dir from the registry. Idempotent. No-op if token empty.
+
+    Called by the natural cleanup path (_cleanup_temp_dir's finally block)
+    so the registry stays consistent with on-disk state.
     """
+    if not token:
+        return
     with _outstanding_lock:
-        _outstanding_temp_dirs.discard(path)
+        scope = _outstanding_temp_dirs.get(token)
+        if scope is not None:
+            scope.discard(path)
+            if not scope:
+                del _outstanding_temp_dirs[token]
 
 
-def cleanup_all_outstanding_offload_temps() -> None:
-    """Sweep any registered offload temp dirs that have not yet been cleaned.
+def cleanup_offload_temps_for_token(token: str) -> None:
+    """Sweep any registered offload temp dirs under the given scope token.
 
     Intended to be called from a workflow's ``finally`` block as a safety net
     for exit paths where natural GC does not fire (abort_signal early return,
-    unhandled exceptions, etc.). On normal completion the registry is
-    typically empty by the time this runs because _TempDirRef.__del__ has
-    already cleaned and unregistered each dir.
+    unhandled exceptions, etc.). Only dirs registered under THIS token are
+    removed; dirs under other tokens (concurrent workflows) are untouched.
+    On normal completion the scope is typically empty already because
+    _TempDirRef.__del__ has cleaned and unregistered each dir.
     """
+    if not token:
+        return
     with _outstanding_lock:
-        dirs = list(_outstanding_temp_dirs)
-        _outstanding_temp_dirs.clear()
+        dirs = list(_outstanding_temp_dirs.pop(token, ()))
     for d in dirs:
         try:
             shutil.rmtree(d)
@@ -72,11 +96,16 @@ def cleanup_all_outstanding_offload_temps() -> None:
 def apply_enable_tensor_disk_offload(
     engine,
     enabled: bool,
+    registry_token: str = "",
 ) -> Tuple[Any, bool]:
     """Apply enable_tensor_disk_offload to cell FOBS context.
 
+    Also propagates registry_token so that download_tensors_to_disk can scope
+    its registry entries to the calling workflow's run(). Pass an empty
+    registry_token to opt out of registry tracking.
+
     Returns:
-      (previous value, applied flag).
+      (previous value of enable_tensor_disk_offload, applied flag).
     """
     if not engine:
         return None, False
@@ -89,14 +118,25 @@ def apply_enable_tensor_disk_offload(
     if not cell:
         return None, False
 
-    previous = cell.get_fobs_context().get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
+    fobs_ctx = cell.get_fobs_context()
+    previous = fobs_ctx.get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
+    updates = {}
     if previous != enabled:
-        cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: enabled})
+        updates[_ENABLE_TENSOR_DISK_OFFLOAD] = enabled
+    if registry_token and fobs_ctx.get(_DISK_OFFLOAD_REGISTRY_TOKEN, "") != registry_token:
+        updates[_DISK_OFFLOAD_REGISTRY_TOKEN] = registry_token
+    if updates:
+        cell.update_fobs_context(updates)
     return previous, True
 
 
 def restore_enable_tensor_disk_offload(engine, previous_value: Any) -> None:
-    """Restore prior enable_tensor_disk_offload value on a cell."""
+    """Restore prior enable_tensor_disk_offload value and clear registry token.
+
+    Clearing the token ensures any subsequent operation on this cell that is
+    not driven by the just-finished workflow does not register into the now-
+    completed token's scope.
+    """
     # previous_value is None only when apply was not executed because no
     # engine/cell was available; False is a valid prior value and must restore.
     if not engine or previous_value is None:
@@ -110,6 +150,11 @@ def restore_enable_tensor_disk_offload(engine, previous_value: Any) -> None:
     if not cell:
         return
 
-    current = cell.get_fobs_context().get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
-    if current != previous_value:
-        cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: previous_value})
+    fobs_ctx = cell.get_fobs_context()
+    updates = {}
+    if fobs_ctx.get(_ENABLE_TENSOR_DISK_OFFLOAD, False) != previous_value:
+        updates[_ENABLE_TENSOR_DISK_OFFLOAD] = previous_value
+    if fobs_ctx.get(_DISK_OFFLOAD_REGISTRY_TOKEN):
+        updates[_DISK_OFFLOAD_REGISTRY_TOKEN] = ""
+    if updates:
+        cell.update_fobs_context(updates)

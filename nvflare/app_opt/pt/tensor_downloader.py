@@ -165,9 +165,10 @@ def _extract_safetensors_keys(data: bytes) -> list[str]:
 class DiskTensorConsumer(ItemConsumer):
     """Writes raw safetensors bytes to disk without deserializing to tensors."""
 
-    def __init__(self, temp_dir: str):
+    def __init__(self, temp_dir: str, registry_token: str = ""):
         ItemConsumer.__init__(self)
         self._temp_dir = temp_dir
+        self._registry_token = registry_token
         self._file_counter = 0
 
     def consume_items(self, items: List[Any], result: Any) -> Any:
@@ -197,7 +198,7 @@ class DiskTensorConsumer(ItemConsumer):
         # Eager cleanup on download callback error; the outer caller may also
         # attempt cleanup via consumer.error path. Double cleanup is intentional
         # and safe because _cleanup_temp_dir handles already-removed paths.
-        _cleanup_temp_dir(self._temp_dir)
+        _cleanup_temp_dir(self._temp_dir, self._registry_token)
 
 
 def download_tensors_to_disk(
@@ -213,12 +214,23 @@ def download_tensors_to_disk(
 
     Returns: tuple of (error message if any, LazyTensorDict for lazy access).
     """
+    # The registry token is set by apply_enable_tensor_disk_offload at the
+    # start of the workflow's run(). Empty token = no registry tracking
+    # (still works, just relies on natural _TempDirRef.__del__ for cleanup).
+    # Tolerate cell=None so this function remains usable from unit tests that
+    # mock out download_object.
+    registry_token = ""
+    if cell is not None:
+        registry_token = cell.get_fobs_context().get("tensor_disk_offload_registry_token", "")
+
     temp_dir = tempfile.mkdtemp(prefix="nvflare_tensors_")
     # Register so the workflow's finally block can sweep this up if natural
     # _TempDirRef.__del__ does not fire (e.g., on abort_signal early return).
-    register_offload_temp_dir(temp_dir)
+    # Scoped by registry_token so concurrent workflows in the same process
+    # do not delete each other's still-live temp dirs.
+    register_offload_temp_dir(temp_dir, registry_token)
 
-    consumer = DiskTensorConsumer(temp_dir)
+    consumer = DiskTensorConsumer(temp_dir, registry_token)
     try:
         download_object(
             from_fqcn=from_fqcn,
@@ -231,12 +243,12 @@ def download_tensors_to_disk(
             abort_signal=abort_signal,
         )
     except Exception:
-        _cleanup_temp_dir(temp_dir)
+        _cleanup_temp_dir(temp_dir, registry_token)
         raise
 
     if consumer.error:
-        _cleanup_temp_dir(temp_dir)
+        _cleanup_temp_dir(temp_dir, registry_token)
         return consumer.error, None
 
     key_to_file = consumer.result if consumer.result is not None else {}
-    return None, LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+    return None, LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir, registry_token=registry_token)

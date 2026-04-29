@@ -236,7 +236,7 @@ def test_download_tensors_to_disk_second_chance_cleanup_on_consumer_error(monkey
     def fake_download_object(**kwargs):
         kwargs["consumer"].error = "download failed"
 
-    def fake_cleanup(path):
+    def fake_cleanup(path, registry_token=""):
         cleanup_calls.append(path)
         shutil.rmtree(path, ignore_errors=True)
 

@@ -28,7 +28,8 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.app_common.utils.tensor_disk_offload_context import (
     apply_enable_tensor_disk_offload,
-    cleanup_all_outstanding_offload_temps,
+    cleanup_offload_temps_for_token,
+    new_registry_token,
     restore_enable_tensor_disk_offload,
 )
 from nvflare.fuel.utils import fobs
@@ -139,9 +140,17 @@ class FedAvg(BaseFedAvg):
         self._params_type = None  # Only store params_type, not full result
 
     def run(self) -> None:
+        # Generate a unique scope token for this run() invocation so that
+        # cleanup_offload_temps_for_token only sweeps dirs registered by this
+        # FedAvg instance. Important when multiple FedAvg jobs run concurrently
+        # in the same Python process (e.g., NVFlare simulator mode): without
+        # per-token scoping, one job's abort would delete another job's
+        # still-live temp dirs.
+        registry_token = new_registry_token() if self.enable_tensor_disk_offload else ""
         previous_disk_offload, disk_offload_applied = apply_enable_tensor_disk_offload(
             engine=getattr(self, "engine", None),
             enabled=self.enable_tensor_disk_offload,
+            registry_token=registry_token,
         )
         if self.enable_tensor_disk_offload and not disk_offload_applied:
             self.warning(
@@ -248,14 +257,17 @@ class FedAvg(BaseFedAvg):
                 previous_value=previous_disk_offload,
             )
             # Safety-net cleanup for any disk-offload temp dirs still
-            # registered. On normal completion these are typically already
-            # gone (cleaned by _TempDirRef.__del__ as scope exits); on
-            # abort_signal early return or unhandled exception the partial
-            # state held by self._aggr_helper / self.aggregator can keep
+            # registered under THIS run's token. On normal completion the
+            # token's scope is typically already empty (dirs were cleaned by
+            # _TempDirRef.__del__ as references went out of scope); on
+            # abort_signal early return or unhandled exception some partial
+            # state in the controller / streaming layer can keep
             # LazyTensorDict references reachable, blocking GC. Without this
-            # sweep, those temp dirs leak on every aborted job.
+            # sweep, those temp dirs leak on every aborted job. Scoping by
+            # registry_token ensures concurrent FedAvg instances are not
+            # affected.
             if self.enable_tensor_disk_offload:
-                cleanup_all_outstanding_offload_temps()
+                cleanup_offload_temps_for_token(registry_token)
 
     def _aggregate_one_result(self, result: FLModel) -> None:
         """Callback: aggregate ONE client result immediately (InTime aggregation)."""
