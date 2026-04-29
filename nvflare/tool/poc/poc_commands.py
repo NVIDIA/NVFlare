@@ -1466,6 +1466,15 @@ def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> List[int]:
     return gpu_ids
 
 
+def _get_poc_start_ready_timeout(cmd_args) -> int:
+    ready_timeout = getattr(cmd_args, "timeout", POC_START_READY_TIMEOUT)
+    if isinstance(ready_timeout, bool) or not isinstance(ready_timeout, int):
+        ready_timeout = POC_START_READY_TIMEOUT
+    if ready_timeout <= 0:
+        raise CLIException("--timeout must be greater than 0 seconds")
+    return ready_timeout
+
+
 def start_poc(cmd_args):
     from nvflare.tool.cli_output import is_json_mode, output_error, output_error_message, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
@@ -1484,6 +1493,11 @@ def start_poc(cmd_args):
     study = getattr(cmd_args, "study", None)
     no_wait = getattr(cmd_args, "no_wait", False)
     no_wait = no_wait if isinstance(no_wait, bool) else False
+    try:
+        ready_timeout = _get_poc_start_ready_timeout(cmd_args)
+    except CLIException as e:
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+        raise SystemExit(4)
 
     port_preflight = {
         "checked": False,
@@ -1542,7 +1556,12 @@ def start_poc(cmd_args):
     if not no_wait and service_config:
         try:
             wait_performed = _wait_for_poc_system_ready(
-                poc_workspace, project_config, service_config, services_list, excluded
+                poc_workspace,
+                project_config,
+                service_config,
+                services_list,
+                excluded,
+                timeout_in_sec=ready_timeout,
             )
             ready = wait_performed
         except SystemStartTimeout as e:
@@ -1568,6 +1587,7 @@ def start_poc(cmd_args):
         "default_port": endpoint_info["default_port"],
         "default_server_port": endpoint_info["default_server_port"],
         "default_admin_port": endpoint_info["default_admin_port"],
+        "ready_timeout": ready_timeout,
         "clients": clients,
     }
     result.update(port_diagnostics)
@@ -1609,6 +1629,7 @@ def _wait_for_poc_system_ready(
     service_config: Dict,
     services_list: List[str],
     excluded: List[str],
+    timeout_in_sec: int = POC_START_READY_TIMEOUT,
 ) -> bool:
     starts_server, expected_clients = _get_started_readiness_participants(service_config, services_list, excluded)
     if not starts_server and not expected_clients:
@@ -1622,7 +1643,7 @@ def _wait_for_poc_system_ready(
         username=service_config[SC.FLARE_PROJ_ADMIN],
         secure_mode=True,
         second_to_wait=0,
-        timeout_in_sec=POC_START_READY_TIMEOUT,
+        timeout_in_sec=timeout_in_sec,
         poll_interval=1.0,
         conn_timeout=1.0,
         expected_clients=expected_clients,
@@ -2192,6 +2213,12 @@ def define_start_parser(poc_parser):
         dest="no_wait",
         action="store_true",
         help="return after starting processes without waiting for admin server/client readiness",
+    )
+    start_parser.add_argument(
+        "--timeout",
+        type=int,
+        default=POC_START_READY_TIMEOUT,
+        help=f"seconds to wait for admin server/client readiness, default {POC_START_READY_TIMEOUT}",
     )
     start_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     start_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")

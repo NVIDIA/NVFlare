@@ -1031,6 +1031,7 @@ activates the first Project Admin kit. The JSON success payload includes:
 | `-ex`, `--exclude` | str | No | `""` | Exclude service directory |
 | `-gpu`, `--gpu` | int... | No | `None` | GPU device IDs |
 | `--no-wait` | flag | No | — | Return after process start without readiness wait |
+| `--timeout` | int | No | `POC_START_READY_TIMEOUT` | Seconds to wait for readiness |
 | `-debug`, `--debug` | flag | No | — | Debug mode |
 | `--schema` | flag | No | — | Print command schema and exit |
 
@@ -1039,6 +1040,7 @@ explicitly selected. In JSON mode, success data includes:
 
 - `status`: `running` after readiness wait, or `starting` with `--no-wait`.
 - `ready`: present when readiness was checked or explicitly skipped.
+- `ready_timeout`: configured readiness timeout in seconds.
 - `server_url`: compatibility URL for the FL server endpoint.
 - `server_address`: bound FL server address, for example `localhost:8002`.
 - `admin_address`: bound admin endpoint address, for example `localhost:8003`.

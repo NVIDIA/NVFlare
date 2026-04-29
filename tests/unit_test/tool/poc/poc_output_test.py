@@ -512,6 +512,67 @@ class TestPocOutput:
         }
         assert data["data"]["ready"] is True
 
+    def test_start_poc_timeout_controls_readiness_wait(self, capsys, tmp_path):
+        from nvflare.tool.poc.poc_commands import start_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        args = MagicMock()
+        args.service = "all"
+        args.exclude = ""
+        args.gpu = None
+        args.study = None
+        args.no_wait = False
+        args.timeout = 12
+
+        project_config = {"participants": [{"name": "server", "type": "server"}, {"name": "site-1", "type": "client"}]}
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_CLIENTS: ["site-1"],
+        }
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands._start_poc", return_value=None),
+            patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(project_config, service_config)),
+            patch("nvflare.tool.poc.poc_commands._is_local_port_available", return_value=(True, None)),
+            patch("nvflare.tool.poc.poc_commands._wait_for_poc_system_ready", return_value=True) as wait_ready,
+        ):
+            start_poc(args)
+
+        assert wait_ready.call_args.kwargs["timeout_in_sec"] == 12
+        data = json.loads(capsys.readouterr().out)
+        assert data["data"]["ready"] is True
+        assert data["data"]["ready_timeout"] == 12
+
+    def test_start_poc_invalid_timeout_exits_4(self, capsys, tmp_path):
+        from nvflare.tool.poc.poc_commands import start_poc
+
+        args = MagicMock()
+        args.service = "all"
+        args.exclude = ""
+        args.gpu = None
+        args.study = None
+        args.no_wait = False
+        args.timeout = 0
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands._start_poc") as start,
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                start_poc(args)
+
+        assert exc_info.value.code == 4
+        start.assert_not_called()
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INVALID_ARGS"
+        assert "--timeout must be greater than 0 seconds" in data["message"]
+
     def test_start_poc_error_includes_port_conflict_metadata(self, capsys, tmp_path):
         from nvflare.cli_exception import CLIException
         from nvflare.lighter.constants import PropKey
@@ -669,6 +730,21 @@ class TestPocOutput:
 
         args = root.parse_args(["poc", "start", "--no-wait"])
         assert args.no_wait is True
+
+    def test_poc_start_parser_has_timeout_flag(self):
+        import argparse
+
+        from nvflare.tool.poc.poc_commands import POC_START_READY_TIMEOUT, def_poc_parser
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        def_poc_parser(subs)
+
+        args = root.parse_args(["poc", "start"])
+        assert args.timeout == POC_START_READY_TIMEOUT
+
+        args = root.parse_args(["poc", "start", "--timeout", "45"])
+        assert args.timeout == 45
 
     def test_poc_stop_parser_has_no_wait_flag(self):
         import argparse

@@ -162,7 +162,8 @@ Use ``nvflare poc start`` to launch services in the prepared POC workspace:
 .. code-block:: none
 
    nvflare poc start [-h] [-p [SERVICE]] [-ex [EXCLUDE]] [-gpu [GPU ...]]
-                     [--study STUDY] [--no-wait] [-debug] [--schema]
+                     [--study STUDY] [--no-wait] [--timeout SECONDS]
+                     [-debug] [--schema]
 
 Options:
 
@@ -174,6 +175,8 @@ Options:
   client services.
 - ``--no-wait``: return after starting processes without waiting for the admin
   server and selected clients to become ready.
+- ``--timeout``: seconds to wait for the admin server and selected clients to
+  become ready. Defaults to the built-in POC readiness timeout.
 - ``-debug, --debug``: debug mode.
 - ``--schema``: print command schema as JSON and exit.
 
@@ -184,11 +187,12 @@ Behavior changes:
   clients only.
 - By default, the command waits until the admin server accepts connections and
   selected clients are registered before returning ``status: running``.
+- Use ``--timeout`` to control this readiness wait.
 - With ``--no-wait``, the command returns immediately with ``status: starting``.
 - The command returns JSON with ``status``, ``server_url``, ``server_address``,
-  ``admin_address``, ``clients``, ``port_conflict``, ``port_preflight``,
-  ``warnings``, and, when readiness was checked or explicitly skipped,
-  ``ready``.
+  ``admin_address``, ``clients``, ``ready_timeout``, ``port_conflict``,
+  ``port_preflight``, ``warnings``, and, when readiness was checked or
+  explicitly skipped, ``ready``.
 - Use ``data.server_address`` and ``data.admin_address`` as the machine-readable
   endpoint addresses for subsequent automation. ``data.server_url`` is kept for
   compatibility with existing clients.
@@ -202,6 +206,7 @@ Examples:
 .. code-block:: shell
 
    nvflare poc start
+   nvflare poc start --timeout 60
    nvflare poc start -p server
    nvflare poc start -p admin@nvidia.com
    nvflare poc start -p admin@nvidia.com --study cancer_research
