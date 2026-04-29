@@ -369,6 +369,47 @@ class TestRemoveClient:
             session.remove_client("")
 
 
+class TestDisableEnableClient:
+    def test_disable_client_sends_command_and_returns_payload(self):
+        session = _make_session()
+        payload = {"clients": [{"client_name": "site-1", "state": "disabled"}]}
+        reply = _ok_meta_result()
+        reply["data"] = [{"type": "dict", "data": payload}]
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            result = session.disable_client("site-1")
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.DISABLE_CLIENT, "site-1"]
+        assert result == payload
+
+    def test_enable_client_sends_command_and_returns_payload(self):
+        session = _make_session()
+        payload = {"clients": [{"client_name": "site-1", "state": "enabled"}]}
+        reply = _ok_meta_result()
+        reply["data"] = [{"type": "dict", "data": payload}]
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            result = session.enable_client("site-1")
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.ENABLE_CLIENT, "site-1"]
+        assert result == payload
+
+    def test_disable_enable_quote_spaced_client_name(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.disable_client("site 1")
+        assert split_to_args(mock_cmd.call_args[0][0]) == [AdminCommandNames.DISABLE_CLIENT, "site 1"]
+
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.enable_client("site 1")
+        assert split_to_args(mock_cmd.call_args[0][0]) == [AdminCommandNames.ENABLE_CLIENT, "site 1"]
+
+    def test_disable_enable_raise_on_empty_client_name(self):
+        session = _make_session()
+        with pytest.raises(ValueError):
+            session.disable_client("")
+        with pytest.raises(ValueError):
+            session.enable_client("")
+
+
 class TestStudyCommands:
     def test_register_study_sends_expected_command(self):
         session = _make_session()

@@ -18,6 +18,7 @@ import time
 from typing import List, Optional
 
 from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey
 from nvflare.apis.utils.format_check import name_check
 from nvflare.apis.workspace import Workspace
@@ -63,6 +64,9 @@ from .api_spec import (
 )
 
 _VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
+_DEFAULT_STATE_CHANGE_TIMEOUT = 30.0
+_STATE_CHANGE_POLL_INTERVAL = 0.5
+_STATE_CHANGE_CONNECT_TIMEOUT = 1.0
 
 __all__ = ["NoConnection", "NoReply", "SystemInfo", "TargetType"]
 
@@ -105,6 +109,8 @@ class Session(SessionSpec):
         assert isinstance(study, str), "study must be str"
         assert os.path.isdir(startup_path), f"startup kit does not exist at {startup_path}"
 
+        self.startup_path = startup_path
+        self.secure_mode = secure_mode
         workspace = Workspace(root_dir=startup_path)
         conf = secure_load_admin_config(workspace)
         admin_config = conf.get_admin_config()
@@ -143,7 +149,13 @@ class Session(SessionSpec):
         if self.api.closed:
             raise SessionClosed("session closed")
 
-        self.api.connect(timeout)
+        try:
+            self.api.connect(timeout)
+        except FLCommunicationError as e:
+            message = str(e)
+            if "cannot connect to server" in message or "cannot authenticate to server" in message:
+                raise NoConnection(message) from e
+            raise
         result = self.api.login()
         status = result.get(ResultKey.STATUS) if isinstance(result, dict) else None
         details = result.get(ResultKey.DETAILS, "") if isinstance(result, dict) else ""
@@ -541,7 +553,126 @@ class Session(SessionSpec):
         meta = result[ResultKey.META]
         return meta.get(MetaKey.CLIENT_STATUS, None)
 
-    def restart(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
+    def _close_ignore_errors(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+    def _new_poll_session(self):
+        return Session(
+            username=self.username,
+            startup_path=self.startup_path,
+            secure_mode=self.secure_mode,
+            debug=self._debug,
+            study=self._study,
+        )
+
+    def _poll_system_info(self, connect_timeout: float):
+        sess = None
+        try:
+            sess = self._new_poll_session()
+            sess.try_connect(connect_timeout)
+            return sess.get_system_info()
+        finally:
+            if sess:
+                sess._close_ignore_errors()
+
+    def _wait_for_server_down(self, timeout: float):
+        deadline = time.time() + timeout
+        last_error = "server is still reachable"
+        while time.time() < deadline:
+            try:
+                remaining = max(deadline - time.time(), 0.1)
+                sys_info = self._poll_system_info(min(_STATE_CHANGE_CONNECT_TIMEOUT, remaining))
+                last_error = f"server is still reachable: {sys_info.server_info.status}"
+            except NoConnection:
+                return
+            except Exception as e:
+                last_error = str(e)
+            time.sleep(min(_STATE_CHANGE_POLL_INTERVAL, max(deadline - time.time(), 0.0)))
+
+        raise TimeoutError(f"server did not stop within {timeout} seconds; last error: {last_error}")
+
+    def _wait_for_server_restart(self, previous_start_time, timeout: float):
+        deadline = time.time() + timeout
+        seen_down = False
+        last_error = "server restart has not completed"
+        while time.time() < deadline:
+            try:
+                remaining = max(deadline - time.time(), 0.1)
+                sys_info = self._poll_system_info(min(_STATE_CHANGE_CONNECT_TIMEOUT, remaining))
+                current_start_time = sys_info.server_info.start_time
+                if seen_down or (previous_start_time is not None and current_start_time != previous_start_time):
+                    return sys_info
+                if previous_start_time is None:
+                    last_error = "waiting for server to go down before confirming restart"
+                else:
+                    last_error = "server is still running with the previous start time"
+            except NoConnection:
+                seen_down = True
+                last_error = "server is not reachable yet"
+            except Exception as e:
+                last_error = str(e)
+            time.sleep(min(_STATE_CHANGE_POLL_INTERVAL, max(deadline - time.time(), 0.0)))
+
+        raise TimeoutError(f"server did not restart within {timeout} seconds; last error: {last_error}")
+
+    def _client_last_connect_times(self, client_names: Optional[List[str]] = None):
+        sys_info = self.get_system_info()
+        connected = {client.name: client.last_connect_time for client in sys_info.client_info}
+        if client_names:
+            return {client_name: connected.get(client_name) for client_name in client_names}
+        return connected
+
+    def _wait_for_clients_shutdown(self, client_names: Optional[List[str]], timeout: float):
+        deadline = time.time() + timeout
+        target_names = set(client_names or [])
+        last_error = "clients are still connected"
+        while time.time() < deadline:
+            sys_info = self.get_system_info()
+            connected = {client.name for client in sys_info.client_info}
+            remaining = target_names & connected if target_names else connected
+            if not remaining:
+                return
+            last_error = f"clients are still connected: {', '.join(sorted(remaining))}"
+            time.sleep(min(_STATE_CHANGE_POLL_INTERVAL, max(deadline - time.time(), 0.0)))
+
+        raise TimeoutError(f"clients did not stop within {timeout} seconds; last error: {last_error}")
+
+    def _wait_for_clients_restart(self, previous_client_times, timeout: float):
+        if not previous_client_times:
+            return
+
+        deadline = time.time() + timeout
+        expected_names = set(previous_client_times)
+        last_error = "clients have not reconnected yet"
+        while time.time() < deadline:
+            sys_info = self.get_system_info()
+            connected = {client.name: client.last_connect_time for client in sys_info.client_info}
+            waiting = []
+            for client_name in expected_names:
+                current_time = connected.get(client_name)
+                previous_time = previous_client_times.get(client_name)
+                if current_time is None:
+                    waiting.append(client_name)
+                elif previous_time is not None and current_time == previous_time:
+                    waiting.append(client_name)
+
+            if not waiting:
+                return
+            last_error = f"clients have not reconnected: {', '.join(sorted(waiting))}"
+            time.sleep(min(_STATE_CHANGE_POLL_INTERVAL, max(deadline - time.time(), 0.0)))
+
+        raise TimeoutError(f"clients did not restart within {timeout} seconds; last error: {last_error}")
+
+    def restart(
+        self,
+        target_type: str,
+        client_names: Optional[List[str]] = None,
+        wait: bool = True,
+        timeout: float = _DEFAULT_STATE_CHANGE_TIMEOUT,
+    ) -> dict:
         """Restart the server, specific clients, or all participants.
 
         Args:
@@ -553,6 +684,17 @@ class Session(SessionSpec):
         if target_type not in _VALID_TARGET_TYPES:
             raise ValueError(f"restart target_type must be one of {_VALID_TARGET_TYPES}")
 
+        previous_server_start_time = None
+        previous_client_times = None
+        if wait:
+            if target_type in (TargetType.SERVER, TargetType.ALL):
+                try:
+                    previous_server_start_time = self.get_system_info().server_info.start_time
+                except Exception:
+                    previous_server_start_time = None
+            elif target_type == TargetType.CLIENT:
+                previous_client_times = self._client_last_connect_times(client_names)
+
         parts = [AdminCommandNames.RESTART, target_type]
         if target_type == TargetType.CLIENT and client_names:
             _validate_target_strs(client_names)
@@ -560,9 +702,21 @@ class Session(SessionSpec):
 
         command = join_args(parts)
         result = self._do_command(command)
+        if wait:
+            if target_type in (TargetType.SERVER, TargetType.ALL):
+                self._close_ignore_errors()
+                self._wait_for_server_restart(previous_server_start_time, timeout)
+            elif target_type == TargetType.CLIENT:
+                self._wait_for_clients_restart(previous_client_times, timeout)
         return result[ResultKey.META]
 
-    def shutdown(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
+    def shutdown(
+        self,
+        target_type: str,
+        client_names: Optional[List[str]] = None,
+        wait: bool = True,
+        timeout: float = _DEFAULT_STATE_CHANGE_TIMEOUT,
+    ) -> dict:
         """Shut down the server, specific clients, or all participants.
 
         Args:
@@ -582,13 +736,11 @@ class Session(SessionSpec):
         command = join_args(parts)
         result = self._do_command(command)
         if target_type in (TargetType.SERVER, TargetType.ALL):
-            try:
-                self.close()
-            except Exception:
-                # The shutdown request already succeeded; the server may tear down the
-                # connection before the client can complete logout. Preserve the command
-                # result instead of masking it with a secondary close failure.
-                pass
+            self._close_ignore_errors()
+            if wait:
+                self._wait_for_server_down(timeout)
+        elif wait:
+            self._wait_for_clients_shutdown(client_names, timeout)
         return result[ResultKey.META]
 
     def set_timeout(self, value: float):
@@ -1082,6 +1234,36 @@ class Session(SessionSpec):
             raise ValueError("client_name must be a non-empty str")
 
         self._do_command(join_args([AdminCommandNames.REMOVE_CLIENT, client_name]))
+
+    def disable_client(self, client_name: str) -> dict:
+        """Disable a client from reconnecting to the system.
+
+        Args:
+            client_name (str): name of the client to disable
+
+        Returns: command result dictionary
+
+        """
+        if not client_name or not isinstance(client_name, str):
+            raise ValueError("client_name must be a non-empty str")
+
+        reply = self._do_command(join_args([AdminCommandNames.DISABLE_CLIENT, client_name]))
+        return self._get_dict_data(reply)
+
+    def enable_client(self, client_name: str) -> dict:
+        """Enable a disabled client to reconnect to the system.
+
+        Args:
+            client_name (str): name of the client to enable
+
+        Returns: command result dictionary
+
+        """
+        if not client_name or not isinstance(client_name, str):
+            raise ValueError("client_name must be a non-empty str")
+
+        reply = self._do_command(join_args([AdminCommandNames.ENABLE_CLIENT, client_name]))
+        return self._get_dict_data(reply)
 
     @staticmethod
     def _filter_job_log_text(log_text: str, tail_lines: Optional[int], grep_pattern: Optional[str]) -> str:

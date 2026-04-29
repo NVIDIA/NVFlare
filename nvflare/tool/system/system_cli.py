@@ -24,6 +24,8 @@ CMD_SYSTEM_RESOURCES = "resources"
 CMD_SYSTEM_SHUTDOWN = "shutdown"
 CMD_SYSTEM_RESTART = "restart"
 CMD_SYSTEM_REMOVE_CLIENT = "remove-client"
+CMD_SYSTEM_DISABLE_CLIENT = "disable-client"
+CMD_SYSTEM_ENABLE_CLIENT = "enable-client"
 CMD_SYSTEM_VERSION = "version"
 CMD_SYSTEM_LOG_CONFIG = "log-config"
 
@@ -53,6 +55,7 @@ def def_system_cli_parser(system_parser):
     p.add_argument("target", choices=["server", "client", "all"])
     p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--force", action="store_true")
+    p.add_argument("--no-wait", dest="no_wait", action="store_true")
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_SHUTDOWN] = p
 
@@ -61,15 +64,30 @@ def def_system_cli_parser(system_parser):
     p.add_argument("target", choices=["server", "client", "all"])
     p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--force", action="store_true")
+    p.add_argument("--no-wait", dest="no_wait", action="store_true")
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_RESTART] = p
 
     # remove-client
-    p = sub.add_parser(CMD_SYSTEM_REMOVE_CLIENT, help="remove a client from the federation")
-    p.add_argument("client_name", help="name of the client to remove")
+    p = sub.add_parser(CMD_SYSTEM_REMOVE_CLIENT, help="remove a client registry entry")
+    p.add_argument("client_name", help="name of the client registry entry to remove")
     p.add_argument("--force", action="store_true")
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_REMOVE_CLIENT] = p
+
+    # disable-client
+    p = sub.add_parser(CMD_SYSTEM_DISABLE_CLIENT, help="disable a client from reconnecting")
+    p.add_argument("client_name", help="name of the client to disable")
+    p.add_argument("--force", action="store_true")
+    p.add_argument("--schema", action="store_true")
+    _system_sub_cmd_parsers[CMD_SYSTEM_DISABLE_CLIENT] = p
+
+    # enable-client
+    p = sub.add_parser(CMD_SYSTEM_ENABLE_CLIENT, help="enable a disabled client to reconnect")
+    p.add_argument("client_name", help="name of the client to enable")
+    p.add_argument("--force", action="store_true")
+    p.add_argument("--schema", action="store_true")
+    _system_sub_cmd_parsers[CMD_SYSTEM_ENABLE_CLIENT] = p
 
     # version
     p = sub.add_parser(CMD_SYSTEM_VERSION, help="show NVFlare version on each remote site")
@@ -341,6 +359,8 @@ def cmd_system_shutdown(args):
 
     target = args.target
     client_names = getattr(args, "client_names", [])
+    no_wait = getattr(args, "no_wait", False)
+    no_wait = no_wait if isinstance(no_wait, bool) else False
 
     if target != "client" and client_names:
         output_error(
@@ -354,17 +374,32 @@ def cmd_system_shutdown(args):
 
     try:
         with _system_session(args) as sess:
-            result = sess.shutdown(target, client_names=client_names or None)
+            if no_wait:
+                result = sess.shutdown(target, client_names=client_names or None, wait=False)
+            else:
+                result = sess.shutdown(target, client_names=client_names or None)
     except (AuthenticationError, NoConnection):
         raise
     except InvalidTarget as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
+    except TimeoutError as e:
+        output_error_message(
+            "CONNECTION_FAILED",
+            message="System shutdown did not complete before the timeout.",
+            hint=(
+                "Check system status, or use 'nvflare system shutdown <target> --no-wait' "
+                "for fire-and-forget shutdown."
+            ),
+            exit_code=2,
+            detail=str(e),
+        )
+        raise SystemExit(2)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         raise SystemExit(2)
 
-    output_ok({"target": target, "status": "shutdown initiated", "result": result})
+    output_ok({"target": target, "status": "shutdown initiated" if no_wait else "stopped", "result": result})
 
 
 def cmd_system_restart(args):
@@ -380,6 +415,8 @@ def cmd_system_restart(args):
 
     target = args.target
     client_names = getattr(args, "client_names", [])
+    no_wait = getattr(args, "no_wait", False)
+    no_wait = no_wait if isinstance(no_wait, bool) else False
 
     if target != "client" and client_names:
         output_error(
@@ -393,17 +430,32 @@ def cmd_system_restart(args):
 
     try:
         with _system_session(args) as sess:
-            result = sess.restart(target, client_names=client_names or None)
+            if no_wait:
+                result = sess.restart(target, client_names=client_names or None, wait=False)
+            else:
+                result = sess.restart(target, client_names=client_names or None)
     except (AuthenticationError, NoConnection):
         raise
     except InvalidTarget as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
+    except TimeoutError as e:
+        output_error_message(
+            "CONNECTION_FAILED",
+            message="System restart did not complete before the timeout.",
+            hint=(
+                "Check system status, or use 'nvflare system restart <target> --no-wait' "
+                "for fire-and-forget restart."
+            ),
+            exit_code=2,
+            detail=str(e),
+        )
+        raise SystemExit(2)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         raise SystemExit(2)
 
-    output_ok({"target": target, "status": "restart initiated", "result": result})
+    output_ok({"target": target, "status": "restart initiated" if no_wait else "restarted", "result": result})
 
 
 def cmd_system_version(args):
@@ -527,7 +579,81 @@ def cmd_system_remove_client(args):
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         raise SystemExit(2)
 
-    output_ok({"client_name": client_name, "status": "removed"})
+    output_ok(
+        {
+            "client_name": client_name,
+            "status": "deregistered_from_server_registry",
+            "reconnect_prevented": False,
+            "credential_revoked": False,
+            "next_step": "Use nvflare system disable-client to prevent this client from reconnecting.",
+        }
+    )
+
+
+def _first_client_result(result: dict, client_name: str, state: str, rejoin_allowed: bool) -> dict:
+    clients = result.get("clients") if isinstance(result, dict) else None
+    if clients and isinstance(clients, list):
+        first = clients[0]
+        if isinstance(first, dict):
+            return first
+    return {
+        "client_name": client_name,
+        "state": state,
+        "credential_revoked": False,
+        "rejoin_allowed": rejoin_allowed,
+    }
+
+
+def cmd_system_disable_client(args):
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        _system_sub_cmd_parsers.get(CMD_SYSTEM_DISABLE_CLIENT),
+        "nvflare system disable-client",
+        ["nvflare system disable-client site-1 --force"],
+        sys.argv[1:],
+    )
+
+    client_name = args.client_name
+    _confirm_or_force(f"Really disable client '{client_name}'?", args)
+
+    try:
+        with _system_session(args) as sess:
+            result = sess.disable_client(client_name)
+    except (AuthenticationError, NoConnection):
+        raise
+    except Exception as e:
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        raise SystemExit(2)
+
+    output_ok(_first_client_result(result, client_name, "disabled", False))
+
+
+def cmd_system_enable_client(args):
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        _system_sub_cmd_parsers.get(CMD_SYSTEM_ENABLE_CLIENT),
+        "nvflare system enable-client",
+        ["nvflare system enable-client site-1 --force"],
+        sys.argv[1:],
+    )
+
+    client_name = args.client_name
+    _confirm_or_force(f"Really enable client '{client_name}'?", args)
+
+    try:
+        with _system_session(args) as sess:
+            result = sess.enable_client(client_name)
+    except (AuthenticationError, NoConnection):
+        raise
+    except Exception as e:
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        raise SystemExit(2)
+
+    output_ok(_first_client_result(result, client_name, "enabled", True))
 
 
 _system_handlers = {
@@ -536,6 +662,8 @@ _system_handlers = {
     CMD_SYSTEM_SHUTDOWN: cmd_system_shutdown,
     CMD_SYSTEM_RESTART: cmd_system_restart,
     CMD_SYSTEM_REMOVE_CLIENT: cmd_system_remove_client,
+    CMD_SYSTEM_DISABLE_CLIENT: cmd_system_disable_client,
+    CMD_SYSTEM_ENABLE_CLIENT: cmd_system_enable_client,
     CMD_SYSTEM_VERSION: cmd_system_version,
     CMD_SYSTEM_LOG_CONFIG: cmd_system_log,
 }

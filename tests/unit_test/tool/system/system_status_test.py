@@ -254,6 +254,8 @@ class TestSystemStatus:
             ["shutdown", "server", "--force"],
             ["restart", "server", "--force"],
             ["remove-client", "site-1", "--force"],
+            ["disable-client", "site-1", "--force"],
+            ["enable-client", "site-1", "--force"],
             ["version"],
             ["log-config", "INFO"],
         ],
@@ -311,6 +313,8 @@ class TestSystemStatus:
             ("shutdown", system_cli.cmd_system_shutdown),
             ("restart", system_cli.cmd_system_restart),
             ("remove-client", system_cli.cmd_system_remove_client),
+            ("disable-client", system_cli.cmd_system_disable_client),
+            ("enable-client", system_cli.cmd_system_enable_client),
             ("version", system_cli.cmd_system_version),
             ("log-config", system_cli.cmd_system_log),
         ]
@@ -819,7 +823,9 @@ class TestSystemRemoveClient:
         data = json.loads(capsys.readouterr().out)
         assert data["status"] == "ok"
         assert data["data"]["client_name"] == "site-1"
-        assert data["data"]["status"] == "removed"
+        assert data["data"]["status"] == "deregistered_from_server_registry"
+        assert data["data"]["reconnect_prevented"] is False
+        assert data["data"]["credential_revoked"] is False
 
     def test_remove_client_invalid_target_exits_4(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_remove_client
@@ -866,3 +872,87 @@ class TestSystemRemoveClient:
         args = parser.parse_args(["remove-client", "site-1", "--force"])
         assert args.client_name == "site-1"
         assert args.force is True
+
+
+class TestSystemDisableEnableClient:
+    """Tests for nvflare system disable-client and enable-client commands."""
+
+    @pytest.fixture(autouse=True)
+    def json_mode(self, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+
+    def _make_args(self, client_name="site-1", force=True):
+        args = MagicMock()
+        args.client_name = client_name
+        args.force = force
+        return args
+
+    def test_disable_client_calls_session_disable_client(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_disable_client
+
+        args = self._make_args(client_name="site-1")
+        sess = MagicMock()
+        sess.disable_client.return_value = {
+            "clients": [
+                {
+                    "client_name": "site-1",
+                    "state": "disabled",
+                    "active_session_removed": True,
+                    "credential_revoked": False,
+                    "rejoin_allowed": False,
+                }
+            ]
+        }
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
+            cmd_system_disable_client(args)
+
+        sess.disable_client.assert_called_once_with("site-1")
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "ok"
+        assert data["data"]["client_name"] == "site-1"
+        assert data["data"]["state"] == "disabled"
+        assert data["data"]["active_session_removed"] is True
+        assert data["data"]["credential_revoked"] is False
+        assert data["data"]["rejoin_allowed"] is False
+
+    def test_enable_client_calls_session_enable_client(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_enable_client
+
+        args = self._make_args(client_name="site-1")
+        sess = MagicMock()
+        sess.enable_client.return_value = {
+            "clients": [
+                {
+                    "client_name": "site-1",
+                    "state": "enabled",
+                    "was_disabled": True,
+                    "credential_revoked": False,
+                    "rejoin_allowed": True,
+                }
+            ]
+        }
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
+            cmd_system_enable_client(args)
+
+        sess.enable_client.assert_called_once_with("site-1")
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "ok"
+        assert data["data"]["client_name"] == "site-1"
+        assert data["data"]["state"] == "enabled"
+        assert data["data"]["was_disabled"] is True
+        assert data["data"]["credential_revoked"] is False
+        assert data["data"]["rejoin_allowed"] is True
+
+    def test_disable_enable_parser_accepts_client_name(self):
+        from nvflare.tool.system.system_cli import def_system_cli_parser
+
+        parser = argparse.ArgumentParser(prog="nvflare system")
+        def_system_cli_parser(parser)
+        disable_args = parser.parse_args(["disable-client", "site-1", "--force"])
+        enable_args = parser.parse_args(["enable-client", "site-1", "--force"])
+        assert disable_args.client_name == "site-1"
+        assert enable_args.client_name == "site-1"
+        assert disable_args.force is True
+        assert enable_args.force is True

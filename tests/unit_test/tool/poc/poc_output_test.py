@@ -332,6 +332,7 @@ class TestPocOutput:
             patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
             patch("nvflare.tool.poc.poc_commands._start_poc", return_value=None),
             patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(project_config, service_config)),
+            patch("nvflare.tool.poc.poc_commands._wait_for_poc_system_ready", return_value=True),
         ):
             start_poc(args)
 
@@ -340,6 +341,81 @@ class TestPocOutput:
         assert data["status"] == "ok"
         assert data["data"]["server_url"] == "grpc://localhost:9443"
         assert data["data"]["clients"] == ["site-1", "site-2"]
+        assert data["data"]["ready"] is True
+
+    def test_start_poc_no_wait_reports_starting_and_skips_readiness(self, capsys, tmp_path):
+        from nvflare.tool.poc.poc_commands import start_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        args = MagicMock()
+        args.service = "all"
+        args.exclude = ""
+        args.gpu = None
+        args.study = None
+        args.no_wait = True
+
+        project_config = {"participants": [{"name": "server", "type": "server"}, {"name": "site-1", "type": "client"}]}
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_CLIENTS: ["site-1"],
+        }
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands._start_poc", return_value=None),
+            patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(project_config, service_config)),
+            patch("nvflare.tool.poc.poc_commands._wait_for_poc_system_ready") as wait_ready,
+        ):
+            start_poc(args)
+
+        wait_ready.assert_not_called()
+        data = json.loads(capsys.readouterr().out)
+        assert data["data"]["status"] == "starting"
+        assert data["data"]["ready"] is False
+
+    def test_start_poc_readiness_timeout_exits_connection_failed(self, capsys, tmp_path):
+        from nvflare.tool.api_utils import SystemStartTimeout
+        from nvflare.tool.poc.poc_commands import start_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        args = MagicMock()
+        args.service = "all"
+        args.exclude = ""
+        args.gpu = None
+        args.study = None
+        args.no_wait = False
+
+        project_config = {"participants": [{"name": "server", "type": "server"}, {"name": "site-1", "type": "client"}]}
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_CLIENTS: ["site-1"],
+        }
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands._start_poc", return_value=None),
+            patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(project_config, service_config)),
+            patch(
+                "nvflare.tool.poc.poc_commands._wait_for_poc_system_ready",
+                side_effect=SystemStartTimeout("cannot connect to server with 1 clients within 30 sec"),
+            ),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                start_poc(args)
+
+        assert exc_info.value.code == 2
+        data = json.loads(capsys.readouterr().out)
+        assert data["error_code"] == "CONNECTION_FAILED"
+        assert data["exit_code"] == 2
+        assert "--no-wait" in data["hint"]
 
     # ------------------------------------------------------------------ poc prepare parsers
 
@@ -355,6 +431,18 @@ class TestPocOutput:
 
         args = root.parse_args(["poc", "prepare", "--force"])
         assert args.force is True
+
+    def test_poc_start_parser_has_no_wait_flag(self):
+        import argparse
+
+        from nvflare.tool.poc.poc_commands import def_poc_parser
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        def_poc_parser(subs)
+
+        args = root.parse_args(["poc", "start", "--no-wait"])
+        assert args.no_wait is True
 
     def test_stop_poc_invalid_service_name_exits_4(self, capsys, tmp_path):
         """stop_poc with an unknown -p/--service name exits 4 (structured error), not 1."""

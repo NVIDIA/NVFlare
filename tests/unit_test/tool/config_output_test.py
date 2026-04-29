@@ -31,7 +31,7 @@ def _config_getter(values):
 
 
 class TestConfigOutput:
-    """Tests for nvflare config after startup-kit registry ownership moved to nvflare config kit."""
+    """Tests for nvflare config after startup-kit registry ownership moved to config subcommands."""
 
     @pytest.fixture(autouse=True)
     def json_mode(self, monkeypatch):
@@ -39,7 +39,9 @@ class TestConfigOutput:
 
     def _make_args(self, **kwargs):
         return SimpleNamespace(
+            startup_kit_dir=kwargs.get("startup_kit_dir"),
             poc_workspace_dir=kwargs.get("poc_workspace_dir"),
+            job_templates_dir=kwargs.get("job_templates_dir"),
             config_sub_cmd=kwargs.get("config_sub_cmd"),
             debug=False,
             schema=False,
@@ -77,7 +79,7 @@ class TestConfigOutput:
         assert "poc_startup_kit_dir" not in data["data"]
         assert "prod_startup_kit_dir" not in data["data"]
 
-    def test_config_parser_has_schema_flag_poc_workspace_and_kit_subcommand(self):
+    def test_config_parser_has_schema_flag_compat_flags_and_flat_startup_kit_subcommands(self):
         from nvflare.cli import def_config_parser
 
         root = argparse.ArgumentParser()
@@ -90,9 +92,14 @@ class TestConfigOutput:
         args = root.parse_args(["config", "-pw", "/path/to/poc"])
         assert args.poc_workspace_dir == "/path/to/poc"
 
-        args = root.parse_args(["config", "kit", "use", "project_admin"])
-        assert args.config_sub_cmd == "kit"
-        assert args.kit_sub_cmd == "use"
+        args = root.parse_args(["config", "-d", "/path/to/startup"])
+        assert args.startup_kit_dir == "/path/to/startup"
+
+        args = root.parse_args(["config", "-jt", "/path/to/templates"])
+        assert args.job_templates_dir == "/path/to/templates"
+
+        args = root.parse_args(["config", "use", "project_admin"])
+        assert args.config_sub_cmd == "use"
         assert args.kit_id == "project_admin"
 
     @pytest.mark.parametrize(
@@ -100,13 +107,10 @@ class TestConfigOutput:
         [
             ["--poc.startup_kit", "/path/to/startup"],
             ["--prod.startup_kit", "/path/to/startup"],
-            ["--startup_kit_dir", "/path/to/startup"],
-            ["-d", "/path/to/startup"],
-            ["-jt", "/path/to/templates"],
-            ["--job_templates_dir", "/path/to/templates"],
+            ["--poc.workspace", "/path/to/poc"],
         ],
     )
-    def test_config_parser_rejects_old_startup_kit_arguments(self, old_args):
+    def test_config_parser_rejects_interim_arguments_that_were_not_in_2_7(self, old_args):
         from nvflare.cli import def_config_parser
 
         root = argparse.ArgumentParser()
@@ -147,6 +151,57 @@ class TestConfigOutput:
         assert "startup_kit_dir" not in data["data"]
         assert "poc_startup_kit_dir" not in data["data"]
         assert "prod_startup_kit_dir" not in data["data"]
+
+    def test_config_compat_startup_kit_flag_registers_and_activates_with_warning(self, capsys):
+        from nvflare.cli import handle_config_cmd
+
+        args = self._make_args(startup_kit_dir="/path/to/startup")
+        mock_config = MagicMock()
+        mock_config.get.side_effect = _config_getter({"startup_kits.active": "project_admin"})
+
+        with (
+            patch("nvflare.cli.load_hidden_config_state", return_value=("/fake/config.conf", mock_config, False)),
+            patch("nvflare.cli.default_startup_kit_id", return_value="project_admin") as default_id,
+            patch("nvflare.cli.add_startup_kit_entry", return_value=mock_config) as add_entry,
+            patch("nvflare.cli.set_active_startup_kit", return_value=mock_config) as set_active,
+            patch("nvflare.cli.save_config") as save_config,
+            patch("nvflare.tool.cli_schema.handle_schema_flag"),
+        ):
+            handle_config_cmd(args)
+
+        default_id.assert_called_once_with("/path/to/startup")
+        add_entry.assert_called_once_with(mock_config, "project_admin", "/path/to/startup", force=True)
+        set_active.assert_called_once_with(mock_config, "project_admin")
+        save_config.assert_called_once_with(mock_config, "/fake/config.conf")
+
+        captured = capsys.readouterr()
+        assert "-d/--startup_kit_dir" in captured.err
+        data = json.loads(captured.out)
+        assert data["status"] == "ok"
+        assert data["data"]["active_startup_kit"] == "project_admin"
+
+    def test_config_compat_job_templates_flag_is_deprecated_but_still_updates_config(self, tmp_path, capsys):
+        from nvflare.cli import handle_config_cmd
+
+        templates_dir = tmp_path / "templates"
+        templates_dir.mkdir()
+        args = self._make_args(job_templates_dir=str(templates_dir))
+        config = CF.parse_string("{}")
+
+        with (
+            patch("nvflare.cli.load_hidden_config_state", return_value=("/fake/config.conf", config, False)),
+            patch("nvflare.cli.save_config") as save_config,
+            patch("nvflare.tool.cli_schema.handle_schema_flag"),
+        ):
+            handle_config_cmd(args)
+
+        saved_config = save_config.call_args.args[0]
+        assert saved_config.get("job_template.path") == str(templates_dir)
+        captured = capsys.readouterr()
+        assert "-jt/--job_templates_dir" in captured.err
+        data = json.loads(captured.out)
+        assert data["status"] == "ok"
+        assert data["data"]["job_templates_dir"] == str(templates_dir)
 
     def test_config_write_warns_when_startup_kit_keys_are_removed(self, capsys):
         from nvflare.cli import handle_config_cmd

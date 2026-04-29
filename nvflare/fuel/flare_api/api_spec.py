@@ -394,13 +394,21 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def restart(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
+    def restart(
+        self,
+        target_type: str,
+        client_names: Optional[List[str]] = None,
+        wait: bool = True,
+        timeout: float = 30.0,
+    ) -> dict:
         """
         Restart the FL server.
 
         Args:
             target_type: must be ``server``
             client_names: unused; retained for signature compatibility
+            wait: whether to wait for the restart to complete before returning
+            timeout: maximum seconds to wait for completion
 
         Returns: a dict that contains detailed info about the restart request:
         status - the overall status of the result.
@@ -410,12 +418,20 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None) -> dict:
+    def shutdown(
+        self,
+        target_type: TargetType,
+        client_names: Optional[List[str]] = None,
+        wait: bool = True,
+        timeout: float = 30.0,
+    ) -> dict:
         """Shut down the FL server.
 
         Args:
             target_type: must be ``server``
             client_names: unused; retained for signature compatibility
+            wait: whether to wait for shutdown completion before returning
+            timeout: maximum seconds to wait for completion
 
         Returns: a dict that contains detailed info about the shutdown request.
         """
@@ -650,6 +666,30 @@ class SessionSpec(ABC):
             client_name: name of the client to remove
 
         Returns: None
+
+        """
+        pass
+
+    @abstractmethod
+    def disable_client(self, client_name: str) -> dict:
+        """Disable a client from reconnecting to the system.
+
+        Args:
+            client_name: name of the client to disable
+
+        Returns: command result dictionary
+
+        """
+        pass
+
+    @abstractmethod
+    def enable_client(self, client_name: str) -> dict:
+        """Enable a disabled client to reconnect to the system.
+
+        Args:
+            client_name: name of the client to enable
+
+        Returns: command result dictionary
 
         """
         pass

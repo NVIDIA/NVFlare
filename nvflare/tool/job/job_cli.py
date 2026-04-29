@@ -89,7 +89,7 @@ CMD_JOB_LOG_ALIAS = "log"
 
 _JOB_HELP_FORMATTER = partial(argparse.HelpFormatter, max_help_position=24, width=120)
 _ACTIVE_STARTUP_KIT_HINT = (
-    "Run 'nvflare config kit list' and 'nvflare config kit use <id>', or set NVFLARE_STARTUP_KIT_DIR for automation."
+    "Run 'nvflare config list' and 'nvflare config use <id>', or set NVFLARE_STARTUP_KIT_DIR for automation."
 )
 
 
@@ -434,7 +434,7 @@ def submit_job(cmd_args):
     handle_schema_flag(
         job_sub_cmd_parser[CMD_SUBMIT_JOB],
         "nvflare job submit",
-        ["nvflare config kit use admin@nvidia.com", "nvflare job submit -j ./my_job"],
+        ["nvflare config use admin@nvidia.com", "nvflare job submit -j ./my_job"],
         sys.argv[1:],
     )
 

@@ -39,7 +39,7 @@ from nvflare.lighter.utils import (
     update_server_default_host,
     update_storage_locations,
 )
-from nvflare.tool.api_utils import shutdown_system
+from nvflare.tool.api_utils import SystemStartTimeout, shutdown_system, wait_for_system_start
 from nvflare.tool.kit.kit_config import (
     STARTUP_KIT_KIND_ADMIN,
     STARTUP_KIT_KIND_SITE,
@@ -75,6 +75,7 @@ POC_ADD_REQUIRED_CERT_ROLE = "project_admin"
 POC_KEY = "poc"
 STARTUP_KIT_KEY = "startup_kit"
 WORKSPACE_KEY = "workspace"
+POC_START_READY_TIMEOUT = 30
 
 
 class AuthorizationError(PermissionError):
@@ -539,7 +540,7 @@ def _register_poc_startup_kits(
         if existing_path:
             raise CLIException(
                 f"startup kit id '{kit_id}' already exists outside POC workspace; "
-                f"run 'nvflare config kit remove {kit_id}' or replace it explicitly"
+                f"run 'nvflare config remove {kit_id}' or replace it explicitly"
             )
         config = add_startup_kit_entry(config, kit_id, kit_path, force=True)
 
@@ -559,7 +560,7 @@ def _write_poc_startup_kit_registry(workspace: str, project_name: str, project_c
 
         print_human(
             "No generated Project Admin startup kit was found; "
-            "run 'nvflare config kit use <id>' after registering an admin startup kit."
+            "run 'nvflare config use <id>' after registering an admin startup kit."
         )
 
     config.put(f"{POC_KEY}.{WORKSPACE_KEY}", workspace)
@@ -811,7 +812,7 @@ def _add_poc_user(poc_workspace: str, cert_role: str, email: str, org: str, forc
     if preferred_active:
         result["active"] = email
     else:
-        result["next_step"] = f"nvflare config kit use {email}"
+        result["next_step"] = f"nvflare config use {email}"
     return result
 
 
@@ -1248,7 +1249,7 @@ def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> List[int]:
 
 
 def start_poc(cmd_args):
-    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_output import output_error, output_error_message, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -1263,6 +1264,8 @@ def start_poc(cmd_args):
     excluded = get_excluded(cmd_args)
     gpu_ids = get_gpis(cmd_args)
     study = getattr(cmd_args, "study", None)
+    no_wait = getattr(cmd_args, "no_wait", False)
+    no_wait = no_wait if isinstance(no_wait, bool) else False
 
     try:
         _start_poc(poc_workspace, gpu_ids, excluded, services_list, study=study)
@@ -1298,16 +1301,81 @@ def start_poc(cmd_args):
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
 
-    output_ok({"status": "running", "server_url": server_url, "clients": clients})
+    ready = False
+    wait_performed = False
+    if not no_wait and service_config:
+        try:
+            wait_performed = _wait_for_poc_system_ready(
+                poc_workspace, project_config, service_config, services_list, excluded
+            )
+            ready = wait_performed
+        except SystemStartTimeout as e:
+            output_error_message(
+                "CONNECTION_FAILED",
+                message="POC system did not become ready before the startup timeout.",
+                hint=(
+                    "Check the POC server/client logs, or use 'nvflare poc start --no-wait' "
+                    "for fire-and-forget startup."
+                ),
+                exit_code=2,
+                detail=str(e),
+            )
+            raise SystemExit(2)
+
+    result = {"status": "starting" if no_wait else "running", "server_url": server_url, "clients": clients}
+    if no_wait or wait_performed:
+        result["ready"] = ready
+    output_ok(result)
     from nvflare.tool.cli_output import print_human
 
-    print_human(f"\nPOC system started. Server: {server_url}")
+    if no_wait:
+        print_human(f"\nPOC system start requested. Server: {server_url}")
+    else:
+        print_human(f"\nPOC system started. Server: {server_url}")
     if clients:
         print_human(f"  Clients: {', '.join(clients)}")
     if service_config:
         proj_admin = service_config.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
         print_human(f"  Admin console not started by default. Start with: nvflare poc start -p {proj_admin}")
     print_human("  Submit jobs with: nvflare job submit -j <job_folder>")
+
+
+def _get_started_readiness_participants(service_config: Dict, services_list: List[str], excluded: List[str]):
+    excluded_set = set(excluded or [])
+    server_name = service_config.get(SC.FLARE_SERVER)
+    clients = list(service_config.get(SC.FLARE_CLIENTS, []))
+    if services_list:
+        started = [service for service in services_list if service not in excluded_set]
+    else:
+        started = [service for service in [server_name] + clients if service and service not in excluded_set]
+    return server_name in started, [client for client in clients if client in started]
+
+
+def _wait_for_poc_system_ready(
+    poc_workspace: str,
+    project_config: Dict,
+    service_config: Dict,
+    services_list: List[str],
+    excluded: List[str],
+) -> bool:
+    starts_server, expected_clients = _get_started_readiness_participants(service_config, services_list, excluded)
+    if not starts_server and not expected_clients:
+        return False
+
+    project_name = project_config.get("name") if project_config else DEFAULT_PROJECT_NAME
+    prod_dir = get_prod_dir(poc_workspace, project_name)
+    wait_for_system_start(
+        len(expected_clients),
+        prod_dir,
+        username=service_config[SC.FLARE_PROJ_ADMIN],
+        secure_mode=True,
+        second_to_wait=0,
+        timeout_in_sec=POC_START_READY_TIMEOUT,
+        poll_interval=1.0,
+        conn_timeout=1.0,
+        expected_clients=expected_clients,
+    )
+    return True
 
 
 def get_gpis(cmd_args):
@@ -1401,7 +1469,7 @@ def setup_service_config(poc_workspace) -> Tuple:
 
 
 def stop_poc(cmd_args):
-    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_output import output_error, output_error_message, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -1413,20 +1481,38 @@ def stop_poc(cmd_args):
     poc_workspace = get_poc_workspace()
     excluded = get_excluded(cmd_args)
     services_list = get_service_list(cmd_args)
+    no_wait = getattr(cmd_args, "no_wait", False)
+    no_wait = no_wait if isinstance(no_wait, bool) else False
 
     try:
-        _stop_poc(poc_workspace, excluded, services_list)
+        _stop_poc(poc_workspace, excluded, services_list, wait=not no_wait)
     except CLIException as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
+    except TimeoutError as e:
+        output_error_message(
+            "CONNECTION_FAILED",
+            message="POC system shutdown did not complete before the timeout.",
+            hint="Check the POC server/client logs, or use 'nvflare poc stop --no-wait' for fire-and-forget shutdown.",
+            exit_code=2,
+            detail=str(e),
+        )
+        raise SystemExit(2)
     except Exception as e:
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         raise SystemExit(5)
 
-    output_ok({"status": "stopped"})
+    output_ok({"status": "shutdown_initiated" if no_wait else "stopped"})
 
 
-def _stop_poc(poc_workspace: str, excluded=None, services_list=None, project_config=None, service_config=None):
+def _stop_poc(
+    poc_workspace: str,
+    excluded=None,
+    services_list=None,
+    project_config=None,
+    service_config=None,
+    wait: bool = True,
+):
     if project_config is None or service_config is None:
         project_config, service_config = setup_service_config(poc_workspace)
 
@@ -1449,7 +1535,7 @@ def _stop_poc(poc_workspace: str, excluded=None, services_list=None, project_con
         from nvflare.tool.cli_output import print_human
 
         print_human("Starting shutdown of NVFLARE")
-        shutdown_system(prod_dir, username=service_config[SC.FLARE_PROJ_ADMIN])
+        shutdown_system(prod_dir, username=service_config[SC.FLARE_PROJ_ADMIN], wait=wait)
     else:
         from nvflare.tool.cli_output import print_human
 
@@ -1856,6 +1942,12 @@ def define_start_parser(poc_parser):
         default=None,
         help="study for admin console launches only; ignored for server and client services",
     )
+    start_parser.add_argument(
+        "--no-wait",
+        dest="no_wait",
+        action="store_true",
+        help="return after starting processes without waiting for admin server/client readiness",
+    )
     start_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     start_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
@@ -1881,6 +1973,12 @@ def define_stop_parser(poc_parser):
         help="exclude service directory during 'stop', default to " ", i.e. nothing to exclude",
     )
     stop_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    stop_parser.add_argument(
+        "--no-wait",
+        dest="no_wait",
+        action="store_true",
+        help="return after requesting shutdown without waiting for completion",
+    )
     stop_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 

@@ -126,7 +126,7 @@ user or site:
 Behavior notes:
 
 - ``poc add user`` and ``poc add site`` require the active startup kit to have
-  the ``project_admin`` certificate role. Use ``nvflare config kit use <id>`` to switch
+  the ``project_admin`` certificate role. Use ``nvflare config use <id>`` to switch
   back to the POC Project Admin kit before adding users or sites.
 - ``poc add user`` adds an admin participant to the persisted POC
   ``project.yml``, dynamically provisions only that new user with the existing
@@ -147,10 +147,10 @@ Examples:
 .. code-block:: shell
 
    nvflare poc add user lead bob@nvidia.com --org nvidia
-   nvflare config kit use bob@nvidia.com
+   nvflare config use bob@nvidia.com
 
    nvflare poc add site site-3 --org nvidia
-   nvflare config kit list
+   nvflare config list
    nvflare poc start -p site-3
 
 **************
@@ -162,7 +162,7 @@ Use ``nvflare poc start`` to launch services in the prepared POC workspace:
 .. code-block:: none
 
    nvflare poc start [-h] [-p [SERVICE]] [-ex [EXCLUDE]] [-gpu [GPU ...]]
-                     [--study STUDY] [-debug] [--schema]
+                     [--study STUDY] [--no-wait] [-debug] [--schema]
 
 Options:
 
@@ -172,6 +172,8 @@ Options:
 - ``-gpu, --gpu``: GPU device IDs to use as ``CUDA_VISIBLE_DEVICES``.
 - ``--study``: study for admin console launches only. Ignored for server and
   client services.
+- ``--no-wait``: return after starting processes without waiting for the admin
+  server and selected clients to become ready.
 - ``-debug, --debug``: debug mode.
 - ``--schema``: print command schema as JSON and exit.
 
@@ -180,7 +182,11 @@ Behavior changes:
 - Admin console participants are **not started by default**.
 - Running ``nvflare poc start`` with no explicit service starts the server and
   clients only.
-- The command returns JSON with ``status``, ``server_url``, and ``clients``.
+- By default, the command waits until the admin server accepts connections and
+  selected clients are registered before returning ``status: running``.
+- With ``--no-wait``, the command returns immediately with ``status: starting``.
+- The command returns JSON with ``status``, ``server_url``, ``clients``, and,
+  when readiness was checked or explicitly skipped, ``ready``.
 
 Examples:
 
@@ -263,7 +269,7 @@ The default POC workspace is ``/tmp/nvflare/poc``.
 The workspace can also be controlled by:
 
 - ``NVFLARE_POC_WORKSPACE``
-- ``~/.nvflare/config.conf`` via ``nvflare config --poc.workspace <poc_workspace>``
+- ``~/.nvflare/config.conf`` via ``nvflare config -pw <poc_workspace>``
 
 ``nvflare poc prepare`` writes the POC workspace into the local NVFlare config
 and registers generated admin/user startup kits in the shared startup kit

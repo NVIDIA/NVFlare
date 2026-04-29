@@ -245,7 +245,7 @@ def _validate_registered_path(kit_id: str, path: str) -> str:
     if not path:
         raise StartupKitConfigError(
             f"startup kit id '{kit_id}' is not registered",
-            hint="Run nvflare config kit list.",
+            hint="Run nvflare config list.",
         )
 
     try:
@@ -259,7 +259,7 @@ def _validate_registered_path(kit_id: str, path: str) -> str:
             ) from e
         raise StartupKitConfigError(
             f"registered path for '{kit_id}' is not a valid startup kit for admin use",
-            hint=f"Run nvflare config kit use <admin-id>, or replace it with nvflare config kit add {kit_id} <startup-kit-dir> --force.",
+            hint=f"Run nvflare config use <admin-id>, or replace it with nvflare config add {kit_id} <startup-kit-dir> --force.",
         ) from e
 
 
@@ -287,7 +287,7 @@ def set_active_startup_kit(config: ConfigTree, kit_id: str) -> ConfigTree:
     kit_id = _normalize_kit_id(kit_id)
     entries = get_startup_kit_entries(config)
     if kit_id not in entries:
-        raise StartupKitConfigError(f"startup kit id '{kit_id}' is not registered", hint="Run nvflare config kit list.")
+        raise StartupKitConfigError(f"startup kit id '{kit_id}' is not registered", hint="Run nvflare config list.")
 
     _validate_registered_path(kit_id, entries[kit_id])
     config.put(STARTUP_KITS_ACTIVE_KEY, kit_id)
@@ -435,14 +435,14 @@ def resolve_startup_kit_dir() -> str:
     if not active:
         raise StartupKitConfigError(
             "no active startup kit is configured",
-            hint="Run nvflare poc prepare, or run nvflare config kit add <id> <startup-kit-dir> then nvflare config kit use <id>.",
+            hint="Run nvflare poc prepare, or run nvflare config add <id> <startup-kit-dir> then nvflare config use <id>.",
         )
 
     entries = get_startup_kit_entries(config)
     if active not in entries:
         raise StartupKitConfigError(
             f"active startup kit '{active}' is not registered",
-            hint="Run nvflare config kit list, then nvflare config kit use <id>.",
+            hint="Run nvflare config list, then nvflare config use <id>.",
         )
 
     path = entries[active]
@@ -453,11 +453,11 @@ def resolve_startup_kit_dir() -> str:
         if not path_obj.exists():
             raise StartupKitConfigError(
                 f"active startup kit '{active}' points to a missing path\nPath: {path}",
-                hint=f"Run nvflare config kit use <id> or nvflare config kit remove {active}.",
+                hint=f"Run nvflare config use <id> or nvflare config remove {active}.",
             ) from e
         raise StartupKitConfigError(
             f"active startup kit '{active}' is not a valid startup kit for admin use\nPath: {path}",
-            hint=f"Run nvflare config kit use <id> or nvflare config kit remove {active}.",
+            hint=f"Run nvflare config use <id> or nvflare config remove {active}.",
         ) from e
 
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""nvflare config kit command parser and handlers."""
+"""nvflare config startup kit command parser and handlers."""
 
 import os
 import sys
@@ -41,8 +41,8 @@ CMD_KIT_USE = "use"
 CMD_KIT_SHOW = "show"
 CMD_KIT_LIST = "list"
 CMD_KIT_REMOVE = "remove"
-# The kit parser is registered under the config subparser in nvflare/cli.py.
-KIT_COMMAND = "nvflare config kit"
+# The startup kit commands are registered directly under nvflare config.
+KIT_COMMAND = "nvflare config"
 
 _kit_root_parser = None
 _kit_sub_cmd_parsers = {}
@@ -58,6 +58,13 @@ def _metadata_for_output(path: str) -> Dict[str, str]:
         "identity": metadata.get("identity") or "-",
         "cert_role": metadata.get("cert_role") or "-",
     }
+
+
+def default_startup_kit_id(path: str) -> str:
+    """Return the default local registry ID for a compatibility startup-kit path."""
+    metadata = inspect_startup_kit_metadata(path)
+    identity = metadata.get("identity")
+    return identity or os.path.basename(os.path.abspath(path.rstrip(os.sep)))
 
 
 def cmd_kit_add(args):
@@ -241,56 +248,43 @@ _KIT_HANDLERS: Dict[str, Callable] = {
 
 def def_kit_cli_parser(sub_cmd):
     global _kit_root_parser
-    parser = sub_cmd.add_parser("kit", help="manage local startup kit registrations")
-    _kit_root_parser = parser
-    kit_subparser = parser.add_subparsers(title="kit subcommands", metavar="", dest="kit_sub_cmd")
+    _kit_root_parser = None
 
-    add_parser = kit_subparser.add_parser(CMD_KIT_ADD, help="register a startup kit path")
+    add_parser = sub_cmd.add_parser(CMD_KIT_ADD, help="register a startup kit path")
     add_parser.add_argument("kit_id", help="local startup kit ID")
     add_parser.add_argument("startup_kit_dir", help="admin/user startup kit directory")
     add_parser.add_argument("--force", action="store_true", help="replace an existing local registration")
     add_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _kit_sub_cmd_parsers[CMD_KIT_ADD] = add_parser
 
-    use_parser = kit_subparser.add_parser(CMD_KIT_USE, help="activate a registered startup kit")
+    use_parser = sub_cmd.add_parser(CMD_KIT_USE, help="activate a registered startup kit")
     use_parser.add_argument("kit_id", help="local startup kit ID")
     use_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _kit_sub_cmd_parsers[CMD_KIT_USE] = use_parser
 
-    show_parser = kit_subparser.add_parser(CMD_KIT_SHOW, help="show the configured active startup kit")
+    show_parser = sub_cmd.add_parser(CMD_KIT_SHOW, help="show the configured active startup kit")
     show_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _kit_sub_cmd_parsers[CMD_KIT_SHOW] = show_parser
 
-    list_parser = kit_subparser.add_parser(CMD_KIT_LIST, help="list registered startup kits")
+    list_parser = sub_cmd.add_parser(CMD_KIT_LIST, help="list registered startup kits")
     list_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _kit_sub_cmd_parsers[CMD_KIT_LIST] = list_parser
 
-    remove_parser = kit_subparser.add_parser(CMD_KIT_REMOVE, help="remove a local startup kit registration")
+    remove_parser = sub_cmd.add_parser(CMD_KIT_REMOVE, help="remove a local startup kit registration")
     remove_parser.add_argument("kit_id", help="local startup kit ID")
     remove_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _kit_sub_cmd_parsers[CMD_KIT_REMOVE] = remove_parser
 
-    return {"kit": parser}
+    return {name: parser for name, parser in _kit_sub_cmd_parsers.items()}
 
 
 def handle_kit_cmd(args):
-    sub_cmd = getattr(args, "kit_sub_cmd", None)
-    if "--schema" in getattr(args, "_argv", []) and sub_cmd is None:
-        handle_schema_flag(
-            _kit_root_parser,
-            KIT_COMMAND,
-            [
-                f"{KIT_COMMAND} add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com",
-                f"{KIT_COMMAND} use cancer_lead",
-                f"{KIT_COMMAND} list",
-            ],
-            sys.argv[1:],
-        )
+    sub_cmd = getattr(args, "config_sub_cmd", None)
 
     handler = _KIT_HANDLERS.get(sub_cmd)
     if handler:
         handler(args)
     elif sub_cmd is None:
-        _kit_root_parser.print_help()
+        return
     else:
-        raise CLIUnknownCmdException("invalid kit command")
+        raise CLIUnknownCmdException("invalid config command")

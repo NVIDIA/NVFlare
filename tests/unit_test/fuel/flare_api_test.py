@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.fuel.flare_api.api_spec import (
     AuthenticationError,
     ClientInfo,
@@ -86,6 +87,16 @@ def test_do_command_raises_no_connection_for_server_connection_error():
 
     with pytest.raises(NoConnection, match=r"cannot connect to server: ERROR_SERVER_CONNECTION"):
         session._do_command("list_jobs", enforce_meta=False)
+
+
+def test_try_connect_maps_transient_communication_failure_to_no_connection():
+    session = Session.__new__(Session)
+    session.api = MagicMock()
+    session.api.closed = False
+    session.api.connect.side_effect = FLCommunicationError("cannot connect to server for 4.0 seconds")
+
+    with pytest.raises(NoConnection, match="cannot connect to server for 4.0 seconds"):
+        session.try_connect(4.0)
 
 
 def test_no_connection_is_connection_error():

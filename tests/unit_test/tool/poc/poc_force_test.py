@@ -425,7 +425,7 @@ class TestPocForce:
             patch(
                 "nvflare.tool.poc.poc_commands._require_poc_project_admin",
                 side_effect=StartupKitConfigError(
-                    "active startup kit is stale", hint="Run 'nvflare config kit use admin@nvidia.com'"
+                    "active startup kit is stale", hint="Run 'nvflare config use admin@nvidia.com'"
                 ),
             ),
             patch("nvflare.tool.poc.poc_commands._add_poc_user") as add_user,
@@ -437,7 +437,7 @@ class TestPocForce:
         add_user.assert_not_called()
         captured = capsys.readouterr()
         assert "active startup kit is stale" in captured.err
-        assert "Run 'nvflare config kit use admin@nvidia.com'" in captured.err
+        assert "Run 'nvflare config use admin@nvidia.com'" in captured.err
 
     def test_poc_add_site_preserves_startup_kit_resolution_hint(self, capsys):
         from nvflare.tool.kit.kit_config import StartupKitConfigError
@@ -452,7 +452,7 @@ class TestPocForce:
             patch(
                 "nvflare.tool.poc.poc_commands._require_poc_project_admin",
                 side_effect=StartupKitConfigError(
-                    "active startup kit is stale", hint="Run 'nvflare config kit use admin@nvidia.com'"
+                    "active startup kit is stale", hint="Run 'nvflare config use admin@nvidia.com'"
                 ),
             ),
             patch("nvflare.tool.poc.poc_commands._add_poc_site") as add_site,
@@ -464,7 +464,7 @@ class TestPocForce:
         add_site.assert_not_called()
         captured = capsys.readouterr()
         assert "active startup kit is stale" in captured.err
-        assert "Run 'nvflare config kit use admin@nvidia.com'" in captured.err
+        assert "Run 'nvflare config use admin@nvidia.com'" in captured.err
 
     def test_interactive_without_force_prompts(self, tmp_path):
         """In interactive mode without --force, should ask for confirmation."""
@@ -702,7 +702,7 @@ poc {{
         assert result["status"] == "added"
         assert result["id"] == "bob@nvidia.com"
         assert result["startup_kit"] == str(workspace / project_name / "prod_00" / "bob@nvidia.com")
-        assert result["next_step"] == "nvflare config kit use bob@nvidia.com"
+        assert result["next_step"] == "nvflare config use bob@nvidia.com"
         assert "active" not in result
         assert not (workspace / project_name / "prod_01").exists()
 

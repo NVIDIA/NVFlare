@@ -80,8 +80,8 @@ def test_startup_kit_hints_name_kit_registry_commands():
         if code in ERROR_REGISTRY
     ]
     combined = " ".join(hints)
-    assert "nvflare config kit list" in combined
-    assert "nvflare config kit use <id>" in combined
+    assert "nvflare config list" in combined
+    assert "nvflare config use <id>" in combined
     assert "NVFLARE_STARTUP_KIT_DIR" in combined
 
 

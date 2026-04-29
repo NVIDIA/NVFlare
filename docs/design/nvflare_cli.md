@@ -19,12 +19,12 @@ NVFlare's admin operations are currently accessible only through an interactive 
 Goal: make the full NVFlare admin command surface accessible non-interactively — scriptable from CI/CD pipelines, automation tools, and AI agents. This covers:
 
 - `nvflare job` — extended with missing job lifecycle operations
-- `nvflare system` — new subcommand for operational control (status, shutdown, restart, version)
+- `nvflare system` — new subcommand for operational control (status, shutdown, restart, client access, version)
 - `nvflare recipe` — FL workflow recipe catalog, no server required
 - `nvflare network` — cellnet diagnostics for advanced troubleshooting
 - `nvflare agent` — bootstrap and context management for agentic workflows
 - `nvflare install-skills` — installs skill files into agent framework discovery paths
-- `nvflare config kit` — local startup kit registry and active-kit selection for all
+- `nvflare config` — local startup kit registry and active-kit selection for all
   server-connected commands
 
 
@@ -91,7 +91,7 @@ Exit code is non-zero. Error message templates support `str.format_map()` substi
 
 ### 3. No interactive prompts for agents
 
-All confirmation-required commands (`abort`, `delete`, `shutdown`, `restart`, `remove-client`) accept `--force` to skip confirmation. `--force` must be passed explicitly. Non-interactive contexts (stdin not a tty) without `--force` exit with code 4.
+All confirmation-required commands (`abort`, `delete`, `shutdown`, `restart`, `remove-client`, `disable-client`, `enable-client`) accept `--force` to skip confirmation. `--force` must be passed explicitly. Non-interactive contexts (stdin not a tty) without `--force` exit with code 4.
 
 ### 4. Exit codes for agent branching
 
@@ -134,11 +134,11 @@ The JSON output shape and error codes defined here become the MCP tool schemas i
 | --- | --- | --- |
 | `nvflare simulator` | — | Deprecated — retain with stderr warning; use Job Recipe SimEnv directly (`python job.py`) |
 | `nvflare poc` | `prepare`, `start`, `stop`, `clean`, `add user`, `add site` | Add JSON output, exit codes, `--schema`; add `--force` to `prepare` for workspace deletion prompt bypass and to `clean` for stop-before-cleanup; register generated user/admin kits in the shared startup kit registry |
-| `nvflare config kit` | `add`, `use`, `show`, `list`, `remove` | User-facing startup kit registry commands; no server connection |
+| `nvflare config` | `add`, `use`, `show`, `list`, `remove` | User-facing startup kit registry commands; keeps 2.7.x root flags `-d/--startup_kit_dir`, `-pw/--poc_workspace_dir`, and deprecated `-jt/--job_templates_dir`; no server connection |
 | `nvflare study` | `register`, `show`, `list`, `remove`, `add-site`, `remove-site`, `add-user`, `remove-user` | Add multi-study lifecycle CLI using the active startup kit |
 | `nvflare provision` | — | Add JSON output, `--schema`, `--force` for Y/N prompts; restore pre-2.7.0 default: no args = generate `project.yml` |
 | `nvflare preflight-check` | — | Add JSON output, `--schema`; exit 0=pass, 1=fail. Underscore alias `preflight_check` accepted for backward compatibility. |
-| `nvflare config` | `kit` | Parent command namespace for local CLI settings. The user-facing workflow in this design is `nvflare config kit`. |
+| `nvflare config` | — | Parent command namespace for local CLI settings and read-only config inspection. Do not add a nested `kit` subcommand. |
 | `nvflare dashboard` | — | No changes; excluded from this plan |
 | `nvflare authz-preview` | — | Deprecated — retain with stderr warning. Underscore alias `authz_preview` accepted for backward compatibility. |
 
@@ -172,7 +172,9 @@ Only commands that serve common end-user or admin tasks are exposed. Diagnostic,
 | `report_resources` | Admin | Yes -> `nvflare system resources` |
 | `shutdown` | Admin | Yes -> `nvflare system shutdown` |
 | `restart` | Admin | Yes -> `nvflare system restart` |
-| `remove_client` | Admin | Yes -> `nvflare system remove-client` |
+| `remove_client` | Admin | Yes -> `nvflare system remove-client`; registry cleanup only |
+| `disable_client` | Admin | Yes -> `nvflare system disable-client`; persists a server-side disabled flag and rejects reconnect/heartbeat |
+| `enable_client` | Admin | Yes -> `nvflare system enable-client`; clears the server-side disabled flag |
 | `sys_info` | Both | Yes -> `nvflare system version` |
 | `report_env` | — | No — workspace paths; internal/debug |
 | `show_scopes` | — | No — internal configuration detail |
@@ -418,18 +420,18 @@ nvflare job submit -j ./job
 Production flow:
 
 ```bash
-nvflare config kit add alice_example_project /secure/startup_kits/example_project/alice@nvidia.com
-nvflare config kit use alice_example_project
+nvflare config add alice_example_project /secure/startup_kits/example_project/alice@nvidia.com
+nvflare config use alice_example_project
 nvflare job list
 ```
 
 Multiple local identities are handled by activating a different registered ID:
 
 ```bash
-nvflare config kit add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com
-nvflare config kit add fraud_org_admin /secure/startup_kits/fraud/org_admin@nvidia.com
-nvflare config kit use cancer_lead
-nvflare config kit show
+nvflare config add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com
+nvflare config add fraud_org_admin /secure/startup_kits/fraud/org_admin@nvidia.com
+nvflare config use cancer_lead
+nvflare config show
 ```
 
 Activation is local config mutation only. It does not contact the server.
@@ -437,7 +439,7 @@ Activation is local config mutation only. It does not contact the server.
 ### Startup Kit Registry Storage
 
 `~/.nvflare/config.conf` is the local storage file for the startup kit registry. The
-user-facing command is `nvflare config kit`; the stored `startup_kits` data is an
+user-facing command is `nvflare config`; the stored `startup_kits` data is an
 implementation detail, not a separate customer-facing concept.
 
 ```hocon
@@ -463,20 +465,32 @@ identities and are not registered in this CLI identity registry. For production 
 choose meaningful local IDs such as `cancer_lead`.
 
 The entry value is only the startup kit path. Metadata such as identity and certificate
-role is inspected from the startup kit when needed by commands such as `nvflare config kit show`;
+role is inspected from the startup kit when needed by commands such as `nvflare config show`;
 it is not duplicated in `config.conf`. Fields that are not reliably derivable from the
 startup kit are omitted from normal output.
 
 Other CLI state may also be stored in `~/.nvflare/config.conf`, but it is outside the
 startup kit registry and should not be part of the normal user workflow.
 
-### `nvflare config kit`
+### `nvflare config`
 
-`nvflare config kit` manages local startup kit registrations. It is not a server-side resource.
-Running `nvflare config kit` without a subcommand should print help and exit without an
-`INVALID_ARGS` error.
+`nvflare config` manages local startup kit registrations. It is not a server-side resource.
+Running `nvflare config` without a subcommand prints the current local config in a
+read-only JSON/human envelope and exits without an `INVALID_ARGS` error.
 
-#### `nvflare config kit add <id> <path>`
+Root compatibility flags:
+
+- `-d` / `--startup_kit_dir`: accepted for compatibility with 2.7.x scripts, but
+  deprecated. The path is registered under the default startup kit ID and made active.
+  New workflows should use `nvflare config add` and `nvflare config use`.
+- `-pw` / `--poc_workspace_dir`: accepted as the supported POC workspace flag spelling.
+- `-jt` / `--job_templates_dir`: accepted for compatibility with 2.7.x scripts, but job
+  template config is deprecated.
+- Interim development-only spellings such as `--poc.workspace`,
+  `--poc.startup_kit`, and `--prod.startup_kit` are not part of the public
+  compatibility contract and must be rejected.
+
+#### `nvflare config add <id> <path>`
 
 Registers a startup kit location under a local ID.
 
@@ -500,10 +514,10 @@ Example output:
 ```text
 registered startup kit: alice_example_project
 path: /secure/startup_kits/example_project/alice@nvidia.com
-next_step: nvflare config kit use alice_example_project
+next_step: nvflare config use alice_example_project
 ```
 
-#### `nvflare config kit use <id>`
+#### `nvflare config use <id>`
 
 Makes a registered startup kit active.
 
@@ -520,7 +534,7 @@ Behavior:
 No server call is made. The next server-connected command creates a session using the
 selected startup kit.
 
-#### `nvflare config kit show`
+#### `nvflare config show`
 
 Shows the configured active startup kit:
 
@@ -531,7 +545,7 @@ cert_role: lead
 path: /secure/startup_kits/cancer/lead@nvidia.com
 ```
 
-`kit show` reports `startup_kits.active`. It does not replace that value with
+`nvflare config show` reports `startup_kits.active`. It does not replace that value with
 `NVFLARE_STARTUP_KIT_DIR`, but it should warn when the environment variable is set:
 
 ```text
@@ -540,9 +554,9 @@ warning: NVFLARE_STARTUP_KIT_DIR is set (/secure/startup_kits/cancer/lead@nvidia
 ```
 
 If the active path is missing or invalid, show the stale registration and suggest
-`nvflare config kit use <id>` or `nvflare config kit remove <id>`.
+`nvflare config use <id>` or `nvflare config remove <id>`.
 
-#### `nvflare config kit list`
+#### `nvflare config list`
 
 Lists registered startup kits. The command checks each registered path locally and flags
 stale entries without contacting the server:
@@ -556,7 +570,7 @@ stale entries without contacting the server:
 The active startup kit is marked with `*`. Missing or invalid paths are shown as
 `missing` or `invalid`. Valid site kits are not shown because they are not CLI identities.
 
-#### `nvflare config kit remove <id>`
+#### `nvflare config remove <id>`
 
 Removes a local config registration. It does not delete the startup kit directory. If the
 removed ID is active, clear `startup_kits.active` and print:
@@ -564,7 +578,7 @@ removed ID is active, clear `startup_kits.active` and print:
 ```text
 removed startup kit: cancer_lead
 warning: no active startup kit is configured
-next_step: nvflare config kit use <id>
+next_step: nvflare config use <id>
 ```
 
 ### Resolution Model
@@ -667,7 +681,7 @@ startup_kit: /tmp/nvflare/poc/example_project/prod_00/bob@nvidia.com
 id: bob@nvidia.com
 identity: bob@nvidia.com
 cert_role: lead
-next_step: nvflare config kit use bob@nvidia.com
+next_step: nvflare config use bob@nvidia.com
 ```
 
 Example output when no active kit exists:
@@ -756,21 +770,21 @@ General rules:
 
 - Validate before mutating `~/.nvflare/config.conf`.
 - Write config atomically so a failed command does not leave a partially written config.
-- Do not contact the server for `nvflare config kit` registration, activation, listing, or
+- Do not contact the server for `nvflare config` registration, activation, listing, or
   removal errors.
 - Treat identity, role, org, and project inspection as best effort. Failure to inspect
-  metadata should not break `kit add` or `kit use` when the startup kit path itself is
+  metadata should not break `config add` or `config use` when the startup kit path itself is
   valid.
 
 If `~/.nvflare/config.conf` does not exist:
 
-- `nvflare config kit list` prints an empty list.
-- `nvflare config kit show` reports that no active startup kit is configured.
+- `nvflare config list` prints an empty list.
+- `nvflare config show` reports that no active startup kit is configured.
 - Normal server-connected commands fail before connecting:
 
 ```text
 Error: no active startup kit is configured
-Hint: Run nvflare poc prepare, or run nvflare config kit add <id> <startup-kit-dir> then nvflare config kit use <id>.
+Hint: Run nvflare poc prepare, or run nvflare config add <id> <startup-kit-dir> then nvflare config use <id>.
 ```
 
 If config parsing fails, commands stop without modifying the file:
@@ -784,10 +798,10 @@ If `startup_kits.active` points to an ID that is not in `startup_kits.entries`:
 
 ```text
 Error: active startup kit 'cancer_lead' is not registered
-Hint: Run nvflare config kit list, then nvflare config kit use <id>.
+Hint: Run nvflare config list, then nvflare config use <id>.
 ```
 
-`kit add` error cases:
+`config add` error cases:
 
 ```text
 Error: startup kit path does not exist: /secure/startup_kits/cancer/lead@nvidia.com
@@ -807,11 +821,11 @@ IDs may contain characters such as `@`, `.`, and `-`. Empty IDs are invalid. If 
 path is registered under more than one ID, allow it; that is local aliasing and does not
 affect server behavior.
 
-`kit use` error cases:
+`config use` error cases:
 
 ```text
 Error: startup kit id 'cancer_lead' is not registered
-Hint: Run nvflare config kit list.
+Hint: Run nvflare config list.
 ```
 
 ```text
@@ -821,13 +835,13 @@ Hint: Restore the startup kit, remove the registration, or activate another kit.
 
 ```text
 Error: registered path for 'cancer_lead' is not a valid startup kit
-Hint: Run nvflare config kit remove cancer_lead, or replace it with nvflare config kit add cancer_lead <startup-kit-dir> --force.
+Hint: Run nvflare config remove cancer_lead, or replace it with nvflare config add cancer_lead <startup-kit-dir> --force.
 ```
 
-`kit use` must not change `startup_kits.active` until the selected ID resolves to a valid
+`config use` must not change `startup_kits.active` until the selected ID resolves to a valid
 startup kit path.
 
-`kit list` should not fail just because one registered path is stale. It marks each entry
+`config list` should not fail just because one registered path is stale. It marks each entry
 independently as `ok`, `missing`, or `invalid`. If the active entry is stale, keep the `*`
 marker and show the stale status.
 
@@ -837,12 +851,12 @@ registry override. If a target ID already exists:
 
 - If the existing path is under the current POC workspace, replace it.
 - If the existing path is outside the current POC workspace, fail and require an explicit
-  registry action such as `nvflare config kit remove <id>` or
-  `nvflare config kit add <id> <path> --force`.
+  registry action such as `nvflare config remove <id>` or
+  `nvflare config add <id> <path> --force`.
 
 ```text
 Error: startup kit id 'lead@nvidia.com' already points outside the POC workspace
-Hint: Run nvflare config kit remove lead@nvidia.com, or replace it explicitly with nvflare config kit add lead@nvidia.com <startup-kit-dir> --force.
+Hint: Run nvflare config remove lead@nvidia.com, or replace it explicitly with nvflare config add lead@nvidia.com <startup-kit-dir> --force.
 ```
 
 `poc add user` fails before creating or registering a new kit when the requested identity
@@ -868,9 +882,9 @@ Manual production registrations remain untouched.
 - Normal server-connected commands do not expose `--startup-target` or `--startup-kit`.
 - Commands resolve the startup kit through `NVFLARE_STARTUP_KIT_DIR` first, then
   `startup_kits.active`.
-- `nvflare config kit` is the user-facing startup kit management interface.
+- `nvflare config` is the user-facing startup kit management interface.
 - `nvflare config` is the parent command namespace; the normal user workflow in this
-  design is `nvflare config kit`.
+  design is `nvflare config`.
 - `poc add user` registers generated user kits in `startup_kits.entries`.
 - `poc add site` generates site kits and updates POC workspace metadata, but it does not
   register site kits in `startup_kits.entries`.
@@ -878,11 +892,11 @@ Manual production registrations remain untouched.
   POC flow.
 - `poc add site` is allowed while POC services are running and does not stop existing
   services.
-- For `nvflare config kit add` and `nvflare poc add user`, `--force` replaces the config
+- For `nvflare config add` and `nvflare poc add user`, `--force` replaces the config
   registration for an existing ID without deleting old startup kit directories.
 - For `nvflare poc prepare`, `--force` means recreate the POC workspace; it does not
   override unrelated startup kit registrations outside the POC workspace.
-- Persona commands are not needed. The common switching command is `nvflare config kit use <id>`.
+- Persona commands are not needed. The common switching command is `nvflare config use <id>`.
 
 
 ## Existing Command Reference
@@ -1044,7 +1058,7 @@ Exit code must be 0 on all checks pass, 1 on any failure.
 ### `nvflare config`
 
 `nvflare config` is the parent command namespace for local CLI settings. The startup kit
-workflow is exposed through `nvflare config kit`; users should not need to edit or reason
+workflow is exposed through `nvflare config`; users should not need to edit or reason
 about the underlying storage layout.
 
 Persistence rules:
@@ -1072,7 +1086,7 @@ Admin startup kit directories and startup kit IDs are often email addresses such
 ---
 
 The root `nvflare config` command is a parent namespace in this design. The documented
-user-facing workflow is `nvflare config kit`; other local config storage is implementation
+user-facing workflow is `nvflare config`; other local config storage is implementation
 state and should not be part of normal user workflows.
 
 ### `nvflare dashboard` — deprecated (under review)
@@ -1094,14 +1108,14 @@ Retain with stderr warning. Underscore alias `authz_preview` accepted for backwa
 | `poc start` | Add | Add | Add | `server_url` in JSON data field when ready |
 | `poc stop` | Add | Add | Add | — |
 | `poc clean` | Add | Add | Add | Add `--force` to stop a running local POC system before cleanup |
-| `config kit add/use/show/list/remove` | Add | Add | Add | Manage local startup kit registry; no server connection |
+| `config add/use/show/list/remove` | Add | Add | Add | Manage local startup kit registry; no server connection |
 | `job create` | — | — | — | Deprecated |
 | `job submit` | Add | Add | Add | Returns `job_id` immediately |
 | `job monitor` | Add | Add | Add | Standalone wait/poll |
 | `study register/show/list/remove/add-site/remove-site/add-user/remove-user` | Add | Add | Add | Manage multi-study lifecycle through active startup kit |
 | `provision` | Add | Add | Add | Restore pre-2.7.0 default; add `--force` |
 | `preflight-check` | Add | Add | Fix | 0=pass, 1=fail; alias `preflight_check` kept |
-| `config` | Add | Add | Add | Parent namespace for `config kit`; no normal server connection |
+| `config` | Add | Add | Add | Local config parent command and startup kit registry; no normal server connection |
 | `job list-templates` | — | — | — | Deprecated; alias `list_templates` kept |
 | `job show-variables` | — | — | — | Deprecated; alias `show_variables` kept |
 | `simulator` | — | — | — | Deprecated |
@@ -1224,10 +1238,24 @@ nvflare system status        [server|client] [client_names...]
 nvflare system resources     [server|client] [clients...]
 nvflare system shutdown      <server|client|all> [client_names...] [--force]
 nvflare system restart       <server|client|all> [client_names...] [--force]
-nvflare system remove-client <client_name>
+nvflare system remove-client <client_name> [--force]
+nvflare system disable-client <client_name> [--force]
+nvflare system enable-client <client_name> [--force]
 nvflare system log-config    [--site server|<client_name>|all] <level>
 nvflare system version       [--site server|<name>|all]
 ```
+
+`remove-client` removes the current active registry entry only. It does not stop the
+client process, revoke credentials, or prevent reconnect. `disable-client` is the durable
+operational control: it persists a disabled flag, removes any active registry entry, and
+rejects subsequent registration or heartbeat from the same client name until
+`enable-client` clears the flag. This is not certificate revocation.
+
+Disabled client state is stored in the server workspace as `disabled_clients.json`.
+Updates must be made under the client manager lock and written with a temporary file plus
+atomic replace so registration/heartbeat handling cannot observe a partially written
+policy file. The file is loaded at server startup so disabled clients remain disabled
+across server restarts.
 
 
 ## Output
@@ -1285,14 +1313,14 @@ All server-connected commands (`nvflare job`, `nvflare study`, `nvflare system`,
 This resolution order applies uniformly. Command-level descriptions that say "same resolution order as `nvflare job`" refer to this list.
 
 Normal commands do not expose `--startup-target` or `--startup-kit`. Users switch local
-identity with `nvflare config kit use <id>`. Automation can use `NVFLARE_STARTUP_KIT_DIR` when
+identity with `nvflare config use <id>`. Automation can use `NVFLARE_STARTUP_KIT_DIR` when
 mutating local config is undesirable.
 
 Resolution error examples:
 
 ```text
 Error: no active startup kit is configured
-Hint: Run nvflare config kit use <id>.
+Hint: Run nvflare config use <id>.
 ```
 
 ```text
@@ -1304,7 +1332,7 @@ Hint: Unset NVFLARE_STARTUP_KIT_DIR, or set it to a valid admin startup kit dire
 ```text
 Error: active startup kit 'cancer_lead' points to a missing path
 Path: /secure/startup_kits/cancer/lead@nvidia.com
-Hint: Run nvflare config kit use <id> or nvflare config kit remove cancer_lead.
+Hint: Run nvflare config use <id> or nvflare config remove cancer_lead.
 ```
 
 ### Session Reuse
@@ -1325,7 +1353,9 @@ Already exposed:
 - `download_job`
 - `shutdown(target_type, client_names=None)` — `target_type` in `server|client|all`; closes session when server/all
 - `restart(target_type, client_names=None)` — `target_type` in `server|client|all`
-- `remove_client(client_name)` — removes a single connected client from the federation
+- `remove_client(client_name)` — removes a single connected client from the active registry
+- `disable_client(client_name)` — disables a client from reconnecting until enabled
+- `enable_client(client_name)` — enables a disabled client to reconnect
 - `check_status`
 - `report_resources`
 - `get_version`
@@ -1352,7 +1382,7 @@ New methods are thin wrappers over `AdminAPI.do_command()`.
 | `nvflare/tool/network/__init__.py` | Package |
 | `nvflare/tool/network/network_cli.py` | All `nvflare network` handlers |
 | `nvflare/tool/kit/__init__.py` | Package |
-| `nvflare/tool/kit/kit_cli.py` | `nvflare config kit` command handlers |
+| `nvflare/tool/kit/kit_cli.py` | `nvflare config` command handlers |
 | `nvflare/tool/kit/kit_config.py` | Startup kit registry config and metadata helpers |
 | `nvflare/tool/agent/__init__.py` | Package |
 | `nvflare/tool/agent/agent_cli.py` | `nvflare agent` subcommands |
@@ -1401,7 +1431,7 @@ On upgrade, existing `nvflare/` skill subdirectory is backed up to `.bak/<timest
 
 ## Confirmation-Required Commands
 
-`shutdown`, `restart`, `remove-client`, `delete`, and `abort` prompt for confirmation in the interactive console. CLI behavior:
+`shutdown`, `restart`, `remove-client`, `disable-client`, `enable-client`, `delete`, and `abort` prompt for confirmation in the interactive console. CLI behavior:
 
 - Default: prompt for confirmation in interactive terminal, or exit 4 in non-interactive mode
 - `--force`: execute without confirmation

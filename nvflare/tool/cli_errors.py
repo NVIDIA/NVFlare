@@ -40,7 +40,7 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "STARTUP_KIT_MISSING": {
         "message": "Startup kit not found.",
-        "hint": "Run 'nvflare config kit list' and 'nvflare config kit use <id>', or set NVFLARE_STARTUP_KIT_DIR for automation.",
+        "hint": "Run 'nvflare config list' and 'nvflare config use <id>', or set NVFLARE_STARTUP_KIT_DIR for automation.",
     },
     "SITE_NOT_FOUND": {
         "message": "Site '{site}' is not connected.",
@@ -92,7 +92,7 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "STARTUP_KIT_NOT_CONFIGURED": {
         "message": "No active startup kit is configured.",
-        "hint": "Run 'nvflare config kit list' and 'nvflare config kit use <id>', or set NVFLARE_STARTUP_KIT_DIR for automation.",
+        "hint": "Run 'nvflare config list' and 'nvflare config use <id>', or set NVFLARE_STARTUP_KIT_DIR for automation.",
     },
     "LOCK_TIMEOUT": {
         "message": "Study registry is busy.",

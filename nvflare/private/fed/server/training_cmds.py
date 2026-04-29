@@ -67,6 +67,24 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                     confirm=ConfirmMethod.AUTH,
                 ),
                 CommandSpec(
+                    name=AdminCommandNames.DISABLE_CLIENT,
+                    description="disable a FL client from reconnecting",
+                    usage="disable_client <client-name>",
+                    handler_func=self.disable_client,
+                    authz_func=self.command_authz_required,
+                    visible=True,
+                    confirm=ConfirmMethod.AUTH,
+                ),
+                CommandSpec(
+                    name=AdminCommandNames.ENABLE_CLIENT,
+                    description="enable a disabled FL client to reconnect",
+                    usage="enable_client <client-name>",
+                    handler_func=self.enable_client,
+                    authz_func=self.command_authz_required,
+                    visible=True,
+                    confirm=ConfirmMethod.AUTH,
+                ),
+                CommandSpec(
                     name=AdminCommandNames.ADMIN_CHECK_STATUS,
                     description="check status for project admin",
                     usage="admin_check_status server|client",
@@ -194,6 +212,32 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error(err)
             return
         conn.append_success("")
+
+    def _client_names_from_args(self, conn: Connection, args: List[str]) -> List[str]:
+        if len(args) < 2:
+            conn.append_error("missing client name", meta=make_meta(MetaStatusValue.SYNTAX_ERROR))
+            return []
+        return args[1:]
+
+    def disable_client(self, conn: Connection, args: List[str]):
+        engine = conn.app_ctx
+        if not isinstance(engine, ServerEngineInternalSpec):
+            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+        client_names = self._client_names_from_args(conn, args)
+        if not client_names:
+            return
+        result = engine.disable_clients(client_names)
+        conn.append_dict(result, meta=make_meta(MetaStatusValue.OK))
+
+    def enable_client(self, conn: Connection, args: List[str]):
+        engine = conn.app_ctx
+        if not isinstance(engine, ServerEngineInternalSpec):
+            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+        client_names = self._client_names_from_args(conn, args)
+        if not client_names:
+            return
+        result = engine.enable_clients(client_names)
+        conn.append_dict(result, meta=make_meta(MetaStatusValue.OK))
 
     # Restart
     def _restart_clients(self, conn) -> str:
