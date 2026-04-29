@@ -1497,13 +1497,14 @@ class TestK8sJobLauncherLaunchJob:
         launcher, mock_api = self._setup(patches)
         self._prime_running(mock_api)
         try:
-            fl_ctx = _make_launch_fl_ctx(app_custom_folder="/custom/app")
+            app_custom_folder = f"/fake/workspace/{_JOB_UUID}/app_site-1/custom"
+            fl_ctx = _make_launch_fl_ctx(app_custom_folder=app_custom_folder)
             launcher.launch_job(_make_launch_job_meta(), fl_ctx)
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             container = manifest["spec"]["containers"][0]
             assert "env" in container
             env_map = {e["name"]: e["value"] for e in container["env"]}
-            assert env_map["PYTHONPATH"] == "/custom/app"
+            assert env_map["PYTHONPATH"] == f"{WORKSPACE_MOUNT_PATH}/{_JOB_UUID}/app_site-1/custom"
         finally:
             _exit_patches(patches)
 

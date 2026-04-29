@@ -459,7 +459,7 @@ class K8sJobLauncher(JobLauncherSpec):
 
         env = {}
         if app_custom_folder:
-            env["PYTHONPATH"] = app_custom_folder
+            env["PYTHONPATH"] = app_custom_folder.replace(args.workspace, WORKSPACE_MOUNT_PATH, 1)
 
         workspace_root = args.workspace
         startup_dir = workspace_obj.get_startup_kit_dir()
