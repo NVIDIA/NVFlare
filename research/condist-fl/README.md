@@ -80,9 +80,10 @@ tensorboard --logdir workspace/simulate_job
 ### Validation
 
 The training process runs cross site validation (on the test set) automatically when the training ends. 
-If the user intend to run cross site validation manually, use `run_validate.py` as following.
+If the user intend to run cross site validation manually, use `run_validate.py` as following (same `-w` workspace root as `nvflare simulator`).
+Pass the client site folder names with `--clients` (same names as under `workspace/`, e.g. `spleen` or `kidney liver pancreas spleen`). Weights are read from `workspace/<SITE>/models/best_model.pt` (or `last.pt`), configs from `workspace/<SITE>/simulate_job/app_<SITE>/config/`.
 ```
-python run_validate.py -w workspace -o cross_site_validate.json
+python run_validate.py -w workspace -o cross_site_validate.json --clients spleen
 ```
 
 ### Inference
