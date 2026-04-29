@@ -56,6 +56,11 @@ def _is_stream_channel(channel: str) -> bool:
 
 
 def _is_server_job_cell(my_info) -> bool:
+    """Return True only for the server child cell that owns one job run.
+
+    Parent server cell FQCN is "server"; server job cells are "server.<job_id>".
+    The fail-fast path must only exit the job process, never the parent server.
+    """
     fqcn = getattr(my_info, "fqcn", "")
     if not fqcn:
         return False
