@@ -61,9 +61,11 @@ class TestUpdateModel(unittest.TestCase):
         merged = update_model(copy.deepcopy(client), copy.deepcopy(client))
         model_body = merged["learner"]["gradient_booster"]["model"]
         expected = 2 * trees_per_client
-        self.assertEqual(len(model_body["trees"]), expected,
-                         f"Expected {expected} trees, got {len(model_body['trees'])} "
-                         f"(num_class blindness bug)")
+        self.assertEqual(
+            len(model_body["trees"]),
+            expected,
+            f"Expected {expected} trees, got {len(model_body['trees'])} " f"(num_class blindness bug)",
+        )
         self.assertEqual(int(model_body["gbtree_model_param"]["num_trees"]), expected)
         indptr = model_body["iteration_indptr"]
         self.assertEqual(indptr[-1], expected)
@@ -92,6 +94,7 @@ class TestUpdateModel(unittest.TestCase):
         merged = update_model(copy.deepcopy(client), copy.deepcopy(client))
         indptr = merged["learner"]["gradient_booster"]["model"]["iteration_indptr"]
         self.assertEqual(indptr, [0, trees_per_client, 2 * trees_per_client])
+
 
 if __name__ == "__main__":
     unittest.main()

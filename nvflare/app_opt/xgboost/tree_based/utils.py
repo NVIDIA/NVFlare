@@ -46,7 +46,5 @@ def update_model(prev_model, model_update):
             prev_model["learner"]["gradient_booster"]["model"]["trees"].append(append_info[tree_ct])
             prev_model["learner"]["gradient_booster"]["model"]["tree_info"].append(append_tree_info[tree_ct])
         # append iteration_indptr
-        prev_model["learner"]["gradient_booster"]["model"]["iteration_indptr"].append(
-            pre_num_trees + add_num_trees
-        )
+        prev_model["learner"]["gradient_booster"]["model"]["iteration_indptr"].append(pre_num_trees + add_num_trees)
         return prev_model
