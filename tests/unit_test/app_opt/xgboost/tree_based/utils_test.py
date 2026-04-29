@@ -55,6 +55,7 @@ class TestUpdateModel(unittest.TestCase):
         num_class, num_parallel_tree = 6, 5
         client = _make_client_model(num_class=num_class, num_parallel_tree=num_parallel_tree)
         trees_per_client = len(client["learner"]["gradient_booster"]["model"]["trees"])
+        client_tree_info = client["learner"]["gradient_booster"]["model"]["tree_info"]
         self.assertEqual(trees_per_client, num_class * num_parallel_tree)
 
         merged = update_model(copy.deepcopy(client), copy.deepcopy(client))
@@ -66,6 +67,7 @@ class TestUpdateModel(unittest.TestCase):
         self.assertEqual(int(model_body["gbtree_model_param"]["num_trees"]), expected)
         indptr = model_body["iteration_indptr"]
         self.assertEqual(indptr[-1], expected)
+        self.assertEqual(model_body["tree_info"], client_tree_info + client_tree_info)
 
     def test_tree_ids_are_sequential(self):
         """After merging, tree ids must be 0..N-1 with no gaps."""
