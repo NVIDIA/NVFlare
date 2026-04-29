@@ -82,13 +82,15 @@ def test_startup_kit_hints_name_kit_registry_commands():
     combined = " ".join(hints)
     assert "nvflare config list" in combined
     assert "nvflare config use <id>" in combined
+    assert "--kit-id <id>" in combined
+    assert "--startup-kit <path>" in combined
     assert "NVFLARE_STARTUP_KIT_DIR" in combined
 
 
-def test_no_error_hint_recommends_old_startup_kit_flags():
+def test_no_error_hint_recommends_removed_startup_kit_flags():
     forbidden = [
-        "--startup-kit",
         "--startup_kit_dir",
+        "--startup_kit",
         "poc.startup_kit",
         "prod.startup_kit",
         "--{target}.startup_kit",

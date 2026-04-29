@@ -14,7 +14,62 @@
 """CLI-scoped session helpers."""
 
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
-from nvflare.tool.kit.kit_config import resolve_admin_user_and_dir_from_startup_kit, resolve_startup_kit_dir
+from nvflare.tool.kit.kit_config import (
+    StartupKitConfigError,
+    resolve_admin_user_and_dir_from_startup_kit,
+    resolve_startup_kit_dir,
+    resolve_startup_kit_dir_by_id,
+)
+
+
+def add_startup_kit_selection_args(parser) -> None:
+    """Add non-mutating startup-kit selectors to an online command parser."""
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--kit-id",
+        dest="kit_id",
+        default=None,
+        help="use this registered startup-kit ID for this command only",
+    )
+    group.add_argument(
+        "--startup-kit",
+        dest="startup_kit",
+        default=None,
+        help="use this admin startup-kit directory for this command only",
+    )
+
+
+def _get_arg_value(args, name: str, default=None):
+    if args is None:
+        return default
+    try:
+        return vars(args).get(name, default)
+    except TypeError:
+        return getattr(args, name, default)
+
+
+def resolve_startup_kit_dir_for_args(args=None) -> str:
+    """Resolve per-command startup-kit selectors, falling back to env/active config."""
+    kit_id = _get_arg_value(args, "kit_id")
+    startup_kit = _get_arg_value(args, "startup_kit")
+
+    if kit_id and startup_kit:
+        raise StartupKitConfigError(
+            "--kit-id and --startup-kit are mutually exclusive",
+            hint="Use only one startup-kit selector for a command.",
+        )
+    if kit_id:
+        return resolve_startup_kit_dir_by_id(kit_id)
+    if startup_kit:
+        _username, admin_user_dir = resolve_admin_user_and_dir_from_startup_kit(startup_kit)
+        return admin_user_dir
+    return resolve_startup_kit_dir()
+
+
+def resolve_admin_user_and_dir_for_args(args=None):
+    """Resolve the admin identity and startup-kit directory for a command invocation."""
+    startup_dir = resolve_startup_kit_dir_for_args(args)
+    return resolve_admin_user_and_dir_from_startup_kit(startup_dir)
 
 
 def new_cli_session(
@@ -40,6 +95,18 @@ def new_active_cli_session(timeout: float, study: str = "default", debug: bool =
     """Create a CLI session using NVFLARE_STARTUP_KIT_DIR or the active registered startup kit."""
     startup_dir = resolve_startup_kit_dir()
     username, admin_user_dir = resolve_admin_user_and_dir_from_startup_kit(startup_dir)
+    return new_cli_session(
+        username=username,
+        startup_kit_location=admin_user_dir,
+        timeout=timeout,
+        study=study,
+        debug=debug,
+    )
+
+
+def new_cli_session_for_args(args=None, timeout: float = 5.0, study: str = "default", debug: bool = False) -> Session:
+    """Create a CLI session using per-command selectors, env var, or the active registered startup kit."""
+    username, admin_user_dir = resolve_admin_user_and_dir_for_args(args)
     return new_cli_session(
         username=username,
         startup_kit_location=admin_user_dir,

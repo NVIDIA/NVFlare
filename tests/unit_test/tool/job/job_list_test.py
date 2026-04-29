@@ -49,6 +49,16 @@ def _configure_active_startup_kit(tmp_path, monkeypatch):
     return admin_dir
 
 
+def _make_admin_startup_kit(parent, username):
+    admin_dir = parent / username
+    startup_dir = admin_dir / "startup"
+    startup_dir.mkdir(parents=True)
+    (startup_dir / "fed_admin.json").write_text(f'{{"admin": {{"username": "{username}"}}}}', encoding="utf-8")
+    (startup_dir / "client.crt").write_text("cert", encoding="utf-8")
+    (startup_dir / "rootCA.pem").write_text("root", encoding="utf-8")
+    return admin_dir
+
+
 class TestJobList:
     """Tests for nvflare job list command."""
 
@@ -137,7 +147,6 @@ class TestJobList:
         [
             ("--startup-target", "prod"),
             ("--startup_target", "prod"),
-            ("--startup-kit", "/tmp/startup"),
             ("--startup_kit", "/tmp/startup"),
         ],
     )
@@ -149,13 +158,31 @@ class TestJobList:
         with pytest.raises(SystemExit):
             parser.parse_args([selector, value])
 
-    def test_list_help_and_schema_omit_old_startup_selectors(self, capsys):
+    @pytest.mark.parametrize(
+        ("selector", "value", "dest"),
+        [
+            ("--startup-kit", "/tmp/startup", "startup_kit"),
+            ("--kit-id", "prod_admin", "kit_id"),
+        ],
+    )
+    def test_list_parser_accepts_scoped_startup_selectors(self, selector, value, dest):
+        self._init_parsers()
+        from nvflare.tool.job.job_cli import job_sub_cmd_parser
+
+        parser = job_sub_cmd_parser["list"]
+        args = parser.parse_args([selector, value])
+
+        assert getattr(args, dest) == value
+
+    def test_list_help_and_schema_include_scoped_startup_selectors(self, capsys):
         self._init_parsers()
         from nvflare.tool.job.job_cli import cmd_job_list, job_sub_cmd_parser
 
         help_text = job_sub_cmd_parser["list"].format_help()
-        for token in ("--startup-target", "--startup_target", "--startup-kit", "--startup_kit"):
+        for token in ("--startup-target", "--startup_target", "--startup_kit"):
             assert token not in help_text
+        assert "--startup-kit" in help_text
+        assert "--kit-id" in help_text
 
         with patch("sys.argv", ["nvflare", "job", "list", "--schema"]):
             with pytest.raises(SystemExit) as exc_info:
@@ -163,8 +190,10 @@ class TestJobList:
 
         assert exc_info.value.code == 0
         schema_text = capsys.readouterr().out
-        for token in ("--startup-target", "--startup_target", "--startup-kit", "--startup_kit"):
+        for token in ("--startup-target", "--startup_target", "--startup_kit"):
             assert token not in schema_text
+        assert "--startup-kit" in schema_text
+        assert "--kit-id" in schema_text
 
     def test_list_forwards_all_study_literal_to_session(self):
         """The literal study name 'all' is forwarded unchanged to session creation."""
@@ -192,6 +221,24 @@ class TestJobList:
 
         assert new_secure.call_args.kwargs["username"] == "admin@nvidia.com"
         assert new_secure.call_args.kwargs["startup_kit_location"] == str(active_admin_dir)
+
+    def test_list_uses_scoped_startup_kit_session(self, tmp_path, monkeypatch):
+        from nvflare.tool.job.job_cli import cmd_job_list
+
+        scoped_admin_dir = _make_admin_startup_kit(tmp_path, "scoped@nvidia.com")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
+        args = self._make_args()
+        args.startup_kit = str(scoped_admin_dir)
+        args.kit_id = None
+        mock_sess = MagicMock()
+        mock_sess.list_jobs.return_value = []
+
+        with patch("nvflare.tool.cli_session.new_secure_session", return_value=mock_sess) as new_secure:
+            cmd_job_list(args)
+
+        assert new_secure.call_args.kwargs["username"] == "scoped@nvidia.com"
+        assert new_secure.call_args.kwargs["startup_kit_location"] == str(scoped_admin_dir)
 
     def test_study_field_injected_in_each_job(self, capsys):
         """cmd_job_list injects study field into each job entry when missing."""

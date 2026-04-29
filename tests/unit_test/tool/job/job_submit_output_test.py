@@ -138,7 +138,9 @@ class TestJobSubmitOutput:
 
         assert new_session.call_args.kwargs["study"] == "all"
 
-    def test_internal_submit_job_exits_before_output_ok_when_output_error_is_mocked(self):
+    def test_internal_submit_job_exits_before_output_ok_when_output_error_is_mocked(
+        self,
+    ):
         from nvflare.fuel.flare_api.api_spec import InvalidJobDefinition
         from nvflare.tool.job.job_cli import internal_submit_job
 
@@ -170,14 +172,22 @@ class TestJobSubmitOutput:
         parser = def_job_cli_parser(root.add_subparsers(dest="sub_command"))["job"]
 
         with pytest.raises(SystemExit):
-            parser.parse_args(["submit", "-j", "./my_job", "-f", "config_fed_server.conf", "num_rounds=1"])
+            parser.parse_args(
+                [
+                    "submit",
+                    "-j",
+                    "./my_job",
+                    "-f",
+                    "config_fed_server.conf",
+                    "num_rounds=1",
+                ]
+            )
 
     @pytest.mark.parametrize(
         ("selector", "value"),
         [
             ("--startup-target", "prod"),
             ("--startup_target", "prod"),
-            ("--startup-kit", "/tmp/startup"),
             ("--startup_kit", "/tmp/startup"),
         ],
     )
@@ -188,7 +198,22 @@ class TestJobSubmitOutput:
         with pytest.raises(SystemExit):
             parser.parse_args(["submit", "-j", "./my_job", selector, value])
 
-    def test_submit_help_omits_old_startup_selectors(self):
+    @pytest.mark.parametrize(
+        ("selector", "value", "dest"),
+        [
+            ("--startup-kit", "/tmp/startup", "startup_kit"),
+            ("--kit-id", "prod_admin", "kit_id"),
+        ],
+    )
+    def test_submit_parser_accepts_scoped_startup_selectors(self, selector, value, dest):
+        root = argparse.ArgumentParser()
+        parser = def_job_cli_parser(root.add_subparsers(dest="sub_command"))["job"]
+
+        args = parser.parse_args(["submit", "-j", "./my_job", selector, value])
+
+        assert getattr(args, dest) == value
+
+    def test_submit_help_includes_scoped_startup_selectors(self):
         root = argparse.ArgumentParser()
         def_job_cli_parser(root.add_subparsers(dest="sub_command"))
 
@@ -197,10 +222,11 @@ class TestJobSubmitOutput:
         help_text = job_sub_cmd_parser["submit"].format_help()
         assert "--startup-target" not in help_text
         assert "--startup_target" not in help_text
-        assert "--startup-kit" not in help_text
         assert "--startup_kit" not in help_text
+        assert "--startup-kit" in help_text
+        assert "--kit-id" in help_text
 
-    def test_submit_schema_omits_old_startup_selectors(self, capsys):
+    def test_submit_schema_includes_scoped_startup_selectors(self, capsys):
         root = argparse.ArgumentParser()
         def_job_cli_parser(root.add_subparsers(dest="sub_command"))
 
@@ -214,8 +240,9 @@ class TestJobSubmitOutput:
         schema_text = capsys.readouterr().out
         assert "--startup-target" not in schema_text
         assert "--startup_target" not in schema_text
-        assert "--startup-kit" not in schema_text
         assert "--startup_kit" not in schema_text
+        assert "--startup-kit" in schema_text
+        assert "--kit-id" in schema_text
 
     def test_submit_parser_rejects_legacy_target_alias(self):
         root = argparse.ArgumentParser()

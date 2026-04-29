@@ -30,7 +30,11 @@ from pyhocon import ConfigTree
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
-from nvflare.tool.cli_session import new_active_cli_session, new_cli_session
+from nvflare.tool.cli_session import (
+    add_startup_kit_selection_args,
+    new_cli_session,
+    new_cli_session_for_args,
+)
 from nvflare.tool.job.config.configer import (
     build_config_file_indices,
     filter_indices,
@@ -89,7 +93,8 @@ CMD_JOB_LOG_ALIAS = "log"
 
 _JOB_HELP_FORMATTER = partial(argparse.HelpFormatter, max_help_position=24, width=120)
 _ACTIVE_STARTUP_KIT_HINT = (
-    "Run 'nvflare config list' and 'nvflare config use <id>', or set NVFLARE_STARTUP_KIT_DIR for automation."
+    "Run 'nvflare config list' and 'nvflare config use <id>', pass --kit-id <id> or --startup-kit <path>, "
+    "or set NVFLARE_STARTUP_KIT_DIR for automation."
 )
 
 
@@ -627,8 +632,9 @@ def define_submit_job_parser(job_subparser):
         help="job folder path, default to ./current_job directory",
     )
     submit_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
-    submit_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     submit_parser.add_argument("--study", type=str, default="default", help="study to submit the job to")
+    add_startup_kit_selection_args(submit_parser)
+    submit_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_SUBMIT_JOB] = submit_parser
 
 
@@ -925,14 +931,15 @@ def create_app_dir(job_folder, app_name: str = "app"):
 
 
 def _get_session(args=None, admin_user_dir=None, username=None, study="default"):
-    """Create a secure session using the active startup kit."""
+    """Create a secure session using command selectors, env, or active startup kit."""
     from nvflare.tool.cli_output import get_connect_timeout, output_error
 
     timeout = get_connect_timeout()
 
     if admin_user_dir is None and username is None:
         try:
-            return new_active_cli_session(
+            return new_cli_session_for_args(
+                args=args,
                 timeout=timeout,
                 study=study,
                 debug=_get_arg_value(args, "debug", False),
@@ -948,9 +955,9 @@ def _get_session(args=None, admin_user_dir=None, username=None, study="default")
 
     if admin_user_dir is None or username is None:
         try:
-            from nvflare.tool.kit.kit_config import resolve_admin_user_and_dir_from_startup_kit, resolve_startup_kit_dir
+            from nvflare.tool.cli_session import resolve_admin_user_and_dir_for_args
 
-            u, d = resolve_admin_user_and_dir_from_startup_kit(resolve_startup_kit_dir())
+            u, d = resolve_admin_user_and_dir_for_args(args)
         except ValueError as e:
             output_error(
                 "STARTUP_KIT_MISSING",
@@ -991,9 +998,13 @@ def _get_arg_value(args, name, default=None):
         return getattr(args, name, default)
 
 
+def _has_scoped_startup_kit_args(args) -> bool:
+    return bool(_get_arg_value(args, "kit_id") or _get_arg_value(args, "startup_kit"))
+
+
 def _job_session_for_args(cmd_args=None, study="default"):
-    if study != "default":
-        return _session(study=study)
+    if study != "default" or _has_scoped_startup_kit_args(cmd_args):
+        return _session(args=cmd_args, study=study)
     return _session()
 
 
@@ -1214,6 +1225,7 @@ def define_list_jobs_parser(job_subparser):
     p.add_argument("-r", "--reverse", action="store_true", default=False, help="reverse sort order")
     p.add_argument("-m", "--max", type=int, default=None, help="max results to return")
     p.add_argument("--study", type=str, default="default", help="study to list jobs from")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_LIST] = p
     job_sub_cmd_handlers[CMD_JOB_LIST] = cmd_job_list
@@ -1222,6 +1234,7 @@ def define_list_jobs_parser(job_subparser):
 def define_job_meta_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_META, help="get metadata for a job")
     p.add_argument("job_id", type=str, help="job ID")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_META] = p
     job_sub_cmd_handlers[CMD_JOB_META] = cmd_job_meta
@@ -1231,6 +1244,7 @@ def define_abort_job_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_ABORT, help="abort a running job")
     p.add_argument("job_id", type=str, help="job ID")
     p.add_argument("--force", action="store_true", help="skip confirmation prompt")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_ABORT] = p
     job_sub_cmd_handlers[CMD_JOB_ABORT] = cmd_job_abort
@@ -1239,6 +1253,7 @@ def define_abort_job_parser(job_subparser):
 def define_clone_job_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_CLONE, help="clone an existing job")
     p.add_argument("job_id", type=str, help="job ID to clone")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_CLONE] = p
     job_sub_cmd_handlers[CMD_JOB_CLONE] = cmd_job_clone
@@ -1247,7 +1262,15 @@ def define_clone_job_parser(job_subparser):
 def define_download_job_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_DOWNLOAD, help="download job result")
     p.add_argument("job_id", type=str, help="job ID")
-    p.add_argument("-o", "--output-dir", dest="output_dir", type=str, default="./", help="destination directory")
+    p.add_argument(
+        "-o",
+        "--output-dir",
+        dest="output_dir",
+        type=str,
+        default="./",
+        help="destination directory",
+    )
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_DOWNLOAD] = p
     job_sub_cmd_handlers[CMD_JOB_DOWNLOAD] = cmd_job_download
@@ -1257,16 +1280,27 @@ def define_delete_job_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_DELETE, help="delete a job")
     p.add_argument("job_id", type=str, help="job ID")
     p.add_argument("--force", action="store_true", help="skip confirmation prompt")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_DELETE] = p
     job_sub_cmd_handlers[CMD_JOB_DELETE] = cmd_job_delete
 
 
-_TERMINAL_JOB_STATES = {"FINISHED_OK", "FINISHED_EXCEPTION", "ABORTED", "ABANDONED", "FAILED"}
+_TERMINAL_JOB_STATES = {
+    "FINISHED_OK",
+    "FINISHED_EXCEPTION",
+    "ABORTED",
+    "ABANDONED",
+    "FAILED",
+}
 
 
 def cmd_job_stats(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
+    from nvflare.fuel.flare_api.api_spec import (
+        AuthenticationError,
+        JobNotFound,
+        NoConnection,
+    )
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1390,6 +1424,7 @@ def define_job_stats_parser(job_subparser):
     p = job_subparser.add_parser(CMD_JOB_STATS, help="show running job statistics")
     p.add_argument("job_id", type=str, help="job ID")
     p.add_argument("--site", default="all", help="target site name or all")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_STATS] = p
     job_sub_cmd_handlers[CMD_JOB_STATS] = cmd_job_stats
@@ -1405,6 +1440,7 @@ def define_job_logs_parser(job_subparser):
         default="server",
         help="target site name, server, or all. Client logs must have been streamed to the server.",
     )
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_LOGS] = p
     job_sub_cmd_handlers[CMD_JOB_LOGS] = cmd_job_logs
@@ -1814,6 +1850,7 @@ def define_job_monitor_parser(job_subparser):
         default=None,
         help="extra metric key to surface from stats (repeatable)",
     )
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_MONITOR] = p
     job_sub_cmd_handlers[CMD_JOB_MONITOR] = cmd_job_monitor
@@ -1833,6 +1870,7 @@ def define_job_log_parser(job_subparser):
         help="log level or mode: DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload",
     )
     p.add_argument("--site", default="all", help="target site name or all")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_LOG_CONFIG] = p
     job_sub_cmd_parser[CMD_JOB_LOG_ALIAS] = p

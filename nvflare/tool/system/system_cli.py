@@ -17,7 +17,13 @@ import time
 from contextlib import contextmanager
 
 import nvflare
-from nvflare.tool.cli_output import output_error, output_error_message, output_ok, output_usage_error
+from nvflare.tool.cli_output import (
+    output_error,
+    output_error_message,
+    output_ok,
+    output_usage_error,
+)
+from nvflare.tool.cli_session import add_startup_kit_selection_args
 
 CMD_SYSTEM_STATUS = "status"
 CMD_SYSTEM_RESOURCES = "resources"
@@ -40,6 +46,7 @@ def def_system_cli_parser(system_parser):
     p = sub.add_parser(CMD_SYSTEM_STATUS, help="show server and client status")
     p.add_argument("target", nargs="?", choices=["server", "client"], default=None)
     p.add_argument("client_names", nargs="*", default=[])
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_STATUS] = p
 
@@ -47,6 +54,7 @@ def def_system_cli_parser(system_parser):
     p = sub.add_parser(CMD_SYSTEM_RESOURCES, help="show server and client resource usage")
     p.add_argument("target", nargs="?", choices=["server", "client"], default=None)
     p.add_argument("client_names", nargs="*", default=[])
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_RESOURCES] = p
 
@@ -56,6 +64,7 @@ def def_system_cli_parser(system_parser):
     p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--force", action="store_true")
     p.add_argument("--no-wait", dest="no_wait", action="store_true")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_SHUTDOWN] = p
 
@@ -65,6 +74,7 @@ def def_system_cli_parser(system_parser):
     p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--force", action="store_true")
     p.add_argument("--no-wait", dest="no_wait", action="store_true")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_RESTART] = p
 
@@ -72,6 +82,7 @@ def def_system_cli_parser(system_parser):
     p = sub.add_parser(CMD_SYSTEM_REMOVE_CLIENT, help="remove a client registry entry")
     p.add_argument("client_name", help="name of the client registry entry to remove")
     p.add_argument("--force", action="store_true")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_REMOVE_CLIENT] = p
 
@@ -79,6 +90,7 @@ def def_system_cli_parser(system_parser):
     p = sub.add_parser(CMD_SYSTEM_DISABLE_CLIENT, help="disable a client from reconnecting")
     p.add_argument("client_name", help="name of the client to disable")
     p.add_argument("--force", action="store_true")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_DISABLE_CLIENT] = p
 
@@ -86,12 +98,14 @@ def def_system_cli_parser(system_parser):
     p = sub.add_parser(CMD_SYSTEM_ENABLE_CLIENT, help="enable a disabled client to reconnect")
     p.add_argument("client_name", help="name of the client to enable")
     p.add_argument("--force", action="store_true")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_ENABLE_CLIENT] = p
 
     # version
     p = sub.add_parser(CMD_SYSTEM_VERSION, help="show NVFlare version on each remote site")
     p.add_argument("--site", default="all", help="server, a client name, or all")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_VERSION] = p
 
@@ -104,6 +118,7 @@ def def_system_cli_parser(system_parser):
         help="DEBUG, INFO, WARNING, ERROR, CRITICAL, concise, msg_only, full, verbose, reload",
     )
     p.add_argument("--site", default="all", help="server, a client name, or all")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_LOG_CONFIG] = p
 
@@ -130,12 +145,17 @@ def _confirm_or_force(prompt, args):
 def _get_system_session(args=None):
     """Create a secure session using the startup kit."""
     from nvflare.tool.cli_output import get_connect_timeout
-    from nvflare.tool.cli_session import new_active_cli_session
+    from nvflare.tool.cli_session import new_cli_session_for_args
 
     try:
-        return new_active_cli_session(timeout=get_connect_timeout())
+        return new_cli_session_for_args(args=args, timeout=get_connect_timeout())
     except ValueError as e:
-        output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e))
+        output_error(
+            "STARTUP_KIT_MISSING",
+            exit_code=4,
+            detail=str(e),
+            hint=getattr(e, "hint", None),
+        )
         raise SystemExit(4)
 
 
@@ -347,7 +367,11 @@ def cmd_system_resources(args):
 
 
 def cmd_system_shutdown(args):
-    from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, NoConnection
+    from nvflare.fuel.flare_api.api_spec import (
+        AuthenticationError,
+        InvalidTarget,
+        NoConnection,
+    )
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -399,11 +423,21 @@ def cmd_system_shutdown(args):
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         raise SystemExit(2)
 
-    output_ok({"target": target, "status": "shutdown initiated" if no_wait else "stopped", "result": result})
+    output_ok(
+        {
+            "target": target,
+            "status": "shutdown initiated" if no_wait else "stopped",
+            "result": result,
+        }
+    )
 
 
 def cmd_system_restart(args):
-    from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, NoConnection
+    from nvflare.fuel.flare_api.api_spec import (
+        AuthenticationError,
+        InvalidTarget,
+        NoConnection,
+    )
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -455,7 +489,13 @@ def cmd_system_restart(args):
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         raise SystemExit(2)
 
-    output_ok({"target": target, "status": "restart initiated" if no_wait else "restarted", "result": result})
+    output_ok(
+        {
+            "target": target,
+            "status": "restart initiated" if no_wait else "restarted",
+            "result": result,
+        }
+    )
 
 
 def cmd_system_version(args):
@@ -554,7 +594,11 @@ def cmd_system_log(args):
 
 
 def cmd_system_remove_client(args):
-    from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, NoConnection
+    from nvflare.fuel.flare_api.api_spec import (
+        AuthenticationError,
+        InvalidTarget,
+        NoConnection,
+    )
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(

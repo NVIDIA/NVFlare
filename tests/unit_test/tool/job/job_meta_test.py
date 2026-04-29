@@ -151,7 +151,6 @@ class TestJobMeta:
         [
             ("--startup-target", "prod"),
             ("--startup_target", "prod"),
-            ("--startup-kit", "/tmp/startup"),
             ("--startup_kit", "/tmp/startup"),
         ],
     )
@@ -168,17 +167,44 @@ class TestJobMeta:
         with pytest.raises(SystemExit):
             parser.parse_args(["abc123", selector, value])
 
-    def test_meta_help_and_schema_omit_old_startup_selectors(self, capsys):
+    @pytest.mark.parametrize(
+        ("selector", "value", "dest"),
+        [
+            ("--startup-kit", "/tmp/startup", "startup_kit"),
+            ("--kit-id", "prod_admin", "kit_id"),
+        ],
+    )
+    def test_meta_parser_accepts_scoped_startup_selectors(self, selector, value, dest):
         import argparse
 
-        from nvflare.tool.job.job_cli import cmd_job_meta, def_job_cli_parser, job_sub_cmd_parser
+        from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        def_job_cli_parser(subs)
+
+        parser = job_sub_cmd_parser["meta"]
+        args = parser.parse_args(["abc123", selector, value])
+
+        assert getattr(args, dest) == value
+
+    def test_meta_help_and_schema_include_scoped_startup_selectors(self, capsys):
+        import argparse
+
+        from nvflare.tool.job.job_cli import (
+            cmd_job_meta,
+            def_job_cli_parser,
+            job_sub_cmd_parser,
+        )
 
         root = argparse.ArgumentParser()
         def_job_cli_parser(root.add_subparsers())
 
         help_text = job_sub_cmd_parser["meta"].format_help()
-        for token in ("--startup-target", "--startup_target", "--startup-kit", "--startup_kit"):
+        for token in ("--startup-target", "--startup_target", "--startup_kit"):
             assert token not in help_text
+        assert "--startup-kit" in help_text
+        assert "--kit-id" in help_text
 
         with patch("sys.argv", ["nvflare", "job", "meta", "--schema"]):
             with pytest.raises(SystemExit) as exc_info:
@@ -186,5 +212,7 @@ class TestJobMeta:
 
         assert exc_info.value.code == 0
         schema_text = capsys.readouterr().out
-        for token in ("--startup-target", "--startup_target", "--startup-kit", "--startup_kit"):
+        for token in ("--startup-target", "--startup_target", "--startup_kit"):
             assert token not in schema_text
+        assert "--startup-kit" in schema_text
+        assert "--kit-id" in schema_text

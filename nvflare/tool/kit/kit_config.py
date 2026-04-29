@@ -82,7 +82,12 @@ def _ensure_v2_config(config: ConfigTree) -> ConfigTree:
 
 
 def _remove_legacy_startup_kit_keys(config: ConfigTree) -> ConfigTree:
-    for key in ("startup_kit.path", "startup_kit", "poc.startup_kit", "prod.startup_kit"):
+    for key in (
+        "startup_kit.path",
+        "startup_kit",
+        "poc.startup_kit",
+        "prod.startup_kit",
+    ):
         try:
             config.pop(key, None)
         except Exception:
@@ -186,6 +191,19 @@ def get_active_startup_kit_id(config: ConfigTree) -> Optional[str]:
     return active.strip() if active and active.strip() else None
 
 
+def resolve_startup_kit_dir_by_id(kit_id: str) -> str:
+    """Resolve a registered startup-kit ID to a validated admin user dir without changing active config."""
+    kit_id = _normalize_kit_id(kit_id)
+    config = load_cli_config()
+    entries = get_startup_kit_entries(config)
+    if kit_id not in entries:
+        raise StartupKitConfigError(
+            f"startup kit id '{kit_id}' is not registered",
+            hint="Run nvflare config list.",
+        )
+    return _validate_registered_path(kit_id, entries[kit_id])
+
+
 def _as_existing_dir(path: str) -> Path:
     if not path or not str(path).strip():
         raise StartupKitConfigError("startup kit directory is not specified")
@@ -287,7 +305,10 @@ def set_active_startup_kit(config: ConfigTree, kit_id: str) -> ConfigTree:
     kit_id = _normalize_kit_id(kit_id)
     entries = get_startup_kit_entries(config)
     if kit_id not in entries:
-        raise StartupKitConfigError(f"startup kit id '{kit_id}' is not registered", hint="Run nvflare config list.")
+        raise StartupKitConfigError(
+            f"startup kit id '{kit_id}' is not registered",
+            hint="Run nvflare config list.",
+        )
 
     _validate_registered_path(kit_id, entries[kit_id])
     config.put(STARTUP_KITS_ACTIVE_KEY, kit_id)
@@ -398,7 +419,9 @@ def inspect_startup_kit_metadata(path: str) -> Dict[str, Optional[str]]:
     return metadata
 
 
-def get_startup_kit_status(path: str) -> Tuple[str, Optional[str], Dict[str, Optional[str]]]:
+def get_startup_kit_status(
+    path: str,
+) -> Tuple[str, Optional[str], Dict[str, Optional[str]]]:
     """Return (status, normalized_path, metadata) without raising for stale entries."""
     path_obj = Path(path).expanduser() if path else Path("")
     if not path or not path_obj.exists():
@@ -435,7 +458,11 @@ def resolve_startup_kit_dir() -> str:
     if not active:
         raise StartupKitConfigError(
             "no active startup kit is configured",
-            hint="Run nvflare poc prepare, or run nvflare config add <id> <startup-kit-dir> then nvflare config use <id>.",
+            hint=(
+                "Run nvflare poc prepare, run nvflare config add <id> <startup-kit-dir> then "
+                "nvflare config use <id>, pass --kit-id <id> or --startup-kit <path>, or set "
+                f"{NVFLARE_STARTUP_KIT_DIR}."
+            ),
         )
 
     entries = get_startup_kit_entries(config)
@@ -461,7 +488,9 @@ def resolve_startup_kit_dir() -> str:
         ) from e
 
 
-def resolve_admin_user_and_dir_from_startup_kit(startup_kit_dir: str) -> Tuple[str, str]:
+def resolve_admin_user_and_dir_from_startup_kit(
+    startup_kit_dir: str,
+) -> Tuple[str, str]:
     """Resolve admin username and normalized admin user dir from a startup kit path."""
     admin_user_dir = validate_admin_startup_kit(startup_kit_dir)
     startup_dir = os.path.join(admin_user_dir, "startup")

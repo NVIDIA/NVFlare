@@ -27,7 +27,13 @@ from nvflare.fuel.flare_api.api_spec import (
     InvalidArgumentError,
     NoConnection,
 )
-from nvflare.tool.cli_output import output_error, output_error_message, output_ok, output_usage_error
+from nvflare.tool.cli_output import (
+    output_error,
+    output_error_message,
+    output_ok,
+    output_usage_error,
+)
+from nvflare.tool.cli_session import add_startup_kit_selection_args
 
 CMD_STUDY_REGISTER = "register"
 CMD_STUDY_ADD_SITE = "add-site"
@@ -66,21 +72,26 @@ def _ensure_study_parsers():
     _study_root_parser = root
 
 
-def _resolve_active_startup_kit_dir() -> str:
-    from nvflare.tool.kit.kit_config import resolve_startup_kit_dir
+def _resolve_startup_kit_dir_for_args(args=None) -> str:
+    from nvflare.tool.cli_session import resolve_startup_kit_dir_for_args
 
-    return resolve_startup_kit_dir()
+    return resolve_startup_kit_dir_for_args(args)
 
 
 @contextmanager
 def _study_session(args):
     from nvflare.tool.cli_output import get_connect_timeout
-    from nvflare.tool.cli_session import new_active_cli_session
+    from nvflare.tool.cli_session import new_cli_session_for_args
 
     try:
-        sess = new_active_cli_session(timeout=get_connect_timeout(), study=DEFAULT_STUDY)
+        sess = new_cli_session_for_args(args=args, timeout=get_connect_timeout(), study=DEFAULT_STUDY)
     except ValueError as e:
-        output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e))
+        output_error(
+            "STARTUP_KIT_MISSING",
+            exit_code=4,
+            detail=str(e),
+            hint=getattr(e, "hint", None),
+        )
         raise SystemExit(4)
     try:
         yield sess
@@ -131,7 +142,7 @@ def _get_caller_role_from_startup_kit(admin_user_dir: str) -> str:
 
 def _try_get_caller_role(args) -> str:
     try:
-        admin_user_dir = _resolve_active_startup_kit_dir()
+        admin_user_dir = _resolve_startup_kit_dir_for_args(args)
         return _get_caller_role_from_startup_kit(admin_user_dir)
     except Exception:
         return ""
@@ -308,7 +319,10 @@ def cmd_remove(args):
         sys.argv[1:],
     )
     _run_with_payload(
-        args, lambda s, name: s.remove_study(name), args.name, parser=_study_sub_cmd_parsers[CMD_STUDY_REMOVE]
+        args,
+        lambda s, name: s.remove_study(name),
+        args.name,
+        parser=_study_sub_cmd_parsers[CMD_STUDY_REMOVE],
     )
 
 
@@ -336,7 +350,10 @@ def cmd_show(args):
         sys.argv[1:],
     )
     _run_with_payload(
-        args, lambda s, name: s.show_study(name), args.name, parser=_study_sub_cmd_parsers[CMD_STUDY_SHOW]
+        args,
+        lambda s, name: s.show_study(name),
+        args.name,
+        parser=_study_sub_cmd_parsers[CMD_STUDY_SHOW],
     )
 
 
@@ -385,6 +402,7 @@ def _define_study_subcommands(parser):
     p.add_argument("name")
     p.add_argument("--sites", nargs="+", required=False)
     p.add_argument("--site-org", action="append", default=[])
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_REGISTER] = p
     _study_handlers[CMD_STUDY_REGISTER] = cmd_register
@@ -393,6 +411,7 @@ def _define_study_subcommands(parser):
     p.add_argument("name")
     p.add_argument("--sites", nargs="+", required=False)
     p.add_argument("--site-org", action="append", default=[])
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_ADD_SITE] = p
     _study_handlers[CMD_STUDY_ADD_SITE] = cmd_add_site
@@ -401,23 +420,27 @@ def _define_study_subcommands(parser):
     p.add_argument("name")
     p.add_argument("--sites", nargs="+", required=False)
     p.add_argument("--site-org", action="append", default=[])
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_REMOVE_SITE] = p
     _study_handlers[CMD_STUDY_REMOVE_SITE] = cmd_remove_site
 
     p = sub.add_parser(CMD_STUDY_REMOVE, help="remove a study")
     p.add_argument("name")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_REMOVE] = p
     _study_handlers[CMD_STUDY_REMOVE] = cmd_remove
 
     p = sub.add_parser(CMD_STUDY_LIST, help="list visible studies")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_LIST] = p
     _study_handlers[CMD_STUDY_LIST] = cmd_list
 
     p = sub.add_parser(CMD_STUDY_SHOW, help="show a study")
     p.add_argument("name")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_SHOW] = p
     _study_handlers[CMD_STUDY_SHOW] = cmd_show
@@ -425,6 +448,7 @@ def _define_study_subcommands(parser):
     p = sub.add_parser(CMD_STUDY_ADD_USER, help="add a study user")
     p.add_argument("study")
     p.add_argument("user")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_ADD_USER] = p
     _study_handlers[CMD_STUDY_ADD_USER] = cmd_add_user
@@ -432,6 +456,7 @@ def _define_study_subcommands(parser):
     p = sub.add_parser(CMD_STUDY_REMOVE_USER, help="remove a study user")
     p.add_argument("study")
     p.add_argument("user")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_REMOVE_USER] = p
     _study_handlers[CMD_STUDY_REMOVE_USER] = cmd_remove_user

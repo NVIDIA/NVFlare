@@ -18,9 +18,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, MonitorReturnCode, NoConnection
+from nvflare.fuel.flare_api.api_spec import (
+    AuthenticationError,
+    JobNotFound,
+    MonitorReturnCode,
+    NoConnection,
+)
 from nvflare.tool import cli_output
-from nvflare.tool.job.job_cli import _parse_monitor_duration_seconds, _parse_monitor_start_ts
+from nvflare.tool.job.job_cli import (
+    _parse_monitor_duration_seconds,
+    _parse_monitor_start_ts,
+)
 
 
 def _configure_active_startup_kit(tmp_path, monkeypatch):
@@ -51,7 +59,14 @@ def _configure_active_startup_kit(tmp_path, monkeypatch):
     return admin_dir
 
 
-def _make_args(job_id="abc123", timeout=0, interval=2, study="default", stats_target="server", metrics=None):
+def _make_args(
+    job_id="abc123",
+    timeout=0,
+    interval=2,
+    study="default",
+    stats_target="server",
+    metrics=None,
+):
     args = MagicMock()
     args.job_id = job_id
     args.timeout = timeout
@@ -110,7 +125,10 @@ def _mock_session(rc, meta):
     def _fake_session(*args, **kwargs):
         yield mock_sess
 
-    return patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session), mock_sess
+    return (
+        patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session),
+        mock_sess,
+    )
 
 
 class TestJobMonitorOutput:
@@ -144,7 +162,6 @@ class TestJobMonitorOutput:
         [
             ("--startup-target", "prod"),
             ("--startup_target", "prod"),
-            ("--startup-kit", "/tmp/startup"),
             ("--startup_kit", "/tmp/startup"),
         ],
     )
@@ -161,18 +178,45 @@ class TestJobMonitorOutput:
         with pytest.raises(SystemExit):
             parser.parse_args(["abc123", selector, value])
 
-    def test_monitor_help_and_schema_omit_old_startup_selectors(self, capsys):
+    @pytest.mark.parametrize(
+        ("selector", "value", "dest"),
+        [
+            ("--startup-kit", "/tmp/startup", "startup_kit"),
+            ("--kit-id", "prod_admin", "kit_id"),
+        ],
+    )
+    def test_monitor_parser_accepts_scoped_startup_selectors(self, selector, value, dest):
         import argparse
 
-        from nvflare.tool.job.job_cli import cmd_job_monitor, def_job_cli_parser, job_sub_cmd_parser
+        from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        def_job_cli_parser(subs)
+
+        parser = job_sub_cmd_parser["monitor"]
+        args = parser.parse_args(["abc123", selector, value])
+
+        assert getattr(args, dest) == value
+
+    def test_monitor_help_and_schema_include_scoped_startup_selectors(self, capsys):
+        import argparse
+
+        from nvflare.tool.job.job_cli import (
+            cmd_job_monitor,
+            def_job_cli_parser,
+            job_sub_cmd_parser,
+        )
 
         root = argparse.ArgumentParser()
         def_job_cli_parser(root.add_subparsers())
 
         help_text = job_sub_cmd_parser["monitor"].format_help()
-        for token in ("--startup-target", "--startup_target", "--startup-kit", "--startup_kit"):
+        for token in ("--startup-target", "--startup_target", "--startup_kit"):
             assert token not in help_text
         assert "--study" in help_text
+        assert "--startup-kit" in help_text
+        assert "--kit-id" in help_text
 
         with patch("sys.argv", ["nvflare", "job", "monitor", "--schema"]):
             with pytest.raises(SystemExit) as exc_info:
@@ -180,9 +224,11 @@ class TestJobMonitorOutput:
 
         assert exc_info.value.code == 0
         schema_text = capsys.readouterr().out
-        for token in ("--startup-target", "--startup_target", "--startup-kit", "--startup_kit"):
+        for token in ("--startup-target", "--startup_target", "--startup_kit"):
             assert token not in schema_text
         assert "--study" in schema_text
+        assert "--startup-kit" in schema_text
+        assert "--kit-id" in schema_text
 
     def test_failed_outputs_error_envelope_exits_1(self, capsys):
         meta = _make_meta("FAILED")
@@ -375,7 +421,10 @@ class TestJobMonitorOutput:
         """In json mode, stats_raw is included in the envelope data."""
         meta = _make_meta("FINISHED_OK")
         mock_sess = MagicMock()
-        mock_sess.monitor_job_and_return_job_meta.return_value = (MonitorReturnCode.JOB_FINISHED, meta)
+        mock_sess.monitor_job_and_return_job_meta.return_value = (
+            MonitorReturnCode.JOB_FINISHED,
+            meta,
+        )
         mock_sess.show_stats.return_value = {"server": {"round": 10, "loss": 0.05}}
 
         @contextmanager
@@ -394,7 +443,10 @@ class TestJobMonitorOutput:
         active_admin_dir = _configure_active_startup_kit(tmp_path, monkeypatch)
         meta = _make_meta("FINISHED_OK")
         mock_sess = MagicMock()
-        mock_sess.monitor_job_and_return_job_meta.return_value = (MonitorReturnCode.JOB_FINISHED, meta)
+        mock_sess.monitor_job_and_return_job_meta.return_value = (
+            MonitorReturnCode.JOB_FINISHED,
+            meta,
+        )
         mock_sess.show_stats.return_value = {}
 
         with patch("nvflare.tool.cli_session.new_secure_session", return_value=mock_sess) as new_secure:
@@ -408,7 +460,10 @@ class TestJobMonitorOutput:
     def test_monitor_uses_named_study_session(self, capsys):
         meta = _make_meta("FINISHED_OK")
         mock_sess = MagicMock()
-        mock_sess.monitor_job_and_return_job_meta.return_value = (MonitorReturnCode.JOB_FINISHED, meta)
+        mock_sess.monitor_job_and_return_job_meta.return_value = (
+            MonitorReturnCode.JOB_FINISHED,
+            meta,
+        )
         mock_sess.show_stats.return_value = {}
 
         @contextmanager
@@ -514,6 +569,16 @@ class TestJobMonitorOutput:
         def_job_cli_parser(root.add_subparsers())
 
         parser = job_sub_cmd_parser["monitor"]
-        args = parser.parse_args(["abc123", "--stats-target", "client", "--metric", "loss", "--metric", "accuracy"])
+        args = parser.parse_args(
+            [
+                "abc123",
+                "--stats-target",
+                "client",
+                "--metric",
+                "loss",
+                "--metric",
+                "accuracy",
+            ]
+        )
         assert args.stats_target == "client"
         assert args.metrics == ["loss", "accuracy"]

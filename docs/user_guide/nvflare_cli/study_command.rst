@@ -34,9 +34,14 @@ Startup Kit Resolution
 All ``nvflare study`` commands connect to the server through an admin startup kit. Resolution
 is identical to all other server-connected ``nvflare`` commands (``job``, ``system``, etc.):
 
-1. ``NVFLARE_STARTUP_KIT_DIR`` environment variable.
-2. ``startup_kits.active`` from ``~/.nvflare/config.conf``.
-3. If neither resolves to a valid admin startup kit, the command fails before connecting.
+1. ``--kit-id <id>``: use a registered startup-kit ID for this command only.
+2. ``--startup-kit <path>``: use an explicit admin startup-kit directory for this command only.
+3. ``NVFLARE_STARTUP_KIT_DIR`` environment variable.
+4. ``startup_kits.active`` from ``~/.nvflare/config.conf``.
+5. If no source resolves to a valid admin startup kit, the command fails before connecting.
+
+The command-line selectors do not change the active startup kit in
+``~/.nvflare/config.conf``.
 
 A user can register and activate a startup kit once with :ref:`kit_command`:
 
@@ -44,6 +49,7 @@ A user can register and activate a startup kit once with :ref:`kit_command`:
 
    nvflare config add project_admin /path/to/admin@nvidia.com
    nvflare config use project_admin
+   nvflare study list --kit-id project_admin
 
 If no source resolves, the command exits with error code 4 and ``"error_code": "STARTUP_KIT_MISSING"``.
 

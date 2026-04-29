@@ -5,7 +5,7 @@ NVIDIA FLARE Job CLI
 #########################
 
 The ``nvflare job`` command family is used to submit, inspect, monitor, and
-manage federated learning jobs from the active local admin startup kit.
+manage federated learning jobs from an admin startup kit.
 
 Before using server-connected job commands, either run ``nvflare poc prepare``
 or activate a registered startup kit with :ref:`kit_command`:
@@ -51,6 +51,22 @@ Common Workflow
 4. Inspect metadata, stats, or logs as needed.
 5. Download, clone, abort, or delete the job when appropriate.
 
+*****************************
+Startup Kit Selection
+*****************************
+
+Server-connected job commands use this startup kit resolution order:
+
+1. ``--kit-id <id>``: use a registered startup-kit ID for this command only.
+2. ``--startup-kit <path>``: use an explicit admin startup-kit directory for this command only.
+3. ``NVFLARE_STARTUP_KIT_DIR`` when set.
+4. ``startup_kits.active`` from ``~/.nvflare/config.conf``.
+5. If no source resolves to a valid admin startup kit, the command fails before connecting.
+
+``--kit-id`` and ``--startup-kit`` do not change the globally active startup kit.
+They are useful for scripts, notebooks, and concurrent workflows that must not
+mutate ``~/.nvflare/config.conf``.
+
 ****************
 Submit a Job
 ****************
@@ -74,18 +90,14 @@ job status.
 To change job configuration values, edit the exported job files before
 submission. Submit-time ``-f/--config_file`` overrides are not supported.
 
-Startup kit resolution order for server-connected job commands:
-
-1. ``NVFLARE_STARTUP_KIT_DIR`` when set.
-2. ``startup_kits.active`` from ``~/.nvflare/config.conf``.
-3. If neither resolves to a valid admin startup kit, the command fails before connecting.
-
 Examples:
 
 .. code-block:: shell
 
    nvflare config use project_admin
    nvflare job submit -j /tmp/nvflare/hello-pt
+   nvflare job list --kit-id project_admin
+   nvflare job submit -j /tmp/nvflare/hello-pt --startup-kit /path/to/admin@nvidia.com
 
 Registered startup kit paths must point to the admin startup kit directory
 itself, not the broader ``prod_00`` root.
