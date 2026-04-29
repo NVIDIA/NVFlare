@@ -294,14 +294,23 @@ class TestCrossSiteEvalIdempotency:
         finally:
             os.unlink(train_script)
 
-    def test_participating_clients_passed_to_cross_site_eval_controller(self, tmp_path):
+    def test_participating_clients_passed_to_cross_site_eval_controller(self, tmp_path, monkeypatch):
         from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
+        from nvflare.app_common.workflows import cross_site_model_eval
         from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
         from nvflare.recipe.utils import add_cross_site_evaluation
 
         train_script = tmp_path / "client.py"
         train_script.write_text("# dummy train script\n")
         participating_clients = ["site-1", "site-3"]
+        captured_kwargs = {}
+
+        class RecordingCrossSiteModelEval(CrossSiteModelEval):
+            def __init__(self, *args, **kwargs):
+                captured_kwargs.update(kwargs)
+                super().__init__(*args, **kwargs)
+
+        monkeypatch.setattr(cross_site_model_eval, "CrossSiteModelEval", RecordingCrossSiteModelEval)
 
         recipe = NumpyFedAvgRecipe(
             name="test_cse_participating_clients",
@@ -313,9 +322,4 @@ class TestCrossSiteEvalIdempotency:
 
         add_cross_site_evaluation(recipe, participating_clients=participating_clients)
 
-        server_app = recipe.job._deploy_map["server"]
-        controllers = [getattr(workflow, "controller", workflow) for workflow in server_app.app_config.workflows]
-        eval_controllers = [controller for controller in controllers if isinstance(controller, CrossSiteModelEval)]
-
-        assert len(eval_controllers) == 1
-        assert eval_controllers[0]._participating_clients == participating_clients
+        assert captured_kwargs["participating_clients"] == participating_clients
