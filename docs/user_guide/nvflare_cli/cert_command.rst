@@ -24,7 +24,10 @@ The public subcommands are:
 Initialize the Root CA
 **********************
 
-The Project Admin first creates a project profile:
+The Project Admin first creates a **project profile** file. This file can be
+stored anywhere on the Project Admin's machine — there is no required location.
+The path is passed explicitly to every ``cert init`` and ``cert approve``
+command; NVFlare never searches for it automatically.
 
 .. code-block:: yaml
 
@@ -36,8 +39,17 @@ The Project Admin first creates a project profile:
      fed_learn_port: 8002
      admin_port: 8003
 
-Then the Project Admin runs ``cert init`` once per federation and passes the
-profile file explicitly:
+The profile captures three things the Project Admin owns:
+
+- **name**: the federation name; every participant definition must use this
+  exact string.
+- **scheme** and **connection_security**: transport settings (``grpc`` /
+  ``tls`` are the defaults).
+- **server**: the server endpoint that clients and users will connect to.
+  ``cert approve`` reads this and embeds it in every signed zip so requesters
+  do not have to supply it themselves.
+
+The Project Admin then runs ``cert init`` once per federation:
 
 .. code-block:: shell
 
@@ -51,10 +63,10 @@ This creates:
 
 Common ``init`` options:
 
-- ``--profile``: project profile yaml file. Required. ``cert init`` reads only
-  the profile ``name`` and uses it as the root CA certificate subject; it does
-  not search for profile files automatically. ``cert approve`` validates the
-  profile ``scheme`` and ``connection_security`` fields later.
+- ``--profile``: path to the project profile yaml file. Required. The file is
+  read directly from this path — no automatic file discovery occurs.
+  ``cert init`` reads only the ``name`` field; ``cert approve`` uses the full
+  profile later.
 - ``--org``: optional organization name for the root CA certificate's O field.
 - ``-o, --output-dir``: CA output directory. Required.
 - ``--valid-days``: root CA validity in days. Default: ``3650``.
@@ -94,6 +106,23 @@ entry** — one file, one identity, one request. The key is plural to stay
 consistent with the centralized format, but ``cert request`` will reject the
 file if the list has zero or more than one entry.
 
+**Participant definition formats:**
+
+*Server* — includes the server's own listen ports:
+
+.. code-block:: yaml
+
+   name: hospital_federation
+
+   participants:
+     - name: server.example.com
+       type: server
+       org: nvidia
+       fed_learn_port: 8002
+       admin_port: 8003
+
+*Client* — only name, type, and org are required:
+
 .. code-block:: yaml
 
    name: hospital_federation
@@ -103,25 +132,34 @@ file if the list has zero or more than one entry.
        type: client
        org: hospital_alpha
 
+*User* — add ``role`` (``org_admin``, ``lead``, or ``member``):
+
+.. code-block:: yaml
+
+   name: hospital_federation
+
+   participants:
+     - name: alice@hospital.org
+       type: admin
+       org: hospital_alpha
+       role: lead
+
 To request a second participant such as ``hospital-b``, create a separate
 ``hospital-b.yaml`` file with its own single entry and run ``cert request``
 again. Each participant has its own private key and request zip.
 
 .. note::
 
-   Before writing the participant definition, the requester must know the
-   project name:
+   **What the requester needs from the Project Admin (out-of-band):**
 
-   - **Project name** (``name:``): matches the ``name:`` in the Project Admin's
-     ``project_profile.yaml``. Every participant definition must use the same
-     project name.
+   - **Project name** (``name:``): every participant definition must use the
+     exact project name from the Project Admin's ``project_profile.yaml``.
 
-   Server host and ports are chosen by the server admin, recorded by the
-   Project Admin in ``project_profile.yaml``, and signed into the approval zip.
-   Client and user participant definitions do not include a ``server:`` block.
-
-For users, use ``type: admin`` and set ``role`` to ``org_admin``, ``lead``, or
-``member``.
+   Client and user definitions do not include a server endpoint. The Project
+   Admin embeds the approved server host, ports, scheme, and connection
+   security from ``project_profile.yaml`` into every signed zip during
+   ``cert approve``. Requesters receive this information inside the signed zip,
+   not by writing it into their own participant definition file.
 
 By default, ``cert request`` writes to ``./<name>/``. For ``hospital-a``:
 
