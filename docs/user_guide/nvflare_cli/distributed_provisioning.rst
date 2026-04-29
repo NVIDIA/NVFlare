@@ -499,20 +499,24 @@ Everything else is **outside the approval chain** and remains local
 package-time behavior:
 
 - **Custom builders**: builders are not included in the request zip, the
-  signed zip, or the signed metadata. They are never seen or approved by the
-  Project Admin. ``nvflare package`` applies only the default builder set for
-  the participant type (server, client, or admin). Centralized-provisioning
-  builder features such as homomorphic encryption (HE) and confidential
-  computing (CC) rely on custom builders in ``project.yaml`` and are therefore
-  not available in the distributed provisioning workflow.
+  signed zip, or the signed metadata, and are never approved by the Project
+  Admin. ``nvflare package`` reads any ``builders:`` block from the local
+  participant definition and applies those builders at package time on the
+  requester's machine — this is purely local, package-time behavior. Because
+  each site configures its own builders independently without central
+  coordination, features that require a matching builder configuration across
+  all participants — such as homomorphic encryption (HE) or confidential
+  computing (CC) — are not directly supported by the distributed provisioning
+  workflow.
 - **Server-side** ``connection_security`` **override**: read from the local
   server request folder at package time; not approved and not distributed.
 - **Private key**: stays on the requester machine and is never sent anywhere.
 - **Workspace layout**: chosen by the requester when running
   ``nvflare package``.
 
-If your deployment requires custom builders (HE, CC, or other
-extensions), use centralized ``nvflare provision`` instead.
+If your deployment requires centrally coordinated builders across all
+participants (HE, CC, or other extensions), use centralized
+``nvflare provision`` instead.
 
 ****************
 Command Summary
@@ -566,6 +570,8 @@ Notes
   NVFlare runtime.
 - Standard distributed provisioning does not generate ``signature.json``.
   Trust is anchored in the signed participant certificate and ``rootCA.pem``.
-- Custom builders (HE, CC, or other extensions) are not part of the approval
-  chain and are not applied during ``nvflare package``. Use centralized
-  ``nvflare provision`` for deployments that require custom builders.
+- Custom builders are not part of the approval chain. Any ``builders:`` block
+  in the local participant definition is applied at package time on the
+  requester's machine. Features requiring coordinated builder configuration
+  across all participants (HE, CC) are not directly supported; use centralized
+  ``nvflare provision`` for those deployments.

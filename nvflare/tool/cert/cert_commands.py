@@ -324,11 +324,10 @@ def handle_cert_init(args):
 
     # 2. Validate required args
     profile_path = getattr(args, "profile", None)
-    project = getattr(args, "project", None)
     missing_flags = [
         flag
         for flag, is_missing in (
-            ("--profile", not profile_path and not project),
+            ("--profile", not profile_path),
             ("-o/--output-dir", not args.output_dir),
         )
         if is_missing
@@ -338,14 +337,10 @@ def handle_cert_init(args):
             _cert_cli._cert_init_parser, f"missing required argument(s): {', '.join(missing_flags)}", exit_code=4
         )
         return 1
-    project_profile_name = None
-    if profile_path:
-        project_profile_name = _load_project_name_from_profile(profile_path)
-        if project_profile_name is None:
-            return 1
-        project = project_profile_name
-    elif not _validate_safe_project_name(project):
+    project_profile_name = _load_project_name_from_profile(profile_path)
+    if project_profile_name is None:
         return 1
+    project = project_profile_name
 
     # 3. Resolve force
     force = args.force

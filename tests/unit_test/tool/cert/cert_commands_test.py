@@ -78,7 +78,7 @@ from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256
 
 def _init_args(**kwargs):
     defaults = dict(
-        project="TestProject",
+        profile=None,
         output_dir=None,
         org=None,
         valid_days=3650,
@@ -133,8 +133,24 @@ def _sign_args(**kwargs):
     return argparse.Namespace(**defaults)
 
 
-def _run_init(tmp_path, **kwargs):
-    """Run cert init in tmp_path; returns return code."""
+def _make_profile(directory, project="example_project") -> str:
+    """Write a minimal project_profile.yaml and return its path string."""
+    path = os.path.join(str(directory), "project_profile.yaml")
+    with open(path, "w") as f:
+        f.write(yaml.safe_dump({"name": project}, sort_keys=False))
+    return path
+
+
+def _run_init(tmp_path, project="TestProject", **kwargs):
+    """Run cert init in tmp_path; returns return code.
+
+    Creates a temporary project_profile.yaml with the given project name so
+    tests do not need to manage profile files manually.
+    """
+    profile_path = tmp_path / "project_profile.yaml"
+    if not profile_path.exists():
+        _write_participant_definition(profile_path, {"name": project})
+    kwargs.setdefault("profile", str(profile_path))
     args = _init_args(output_dir=str(tmp_path), **kwargs)
     return handle_cert_init(args)
 
@@ -573,7 +589,7 @@ class TestCertValidationHelpers:
 
     def test_request_project_ca_uses_nofollow_read_for_rootca(self, tmp_path):
         ca_dir = tmp_path / "ca"
-        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir)))
         rootca_path = str(ca_dir / "rootCA.pem")
 
         from nvflare.tool.cert import cert_commands
@@ -590,7 +606,7 @@ class TestCertValidationHelpers:
 
     def test_request_project_ca_mismatch_returns_none_when_error_is_mocked(self, tmp_path):
         ca_dir = tmp_path / "ca"
-        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir)))
 
         with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
             ca_meta = _validate_request_project_matches_ca(str(ca_dir), "other_project")
@@ -648,7 +664,7 @@ class TestCertInit:
         ca_dir = tmp_path / "ca"
         _write_participant_definition(profile_path, {"name": "ProfileProject"})
 
-        rc = handle_cert_init(_init_args(project=None, profile=str(profile_path), output_dir=str(ca_dir)))
+        rc = handle_cert_init(_init_args(profile=str(profile_path), output_dir=str(ca_dir)))
 
         assert rc == 0
         with open(str(ca_dir / "ca.json")) as f:
@@ -707,11 +723,14 @@ class TestCertInit:
         assert data["schema_version"] == "1"
         assert data["command"] == "nvflare cert init"
         assert len(data["args"]) > 0
+        args_by_name = {arg["name"]: arg for arg in data["args"]}
+        assert args_by_name["--profile"]["required"] is True
+        assert args_by_name["--output-dir"]["required"] is True
 
     def test_missing_required_args_show_help_and_missing_flags(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         with pytest.raises(SystemExit) as exc_info:
-            handle_cert_init(_init_args(project=None, output_dir=None))
+            handle_cert_init(_init_args(output_dir=None))
         assert exc_info.value.code == 4
         captured = capsys.readouterr()
         assert "INVALID_ARGS" in captured.err
@@ -720,7 +739,9 @@ class TestCertInit:
 
     def test_agent_mode_json_envelope(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
-        rc = handle_cert_init(_init_args(output_dir=str(tmp_path)))
+        profile_path = tmp_path / "project_profile.yaml"
+        _write_participant_definition(profile_path, {"name": "TestProject"})
+        rc = handle_cert_init(_init_args(profile=str(profile_path), output_dir=str(tmp_path)))
         assert rc == 0
         data = json.loads(capsys.readouterr().out)
         assert data["schema_version"] == "1"
@@ -733,13 +754,13 @@ class TestCertInit:
 
     def test_force_flag_overwrites_existing_ca(self, tmp_path):
         (tmp_path / "rootCA.key").write_bytes(b"old-key")
-        rc = handle_cert_init(_init_args(output_dir=str(tmp_path), force=True))
+        rc = handle_cert_init(_init_args(profile=_make_profile(tmp_path), output_dir=str(tmp_path), force=True))
         assert rc == 0
         assert (tmp_path / "rootCA.key").exists()
 
     def test_output_dir_created(self, tmp_path):
         new_dir = str(tmp_path / "new" / "subdir")
-        args = _init_args(output_dir=new_dir)
+        args = _init_args(profile=_make_profile(tmp_path), output_dir=new_dir)
         rc = handle_cert_init(args)
         assert rc == 0
         assert os.path.exists(new_dir)
@@ -749,7 +770,7 @@ class TestCertInit:
         with patch("nvflare.tool.cert.cert_commands.os.makedirs", side_effect=OSError("blocked")):
             with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
                 with patch("nvflare.tool.cert.cert_commands.generate_keys") as generate_keys:
-                    rc = handle_cert_init(_init_args(output_dir=str(tmp_path / "ca")))
+                    rc = handle_cert_init(_init_args(profile=_make_profile(tmp_path), output_dir=str(tmp_path / "ca")))
 
         assert rc == 1
         output_error.assert_called_once()
@@ -762,7 +783,7 @@ class TestCertInit:
         with patch("nvflare.tool.cert.cert_commands.os.access", return_value=False):
             with patch("nvflare.tool.cert.cert_commands.output_error") as output_error:
                 with patch("nvflare.tool.cert.cert_commands.generate_keys") as generate_keys:
-                    rc = handle_cert_init(_init_args(output_dir=str(ca_dir)))
+                    rc = handle_cert_init(_init_args(profile=_make_profile(tmp_path), output_dir=str(ca_dir)))
 
         assert rc == 1
         output_error.assert_called_once()
@@ -778,7 +799,7 @@ class TestCertInit:
         monkeypatch.setattr(cert_commands, "_write_private_key", _fail_write_private_key)
 
         with pytest.raises(SystemExit) as exc_info:
-            handle_cert_init(_init_args(output_dir=str(tmp_path)))
+            handle_cert_init(_init_args(profile=_make_profile(tmp_path), output_dir=str(tmp_path)))
         assert exc_info.value.code == 1
         assert not (tmp_path / "rootCA.pem").exists()
         assert not (tmp_path / "rootCA.key").exists()
@@ -795,7 +816,7 @@ class TestCertInit:
         monkeypatch.setattr(cert_commands, "_write_private_key", _partial_write_private_key)
 
         with pytest.raises(SystemExit) as exc_info:
-            handle_cert_init(_init_args(output_dir=str(tmp_path)))
+            handle_cert_init(_init_args(profile=_make_profile(tmp_path), output_dir=str(tmp_path)))
         assert exc_info.value.code == 1
         assert not (tmp_path / "rootCA.pem").exists()
         assert not (tmp_path / "rootCA.key").exists()
@@ -804,7 +825,7 @@ class TestCertInit:
     @pytest.mark.skipif(platform.system() == "Windows", reason="directory chmod semantics differ on Windows")
     def test_output_dir_permissions(self, tmp_path):
         new_dir = str(tmp_path / "secure" / "ca")
-        rc = handle_cert_init(_init_args(output_dir=new_dir))
+        rc = handle_cert_init(_init_args(profile=_make_profile(tmp_path), output_dir=new_dir))
         assert rc == 0
         mode = stat.S_IMODE(os.stat(new_dir).st_mode)
         assert mode == 0o700
@@ -1016,7 +1037,7 @@ class TestCertCsr:
 def _setup_ca(tmp_path):
     """Run cert init and return ca_dir path."""
     ca_dir = str(tmp_path / "ca")
-    args = _init_args(output_dir=ca_dir)
+    args = _init_args(profile=_make_profile(tmp_path), output_dir=ca_dir)
     handle_cert_init(args)
     return ca_dir
 
@@ -2575,7 +2596,7 @@ class TestDistributedCertParticipantWorkflow:
             },
         )
 
-        handle_cert_init(_init_args(project="hospital_federation", org="hospital_central", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=str(profile_path), org="hospital_central", output_dir=str(ca_dir)))
         _run_cert_cli(_participant_request_args(participant_path))
         request_dir = tmp_path / long_name
         _run_cert_cli(
@@ -2729,7 +2750,7 @@ class TestDistributedCertParticipantWorkflow:
         _write_participant_definition(participant_path, participant_definition)
         _write_participant_definition(profile_path, profile)
 
-        handle_cert_init(_init_args(project="hospital_federation", org="hospital_central", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=str(profile_path), org="hospital_central", output_dir=str(ca_dir)))
         _run_cert_cli(_participant_request_args(participant_path))
         request_dir = tmp_path / "server1.hospital-central.org"
         capsys.readouterr()
@@ -2781,7 +2802,7 @@ class TestDistributedCertParticipantWorkflow:
         participant_path = tmp_path / "site-3.yaml"
         profile_path = tmp_path / "project_profile.yaml"
 
-        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir)))
         _write_project_profile(profile_path)
         _write_request_participant(participant_path)
         _run_cert_cli(["request", "-p", str(participant_path), "--out", str(request_dir)])
@@ -2835,7 +2856,7 @@ class TestDistributedCertParticipantWorkflow:
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         monkeypatch.setenv("HOME", str(tmp_path / "home"))
         ca_dir = tmp_path / "ca"
-        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir)))
         request_zip = _write_request_zip(tmp_path)
         capsys.readouterr()
 
@@ -2893,7 +2914,7 @@ class TestDistributedCertParticipantWorkflow:
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         monkeypatch.setenv("HOME", str(tmp_path / "home"))
         ca_dir = tmp_path / "ca"
-        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir)))
         request_zip = _write_request_zip(tmp_path)
         missing_profile = str(tmp_path / "does_not_exist.yaml")
         capsys.readouterr()
@@ -3198,7 +3219,7 @@ class TestDistributedCertRequestApprove:
         profile_path = tmp_path / "project_profile.yaml"
         participant_path = tmp_path / "site-3.yaml"
 
-        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir)))
         _write_project_profile(profile_path)
         _write_request_participant(participant_path)
         _run_cert_cli(
@@ -3302,7 +3323,7 @@ class TestDistributedCertRequestApprove:
         monkeypatch.setenv("HOME", str(tmp_path / "home"))
         ca_dir = tmp_path / "ca"
         profile_path = tmp_path / "project_profile.yaml"
-        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir)))
         _write_project_profile(profile_path)
         request_zip = _write_request_zip(tmp_path, **zip_kwargs)
         capsys.readouterr()
@@ -3328,7 +3349,7 @@ class TestDistributedCertRequestApprove:
         monkeypatch.setenv("HOME", str(tmp_path / "home"))
         ca_dir = tmp_path / "ca"
         profile_path = tmp_path / "project_profile.yaml"
-        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir)))
         _write_project_profile(profile_path)
         request_zip = _write_request_zip(tmp_path, metadata_updates={"site_yaml_sha256": "0" * 64})
         capsys.readouterr()
@@ -3351,7 +3372,7 @@ class TestDistributedCertRequestApprove:
     def test_approve_rejects_request_for_different_ca_project(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         ca_dir = tmp_path / "ca"
-        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir)))
         request_zip = _write_request_zip(tmp_path, project="other_project")
         capsys.readouterr()
 
@@ -3365,7 +3386,7 @@ class TestDistributedCertRequestApprove:
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         monkeypatch.setenv("HOME", str(tmp_path / "home"))
         ca_dir = tmp_path / "ca"
-        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir)))
         request_zip = _write_request_zip(tmp_path, project="example_project")
         profile_path = tmp_path / "project_profile.yaml"
         _write_project_profile(profile_path, project="other_project")
@@ -3380,7 +3401,7 @@ class TestDistributedCertRequestApprove:
     def test_approve_request_zip_read_error_returns_cli_error(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         ca_dir = tmp_path / "ca"
-        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir)))
         request_zip = _write_request_zip(tmp_path)
         capsys.readouterr()
 
@@ -3399,7 +3420,7 @@ class TestDistributedCertRequestApprove:
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         ca_dir = tmp_path / "ca"
         profile_path = tmp_path / "project_profile.yaml"
-        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir)))
         _write_project_profile(profile_path)
         capsys.readouterr()
 
@@ -3446,7 +3467,7 @@ class TestDistributedCertRequestApprove:
         ca_dir = tmp_path / "ca"
         request_zip = _write_request_zip(tmp_path)
         profile_path = tmp_path / "project_profile.yaml"
-        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir)))
         _write_project_profile(profile_path)
         capsys.readouterr()
 
@@ -3463,7 +3484,7 @@ class TestDistributedCertRequestApprove:
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         ca_dir = tmp_path / "ca"
         request_zip = _write_request_zip(tmp_path)
-        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir)))
 
         with patch("nvflare.tool.cert.cert_commands._validate_request_metadata", return_value=None):
             with patch("nvflare.tool.cert.cert_commands.sign_csr_files") as sign_csr:
@@ -3480,7 +3501,7 @@ class TestDistributedCertRequestApprove:
         request_zip = _write_request_zip(tmp_path)
         signed_zip = tmp_path / "site-3.signed.zip"
         profile_path = tmp_path / "project_profile.yaml"
-        handle_cert_init(_init_args(project="example_project", org="nvidia", output_dir=str(ca_dir)))
+        handle_cert_init(_init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir)))
         _write_project_profile(profile_path)
 
         with patch("nvflare.tool.cert.cert_commands._write_zip_nofollow", return_value=False):
