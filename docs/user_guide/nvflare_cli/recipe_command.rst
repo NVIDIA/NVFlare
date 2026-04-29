@@ -38,12 +38,34 @@ Filter by framework:
 
    nvflare recipe list --framework pytorch
 
+``--framework`` is a shorthand for ``--filter framework=<framework>``.
+
 Supported framework filter values:
 
 - ``pytorch``
 - ``tensorflow``
 - ``sklearn``
 - ``xgboost``
+
+Filter by recipe metadata:
+
+.. code-block:: shell
+
+   nvflare recipe list --filter framework=pytorch --filter algorithm=fedavg
+   nvflare recipe list --filter privacy=homomorphic_encryption
+
+Supported ``--filter`` keys:
+
+- ``framework``
+- ``privacy``
+- ``algorithm``
+- ``aggregation``
+- ``state_exchange``
+
+``--filter`` is repeatable. Filters for different keys are combined together;
+repeating the same key matches any of the provided values. Hyphens and
+underscores are normalized in filter values, so ``homomorphic-encryption`` and
+``homomorphic_encryption`` are equivalent.
 
 Other options:
 
@@ -53,6 +75,7 @@ Other options:
 Behavior notes:
 
 - Recipes whose optional dependencies are not installed are skipped silently.
+- Valid metadata filters that match no available recipes return an empty list.
 - The command checks recipe modules dynamically and returns only recipes that
   are actually available in the current environment.
 
@@ -73,7 +96,11 @@ Example JSON response:
          "description": "FedAvg for PyTorch nn.Module models",
          "framework": "pytorch",
          "module": "nvflare.app_opt.pt.recipes.fedavg",
-         "class": "FedAvgRecipe"
+         "class": "FedAvgRecipe",
+         "algorithm": "fedavg",
+         "aggregation": "weighted_average",
+         "state_exchange": "full_model",
+         "privacy": []
        }
      ]
    }
@@ -86,7 +113,7 @@ Typical Workflow
 
 .. code-block:: shell
 
-   nvflare recipe list --framework pytorch
+   nvflare recipe list --filter framework=pytorch --filter algorithm=fedavg
    python job.py --export --export-dir /tmp/nvflare/hello-pt
    nvflare job submit -j /tmp/nvflare/hello-pt
 
@@ -109,6 +136,7 @@ The top-level CLI also supports JSON output mode:
 
    nvflare recipe list --format json
    nvflare recipe list --framework sklearn --format json
+   nvflare recipe list --filter framework=pytorch --filter state_exchange=full_model --format json
 
 Human-readable argument errors print help first, followed by the specific
 error. JSON mode prints only the JSON envelope.

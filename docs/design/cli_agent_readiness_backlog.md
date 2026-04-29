@@ -11,6 +11,8 @@ This backlog tracks the remaining larger CLI enhancement groups after the
 - `nvflare job wait`
 - `poc prepare` port and startup-kit preflight
 - `poc start` readiness, bound addresses, and port conflict metadata
+- `recipe list --filter` with list-time metadata for `framework`, `privacy`,
+  `algorithm`, `aggregation`, and `state_exchange`
 
 ## 1. CLI Contract
 
@@ -35,9 +37,8 @@ This backlog tracks the remaining larger CLI enhancement groups after the
 ## 4. Recipe Discovery
 
 - `recipe show`
-- `recipe list --filter`
-- Structured recipe metadata: algorithm, privacy, framework, state exchange, and
-  related selection fields.
+- Detailed recipe metadata beyond the list-time fields, including parameters,
+  examples, and compatibility guidance.
 
 ## 5. Study / Production Preflight
 

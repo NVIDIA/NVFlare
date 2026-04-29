@@ -119,6 +119,153 @@ def test_recipe_list_human_empty_framework_catalog_suggests_framework_install(mo
     assert "pip install torch" in captured.err
 
 
+def test_recipe_list_filters_catalog_with_repeated_filter_args(monkeypatch, capsys):
+    import json
+
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_list
+
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+    monkeypatch.setattr(
+        "nvflare.tool.recipe.recipe_cli._load_catalog",
+        lambda framework=None: [
+            {
+                "name": "fedavg-pt",
+                "framework": "pytorch",
+                "description": "FedAvg",
+                "algorithm": "fedavg",
+                "aggregation": "weighted_average",
+                "state_exchange": "full_model",
+                "privacy": [],
+            },
+            {
+                "name": "fedavg-he-pt",
+                "framework": "pytorch",
+                "description": "FedAvg HE",
+                "algorithm": "fedavg",
+                "aggregation": "weighted_average",
+                "state_exchange": "full_model",
+                "privacy": ["homomorphic_encryption"],
+            },
+            {
+                "name": "fedopt-pt",
+                "framework": "pytorch",
+                "description": "FedOpt",
+                "algorithm": "fedopt",
+                "aggregation": "server_optimizer",
+                "state_exchange": "weight_diff",
+                "privacy": [],
+            },
+        ],
+    )
+
+    cmd_recipe_list(Namespace(framework=None, filters=["framework=pytorch", "privacy=homomorphic-encryption"]))
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ok"
+    assert [entry["name"] for entry in payload["data"]] == ["fedavg-he-pt"]
+
+
+def test_recipe_list_framework_flag_combines_with_filters(monkeypatch, capsys):
+    import json
+
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_list
+
+    calls = []
+
+    def fake_load_catalog(framework=None):
+        calls.append(framework)
+        return [
+            {
+                "name": "fedavg-pt",
+                "framework": "pytorch",
+                "description": "FedAvg",
+                "algorithm": "fedavg",
+                "aggregation": "weighted_average",
+                "state_exchange": "full_model",
+                "privacy": [],
+            },
+            {
+                "name": "fedopt-pt",
+                "framework": "pytorch",
+                "description": "FedOpt",
+                "algorithm": "fedopt",
+                "aggregation": "server_optimizer",
+                "state_exchange": "weight_diff",
+                "privacy": [],
+            },
+        ]
+
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._load_catalog", fake_load_catalog)
+
+    cmd_recipe_list(Namespace(framework="pytorch", filters=["algorithm=fedopt"]))
+
+    payload = json.loads(capsys.readouterr().out)
+    assert calls == ["pytorch"]
+    assert [entry["name"] for entry in payload["data"]] == ["fedopt-pt"]
+
+
+def test_recipe_list_valid_filter_with_no_matches_returns_empty_result(monkeypatch, capsys):
+    import json
+
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_list
+
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+    monkeypatch.setattr(
+        "nvflare.tool.recipe.recipe_cli._load_catalog",
+        lambda framework=None: [
+            {
+                "name": "fedavg-pt",
+                "framework": "pytorch",
+                "description": "FedAvg",
+                "algorithm": "fedavg",
+                "aggregation": "weighted_average",
+                "state_exchange": "full_model",
+                "privacy": [],
+            }
+        ],
+    )
+
+    cmd_recipe_list(Namespace(framework=None, filters=["privacy=differential_privacy"]))
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ok"
+    assert payload["data"] == []
+
+
+def test_recipe_list_rejects_conflicting_framework_filters(monkeypatch, capsys):
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_list
+
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+
+    with pytest.raises(SystemExit) as exc_info:
+        cmd_recipe_list(Namespace(framework="pytorch", filters=["framework=tensorflow"]))
+
+    assert exc_info.value.code == 4
+    captured = capsys.readouterr()
+    assert '"error_code": "INVALID_ARGS"' in captured.out
+    assert "conflicts with --filter framework=tensorflow" in captured.out
+
+
+def test_recipe_list_rejects_invalid_filter(monkeypatch, capsys):
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_list
+
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+
+    with pytest.raises(SystemExit) as exc_info:
+        cmd_recipe_list(Namespace(framework=None, filters=["unknown=value"]))
+
+    assert exc_info.value.code == 4
+    captured = capsys.readouterr()
+    assert '"error_code": "INVALID_ARGS"' in captured.out
+    assert "unsupported filter key" in captured.out
+
+
 def test_recipe_list_empty_framework_catalog_still_exits_when_output_error_is_mocked(monkeypatch):
     from unittest.mock import patch
 
@@ -182,8 +329,54 @@ def test_recipe_catalog_is_discovered_from_package_modules(monkeypatch):
             "framework": "pytorch",
             "module": "fake.recipes.fedavg",
             "class": "FakeRecipe",
+            "algorithm": "fedavg",
+            "aggregation": "weighted_average",
+            "state_exchange": "full_model",
+            "privacy": [],
         }
     ]
+
+
+def test_recipe_catalog_prefers_specific_algorithm_marker_over_fedavg_class_name(monkeypatch):
+    from nvflare.recipe.spec import Recipe
+    from nvflare.tool.recipe.recipe_cli import _load_catalog
+
+    class KMeansFedAvgRecipe(Recipe):
+        """KMeans recipe."""
+
+        def __init__(self):
+            pass
+
+    fake_package = ModuleType("fake.recipes")
+    fake_package.__path__ = ["fake/recipes"]
+
+    fake_module = ModuleType("fake.recipes.kmeans")
+    KMeansFedAvgRecipe.__module__ = "fake.recipes.kmeans"
+    setattr(fake_module, "KMeansFedAvgRecipe", KMeansFedAvgRecipe)
+
+    monkeypatch.setattr(
+        "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
+        [{"package": "fake.recipes", "framework": "sklearn"}],
+    )
+
+    def fake_import_module(name):
+        if name == "fake.recipes":
+            return fake_package
+        if name == "fake.recipes.kmeans":
+            return fake_module
+        raise ImportError(name)
+
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli.importlib.import_module", fake_import_module)
+    monkeypatch.setattr(
+        "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
+        lambda path, prefix="": [(None, "fake.recipes.kmeans", False)],
+    )
+
+    catalog = _load_catalog(framework="sklearn")
+
+    assert catalog[0]["algorithm"] == "kmeans"
+    assert catalog[0]["aggregation"] == "cluster_centers"
+    assert catalog[0]["state_exchange"] == "cluster_centers"
 
 
 def test_recipe_catalog_core_framework_is_not_special_catch_all(monkeypatch):
@@ -232,6 +425,10 @@ def test_recipe_catalog_core_framework_is_not_special_catch_all(monkeypatch):
             "framework": "core",
             "module": "fake.core.fedavg",
             "class": "CoreRecipe",
+            "algorithm": "fedavg",
+            "aggregation": "weighted_average",
+            "state_exchange": "full_model",
+            "privacy": [],
         }
     ]
 
@@ -342,5 +539,9 @@ def test_recipe_catalog_prefers_leaf_recipe_class_when_module_has_base_and_subcl
             "framework": "pytorch",
             "module": "fake.recipes.swarm",
             "class": "FinalRecipe",
+            "algorithm": "swarm",
+            "aggregation": None,
+            "state_exchange": "full_model",
+            "privacy": [],
         }
     ]

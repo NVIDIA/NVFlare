@@ -26,6 +26,141 @@ _RECIPE_PACKAGE_ROOTS = [
     {"package": "nvflare.app_opt.sklearn.recipes", "framework": "sklearn"},
     {"package": "nvflare.app_opt.xgboost.recipes", "framework": "xgboost"},
 ]
+_FILTER_KEYS = {"framework", "privacy", "algorithm", "aggregation", "state_exchange"}
+_LIST_METADATA_KEYS = {"privacy"}
+
+
+def _normalize_filter_value(value: str) -> str:
+    return str(value).strip().lower().replace("-", "_")
+
+
+def _recipe_attr(recipe_cls, name: str, default=None):
+    value = getattr(recipe_cls, f"recipe_{name}", None)
+    if value is None:
+        value = getattr(recipe_cls, name, None)
+    return default if value is None else value
+
+
+def _as_string_list(value) -> list:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [_normalize_filter_value(value)] if value.strip() else []
+    if isinstance(value, (list, tuple, set)):
+        return [_normalize_filter_value(v) for v in value if str(v).strip()]
+    return [_normalize_filter_value(value)]
+
+
+def _infer_algorithm(cli_name: str, recipe_cls) -> str:
+    text = _normalize_filter_value(f"{cli_name} {recipe_cls.__name__} {recipe_cls.__module__}")
+    algorithm_markers = [
+        ("kmeans", "kmeans"),
+        ("svm", "svm"),
+        ("fedavg", "fedavg"),
+        ("fedopt", "fedopt"),
+        ("scaffold", "scaffold"),
+        ("cyclic", "cyclic"),
+        ("swarm", "swarm"),
+        ("fedstats", "fedstats"),
+        ("fedeval", "fedeval"),
+        ("cross_site_eval", "cross_site_eval"),
+        ("cross_site", "cross_site_eval"),
+        ("bagging", "xgboost_bagging"),
+        ("vertical", "xgboost_vertical"),
+        ("histogram", "xgboost_horizontal"),
+        ("xgb", "xgboost"),
+        ("psi", "psi"),
+    ]
+    for marker, algorithm in algorithm_markers:
+        if marker in text:
+            return algorithm
+    return None
+
+
+def _infer_aggregation(algorithm: str) -> str:
+    if algorithm in {"fedavg", "scaffold"}:
+        return "weighted_average"
+    if algorithm == "fedopt":
+        return "server_optimizer"
+    if algorithm == "kmeans":
+        return "cluster_centers"
+    if algorithm == "svm":
+        return "support_vectors"
+    if algorithm and algorithm.startswith("xgboost"):
+        return "tree_ensemble"
+    return None
+
+
+def _infer_state_exchange(algorithm: str) -> str:
+    if algorithm == "fedopt":
+        return "weight_diff"
+    if algorithm in {"fedavg", "scaffold", "cyclic", "swarm", "fedeval"}:
+        return "full_model"
+    if algorithm == "kmeans":
+        return "cluster_centers"
+    if algorithm == "svm":
+        return "support_vectors"
+    if algorithm and algorithm.startswith("xgboost"):
+        return "trees"
+    return None
+
+
+def _infer_privacy(cli_name: str, recipe_cls) -> list:
+    text = _normalize_filter_value(f"{cli_name} {recipe_cls.__name__} {recipe_cls.__module__}")
+    privacy = []
+    if "_he" in text or "he_" in text or "withhe" in text or "homomorphic" in text:
+        privacy.append("homomorphic_encryption")
+    if "differential_privacy" in text or "_dp" in text or " dp" in text:
+        privacy.append("differential_privacy")
+    return privacy
+
+
+def _recipe_metadata(cli_name: str, recipe_cls) -> dict:
+    algorithm = _recipe_attr(recipe_cls, "algorithm") or _infer_algorithm(cli_name, recipe_cls)
+    aggregation = _recipe_attr(recipe_cls, "aggregation") or _infer_aggregation(algorithm)
+    state_exchange = _recipe_attr(recipe_cls, "state_exchange") or _infer_state_exchange(algorithm)
+    privacy = _as_string_list(_recipe_attr(recipe_cls, "privacy")) or _infer_privacy(cli_name, recipe_cls)
+    return {
+        "algorithm": _normalize_filter_value(algorithm) if algorithm else None,
+        "aggregation": _normalize_filter_value(aggregation) if aggregation else None,
+        "state_exchange": _normalize_filter_value(state_exchange) if state_exchange else None,
+        "privacy": privacy,
+    }
+
+
+def _parse_recipe_filters(raw_filters: list) -> dict:
+    parsed = {}
+    for raw_filter in raw_filters or []:
+        if "=" not in raw_filter:
+            raise ValueError(f"invalid filter '{raw_filter}'; expected key=value")
+        key, value = raw_filter.split("=", 1)
+        key = _normalize_filter_value(key)
+        value = _normalize_filter_value(value)
+        if key not in _FILTER_KEYS:
+            raise ValueError(f"unsupported filter key '{key}'")
+        if not value:
+            raise ValueError(f"filter '{key}' requires a non-empty value")
+        parsed.setdefault(key, set()).add(value)
+    return parsed
+
+
+def _entry_matches_filters(entry: dict, filters: dict) -> bool:
+    for key, expected_values in filters.items():
+        actual_value = entry.get(key)
+        if key in _LIST_METADATA_KEYS:
+            actual_values = set(_as_string_list(actual_value))
+            if not actual_values.intersection(expected_values):
+                return False
+        else:
+            if _normalize_filter_value(actual_value) not in expected_values:
+                return False
+    return True
+
+
+def _filter_catalog(catalog: list, filters: dict) -> list:
+    if not filters:
+        return catalog
+    return [entry for entry in catalog if _entry_matches_filters(entry, filters)]
 
 
 def _framework_install_hint(framework: str = None) -> list[str]:
@@ -131,15 +266,15 @@ def _load_catalog(framework: str = None) -> list:
                 if cli_name in seen:
                     continue
                 seen.add(cli_name)
-                results.append(
-                    {
-                        "name": cli_name,
-                        "description": _recipe_description(recipe_cls),
-                        "framework": root["framework"],
-                        "module": module_name,
-                        "class": recipe_cls.__name__,
-                    }
-                )
+                entry = {
+                    "name": cli_name,
+                    "description": _recipe_description(recipe_cls),
+                    "framework": root["framework"],
+                    "module": module_name,
+                    "class": recipe_cls.__name__,
+                }
+                entry.update(_recipe_metadata(cli_name, recipe_cls))
+                results.append(entry)
 
     results.sort(key=lambda entry: entry["name"])
     return results
@@ -152,11 +287,39 @@ def cmd_recipe_list(cmd_args):
     handle_schema_flag(
         _recipe_parser,
         "nvflare recipe list",
-        ["nvflare recipe list", "nvflare recipe list --framework pytorch"],
+        [
+            "nvflare recipe list",
+            "nvflare recipe list --framework pytorch",
+            "nvflare recipe list --filter framework=pytorch --filter algorithm=fedavg",
+        ],
         sys.argv[1:],
     )
 
     framework = getattr(cmd_args, "framework", None)
+    try:
+        filters = _parse_recipe_filters(getattr(cmd_args, "filters", None))
+    except ValueError as e:
+        output_usage_error(
+            _recipe_parser,
+            str(e),
+            exit_code=4,
+            hint=f"Use --filter key=value with keys: {', '.join(sorted(_FILTER_KEYS))}.",
+        )
+        raise SystemExit(4)
+
+    if framework:
+        normalized_framework = _normalize_filter_value(framework)
+        filter_frameworks = filters.get("framework")
+        if filter_frameworks and normalized_framework not in filter_frameworks:
+            output_usage_error(
+                _recipe_parser,
+                f"--framework {framework} conflicts with --filter framework={','.join(sorted(filter_frameworks))}",
+                exit_code=4,
+                hint="Use either --framework or matching framework filters.",
+            )
+            raise SystemExit(4)
+        filters.setdefault("framework", set()).add(normalized_framework)
+
     catalog = _load_catalog(framework=framework)
 
     if framework and not catalog:
@@ -170,8 +333,16 @@ def cmd_recipe_list(cmd_args):
         )
         raise SystemExit(4)
 
+    catalog = _filter_catalog(catalog, filters)
+
     if is_json_mode():
         output_ok(catalog)
+        return
+
+    if filters and not catalog:
+        filter_desc = ", ".join(f"{key}={','.join(sorted(values))}" for key, values in sorted(filters.items()))
+        print_human(f"No recipes matched filters: {filter_desc}")
+        print_human()
         return
 
     if not catalog:
@@ -214,6 +385,14 @@ def def_recipe_parser(sub_cmd):
         default=None,
         choices=["pytorch", "tensorflow", "sklearn", "xgboost"],
         help="filter by framework",
+    )
+    list_parser.add_argument(
+        "--filter",
+        dest="filters",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="filter by metadata; repeatable keys: framework, privacy, algorithm, aggregation, state_exchange",
     )
     list_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _recipe_parser = list_parser

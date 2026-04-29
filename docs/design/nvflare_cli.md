@@ -379,12 +379,23 @@ New top-level subcommand. No server connection required.
 | `nvflare recipe list` | List all built-in FL workflow recipes |
 
 ```text
-nvflare recipe list [--framework <framework>]
+nvflare recipe list [--framework <framework>] [--filter key=value]...
 ```
 
-`--framework` filters by framework (for example `pytorch`, `tensorflow`, `sklearn`). Without filters, returns all recipes whose optional dependencies are installed.
+`--framework` filters by framework (for example `pytorch`, `tensorflow`, `sklearn`) and is a shorthand for `--filter framework=<framework>`.
+`--filter` is repeatable and supports these metadata keys:
 
-Recipe classes declare metadata as class-level attributes (`recipe_name`, `recipe_description`, `recipe_frameworks`, `recipe_min_clients`). The CLI discovers them at runtime via `importlib` + `inspect`.
+- `framework`
+- `privacy`
+- `algorithm`
+- `aggregation`
+- `state_exchange`
+
+Filter values are normalized so hyphenated and underscored values match the same metadata value, for example `homomorphic-encryption` and `homomorphic_encryption`.
+Repeated filters for different keys are combined as an intersection. Repeated filters for the same key are treated as alternatives. Without filters, the command returns all recipes whose optional dependencies are installed.
+Valid metadata filters that match no available recipes return an empty list.
+
+Recipe classes may declare metadata as class-level attributes (`recipe_algorithm`, `recipe_aggregation`, `recipe_state_exchange`, `recipe_privacy`) or the shorter forms (`algorithm`, `aggregation`, `state_exchange`, `privacy`). When explicit metadata is absent, the CLI infers the common fields from the recipe module, class, and CLI name. The CLI discovers recipes at runtime via `importlib` + `inspect`.
 
 Example:
 
@@ -396,9 +407,13 @@ Example:
     {
       "name": "fedavg",
       "description": "Federated Averaging for PyTorch",
-      "frameworks": ["pytorch"],
-      "min_clients": 2,
-      "recipe_class": "nvflare.app_opt.pt.recipes.fedavg.FedAvgRecipe"
+      "framework": "pytorch",
+      "module": "nvflare.app_opt.pt.recipes.fedavg",
+      "class": "FedAvgRecipe",
+      "algorithm": "fedavg",
+      "aggregation": "weighted_average",
+      "state_exchange": "full_model",
+      "privacy": []
     }
   ]
 }
@@ -1471,7 +1486,7 @@ Site enrollment is role-sensitive:
 ### Add `nvflare recipe`
 
 ```text
-nvflare recipe list [--framework <framework>]
+nvflare recipe list [--framework <framework>] [--filter key=value]...
 ```
 
 ### Add `nvflare network`
