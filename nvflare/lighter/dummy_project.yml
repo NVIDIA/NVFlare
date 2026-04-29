@@ -28,6 +28,14 @@ participants:
     type: admin
     org: nvidia
     role: project_admin
+  - name: org-admin@nvidia.com
+    type: admin
+    org: nvidia
+    role: org_admin
+  - name: lead@nvidia.com
+    type: admin
+    org: nvidia
+    role: lead
 
 # The same methods in all builders are called in their order defined in builders section
 builders:

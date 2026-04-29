@@ -74,6 +74,17 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
         t2_run_dir = workspace.get_run_dir(t2_job_id)
         shutil.copytree(t1_run_dir, t2_run_dir)
 
+        # Verify the original T1 app before HUB rewrites any job files.
+        # FROM_HUB_SITE=True later signals that the hub verified the job, so we must actually do so here.
+        app_path = workspace.get_app_dir(job_id)
+        root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
+        sig_file = os.path.join(app_path, NVFLARE_SIG_FILE)
+        if os.path.exists(sig_file):
+            if not verify_folder_signature(app_path, root_ca_path):
+                return "hub: job signature verification failed before forwarding", None, None
+        elif require_signed_jobs(workspace):
+            return "hub: unsigned job rejected — require_signed_jobs is enabled", None, None
+
         # step 3: modify the T1 client's config_fed_client.json to use HubExecutor
         # simply use t1_config_fed_client.json in the site folder
         site_config_dir = workspace.get_site_config_dir()
@@ -145,17 +156,6 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
         submitter_role = t1_meta.get(JobMetaKey.SUBMITTER_ROLE.value, "")
         scope = t1_meta.get(JobMetaKey.SCOPE.value, "")
 
-        # Verify the job app folder signature before setting FROM_HUB_SITE.
-        # FROM_HUB_SITE=True signals that the hub verified the job, so we must actually do so here.
-        app_path = workspace.get_app_dir(job_id)
-        root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
-        sig_file = os.path.join(app_path, NVFLARE_SIG_FILE)
-        if os.path.exists(sig_file):
-            if not verify_folder_signature(app_path, root_ca_path):
-                return "hub: job signature verification failed before forwarding", None, None
-        elif require_signed_jobs(workspace):
-            return "hub: unsigned job rejected — require_signed_jobs is enabled", None, None
-
         # Note: the app_name is already created like "app_"+site_name, which is also the directory that contains
         # app config files (config_fed_server.json and config_fed_client.json).
         # We need to make sure that the deploy-map uses this app name!
@@ -176,6 +176,11 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
         t2_meta_path = workspace.get_job_meta_path(t2_job_id)
         with open(t2_meta_path, "w") as f:
             json.dump(t2_meta, f, indent=4)
+
+        # The copied T2 app has been rewritten, so the originator signature no longer describes its contents.
+        t2_sig_file = os.path.join(workspace.get_app_dir(t2_job_id), NVFLARE_SIG_FILE)
+        if os.path.exists(t2_sig_file):
+            os.remove(t2_sig_file)
 
         # step 5: submit T2 app (as a job) to T1's job store
         t2_job_def = load_job_def_bytes(from_path=workspace.root_dir, def_name=t2_job_id)

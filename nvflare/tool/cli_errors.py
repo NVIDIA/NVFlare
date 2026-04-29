@@ -40,7 +40,7 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "STARTUP_KIT_MISSING": {
         "message": "Startup kit not found.",
-        "hint": "Set --startup or configure via 'nvflare config'.",
+        "hint": "Run 'nvflare config kit list' and 'nvflare config kit use <id>', or set NVFLARE_STARTUP_KIT_DIR for automation.",
     },
     "SITE_NOT_FOUND": {
         "message": "Site '{site}' is not connected.",
@@ -62,6 +62,46 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "Command failed.",
         "hint": "",
     },
+    "STUDY_NOT_FOUND": {
+        "message": "Study '{study}' not found.",
+        "hint": "Verify the study name. If the study exists and you expect access, contact a project_admin.",
+    },
+    "STUDY_ALREADY_EXISTS": {
+        "message": "Study '{study}' already exists.",
+        "hint": "Use 'nvflare study show {study}' or contact a project_admin to update access.",
+    },
+    "STUDY_HAS_JOBS": {
+        "message": "Study '{study}' has associated jobs and cannot be removed.",
+        "hint": "Archive or delete the associated jobs before retrying.",
+    },
+    "INVALID_STUDY_NAME": {
+        "message": "Invalid study name '{study}'.",
+        "hint": "Use only lowercase letters, numbers, underscores, and hyphens.",
+    },
+    "INVALID_SITE": {
+        "message": "Invalid site value.",
+        "hint": "Use a comma-separated list of valid site names.",
+    },
+    "USER_ALREADY_IN_STUDY": {
+        "message": "User '{user}' is already in study '{study}'.",
+        "hint": "Use a different user or remove the existing entry first.",
+    },
+    "USER_NOT_IN_STUDY": {
+        "message": "User '{user}' is not in study '{study}'.",
+        "hint": "Use 'nvflare study add-user' to add the user first.",
+    },
+    "STARTUP_KIT_NOT_CONFIGURED": {
+        "message": "No active startup kit is configured.",
+        "hint": "Run 'nvflare config kit list' and 'nvflare config kit use <id>', or set NVFLARE_STARTUP_KIT_DIR for automation.",
+    },
+    "LOCK_TIMEOUT": {
+        "message": "Study registry is busy.",
+        "hint": "Another study mutation is in progress. Retry shortly.",
+    },
+    "NOT_AUTHORIZED": {
+        "message": "Not authorized for this operation.",
+        "hint": "Use a startup kit with the required admin role.",
+    },
     # --- Job commands ---
     "JOB_NOT_FOUND": {
         "message": "Job '{job_id}' does not exist.",
@@ -74,6 +114,10 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     "JOB_INVALID": {
         "message": "Job folder is not a valid NVFlare job.",
         "hint": "Check meta.json and config_fed_server.json.",
+    },
+    "LOG_NOT_FOUND": {
+        "message": "Job logs are not available for site '{site}'.",
+        "hint": "Verify that client log streaming is enabled and that the site has run this job.",
     },
     # --- Cert commands ---
     "OUTPUT_DIR_NOT_WRITABLE": {

@@ -45,6 +45,14 @@ _docker_mock.errors = _docker_errors
 _docker_mock.types = _docker_types
 _docker_types.DeviceRequest = MagicMock
 
+
+class _Mount(dict):
+    def __init__(self, target, source, type="volume", read_only=False, **kwargs):
+        super().__init__(Target=target, Source=source, Type=type, ReadOnly=read_only)
+
+
+_docker_types.Mount = _Mount
+
 for _mod_name, _mod_obj in [
     ("docker", _docker_mock),
     ("docker.errors", _docker_errors),
@@ -108,6 +116,10 @@ def _make_container(status="running", exit_code=0):
     c.status = status
     c.attrs = {"State": {"ExitCode": exit_code}}
     return c
+
+
+def _mounts_by_target(mounts):
+    return {m["Target"]: m for m in mounts}
 
 
 # ---------------------------------------------------------------------------
@@ -330,7 +342,7 @@ class TestDockerJobLauncherInit:
         assert launcher.workspace == "/host/ws"
 
     def test_raises_if_default_job_container_kwargs_contains_reserved_key(self):
-        for reserved in ("volumes", "network", "environment", "command", "name", "detach"):
+        for reserved in ("volumes", "mounts", "network", "environment", "command", "name", "detach"):
             with pytest.raises(ValueError, match="reserved"):
                 _make_launcher(default_job_container_kwargs={reserved: "anything"})
 
@@ -396,18 +408,20 @@ def _make_fl_ctx(
     return fl_ctx, job_args
 
 
-def _make_job_meta(job_id="job-1", site_name="site-1", docker_spec=None, resource_spec=None):
+def _make_job_meta(job_id="job-1", site_name="site-1", docker_spec=None, resource_spec=None, study=None):
     meta = {
         JobConstants.JOB_ID: job_id,
         "deploy_map": {"app": [site_name]},
     }
+    if study is not None:
+        meta[JobMetaKey.STUDY.value] = study
     if resource_spec is not None:
         meta[JobMetaKey.RESOURCE_SPEC.value] = resource_spec
     else:
         spec = {"image": "nvflare/nvflare:test"}
         if docker_spec is not None:
             spec.update(docker_spec)
-        meta[JobMetaKey.RESOURCE_SPEC.value] = {site_name: {"docker": spec}}
+        meta["launcher_spec"] = {site_name: {"docker": spec}}
     return meta
 
 
@@ -481,9 +495,165 @@ class TestDockerJobLauncherLaunchJob:
         launcher.launch_job(_make_job_meta(), fl_ctx)
 
         call_kwargs = dc.containers.run.call_args[1]
-        volumes = call_kwargs["volumes"]
-        assert "/host/workspace" in volumes
-        assert volumes["/host/workspace"]["mode"] == "rw"
+        mounts_by_target = _mounts_by_target(call_kwargs["mounts"])
+        assert mounts_by_target["/var/tmp/nvflare/workspace"] == {
+            "Target": "/var/tmp/nvflare/workspace",
+            "Source": "/host/workspace",
+            "Type": "bind",
+            "ReadOnly": False,
+        }
+
+    def test_launch_study_data_mounts_nested_datasets(self):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+        study_data = {
+            "study-a": {
+                "training": {"source": "/data/train", "mode": "ro"},
+                "output": {"source": "/data/out", "mode": "rw"},
+            }
+        }
+
+        fl_ctx, _ = _make_fl_ctx()
+        with patch(
+            "nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data
+        ) as mock_load:
+            with patch("nvflare.app_opt.job_launcher.docker_launcher.os.path.exists", return_value=True):
+                launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+
+        mock_load.assert_called_once_with("/var/tmp/nvflare/workspace/local/study_data.yaml")
+        call_kwargs = dc.containers.run.call_args[1]
+        assert call_kwargs["command"] == [
+            "/usr/local/bin/python",
+            "-u",
+            "-m",
+            "nvflare.private.fed.app.client.worker_process",
+            "-w",
+            "/ws",
+            "-s",
+            "/ws/startup",
+            "-u",
+            "tcp://site-1:8002",
+        ]
+        assert call_kwargs["working_dir"] == "/var/tmp/nvflare/workspace"
+
+        mounts_by_target = _mounts_by_target(call_kwargs["mounts"])
+        assert mounts_by_target["/data/study-a/training"] == {
+            "Target": "/data/study-a/training",
+            "Source": "/data/train",
+            "Type": "bind",
+            "ReadOnly": True,
+        }
+        assert mounts_by_target["/data/study-a/output"] == {
+            "Target": "/data/study-a/output",
+            "Source": "/data/out",
+            "Type": "bind",
+            "ReadOnly": False,
+        }
+
+    def test_launch_study_data_mounts_same_source_to_multiple_targets(self):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+        study_data = {
+            "study-a": {
+                "training": {"source": "/data/shared", "mode": "ro"},
+                "validation": {"source": "/data/shared", "mode": "ro"},
+            }
+        }
+
+        fl_ctx, _ = _make_fl_ctx()
+        with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data):
+            launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+
+        mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
+        assert mounts_by_target["/data/study-a/training"]["Source"] == "/data/shared"
+        assert mounts_by_target["/data/study-a/validation"]["Source"] == "/data/shared"
+
+    def test_launch_study_data_host_source_is_not_prechecked_from_parent_container(self):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+        study_data = {"study-a": {"training": {"source": "/host/not-mounted-in-parent", "mode": "ro"}}}
+
+        fl_ctx, _ = _make_fl_ctx()
+        with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data):
+            with patch(
+                "nvflare.app_opt.job_launcher.docker_launcher.os.path.exists",
+                side_effect=AssertionError("host source should be left for Docker to validate"),
+            ):
+                launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+
+        mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
+        assert mounts_by_target["/data/study-a/training"] == {
+            "Target": "/data/study-a/training",
+            "Source": "/host/not-mounted-in-parent",
+            "Type": "bind",
+            "ReadOnly": True,
+        }
+
+    def test_launch_default_study_without_mapping_does_not_mount_data(self):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        fl_ctx, _ = _make_fl_ctx()
+        with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value={}) as mock_load:
+            launcher.launch_job(_make_job_meta(study="default"), fl_ctx)
+
+        mock_load.assert_called_once_with("/var/tmp/nvflare/workspace/local/study_data.yaml")
+        mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
+        assert set(mounts_by_target) == {"/var/tmp/nvflare/workspace"}
+
+    def test_launch_default_study_mounts_default_mapping_when_present(self):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+        study_data = {"default": {"training": {"source": "/data/default-train", "mode": "ro"}}}
+
+        fl_ctx, _ = _make_fl_ctx()
+        with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data):
+            with patch("nvflare.app_opt.job_launcher.docker_launcher.os.path.exists", return_value=True):
+                launcher.launch_job(_make_job_meta(study="default"), fl_ctx)
+
+        mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
+        assert mounts_by_target["/data/default/training"] == {
+            "Target": "/data/default/training",
+            "Source": "/data/default-train",
+            "Type": "bind",
+            "ReadOnly": True,
+        }
+
+    def test_launch_omits_data_mount_when_study_mapping_is_missing(self):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+        study_data = {"other-study": {"training": {"source": "/data/train", "mode": "ro"}}}
+
+        fl_ctx, _ = _make_fl_ctx()
+        with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data):
+            launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+
+        mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
+        assert set(mounts_by_target) == {"/var/tmp/nvflare/workspace"}
 
     def test_launch_no_docker_socket_in_job_container(self):
         """Job containers must never receive the Docker socket."""
@@ -498,8 +668,8 @@ class TestDockerJobLauncherLaunchJob:
         launcher.launch_job(_make_job_meta(), fl_ctx)
 
         call_kwargs = dc.containers.run.call_args[1]
-        volumes = call_kwargs.get("volumes", {})
-        assert "/var/run/docker.sock" not in volumes
+        mounts = call_kwargs.get("mounts", [])
+        assert all(m["Source"] != "/var/run/docker.sock" for m in mounts)
 
     def test_launch_merges_default_job_env(self):
         launcher = _make_launcher(default_job_env={"NCCL_P2P_DISABLE": "1"})
@@ -590,8 +760,9 @@ class TestDockerJobLauncherLaunchJob:
         call_kwargs = dc.containers.run.call_args[1]
         assert call_kwargs.get("device_requests") == [{"Count": 2, "Capabilities": [["gpu"]]}]
 
-    def test_launch_legacy_flat_resource_spec_not_used_for_docker(self):
-        """Legacy flat resource_spec (process mode) is not applied to Docker containers."""
+    def test_launch_num_of_gpus_mixed_with_mode_keys_ignored(self):
+        """num_of_gpus at the site level alongside mode keys (nested format) is treated as nested —
+        the site-level num_of_gpus is not used as a flat fallback."""
         launcher = _make_launcher()
         dc = launcher._docker_client
         container = MagicMock()
@@ -600,7 +771,6 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.get.return_value = _make_container("running")
 
         fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
-        # Top-level num_of_gpus (outside any mode section) must NOT be used by Docker launcher
         job_meta = _make_job_meta(
             site_name="site-1",
             resource_spec={"site-1": {"docker": {"image": "nvflare:test"}, "num_of_gpus": 2}},
@@ -609,6 +779,43 @@ class TestDockerJobLauncherLaunchJob:
 
         call_kwargs = dc.containers.run.call_args[1]
         assert call_kwargs.get("device_requests") is None
+
+    def test_launch_num_of_gpus_from_flat_resource_spec(self):
+        """Option 4: num_of_gpus in flat resource_spec[site] is used by Docker launcher."""
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1")
+        job_meta[JobMetaKey.RESOURCE_SPEC.value] = {"site-1": {"num_of_gpus": 2}}
+        launcher.launch_job(job_meta, fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        assert call_kwargs.get("device_requests") == [{"Count": 2, "Capabilities": [["gpu"]]}]
+
+    def test_launch_image_from_launcher_spec_default(self):
+        """launcher_spec 'default' key applies to all sites that have no explicit entry."""
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = {
+            JobConstants.JOB_ID: "job-1",
+            JobMetaKey.JOB_LAUNCHER_SPEC.value: {
+                "default": {"docker": {"image": "default/img:v1"}},
+            },
+        }
+        launcher.launch_job(job_meta, fl_ctx)
+
+        assert dc.containers.run.call_args[0][0] == "default/img:v1"
 
     def test_launch_no_container_kwargs_no_extra_keys(self):
         launcher = _make_launcher()

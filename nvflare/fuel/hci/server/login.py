@@ -128,7 +128,7 @@ class LoginModule(CommandModule, CommandFilter):
                 self.logger.warning(f"rejecting login for user '{user_name}': unknown study '{study}'")
                 _reject(f"unknown study '{study}'", code="AUTH_UNKNOWN_STUDY")
                 return
-            if not registry.get_role(user_name, study):
+            if not registry.has_user(user_name, study):
                 self.logger.warning(f"rejecting login for user '{user_name}': no mapping for study '{study}'")
                 _reject(
                     f"user '{user_name}' is not mapped to study '{study}'",

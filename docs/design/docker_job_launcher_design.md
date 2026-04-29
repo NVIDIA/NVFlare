@@ -109,7 +109,7 @@ SJ/CJ containers do not receive the Docker socket, which limits lateral movement
 
 ### Resource Management
 
-Docker mode should use **`BEResourceManager` (Best-Effort)** — it approves every resource request unconditionally; no pre-scheduling check is done at scheduling time. If a requested resource (e.g. GPU) is unavailable, the job container fails at startup.
+Docker mode should use **`PassthroughResourceManager` — it approves every resource request unconditionally; no pre-scheduling check is done at scheduling time. If a requested resource (e.g. GPU) is unavailable, the job container fails at startup.
 
 `GPUResourceManager` is not suitable for Docker mode: it would require the SP/CP container itself to have GPU passthrough just to count available GPUs, but SP/CP never uses GPUs — it only manages the federation.
 
@@ -120,7 +120,7 @@ The default provisioning injects `GPUResourceManager`. If a site is **exclusivel
   "components": [
     {
       "id": "resource_manager",
-      "path": "nvflare.app_common.resource_managers.be_resource_manager.BEResourceManager",
+      "path": "nvflare.app_common.resource_managers.passthrough_resource_manager.PassthroughResourceManager",
       "args": {}
     }
   ]
@@ -129,7 +129,7 @@ The default provisioning injects `GPUResourceManager`. If a site is **exclusivel
 
 Remove the `resource_consumer` component (`GPUResourceConsumer`) as well — it is only needed alongside `GPUResourceManager`.
 
-If a job package is intended to be portable across deployments and carries both Docker- and process-related resource entries, the site's configured launcher still determines which mode is active at runtime. On a Docker-configured site, prefer `BEResourceManager` because the Docker launcher bypasses the process-mode GPU scheduler and passes GPU settings directly via `device_requests`.
+If a job package is intended to be portable across deployments and carries both Docker- and process-related resource entries, the site's configured launcher still determines which mode is active at runtime. On a Docker-configured site, prefer `PassthroughResourceManager` because the Docker launcher bypasses the process-mode GPU scheduler and passes GPU settings directly via `device_requests`.
 
 **Future:** A `DockerResourceManager` that queries the host GPU inventory without needing SP/CP GPU passthrough is a natural follow-up.
 
@@ -142,7 +142,7 @@ If a job package is intended to be portable across deployments and carries both 
 workspace/               ← bind-mounted into all containers at /var/tmp/nvflare/workspace
   startup/               ← certs, config, sub_start.sh
   local/
-    study_data.json      ← optional: site admin maps study names to host data paths
+    study_data.yaml      ← optional: site admin maps study/dataset names to host data paths
   runs/
     job_001/             ← written by SJ/CJ for job 1
     job_002/             ← written by SJ/CJ for job 2
@@ -182,7 +182,7 @@ SP/CP container (site admin grants via start_docker.sh)
 SJ/CJ container (DockerJobLauncher controls)
   ├── NO Docker socket                        ← cannot create further containers
   ├── workspace bind mount at /var/tmp/nvflare/workspace
-  ├── data bind mount at /var/tmp/nvflare/data (read-only, if study_data.json configured)
+  ├── optional data bind mounts at /data/<study>/<dataset>
   └── nvflare-network                         ← intra-site to SP/CP only (PARENT_URL)
 ```
 
@@ -197,48 +197,47 @@ A complete example:
 ```json
 {
   "name": "my-fl-job",
-  "study": "study_A",
+  "study": "study_a",
   "deploy_map": {
     "app": ["server", "site-1", "site-2"]
   },
-  "resource_spec": {
-    "server": {
+  "launcher_spec": {
+    "default": {
       "docker": {"image": "nvflare-pt:latest"}
     },
     "site-1": {
       "docker": {
         "image": "nvflare-pt:latest",
-        "num_of_gpus": 1,
         "shm_size": "8g",
         "ipc_mode": "host"
-      },
-      "process": {
-        "num_of_gpus": 1
       }
     }
+  },
+  "resource_spec": {
+    "site-1": {"num_of_gpus": 1}
   },
   "min_clients": 1
 }
 ```
 
-`deploy_map` is launcher-agnostic — it maps app names to site name lists, exactly as in process mode. All launcher-specific configuration lives in `resource_spec`.
+`deploy_map` is launcher-agnostic — it maps app names to site name lists, exactly as in process mode. Launcher-specific configuration lives in `launcher_spec`; GPU placement hints for the scheduler live in `resource_spec`.
 
-A job may carry resource entries for multiple launcher modes for portability across deployments, but the active launcher is chosen only by the site's configured launcher in `resources.json`.
+A job may carry launcher entries for multiple modes (e.g. both `docker` and `k8s`) for portability across deployments, but the active launcher is determined only by the site's configured launcher in `resources.json`.
 
 ### Job Image
 
-The `image` field in `resource_spec[site][docker]` specifies the Docker image for SJ/CJ containers on that site:
+The `image` field in `launcher_spec[site][docker]` specifies the Docker image for SJ/CJ containers on that site. A `default` entry under `launcher_spec` applies to all sites not explicitly listed:
 
 - Per-site. Different sites can specify different images.
 - The site admin must pull or build the image before the job runs. The launcher does not pull images.
-- If no `image` is specified for a site that has `DockerJobLauncher` configured, the job fails immediately with a clear error. There is no silent fallback to process mode.
+- If no `image` is resolvable for a site that has `DockerJobLauncher` configured, the job fails immediately with a clear error. There is no silent fallback to process mode.
 
 ### GPU and Additional Container Flags
 
-All Docker-specific resource requirements and runtime flags live under `resource_spec[site][docker]`. Keys use Docker Python SDK naming (underscores, not hyphens):
+Docker-specific runtime flags live under `launcher_spec[site][docker]`. Keys use Docker Python SDK naming (underscores, not hyphens):
 
 ```json
-"resource_spec": {
+"launcher_spec": {
   "site-1": {
     "docker": {
       "image": "nvflare-pt:latest",
@@ -252,9 +251,11 @@ All Docker-specific resource requirements and runtime flags live under `resource
 
 `DockerJobLauncher` translates `num_of_gpus` to `device_requests: [{"Count": N, "Capabilities": [["gpu"]]}]` before calling `docker run`. For fine-grained control (specific GPU UUIDs, driver constraints), set `device_requests` directly in the `docker` spec — it takes precedence over `num_of_gpus`.
 
-Job-level `resource_spec[site][docker]` is merged with site-level defaults from `default_job_container_kwargs` in `local/resources.json`; job-level wins on conflict. Reserved keys controlled by the launcher (`volumes`, `network`, `environment`, `command`, `name`, `detach`, `user`, `working_dir`) cannot be overridden.
+GPU can also be declared in a flat `resource_spec[site] = {"num_of_gpus": N}` (no mode nesting) — `DockerJobLauncher` falls back to this for backward compatibility when `launcher_spec[site]["docker"]["num_of_gpus"]` is absent and `resource_spec[site]` has no mode keys. New jobs should use `launcher_spec`.
 
-Site-level default environment variables can be set with `default_job_env` in `local/resources.json`. This is intended for site/runtime-specific settings such as NCCL workarounds; launcher-controlled variables like `USER`, `HOME`, and `PYTHONPATH` still take precedence.
+Job-level `launcher_spec[site][docker]` is merged with site-level defaults from `default_job_container_kwargs` in `local/resources.json`; job-level wins on conflict. Reserved keys controlled by the launcher (`volumes`, `network`, `environment`, `command`, `name`, `detach`, `user`, `working_dir`) cannot be overridden.
+
+Site-level default environment variables can be set with `default_job_env` in `local/resources.json`. Launcher-controlled variables like `USER`, `HOME`, and `PYTHONPATH` still take precedence.
 
 Site-level defaults (set by site admin in `local/resources.json`):
 
@@ -269,26 +270,33 @@ Site-level defaults (set by site admin in `local/resources.json`):
 }
 ```
 
-**Legacy flat format:** `resource_spec[site] = {"num_of_gpus": N}` (no `docker`/`process` nesting) is treated as process mode for backward compatibility — Docker mode gets no resource spec from it. New jobs should use the nested format.
-
 ### Dataset / Study Data
 
 Set `"study"` in `meta.json` to the name of the study whose data the job needs:
 
 ```json
-{ "study": "study_A" }
+{ "study": "study_a" }
 ```
 
-The site admin creates `workspace/local/study_data.json` mapping study names to host data paths:
+The site admin creates `workspace/local/study_data.yaml` mapping study and dataset names to host data paths:
 
-```json
-{
-  "study_A": "/host/data/study_A",
-  "study_B": "/host/data/study_B"
-}
+```yaml
+study_a:
+  training:
+    source: /host/data/study_a/training
+    mode: ro
+  output:
+    source: /host/data/study_a/output
+    mode: rw
+default:
+  training:
+    source: /host/data/default/training
+    mode: ro
 ```
 
-At launch time, `DockerJobLauncher` looks up the study name and bind-mounts the host path into the SJ/CJ container at `/var/tmp/nvflare/data` (read-only). If the file doesn't exist or the study has no entry, no data volume is added. Training code reads data from `/var/tmp/nvflare/data` inside the container.
+At launch time, `DockerJobLauncher` looks up the study name and bind-mounts each configured dataset into the SJ/CJ container at `/data/<study>/<dataset>`. In Docker mode, `source` is the host path passed to Docker and `mode` must be `ro` or `rw`. If the file doesn't exist or the study has no entry, no data volume is added.
+
+This YAML schema replaces the legacy flat `study -> path` map. A stale flat-format file now fails validation instead of being ignored. If a configured dataset host `source` path does not exist, Docker reports the bind-mount failure when the job container is created.
 
 ---
 
@@ -307,7 +315,7 @@ sequenceDiagram
     SP->>Launcher: fire BEFORE_JOB_LAUNCH event
     Launcher->>SP: add_launcher(self, fl_ctx)
     SP->>Launcher: launch_job(job_meta, fl_ctx)
-    Launcher->>Launcher: read image from resource_spec[site][docker]
+    Launcher->>Launcher: read image from launcher_spec[site][docker]
     Launcher->>Launcher: override PARENT_URL → SP/CP container name
     Launcher->>Docker: containers.run(job_image, command, network, volumes, ...)
     Docker->>SJ: start container
@@ -443,16 +451,16 @@ NVFL_P_IMAGE=nvflare-site:2.7.2 ./start_docker.sh
 
 ### Step 4 — Configure site data (optional)
 
-If jobs need access to study data, create `workspace/local/study_data.json`. No change to `resources.json` is needed — `DockerJobLauncher` reads this file fresh on every job launch, so entries can be added or updated at any time without restarting SP/CP.
+If jobs need access to study data, create `workspace/local/study_data.yaml`. No change to `resources.json` is needed — `DockerJobLauncher` reads this file fresh on every job launch, so entries can be added or updated at any time without restarting SP/CP.
 
-```json
-{
-  "study_A": "/host/data/study_A",
-  "study_B": "/host/data/study_B"
-}
+```yaml
+study_a:
+  training:
+    source: /host/data/study_a/training
+    mode: ro
 ```
 
-Keys are study names (from `meta.json`); values are host paths that will be bind-mounted read-only into SJ/CJ containers at `/var/tmp/nvflare/data`. If the file is absent or the job's study has no entry, no data volume is added and the job runs without a data mount.
+Top-level keys are study names from `meta.json`; nested keys are dataset names. Each dataset entry defines the host `source` path and mount `mode`. Dataset names appear in the container path as `/data/<study>/<dataset>`. If the file is absent or the job's study has no entry, no data volume is added and the job runs without a data mount. Legacy flat `study -> path` entries are invalid in this schema.
 
 ### Step 5 — Submit a job
 
@@ -640,13 +648,12 @@ single flag sets everything needed for that mode:
 | `mode` | Launcher | Resource manager | Resource consumer | Start script |
 |---|---|---|---|---|
 | `process` | `ProcessJobLauncher` | `GPUResourceManager` | `GPUResourceConsumer` | `start.sh` (unchanged) |
-| `docker` | `DockerJobLauncher` | `BEResourceManager` | none | `start_docker.sh` |
-| `k8s` | `K8sJobLauncher` | `BEResourceManager` | none | Helm charts |
+| `docker` | `DockerJobLauncher` | `PassthroughResourceManager` | none | `start_docker.sh` |
+| `k8s` | `K8sJobLauncher` | `PassthroughResourceManager` | none | Helm charts |
 
 The tool removes **both** `GPUResourceManager` and `GPUResourceConsumer` for Docker/K8s mode
-and replaces them with `BEResourceManager` (to be renamed `PassThroughResourceManager` in a
-follow-up PR). This
-is important: `GPUResourceConsumer` sets `CUDA_VISIBLE_DEVICES` in the SP/CP process
+and replaces them with `PassthroughResourceManager`. This is important: `GPUResourceConsumer` sets
+`CUDA_VISIBLE_DEVICES` in the SP/CP process
 environment, which is correct for process mode (subprocess inherits it) but wrong for
 Docker/K8s mode (SJ/CJ runs in a separate container/pod with its own environment — GPU
 assignment is handled by `device_requests` / pod resource limits instead). Site admin cannot
@@ -680,7 +687,7 @@ Neither is universally better — the right choice depends on the deployment con
 | Job isolation | Per-job container; each job gets its own image | Shared SP/CP environment; all jobs see the same Python packages |
 | Custom environments | Different image (Python version, CUDA, ML framework) per job | Must match SP/CP environment |
 | Startup overhead | Container launch (~seconds, longer with image pull) | Subprocess (~instant) |
-| GPU access | Via Docker `device_requests`; requires `BEResourceManager` | Direct; `GPUResourceManager` + `GPUResourceConsumer` assign `CUDA_VISIBLE_DEVICES` |
+| GPU access | Via Docker `device_requests`; requires `PassthroughResourceManager` | Direct; `GPUResourceManager` + `GPUResourceConsumer` assign `CUDA_VISIBLE_DEVICES` |
 | File permissions | Requires `--user` alignment between SP/CP and SJ/CJ | Native; no extra setup |
 | Operational complexity | Higher (Docker network, socket mount, image management, container lifecycle) | Lower |
 | Security posture | Elevated (socket access is root-equivalent with standard Docker) | Least privilege (normal OS user) |

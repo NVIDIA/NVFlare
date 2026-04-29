@@ -36,7 +36,7 @@ The following methods must be implemented:
 
 .. code-block:: python
 
-      def initialize(self)
+      def initialize(self):
       def train(self, model: FLModel) -> Union[str, FLModel]:
       def get_model(self, model_name: str) -> Union[str, FLModel]:
       def validate(self, model: FLModel) -> Union[str, FLModel]:

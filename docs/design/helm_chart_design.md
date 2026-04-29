@@ -1,6 +1,6 @@
 # NVFlare Helm Chart — Technical Design
 
-**Version:** 2.7.x / Helm chart 0.1.0
+**Version:** Helm chart 0.1.0
 **Date:** 2026-04-10
 
 For a high-level overview see [helm_chart_overview.md](helm_chart_overview.md).
@@ -30,9 +30,7 @@ For a high-level overview see [helm_chart_overview.md](helm_chart_overview.md).
 | `docker_image` | required | `repo:tag` for all participants; tag becomes `appVersion` |
 | `parent_port` | `8102` | Port job pods use to talk back to the client or server process |
 | `workspace_pvc` | `nvflws` | PVC claim name for the runtime workspace volume |
-| `etc_pvc` | `nvfletc` | PVC claim name for the startup-kit volume |
 | `workspace_mount_path` | `/var/tmp/nvflare/workspace` | In-container mount path for workspace PVC |
-| `etc_mount_path` | `/var/tmp/nvflare/etc` | In-container mount path for etc PVC |
 
 ### Template File Resolution
 
@@ -74,9 +72,6 @@ def _helm_src(role: str, filename: str) -> str:
 | `image.repository` | Container image repository |
 | `image.tag` | Container image tag |
 | `image.pullPolicy` | `IfNotPresent` |
-| `persistence.etc.claimName` | PVC name for startup kit |
-| `persistence.etc.friendlyName` | Display name for the etc PVC (same as `claimName`) |
-| `persistence.etc.mountPath` | Mount path for etc PVC |
 | `persistence.workspace.claimName` | PVC name for workspace |
 | `persistence.workspace.friendlyName` | Display name for the workspace PVC (same as `claimName`) |
 | `persistence.workspace.mountPath` | Mount path for workspace PVC |
@@ -170,7 +165,7 @@ Requires `microk8s enable ingress`. The ingress controller DaemonSet must also b
 ├── values.yaml
 └── templates/
     ├── _helpers.tpl
-    ├── client-pod.yaml
+    ├── client-deployment.yaml
     └── service.yaml
 ```
 
@@ -182,9 +177,6 @@ Requires `microk8s enable ingress`. The ingress controller DaemonSet must also b
 | `image.repository` | Container image repository |
 | `image.tag` | Container image tag |
 | `image.pullPolicy` | `Always` |
-| `persistence.etc.claimName` | PVC name for startup kit |
-| `persistence.etc.friendlyName` | Display name for the etc PVC (same as `claimName`) |
-| `persistence.etc.mountPath` | Mount path for etc PVC |
 | `persistence.workspace.claimName` | PVC name for workspace |
 | `persistence.workspace.friendlyName` | Display name for the workspace PVC (same as `claimName`) |
 | `persistence.workspace.mountPath` | Mount path for workspace PVC |
@@ -195,7 +187,7 @@ Requires `microk8s enable ingress`. The ingress controller DaemonSet must also b
 
 ### Template Details
 
-**`client/pod.yaml`** — `uid=` is appended by the template, not stored in `values.yaml`:
+**`client/deployment.yaml`** — `uid=` is appended by the template, not stored in `values.yaml`:
 
 ```yaml
 args:
@@ -229,7 +221,7 @@ Consistency requirements across chart and `comm_config.json`:
 
 | Source | Field | Value |
 |--------|-------|-------|
-| `values.yaml` / `client-pod.yaml` | `containerPort` | `parent_port` |
+| `values.yaml` / `client-deployment.yaml` | `containerPort` | `parent_port` |
 | `service.yaml` | `port` / `targetPort` | `parent_port` |
 | `service.yaml` | `metadata.name` | `<client.name>` |
 | `comm_config.json` | `internal.resources.port` | `parent_port` |
@@ -237,28 +229,31 @@ Consistency requirements across chart and `comm_config.json`:
 
 ### K8sJobLauncher
 
-`ClientK8sJobLauncher.launch_job()` runs each FL job's executor in a dynamically-created Pod. The job image is read from `deploy_map` in `meta.json`:
+`ClientK8sJobLauncher.launch_job()` runs each FL job's executor in a dynamically-created Pod. The job image is read from `launcher_spec` in `meta.json`:
 
 ```json
 {
-  "deploy_map": {
-    "app": [
-      { "sites": ["server"], "image": "myregistry/nvflare-server:2.7.0" },
-      { "sites": ["site-1"], "image": "myregistry/nvflare-client:2.7.0" },
-      "site-2"
-    ]
+  "launcher_spec": {
+    "site-1": {
+      "k8s": { "image": "myregistry/nvflare-client:2.7.0", "num_of_gpus": 1 }
+    },
+    "default": {
+      "k8s": { "image": "myregistry/nvflare-job:2.7.0" }
+    }
   }
 }
 ```
 
-Plain strings receive no image override (`extract_job_image` returns `None`) and fall back to the launcher's default.
+If no site-specific `launcher_spec[site]["k8s"]` entry exists, the launcher can
+use `launcher_spec["default"]["k8s"]` when present.
 
 **`K8sJobLauncher`** responsibilities:
 - Loads `kubeconfig` from a file path provided at construction time.
-- Builds a Pod manifest with PVCs: `nvflws`, `nvfldata`, `nvfletc`.
-- Attaches `nvidia.com/gpu` resource limits when specified in job metadata.
+- Builds a Pod manifest with an ephemeral workspace volume, a startup-kit Secret mount, and an optional `nvfldata` PVC.
+- Attaches `nvidia.com/gpu` resource limits when `num_of_gpus` is specified in `launcher_spec[site]["k8s"]`, `launcher_spec["default"]["k8s"]`, or legacy flat `resource_spec[site]`.
+- Resolves the data PVC from the study mapping YAML; null or empty mapping values skip the data PVC mount.
 - Converts the UUID job ID to an RFC 1123-compliant pod name via `uuid4_to_rfc1123()`.
-- Registers itself as launcher on `BEFORE_JOB_LAUNCH` only when the job has an image for this site.
+- Registers itself as launcher on `BEFORE_JOB_LAUNCH` unconditionally (launcher type is site policy, not job config); `launch_job` raises `RuntimeError` if no image is found for this site.
 
 **`K8sJobHandle`** responsibilities:
 - Submits the pod via `core_v1_api.create_namespaced_pod()`.
@@ -310,7 +305,7 @@ prod_NN/
 │       ├── values.yaml
 │       └── templates/
 │           ├── _helpers.tpl
-│           ├── client-pod.yaml
+│           ├── client-deployment.yaml
 │           └── service.yaml
 └── site-2/
     └── helm_chart/  ...
@@ -346,7 +341,7 @@ Pod scheduled → image pulled → PVCs mounted
     ▼
 python3 -u -m nvflare.private.fed.app.client.client_train
     ├─ uid=site-1  (injected by pod template from .Values.name)
-    ├─ reads startup kit from etc PVC
+    ├─ reads startup kit from workspace/startup
     ├─ connects to nvflare-server:fedLearnPort (ClusterIP within cluster)
     └─ enters event loop, waiting for tasks
 ```
@@ -357,11 +352,11 @@ python3 -u -m nvflare.private.fed.app.client.client_train
 Server submits job → ClientEngine.fire_event(BEFORE_JOB_LAUNCH)
     │
     ▼
-ClientK8sJobLauncher.handle_event()  — registers if job has image for this site
+ClientK8sJobLauncher.handle_event()  — registers unconditionally (site policy)
     │
     ▼
 ClientK8sJobLauncher.launch_job(job_meta, fl_ctx)
-    ├─ Pod manifest: name=rfc1123(job_id), image from deploy_map, volumes: nvflws/nvfldata/nvfletc
+    ├─ Pod manifest: name=rfc1123(job_id), image from launcher_spec, volumes: emptyDir workspace + startup Secret + optional nvfldata
     ├─ core_v1_api.create_namespaced_pod()
     ├─ K8sJobHandle.enter_states([RUNNING])  — polls every 1s, terminates if stuck in Pending
     └─ returns K8sJobHandle  →  poll() / wait() / terminate()
@@ -373,7 +368,7 @@ ClientK8sJobLauncher.launch_job(job_meta, fl_ctx)
 
 ### mTLS
 
-All server↔client communication uses mutual TLS. Certificates are generated by `nvflare provision` (RSA, project root CA) and placed in the `nvfletc` PVC under `<site-name>/startup/`. `secure_train=true` in the pod args activates TLS on both sides.
+All server↔client communication uses mutual TLS. Certificates are generated by `nvflare provision` (RSA, project root CA) and stored in each site's workspace `startup/` directory. `secure_train=true` in the pod args activates TLS on both sides.
 
 ### Networking
 
@@ -398,7 +393,7 @@ rules:
     verbs: ["create", "delete", "get", "watch"]
 ```
 
-The kubeconfig for this service account must be placed in the client startup kit so it is copied into the `nvfletc` PVC during deployment.
+The kubeconfig for this service account must be placed in the client startup kit so it lands in the site's workspace `startup/` directory during deployment.
 
 ---
 

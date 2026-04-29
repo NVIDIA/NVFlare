@@ -73,6 +73,35 @@ def test_internal_error_hint_does_not_reference_verbose():
     assert "--verbose" not in ERROR_REGISTRY["INTERNAL_ERROR"]["hint"]
 
 
+def test_startup_kit_hints_name_kit_registry_commands():
+    hints = [
+        ERROR_REGISTRY[code]["hint"]
+        for code in ("STARTUP_KIT_MISSING", "STARTUP_KIT_NOT_CONFIGURED")
+        if code in ERROR_REGISTRY
+    ]
+    combined = " ".join(hints)
+    assert "nvflare config kit list" in combined
+    assert "nvflare config kit use <id>" in combined
+    assert "NVFLARE_STARTUP_KIT_DIR" in combined
+
+
+def test_no_error_hint_recommends_old_startup_kit_flags():
+    forbidden = [
+        "--startup-kit",
+        "--startup_kit_dir",
+        "poc.startup_kit",
+        "prod.startup_kit",
+        "--{target}.startup_kit",
+    ]
+
+    offenders = {
+        code: entry["hint"]
+        for code, entry in ERROR_REGISTRY.items()
+        if any(old_text in entry["hint"] for old_text in forbidden)
+    }
+    assert offenders == {}
+
+
 def test_missing_substitution_key_falls_back_to_template():
     entry = ERROR_REGISTRY["JOB_NOT_FOUND"]
     try:

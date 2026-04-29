@@ -38,7 +38,7 @@ Event headers are enclosed in square brackets. The following are some examples o
 .. code-block::
 
     [E:b6ac4a2a-eb01-4123-b898-758f20dc028d][T:2022-09-13 13:56:01.280558][U:?][A:_cert_login admin@b.org]
-    [E:16392ed4-d6c7-490a-a84b-12685297e912][T:2022-09-1412:59:47.691957][U:trainer@b.org][A:train.deploy]
+    [E:16392ed4-d6c7-490a-a84b-12685297e912][T:2022-09-14 12:59:47.691957][U:trainer@b.org][A:train.deploy]
     [E:636ee230-3534-45a2-9689-d0ec6c90ed45][R:9dbf4179-991b-4d67-be2f-8e4bac1b8eb2][T:2022-09-14 15:08:33.181712][J:c4886aa3-9547-4ba7-902e-eb5e52085bc2][A:train#39027d22-3c70-4438-9c6b-637c380b8669]received task from server
 
 Event Headers

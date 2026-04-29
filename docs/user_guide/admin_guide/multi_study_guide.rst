@@ -118,6 +118,18 @@ Pass the ``study`` parameter to :class:`ProdEnv`:
 
     ProdEnv(startup_kit_location="/path/to/admin", study="cancer-research")
 
+PocEnv (Recipes)
+----------------
+
+Pass the ``study`` parameter to :class:`PocEnv` when your POC deployment is provisioned from a custom
+``project.yml`` that defines ``studies:``:
+
+.. code-block:: python
+
+    PocEnv(num_clients=2, project_conf_path="/path/to/project.yml", study="cancer-research")
+
+If the POC deployment uses the default generated project with no ``studies:``, only the ``default`` study is valid.
+
 Study-Scoped Behavior
 =====================
 
@@ -142,5 +154,9 @@ radius — use separate NVFlare deployments.
 Updating Studies
 ================
 
-Changing study definitions requires reprovisioning and a server restart. There is no live reload
-mechanism.
+Study site enrollment and user membership can be updated at runtime using the ``nvflare study``
+command family without reprovisioning or restarting the server. See :ref:`study_command` for the
+full command reference.
+
+Changing the core study definition (adding new studies or altering the base provisioned
+configuration) requires reprovisioning and a server restart.

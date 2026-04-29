@@ -51,6 +51,11 @@ def get_cn_from_cert(cert):
     return attr[0].value
 
 
+def get_org_from_cert(cert) -> str:
+    attr = cert.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)
+    return attr[0].value if attr else ""
+
+
 def load_cert_file(path: str):
     return load_crt(path)
 

@@ -29,10 +29,15 @@ except ImportError:
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import get_job_meta_study
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
-from nvflare.utils.job_launcher_utils import get_client_job_args, get_launcher_resource_spec, get_server_job_args
+from nvflare.app_opt.job_launcher.study_data import (
+    load_study_data_file,
+    resolve_study_dataset_mounts,
+    should_mount_study_data,
+)
+from nvflare.utils.job_launcher_utils import get_client_job_args, get_job_launcher_spec, get_server_job_args
 
 
 # Docker container status strings
@@ -236,8 +241,7 @@ class DockerJobLauncher(JobLauncherSpec):
     """
 
     WORKSPACE_MOUNT = "/var/tmp/nvflare/workspace"
-    DATA_MOUNT = "/var/tmp/nvflare/data"
-    STUDY_DATA_PATH_FILE = "local/study_data.json"
+    STUDY_DATA_PATH_FILE = "local/study_data.yaml"
 
     def __init__(
         self,
@@ -281,7 +285,17 @@ class DockerJobLauncher(JobLauncherSpec):
         self.python_path = python_path
         self.timeout = timeout
         default_job_container_kwargs = default_job_container_kwargs or {}
-        _RESERVED_KWARGS = {"volumes", "network", "environment", "command", "name", "detach", "user", "working_dir"}
+        _RESERVED_KWARGS = {
+            "volumes",
+            "mounts",
+            "network",
+            "environment",
+            "command",
+            "name",
+            "detach",
+            "user",
+            "working_dir",
+        }
         reserved_used = _RESERVED_KWARGS & set(default_job_container_kwargs.keys())
         if reserved_used:
             raise ValueError(
@@ -329,13 +343,15 @@ class DockerJobLauncher(JobLauncherSpec):
         _, exe_module = exe_module_entry
 
         site_name = fl_ctx.get_identity_name()
-        job_image = get_launcher_resource_spec(job_meta, site_name, "docker").get("image")
+        job_image = get_job_launcher_spec(job_meta, site_name, "docker").get("image")
         container_name = _sanitize_container_name(f"{site_name}-{job_id}")
         if not job_image:
             raise RuntimeError(
                 f"DockerJobLauncher is configured for site '{site_name}' but no job image "
                 f"was specified in meta.json for this site. "
-                f"Add an 'image' field to resource_spec['{site_name}']['docker']."
+                f"Set launcher_spec['{site_name}']['docker']['image'] (preferred), "
+                f"launcher_spec['default']['docker']['image'] (shared default), "
+                f"or resource_spec['{site_name}']['docker']['image'] (legacy)."
             )
 
         workspace = self.workspace
@@ -393,18 +409,30 @@ class DockerJobLauncher(JobLauncherSpec):
             if python_paths:
                 environment["PYTHONPATH"] = os.pathsep.join(python_paths)
 
-        # Docker resource spec: all per-job Docker resource requirements live in
-        # resource_spec[site][docker] = {num_of_gpus, shm_size, ipc_mode, ...}.
-        # Legacy flat resource_spec[site] = {num_of_gpus} is treated as process mode — docker gets nothing.
+        # Docker launcher spec: per-job Docker settings (image, shm_size, ipc_mode, ...) live in
+        # launcher_spec[site][docker]. Falls back to nested resource_spec[site][docker] for
+        # backward compatibility. num_of_gpus falls back to flat resource_spec[site] (Option 4).
         # Site-level defaults (default_job_container_kwargs) are merged in; job-level takes precedence on conflict.
-        docker_spec = get_launcher_resource_spec(job_meta, site_name, "docker")
-        num_gpus = docker_spec.get("num_of_gpus", 0)
-        _RESERVED_KWARGS = {"volumes", "network", "environment", "command", "name", "detach", "user", "working_dir"}
+        docker_spec = get_job_launcher_spec(job_meta, site_name, "docker")
+        _site_rs = (job_meta.get(JobMetaKey.RESOURCE_SPEC.value) or {}).get(site_name) or {}
+        _flat_gpus = 0 if any(k in _site_rs for k in ("process", "docker", "k8s")) else _site_rs.get("num_of_gpus", 0)
+        num_gpus = docker_spec["num_of_gpus"] if "num_of_gpus" in docker_spec else _flat_gpus
+        _RESERVED_KWARGS = {
+            "volumes",
+            "mounts",
+            "network",
+            "environment",
+            "command",
+            "name",
+            "detach",
+            "user",
+            "working_dir",
+        }
         _NON_CONTAINER_KEYS = {"num_of_gpus", "image"} | _RESERVED_KWARGS
         reserved_in_spec = _RESERVED_KWARGS & set(docker_spec.keys())
         if reserved_in_spec:
             self.logger.warning(
-                f"job {job_id}: resource_spec['{site_name}']['docker'] contains reserved keys "
+                f"job {job_id}: launcher_spec['{site_name}']['docker'] contains reserved keys "
                 f"{sorted(reserved_in_spec)} — ignored (controlled by the launcher)"
             )
         job_container_kwargs = {k: v for k, v in docker_spec.items() if k not in _NON_CONTAINER_KEYS}
@@ -420,29 +448,35 @@ class DockerJobLauncher(JobLauncherSpec):
         if num_gpus and "device_requests" not in job_container_kwargs:
             merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
 
-        # Volumes: always mount workspace; optionally mount study data if local/study_data.json exists
-        volumes = {
-            workspace: {"bind": self.WORKSPACE_MOUNT, "mode": "rw"},
-        }
-        # Read study data map from workspace/local/study_data.json.
+        # Mounts: always mount workspace; mount study datasets only when the job declares a study.
+        mounts = [docker.types.Mount(target=self.WORKSPACE_MOUNT, source=workspace, type="bind", read_only=False)]
+        # Read study data map from workspace/local/study_data.yaml.
         # Must use WORKSPACE_MOUNT (container-internal path) for the file read because launch_job
         # runs inside the SP/CP container. The host path (workspace) does not exist in the container
         # filesystem. The Docker volume source must remain the host path for the daemon API.
-        # Maps study name → host data path; study name comes from meta.json "study" field.
+        # Maps study -> dataset -> {source, mode}; source is a host path for Docker.
+        # Each dataset is mounted at /data/<study>/<dataset>.
         study_data_file = os.path.join(self.WORKSPACE_MOUNT, self.STUDY_DATA_PATH_FILE)
-        if os.path.isfile(study_data_file):
-            try:
-                import json as _json
-
-                with open(study_data_file) as f:
-                    study_data_map = _json.load(f)
-                study = get_job_meta_study(job_meta)
-                data_host_path = study_data_map.get(study) if study else None
-                if data_host_path:
-                    volumes[data_host_path] = {"bind": self.DATA_MOUNT, "mode": "ro"}
-                    self.logger.info(f"mounting study '{study}' data from {data_host_path} -> {self.DATA_MOUNT}")
-            except Exception as e:
-                self.logger.warning(f"failed to read {study_data_file}: {e}")
+        study = job_meta.get(JobMetaKey.STUDY.value)
+        if should_mount_study_data(study):
+            study_data_map = load_study_data_file(study_data_file)
+            data_mounts = resolve_study_dataset_mounts(study_data_map, study, study_data_file)
+            for dataset_mount in data_mounts:
+                mounts.append(
+                    docker.types.Mount(
+                        target=dataset_mount.mount_path,
+                        source=dataset_mount.source,
+                        type="bind",
+                        read_only=dataset_mount.read_only,
+                    )
+                )
+                self.logger.info(
+                    "mounting study '%s' dataset '%s' from %s -> %s",
+                    study,
+                    dataset_mount.dataset,
+                    dataset_mount.source,
+                    dataset_mount.mount_path,
+                )
 
         self.logger.info(f"launching job {job_id} as container {container_name} using image {job_image}")
 
@@ -455,7 +489,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 network=self.network,
                 detach=True,
                 environment=environment if environment else None,
-                volumes=volumes,
+                mounts=mounts,
                 working_dir=self.WORKSPACE_MOUNT,
                 # Run as the same user as SP/CP so job-written files are accessible to SP/CP
                 # (e.g. cross_val_results.json written by SJ must be readable/deletable by SP).

@@ -14,4 +14,4 @@ Additional hello-world examples on GitHub:
 
 - :github_nvflare_link:`Deep Learning to Federated Learning (GitHub) <examples/hello-world/ml-to-fl>`
 - :github_nvflare_link:`Hello Cyclic Weight Transfer (GitHub) <examples/hello-world/hello-cyclic>`
-- :github_nvflare_link:`Hello Client Controlled Workflow (GitHub) <examples/hello-world/hello-ccwf>`
+- :github_nvflare_link:`Hello Client-Controlled Workflow <examples/hello-world/hello-ccwf>`

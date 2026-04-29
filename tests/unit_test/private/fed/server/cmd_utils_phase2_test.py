@@ -62,15 +62,11 @@ class _FakeEngine:
 
 
 class _FakeStudyRegistry:
-    def __init__(self, roles=None, studies=None):
-        self.roles = roles or {}
+    def __init__(self, studies=None):
         self.studies = studies or {}
 
     def has_study(self, study):
         return study in self.studies
-
-    def get_role(self, user_name, study):
-        return self.roles.get((user_name, study))
 
     def get_sites(self, study):
         return self.studies.get(study)
@@ -90,13 +86,8 @@ def _install_registry(monkeypatch, registry):
     _FakeStudyRegistryService.registry = registry
 
 
-def test_command_authz_required_resolves_study_role_before_authorization(monkeypatch):
-    _install_registry(
-        monkeypatch,
-        _FakeStudyRegistry(
-            roles={("admin@nvidia.com", "cancer-research"): "lead"}, studies={"cancer-research": {"site-a"}}
-        ),
-    )
+def test_command_authz_required_keeps_cert_role_for_named_study(monkeypatch):
+    _install_registry(monkeypatch, _FakeStudyRegistry(studies={"cancer-research": {"site-a"}}))
 
     conn = _FakeConnection(
         props={
@@ -109,16 +100,11 @@ def test_command_authz_required_resolves_study_role_before_authorization(monkeyp
     result = CommandUtil().command_authz_required(conn, ["list_jobs"])
 
     assert result == PreAuthzReturnCode.REQUIRE_AUTHZ
-    assert conn.get_prop(ConnProps.USER_ROLE) == "lead"
+    assert conn.get_prop(ConnProps.USER_ROLE) == "project_admin"
 
 
-def test_authorize_client_operation_resolves_study_role_before_authorization(monkeypatch):
-    _install_registry(
-        monkeypatch,
-        _FakeStudyRegistry(
-            roles={("admin@nvidia.com", "cancer-research"): "lead"}, studies={"cancer-research": {"site-a"}}
-        ),
-    )
+def test_authorize_client_operation_keeps_cert_role_for_named_study(monkeypatch):
+    _install_registry(monkeypatch, _FakeStudyRegistry(studies={"cancer-research": {"site-a"}}))
 
     conn = _FakeConnection(
         props={
@@ -132,16 +118,11 @@ def test_authorize_client_operation_resolves_study_role_before_authorization(mon
     result = CommandUtil().authorize_client_operation(conn, ["report_env", "site-a"])
 
     assert result == PreAuthzReturnCode.REQUIRE_AUTHZ
-    assert conn.get_prop(ConnProps.USER_ROLE) == "lead"
+    assert conn.get_prop(ConnProps.USER_ROLE) == "project_admin"
 
 
 def test_authorize_server_operation_requires_authz_for_client_targets_when_registry_exists(monkeypatch):
-    _install_registry(
-        monkeypatch,
-        _FakeStudyRegistry(
-            roles={("admin@nvidia.com", "cancer-research"): "lead"}, studies={"cancer-research": {"site-a"}}
-        ),
-    )
+    _install_registry(monkeypatch, _FakeStudyRegistry(studies={"cancer-research": {"site-a"}}))
 
     conn = _FakeConnection(
         props={
@@ -155,16 +136,11 @@ def test_authorize_server_operation_requires_authz_for_client_targets_when_regis
     result = CommandUtil().authorize_server_operation(conn, ["check_status", "client"])
 
     assert result == PreAuthzReturnCode.REQUIRE_AUTHZ
-    assert conn.get_prop(ConnProps.USER_ROLE) == "lead"
+    assert conn.get_prop(ConnProps.USER_ROLE) == "project_admin"
 
 
 def test_authorize_server_operation_keeps_cert_role_for_all_targets(monkeypatch):
-    _install_registry(
-        monkeypatch,
-        _FakeStudyRegistry(
-            roles={("admin@nvidia.com", "cancer-research"): "lead"}, studies={"cancer-research": {"site-a"}}
-        ),
-    )
+    _install_registry(monkeypatch, _FakeStudyRegistry(studies={"cancer-research": {"site-a"}}))
 
     conn = _FakeConnection(
         props={
