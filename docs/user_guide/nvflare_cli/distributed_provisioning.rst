@@ -413,13 +413,23 @@ separate root CA file before running ``nvflare package``; the out-of-band value
 is only the fingerprint used to verify the root CA inside the signed zip.
 
 ``nvflare package`` always prints the fingerprint computed from the signed zip.
-Use one of these options to make the package command verify it:
+Use one of these options to make the package command verify the out-of-band
+fingerprint:
 
 .. code-block:: shell
 
    nvflare package hospital-a.signed.zip --confirm-rootca
    nvflare package hospital-a.signed.zip \
        --expected-rootca-fingerprint SHA256:AA:BB:...
+
+Use ``--confirm-rootca`` only for manual human confirmation. Use
+``--expected-rootca-fingerprint`` for automation that has the expected
+fingerprint. If you intentionally skip out-of-band fingerprint verification,
+drop both options:
+
+.. code-block:: shell
+
+   nvflare package hospital-a.signed.zip
 
 Without either option, packaging still validates the signed zip, metadata,
 certificate chain, and local private-key match, but it does not prompt and does
@@ -577,8 +587,10 @@ Notes
   Project Admin's profile through the signed zip.
 - Server ``connection_security`` overrides are resolved locally at package time
   from the original server participant definition.
-- Use ``--confirm-rootca`` for interactive root CA fingerprint confirmation or
-  ``--expected-rootca-fingerprint`` for non-interactive automation.
+- Use ``--confirm-rootca`` only for interactive root CA fingerprint confirmation.
+  Use ``--expected-rootca-fingerprint`` for non-interactive automation that
+  verifies the out-of-band fingerprint. Omit both options only when you
+  intentionally skip out-of-band fingerprint verification.
 - Startup kits generated from signed zips are compatible with the normal
   NVFlare runtime.
 - Standard distributed provisioning does not generate ``signature.json``.

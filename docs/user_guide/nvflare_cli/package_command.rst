@@ -27,16 +27,22 @@ For a site request created in ``./hospital-a``:
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip --confirm-rootca
+   nvflare package hospital-a.signed.zip
 
-To compare the signed zip root CA with the value received from the Project
-Admin through a trusted out-of-band channel:
+This still validates the signed zip, signed metadata, certificate chain, and
+local private-key match. It does not perform an out-of-band root CA fingerprint
+comparison.
+
+For interactive/manual fingerprint confirmation, compare the signed zip root CA
+with the value received from the Project Admin through a trusted out-of-band
+channel:
 
 .. code-block:: shell
 
    nvflare package hospital-a.signed.zip --confirm-rootca
 
-For non-interactive automation, pass the expected fingerprint explicitly:
+For non-interactive automation that verifies the out-of-band fingerprint, pass
+the expected fingerprint explicitly:
 
 .. code-block:: shell
 

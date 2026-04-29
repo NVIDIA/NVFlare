@@ -8,12 +8,13 @@ These examples use the public distributed provisioning CLI workflow:
 3. Each requester creates one participant definition file.
 4. `nvflare cert request --participant <participant.yaml>` creates a local private key, CSR, metadata, and request zip.
 5. `nvflare cert approve <request.zip> --ca-dir <dir> --profile <project_profile.yaml>` signs the request zip, adds the server endpoint information from the profile to the signed zip, and prints `rootca_fingerprint_sha256`.
-6. `nvflare package <signed.zip> --confirm-rootca` combines the signed zip with the local request material to build a startup kit.
+6. `nvflare package <signed.zip>` combines the signed zip with the local request material to build a startup kit.
 
 Interactive examples use `package --confirm-rootca` so the site admin can
 compare the displayed fingerprint with the Project Admin's out-of-band value.
 Scripted examples pass the approval output to
-`package --expected-rootca-fingerprint`.
+`package --expected-rootca-fingerprint`. If you intentionally skip out-of-band
+fingerprint verification, omit both options.
 
 ## Directory Layout
 
