@@ -12,9 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib.util
 import logging
+import sys
 
-from nvflare.utils.job_launcher_utils import _validate_launcher_spec, get_job_launcher_spec
+from nvflare.utils.job_launcher_utils import (
+    _validate_launcher_spec,
+    get_job_launcher_spec,
+    refresh_custom_dir_import_path,
+)
 
 
 class TestGetJobLauncherSpec:
@@ -112,3 +118,38 @@ class TestValidateLauncherSpec:
         with caplog.at_level(logging.WARNING, logger="nvflare.utils.job_launcher_utils"):
             get_job_launcher_spec(meta, "site-1", "docker")
         assert any("defaults" in msg for msg in caplog.messages)
+
+
+class TestRefreshCustomDirImportPath:
+    def test_logs_when_custom_dir_is_missing(self, tmp_path, caplog):
+        custom_path = str(tmp_path / "missing" / "custom")
+
+        with caplog.at_level(logging.DEBUG, logger="nvflare.utils.job_launcher_utils"):
+            refresh_custom_dir_import_path(custom_path)
+
+        assert "custom dir not found" in caplog.text
+        assert custom_path in caplog.text
+
+    def test_refreshes_importer_cache_for_dir_created_after_startup(self, tmp_path):
+        module_name = "nvflare_refresh_path_probe"
+        custom_dir = tmp_path / "app" / "custom"
+        custom_path = str(custom_dir)
+        sys.path.append(custom_path)
+        try:
+            assert importlib.util.find_spec(module_name) is None
+            assert sys.path_importer_cache.get(custom_path) is None
+
+            custom_dir.mkdir(parents=True)
+            (custom_dir / f"{module_name}.py").write_text("VALUE = 123\n")
+
+            assert importlib.util.find_spec(module_name) is None
+            refresh_custom_dir_import_path(custom_path)
+
+            spec = importlib.util.find_spec(module_name)
+            assert spec is not None
+            assert spec.origin == str(custom_dir / f"{module_name}.py")
+        finally:
+            sys.modules.pop(module_name, None)
+            if custom_path in sys.path:
+                sys.path.remove(custom_path)
+            sys.path_importer_cache.pop(custom_path, None)
