@@ -11,8 +11,9 @@ single-node Kubernetes environments, treated as two Kubernetes clusters:
 * one cluster for a single FLARE client named ``site-1``.
 
 It covers provisioning, editing ``project.yml``, generating Helm charts for the
-server and client, creating the required PersistentVolumeClaims (PVCs), staging
-the provisioned folders into the PVCs, and deploying the generated charts.
+server and client, creating the Helm workspace PersistentVolumeClaim (PVC) and
+any job data PVCs, staging the provisioned folders into the workspace PVC, and
+deploying the generated charts.
 
 The Kubernetes environments are created from the Brev web UI. The exact control
 labels in Brev can change, but the workflow is the same: create an environment,
@@ -30,7 +31,8 @@ The examples use:
 * one Brev Kubernetes environment named ``nvflare-server-k8s``;
 * one Brev Kubernetes environment named ``nvflare-site-1-k8s``;
 * namespace ``nvflare`` in both clusters;
-* PVC names ``nvflws``, ``nvfletc``, and ``nvfldata`` in both clusters;
+* workspace PVC name ``nvflws`` in both clusters;
+* optional job data PVC name ``nvfldata`` in both clusters;
 * an externally reachable DNS name for the server, for example
   ``server1.example.com``;
 * a container image in a registry that both clusters can pull, for example
@@ -255,6 +257,9 @@ Edit ``project.yml`` with these deployment-specific goals:
 #. Leave ``admin_port`` unset so it defaults to ``fed_learn_port``. The Brev
    server only needs to expose the ``fed_learn_port`` value.
 #. Add ``HelmChartBuilder`` after ``StaticFileBuilder``.
+#. Configure ``HelmChartBuilder`` only with supported args:
+   ``docker_image``, ``parent_port``, ``workspace_pvc``, and
+   ``workspace_mount_path``.
 #. Use the container image that both clusters can pull.
 
 Example:
@@ -296,7 +301,7 @@ Example:
          docker_image: registry.example.com/nvflare:dev
          parent_port: 8102
          workspace_pvc: nvflws
-         etc_pvc: nvfletc
+         workspace_mount_path: /var/tmp/nvflare/workspace
      - path: nvflare.lighter.impl.cert.CertBuilder
      - path: nvflare.lighter.impl.signature.SignatureBuilder
 
@@ -312,6 +317,14 @@ state, ``HelmChartBuilder.build()`` updates it with Kubernetes Service names and
 ports, and ``StaticFileBuilder.finalize()`` writes the final
 ``comm_config.json`` files.
 
+The current ``HelmChartBuilder`` does not accept an ``etc_pvc`` argument. The
+generated server and client charts mount only the configured ``workspace_pvc``.
+In this guide, that PVC is ``nvflws`` and it is mounted at
+``/var/tmp/nvflare/workspace``. Create separate data PVCs, such as
+``nvfldata``, only for launched Kubernetes job pods that need study data. The
+PVC creation steps below include ``nvfldata`` for that later job-data example;
+it is not a ``HelmChartBuilder`` argument.
+
 Run Provisioning
 ================
 
@@ -325,7 +338,13 @@ Set ``PROD_DIR`` to the generated production folder:
 
 .. code-block:: shell
 
-   PROD_DIR=$(find /tmp/nvflare/provision/example_project -maxdepth 1 -type d -name 'prod_*' | sort | tail -n 1)
+   PROJECT_NAME=$(grep '^name:' project.yml | awk '{print $2}')
+   PROD_DIR=$(find "/tmp/nvflare/provision/${PROJECT_NAME}" \
+     -maxdepth 1 -type d -name 'prod_*' | sort | tail -n 1)
+   if [ -z "$PROD_DIR" ]; then
+     echo "No prod_* folder found for project '${PROJECT_NAME}'" >&2
+     exit 1
+   fi
    echo "$PROD_DIR"
 
 The generated folder should contain ``server1``, ``site-1``, the admin startup
@@ -394,7 +413,9 @@ the uploaded archive and set deployment variables:
    kubectl get nodes
    helm version
 
-Create the namespace and PVCs:
+Create the namespace and PVCs. The generated server chart requires the
+``nvflws`` workspace PVC. The ``nvfldata`` PVC is used later only by launched
+Kubernetes job pods that need study data:
 
 .. code-block:: shell
 
@@ -411,17 +432,6 @@ Create the namespace and PVCs:
      resources:
        requests:
          storage: 10Gi
-   ---
-   apiVersion: v1
-   kind: PersistentVolumeClaim
-   metadata:
-     name: nvfletc
-   spec:
-     accessModes:
-       - ReadWriteOnce
-     resources:
-       requests:
-         storage: 1Gi
    ---
    apiVersion: v1
    kind: PersistentVolumeClaim
@@ -518,15 +528,10 @@ the server with ``-m /var/tmp/nvflare/workspace``, so the PVC root must contain
          volumeMounts:
            - name: nvflws
              mountPath: /mnt/nvflws
-           - name: nvfletc
-             mountPath: /mnt/nvfletc
      volumes:
        - name: nvflws
          persistentVolumeClaim:
            claimName: nvflws
-       - name: nvfletc
-         persistentVolumeClaim:
-           claimName: nvfletc
    EOF
 
    kubectl -n "$NAMESPACE" delete pod nvflare-pvc-copy --ignore-not-found=true
@@ -584,7 +589,9 @@ the uploaded archive and set deployment variables:
    kubectl get nodes
    helm version
 
-Create the namespace and PVCs:
+Create the namespace and PVCs. The generated client chart requires the
+``nvflws`` workspace PVC. The ``nvfldata`` PVC is used later only by launched
+Kubernetes job pods that need study data:
 
 .. code-block:: shell
 
@@ -601,17 +608,6 @@ Create the namespace and PVCs:
      resources:
        requests:
          storage: 10Gi
-   ---
-   apiVersion: v1
-   kind: PersistentVolumeClaim
-   metadata:
-     name: nvfletc
-   spec:
-     accessModes:
-       - ReadWriteOnce
-     resources:
-       requests:
-         storage: 1Gi
    ---
    apiVersion: v1
    kind: PersistentVolumeClaim
@@ -703,15 +699,10 @@ Copy the ``site-1`` startup kit contents into the client ``nvflws`` PVC:
          volumeMounts:
            - name: nvflws
              mountPath: /mnt/nvflws
-           - name: nvfletc
-             mountPath: /mnt/nvfletc
      volumes:
        - name: nvflws
          persistentVolumeClaim:
            claimName: nvflws
-       - name: nvfletc
-         persistentVolumeClaim:
-           claimName: nvfletc
    EOF
 
    kubectl -n "$NAMESPACE" delete pod nvflare-pvc-copy --ignore-not-found=true
