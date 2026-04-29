@@ -293,3 +293,29 @@ class TestCrossSiteEvalIdempotency:
             assert getattr(recipe, "_cse_added", False) is True
         finally:
             os.unlink(train_script)
+
+    def test_participating_clients_passed_to_cross_site_eval_controller(self, tmp_path):
+        from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
+        from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+        from nvflare.recipe.utils import add_cross_site_evaluation
+
+        train_script = tmp_path / "client.py"
+        train_script.write_text("# dummy train script\n")
+        participating_clients = ["site-1", "site-3"]
+
+        recipe = NumpyFedAvgRecipe(
+            name="test_cse_participating_clients",
+            model=[1.0, 2.0],
+            min_clients=2,
+            num_rounds=2,
+            train_script=str(train_script),
+        )
+
+        add_cross_site_evaluation(recipe, participating_clients=participating_clients)
+
+        server_app = recipe.job._deploy_map["server"]
+        controllers = [getattr(workflow, "controller", workflow) for workflow in server_app.app_config.workflows]
+        eval_controllers = [controller for controller in controllers if isinstance(controller, CrossSiteModelEval)]
+
+        assert len(eval_controllers) == 1
+        assert eval_controllers[0]._participating_clients == participating_clients
