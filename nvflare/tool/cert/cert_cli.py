@@ -58,7 +58,7 @@ def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         description="Initialize a root CA for distributed provisioning. Project Admin only. One-time per federation.",
         help="Initialize root CA for a distributed provisioning federation (Project Admin only).",
     )
-    p.add_argument(
+    profile_arg = p.add_argument(
         "--profile",
         required=False,
         default=None,
@@ -66,7 +66,8 @@ def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         metavar="PROJECT_PROFILE",
         help="Project profile yaml file. The profile name is used as the CN of the root CA certificate.",
     )
-    p.add_argument(
+    profile_arg.schema_required = True
+    output_dir_arg = p.add_argument(
         "-o",
         "--output-dir",
         required=False,
@@ -75,6 +76,7 @@ def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         metavar="OUTPUT_DIR",
         help="Directory where CA files are written. Created if it does not exist.",
     )
+    output_dir_arg.schema_required = True
     p.add_argument(
         "--org",
         required=False,

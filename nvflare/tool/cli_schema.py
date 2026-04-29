@@ -64,7 +64,7 @@ def parser_to_schema(
             required = action.nargs not in (argparse.OPTIONAL, argparse.ZERO_OR_MORE)
         else:
             name = max(action.option_strings, key=len)
-            required = bool(getattr(action, "required", False))
+            required = bool(getattr(action, "required", False) or getattr(action, "schema_required", False))
 
         entry = {
             "name": name,
