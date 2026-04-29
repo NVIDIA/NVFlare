@@ -25,8 +25,9 @@ _deploy_root_parser: Optional[argparse.ArgumentParser] = None
 _deploy_prepare_parser: Optional[argparse.ArgumentParser] = None
 
 _DEPLOY_PREPARE_EXAMPLES = [
-    "nvflare deploy prepare --kit ./site-1 --output ./site-1-docker --config docker.yaml",
-    "nvflare deploy prepare --kit ./site-1 --output ./site-1-k8s --config k8s.yaml",
+    "nvflare deploy prepare ./site-1",
+    "nvflare deploy prepare ./site-1 --output ./site-1-docker --config docker.yaml",
+    "nvflare deploy prepare ./site-1 --output ./site-1-k8s --config k8s.yaml",
 ]
 
 
@@ -44,20 +45,15 @@ def def_deploy_cli_parser(sub_cmd) -> dict:
         description="Prepare an existing server/client startup kit for Docker or Kubernetes.",
         help="prepare a startup kit for Docker or Kubernetes",
     )
-    prepare_parser.add_argument(
-        "--kit",
-        required=True,
-        help="Existing input startup kit directory. The input kit is not modified.",
-    )
+    prepare_parser.add_argument("kit", nargs="?", help="Existing input startup kit directory.")
+    prepare_parser.add_argument("--kit", dest="kit_flag", help="Existing input startup kit directory.")
     prepare_parser.add_argument(
         "--output",
-        required=True,
-        help="Directory to write the prepared startup kit copy.",
+        help="Directory to write the prepared startup kit copy. Defaults to <kit>/prepared/<runtime>.",
     )
     prepare_parser.add_argument(
         "--config",
-        required=True,
-        help="YAML runtime config file with top-level runtime: docker or runtime: k8s.",
+        help="YAML runtime config file with top-level runtime: docker or runtime: k8s. Defaults to <kit>/config.yaml.",
     )
     prepare_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _deploy_prepare_parser = prepare_parser
@@ -77,4 +73,3 @@ def handle_deploy_cmd(args):
 
     output_usage_error(_deploy_root_parser, "deploy subcommand required", exit_code=4)
     raise SystemExit(4)
-

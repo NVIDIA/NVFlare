@@ -14,8 +14,9 @@ This design separates two concerns:
 The proposed command is:
 
 ```bash
-nvflare deploy prepare --kit ./site-1 --output ./site-1-docker --config docker.yaml
-nvflare deploy prepare --kit ./site-1 --output ./site-1-k8s --config k8s.yaml
+nvflare deploy prepare ./site-1
+nvflare deploy prepare ./site-1 --output ./site-1-docker --config docker.yaml
+nvflare deploy prepare ./site-1 --output ./site-1-k8s --config k8s.yaml
 ```
 
 `prepare` is intentionally scoped under `deploy`. A plain `nvflare prepare`
@@ -134,8 +135,8 @@ process.
 ## Proposed Command
 
 ```bash
-nvflare deploy prepare \
-  --kit <startup-kit-dir> \
+nvflare deploy prepare <startup-kit-dir>
+nvflare deploy prepare <startup-kit-dir> \
   --output <prepared-kit-dir> \
   --config <runtime-config.yaml>
 ```
@@ -143,12 +144,17 @@ nvflare deploy prepare \
 The runtime is declared in the config file with `runtime: docker` or
 `runtime: k8s`.
 
+By convention, `--config` defaults to `<startup-kit-dir>/config.yaml`, and
+`--output` defaults to `<startup-kit-dir>/prepared/<runtime>`, such as
+`prepared/docker` or `prepared/k8s`. Users can override either path when
+needed.
+
 Possible future runtime names can be added under the same command without
 changing provisioning or packaging.
 
-The command reads the input startup kit from `--kit`, writes a prepared copy to
-`--output`, and applies runtime-specific generated artifacts and config changes
-to the output copy. The input kit should remain unchanged.
+The command reads the input startup kit, writes a prepared copy to the output
+directory, and applies runtime-specific generated artifacts and config changes
+to the output copy. Existing input kit files should remain unchanged.
 
 ## CLI Arguments and Config Validation
 
@@ -157,17 +163,24 @@ files before writing generated artifacts.
 
 Supported arguments:
 
-- `--kit`
+- `<startup-kit-dir>`
   - Required: yes
   - Description: path to an existing input startup kit directory.
 
+- `--kit`
+  - Required: no
+  - Description: explicit alias for `<startup-kit-dir>`, kept for callers that
+    prefer named options.
+
 - `--output`
-  - Required: yes
+  - Required: no
+  - Default: `<startup-kit-dir>/prepared/<runtime>`
   - Description: path to write the prepared startup kit directory. The runtime
-    preparation changes are applied here, not to `--kit`.
+    preparation changes are applied here, not to the input kit files.
 
 - `--config`
-  - Required: yes
+  - Required: no
+  - Default: `<startup-kit-dir>/config.yaml`
   - Description: YAML config file. The file must contain a top-level `runtime`
     key. Initial values are `docker` and `k8s`.
 
@@ -497,8 +510,9 @@ prepared output.
 
 Minimum validation:
 
-- `--kit` exists and is a directory
-- `--output` is specified and can be created or updated
+- `<startup-kit-dir>` exists and is a directory
+- `--output` can be created or updated, using
+  `<startup-kit-dir>/prepared/<runtime>` when omitted
 - `startup/`, `local/`, and `local/resources.json.default` exist
 - `local/resources.json.default` is valid JSON
 - the kit role is detected from files in `startup/`. A server kit has
@@ -514,8 +528,9 @@ skipping or partially preparing the kit.
 
 ## Output Behavior
 
-`--kit` is read-only input. Runtime preparation changes are written to the
-prepared kit under `--output`.
+The startup kit is read-only input. Runtime preparation changes are written to
+the prepared kit under `--output`, or under
+`<startup-kit-dir>/prepared/<runtime>` when `--output` is omitted.
 
 The command should print a result that reflects the configured runtime. For
 Docker, a successful result should point users to:
@@ -565,14 +580,11 @@ Shared helpers can handle:
 - detecting server/client/admin kit type
 - reporting next steps
 
-Existing code from `DockerLauncherBuilder` and
-`HelmChartBuilder` can be reused or refactored into common helpers, but
-runtime selection should move out of provisioning builders.
-
-`DockerLauncherBuilder` may remain only if it is still needed for existing
-provisioning-time Docker workflows. Site-local Docker deployment preparation
-should use the new deploy command rather than requiring a site-local
-`project.yml` builder entry.
+Runtime preparation should not depend on provisioning `Builder` classes or
+`lighter` templates. Legacy runtime builders such as `DockerLauncherBuilder`
+and `HelmChartBuilder` may remain untouched for backward compatibility in this
+PR, but site-local Docker/K8s deployment preparation should use the new deploy
+command rather than requiring a site-local `project.yml` builder entry.
 
 ## Workflow Summary
 
@@ -583,8 +595,8 @@ should use the new deploy command rather than requiring a site-local
 nvflare provision -p project.yml
 
 # Site admin, from the received startup kit
-nvflare deploy prepare --kit ./site-1 --output ./site-1-docker --config docker.yaml
-cd ./site-1-docker
+nvflare deploy prepare ./site-1
+cd ./site-1/prepared/docker
 ./startup/start_docker.sh
 ```
 
@@ -596,8 +608,8 @@ nvflare cert ...
 nvflare package ...
 
 # Site admin
-nvflare deploy prepare --kit ./site-1 --output ./site-1-docker --config docker.yaml
-cd ./site-1-docker
+nvflare deploy prepare ./site-1
+cd ./site-1/prepared/docker
 ./startup/start_docker.sh
 ```
 

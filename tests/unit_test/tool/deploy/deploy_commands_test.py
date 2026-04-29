@@ -14,15 +14,42 @@
 
 import argparse
 import json
+from datetime import datetime, timedelta
 
 import pytest
 import yaml
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 
-from nvflare.tool.deploy.deploy_commands import prepare_deployment
+from nvflare.tool.deploy.deploy_commands import HELM_RELEASE_NAME_MAX_LENGTH, _k8s_release_name, prepare_deployment
 
 
 def _write_json(path, data):
     path.write_text(json.dumps(data, indent=2))
+
+
+def _write_cert(path, common_name="site-1", org="nvidia"):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, org),
+        ]
+    )
+    now = datetime.utcnow()
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(days=1))
+        .not_valid_after(now + timedelta(days=1))
+        .sign(key, hashes.SHA256())
+    )
+    path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
 
 
 def _make_client_kit(tmp_path, name="site-1"):
@@ -46,7 +73,7 @@ def _make_client_kit(tmp_path, name="site-1"):
             },
         },
     )
-    (startup / "client.crt").write_text("crt")
+    _write_cert(startup / "client.crt", common_name=name)
     (startup / "client.key").write_text("key")
     (startup / "rootCA.pem").write_text("ca")
     (startup / "sub_start.sh").write_text(
@@ -157,6 +184,69 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
     assert (output / "local" / "study_data.yaml").exists()
 
 
+def test_prepare_docker_reads_org_from_cert_without_sub_start(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    (kit / "startup" / "sub_start.sh").unlink()
+    output = tmp_path / "site-1-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    script = (output / "startup" / "start_docker.sh").read_text()
+    assert "org=nvidia" in script
+    assert not (output / "startup" / "sub_start.sh").exists()
+
+
+def test_prepare_uses_conventional_config_and_output_paths(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = kit / "prepared" / "docker"
+    (kit / "config.yaml").write_text(
+        yaml.safe_dump({"runtime": "docker", "parent": {"docker_image": "repo/nvflare:dev"}}, sort_keys=False)
+    )
+
+    prepare_deployment(argparse.Namespace(kit=str(kit), kit_flag=None, output=None, config=None))
+    capsys.readouterr()
+
+    assert output.exists()
+    assert (output / "startup" / "start_docker.sh").exists()
+
+    (output / "stale.txt").write_text("stale")
+    prepare_deployment(argparse.Namespace(kit=str(kit), kit_flag=None, output=None, config=None))
+    capsys.readouterr()
+
+    assert not (output / "stale.txt").exists()
+    assert not (output / "prepared").exists()
+    assert (output / "startup" / "start_docker.sh").exists()
+
+
+def test_prepare_default_output_is_runtime_specific(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    config_path = kit / "config.yaml"
+
+    config_path.write_text(
+        yaml.safe_dump({"runtime": "docker", "parent": {"docker_image": "repo/nvflare:dev"}}, sort_keys=False)
+    )
+    prepare_deployment(argparse.Namespace(kit=str(kit), kit_flag=None, output=None, config=None))
+    capsys.readouterr()
+
+    config_path.write_text(
+        yaml.safe_dump({"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev"}}, sort_keys=False)
+    )
+    prepare_deployment(argparse.Namespace(kit=str(kit), kit_flag=None, output=None, config=None))
+    capsys.readouterr()
+
+    assert (kit / "prepared" / "docker" / "startup" / "start_docker.sh").exists()
+    assert (kit / "prepared" / "k8s" / "helm_chart" / "values.yaml").exists()
+    assert not (kit / "prepared" / "k8s" / "prepared").exists()
+
+
 def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
     output = tmp_path / "site-1-k8s"
@@ -243,6 +333,46 @@ def test_prepare_k8s_client_sanitizes_service_name_without_changing_site_identit
     assert "_" not in values["serviceName"]
 
 
+def test_prepare_k8s_requires_comm_config(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    (kit / "local" / "comm_config.json").unlink()
+    output = tmp_path / "site-1-k8s"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_KIT" in err
+    assert "Missing comm_config.json" in err
+    assert not output.exists()
+
+
+def test_k8s_release_name_is_safe_for_helm():
+    safe_names = [
+        _k8s_release_name("1-my-site"),
+        _k8s_release_name("a" * 80),
+        _k8s_release_name("Site_1"),
+    ]
+
+    for name in safe_names:
+        assert len(name) <= HELM_RELEASE_NAME_MAX_LENGTH
+        assert name[0].isalpha()
+        assert name[-1].isalnum()
+        assert name == name.lower()
+        assert all(c.isalnum() or c == "-" for c in name)
+
+    assert _k8s_release_name("site-1") == "site-1"
+    assert _k8s_release_name("1-my-site").startswith("site-1-my-site-")
+    assert _k8s_release_name("a" * 80) != _k8s_release_name("a" * 79 + "b")
+
+
 def test_prepare_rejects_admin_kit_without_writing_output(tmp_path, capsys):
     kit = tmp_path / "admin"
     startup = kit / "startup"
@@ -263,4 +393,50 @@ def test_prepare_rejects_admin_kit_without_writing_output(tmp_path, capsys):
         prepare_deployment(argparse.Namespace(kit=str(kit), output=str(output), config=str(config_path)))
 
     assert "UNSUPPORTED_KIT" in capsys.readouterr().err
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "config, expected",
+    [
+        (
+            {"runtime": "docker", "parent": {"docker_image": "repo/nvflare:dev"}, "job_launcher": {"python_path": 7}},
+            "job_launcher.python_path",
+        ),
+        (
+            {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev", "workspace_pvc": 7}},
+            "parent.workspace_pvc",
+        ),
+        (
+            {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev", "workspace_mount_path": []}},
+            "parent.workspace_mount_path",
+        ),
+        (
+            {
+                "runtime": "k8s",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+                "job_launcher": {"config_file_path": 7},
+            },
+            "job_launcher.config_file_path",
+        ),
+        (
+            {
+                "runtime": "k8s",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+                "job_launcher": {"python_path": False},
+            },
+            "job_launcher.python_path",
+        ),
+    ],
+)
+def test_prepare_rejects_non_string_optional_config_values(tmp_path, capsys, config, expected):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(kit, output, config)
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert expected in err
     assert not output.exists()

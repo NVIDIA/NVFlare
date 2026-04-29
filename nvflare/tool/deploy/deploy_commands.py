@@ -28,6 +28,9 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
+from cryptography.x509.oid import NameOID
 
 from nvflare.tool.cli_output import output_error_message, output_ok
 
@@ -89,6 +92,8 @@ STUDY_DATA_TEMPLATE = """# Study data mapping used by Docker and Kubernetes job 
 """
 
 K8S_NAME_PATTERN = re.compile(r"^[a-z]([-a-z0-9]*[a-z0-9])?$")
+K8S_SERVICE_NAME_MAX_LENGTH = 63
+HELM_RELEASE_NAME_MAX_LENGTH = 53
 
 
 @dataclass
@@ -102,13 +107,12 @@ class KitInfo:
 
 
 def prepare_deployment(args) -> None:
-    kit = Path(args.kit).expanduser().resolve()
-    output = Path(args.output).expanduser().resolve()
-    config_path = Path(args.config).expanduser().resolve()
+    kit, output_arg, config_path = _resolve_prepare_inputs(args)
 
     config = _load_config(config_path)
     runtime = config["runtime"]
     _validate_runtime_config(runtime, config)
+    output = _resolve_output_path(kit, output_arg, runtime)
     kit_info = _validate_kit(kit)
     if kit_info.role == ROLE_ADMIN:
         _fail(
@@ -116,23 +120,26 @@ def prepare_deployment(args) -> None:
             "Admin startup kits are not supported by 'nvflare deploy prepare'.",
             "Use a server or client startup kit.",
         )
-    if output == kit or _is_path_relative_to(output, kit) or _is_path_relative_to(kit, output):
+    if output == kit or _is_path_relative_to(kit, output):
         _fail(
             "INVALID_ARGS",
-            "--output must be separate from --kit and must not contain or be contained by it.",
-            "Choose a separate prepared-kit directory.",
+            "--output must not be the same as --kit or contain it.",
+            "Choose a prepared-kit directory outside the kit, or use the default <kit>/prepared/<runtime>.",
         )
     if output.exists() and not output.is_dir():
         _fail("INVALID_ARGS", f"Output path exists and is not a directory: {output}", "Choose a directory path.")
 
     parent_dir = output.parent
-    if not parent_dir.exists():
-        _fail("INVALID_ARGS", f"Output parent directory does not exist: {parent_dir}", "Create the parent directory.")
+    try:
+        parent_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as ex:
+        _fail("INVALID_ARGS", f"Cannot create output parent directory: {parent_dir}", f"Check the path: {ex}")
 
-    temp_dir = Path(tempfile.mkdtemp(prefix=f".{output.name}.prepare-", dir=str(parent_dir)))
+    temp_parent = None if _is_path_relative_to(output, kit) else str(parent_dir)
+    temp_dir = Path(tempfile.mkdtemp(prefix=f".{output.name}.prepare-", dir=temp_parent))
     prepared_dir = temp_dir / output.name
     try:
-        shutil.copytree(kit, prepared_dir)
+        shutil.copytree(kit, prepared_dir, ignore=_ignore_output_path(kit, output))
         prepared_info = KitInfo(
             kit_dir=prepared_dir,
             role=kit_info.role,
@@ -160,6 +167,47 @@ def prepare_deployment(args) -> None:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
     output_ok(result)
+
+
+def _resolve_prepare_inputs(args) -> tuple[Path, str | None, Path]:
+    positional_kit = getattr(args, "kit", None)
+    flag_kit = getattr(args, "kit_flag", None)
+    if positional_kit and flag_kit:
+        _fail("INVALID_ARGS", "Specify the startup kit only once.", "Use either positional kit or --kit.")
+    kit_arg = positional_kit or flag_kit
+    if not kit_arg:
+        _fail("INVALID_ARGS", "Missing startup kit directory.", "Run nvflare deploy prepare <startup-kit-dir>.")
+
+    kit = Path(kit_arg).expanduser().resolve()
+    output_arg = getattr(args, "output", None)
+    config_arg = getattr(args, "config", None)
+    config_path = Path(config_arg).expanduser().resolve() if config_arg else kit / "config.yaml"
+    return kit, output_arg, config_path
+
+
+def _resolve_output_path(kit: Path, output_arg: str | None, runtime: str) -> Path:
+    if output_arg:
+        return Path(output_arg).expanduser().resolve()
+    return kit / "prepared" / runtime
+
+
+def _ignore_output_path(kit: Path, output: Path):
+    if not _is_path_relative_to(output, kit):
+        return None
+
+    excluded = output.resolve()
+    prepared_root = (kit / "prepared").resolve()
+
+    def _ignore(dir_name: str, names: list[str]) -> list[str]:
+        current = Path(dir_name).resolve()
+        ignored = []
+        for name in names:
+            path = (current / name).resolve()
+            if path == excluded or path == prepared_root:
+                ignored.append(name)
+        return ignored
+
+    return _ignore
 
 
 def _prepare_docker(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) -> dict[str, Any]:
@@ -197,7 +245,6 @@ def _prepare_k8s(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) 
     namespace = config.get("namespace", "default")
     parent = config.get("parent") or {}
     job_launcher = config.get("job_launcher") or {}
-    docker_image = parent["docker_image"]
     parent_port = parent.get("parent_port", 8102)
     workspace_mount_path = parent.get("workspace_mount_path", WORKSPACE_MOUNT_PATH)
 
@@ -265,6 +312,7 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
         _required_str(parent, "docker_image", "parent")
         if "network" in parent:
             _required_str(parent, "network", "parent")
+        _optional_str(job_launcher, "python_path", "job_launcher")
         _optional_mapping(job_launcher, "default_job_env", "job_launcher")
         default_kwargs = _optional_mapping(job_launcher, "default_job_container_kwargs", "job_launcher")
         if default_kwargs:
@@ -300,8 +348,12 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
         if "namespace" in config:
             _required_str(config, "namespace", "k8s config")
         _optional_int(parent, "parent_port", "parent")
+        _optional_str(parent, "workspace_pvc", "parent")
+        _optional_str(parent, "workspace_mount_path", "parent")
         _optional_mapping(parent, "resources", "parent")
         _optional_mapping(parent, "pod_security_context", "parent")
+        _optional_str(job_launcher, "config_file_path", "job_launcher")
+        _optional_str(job_launcher, "python_path", "job_launcher")
         _optional_int(job_launcher, "pending_timeout", "job_launcher")
         _optional_mapping(job_launcher, "job_pod_security_context", "job_launcher")
 
@@ -337,7 +389,7 @@ def _validate_kit(kit_dir: Path) -> KitInfo:
         _validate_identity_files(startup_dir, role)
 
     name = _detect_name(kit_dir, role, role_config)
-    org = _detect_org(startup_dir, name)
+    org = _detect_org(startup_dir, role) if role != ROLE_ADMIN else name
     fed_learn_port, admin_port = _detect_ports(role, role_config)
     return KitInfo(kit_dir=kit_dir, role=role, name=name, org=org, fed_learn_port=fed_learn_port, admin_port=admin_port)
 
@@ -368,13 +420,17 @@ def _detect_name(kit_dir: Path, role: str, role_config: dict[str, Any]) -> str:
     return str(admin.get("name") or kit_dir.name)
 
 
-def _detect_org(startup_dir: Path, default: str) -> str:
-    sub_start = startup_dir / "sub_start.sh"
-    if sub_start.is_file():
-        match = re.search(r"(?:^|\s)org=([^\s\"']+)", sub_start.read_text(encoding="utf-8", errors="ignore"))
-        if match:
-            return match.group(1)
-    return default
+def _detect_org(startup_dir: Path, role: str) -> str:
+    cert_name = "server.crt" if role == ROLE_SERVER else "client.crt"
+    cert_path = startup_dir / cert_name
+    try:
+        cert = x509.load_pem_x509_certificate(cert_path.read_bytes(), default_backend())
+        org_attrs = cert.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)
+    except Exception as ex:
+        _fail("INVALID_KIT", f"Failed to parse {cert_name}: {ex}", "Use a valid provisioned startup kit.")
+    if not org_attrs or not org_attrs[0].value:
+        _fail("INVALID_KIT", f"Missing organization in {cert_name}.", "Use a valid provisioned startup kit.")
+    return org_attrs[0].value
 
 
 def _detect_ports(role: str, role_config: dict[str, Any]) -> tuple[int | None, int | None]:
@@ -441,7 +497,11 @@ def _patch_comm_config_for_docker(kit_dir: Path) -> None:
 def _patch_comm_config_for_k8s(kit_dir: Path, role: str, site_name: str, parent_port: int) -> None:
     comm_config_path = kit_dir / "local" / COMM_CONFIG_JSON
     if not comm_config_path.is_file():
-        return
+        _fail(
+            "INVALID_KIT",
+            f"Missing {COMM_CONFIG_JSON}: {comm_config_path}",
+            "K8s deployment requires comm_config.json so job pods can connect to the parent service.",
+        )
     comm_config = _load_json_file(comm_config_path, COMM_CONFIG_JSON)
     resources = _internal_resources(comm_config)
     resources.update(
@@ -491,18 +551,22 @@ def _k8s_parent_service_name(role: str, site_name: str) -> str:
 
 
 def _k8s_service_name(site_name: str) -> str:
-    if len(site_name) <= 63 and K8S_NAME_PATTERN.match(site_name):
-        return site_name
+    return _stable_k8s_name(site_name, K8S_SERVICE_NAME_MAX_LENGTH)
 
-    normalized = re.sub(r"[^a-z0-9-]", "-", site_name.lower())
+
+def _stable_k8s_name(raw_name: str, max_length: int) -> str:
+    if len(raw_name) <= max_length and K8S_NAME_PATTERN.match(raw_name):
+        return raw_name
+
+    normalized = re.sub(r"[^a-z0-9-]", "-", raw_name.lower())
     normalized = re.sub(r"-+", "-", normalized).strip("-")
     if not normalized:
         normalized = "site"
     if not normalized[0].isalpha():
         normalized = f"site-{normalized}"
 
-    digest = hashlib.sha256(site_name.encode("utf-8")).hexdigest()[:8]
-    head_max = 63 - len(digest) - 1
+    digest = hashlib.sha256(raw_name.encode("utf-8")).hexdigest()[:8]
+    head_max = max_length - len(digest) - 1
     head = normalized[:head_max].rstrip("-") or "site"
     return f"{head}-{digest}"
 
@@ -801,8 +865,7 @@ def _relocate_server_storage_to_workspace(kit_dir: Path, workspace_mount_path: s
 
 
 def _k8s_release_name(name: str) -> str:
-    safe = re.sub(r"[^a-z0-9-]", "-", name.lower()).strip("-")
-    return safe or "nvflare-site"
+    return _stable_k8s_name(name, HELM_RELEASE_NAME_MAX_LENGTH)
 
 
 def _is_path_relative_to(path: Path, parent: Path) -> bool:
@@ -828,6 +891,14 @@ def _validate_allowed_keys(data: dict[str, Any], allowed: set[str], where: str) 
 def _required_str(data: dict[str, Any], key: str, where: str) -> None:
     if not isinstance(data.get(key), str) or not data.get(key):
         _fail("INVALID_CONFIG", f"{where}.{key} must be a non-empty string.", "Fix the runtime config.")
+
+
+def _optional_str(data: dict[str, Any], key: str, where: str) -> str | None:
+    if key not in data or data[key] is None:
+        return None
+    if not isinstance(data[key], str) or not data[key]:
+        _fail("INVALID_CONFIG", f"{where}.{key} must be a non-empty string.", "Fix the runtime config.")
+    return data[key]
 
 
 def _optional_mapping(data: dict[str, Any], key: str, where: str) -> dict[str, Any] | None:
