@@ -683,6 +683,8 @@ class Session(SessionSpec):
         """
         if target_type not in _VALID_TARGET_TYPES:
             raise ValueError(f"restart target_type must be one of {_VALID_TARGET_TYPES}")
+        if target_type == TargetType.CLIENT and client_names:
+            _validate_target_strs(client_names)
 
         previous_server_start_time = None
         previous_client_times = None
@@ -697,7 +699,6 @@ class Session(SessionSpec):
 
         parts = [AdminCommandNames.RESTART, target_type]
         if target_type == TargetType.CLIENT and client_names:
-            _validate_target_strs(client_names)
             parts.extend(client_names)
 
         command = join_args(parts)
@@ -727,10 +728,11 @@ class Session(SessionSpec):
         """
         if target_type not in _VALID_TARGET_TYPES:
             raise ValueError(f"shutdown target_type must be one of {_VALID_TARGET_TYPES}")
+        if target_type == TargetType.CLIENT and client_names:
+            _validate_target_strs(client_names)
 
         parts = [AdminCommandNames.SHUTDOWN, target_type]
         if target_type == TargetType.CLIENT and client_names:
-            _validate_target_strs(client_names)
             parts.extend(client_names)
 
         command = join_args(parts)

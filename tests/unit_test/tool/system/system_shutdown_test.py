@@ -54,8 +54,23 @@ class TestSystemShutdown:
         data = json.loads(captured.out)
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
-        assert "shutdown initiated" in data["data"]["status"]
+        assert data["data"]["status"] == "stopped"
         assert data["data"]["result"] is None
+
+    def test_shutdown_no_wait_reports_initiated(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_shutdown
+
+        args = self._make_args(force=True)
+        args.no_wait = True
+        mock_sess = MagicMock()
+        mock_sess.shutdown.return_value = None
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=mock_sess):
+            cmd_system_shutdown(args)
+
+        mock_sess.shutdown.assert_called_once_with("server", client_names=None, wait=False)
+        data = json.loads(capsys.readouterr().out)
+        assert data["data"]["status"] == "shutdown initiated"
 
     def test_shutdown_preserves_server_reply(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_shutdown
@@ -160,6 +175,31 @@ class TestSystemShutdown:
         assert args.system_sub_cmd == "shutdown"
         assert args.target == "client"
         assert args.force is True
+
+    def test_shutdown_parser_accepts_no_wait(self):
+        from nvflare.tool.system.system_cli import def_system_cli_parser
+
+        parser = argparse.ArgumentParser(prog="nvflare system")
+        def_system_cli_parser(parser)
+
+        args = parser.parse_args(["shutdown", "all", "--force", "--no-wait"])
+        assert args.no_wait is True
+
+    def test_shutdown_timeout_exits_connection_failed(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_shutdown
+
+        args = self._make_args(force=True)
+        mock_sess = MagicMock()
+        mock_sess.shutdown.side_effect = TimeoutError("server did not stop")
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=mock_sess):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_system_shutdown(args)
+
+        assert exc_info.value.code == 2
+        data = json.loads(capsys.readouterr().out)
+        assert data["error_code"] == "CONNECTION_FAILED"
+        assert "--no-wait" in data["hint"]
 
     def test_shutdown_rejects_client_names_for_non_client_target(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_shutdown

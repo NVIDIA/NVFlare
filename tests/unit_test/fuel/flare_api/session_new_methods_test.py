@@ -259,7 +259,8 @@ class TestShutdown:
         session = _make_session()
         session.close = MagicMock()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()):
-            session.shutdown(TargetType.SERVER)
+            with patch.object(session, "_wait_for_server_down"):
+                session.shutdown(TargetType.SERVER)
         session.close.assert_called_once()
 
     def test_shutdown_preserves_result_if_close_fails(self):
@@ -268,7 +269,8 @@ class TestShutdown:
         expected_meta = _ok_meta_result()[ResultKey.META]
 
         with patch.object(session, "_do_command", return_value=_ok_meta_result()):
-            result = session.shutdown(TargetType.SERVER)
+            with patch.object(session, "_wait_for_server_down"):
+                result = session.shutdown(TargetType.SERVER)
 
         assert result == expected_meta
         session.close.assert_called_once()
@@ -288,7 +290,7 @@ class TestShutdown:
         session = _make_session()
         session.close = MagicMock()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
-            session.shutdown(TargetType.CLIENT, ["site-1"])
+            session.shutdown(TargetType.CLIENT, ["site-1"], wait=False)
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [AdminCommandNames.SHUTDOWN, TargetType.CLIENT, "site-1"]
         session.close.assert_not_called()
@@ -300,7 +302,7 @@ class TestShutdown:
         session = _make_session()
         session.close = MagicMock()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
-            session.shutdown(TargetType.CLIENT, ["site-1", "site-2", "site-3"])
+            session.shutdown(TargetType.CLIENT, ["site-1", "site-2", "site-3"], wait=False)
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [
             AdminCommandNames.SHUTDOWN,
@@ -316,7 +318,7 @@ class TestRestart:
     def test_sends_restart_command(self):
         session = _make_session()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
-            session.restart(TargetType.SERVER)
+            session.restart(TargetType.SERVER, wait=False)
         cmd = mock_cmd.call_args[0][0]
         assert AdminCommandNames.RESTART in cmd
 
@@ -328,7 +330,7 @@ class TestRestart:
     def test_restart_client_quotes_single_target(self):
         session = _make_session()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
-            session.restart(TargetType.CLIENT, ["site-1"])
+            session.restart(TargetType.CLIENT, ["site-1"], wait=False)
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [AdminCommandNames.RESTART, TargetType.CLIENT, "site-1"]
 
@@ -338,7 +340,7 @@ class TestRestart:
         # over-quoting pattern — this test guards against that regression.
         session = _make_session()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
-            session.restart(TargetType.CLIENT, ["site-1", "site-2"])
+            session.restart(TargetType.CLIENT, ["site-1", "site-2"], wait=False)
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [
             AdminCommandNames.RESTART,

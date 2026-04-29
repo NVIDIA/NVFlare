@@ -192,22 +192,22 @@ def _make_session_with_meta(meta: dict):
 class TestSessionShutdown:
     def test_shutdown_server_sends_correct_command(self):
         sess = _make_session_with_meta({})
-        sess.shutdown("server")
+        sess.shutdown("server", wait=False)
         sess._do_command.assert_called_once_with("shutdown server")
 
     def test_shutdown_client_sends_correct_command(self):
         sess = _make_session_with_meta({})
-        sess.shutdown("client")
+        sess.shutdown("client", wait=False)
         sess._do_command.assert_called_once_with("shutdown client")
 
     def test_shutdown_all_sends_correct_command(self):
         sess = _make_session_with_meta({})
-        sess.shutdown("all")
+        sess.shutdown("all", wait=False)
         sess._do_command.assert_called_once_with("shutdown all")
 
     def test_shutdown_client_with_names_sends_correct_command(self):
         sess = _make_session_with_meta({})
-        sess.shutdown("client", client_names=["site-1", "site-2"])
+        sess.shutdown("client", client_names=["site-1", "site-2"], wait=False)
         cmd = sess._do_command.call_args[0][0]
         assert cmd.startswith("shutdown client")
         assert "site-1" in cmd
@@ -215,18 +215,28 @@ class TestSessionShutdown:
 
     def test_shutdown_server_closes_session(self):
         sess = _make_session_with_meta({})
+        sess._wait_for_server_down = MagicMock()
         sess.shutdown("server")
         sess.close.assert_called_once()
+        sess._wait_for_server_down.assert_called_once()
 
     def test_shutdown_all_closes_session(self):
         sess = _make_session_with_meta({})
+        sess._wait_for_server_down = MagicMock()
         sess.shutdown("all")
         sess.close.assert_called_once()
+        sess._wait_for_server_down.assert_called_once()
 
     def test_shutdown_client_does_not_close_session(self):
         sess = _make_session_with_meta({})
-        sess.shutdown("client")
+        sess.shutdown("client", wait=False)
         sess.close.assert_not_called()
+
+    def test_shutdown_client_waits_by_default(self):
+        sess = _make_session_with_meta({})
+        sess._wait_for_clients_shutdown = MagicMock()
+        sess.shutdown("client")
+        sess._wait_for_clients_shutdown.assert_called_once_with(None, 30.0)
 
     def test_shutdown_invalid_target_raises_value_error(self):
         sess = _make_session_with_meta({})
@@ -237,25 +247,39 @@ class TestSessionShutdown:
 class TestSessionRestart:
     def test_restart_server_sends_correct_command(self):
         sess = _make_session_with_meta({})
-        sess.restart("server")
+        sess.restart("server", wait=False)
         sess._do_command.assert_called_once_with("restart server")
 
     def test_restart_client_sends_correct_command(self):
         sess = _make_session_with_meta({})
-        sess.restart("client")
+        sess.restart("client", wait=False)
         sess._do_command.assert_called_once_with("restart client")
 
     def test_restart_all_sends_correct_command(self):
         sess = _make_session_with_meta({})
-        sess.restart("all")
+        sess.restart("all", wait=False)
         sess._do_command.assert_called_once_with("restart all")
 
     def test_restart_client_with_names_sends_correct_command(self):
         sess = _make_session_with_meta({})
-        sess.restart("client", client_names=["site-1"])
+        sess.restart("client", client_names=["site-1"], wait=False)
         cmd = sess._do_command.call_args[0][0]
         assert cmd.startswith("restart client")
         assert "site-1" in cmd
+
+    def test_restart_server_waits_by_default(self):
+        sess = _make_session_with_meta({})
+        sess.get_system_info = MagicMock(return_value=MagicMock(server_info=MagicMock(start_time=123)))
+        sess._wait_for_server_restart = MagicMock()
+        sess.restart("server")
+        sess._wait_for_server_restart.assert_called_once_with(123, 30.0)
+
+    def test_restart_client_waits_by_default(self):
+        sess = _make_session_with_meta({})
+        sess._client_last_connect_times = MagicMock(return_value={"site-1": 123})
+        sess._wait_for_clients_restart = MagicMock()
+        sess.restart("client", client_names=["site-1"])
+        sess._wait_for_clients_restart.assert_called_once_with({"site-1": 123}, 30.0)
 
     def test_restart_invalid_target_raises_value_error(self):
         sess = _make_session_with_meta({})

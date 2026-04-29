@@ -226,6 +226,43 @@ class TestPocOutput:
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
 
+    def test_stop_poc_no_wait_reports_shutdown_initiated(self, capsys, tmp_path):
+        from nvflare.tool.poc.poc_commands import stop_poc
+
+        args = self._make_stop_args()
+        args.no_wait = True
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands._stop_poc", return_value=None) as stop,
+        ):
+            stop_poc(args)
+
+        stop.assert_called_once_with(str(tmp_path), [], [], wait=False)
+        data = json.loads(capsys.readouterr().out)
+        assert data["data"]["status"] == "shutdown_initiated"
+
+    def test_stop_poc_timeout_exits_connection_failed(self, capsys, tmp_path):
+        from nvflare.tool.poc.poc_commands import stop_poc
+
+        args = self._make_stop_args()
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands._stop_poc", side_effect=TimeoutError("server did not stop")),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                stop_poc(args)
+
+        assert exc_info.value.code == 2
+        data = json.loads(capsys.readouterr().out)
+        assert data["error_code"] == "CONNECTION_FAILED"
+        assert "--no-wait" in data["hint"]
+
     def test_start_poc_malformed_participants_omits_missing_names(self, capsys, tmp_path):
         from nvflare.tool.poc.poc_commands import start_poc
 
@@ -444,13 +481,25 @@ class TestPocOutput:
         args = root.parse_args(["poc", "start", "--no-wait"])
         assert args.no_wait is True
 
+    def test_poc_stop_parser_has_no_wait_flag(self):
+        import argparse
+
+        from nvflare.tool.poc.poc_commands import def_poc_parser
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        def_poc_parser(subs)
+
+        args = root.parse_args(["poc", "stop", "--no-wait"])
+        assert args.no_wait is True
+
     def test_stop_poc_invalid_service_name_exits_4(self, capsys, tmp_path):
         """stop_poc with an unknown -p/--service name exits 4 (structured error), not 1."""
         from nvflare.tool.poc.poc_commands import stop_poc
 
         args = self._make_stop_args()
 
-        def fake_stop(workspace, excluded, services_list):
+        def fake_stop(workspace, excluded, services_list, **_kwargs):
             from nvflare.cli_exception import CLIException
 
             raise CLIException("participant 'bad-site' is not defined, expecting one of: ['server', 'site-1']")

@@ -654,7 +654,7 @@ class TestSystemShutdown:
         data = json.loads(capsys.readouterr().out)
         assert data["status"] == "ok"
         assert data["data"]["target"] == "server"
-        assert data["data"]["status"] == "shutdown initiated"
+        assert data["data"]["status"] == "stopped"
 
     def test_shutdown_parser_accepts_all_targets(self):
         from nvflare.tool.system.system_cli import def_system_cli_parser
@@ -764,7 +764,7 @@ class TestSystemRestart:
         data = json.loads(capsys.readouterr().out)
         assert data["status"] == "ok"
         assert data["data"]["target"] == "server"
-        assert data["data"]["status"] == "restart initiated"
+        assert data["data"]["status"] == "restarted"
 
     def test_restart_parser_accepts_all_targets(self):
         from nvflare.tool.system.system_cli import def_system_cli_parser

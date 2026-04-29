@@ -174,6 +174,8 @@ Control arguments:
 - positional ``target``: required. One of ``server``, ``client``, or ``all``.
 - positional ``client_names``: optional. One or more client names. Only meaningful when ``target`` is ``client``.
 - ``--force``: skip the confirmation prompt.
+- ``--no-wait``: return after requesting shutdown or restart without waiting
+  for completion.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -183,15 +185,20 @@ Examples:
    nvflare system shutdown server --force
    nvflare system shutdown client site-1 site-2 --force
    nvflare system shutdown all --force
+   nvflare system shutdown all --force --no-wait
 
    nvflare system restart server --force
    nvflare system restart client site-1 --force
    nvflare system restart all --force
+   nvflare system restart server --force --no-wait
 
 In non-interactive contexts, ``--force`` is required.
 
-When ``target`` is ``server`` or ``all``, the admin session closes automatically
-after the command completes.
+By default, shutdown waits for the target to stop before returning, and restart
+waits for the target to become reachable again before returning. With
+``--no-wait``, the command returns immediately with an initiated status. When
+``target`` is ``server`` or ``all``, the admin session closes automatically
+after the shutdown or restart request is sent.
 
 ****************
 Client Access Control

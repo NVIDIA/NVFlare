@@ -216,13 +216,15 @@ Use ``nvflare poc stop`` to stop running POC services:
 
 .. code-block:: none
 
-   nvflare poc stop [-h] [-p [SERVICE]] [-ex [EXCLUDE]] [-debug] [--schema]
+   nvflare poc stop [-h] [-p [SERVICE]] [-ex [EXCLUDE]] [--no-wait]
+                    [-debug] [--schema]
 
 Options:
 
 - ``-p, --service``: participant to stop. By default, stops all running
   services, including admin consoles.
 - ``-ex, --exclude``: participant to exclude from stop handling.
+- ``--no-wait``: return after requesting shutdown without waiting for completion.
 - ``-debug, --debug``: debug mode.
 - ``--schema``: print command schema as JSON and exit.
 
@@ -233,9 +235,12 @@ Examples:
    nvflare poc stop
    nvflare poc stop -p server
    nvflare poc stop -p site-1
+   nvflare poc stop --no-wait
 
 Stopping the server path uses coordinated system shutdown logic. Stopping a
-subset of services uses the local stop script flow.
+subset of services uses the local stop script flow. By default, the server path
+waits for shutdown completion before returning ``status: stopped``. With
+``--no-wait``, it returns immediately with ``status: shutdown_initiated``.
 
 ****************
 Clean Workspace
