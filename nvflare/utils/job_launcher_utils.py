@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import importlib
 import logging
 import os
 import sys
@@ -191,3 +192,17 @@ def add_custom_dir_to_path(app_custom_folder, new_env):
     sys_path = copy.copy(sys.path)
     sys_path.append(app_custom_folder)
     new_env[SystemVarName.PYTHONPATH] = os.pathsep.join(sys_path)
+
+
+def refresh_custom_dir_import_path(app_custom_folder):
+    """Refresh import state after a job custom dir is created post-interpreter startup."""
+    if not app_custom_folder:
+        return
+    if not os.path.isdir(app_custom_folder):
+        logging.getLogger(__name__).debug(
+            "refresh_custom_dir_import_path: custom dir not found, skipping: %s", app_custom_folder
+        )
+        return
+    if app_custom_folder not in sys.path:
+        sys.path.append(app_custom_folder)
+    importlib.invalidate_caches()

@@ -754,6 +754,9 @@ class WFCommServer(FLComponent, WFCommSpec):
     def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
         """Cancel all standing tasks in this controller.
 
+        This only marks tasks completed. In the normal running path, the task
+        monitor later removes completed tasks and drops their owned resources.
+
         Args:
             completion_status (str, optional): the completion status for this cancellation.
                 Defaults to TaskCompletionStatus.CANCELLED.
@@ -762,6 +765,58 @@ class WFCommServer(FLComponent, WFCommSpec):
         with self._task_lock:
             for t in self._tasks:
                 t.completion_status = completion_status
+
+    def _release_task_resources(self, task: Task, fl_ctx: Optional[FLContext] = None):
+        """Drop references owned by a task after it leaves the communicator."""
+        try:
+            msg_root_id = getattr(task, "msg_root_id", None)
+            if msg_root_id:
+                delete_msg_root(msg_root_id)
+        except Exception as e:
+            self.log_warning(
+                fl_ctx,
+                "error cleaning up download transactions for task {}: {}".format(task.name, secure_format_exception(e)),
+            )
+
+        if hasattr(task, "_broadcast_data"):
+            delattr(task, "_broadcast_data")
+
+        for client_task in task.client_tasks:
+            client_task.result = None
+            client_task.props.clear()
+            client_task.task = None
+
+        task.client_tasks.clear()
+        task.last_client_task_map.clear()
+        task.props.clear()
+        task.data = None
+        task.before_task_sent_cb = None
+        task.after_task_sent_cb = None
+        task.result_received_cb = None
+        # finalize_run is called after controller.run has exited and the
+        # communicator is being torn down. Normal task-exit callbacks are run
+        # by the task monitor drain path; finalization only releases any task
+        # references still owned by this communicator.
+        task.task_done_cb = None
+
+    def _clear_standing_tasks(
+        self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None
+    ):
+        """Cancel and remove standing tasks, releasing references synchronously.
+
+        finalize_run stops the task monitor, so it cannot rely on
+        cancel_all_tasks() plus a later monitor pass to drain task state.
+        """
+        with self._task_lock:
+            exit_tasks = list(self._tasks)
+            self._tasks.clear()
+            self._client_task_map.clear()
+
+        for task in exit_tasks:
+            if task.completion_status is None:
+                task.completion_status = completion_status
+            task.is_standing = False
+            self._release_task_resources(task, fl_ctx)
 
     def finalize_run(self, fl_ctx: FLContext):
         """Do cleanup of the coordinator implementation.
@@ -773,8 +828,9 @@ class WFCommServer(FLComponent, WFCommSpec):
         Args:
             fl_ctx (FLContext): FLContext associated with this action
         """
-        self.cancel_all_tasks()  # unconditionally cancel all tasks
-        self._all_done = True
+        with self._controller_lock:
+            self._clear_standing_tasks(fl_ctx=fl_ctx)
+            self._all_done = True
 
     def relay(
         self,
@@ -1087,7 +1143,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                 self.cancel_task(task, fl_ctx=None, completion_status=TaskCompletionStatus.ABORTED)
                 break
 
-            task_done = task.props[_TASK_KEY_DONE]
+            task_done = task.props.get(_TASK_KEY_DONE, False)
             if task_done:
                 break
             time.sleep(self._task_check_period)
