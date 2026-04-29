@@ -46,6 +46,9 @@ from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import load_crt_bytes, load_yaml, verify_cert, verify_content
 from nvflare.tool.cert.cert_constants import ADMIN_CERT_TYPES, KIT_TYPE_TO_ROLE, VALID_CERT_TYPES
+from nvflare.tool.cert.file_utils import read_file_nofollow as _shared_read_file_nofollow
+from nvflare.tool.cert.file_utils import safe_project_name_error
+from nvflare.tool.cert.file_utils import write_file_nofollow as _shared_write_file_nofollow
 from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256, normalize_sha256_fingerprint
 from nvflare.tool.cli_output import (
     is_json_mode,
@@ -66,7 +69,6 @@ _KIT_TYPE_TO_ROLE = KIT_TYPE_TO_ROLE
 _DUMMY_SERVER_NAME = "__nvflare_dummy_server__"
 _DUMMY_ORG = "myorg"
 _MAX_ZIP_MEMBER_SIZE = 10 * 1024 * 1024
-_SAFE_PROJECT_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _REQUEST_ID_PATTERN = re.compile(
     r"(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
 )
@@ -90,19 +92,9 @@ def _reject_invalid_project_name(project_name: str, *, code: str, hint: str, fie
 def _validate_safe_project_name(
     project_name: str, *, code: str = "INVALID_PROJECT_NAME", field_label: str = "Project"
 ) -> bool:
-    hint = "Project names must match [A-Za-z0-9][A-Za-z0-9._-]* and must not contain path separators."
-    if not project_name or not isinstance(project_name, str) or not project_name.strip():
-        _reject_invalid_project_name(project_name, code=code, hint=hint, field_label=field_label)
-        return False
-    if len(project_name) > 64:
-        _reject_invalid_project_name(
-            project_name, code=code, hint="Project names must be 64 characters or fewer.", field_label=field_label
-        )
-        return False
-    if os.sep in project_name or (os.altsep and os.altsep in project_name) or project_name.startswith("."):
-        _reject_invalid_project_name(project_name, code=code, hint=hint, field_label=field_label)
-        return False
-    if not _SAFE_PROJECT_NAME_PATTERN.fullmatch(project_name):
+    validation_error = safe_project_name_error(project_name, field_label=field_label)
+    if validation_error:
+        _, hint = validation_error
         _reject_invalid_project_name(project_name, code=code, hint=hint, field_label=field_label)
         return False
     return True
@@ -233,43 +225,11 @@ def _read_cert_org(cert) -> str:
     return attrs[0].value if attrs else ""
 
 
-def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    fd = os.open(path, flags, mode)
-    try:
-        if hasattr(os, "fchmod"):
-            os.fchmod(fd, mode)
-        with os.fdopen(fd, "wb") as f:
-            fd = -1  # ownership transferred to f
-            f.write(content)
-    except Exception:
-        if fd != -1:
-            os.close(fd)
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
-        raise
+_write_file_nofollow = _shared_write_file_nofollow
 
 
 def _read_file_nofollow(path: str, max_size: int = _MAX_ZIP_MEMBER_SIZE) -> bytes:
-    flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    fd = os.open(path, flags)
-    try:
-        with os.fdopen(fd, "rb") as f:
-            fd = -1  # ownership transferred to f
-            content = f.read(max_size + 1)
-    except BaseException:
-        if fd != -1:
-            os.close(fd)
-        raise
-    if len(content) > max_size:
-        raise ValueError(f"file exceeds maximum size: {path}")
-    return content
+    return _shared_read_file_nofollow(path, max_size)
 
 
 def _read_json_file_nofollow(path: str) -> dict:

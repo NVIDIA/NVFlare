@@ -50,6 +50,9 @@ from nvflare.lighter.utils import (
 )
 from nvflare.tool import cli_output
 from nvflare.tool.cert.cert_constants import ADMIN_CERT_TYPES, VALID_CERT_TYPES
+from nvflare.tool.cert.file_utils import read_file_nofollow as _shared_read_file_nofollow
+from nvflare.tool.cert.file_utils import safe_project_name_error
+from nvflare.tool.cert.file_utils import write_file_nofollow as _write_file_nofollow
 from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256
 from nvflare.tool.cli_output import (
     output_error,
@@ -66,7 +69,6 @@ _VALID_SCHEMES = {"grpc", "tcp", "http"}
 _VALID_CONNECTION_SECURITY = {"clear", "tls", "mtls"}
 _USAGE_HINT = "Run the command with -h for usage."
 _SAFE_CERT_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@-]*")
-_SAFE_PROJECT_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _REQUEST_ID_PATTERN = re.compile(
     r"(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
 )
@@ -136,37 +138,10 @@ def _csr_subject_name(name: str, cert_type: str) -> str:
 
 
 def _validate_safe_project_name(project: str, *, field_label: str = "Project") -> bool:
-    if not isinstance(project, str) or not project.strip():
-        output_error(
-            "INVALID_PROJECT_NAME",
-            exit_code=4,
-            name=project,
-            reason=f"{field_label} must not be empty or whitespace only.",
-        )
-        return False
-    if len(project) > 64:
-        output_error(
-            "INVALID_PROJECT_NAME",
-            exit_code=4,
-            name=project,
-            reason=f"{field_label} must be 64 characters or fewer.",
-        )
-        return False
-    if os.sep in project or (os.altsep and os.altsep in project) or project.startswith("."):
-        output_error(
-            "INVALID_PROJECT_NAME",
-            exit_code=4,
-            name=project,
-            reason=f"{field_label} must not contain path separators or start with '.'.",
-        )
-        return False
-    if not _SAFE_PROJECT_NAME_PATTERN.fullmatch(project):
-        output_error(
-            "INVALID_PROJECT_NAME",
-            exit_code=4,
-            name=project,
-            reason=f"{field_label} must match [A-Za-z0-9][A-Za-z0-9._-]*.",
-        )
+    validation_error = safe_project_name_error(project, field_label=field_label)
+    if validation_error:
+        reason, _ = validation_error
+        output_error("INVALID_PROJECT_NAME", exit_code=4, name=project, reason=reason)
         return False
     return True
 
@@ -493,43 +468,12 @@ def _write_private_key(path: str, pem_bytes: bytes) -> None:
         raise
 
 
-def _write_file_nofollow(path: str, content: bytes, mode: int = 0o644) -> None:
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    fd = os.open(path, flags, mode)
-    try:
-        if hasattr(os, "fchmod"):
-            os.fchmod(fd, mode)
-        with os.fdopen(fd, "wb") as f:
-            fd = -1  # ownership transferred to f
-            f.write(content)
-    except Exception:
-        if fd != -1:
-            os.close(fd)
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
-        raise
-
-
 def _read_file_nofollow(path: str, max_size: int = _MAX_ZIP_MEMBER_SIZE) -> bytes:
-    flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    fd = os.open(path, flags)
-    try:
-        with os.fdopen(fd, "rb") as f:
-            fd = -1  # ownership transferred to f
-            content = f.read(max_size + 1)
-    except BaseException:
-        if fd != -1:
-            os.close(fd)
-        raise
-    if len(content) > max_size:
-        raise _UnsafeZipSourceError(f"zip source too large: {path}")
-    return content
+    return _shared_read_file_nofollow(
+        path,
+        max_size,
+        too_large_error_factory=lambda file_path: _UnsafeZipSourceError(f"zip source too large: {file_path}"),
+    )
 
 
 def _read_text_nofollow(path: str) -> str:
