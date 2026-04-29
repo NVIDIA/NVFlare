@@ -147,11 +147,11 @@ When `--enable_dp` is specified, the **SVTPrivacy** filter implements the Sparse
 
 **Parameters**:
 - `--dp_fraction=0.9`: Share top 90% of weights by magnitude (reduces communication and limits information exposure)
-- `--dp_epsilon=21.0`: Privacy budget for the corrected SVT threshold/query split
+- `--dp_epsilon=21.0`: Privacy budget for the SVT threshold/query split
 - `--dp_noise_var=2.0`: Release noise control for the retuned SVT defaults
 - `--dp_gamma=1e-4`: Gradient clipping threshold
 
-*Defaults are retuned for the current corrected SVT implementation. Adjust these parameters to explore different privacy-utility trade-offs. See [Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] for the original SVT-based method and privacy analysis.*
+*Defaults are retuned for the current SVT implementation. Adjust these parameters to explore different privacy-utility trade-offs. See [Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] for the original SVT-based method and privacy analysis.*
 
 ## Job Recipe
 
@@ -282,7 +282,7 @@ Quantitative results after 600 rounds of training:
 
 2. **Privacy-Utility Trade-off**: The SVT privacy filter trades model utility for clipped, sparse, noisy update sharing, with a 4.2% accuracy reduction (0.8573 → 0.8209). This demonstrates the feasibility of privacy-preserving federated learning for sensitive medical applications.
 
-**Note**: The DP defaults are retuned for the corrected SVT implementation. You can explore different privacy-utility trade-offs by adjusting `--dp_fraction`, `--dp_epsilon`, `--dp_noise_var`, and `--dp_gamma`. Lower epsilon values provide stronger privacy but typically reduce accuracy.
+**Note**: The DP defaults are retuned for the current SVT implementation. You can explore different privacy-utility trade-offs by adjusting `--dp_fraction`, `--dp_epsilon`, `--dp_noise_var`, and `--dp_gamma`. Lower epsilon values provide stronger privacy but typically reduce accuracy.
 
 ## Technical Notes
 

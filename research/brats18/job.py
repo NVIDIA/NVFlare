@@ -40,7 +40,7 @@ def main():
     parser.add_argument(
         "--dp_fraction", type=float, default=0.9, help="DP: fraction of weights to share (default from paper: 0.9)"
     )
-    parser.add_argument("--dp_epsilon", type=float, default=21.0, help="DP: privacy budget for corrected SVT split.")
+    parser.add_argument("--dp_epsilon", type=float, default=21.0, help="DP: privacy budget for the SVT split.")
     parser.add_argument(
         "--dp_noise_var", type=float, default=2.0, help="DP: release noise control for retuned SVT defaults."
     )
