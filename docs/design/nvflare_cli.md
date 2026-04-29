@@ -237,6 +237,12 @@ content:
   timestamped line are included.
 - `--max-bytes N`: return at most N UTF-8 bytes per site.
 
+These are CLI output bounds, not server-side retrieval filters. They bound the
+human/JSON output and truncation metadata after the server command returns log
+content. If the server has already limited a large log to its maximum returned
+response size, `--tail` and `--since` are evaluated against that returned
+content, not against bytes that were never returned to the CLI.
+
 `grep` is intentionally not a CLI flag; users can pipe or post-process the
 returned content when text matching is needed.
 
@@ -312,7 +318,7 @@ Code: LOG_NOT_FOUND (exit 1)
 
 Server-side behavior: `get_job_log <job_id> [server|all|client_name]` returns structured data from server-side stored artifacts. Server logs are read from the live server workspace when available, then from the saved job-store `workspace` component after the run workspace has been archived. Client logs are read from the server's live job workspace at `<job_id>/<client_name>/log.txt` when available, then from the saved job-store `workspace` component member `<client_name>/log.txt`. For compatibility with existing stored receiver outputs, the command can also fall back to client-data components such as `LOG_log.txt_<client_name>`. `tail_target_log` / `grep_target` are insufficient and are not used for this command.
 
-Session API: `Session.get_job_logs(job_id, target, tail_lines=None, grep_pattern=None)` sends the structured server command and returns `logs` plus optional `unavailable`. `tail_lines` and `grep_pattern` are retained as deprecated compatibility arguments for existing Python callers. The CLI applies `--tail`, `--since`, and `--max-bytes` locally after retrieving server-side stored logs so the JSON response can include truncation metadata.
+Session API: `Session.get_job_logs(job_id, target, tail_lines=None, grep_pattern=None)` sends the structured server command and returns `logs` plus optional `unavailable`. `tail_lines` and `grep_pattern` are retained as deprecated compatibility arguments for existing Python callers. The CLI applies `--tail`, `--since`, and `--max-bytes` locally after retrieving server-side stored logs so the JSON response can include truncation metadata. These CLI filters should not be described as reducing server-side read cost or admin API transfer size.
 
 ### `nvflare job log-config`
 

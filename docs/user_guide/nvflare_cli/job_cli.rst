@@ -260,6 +260,12 @@ If no explicit bound is provided, ``job logs`` returns at most the last 500
 lines per site. JSON output includes ``logs_truncated``, per-site availability
 and line/byte counts under ``sites``, and the applied ``filters``.
 
+The bound options are applied by the CLI after the server returns the stored
+log content. They bound the printed or JSON output from ``nvflare job logs``;
+they do not reduce the amount of log content requested from the server. If a
+large log is already limited by the server-side maximum response size before it
+reaches the CLI, ``--tail`` and ``--since`` are applied to that returned content.
+
 In normal human output mode, ``job logs`` prints the log text directly. With
 ``--site all``, each site is separated by a short header. Use ``--format json``
 when a structured ``logs`` dictionary is needed for automation.
