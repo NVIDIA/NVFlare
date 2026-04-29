@@ -42,6 +42,7 @@ from nvflare.private.fed.utils.fed_utils import (
     set_stats_pool_config_for_job,
 )
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
+from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
 
 
 def main(args):
@@ -65,6 +66,7 @@ def main(args):
     secure_train = kv_list.get("secure_train", False)
     download_workspace(args, secure_train)
     workspace = Workspace(root_dir=args.workspace, site_name=SiteType.SERVER)
+    refresh_custom_dir_import_path(workspace.get_app_custom_dir(args.job_id))
     set_stats_pool_config_for_job(workspace, args.job_id)
 
     try:
