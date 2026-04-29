@@ -112,12 +112,15 @@ stderr:
 .. code-block:: shell
 
    nvflare job monitor <job_id>
+   nvflare job monitor <job_id> --study cancer_research
 
 Monitor options:
 
 - ``job_id``: job ID to monitor.
 - ``--timeout``: max seconds to wait. Default: ``0`` (no timeout).
 - ``--interval``: poll interval in seconds. Default: ``2``.
+- ``--study``: monitor a job in a named study. Use the same study name used
+  at submission time. If omitted, the literal study name ``default`` is used.
 - ``--stats-target``: where to fetch stats from. Choices: ``server``, ``client``, ``all``. Default: ``server``.
 - ``--metric``: extra metric key to surface from stats. Repeatable.
 - ``--schema``: print the command schema as JSON and exit.

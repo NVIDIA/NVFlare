@@ -369,7 +369,7 @@ Example:
 
 ## Monitor / Poll
 
-`nvflare job monitor <job_id>` polls until the job reaches a terminal state via `monitor_job_and_return_job_meta()` callback. Status lines print to stderr; final JSON to stdout.
+`nvflare job monitor <job_id>` polls until the job reaches a terminal state via `monitor_job_and_return_job_meta()` callback. Status lines print to stderr; final JSON to stdout. For named-study jobs, pass the same `--study` value used at submit/list time so the monitor opens the correct study session.
 
 ```bash
 JOB=$(nvflare job submit -j ./my_job | jq -r .data.job_id)
@@ -1015,6 +1015,7 @@ Polls a running job until it reaches a terminal state. Prints status updates to 
 | `job_id` | str | Yes | — | Job ID to monitor |
 | `--timeout` | int | No | 0 | Max seconds to wait |
 | `--interval` | int | No | 2 | Poll interval in seconds |
+| `--study` | str | No | `"default"` | Study containing the job |
 | `--schema` | flag | No | — | Print command schema and exit |
 
 Exit code 0 on `FINISHED_OK`, exit code 1 on `FAILED` / `ABORTED`.
@@ -1135,7 +1136,7 @@ the active-kit registry or `NVFLARE_STARTUP_KIT_DIR`.
 ```text
 # Job lifecycle (server must be running)
 nvflare job submit    -j <job_folder>
-nvflare job monitor   <job_id> [--timeout N] [--interval N]
+nvflare job monitor   <job_id> [--study name] [--timeout N] [--interval N]
 nvflare job list      [-n prefix] [-i id_prefix] [-r] [-m num] [--study name|all]
 nvflare job meta      <job_id>
 nvflare job abort     <job_id> [--force]

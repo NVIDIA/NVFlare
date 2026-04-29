@@ -1622,10 +1622,15 @@ def cmd_job_monitor(cmd_args):
     handle_schema_flag(
         job_sub_cmd_parser[CMD_JOB_MONITOR],
         "nvflare job monitor",
-        ["nvflare job monitor abc123", "nvflare job monitor abc123 --timeout 3600"],
+        [
+            "nvflare job monitor abc123",
+            "nvflare job monitor abc123 --timeout 3600",
+            "nvflare job monitor abc123 --study cancer",
+        ],
         sys.argv[1:],
     )
 
+    study = _get_arg_value(cmd_args, "study", "default")
     start = time.time()
     start_ts_holder = {"value": None}
     timeout = getattr(cmd_args, "timeout", 0)
@@ -1647,7 +1652,7 @@ def cmd_job_monitor(cmd_args):
     )
 
     try:
-        with _job_session_for_args(cmd_args) as sess:
+        with _job_session_for_args(cmd_args, study=study) as sess:
             rc, meta = sess.monitor_job_and_return_job_meta(
                 cmd_args.job_id,
                 timeout=timeout,
@@ -1794,6 +1799,7 @@ def define_job_monitor_parser(job_subparser):
     p.add_argument("job_id", type=str, help="job ID")
     p.add_argument("--timeout", type=int, default=0, help="seconds to wait (0 = no timeout)")
     p.add_argument("--interval", type=int, default=2, help="poll interval in seconds")
+    p.add_argument("--study", type=str, default="default", help="study to monitor the job in")
     p.add_argument(
         "--stats-target",
         dest="stats_target",

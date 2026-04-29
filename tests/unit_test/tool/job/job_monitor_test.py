@@ -51,11 +51,12 @@ def _configure_active_startup_kit(tmp_path, monkeypatch):
     return admin_dir
 
 
-def _make_args(job_id="abc123", timeout=0, interval=2, stats_target="server", metrics=None):
+def _make_args(job_id="abc123", timeout=0, interval=2, study="default", stats_target="server", metrics=None):
     args = MagicMock()
     args.job_id = job_id
     args.timeout = timeout
     args.interval = interval
+    args.study = study
     args.stats_target = stats_target
     args.metrics = metrics or []
     return args
@@ -171,6 +172,7 @@ class TestJobMonitorOutput:
         help_text = job_sub_cmd_parser["monitor"].format_help()
         for token in ("--startup-target", "--startup_target", "--startup-kit", "--startup_kit"):
             assert token not in help_text
+        assert "--study" in help_text
 
         with patch("sys.argv", ["nvflare", "job", "monitor", "--schema"]):
             with pytest.raises(SystemExit) as exc_info:
@@ -180,6 +182,7 @@ class TestJobMonitorOutput:
         schema_text = capsys.readouterr().out
         for token in ("--startup-target", "--startup_target", "--startup-kit", "--startup_kit"):
             assert token not in schema_text
+        assert "--study" in schema_text
 
     def test_failed_outputs_error_envelope_exits_1(self, capsys):
         meta = _make_meta("FAILED")
@@ -402,6 +405,25 @@ class TestJobMonitorOutput:
         assert new_secure.call_args.kwargs["username"] == "admin@nvidia.com"
         assert new_secure.call_args.kwargs["startup_kit_location"] == str(active_admin_dir)
 
+    def test_monitor_uses_named_study_session(self, capsys):
+        meta = _make_meta("FINISHED_OK")
+        mock_sess = MagicMock()
+        mock_sess.monitor_job_and_return_job_meta.return_value = (MonitorReturnCode.JOB_FINISHED, meta)
+        mock_sess.show_stats.return_value = {}
+
+        @contextmanager
+        def _fake_session(*args, **kwargs):
+            yield mock_sess
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session) as session_factory:
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            cmd_job_monitor(_make_args(study="cancer"))
+
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "ok"
+        assert session_factory.call_args.kwargs["study"] == "cancer"
+
     def test_no_human_text_on_stdout(self, capsys):
         """In json mode, stdout contains only one JSON line."""
         meta = _make_meta("FINISHED_OK")
@@ -460,10 +482,11 @@ class TestJobMonitorOutput:
         def_job_cli_parser(root.add_subparsers())
 
         parser = job_sub_cmd_parser["monitor"]
-        args = parser.parse_args(["abc123", "--timeout", "300", "--interval", "5"])
+        args = parser.parse_args(["abc123", "--timeout", "300", "--interval", "5", "--study", "cancer"])
         assert args.job_id == "abc123"
         assert args.timeout == 300
         assert args.interval == 5
+        assert args.study == "cancer"
 
     def test_parser_defaults(self):
         import argparse
@@ -477,6 +500,7 @@ class TestJobMonitorOutput:
         args = parser.parse_args(["abc123"])
         assert args.timeout == 0
         assert args.interval == 2
+        assert args.study == "default"
         assert args.stats_target == "server"
         assert args.metrics is None
 
