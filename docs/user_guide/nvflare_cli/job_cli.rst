@@ -80,7 +80,11 @@ Use ``nvflare job submit`` to submit a pre-built NVFlare job folder:
 Submit options:
 
 - ``-j, --job_folder``: job folder path. Defaults to ``./current_job``.
-- ``--study``: submit into a named study when the server is configured for multi-study access. If omitted, the literal study name ``default`` is submitted.
+- ``--study``: submit into a named study when the server is configured for
+  multi-study access. If omitted, the literal study name ``default`` is
+  submitted.
+- ``--submit-token``: caller-generated token for retry-safe submit and later
+  recovery with ``nvflare job list --submit-token``.
 - ``-debug, --debug``: keep the temporary copied job folder for inspection.
 - ``--schema``: print the command schema as JSON and exit.
 
@@ -113,6 +117,51 @@ If the server is configured for studies, you can target one explicitly:
 .. code-block:: shell
 
    nvflare job submit -j /tmp/nvflare/my_job --study cancer_research
+
+Retry-Safe Submit Tokens
+========================
+
+Use ``--submit-token`` when an automated caller may retry a submit after a
+timeout or lost client connection:
+
+.. code-block:: shell
+
+   TOKEN=$(uuidgen)
+   nvflare job submit -j /tmp/nvflare/my_job \
+       --study cancer_research \
+       --submit-token "$TOKEN" \
+       --format json
+
+The submit token is an idempotency and recovery value for one intended submit.
+It is not an authentication token, session token, startup-kit credential, API
+key, or certificate secret. Normal startup-kit authentication and authorization
+still apply.
+
+Tokens must be non-empty, at most 128 characters, and use only letters,
+numbers, ``.``, ``_``, ``:``, or ``-``.
+
+Submit-token scope is the selected server/project context, study, submitter
+identity, and token value. Reusing the same token with the same job content in
+the same scope returns the existing ``job_id``. Reusing it with different job
+content fails with ``SUBMIT_TOKEN_CONFLICT``. The same token may be used in a
+different study because studies are separate job namespaces.
+
+The token is stored only as server-owned submission metadata. It is not written
+to the job's ``meta.json``; that file remains job-owned execution metadata such
+as ``deploy_map``, ``resource_spec``, ``min_clients``, and launcher settings.
+If ``--submit-token`` is omitted, submit behavior is unchanged and each submit
+creates a new job as before.
+
+After a client-side timeout or session loss, recover the accepted job with
+``job list --submit-token``:
+
+.. code-block:: shell
+
+   nvflare job list --study cancer_research --submit-token "$TOKEN" --format json
+
+``--submit-token`` is only for ``job submit`` and ``job list``. To monitor,
+download, abort, delete, or clone the recovered job, first resolve the
+``job_id`` with ``job list --submit-token`` and then use the normal job command.
 
 ****************
 Monitor a Job
@@ -170,6 +219,9 @@ Common list filters:
 - ``--study``: list jobs from a named study. If omitted, the literal study name
   ``default`` is used. Values such as ``all`` are passed through to the server
   unchanged.
+- ``--submit-token``: find the job associated with a retry-safe submit token in
+  the selected study. This is the recovery path after submitting with
+  ``--submit-token``.
 - ``--schema``: print the command schema as JSON and exit.
 
 Retrieve metadata for a single job:

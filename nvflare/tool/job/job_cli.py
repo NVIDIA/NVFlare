@@ -68,6 +68,16 @@ from nvflare.utils.cli_utils import (
     save_config,
 )
 
+_SUBMIT_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+
+
+def _submit_token_arg(value: str) -> str:
+    if not isinstance(value, str) or not _SUBMIT_TOKEN_PATTERN.fullmatch(value):
+        raise argparse.ArgumentTypeError(
+            "submit token must be non-empty, at most 128 characters, and match ^[A-Za-z0-9._:-]{1,128}$"
+        )
+    return value
+
 CMD_LIST_TEMPLATES = "list-templates"
 CMD_SHOW_VARIABLES = "show-variables"
 CMD_CREATE_JOB = "create"
@@ -449,7 +459,11 @@ def submit_job(cmd_args):
     handle_schema_flag(
         job_sub_cmd_parser[CMD_SUBMIT_JOB],
         "nvflare job submit",
-        ["nvflare config use admin@nvidia.com", "nvflare job submit -j ./my_job"],
+        [
+            "nvflare config use admin@nvidia.com",
+            "nvflare job submit -j ./my_job",
+            "nvflare job submit -j ./my_job --submit-token retry-001",
+        ],
         sys.argv[1:],
     )
 
@@ -531,20 +545,36 @@ def _resolve_admin_user_and_dir_from_startup_kit(
 
 
 def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
-    from nvflare.fuel.flare_api.api_spec import AuthorizationError, InternalError, InvalidJobDefinition, NoConnection
+    from nvflare.fuel.flare_api.api_spec import (
+        AuthorizationError,
+        InternalError,
+        InvalidJobDefinition,
+        NoConnection,
+        SubmitTokenConflict,
+    )
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
 
     if not is_json_mode():
         print_human("trying to connect to the server")
     study = getattr(cmd_args, "study", "default") if cmd_args else "default"
+    submit_token = getattr(cmd_args, "submit_token", None) if cmd_args else None
 
     sess = _get_session(args=cmd_args, admin_user_dir=admin_user_dir, username=username, study=study)
     try:
         try:
-            job_id = sess.submit_job(temp_job_dir)
+            job_id = sess.submit_job(temp_job_dir, submit_token=submit_token)
         except InvalidJobDefinition as e:
             output_error("JOB_INVALID", exit_code=1, detail=str(e))
             raise SystemExit(1)
+        except SubmitTokenConflict as e:
+            output_error(
+                "SUBMIT_TOKEN_CONFLICT",
+                exit_code=4,
+                detail=str(e),
+                hint="Use a new submit token when submitting different job content.",
+                data={"existing_job_id": e.existing_job_id} if e.existing_job_id else None,
+            )
+            raise SystemExit(4)
         except AuthorizationError as e:
             output_error("AUTH_FAILED", exit_code=2, detail=str(e))
             raise SystemExit(2)
@@ -649,6 +679,12 @@ def define_submit_job_parser(job_subparser):
     )
     submit_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     submit_parser.add_argument("--study", type=str, default="default", help="study to submit the job to")
+    submit_parser.add_argument(
+        "--submit-token",
+        type=_submit_token_arg,
+        default=None,
+        help="retry-safe submit token scoped by study and submitter",
+    )
     add_startup_kit_selection_args(submit_parser)
     submit_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_SUBMIT_JOB] = submit_parser
@@ -1035,7 +1071,8 @@ def cmd_job_list(cmd_args):
         [
             "nvflare job list",
             "nvflare job list -n cifar -m 10",
-            "nvflare job list --study all",
+            "nvflare job list --submit-token retry-001",
+            "nvflare job list --study cancer_research",
         ],
         sys.argv[1:],
     )
@@ -1049,6 +1086,7 @@ def cmd_job_list(cmd_args):
                 id_prefix=getattr(cmd_args, "id", None),
                 reverse=getattr(cmd_args, "reverse", False),
                 limit=getattr(cmd_args, "max", None),
+                submit_token=getattr(cmd_args, "submit_token", None),
             )
     except AuthenticationError:
         raise
@@ -1252,6 +1290,12 @@ def define_list_jobs_parser(job_subparser):
     p.add_argument("-r", "--reverse", action="store_true", default=False, help="reverse sort order")
     p.add_argument("-m", "--max", type=int, default=None, help="max results to return")
     p.add_argument("--study", type=str, default="default", help="study to list jobs from")
+    p.add_argument(
+        "--submit-token",
+        type=_submit_token_arg,
+        default=None,
+        help="retry-safe submit token to resolve a submitted job",
+    )
     add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_LIST] = p

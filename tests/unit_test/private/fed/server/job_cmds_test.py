@@ -22,11 +22,12 @@ import pytest
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode, ServerCommandKey, WorkspaceConstants
-from nvflare.apis.job_def import JobMetaKey, RunStatus
+from nvflare.apis.job_def import JobMetaKey, RunStatus, SubmitRecordKey, SubmitRecordState
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.lighter.tool_consts import NVFLARE_SUBMITTER_CRT_FILE
 from nvflare.private.fed.server import cmd_utils as cmd_utils_module
 from nvflare.private.fed.server import job_cmds as job_cmds_module
 from nvflare.private.fed.server.job_cmds import (
@@ -38,17 +39,23 @@ from nvflare.private.fed.server.job_cmds import (
 TEST_CASES = [
     (
         ["-d", "-u", "12345", "-n", "hello_", "-m", "3"],
-        Namespace(u=True, d=True, job_id="12345", m=3, n="hello_", r=False),
+        Namespace(u=True, d=True, job_id="12345", m=3, n="hello_", r=False, submit_token=None),
     ),
     (
         ["12345", "-d", "-u", "-n", "hello_", "-m", "3"],
-        Namespace(u=True, d=True, job_id="12345", m=3, n="hello_", r=False),
+        Namespace(u=True, d=True, job_id="12345", m=3, n="hello_", r=False, submit_token=None),
     ),
-    (["-d", "-u", "-n", "hello_", "-m", "3"], Namespace(u=True, d=True, job_id=None, m=3, n="hello_", r=False)),
-    (["-u", "-n", "hello_", "-m", "5"], Namespace(u=True, d=False, job_id=None, m=5, n="hello_", r=False)),
-    (["-u"], Namespace(u=True, d=False, job_id=None, m=None, n=None, r=False)),
-    (["-r"], Namespace(u=False, d=False, job_id=None, m=None, n=None, r=True)),
-    (["nvflare"], Namespace(u=False, d=False, job_id="nvflare", m=None, n=None, r=False)),
+    (
+        ["-d", "-u", "-n", "hello_", "-m", "3"],
+        Namespace(u=True, d=True, job_id=None, m=3, n="hello_", r=False, submit_token=None),
+    ),
+    (
+        ["-u", "-n", "hello_", "-m", "5"],
+        Namespace(u=True, d=False, job_id=None, m=5, n="hello_", r=False, submit_token=None),
+    ),
+    (["-u"], Namespace(u=True, d=False, job_id=None, m=None, n=None, r=False, submit_token=None)),
+    (["-r"], Namespace(u=False, d=False, job_id=None, m=None, n=None, r=True, submit_token=None)),
+    (["nvflare"], Namespace(u=False, d=False, job_id="nvflare", m=None, n=None, r=False, submit_token=None)),
 ]
 
 
@@ -124,6 +131,12 @@ class _FakeJobMetaValidator:
         return True, "", {}
 
 
+class _FakeJobMetaValidatorNoAssert:
+    def validate(self, folder_name, zip_file_name):
+        assert folder_name == "job_folder"
+        return True, "", {}
+
+
 class _FakeJobDefManager:
     def __init__(self):
         self.created_meta = None
@@ -140,6 +153,115 @@ class _FakeJobDefManager:
         result = dict(meta)
         result[JobMetaKey.JOB_ID.value] = "cloned-job-id"
         return result
+
+
+class _FakeSubmitTokenJobDefManager:
+    def __init__(self):
+        self.create_count = 0
+        self.new_record_count = 0
+        self.created_metas = []
+        self.jobs = {}
+        self.records = {}
+
+    def create(self, meta, uploaded_content, fl_ctx):
+        self.create_count += 1
+        result = dict(meta)
+        result[JobMetaKey.JOB_ID.value] = result.get(JobMetaKey.JOB_ID.value) or f"job-{self.create_count}"
+        self.created_metas.append(result)
+        self.jobs[result[JobMetaKey.JOB_ID.value]] = _FakeListedJob(result)
+        return result
+
+    def get_job(self, jid, fl_ctx):
+        return self.jobs.get(jid)
+
+    def get_all_jobs(self, fl_ctx):
+        return list(self.jobs.values())
+
+    def _record_key(self, study, submitter, submit_token):
+        if isinstance(submitter, dict):
+            submitter_key = (
+                submitter.get("name", ""),
+                submitter.get("org", ""),
+                submitter.get("role", ""),
+            )
+        else:
+            submitter_key = (
+                getattr(submitter, "name", ""),
+                getattr(submitter, "org", ""),
+                getattr(submitter, "role", ""),
+            )
+        return study, submitter_key, submit_token
+
+    def get_submit_record(self, study, submitter, submit_token, fl_ctx):
+        return self.records.get(self._record_key(study, submitter, submit_token))
+
+    def new_submit_record(
+        self,
+        study,
+        submitter,
+        submit_token,
+        job_content_hash,
+        job_name="",
+        job_folder_name="",
+        job_id=None,
+        state=SubmitRecordState.CREATING.value,
+    ):
+        self.new_record_count += 1
+        if isinstance(submitter, dict):
+            submitter_info = submitter
+        else:
+            submitter_info = {
+                "name": getattr(submitter, "name", ""),
+                "org": getattr(submitter, "org", ""),
+                "role": getattr(submitter, "role", ""),
+            }
+        return {
+            SubmitRecordKey.SCHEMA_VERSION.value: 1,
+            SubmitRecordKey.STATE.value: state,
+            SubmitRecordKey.SUBMIT_TOKEN.value: submit_token,
+            SubmitRecordKey.JOB_ID.value: job_id or f"reserved-job-{self.new_record_count}",
+            SubmitRecordKey.STUDY.value: study,
+            SubmitRecordKey.SUBMITTER_NAME.value: submitter_info.get("name", ""),
+            SubmitRecordKey.SUBMITTER_ORG.value: submitter_info.get("org", ""),
+            SubmitRecordKey.SUBMITTER_ROLE.value: submitter_info.get("role", ""),
+            SubmitRecordKey.JOB_NAME.value: job_name,
+            SubmitRecordKey.JOB_FOLDER_NAME.value: job_folder_name,
+            SubmitRecordKey.JOB_CONTENT_HASH.value: job_content_hash,
+            SubmitRecordKey.SUBMIT_TIME.value: "2026-04-29T10:00:00-07:00",
+        }
+
+    def create_submit_record(self, record, fl_ctx):
+        submitter = {
+            "name": record.get(SubmitRecordKey.SUBMITTER_NAME.value, ""),
+            "org": record.get(SubmitRecordKey.SUBMITTER_ORG.value, ""),
+            "role": record.get(SubmitRecordKey.SUBMITTER_ROLE.value, ""),
+        }
+        key = self._record_key(
+            record[SubmitRecordKey.STUDY.value],
+            submitter,
+            record[SubmitRecordKey.SUBMIT_TOKEN.value],
+        )
+        if key in self.records:
+            raise RuntimeError("submit record already exists")
+        self.records[key] = dict(record)
+        return dict(record)
+
+    def update_submit_record(self, record, fl_ctx):
+        submitter = {
+            "name": record.get(SubmitRecordKey.SUBMITTER_NAME.value, ""),
+            "org": record.get(SubmitRecordKey.SUBMITTER_ORG.value, ""),
+            "role": record.get(SubmitRecordKey.SUBMITTER_ROLE.value, ""),
+        }
+        self.records[
+            self._record_key(record[SubmitRecordKey.STUDY.value], submitter, record[SubmitRecordKey.SUBMIT_TOKEN.value])
+        ] = dict(record)
+        return dict(record)
+
+    def get_job_by_submit_token(self, study, submitter, submit_token, fl_ctx):
+        record = self.get_submit_record(study, submitter, submit_token, fl_ctx)
+        if not record:
+            return None
+        return self.get_job(record.get(SubmitRecordKey.JOB_ID.value), fl_ctx)
 
 
 class _FakeEngine:
@@ -243,6 +365,9 @@ class _FakeStudyRegistry:
     def get_sites(self, study):
         return self.sites.get(study)
 
+    def get_studies(self):
+        return {study: {"site_orgs": {"org": sorted(sites)}} for study, sites in self.sites.items()}
+
 
 class _FakeStudyRegistryService:
     registry = None
@@ -268,6 +393,25 @@ def _zip_bytes(files):
         for name, content in files.items():
             zip_file.writestr(name, content)
     return output.getvalue()
+
+
+def _submit_conn(engine, uploaded_content, study="default", user_name="submitter"):
+    return _MockConnection(
+        app_ctx=engine,
+        props={
+            ConnProps.FILE_LOCATION: uploaded_content,
+            ConnProps.ACTIVE_STUDY: study,
+            ConnProps.USER_NAME: user_name,
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "role",
+        },
+    )
+
+
+def _submitted_job_id(conn):
+    assert conn.errors == []
+    assert conn.successes
+    return conn.successes[-1][1][MetaKey.JOB_ID]
 
 
 def test_submit_job_exposes_study_in_submit_event(monkeypatch):
@@ -339,6 +483,198 @@ def test_submit_job_defaults_study_when_cmd_props_missing(monkeypatch):
     assert conn.errors == []
     assert engine.submit_event_meta == {JobMetaKey.STUDY.value: "default"}
     assert engine.job_def_manager.created_meta[JobMetaKey.STUDY.value] == "default"
+
+
+def test_server_list_parser_accepts_submit_token():
+    parser = _create_list_job_cmd_parser()
+    parsed_args = parser.parse_args(["--submit-token", "retry.01:A_b-c"])
+
+    assert parsed_args.submit_token == "retry.01:A_b-c"
+
+
+@pytest.mark.parametrize("token", ["", "bad token", "bad/token", "x" * 129])
+def test_submit_job_rejects_invalid_submit_token(monkeypatch, token):
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    engine = _FakeEngine()
+    conn = _submit_conn(engine, _zip_bytes({"meta.json": "{}"}))
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder", "--submit-token", token])
+
+    assert len(conn.errors) == 1
+    assert "submit_token" in conn.errors[0][0]
+    assert engine.job_def_manager.created_meta is None
+
+
+def test_same_submit_token_same_content_returns_same_job(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    engine = _FakeEngine()
+    engine.job_def_manager = _FakeSubmitTokenJobDefManager()
+    content = _zip_bytes({"meta.json": "{}", "app/config/config_fed_server.json": "{}"})
+
+    conn1 = _submit_conn(engine, content, study="study-a")
+    JobCommandModule().submit_job(conn1, ["submit_job", "job_folder", "--submit-token", "retry-1"])
+    conn2 = _submit_conn(engine, content, study="study-a")
+    JobCommandModule().submit_job(conn2, ["submit_job", "job_folder", "--submit-token", "retry-1"])
+
+    assert _submitted_job_id(conn1) == _submitted_job_id(conn2)
+    assert engine.job_def_manager.create_count == 1
+    assert engine.job_def_manager.new_record_count == 1
+
+
+def test_same_submit_token_different_content_conflicts(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    engine = _FakeEngine()
+    engine.job_def_manager = _FakeSubmitTokenJobDefManager()
+
+    conn1 = _submit_conn(engine, _zip_bytes({"meta.json": "{}", "app/config/config_fed_server.json": "{}"}))
+    JobCommandModule().submit_job(conn1, ["submit_job", "job_folder", "--submit-token", "retry-1"])
+    conn2 = _submit_conn(
+        engine,
+        _zip_bytes({"meta.json": "{}", "app/config/config_fed_server.json": "{}", "app/custom.txt": "changed"}),
+    )
+    JobCommandModule().submit_job(conn2, ["submit_job", "job_folder", "--submit-token", "retry-1"])
+
+    assert _submitted_job_id(conn1)
+    assert len(conn2.errors) == 1
+    assert "SUBMIT_TOKEN_CONFLICT" in conn2.errors[0][0]
+    assert engine.job_def_manager.create_count == 1
+
+
+def test_same_submit_token_different_study_is_independent(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    engine = _FakeEngine()
+    engine.job_def_manager = _FakeSubmitTokenJobDefManager()
+    content_a = _zip_bytes({"meta.json": "{}", "app/config/config_fed_server.json": "study-a"})
+    content_b = _zip_bytes({"meta.json": "{}", "app/config/config_fed_server.json": "study-b"})
+
+    conn1 = _submit_conn(engine, content_a, study="study-a")
+    JobCommandModule().submit_job(conn1, ["submit_job", "job_folder", "--submit-token", "retry-1"])
+    conn2 = _submit_conn(engine, content_b, study="study-b")
+    JobCommandModule().submit_job(conn2, ["submit_job", "job_folder", "--submit-token", "retry-1"])
+
+    assert _submitted_job_id(conn1) != _submitted_job_id(conn2)
+    assert engine.job_def_manager.create_count == 2
+    assert conn2.errors == []
+
+
+def test_no_submit_token_keeps_duplicate_submit_behavior(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    engine = _FakeEngine()
+    engine.job_def_manager = _FakeSubmitTokenJobDefManager()
+    content = _zip_bytes({"meta.json": "{}", "app/config/config_fed_server.json": "{}"})
+
+    conn1 = _submit_conn(engine, content)
+    JobCommandModule().submit_job(conn1, ["submit_job", "job_folder"])
+    conn2 = _submit_conn(engine, content)
+    JobCommandModule().submit_job(conn2, ["submit_job", "job_folder"])
+
+    assert _submitted_job_id(conn1) != _submitted_job_id(conn2)
+    assert engine.job_def_manager.create_count == 2
+
+
+def test_submit_token_is_not_written_to_job_meta(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    engine = _FakeEngine()
+    engine.job_def_manager = _FakeSubmitTokenJobDefManager()
+    conn = _submit_conn(engine, _zip_bytes({"meta.json": "{}", "app/config/config_fed_server.json": "{}"}))
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder", "--submit-token", "retry-1"])
+
+    assert _submitted_job_id(conn)
+    assert "submit_token" not in engine.job_def_manager.created_metas[0]
+
+
+def test_user_job_meta_submit_token_is_stripped_before_submit_event(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    engine = _FakeEngine()
+    engine.job_def_manager = _FakeSubmitTokenJobDefManager()
+    conn = _submit_conn(
+        engine,
+        _zip_bytes({"meta.json": '{"submit_token": "from-user-meta"}', "app/config/config_fed_server.json": "{}"}),
+    )
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    assert _submitted_job_id(conn)
+    assert "submit_token" not in engine.submit_event_meta
+    assert "submit_token" not in engine.job_def_manager.created_metas[0]
+
+
+def test_canonical_hash_ignores_signature_artifacts(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    engine = _FakeEngine()
+    engine.job_def_manager = _FakeSubmitTokenJobDefManager()
+    base_files = {"meta.json": "{}", "app/config/config_fed_server.json": "{}"}
+    signed_files = dict(base_files)
+    signed_files[".__nvfl_sig.json"] = '{"signature": "volatile"}'
+    signed_files[NVFLARE_SUBMITTER_CRT_FILE] = "volatile cert"
+
+    conn1 = _submit_conn(engine, _zip_bytes(base_files))
+    JobCommandModule().submit_job(conn1, ["submit_job", "job_folder", "--submit-token", "retry-1"])
+    conn2 = _submit_conn(engine, _zip_bytes(signed_files))
+    JobCommandModule().submit_job(conn2, ["submit_job", "job_folder", "--submit-token", "retry-1"])
+
+    assert _submitted_job_id(conn1) == _submitted_job_id(conn2)
+    assert engine.job_def_manager.create_count == 1
+
+
+def test_list_jobs_by_submit_token_returns_expected_job(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([])
+    manager = _FakeSubmitTokenJobDefManager()
+    meta = {
+        JobMetaKey.JOB_ID.value: "job-1",
+        JobMetaKey.JOB_NAME.value: "hello",
+        JobMetaKey.STUDY.value: "study-a",
+    }
+    manager.jobs["job-1"] = _FakeListedJob(meta)
+    manager.records[
+        (
+            "study-a",
+            ("submitter", "org", "role"),
+            "retry-1",
+        )
+    ] = {
+        "study": "study-a",
+        "submitter_name": "submitter",
+        "submitter_org": "org",
+        "submitter_role": "role",
+        "submit_token": "retry-1",
+        "job_id": "job-1",
+        "job_content_hash": "sha256:abc",
+    }
+    engine.job_def_manager = manager
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            ConnProps.ACTIVE_STUDY: "study-a",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "role",
+        },
+    )
+
+    JobCommandModule().list_jobs(conn, ["list_jobs", "--submit-token", "retry-1"])
+
+    assert conn.errors == []
+    assert len(conn.tables) == 1
+    assert conn.tables[0].rows[0][1][MetaKey.JOB_ID] == "job-1"
 
 
 def test_clone_job_preserves_source_study(monkeypatch):

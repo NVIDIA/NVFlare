@@ -73,6 +73,7 @@ class TestJobList:
         args.reverse = kwargs.get("reverse", False)
         args.max = kwargs.get("max", None)
         args.study = kwargs.get("study", "default")
+        args.submit_token = kwargs.get("submit_token", None)
         return args
 
     def test_list_json_envelope(self, capsys):
@@ -99,7 +100,9 @@ class TestJobList:
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             cmd_job_list(args)
 
-        mock_sess.list_jobs.assert_called_once_with(name_prefix="cifar", id_prefix=None, reverse=False, limit=None)
+        mock_sess.list_jobs.assert_called_once_with(
+            name_prefix="cifar", id_prefix=None, reverse=False, limit=None, submit_token=None
+        )
 
     def test_list_with_reverse_flag(self):
         """reverse flag is passed to list_jobs."""
@@ -112,7 +115,9 @@ class TestJobList:
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             cmd_job_list(args)
 
-        mock_sess.list_jobs.assert_called_once_with(name_prefix=None, id_prefix=None, reverse=True, limit=None)
+        mock_sess.list_jobs.assert_called_once_with(
+            name_prefix=None, id_prefix=None, reverse=True, limit=None, submit_token=None
+        )
 
     def _init_parsers(self):
         import argparse
@@ -133,14 +138,23 @@ class TestJobList:
         args = parser.parse_args(["--study", "my_study"])
         assert args.study == "my_study"
 
-    def test_list_parser_all_study(self):
-        """--study all should be accepted."""
+    def test_list_parser_accepts_submit_token(self):
         self._init_parsers()
         from nvflare.tool.job.job_cli import job_sub_cmd_parser
 
         parser = job_sub_cmd_parser["list"]
-        args = parser.parse_args(["--study", "all"])
-        assert args.study == "all"
+        args = parser.parse_args(["--submit-token", "retry.01:A_b-c"])
+
+        assert args.submit_token == "retry.01:A_b-c"
+
+    @pytest.mark.parametrize("token", ["", "bad token", "bad/token", "x" * 129])
+    def test_list_parser_rejects_invalid_submit_token(self, token):
+        self._init_parsers()
+        from nvflare.tool.job.job_cli import job_sub_cmd_parser
+
+        parser = job_sub_cmd_parser["list"]
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--submit-token", token])
 
     @pytest.mark.parametrize(
         ("selector", "value"),
@@ -195,18 +209,31 @@ class TestJobList:
         assert "--startup-kit" in schema_text
         assert "--kit-id" in schema_text
 
-    def test_list_forwards_all_study_literal_to_session(self):
-        """The literal study name 'all' is forwarded unchanged to session creation."""
+    def test_list_forwards_named_study_to_session(self):
         from nvflare.tool.job.job_cli import cmd_job_list
 
-        args = self._make_args(study="all")
+        args = self._make_args(study="cancer_research")
         mock_sess = MagicMock()
         mock_sess.list_jobs.return_value = []
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess) as get_session:
             cmd_job_list(args)
 
-        assert get_session.call_args.kwargs["study"] == "all"
+        assert get_session.call_args.kwargs["study"] == "cancer_research"
+
+    def test_list_forwards_submit_token_to_session(self):
+        from nvflare.tool.job.job_cli import cmd_job_list
+
+        args = self._make_args(submit_token="retry-1")
+        mock_sess = MagicMock()
+        mock_sess.list_jobs.return_value = []
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            cmd_job_list(args)
+
+        mock_sess.list_jobs.assert_called_once_with(
+            name_prefix=None, id_prefix=None, reverse=False, limit=None, submit_token="retry-1"
+        )
 
     def test_list_uses_active_startup_kit_session(self, tmp_path, monkeypatch):
         from nvflare.tool.job.job_cli import cmd_job_list

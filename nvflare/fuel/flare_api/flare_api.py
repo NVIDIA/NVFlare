@@ -14,6 +14,7 @@
 
 import json
 import os
+import re
 import time
 from typing import List, Optional
 
@@ -59,6 +60,7 @@ from .api_spec import (
     ServerInfo,
     SessionClosed,
     SessionSpec,
+    SubmitTokenConflict,
     SystemInfo,
     TargetType,
 )
@@ -67,6 +69,20 @@ _VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
 _DEFAULT_STATE_CHANGE_TIMEOUT = 30.0
 _STATE_CHANGE_POLL_INTERVAL = 0.5
 _STATE_CHANGE_CONNECT_TIMEOUT = 1.0
+_SUBMIT_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_SUBMIT_TOKEN_CONFLICT_STATUS = "submit_token_conflict"
+
+
+def _validate_submit_token(submit_token: Optional[str]) -> Optional[str]:
+    if submit_token is None:
+        return None
+    if not isinstance(submit_token, str):
+        raise InvalidArgumentError(f"submit_token must be str but got {type(submit_token)}")
+    if not _SUBMIT_TOKEN_PATTERN.fullmatch(submit_token):
+        raise InvalidArgumentError(
+            "submit_token must be non-empty, at most 128 characters, and match ^[A-Za-z0-9._:-]{1,128}$"
+        )
+    return submit_token
 
 __all__ = ["NoConnection", "NoReply", "SystemInfo", "TargetType"]
 
@@ -189,6 +205,11 @@ class Session(SessionSpec):
             info = meta.get(MetaKey.INFO, "")
             if cmd_status == MetaStatusValue.INVALID_JOB_DEFINITION:
                 raise InvalidJobDefinition(f"invalid job definition: {info}")
+            elif cmd_status == _SUBMIT_TOKEN_CONFLICT_STATUS:
+                raise SubmitTokenConflict(
+                    info or "submit token was already used for different job content",
+                    meta.get(MetaKey.JOB_ID),
+                )
             elif cmd_status == MetaStatusValue.NOT_AUTHORIZED:
                 raise AuthorizationError(f"user not authorized for the action '{command}: {info}'")
             elif cmd_status == MetaStatusValue.NOT_AUTHENTICATED:
@@ -275,11 +296,12 @@ class Session(SessionSpec):
             raise InternalError(f"server failed to return job id: {info}")
         return job_id
 
-    def submit_job(self, job_definition_path: str) -> str:
+    def submit_job(self, job_definition_path: str, submit_token: str = None) -> str:
         """Submit a predefined job to the NVFLARE system.
 
         Args:
             job_definition_path: path to the folder that defines a NVFLARE job
+            submit_token: optional retry-safe submit token scoped by study and submitter
 
         Returns: the job id if accepted by the system
 
@@ -305,7 +327,11 @@ class Session(SessionSpec):
                 f"job folder name '{job_folder_name}' contains unsupported characters. "
                 "Use only letters, numbers, dots, underscores, and hyphens, with no spaces."
             )
-        result = self._do_command(AdminCommandNames.SUBMIT_JOB + " " + job_definition_path)
+        submit_token = _validate_submit_token(submit_token)
+        parts = [AdminCommandNames.SUBMIT_JOB, job_definition_path]
+        if submit_token:
+            parts.extend(["--submit-token", submit_token])
+        result = self._do_command(join_args(parts))
         meta = result[ResultKey.META]
         job_id = meta.get(MetaKey.JOB_ID, None)
         if not job_id:
@@ -336,6 +362,7 @@ class Session(SessionSpec):
         id_prefix: Optional[str] = None,
         name_prefix: Optional[str] = None,
         reverse: bool = False,
+        submit_token: Optional[str] = None,
         **kwargs,
     ) -> List[dict]:
         """Get the job info from the server.
@@ -346,6 +373,7 @@ class Session(SessionSpec):
             id_prefix (str): if included, only return jobs with the beginning of the job ID matching the id_prefix
             name_prefix (str): if included, only return jobs with the beginning of the job name matching the name_prefix
             reverse (bool): if specified, list jobs in the reverse order of submission times
+            submit_token: optional retry-safe submit token to resolve the submitted job
             **kwargs: deprecated legacy aliases accepted for compatibility
 
         Returns: a list of job metadata
@@ -382,6 +410,7 @@ class Session(SessionSpec):
             raise ValueError(f"id_prefix must be None or str but got {type(id_prefix)}")
         if name_prefix is not None and not isinstance(name_prefix, str):
             raise ValueError(f"name_prefix must be None or str but got {type(name_prefix)}")
+        submit_token = _validate_submit_token(submit_token)
 
         parts = [AdminCommandNames.LIST_JOBS]
         if detailed:
@@ -400,6 +429,8 @@ class Session(SessionSpec):
             if not isinstance(id_prefix, str):
                 raise InvalidArgumentError("id_prefix must be str but got {}.".format(type(id_prefix)))
             parts.append(id_prefix)
+        if submit_token:
+            parts.extend(["--submit-token", submit_token])
         command = join_args(parts)
         result = self._do_command(command)
         meta = result[ResultKey.META]

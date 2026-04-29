@@ -17,6 +17,7 @@
 import os
 from unittest.mock import MagicMock, patch
 
+from nvflare.fuel.hci.client.file_transfer import FileTransferModule
 from nvflare.fuel.hci.reg import CommandEntry
 
 
@@ -146,7 +147,6 @@ class TestPushFolderKeyGuard:
     def test_sign_folders_exception_returns_error(self, tmp_path):
         """sign_folders raising an exception returns ERROR_RUNTIME instead of crashing."""
         from nvflare.fuel.hci.client.api_status import APIStatus
-        from nvflare.fuel.hci.client.file_transfer import FileTransferModule
 
         key_file = tmp_path / "test.key"
         key_file.write_text("fake key content")
@@ -172,3 +172,25 @@ class TestPushFolderKeyGuard:
 
         assert result["status"] == APIStatus.ERROR_RUNTIME
         assert "corrupted key" in result["details"]
+
+
+def test_push_folder_preserves_submit_args_after_folder(tmp_path):
+    upload_dir = str(tmp_path / "upload")
+    download_dir = str(tmp_path / "dl")
+    os.makedirs(os.path.join(upload_dir, "test_job"), exist_ok=True)
+    os.makedirs(download_dir, exist_ok=True)
+
+    module = FileTransferModule(upload_dir=upload_dir, download_dir=download_dir)
+    args, ctx = _make_push_folder_args_and_ctx(None, None, "test_job")
+    args.extend(["--submit-token", "retry-1"])
+
+    with (
+        patch("nvflare.fuel.hci.client.file_transfer.zip_directory_to_file"),
+        patch.object(ctx.get_api.return_value, "server_execute", return_value={}) as server_execute,
+    ):
+        result = module.push_folder(args, ctx)
+
+    assert result == {}
+    server_execute.assert_called_once()
+    command = server_execute.call_args.args[0]
+    assert command == "admin.push_folder test_job --submit-token retry-1"

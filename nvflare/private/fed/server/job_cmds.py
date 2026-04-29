@@ -16,7 +16,9 @@ import datetime
 import io
 import json
 import os
+import re
 import shutil
+import threading
 import uuid
 from typing import Dict, List, Optional, Set
 from zipfile import BadZipFile, ZipFile
@@ -30,6 +32,8 @@ from nvflare.apis.job_def import (
     SERVER_SITE_NAME,
     Job,
     JobMetaKey,
+    SubmitRecordKey,
+    SubmitRecordState,
     get_job_meta_study,
     is_valid_job_id,
 )
@@ -46,6 +50,7 @@ from nvflare.apis.storage import (
     StorageException,
     StorageSpec,
 )
+from nvflare.apis.utils.job_submit_token import canonical_job_content_hash
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -79,6 +84,23 @@ CLONED_META_KEYS = {
     JobMetaKey.STUDY.value,
 }
 
+_SUBMIT_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_SUBMIT_TOKEN_CONFLICT_STATUS = "submit_token_conflict"
+
+
+def _validate_submit_token(submit_token: str) -> str:
+    if submit_token is None:
+        return None
+    if not isinstance(submit_token, str) or not _SUBMIT_TOKEN_PATTERN.fullmatch(submit_token):
+        raise ValueError(
+            "submit_token must be non-empty, at most 128 characters, and match ^[A-Za-z0-9._:-]{1,128}$"
+        )
+    return submit_token
+
+
+def _active_study_from_conn(conn: Connection) -> str:
+    return conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY) or DEFAULT_STUDY
+
 
 def _create_list_job_cmd_parser():
     parser = SafeArgumentParser(prog=AdminCommandNames.LIST_JOBS)
@@ -92,6 +114,14 @@ def _create_list_job_cmd_parser():
         type=int,
         help="Maximum number of jobs that will be listed",
     )
+    parser.add_argument("--submit-token", dest="submit_token", help="retry-safe submit token")
+    return parser
+
+
+def _create_submit_job_cmd_parser():
+    parser = SafeArgumentParser(prog=AdminCommandNames.SUBMIT_JOB)
+    parser.add_argument("folder_name", help="Uploaded job folder name")
+    parser.add_argument("--submit-token", dest="submit_token", help="retry-safe submit token")
     return parser
 
 
@@ -106,6 +136,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     """Command module with commands for job management."""
 
     MAX_RETURNED_JOB_LOG_BYTES = 5 * 1024 * 1024
+    _submit_token_locks = {}
+    _submit_token_locks_guard = threading.Lock()
 
     def __init__(self):
         super().__init__()
@@ -134,7 +166,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 CommandSpec(
                     name=AdminCommandNames.LIST_JOBS,
                     description="list submitted jobs",
-                    usage=f"{AdminCommandNames.LIST_JOBS} [-n name_prefix] [-d] [-u] [-r] [-m num_of_jobs] [job_id_prefix]",
+                    usage=(
+                        f"{AdminCommandNames.LIST_JOBS} [-n name_prefix] [-d] [-u] [-r] "
+                        "[-m num_of_jobs] [--submit-token token] [job_id_prefix]"
+                    ),
                     handler_func=self.list_jobs,
                     authz_func=self.command_authz_required,
                 ),
@@ -185,7 +220,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 CommandSpec(
                     name=AdminCommandNames.SUBMIT_JOB,
                     description="submit a job",
-                    usage=f"{AdminCommandNames.SUBMIT_JOB} job_folder",
+                    usage=f"{AdminCommandNames.SUBMIT_JOB} job_folder [--submit-token token]",
                     handler_func=self.submit_job,
                     authz_func=self.command_authz_required,
                     client_cmd=ftd.PUSH_FOLDER_FQN,
@@ -253,7 +288,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             )
             return PreAuthzReturnCode.ERROR
 
-        requested_study = conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY)
+        requested_study = _active_study_from_conn(conn)
         if requested_study and get_job_meta_study(job.meta) != requested_study:
             conn.append_error(
                 f"Job with ID {job_id} doesn't exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
@@ -366,7 +401,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         try:
             parser = _create_list_job_cmd_parser()
             parsed_args = parser.parse_args(args[1:])
-            requested_study = conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY)
+            submit_token = _validate_submit_token(parsed_args.submit_token)
+            requested_study = _active_study_from_conn(conn)
 
             engine = conn.app_ctx
             job_def_manager = engine.job_def_manager
@@ -376,7 +412,16 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 )
 
             with engine.new_context() as fl_ctx:
-                jobs = job_def_manager.get_all_jobs(fl_ctx)
+                if submit_token:
+                    jobs = self._list_jobs_by_submit_token(
+                        job_def_manager,
+                        requested_study,
+                        self._submitter_from_conn(conn),
+                        submit_token,
+                        fl_ctx,
+                    )
+                else:
+                    jobs = job_def_manager.get_all_jobs(fl_ctx)
             if jobs:
                 id_prefix = parsed_args.job_id
                 name_prefix = parsed_args.n
@@ -384,7 +429,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 user_name = conn.get_prop(ConnProps.USER_NAME, "") if parsed_args.u else None
 
                 filtered_jobs = [
-                    job for job in jobs if self._job_match(job.meta, id_prefix, name_prefix, user_name, requested_study)
+                    job
+                    for job in jobs
+                    if self._job_match(job.meta, id_prefix, name_prefix, user_name, requested_study)
                 ]
                 if not filtered_jobs:
                     conn.append_string(
@@ -409,6 +456,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
             else:
                 conn.append_string("No jobs found.", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOBS: []}))
+        except ValueError as e:
+            conn.append_error(str(e), meta=make_meta(MetaStatusValue.SYNTAX_ERROR, str(e)))
+            return
         except Exception as e:
             conn.append_error(
                 secure_format_exception(e),
@@ -962,8 +1012,252 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             ((not id_prefix) or job_id.startswith(id_prefix.lower()))
             and ((not name_prefix) or job_name.startswith(name_prefix.lower()))
             and ((not user_name) or job_meta.get("submitter_name") == user_name)
-            and (get_job_meta_study(job_meta) == requested_study)
+            and get_job_meta_study(job_meta) == requested_study
         )
+
+    @staticmethod
+    def _submitter_from_conn(conn: Connection) -> dict:
+        return {
+            "name": conn.get_prop(ConnProps.USER_NAME, ""),
+            "org": conn.get_prop(ConnProps.USER_ORG, ""),
+            "role": conn.get_prop(ConnProps.USER_ROLE, ""),
+        }
+
+    @staticmethod
+    def _canonical_job_content_hash(zip_file_name: str) -> str:
+        return canonical_job_content_hash(zip_file_name)
+
+    @staticmethod
+    def _require_submit_record_method(job_def_manager: JobDefManagerSpec, method_name: str):
+        method = getattr(job_def_manager, method_name, None)
+        if not callable(method):
+            raise RuntimeError(f"job_def_manager does not implement required submit-token method '{method_name}'")
+        return method
+
+    def _get_submit_record(
+        self, job_def_manager: JobDefManagerSpec, study: str, submitter: dict, submit_token: str, fl_ctx
+    ):
+        method = self._require_submit_record_method(job_def_manager, "get_submit_record")
+        return method(study, submitter, submit_token, fl_ctx)
+
+    def _create_submit_record(self, job_def_manager: JobDefManagerSpec, record: dict, fl_ctx):
+        method = self._require_submit_record_method(job_def_manager, "create_submit_record")
+        return method(record, fl_ctx)
+
+    def _update_submit_record(self, job_def_manager: JobDefManagerSpec, record: dict, fl_ctx):
+        method = self._require_submit_record_method(job_def_manager, "update_submit_record")
+        return method(record, fl_ctx)
+
+    def _new_submit_record(
+        self,
+        job_def_manager: JobDefManagerSpec,
+        *,
+        study: str,
+        submitter: dict,
+        submit_token: str,
+        job_content_hash: str,
+        job_name: str,
+        job_folder_name: str,
+        state: str,
+    ) -> dict:
+        method = self._require_submit_record_method(job_def_manager, "new_submit_record")
+        return method(
+            study=study,
+            submitter=submitter,
+            submit_token=submit_token,
+            job_content_hash=job_content_hash,
+            job_name=job_name,
+            job_folder_name=job_folder_name,
+            state=state,
+        )
+
+    @staticmethod
+    def _append_submit_token_conflict(conn: Connection, record: dict):
+        existing_job_id = record.get(SubmitRecordKey.JOB_ID.value) if isinstance(record, dict) else None
+        extra = {"code": "SUBMIT_TOKEN_CONFLICT"}
+        if existing_job_id:
+            extra[MetaKey.JOB_ID] = existing_job_id
+        conn.append_error(
+            "SUBMIT_TOKEN_CONFLICT: submit token was already used for different job content. "
+            "Use a new submit token for a new job.",
+            meta=make_meta(
+                _SUBMIT_TOKEN_CONFLICT_STATUS,
+                "submit token was already used for different job content",
+                extra=extra,
+            ),
+        )
+
+    def _job_for_submit_record(self, job_def_manager: JobDefManagerSpec, record: dict, fl_ctx):
+        if not isinstance(record, dict):
+            return None
+        job_id = record.get(SubmitRecordKey.JOB_ID.value)
+        if not job_id:
+            return None
+        return job_def_manager.get_job(job_id, fl_ctx)
+
+    @staticmethod
+    def _job_id_from_job(job) -> Optional[str]:
+        if not job:
+            return None
+        job_id = getattr(job, "job_id", None)
+        if job_id:
+            return job_id
+        meta = getattr(job, "meta", None)
+        if isinstance(meta, dict):
+            return meta.get(JobMetaKey.JOB_ID.value)
+        return None
+
+    @classmethod
+    def _submit_token_lock(cls, study: str, submitter: dict, submit_token: str):
+        key = (
+            study,
+            submitter.get("name", ""),
+            submitter.get("org", ""),
+            submitter.get("role", ""),
+            submit_token,
+        )
+        with cls._submit_token_locks_guard:
+            lock = cls._submit_token_locks.get(key)
+            if lock is None:
+                lock = threading.Lock()
+                cls._submit_token_locks[key] = lock
+            return lock
+
+    def _handle_submit_token_record(
+        self,
+        conn: Connection,
+        job_def_manager: JobDefManagerSpec,
+        *,
+        study: str,
+        submitter: dict,
+        submit_token: str,
+        job_content_hash: str,
+        meta: dict,
+        folder_name: str,
+        zip_file_name: str,
+        fl_ctx,
+    ):
+        with self._submit_token_lock(study, submitter, submit_token):
+            return self._handle_submit_token_record_locked(
+                conn,
+                job_def_manager,
+                study=study,
+                submitter=submitter,
+                submit_token=submit_token,
+                job_content_hash=job_content_hash,
+                meta=meta,
+                folder_name=folder_name,
+                zip_file_name=zip_file_name,
+                fl_ctx=fl_ctx,
+            )
+
+    def _handle_submit_token_record_locked(
+        self,
+        conn: Connection,
+        job_def_manager: JobDefManagerSpec,
+        *,
+        study: str,
+        submitter: dict,
+        submit_token: str,
+        job_content_hash: str,
+        meta: dict,
+        folder_name: str,
+        zip_file_name: str,
+        fl_ctx,
+    ):
+        record = self._get_submit_record(job_def_manager, study, submitter, submit_token, fl_ctx)
+        if record:
+            if record.get(SubmitRecordKey.JOB_CONTENT_HASH.value) != job_content_hash:
+                self._append_submit_token_conflict(conn, record)
+                return None
+            job = self._job_for_submit_record(job_def_manager, record, fl_ctx)
+            existing_job_id = self._job_id_from_job(job)
+            if existing_job_id:
+                return existing_job_id
+            recorded_job_id = record.get(SubmitRecordKey.JOB_ID.value)
+            if not recorded_job_id:
+                raise RuntimeError("submit record is missing job_id")
+            meta[JobMetaKey.JOB_ID.value] = recorded_job_id
+            created_meta = job_def_manager.create(meta, zip_file_name, fl_ctx)
+            record[SubmitRecordKey.STATE.value] = SubmitRecordState.CREATED.value
+            self._update_submit_record(job_def_manager, record, fl_ctx)
+            return created_meta.get(JobMetaKey.JOB_ID.value)
+
+        record = self._new_submit_record(
+            job_def_manager,
+            study=study,
+            submitter=submitter,
+            submit_token=submit_token,
+            job_content_hash=job_content_hash,
+            job_name=CommandUtil.get_job_name(meta),
+            job_folder_name=folder_name,
+            state=SubmitRecordState.CREATING.value,
+        )
+        job_id = record.get(SubmitRecordKey.JOB_ID.value)
+        if not job_id:
+            raise RuntimeError("submit record is missing job_id")
+        meta[JobMetaKey.JOB_ID.value] = job_id
+        try:
+            create_result = self._create_submit_record(job_def_manager, record, fl_ctx)
+        except Exception:
+            existing = self._get_submit_record(job_def_manager, study, submitter, submit_token, fl_ctx)
+            if not existing:
+                raise
+            if existing.get(SubmitRecordKey.JOB_CONTENT_HASH.value) != job_content_hash:
+                self._append_submit_token_conflict(conn, existing)
+                return None
+            job = self._job_for_submit_record(job_def_manager, existing, fl_ctx)
+            existing_job_id = self._job_id_from_job(job)
+            if existing_job_id:
+                return existing_job_id
+            meta[JobMetaKey.JOB_ID.value] = existing.get(SubmitRecordKey.JOB_ID.value)
+            created_meta = job_def_manager.create(meta, zip_file_name, fl_ctx)
+            existing[SubmitRecordKey.STATE.value] = SubmitRecordState.CREATED.value
+            self._update_submit_record(job_def_manager, existing, fl_ctx)
+            return created_meta.get(JobMetaKey.JOB_ID.value)
+        if create_result is False:
+            existing = self._get_submit_record(job_def_manager, study, submitter, submit_token, fl_ctx)
+            if not existing:
+                raise RuntimeError("submit record creation failed and no existing record was found")
+            if existing.get(SubmitRecordKey.JOB_CONTENT_HASH.value) != job_content_hash:
+                self._append_submit_token_conflict(conn, existing)
+                return None
+            job = self._job_for_submit_record(job_def_manager, existing, fl_ctx)
+            resolved_job_id = self._job_id_from_job(job)
+            if resolved_job_id:
+                return resolved_job_id
+            existing_job_id = existing.get(SubmitRecordKey.JOB_ID.value)
+            if not existing_job_id:
+                raise RuntimeError("submit record is missing job_id")
+            meta[JobMetaKey.JOB_ID.value] = existing_job_id
+            created_meta = job_def_manager.create(meta, zip_file_name, fl_ctx)
+            existing[SubmitRecordKey.STATE.value] = SubmitRecordState.CREATED.value
+            self._update_submit_record(job_def_manager, existing, fl_ctx)
+            return created_meta.get(JobMetaKey.JOB_ID.value)
+
+        created_meta = job_def_manager.create(meta, zip_file_name, fl_ctx)
+        record[SubmitRecordKey.STATE.value] = SubmitRecordState.CREATED.value
+        self._update_submit_record(job_def_manager, record, fl_ctx)
+        return created_meta.get(JobMetaKey.JOB_ID.value)
+
+    def _list_jobs_by_submit_token(
+        self,
+        job_def_manager: JobDefManagerSpec,
+        study: str,
+        submitter: dict,
+        submit_token: str,
+        fl_ctx,
+    ) -> List[Job]:
+        get_job_by_submit_token = getattr(job_def_manager, "get_job_by_submit_token", None)
+        if callable(get_job_by_submit_token):
+            job = get_job_by_submit_token(study, submitter, submit_token, fl_ctx)
+            if not job:
+                return []
+            return job if isinstance(job, list) else [job]
+
+        record = self._get_submit_record(job_def_manager, study, submitter, submit_token, fl_ctx)
+        job = self._job_for_submit_record(job_def_manager, record, fl_ctx)
+        return [job] if job else []
 
     @staticmethod
     def _send_detail_list(conn: Connection, jobs: List[Job]):
@@ -1019,7 +1313,15 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             job.meta[JobMetaKey.DURATION.value] = str(duration)
 
     def submit_job(self, conn: Connection, args: List[str]):
-        folder_name = args[1]
+        try:
+            parser = _create_submit_job_cmd_parser()
+            parsed_args = parser.parse_args(args[1:])
+            folder_name = parsed_args.folder_name
+            submit_token = _validate_submit_token(parsed_args.submit_token)
+        except ValueError as e:
+            conn.append_error(str(e), meta=make_meta(MetaStatusValue.SYNTAX_ERROR, str(e)))
+            return
+
         zip_file_name = conn.get_prop(ConnProps.FILE_LOCATION)
         if not zip_file_name:
             conn.append_error("missing upload file", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
@@ -1038,6 +1340,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 # A user-submitted job is never "from hub site" — only HubAppDeployer sets this flag
                 # after verifying the job, and it operates on the server side.
                 meta.pop(JobMetaKey.FROM_HUB_SITE.value, None)
+                # Submit-token is server-owned submission metadata. User job metadata must not expose it.
+                meta.pop(SubmitRecordKey.SUBMIT_TOKEN.value, None)
 
                 job_def_manager = engine.job_def_manager
                 if not isinstance(job_def_manager, JobDefManagerSpec):
@@ -1045,7 +1349,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                         f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
                     )
 
-                meta[JobMetaKey.STUDY.value] = conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY)
+                meta[JobMetaKey.STUDY.value] = _active_study_from_conn(conn)
                 registry = StudyRegistryService.get_registry()
                 requested_study = meta[JobMetaKey.STUDY.value]
                 if registry:
@@ -1083,16 +1387,34 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     return
 
                 # set submitter info
-                meta[JobMetaKey.SUBMITTER_NAME.value] = conn.get_prop(ConnProps.USER_NAME, "")
-                meta[JobMetaKey.SUBMITTER_ORG.value] = conn.get_prop(ConnProps.USER_ORG, "")
-                meta[JobMetaKey.SUBMITTER_ROLE.value] = conn.get_prop(ConnProps.USER_ROLE, "")
+                submitter = self._submitter_from_conn(conn)
+                meta[JobMetaKey.SUBMITTER_NAME.value] = submitter["name"]
+                meta[JobMetaKey.SUBMITTER_ORG.value] = submitter["org"]
+                meta[JobMetaKey.SUBMITTER_ROLE.value] = submitter["role"]
                 meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
                 custom_props = conn.get_prop(ConnProps.CUSTOM_PROPS)
                 if custom_props:
                     meta[JobMetaKey.CUSTOM_PROPS.value] = custom_props
 
-                meta = job_def_manager.create(meta, zip_file_name, fl_ctx)
-                job_id = meta.get(JobMetaKey.JOB_ID)
+                if submit_token:
+                    job_content_hash = self._canonical_job_content_hash(zip_file_name)
+                    job_id = self._handle_submit_token_record(
+                        conn,
+                        job_def_manager,
+                        study=requested_study,
+                        submitter=submitter,
+                        submit_token=submit_token,
+                        job_content_hash=job_content_hash,
+                        meta=meta,
+                        folder_name=folder_name,
+                        zip_file_name=zip_file_name,
+                        fl_ctx=fl_ctx,
+                    )
+                    if job_id is None:
+                        return
+                else:
+                    meta = job_def_manager.create(meta, zip_file_name, fl_ctx)
+                    job_id = meta.get(JobMetaKey.JOB_ID)
 
                 # os.remove(zip_file_name)  # the file is no longer needed
                 conn.append_string(f"Submitted job: {job_id}")

@@ -125,18 +125,51 @@ class TestJobSubmitOutput:
         assert data["error_code"] == "AUTH_FAILED"
         assert "not authorized" in data["message"].lower()
 
-    def test_internal_submit_job_forwards_all_study_literal(self):
+    def test_internal_submit_job_forwards_named_study(self):
         from nvflare.tool.job.job_cli import internal_submit_job
 
         fake_session = MagicMock()
         fake_session.submit_job.return_value = "abc123"
         cmd_args = MagicMock()
-        cmd_args.study = "all"
+        cmd_args.study = "cancer"
 
         with patch("nvflare.tool.job.job_cli.new_cli_session", return_value=fake_session) as new_session:
             internal_submit_job("/tmp/startup", "admin@nvidia.com", "/tmp/job", cmd_args=cmd_args)
 
-        assert new_session.call_args.kwargs["study"] == "all"
+        assert new_session.call_args.kwargs["study"] == "cancer"
+
+    def test_internal_submit_job_forwards_submit_token(self):
+        from nvflare.tool.job.job_cli import internal_submit_job
+
+        fake_session = MagicMock()
+        fake_session.submit_job.return_value = "abc123"
+        cmd_args = MagicMock()
+        cmd_args.study = "default"
+        cmd_args.submit_token = "retry-1"
+
+        with patch("nvflare.tool.job.job_cli.new_cli_session", return_value=fake_session):
+            internal_submit_job("/tmp/startup", "admin@nvidia.com", "/tmp/job", cmd_args=cmd_args)
+
+        fake_session.submit_job.assert_called_once_with("/tmp/job", submit_token="retry-1")
+
+    def test_internal_submit_job_submit_token_conflict_exits_before_output_ok_when_output_error_is_mocked(
+        self,
+    ):
+        from nvflare.fuel.flare_api.api_spec import SubmitTokenConflict
+        from nvflare.tool.job.job_cli import internal_submit_job
+
+        fake_session = MagicMock()
+        fake_session.submit_job.side_effect = SubmitTokenConflict("same token used for different content", "job-1")
+
+        with patch("nvflare.tool.job.job_cli.new_cli_session", return_value=fake_session):
+            with patch("nvflare.tool.cli_output.output_error") as output_error:
+                with patch("nvflare.tool.cli_output.output_ok") as output_ok:
+                    with pytest.raises(SystemExit) as exc_info:
+                        internal_submit_job("/tmp/startup", "admin@nvidia.com", "/tmp/job")
+
+        assert exc_info.value.code == 4
+        output_error.assert_called_once()
+        output_ok.assert_not_called()
 
     def test_internal_submit_job_exits_before_output_ok_when_output_error_is_mocked(
         self,

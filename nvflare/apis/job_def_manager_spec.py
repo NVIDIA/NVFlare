@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import Job, RunStatus
+from nvflare.apis.job_def import Job, RunStatus, SubmitRecordState
 
 
 class JobDefManagerSpec(FLComponent, ABC):
@@ -39,6 +39,55 @@ class JobDefManagerSpec(FLComponent, ABC):
             A dict containing meta info. Additional meta info are added, especially
             a unique Job ID (jid) which has been created.
         """
+        pass
+
+    @abstractmethod
+    def get_job_content_hash(self, uploaded_content: Union[str, bytes]) -> str:
+        """Compute the canonical content hash for uploaded job content.
+
+        The hash is based on sorted real job file paths and bytes, excluding volatile
+        submit signing artifacts. It is stable across repeated signed uploads of the
+        same job content.
+        """
+        pass
+
+    @abstractmethod
+    def get_submit_record(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> Optional[dict]:
+        """Get the persistent submit-token record for the scoped submit token."""
+        pass
+
+    @abstractmethod
+    def new_submit_record(
+        self,
+        study: str,
+        submitter,
+        submit_token: str,
+        job_content_hash: str,
+        job_name: str = "",
+        job_folder_name: str = "",
+        job_id: str = None,
+        state: str = SubmitRecordState.CREATING.value,
+    ) -> dict:
+        """Build a submit-token record with a pre-generated job_id for reservation before job creation."""
+        pass
+
+    @abstractmethod
+    def create_submit_record(self, record: dict, fl_ctx: FLContext) -> bool:
+        """Create a persistent submit-token record with no-overwrite semantics.
+
+        Returns True when the record is created, False when a record already exists
+        for the same study, submitter, and submit token.
+        """
+        pass
+
+    @abstractmethod
+    def update_submit_record(self, record: dict, fl_ctx: FLContext) -> dict:
+        """Replace the persistent submit-token record with updated metadata."""
+        pass
+
+    @abstractmethod
+    def get_job_by_submit_token(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> Optional[Job]:
+        """Resolve a submit-token record to its referenced Job, if both exist."""
         pass
 
     @abstractmethod

@@ -41,6 +41,12 @@ class InvalidJobDefinition(Exception):
     pass
 
 
+class SubmitTokenConflict(Exception):
+    def __init__(self, message: str, existing_job_id: str = None):
+        super().__init__(message)
+        self.existing_job_id = existing_job_id
+
+
 class JobNotFound(Exception):
     pass
 
@@ -149,11 +155,12 @@ class SystemInfo:
 
 class SessionSpec(ABC):
     @abstractmethod
-    def submit_job(self, job_definition_path: str) -> str:
+    def submit_job(self, job_definition_path: str, submit_token: str = None) -> str:
         """Submit a predefined job to the NVFLARE system
 
         Args:
             job_definition_path: path to the folder that defines a NVFLARE job
+            submit_token: optional retry-safe submit token scoped by study and submitter
 
         Returns: the job id if accepted by the system
 
@@ -194,6 +201,7 @@ class SessionSpec(ABC):
         id_prefix: Optional[str] = None,
         name_prefix: Optional[str] = None,
         reverse: bool = False,
+        submit_token: Optional[str] = None,
         **kwargs,
     ) -> List[dict]:
         """Get the job info from the server
@@ -204,6 +212,7 @@ class SessionSpec(ABC):
             id_prefix: if included, only return jobs with the beginning of the job ID matching the prefix
             name_prefix: if included, only return jobs with the beginning of the job name matching the prefix
             reverse: if specified, list jobs in the reverse order of submission times
+            submit_token: optional retry-safe submit token to resolve the submitted job
             **kwargs: deprecated legacy aliases accepted for compatibility
 
         Returns: a list of job metadata

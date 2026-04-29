@@ -21,6 +21,7 @@ from nvflare.fuel.flare_api.api_spec import (
     AuthenticationError,
     ClientInfo,
     InternalError,
+    InvalidArgumentError,
     InvalidJobDefinition,
     JobNotFound,
     NoConnection,
@@ -61,6 +62,67 @@ def test_submit_job_accepts_valid_job_folder_name(tmp_path):
 
     assert session.submit_job(str(job_dir)) == "job-1"
     session._do_command.assert_called_once()
+
+
+def test_submit_job_forwards_submit_token(tmp_path):
+    job_dir = tmp_path / "fox-training"
+    job_dir.mkdir()
+
+    session = Session.__new__(Session)
+    session.upload_dir = str(tmp_path)
+    session._do_command = MagicMock(
+        return_value={
+            ResultKey.STATUS: "SUCCESS",
+            ResultKey.META: {MetaKey.STATUS: MetaStatusValue.OK, MetaKey.JOB_ID: "job-1"},
+        }
+    )
+
+    assert session.submit_job(str(job_dir), submit_token="retry.01:A_b-c") == "job-1"
+
+    command = session._do_command.call_args.args[0]
+    assert command.startswith("submit_job ")
+    assert str(job_dir) in command
+    assert "--submit-token retry.01:A_b-c" in command
+
+
+@pytest.mark.parametrize("token", ["", "bad token", "bad/token", "x" * 129])
+def test_submit_job_rejects_invalid_submit_token(tmp_path, token):
+    job_dir = tmp_path / "fox-training"
+    job_dir.mkdir()
+
+    session = Session.__new__(Session)
+    session.upload_dir = str(tmp_path)
+    session._do_command = MagicMock()
+
+    with pytest.raises(InvalidArgumentError, match="submit_token"):
+        session.submit_job(str(job_dir), submit_token=token)
+
+    session._do_command.assert_not_called()
+
+
+def test_list_jobs_forwards_submit_token():
+    session = Session.__new__(Session)
+    session._do_command = MagicMock(
+        return_value={
+            ResultKey.STATUS: "SUCCESS",
+            ResultKey.META: {MetaKey.STATUS: MetaStatusValue.OK, MetaKey.JOBS: []},
+        }
+    )
+
+    assert session.list_jobs(submit_token="retry.01:A_b-c") == []
+
+    assert session._do_command.call_args.args[0] == "list_jobs --submit-token retry.01:A_b-c"
+
+
+@pytest.mark.parametrize("token", ["", "bad token", "bad/token", "x" * 129])
+def test_list_jobs_rejects_invalid_submit_token(token):
+    session = Session.__new__(Session)
+    session._do_command = MagicMock()
+
+    with pytest.raises(InvalidArgumentError, match="submit_token"):
+        session.list_jobs(submit_token=token)
+
+    session._do_command.assert_not_called()
 
 
 def test_do_command_includes_syntax_error_details():

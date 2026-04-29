@@ -61,3 +61,21 @@ class TestJobCLI:
         assert exc_info.value.code == 0
         data = json.loads(capsys.readouterr().out)
         assert data["command"] == "nvflare job log"
+
+    def test_submit_parser_accepts_submit_token(self):
+        parser = argparse.ArgumentParser(prog="nvflare")
+        subparsers = parser.add_subparsers(dest="command")
+        job_cli.def_job_cli_parser(subparsers)
+
+        args = parser.parse_args(["job", "submit", "-j", "/tmp/job", "--submit-token", "retry.01:A_b-c"])
+
+        assert args.submit_token == "retry.01:A_b-c"
+
+    @pytest.mark.parametrize("token", ["", "bad token", "bad/token", "x" * 129])
+    def test_submit_parser_rejects_invalid_submit_token(self, token):
+        parser = argparse.ArgumentParser(prog="nvflare")
+        subparsers = parser.add_subparsers(dest="command")
+        job_cli.def_job_cli_parser(subparsers)
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["job", "submit", "--submit-token", token])

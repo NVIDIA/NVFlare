@@ -84,6 +84,29 @@ class JobMetaKey(str, Enum):
         return self.value
 
 
+class SubmitRecordState(str, Enum):
+    CREATING = "creating"
+    CREATED = "created"
+
+
+class SubmitRecordKey(str, Enum):
+    SCHEMA_VERSION = "schema_version"
+    STATE = "state"
+    SUBMIT_TOKEN = "submit_token"
+    JOB_ID = "job_id"
+    STUDY = "study"
+    SUBMITTER_NAME = "submitter_name"
+    SUBMITTER_ORG = "submitter_org"
+    SUBMITTER_ROLE = "submitter_role"
+    JOB_NAME = "job_name"
+    JOB_FOLDER_NAME = "job_folder_name"
+    JOB_CONTENT_HASH = "job_content_hash"
+    SUBMIT_TIME = "submit_time"
+
+    def __repr__(self):
+        return self.value
+
+
 class TopDir(object):
     JOB = "job"
     WORKSPACE = "workspace"

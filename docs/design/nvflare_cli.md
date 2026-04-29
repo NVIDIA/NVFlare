@@ -1041,6 +1041,7 @@ for results.
 | `-j`, `--job-folder` | str | No | `"./current_job"` | Pre-built job config folder |
 | `-debug`, `--debug` | flag | No | — | Debug mode |
 | `--study` | str | No | `"default"` | Study to submit the job to |
+| `--submit-token` | str | No | — | Caller-generated token for retry-safe submit and later job recovery |
 | `--schema` | flag | No | — | Print command schema and exit |
 
 Output:
@@ -1048,6 +1049,137 @@ Output:
 ```json
 {"schema_version": "1", "status": "ok", "data": {"job_id": "abc123"}}
 ```
+
+`--submit-token` is the canonical name for the job submission idempotency/recovery
+token. It is a caller-generated opaque value for one intended job submission. It is not
+an auth token, session token, startup-kit credential, API key, or certificate secret. It
+does not grant access; normal startup-kit authentication and authorization still apply.
+
+The submit token is not part of the submitted job's `meta.json`. Job `meta.json` remains
+job-owned metadata for FLARE execution, such as `deploy_map`, `resource_spec`,
+`min_clients`, and launcher configuration. Submit-token bookkeeping is server-owned
+submission metadata.
+
+A UUID is recommended for automated retries, but any unique non-empty token matching
+`^[A-Za-z0-9._:-]{1,128}$` is accepted. Examples:
+
+```bash
+nvflare job submit -j ./job --submit-token 550e8400-e29b-41d4-a716-446655440000
+nvflare job submit -j ./job --submit-token run-20260429-001
+nvflare job submit -j ./job --submit-token agent:session-123:step-2
+```
+
+Submit-token scope:
+
+- Lookup key: `(server/project context, study, submitter identity, submit_token)`.
+- Validation value: a server-computed job content hash for the submitted job artifact.
+- Same scope + same token + same job content: return the existing `job_id`.
+- Same scope + same token + different job content: fail with a conflict such as
+  `SUBMIT_TOKEN_CONFLICT`.
+- Same token in a different study is allowed because studies are separate job namespaces.
+- Same submitter and same study without `--submit-token`: keep normal behavior and create
+  a new job for each submit.
+- Same submitter and same study with different `--submit-token` values: keep normal
+  behavior and create separate jobs, even if the submitted content is identical.
+
+The job content hash is intentionally not part of the lookup key. The token names the
+submission attempt; the content hash proves whether a retry is the same submission. If
+the hash were part of the lookup key, accidental token reuse for a different job would
+silently create a second job instead of surfacing a conflict.
+
+Server storage model:
+
+- Persist a separate study-scoped submit record in the server job store. The persistent
+  job store is the source of truth; any in-memory lookup map is only an optional cache.
+- Do not persist `submit_token` in the uploaded job `meta.json`.
+- Do not require runtime clients to receive `submit_token`; deployment/runtime job
+  metadata should remain focused on executing the job.
+- Store submit records outside the normal job-object namespace so `get_all_jobs()` and
+  scheduling continue to see only real jobs.
+
+Recommended persistent namespace:
+
+```text
+job_submit_records/<study_hash>/<submitter_hash>/<submit_token_hash>
+```
+
+Recommended submit record payload:
+
+```json
+{
+  "schema_version": 1,
+  "submit_token": "run-20260429-001",
+  "job_id": "eef2c05b-8b8e-44cf-a6e6-787985ad6a42",
+  "state": "creating|created",
+  "job_name": "hello-numpy",
+  "job_folder_name": "hello-numpy",
+  "study": "cancer",
+  "submitter_name": "alice",
+  "submitter_org": "nvidia",
+  "submitter_role": "project_admin",
+  "submit_time": "2026-04-29T10:00:00-07:00",
+  "job_content_hash": "sha256:..."
+}
+```
+
+Submit handling:
+
+1. If `--submit-token` is absent, use the existing submit path and create a new job.
+2. If `--submit-token` is present, compute the study-scoped submit-record key.
+3. If a submit record exists:
+   - same content hash: return the existing `job_id`;
+   - different content hash: return `SUBMIT_TOKEN_CONFLICT` and do not create a job.
+4. If no submit record exists:
+   - pre-generate a `job_id`;
+   - create a submit record with `state: "creating"`, that `job_id`, and the content hash
+     using no-overwrite semantics for the submit-record key;
+   - create the job using the pre-generated `job_id`;
+   - update the submit record to `state: "created"` before returning success.
+
+The submit record should be written before the job object so a retry can recover even if
+the server accepts the request but the client times out. If a retry finds a matching
+`state: "creating"` record, it should check whether the referenced `job_id` already
+exists. If the job exists, update the submit record to `created` and return the existing
+`job_id`; if the job does not exist, retry creation with the same pre-generated `job_id`.
+Concurrent submissions with the same scope and token must be serialized by the
+no-overwrite submit-record create or an equivalent lock.
+
+Recovery after client-side timeout or session loss:
+
+```bash
+TOKEN=$(uuidgen)
+nvflare job submit -j ./job --study cancer --submit-token "$TOKEN" --format json
+nvflare job list --study cancer --submit-token "$TOKEN" --format json
+nvflare job meta <job_id> --format json
+```
+
+`nvflare job list --submit-token <token>` filters jobs in the selected study. Without
+`--study`, it searches the default study, matching normal `job list` behavior. There is
+no reserved `all` study selector; callers either omit `--study` for the default study or
+specify one concrete study name. The filter should resolve through server submit records,
+not by scanning or modifying the job's `meta.json`. Do not add `--submit-token` to
+`monitor`, `download`, `abort`, `delete`, or `clone`; recover the `job_id` with
+`job list --submit-token` first, then use normal job lifecycle commands.
+
+#### `nvflare job list`
+
+Lists jobs visible to the active startup kit. With no submit-token filter, this keeps the
+normal list behavior for the selected study.
+
+| Argument | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `-n`, `--name` | str | No | — | Filter by job name prefix |
+| `-i`, `--id` | str | No | — | Filter by job ID prefix |
+| `-r`, `--reverse` | flag | No | — | Reverse sort order |
+| `-m`, `--max` | int | No | — | Maximum number of returned jobs |
+| `--study` | str | No | `"default"` | Study to list |
+| `--submit-token` | str | No | — | Recovery filter for a previous retry-safe submit in the selected study |
+| `--schema` | flag | No | — | Print command schema and exit |
+
+`--submit-token` on `job list` is a recovery lookup, not an authorization mechanism. The
+server resolves it through study-scoped submit records owned by the current submitter. It
+must not scan job `meta.json`, because submit tokens are server-owned submission metadata
+and are not part of job execution metadata.
 
 #### `nvflare job monitor`
 
@@ -1178,9 +1310,9 @@ the active-kit registry or `NVFLARE_STARTUP_KIT_DIR`.
 
 ```text
 # Job lifecycle (server must be running)
-nvflare job submit    -j <job_folder>
+nvflare job submit    -j <job_folder> [--study name] [--submit-token token]
 nvflare job monitor   <job_id> [--study name] [--timeout N] [--interval N]
-nvflare job list      [-n prefix] [-i id_prefix] [-r] [-m num] [--study name|all]
+nvflare job list      [-n prefix] [-i id_prefix] [-r] [-m num] [--study name] [--submit-token token]
 nvflare job meta      <job_id>
 nvflare job abort     <job_id> [--force]
 nvflare job clone     <job_id>
@@ -1321,9 +1453,10 @@ Example:
   "description": "Submit a pre-built job config folder to the FL server. Returns job_id immediately.",
   "args": [
     {"name": "-j/--job-folder", "type": "path", "required": false, "default": "./current_job", "description": "Pre-built job config folder"},
+    {"name": "--submit-token", "type": "string", "required": false, "default": null, "description": "Caller-generated token for retry-safe submit and later job recovery"},
     {"name": "--schema", "type": "bool", "required": false, "default": false, "description": "Print command schema as JSON and exit"}
   ],
-  "examples": ["nvflare job submit -j ./my_job"]
+  "examples": ["nvflare job submit -j ./my_job --submit-token 550e8400-e29b-41d4-a716-446655440000"]
 }
 ```
 
