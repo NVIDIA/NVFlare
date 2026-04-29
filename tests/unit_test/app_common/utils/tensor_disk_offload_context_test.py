@@ -280,3 +280,107 @@ def test_restore_clears_registry_token():
     restore_enable_tensor_disk_offload(_MockEngine(cell), previous_value=False)
     assert cell.ctx["enable_tensor_disk_offload"] is False
     assert cell.ctx.get("tensor_disk_offload_registry_token") == ""
+
+
+def test_cleanup_retries_when_writer_keeps_writing(monkeypatch):
+    """Reproduces the abort-path race: streaming threads keep writing chunks
+    into the temp dir for a few seconds after cleanup_offload_temps_for_token
+    starts. The first rmtree pass surfaces ENOTEMPTY; the retry loop must
+    keep draining until the writer stops, then succeed.
+    """
+    saved = _isolate_registry()
+    d = None
+    try:
+        d = tempfile.mkdtemp(prefix="nvflare_tensors_test_race_")
+        for i in range(5):
+            with open(os.path.join(d, f"chunk_{i}.safetensors"), "w") as f:
+                f.write("x")
+        register_offload_temp_dir(d, _TOKEN_A)
+
+        # Simulate a writer that injects 3 new chunks AFTER each rmtree pass
+        # (mimicking stream threads still flushing post-abort), then stops.
+        injection_counter = {"n": 0}
+        original_rmtree = ctx.shutil.rmtree
+
+        def racy_rmtree(path, ignore_errors=False, onerror=None):
+            original_rmtree(path, ignore_errors=ignore_errors, onerror=onerror)
+            if injection_counter["n"] < 3 and not os.path.exists(path):
+                os.makedirs(path, exist_ok=True)
+                with open(os.path.join(path, f"late_chunk_{injection_counter['n']}"), "w") as f:
+                    f.write("y")
+                injection_counter["n"] += 1
+
+        monkeypatch.setattr(ctx.shutil, "rmtree", racy_rmtree)
+        # Speed up the test — don't actually sleep half a second per pass.
+        monkeypatch.setattr(ctx, "_CLEANUP_RETRY_INTERVAL_SEC", 0.01)
+
+        cleanup_offload_temps_for_token(_TOKEN_A)
+
+        # After the writer stopped, the retry loop should have drained the dir.
+        assert not os.path.exists(d), f"{d} should have been removed after retries"
+        assert injection_counter["n"] == 3
+        assert ctx._outstanding_temp_dirs == {}
+    finally:
+        if d and os.path.exists(d):
+            shutil.rmtree(d, ignore_errors=True)
+        _restore_registry(saved)
+
+
+def test_cleanup_gives_up_after_deadline_when_writer_never_stops(monkeypatch, caplog):
+    """If a writer never stops, cleanup must not block forever. After the
+    deadline it logs a warning and returns; the registry is still cleared
+    so subsequent runs don't double-track the same path.
+    """
+    saved = _isolate_registry()
+    d = None
+    try:
+        d = tempfile.mkdtemp(prefix="nvflare_tensors_test_persistent_")
+        register_offload_temp_dir(d, _TOKEN_A)
+        original_rmtree = ctx.shutil.rmtree
+
+        def never_empty_rmtree(path, ignore_errors=False, onerror=None):
+            original_rmtree(path, ignore_errors=ignore_errors, onerror=onerror)
+            os.makedirs(path, exist_ok=True)
+            with open(os.path.join(path, "infinite_writer"), "w") as f:
+                f.write("z")
+
+        monkeypatch.setattr(ctx.shutil, "rmtree", never_empty_rmtree)
+        monkeypatch.setattr(ctx, "_CLEANUP_TIMEOUT_SEC", 0.1)
+        monkeypatch.setattr(ctx, "_CLEANUP_RETRY_INTERVAL_SEC", 0.01)
+
+        with caplog.at_level("WARNING"):
+            cleanup_offload_temps_for_token(_TOKEN_A)
+
+        assert "after 0.1s of retries" in caplog.text
+        assert d in caplog.text
+        assert ctx._outstanding_temp_dirs == {}
+    finally:
+        if d and os.path.exists(d):
+            shutil.rmtree(d, ignore_errors=True)
+        _restore_registry(saved)
+
+
+def test_cleanup_succeeds_first_pass_when_no_writer(monkeypatch):
+    """Sanity check: the retry loop must not regress the no-race path.
+    With no concurrent writer, the first rmtree pass succeeds and we don't
+    sleep at all.
+    """
+    saved = _isolate_registry()
+    d = None
+    sleep_calls = []
+    try:
+        d = tempfile.mkdtemp(prefix="nvflare_tensors_test_nowriter_")
+        with open(os.path.join(d, "chunk_0"), "w") as f:
+            f.write("x")
+        register_offload_temp_dir(d, _TOKEN_A)
+
+        monkeypatch.setattr(ctx.time, "sleep", lambda s: sleep_calls.append(s))
+        cleanup_offload_temps_for_token(_TOKEN_A)
+
+        assert not os.path.exists(d)
+        assert sleep_calls == [], "no retries should be needed without a concurrent writer"
+        assert ctx._outstanding_temp_dirs == {}
+    finally:
+        if d and os.path.exists(d):
+            shutil.rmtree(d, ignore_errors=True)
+        _restore_registry(saved)

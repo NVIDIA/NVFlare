@@ -13,8 +13,10 @@
 # limitations under the License.
 
 import logging
+import os
 import shutil
 import threading
+import time
 import uuid
 from typing import Any, Tuple
 
@@ -22,6 +24,17 @@ logger = logging.getLogger(__name__)
 
 _ENABLE_TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"
 _DISK_OFFLOAD_REGISTRY_TOKEN = "tensor_disk_offload_registry_token"
+
+# Streaming threads can keep writing chunks for several seconds after
+# FedAvg.run()'s finally block fires on abort_signal. A single rmtree
+# pass races those writes and surfaces ENOTEMPTY when new chunks appear
+# between the walk and the parent rmdir. The safety-net cleanup retries
+# rmtree with these bounds; ignore_errors=True on each pass drains the
+# dir incrementally while streams catch up. Empirically post-abort
+# writes in the 5GB / 4-client case continued for ~4s; 15s gives
+# generous headroom without blocking shutdown unreasonably.
+_CLEANUP_TIMEOUT_SEC = 15.0
+_CLEANUP_RETRY_INTERVAL_SEC = 0.5
 
 # Module-level registry mapping an opaque scope token to the set of disk-offload
 # temp dirs created within that scope. Used as a safety net for cleanup paths
@@ -84,13 +97,33 @@ def cleanup_offload_temps_for_token(token: str) -> None:
         return
     with _outstanding_lock:
         dirs = list(_outstanding_temp_dirs.pop(token, ()))
-    for d in dirs:
-        try:
-            shutil.rmtree(d)
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            logger.warning("failed to cleanup outstanding offload temp dir '%s': %s", d, e)
+    if not dirs:
+        return
+
+    # Retry with a deadline because streaming threads may still be flushing
+    # chunks into these dirs after abort_signal. ignore_errors=True lets each
+    # pass drain whatever chunks are present at that moment; subsequent
+    # passes mop up chunks that arrived during the previous pass. After
+    # streams stop arriving, the next pass succeeds.
+    deadline = time.monotonic() + _CLEANUP_TIMEOUT_SEC
+    remaining = list(dirs)
+    while remaining and time.monotonic() < deadline:
+        next_remaining = []
+        for d in remaining:
+            shutil.rmtree(d, ignore_errors=True)
+            if os.path.exists(d):
+                next_remaining.append(d)
+        if next_remaining:
+            time.sleep(_CLEANUP_RETRY_INTERVAL_SEC)
+        remaining = next_remaining
+
+    for d in remaining:
+        logger.warning(
+            "failed to cleanup outstanding offload temp dir '%s' after %.1fs of retries; "
+            "concurrent writes may be in-flight",
+            d,
+            _CLEANUP_TIMEOUT_SEC,
+        )
 
 
 def apply_enable_tensor_disk_offload(
