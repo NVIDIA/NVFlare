@@ -416,6 +416,20 @@ nvflare job monitor $JOB && nvflare job download $JOB
 Exit code 0 on `FINISHED_OK`, exit code 1 on `FAILED` / `ABORTED`.
 
 
+## Study Selector Semantics
+
+`--study` always names exactly one concrete study. If `--study` is omitted, commands use
+the default study. The string `all` is not a reserved study selector and must not trigger
+cross-study behavior in `nvflare job`, `nvflare study`, API sessions, or server-side admin
+commands. If a project intentionally creates a study literally named `all`, it is treated
+as a normal study name.
+
+Do not add special `study == "all"` handling for job submit/list/monitor, submit-token
+lookup, study authorization checks, or session creation. Cross-study enumeration must be
+modeled as a separate explicit command or API in a future design, not as an overloaded
+study name.
+
+
 ## Shell Commands
 
 Commands like `pwd`, `ls`, `cat`, `head`, `tail`, and `grep` are not exposed in the CLI. Direct client shell targets were removed per FLARE-2808; `nvflare job logs --site <client_name>` is not a shell target and only reads client logs already streamed to the server-side log store. Server shell targets remain in the interactive console only for controlled debug use.
