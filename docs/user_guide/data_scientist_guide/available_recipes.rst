@@ -43,9 +43,10 @@ Most training recipes accept the following model-related parameters:
 
     .. warning::
 
-       Temporary files use the process temp directory (``TMPDIR`` / OS default such as ``/tmp``). In
-       containers, ``/tmp`` may be tmpfs (RAM-backed), which can reduce memory offload impact. Set
-       ``TMPDIR`` to a disk-backed mount for the server process.
+       Temporary files use the server process temp directory (``TMPDIR`` / OS default such as ``/tmp``).
+       The server IT setup must point this to a writable, disk-backed mount. In containers or Kubernetes,
+       ``/tmp`` may be RAM-backed, which prevents memory offload benefits. See
+       :ref:`Starting Federated Learning Servers <starting_fl_servers>`.
 
 See :ref:`job_recipe` for detailed explanations of these options.
 
