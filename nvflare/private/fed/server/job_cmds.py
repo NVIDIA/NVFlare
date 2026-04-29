@@ -1006,12 +1006,12 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     @staticmethod
     def _job_match(job_meta: Dict, id_prefix: str, name_prefix: str, user_name: str, requested_study: str) -> bool:
-        job_id = (job_meta.get("job_id") or "").lower()
-        job_name = (job_meta.get("name") or "").lower()
+        job_id = (job_meta.get(JobMetaKey.JOB_ID.value) or "").lower()
+        job_name = (job_meta.get(JobMetaKey.JOB_NAME.value) or "").lower()
         return (
             ((not id_prefix) or job_id.startswith(id_prefix.lower()))
             and ((not name_prefix) or job_name.startswith(name_prefix.lower()))
-            and ((not user_name) or job_meta.get("submitter_name") == user_name)
+            and ((not user_name) or job_meta.get(JobMetaKey.SUBMITTER_NAME.value) == user_name)
             and get_job_meta_study(job_meta) == requested_study
         )
 
