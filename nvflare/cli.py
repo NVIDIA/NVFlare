@@ -270,6 +270,41 @@ def _emit_argparse_error_human(parser, message, exit_code: int = 4):
     output_usage_error(parser, message, exit_code=exit_code)
 
 
+def _display_unknown_args(argv, cmd: str, args, unknown: list) -> list:
+    """Return unknown args as users entered them.
+
+    ``argparse.parse_known_args`` can consume the value of an unknown option as an optional
+    positional. This currently matters for ``nvflare package`` because signed-zip mode has
+    an optional positional input. Preserve the original option/value pair in the error while
+    still allowing valid ``*.signed.zip`` positional inputs to remain separate.
+    """
+
+    if cmd != CMD_PACKAGE:
+        return unknown
+
+    input_path = getattr(args, "input", None)
+    if not input_path or str(input_path).lower().endswith(".signed.zip"):
+        return unknown
+
+    unknown_set = set(unknown)
+    display_unknown = []
+    display_unknown_set = set()
+
+    for i, token in enumerate(argv):
+        if token not in unknown_set or token in display_unknown_set:
+            continue
+        display_unknown.append(token)
+        display_unknown_set.add(token)
+        if token.startswith("-") and "=" not in token and i + 1 < len(argv) and argv[i + 1] == input_path:
+            display_unknown.append(argv[i + 1])
+            display_unknown_set.add(argv[i + 1])
+
+    for token in unknown:
+        if token not in display_unknown_set:
+            display_unknown.append(token)
+    return display_unknown
+
+
 def _patch_help_on_error(parser, json_mode: bool = False):
     """Recursively patch every parser in the tree to print help before error-exit.
 
@@ -415,7 +450,8 @@ def parse_args(prog_name: str):
     args.sub_command = cmd
     sub_cmd_parser = sub_cmd_parsers.get(cmd)
     if unknown:
-        msg = f"unrecognized arguments: {' '.join(unknown)}"
+        display_unknown = _display_unknown_args(normalized_argv, cmd, args, unknown)
+        msg = f"unrecognized arguments: {' '.join(display_unknown)}"
         if args.format == "json":
             _emit_argparse_error_json(sub_cmd_parser or _parser, f"{prog_name} {cmd}: {msg}")
         else:

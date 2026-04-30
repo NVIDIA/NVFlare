@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -59,3 +60,33 @@ def test_invalid_subcommand_json_error(capsys, monkeypatch):
     assert payload["error_code"] == "INVALID_ARGS"
     assert "usage" in payload["data"]
     assert "list" in payload["data"]["choices"]
+
+
+def test_display_unknown_args_preserves_consumed_unknown_option_value():
+    from nvflare import cli as cli_mod
+
+    args = SimpleNamespace(input="example_project")
+
+    result = cli_mod._display_unknown_args(
+        ["package", "--project_name", "example_project"],
+        cli_mod.CMD_PACKAGE,
+        args,
+        ["--project_name"],
+    )
+
+    assert result == ["--project_name", "example_project"]
+
+
+def test_display_unknown_args_keeps_signed_zip_as_positional_input():
+    from nvflare import cli as cli_mod
+
+    args = SimpleNamespace(input="hospital.signed.zip")
+
+    result = cli_mod._display_unknown_args(
+        ["package", "--unknown-flag", "hospital.signed.zip"],
+        cli_mod.CMD_PACKAGE,
+        args,
+        ["--unknown-flag"],
+    )
+
+    assert result == ["--unknown-flag"]
