@@ -1,0 +1,159 @@
+target: client.py, custom_aggregators.py, job.py, model.py
+goal: mutate local client behavior and bounded registered model architectures without changing the federated protocol; scaffold metadata is allowed only when explicitly selected
+
+fixed_invariants:
+  api_loop:
+    - flare.init()
+    - while flare.is_running()
+    - input_model = flare.receive()
+    - flare.send(output_model)
+  model_contract:
+    - model.load_state_dict(input_model.params, strict=True)
+    - global_model = deepcopy(model)
+    - compute_model_diff(model, global_model)
+    - output_model.params_type == ParamsType.DIFF
+  required_meta:
+    - NUM_STEPS_CURRENT_ROUND
+  fixed_assets:
+    - create_datasets/create_data_loaders contract
+    - train_idx_root partitioning scheme
+
+mutable_args:
+  model_arch:
+    type: str
+    choices: [moderate_cnn, moderate_cnn_norm, moderate_cnn_small_head]
+  max_model_params: {type: int, min: 1, max: 5000000}
+  aggregation_epochs: {type: int, min: 1, max: 8}
+  lr: {type: float, min: 0.0001, max: 0.1, log_scale: true}
+  batch_size: {type: int, choices: [32, 64, 128]}
+  eval_batch_size: {type: int, choices: [64, 128, 256, 512, 1024, 2048]}
+  num_workers: {type: int, min: 0, max: 8}
+  momentum: {type: float, min: 0.0, max: 0.99}
+  weight_decay: {type: float, min: 0.0, max: 0.001, log_scale: true}
+  no_lr_scheduler: {type: bool}
+  cosine_lr_eta_min_factor: {type: float, min: 0.0001, max: 0.1, log_scale: true}
+  evaluate_local: {type: bool}
+  fedproxloss_mu: {type: float, min: 0.0, max: 1.0, log_scale: true}
+  aggregator:
+    type: str
+    choices: [weighted, fedavg, fedavgm, fedadam, fedopt, scaffold, median, default]
+  server_lr: {type: float, min: 0.1, max: 4.0}
+  server_momentum: {type: float, min: 0.0, max: 0.95}
+  fedopt_beta1: {type: float, min: 0.0, max: 0.99}
+  fedopt_beta2: {type: float, min: 0.5, max: 0.999}
+  fedopt_tau: {type: float, min: 0.000001, max: 0.1, log_scale: true}
+
+comparison_budget_args:
+  h100_default_candidate_budget:
+    n_clients: 8
+    num_rounds: 10
+    aggregation_epochs: 4
+    batch_size: 64
+    eval_batch_size: 1024
+    alpha: 0.5
+    seed: 0
+    model_arch: moderate_cnn
+    max_model_params: 5000000
+    aggregator: weighted
+    cross_site_eval: true
+    final_eval_clients: site-1
+    run_timeout_seconds: 600
+  fixed_within_campaign:
+    - n_clients
+    - num_rounds
+    - aggregation_epochs
+    - batch_size
+    - eval_batch_size
+    - alpha
+    - seed
+    - model_arch
+    - max_model_params
+    - cross_site_eval
+    - final_eval_clients
+  note: >
+    Some fixed budget fields are mutable only when starting a new campaign or
+    explicitly labeled subcampaign. Do not compare candidate scores across
+    different fixed budget values as if they came from the same search.
+  split_cache: >
+    CIFAR-10 train index splits are cached under /tmp/cifar10_splits by
+    n_clients, alpha, and seed. Candidate job names must not create new splits
+    when these fixed data-budget fields are unchanged.
+
+parallel_sweep:
+  node_profile:
+    gpu_count: 4
+    gpu_type: H100
+    gpu_memory_gb: 80
+  default_parallel_candidates: 4
+  parallel_candidates_source: initial_agent_instruction
+  example_parallel_candidates: 8
+  oversubscribe_rule: >
+    If PARALLEL_CANDIDATES is greater than gpu_count, map lane i to
+    GPU_IDS[i % len(GPU_IDS)] so each GPU may run multiple independent
+    simulations. Require unique RUN_LOG and job --name values for every lane.
+  gpu_binding_env: CUDA_VISIBLE_DEVICES
+  per_run_artifacts:
+    - RUN_LOG
+    - job --name
+  batch_decision_rule: >
+    Run PARALLEL_CANDIDATES same-budget candidates in parallel, then rank all
+    results before keeping, narrowing, or discarding the sweep axis.
+
+literature_review:
+  trigger_after_non_improving_batches: 2
+  ledger_source_rule: >
+    When a candidate implements a method or design choice from a research
+    paper, include a compact source reference in the results.tsv description
+    field, such as [src: Li20 FedProx arXiv:1812.06127]. Put fuller citations
+    and the hypothesis in templates/mutation_report.md.
+  pipeline:
+    - literature_search
+    - challenge_extraction
+    - proposal_scoring
+    - quality_weighted_branch_exploration
+    - reflective_memory
+  proposal_score_axes:
+    - expected_score_gain
+    - contract_safety
+    - implementation_simplicity
+    - evidence_strength
+    - novelty_vs_results_tsv
+  allowed_topics:
+    - federated_optimization
+    - non_iid_cifar10
+    - client_drift
+    - robust_aggregation
+    - fedprox_regularization
+    - fedopt_server_optimization
+    - scaffold_control_variates
+    - optimizer_and_scheduler_tuning
+    - local_epoch_scheduling
+    - bounded_model_architecture
+  reject_if_requires:
+    - protocol_change_outside_scaffold_meta
+    - new_dependency
+    - unregistered_model_architecture
+    - model_parameter_count_above_budget
+    - evaluation_change
+    - server_coupled_state_outside_scaffold
+
+preferred_targets:
+  - client.py
+  - custom_aggregators.py
+  - job.py
+  - model.py
+
+forbidden_mutations:
+  - switch ParamsType.DIFF to FULL
+  - remove NUM_STEPS_CURRENT_ROUND
+  - rewrite flare task loop
+  - change model architecture outside the registered model_arch and max_model_params budget
+  - add server-coupled meta keys outside the explicit scaffold mode
+  - add new dependencies
+
+required_loop:
+  - establish baseline first
+  - keep the recipe budget fixed within a campaign
+  - redirect full output to run.log
+  - record every run in results.tsv
+  - keep or revert after comparing score and complexity
