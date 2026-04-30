@@ -36,6 +36,7 @@ or run in a separate recipe test suite (takes ~1-2 minutes).
 """
 
 import os
+import sys
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
@@ -57,6 +58,40 @@ class TestExperimentTrackingRecipes:
         repo_root = os.path.dirname(os.path.dirname(test_dir))
         return os.path.join(repo_root, "examples/advanced/experiment-tracking/tensorboard/client.py")
 
+    @property
+    def client_script_dir(self):
+        return os.path.dirname(self.client_script_path)
+
+    def _is_client_script_module(self, module):
+        spec = getattr(module, "__spec__", None)
+        origin = getattr(spec, "origin", None)
+        if not origin or origin in {"built-in", "frozen"}:
+            return False
+
+        client_script_dir = os.path.realpath(self.client_script_dir)
+        module_origin = os.path.realpath(origin)
+        return module_origin.startswith(client_script_dir + os.sep)
+
+    def _make_model(self):
+        original_sys_path = list(sys.path)
+        previous_modules = {
+            name: module
+            for name, module in list(sys.modules.items())
+            if name == "model" or self._is_client_script_module(module)
+        }
+        sys.modules.pop("model", None)
+        sys.path.insert(0, self.client_script_dir)
+        try:
+            from model import SimpleNetwork
+
+            return SimpleNetwork()
+        finally:
+            for name, module in list(sys.modules.items()):
+                if name == "model" or self._is_client_script_module(module):
+                    sys.modules.pop(name, None)
+            sys.modules.update(previous_modules)
+            sys.path[:] = original_sys_path
+
     def test_tensorboard_tracking_integration(self):
         """Test TensorBoard tracking can be added and job completes."""
         import tempfile
@@ -67,6 +102,7 @@ class TestExperimentTrackingRecipes:
                 name="test_tensorboard",
                 min_clients=2,
                 num_rounds=1,
+                model=self._make_model(),
                 train_script=self.client_script_path,
             )
 
@@ -89,6 +125,7 @@ class TestExperimentTrackingRecipes:
                 name="test_mlflow",
                 min_clients=2,
                 num_rounds=1,
+                model=self._make_model(),
                 train_script=self.client_script_path,
             )
 
