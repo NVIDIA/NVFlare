@@ -590,6 +590,12 @@ Federated Kaplan-Meier survival analysis with optional homomorphic encryption ov
 The ``KMRecipe`` is defined in the Kaplan-Meier example's ``job.py`` rather than exported as a package-level
 recipe.
 
+Run the snippet from the Kaplan-Meier example directory so ``from job import KMRecipe`` resolves correctly:
+
+.. code-block:: bash
+
+    cd examples/advanced/kaplan-meier-he
+
 .. code-block:: python
 
     from job import KMRecipe
