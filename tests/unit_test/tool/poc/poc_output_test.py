@@ -345,6 +345,45 @@ class TestPocOutput:
         assert data["data"]["status"] == "running"
         assert data["data"]["clients"] == []
 
+    def test_start_poc_builds_endpoint_info_after_config_load(self, capsys, tmp_path):
+        from nvflare.tool.poc.poc_commands import start_poc
+
+        args = MagicMock()
+        args.service = "all"
+        args.exclude = ""
+        args.gpu = None
+        args.study = None
+        args.no_wait = True
+        project_config = {"participants": [{"type": "client", "name": "site-1"}]}
+        service_config = {}
+        endpoint_calls = []
+
+        def _endpoint_info(project, service):
+            endpoint_calls.append((project, service))
+            return {
+                "server_url": "localhost:8002",
+                "server_address": "localhost:8002",
+                "admin_address": "localhost:8003",
+                "default_port": 8002,
+                "default_server_port": 8002,
+                "default_admin_port": 8003,
+            }
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands._start_poc", return_value=None),
+            patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(project_config, service_config)),
+            patch("nvflare.tool.poc.poc_commands._build_poc_endpoint_info", side_effect=_endpoint_info),
+        ):
+            start_poc(args)
+
+        assert endpoint_calls == [(project_config, service_config)]
+        data = json.loads(capsys.readouterr().out)
+        assert data["data"]["server_address"] == "localhost:8002"
+
     def test_prepare_jobs_dir_user_decline_emits_no_success(self, capsys, tmp_path):
         """prepare_jobs_dir should not emit output_ok when the user declines replacement."""
         from nvflare.tool.poc.poc_commands import prepare_jobs_dir

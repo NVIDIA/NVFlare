@@ -1804,18 +1804,18 @@ def define_job_logs_parser(job_subparser):
         "--tail",
         type=_non_negative_int,
         default=None,
-        help="return at most the last N log lines per site",
+        help="return at most the last N log lines per site; applied after --since",
     )
     p.add_argument(
         "--since",
         default=None,
-        help="return log lines at or after this timestamp when timestamps are parseable",
+        help="return log lines at or after this timestamp; any explicit bound disables the default 500-line tail",
     )
     p.add_argument(
         "--max-bytes",
         type=_non_negative_int,
         default=None,
-        help="return at most N bytes per site",
+        help="return at most N bytes per site; applied after --since and --tail",
     )
     add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
@@ -2191,10 +2191,10 @@ def cmd_job_monitor(cmd_args):
     timeout = getattr(cmd_args, "timeout", 0)
     interval = getattr(cmd_args, "interval", 2)
     if timeout < 0:
-        output_error("INVALID_ARGUMENT", exit_code=4, detail="--timeout must be >= 0")
+        output_error("INVALID_ARGS", exit_code=4, detail="--timeout must be >= 0")
         return
     if interval <= 0:
-        output_error("INVALID_ARGUMENT", exit_code=4, detail="--interval must be > 0")
+        output_error("INVALID_ARGS", exit_code=4, detail="--interval must be > 0")
         return
     cb_state = _make_monitor_state()
     emit_interval = max(interval, 5)
@@ -2321,10 +2321,10 @@ def cmd_job_wait(cmd_args):
     timeout = getattr(cmd_args, "timeout", 0)
     interval = getattr(cmd_args, "interval", 2)
     if timeout < 0:
-        output_error("INVALID_ARGUMENT", exit_code=4, detail="--timeout must be >= 0")
+        output_error("INVALID_ARGS", exit_code=4, detail="--timeout must be >= 0")
         return
     if interval <= 0:
-        output_error("INVALID_ARGUMENT", exit_code=4, detail="--interval must be > 0")
+        output_error("INVALID_ARGS", exit_code=4, detail="--interval must be > 0")
         return
 
     try:

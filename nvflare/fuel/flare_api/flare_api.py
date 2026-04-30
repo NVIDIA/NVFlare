@@ -156,6 +156,7 @@ class Session(SessionSpec):
             admin_config[AdminConfigKey.UID_SOURCE] = UidSource.CERT
 
         self.username = username
+        self._debug = debug
         upload_dir = admin_config.get(AdminConfigKey.UPLOAD_DIR)
         download_dir = admin_config.get(AdminConfigKey.DOWNLOAD_DIR)
         if not os.path.isdir(download_dir):

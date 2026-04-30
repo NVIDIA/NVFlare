@@ -156,6 +156,27 @@ class TestJobMonitorOutput:
         assert data["data"]["status"] == "FINISHED_OK"
 
     @pytest.mark.parametrize(
+        ("kwargs", "detail"),
+        [
+            ({"timeout": -1}, "--timeout must be >= 0"),
+            ({"interval": 0}, "--interval must be > 0"),
+            ({"interval": -1}, "--interval must be > 0"),
+        ],
+    )
+    def test_invalid_monitor_arguments_exit_before_session_creation(self, capsys, kwargs, detail):
+        from nvflare.tool.job.job_cli import cmd_job_monitor
+
+        with patch("nvflare.tool.job.job_cli._job_session_for_args") as session_factory:
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_monitor(_make_args(**kwargs))
+
+        assert exc_info.value.code == 4
+        session_factory.assert_not_called()
+        data = json.loads(capsys.readouterr().out)
+        assert data["error_code"] == "INVALID_ARGS"
+        assert detail in data["message"]
+
+    @pytest.mark.parametrize(
         ("selector", "value"),
         [
             ("--startup-target", "prod"),

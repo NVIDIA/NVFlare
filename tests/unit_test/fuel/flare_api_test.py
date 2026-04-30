@@ -303,6 +303,26 @@ def _make_session_with_meta(meta: dict):
     return session
 
 
+def test_new_poll_session_preserves_debug_setting():
+    sess = Session.__new__(Session)
+    sess.username = "admin@nvidia.com"
+    sess.startup_path = "/tmp/startup"
+    sess.secure_mode = True
+    sess._debug = True
+    sess._study = "cancer"
+
+    with patch("nvflare.fuel.flare_api.flare_api.Session") as session_cls:
+        sess._new_poll_session()
+
+    session_cls.assert_called_once_with(
+        username="admin@nvidia.com",
+        startup_path="/tmp/startup",
+        secure_mode=True,
+        debug=True,
+        study="cancer",
+    )
+
+
 class TestSessionShutdown:
     def test_shutdown_server_sends_correct_command(self):
         sess = _make_session_with_meta({})

@@ -13,11 +13,20 @@
 # limitations under the License.
 
 import json
+from unittest.mock import patch
 
 import pytest
 
 from nvflare.tool import cli_output
-from nvflare.tool.cli_output import SCHEMA_VERSION, output, output_error, output_error_message, output_ok, print_human
+from nvflare.tool.cli_output import (
+    SCHEMA_VERSION,
+    output,
+    output_error,
+    output_error_message,
+    output_jsonl_event,
+    output_ok,
+    print_human,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -172,6 +181,13 @@ class TestOutputOk:
         captured = capsys.readouterr()
         assert captured.out == ""
         assert "progress message" in captured.err
+
+    def test_jsonl_event_flushes_stdout(self):
+        with patch("builtins.print") as mock_print:
+            output_jsonl_event({"event": "progress"})
+
+        mock_print.assert_called_once()
+        assert mock_print.call_args.kwargs["flush"] is True
 
     def test_human_mode_dict_renders_as_table(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")

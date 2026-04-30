@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
 import io
 from argparse import Namespace
 from pathlib import Path
@@ -1612,3 +1613,16 @@ def test_do_app_command_usage_error_uses_append_error(monkeypatch):
     assert conn.strings == []
     assert conn.errors[0][0] == "Usage: app_command job_id topic"
     assert conn.errors[0][1][MetaKey.STATUS] == "syntax_error"
+
+
+def test_submit_token_locks_are_weakly_released():
+    submitter = {"name": "admin@nvidia.com", "org": "nvidia", "role": "lead"}
+    token = "weak-lock-token"
+    key = ("study", submitter["name"], submitter["org"], submitter["role"], token)
+
+    lock = JobCommandModule._submit_token_lock("study", submitter, token)
+
+    assert JobCommandModule._submit_token_locks.get(key) is lock
+    del lock
+    gc.collect()
+    assert key not in JobCommandModule._submit_token_locks

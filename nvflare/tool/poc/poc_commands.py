@@ -1529,7 +1529,7 @@ def start_poc(cmd_args):
     clients = []
     project_config = None
     service_config = None
-    endpoint_info = _build_poc_endpoint_info(project_config, service_config)
+    endpoint_info = None
     try:
         project_config, service_config = setup_service_config(poc_workspace)
         if project_config:
@@ -1550,6 +1550,8 @@ def start_poc(cmd_args):
     except CLIException as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
+    if endpoint_info is None:
+        endpoint_info = _build_poc_endpoint_info(project_config, service_config)
 
     ready = False
     wait_performed = False

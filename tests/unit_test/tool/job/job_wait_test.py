@@ -162,7 +162,7 @@ class TestJobWait:
         assert exc_info.value.code == 4
         session_factory.assert_not_called()
         data = json.loads(capsys.readouterr().out)
-        assert data["error_code"] == "INVALID_ARGUMENT"
+        assert data["error_code"] == "INVALID_ARGS"
         assert detail in data["message"]
 
     def test_job_not_found_exits_1(self, capsys):

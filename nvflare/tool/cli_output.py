@@ -206,7 +206,7 @@ def output_jsonl_event(event: Any) -> None:
         event = {"event": event}
     payload = {"schema_version": SCHEMA_VERSION}
     payload.update(event)
-    print(json.dumps(payload))
+    print(json.dumps(payload), flush=True)
 
 
 def output_error_message(

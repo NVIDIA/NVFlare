@@ -55,17 +55,19 @@ def test_job_get_session_uses_active_session_with_connect_timeout(monkeypatch):
     with (
         patch("nvflare.tool.cli_output.get_connect_timeout", return_value=3.25),
         patch(
-            "nvflare.tool.cli_session.new_active_cli_session",
+            "nvflare.tool.cli_session.new_cli_session_for_args",
             return_value=MagicMock(),
-            create=True,
         ) as shared_active,
-        patch("nvflare.tool.job.job_cli.new_active_cli_session", return_value=MagicMock(), create=True) as job_active,
+        patch(
+            "nvflare.tool.job.job_cli.new_cli_session_for_args",
+            return_value=MagicMock(),
+        ) as job_active,
     ):
         job_cli._get_session(study="default")
 
     active_session = _called_active_session_mock(shared_active, job_active)
-    assert _call_arg(active_session.call_args, "timeout", 0) == 3.25
-    assert _call_arg(active_session.call_args, "study", 1) in (None, "default")
+    assert _call_arg(active_session.call_args, "timeout", 1) == 3.25
+    assert _call_arg(active_session.call_args, "study", 2) in (None, "default")
 
 
 def test_system_get_session_uses_active_session_with_connect_timeout(monkeypatch):
@@ -74,17 +76,11 @@ def test_system_get_session_uses_active_session_with_connect_timeout(monkeypatch
     with (
         patch("nvflare.tool.cli_output.get_connect_timeout", return_value=4.0),
         patch(
-            "nvflare.tool.cli_session.new_active_cli_session",
+            "nvflare.tool.cli_session.new_cli_session_for_args",
             return_value=MagicMock(),
-            create=True,
         ) as shared_active,
-        patch(
-            "nvflare.tool.system.system_cli.new_active_cli_session",
-            return_value=MagicMock(),
-            create=True,
-        ) as system_active,
     ):
         system_cli._get_system_session()
 
-    active_session = _called_active_session_mock(shared_active, system_active)
-    assert _call_arg(active_session.call_args, "timeout", 0) == 4.0
+    assert shared_active.called
+    assert _call_arg(shared_active.call_args, "timeout", 1) == 4.0

@@ -454,9 +454,11 @@ class TestSystemActiveStartupKit:
         sess.report_resources.assert_called_once_with("all", None)
 
     def test_shutdown_uses_active_startup_kit(self, tmp_path, monkeypatch):
-        from nvflare.tool.system.system_cli import cmd_system_shutdown
+        from nvflare.tool.system.system_cli import _DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT, cmd_system_shutdown
 
-        args = argparse.Namespace(target="server", client_names=[], force=True)
+        args = argparse.Namespace(
+            target="server", client_names=[], force=True, timeout=_DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT
+        )
         sess = self._run_and_assert_active_session(
             tmp_path,
             monkeypatch,
@@ -465,12 +467,14 @@ class TestSystemActiveStartupKit:
             lambda s: setattr(s.shutdown, "return_value", {"status": "ok"}),
         )
 
-        sess.shutdown.assert_called_once_with("server", client_names=None)
+        sess.shutdown.assert_called_once_with("server", client_names=None, timeout=_DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT)
 
     def test_restart_uses_active_startup_kit(self, tmp_path, monkeypatch):
-        from nvflare.tool.system.system_cli import cmd_system_restart
+        from nvflare.tool.system.system_cli import _DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT, cmd_system_restart
 
-        args = argparse.Namespace(target="server", client_names=[], force=True)
+        args = argparse.Namespace(
+            target="server", client_names=[], force=True, timeout=_DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT
+        )
         sess = self._run_and_assert_active_session(
             tmp_path,
             monkeypatch,
@@ -479,7 +483,7 @@ class TestSystemActiveStartupKit:
             lambda s: setattr(s.restart, "return_value", {"status": "ok"}),
         )
 
-        sess.restart.assert_called_once_with("server", client_names=None)
+        sess.restart.assert_called_once_with("server", client_names=None, timeout=_DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT)
 
     def test_version_uses_active_startup_kit(self, tmp_path, monkeypatch):
         from nvflare.tool.system.system_cli import cmd_system_version
@@ -639,10 +643,13 @@ class TestSystemShutdown:
         monkeypatch.setattr(cli_output, "_output_format", "json")
 
     def _make_args(self, target="server", client_names=None, force=True):
+        from nvflare.tool.system.system_cli import _DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT
+
         args = MagicMock()
         args.target = target
         args.client_names = client_names or []
         args.force = force
+        args.timeout = _DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT
         return args
 
     def _make_session(self, result=None):
@@ -659,7 +666,7 @@ class TestSystemShutdown:
         with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
             cmd_system_shutdown(args)
 
-        sess.shutdown.assert_called_once_with("server", client_names=None)
+        sess.shutdown.assert_called_once_with("server", client_names=None, timeout=30.0)
 
     def test_shutdown_client_all_calls_session_shutdown(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_shutdown
@@ -670,7 +677,7 @@ class TestSystemShutdown:
         with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
             cmd_system_shutdown(args)
 
-        sess.shutdown.assert_called_once_with("client", client_names=None)
+        sess.shutdown.assert_called_once_with("client", client_names=None, timeout=30.0)
 
     def test_shutdown_client_named_passes_client_names(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_shutdown
@@ -681,7 +688,7 @@ class TestSystemShutdown:
         with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
             cmd_system_shutdown(args)
 
-        sess.shutdown.assert_called_once_with("client", client_names=["site-1", "site-2"])
+        sess.shutdown.assert_called_once_with("client", client_names=["site-1", "site-2"], timeout=30.0)
 
     def test_shutdown_all_calls_session_shutdown(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_shutdown
@@ -692,7 +699,7 @@ class TestSystemShutdown:
         with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
             cmd_system_shutdown(args)
 
-        sess.shutdown.assert_called_once_with("all", client_names=None)
+        sess.shutdown.assert_called_once_with("all", client_names=None, timeout=30.0)
 
     def test_shutdown_invalid_target_exits_4(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_shutdown
@@ -775,10 +782,13 @@ class TestSystemRestart:
         monkeypatch.setattr(cli_output, "_output_format", "json")
 
     def _make_args(self, target="server", client_names=None, force=True):
+        from nvflare.tool.system.system_cli import _DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT
+
         args = MagicMock()
         args.target = target
         args.client_names = client_names or []
         args.force = force
+        args.timeout = _DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT
         return args
 
     def _make_session(self, result=None):
@@ -795,7 +805,7 @@ class TestSystemRestart:
         with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
             cmd_system_restart(args)
 
-        sess.restart.assert_called_once_with("server", client_names=None)
+        sess.restart.assert_called_once_with("server", client_names=None, timeout=30.0)
 
     def test_restart_client_named_passes_client_names(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_restart
@@ -806,7 +816,7 @@ class TestSystemRestart:
         with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
             cmd_system_restart(args)
 
-        sess.restart.assert_called_once_with("client", client_names=["site-1"])
+        sess.restart.assert_called_once_with("client", client_names=["site-1"], timeout=30.0)
 
     def test_restart_all_calls_session_restart(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_restart
@@ -817,7 +827,7 @@ class TestSystemRestart:
         with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
             cmd_system_restart(args)
 
-        sess.restart.assert_called_once_with("all", client_names=None)
+        sess.restart.assert_called_once_with("all", client_names=None, timeout=30.0)
 
     def test_restart_invalid_target_exits_4(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_restart

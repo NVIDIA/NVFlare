@@ -712,6 +712,13 @@ class TestShowStudy:
             self._module().cmd_show_study(conn, ["show_study", "study1"])
         assert conn.last_reply["error_code"] == "STUDY_NOT_FOUND"
 
+    def test_lead_cannot_show_org_study_without_user_mapping(self):
+        registry = _make_registry({"study1": {"site_orgs": {"org_a": ["site-a"]}, "admins": ["other@example.com"]}})
+        conn = _FakeConnection(role="lead", org="org_a", user="lead@example.com")
+        with patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.get_registry", return_value=registry):
+            self._module().cmd_show_study(conn, ["show_study", "study1"])
+        assert conn.last_reply["error_code"] == "STUDY_NOT_FOUND"
+
     def test_show_nonexistent_study_returns_not_found(self):
         registry = _make_registry({})
         conn = _FakeConnection(role="project_admin", org="project")

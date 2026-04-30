@@ -30,7 +30,26 @@ CMD_SYSTEM_ENABLE_CLIENT = "enable-client"
 CMD_SYSTEM_VERSION = "version"
 CMD_SYSTEM_LOG_CONFIG = "log-config"
 
+_DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT = 30.0
+
 _system_sub_cmd_parsers = {}
+
+
+def _non_negative_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as e:
+        raise ValueError(str(e))
+    if parsed < 0:
+        raise ValueError("value must be >= 0")
+    return parsed
+
+
+def _get_system_state_change_timeout(args) -> float:
+    timeout = getattr(args, "timeout", _DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+        return _DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT
+    return float(timeout)
 
 
 def def_system_cli_parser(system_parser):
@@ -59,6 +78,12 @@ def def_system_cli_parser(system_parser):
     p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--force", action="store_true")
     p.add_argument("--no-wait", dest="no_wait", action="store_true")
+    p.add_argument(
+        "--timeout",
+        type=_non_negative_float,
+        default=_DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT,
+        help="seconds to wait for shutdown completion",
+    )
     add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_SHUTDOWN] = p
@@ -69,6 +94,12 @@ def def_system_cli_parser(system_parser):
     p.add_argument("client_names", nargs="*", default=[])
     p.add_argument("--force", action="store_true")
     p.add_argument("--no-wait", dest="no_wait", action="store_true")
+    p.add_argument(
+        "--timeout",
+        type=_non_negative_float,
+        default=_DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT,
+        help="seconds to wait for restart completion",
+    )
     add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_RESTART] = p
@@ -376,6 +407,7 @@ def cmd_system_shutdown(args):
     client_names = getattr(args, "client_names", [])
     no_wait = getattr(args, "no_wait", False)
     no_wait = no_wait if isinstance(no_wait, bool) else False
+    timeout = _get_system_state_change_timeout(args)
 
     if target != "client" and client_names:
         output_error(
@@ -392,7 +424,7 @@ def cmd_system_shutdown(args):
             if no_wait:
                 result = sess.shutdown(target, client_names=client_names or None, wait=False)
             else:
-                result = sess.shutdown(target, client_names=client_names or None)
+                result = sess.shutdown(target, client_names=client_names or None, timeout=timeout)
     except (AuthenticationError, NoConnection):
         raise
     except InvalidTarget as e:
@@ -400,16 +432,16 @@ def cmd_system_shutdown(args):
         raise SystemExit(4)
     except TimeoutError as e:
         output_error_message(
-            "CONNECTION_FAILED",
+            "TIMEOUT",
             message="System shutdown did not complete before the timeout.",
             hint=(
-                "Check system status, or use 'nvflare system shutdown <target> --no-wait' "
-                "for fire-and-forget shutdown."
+                "Increase --timeout, check system status, or use "
+                "'nvflare system shutdown <target> --no-wait' for fire-and-forget shutdown."
             ),
-            exit_code=2,
+            exit_code=3,
             detail=str(e),
         )
-        raise SystemExit(2)
+        raise SystemExit(3)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         raise SystemExit(2)
@@ -418,6 +450,7 @@ def cmd_system_shutdown(args):
         {
             "target": target,
             "status": "shutdown initiated" if no_wait else "stopped",
+            "timeout": None if no_wait else timeout,
             "result": result,
         }
     )
@@ -438,6 +471,7 @@ def cmd_system_restart(args):
     client_names = getattr(args, "client_names", [])
     no_wait = getattr(args, "no_wait", False)
     no_wait = no_wait if isinstance(no_wait, bool) else False
+    timeout = _get_system_state_change_timeout(args)
 
     if target != "client" and client_names:
         output_error(
@@ -454,7 +488,7 @@ def cmd_system_restart(args):
             if no_wait:
                 result = sess.restart(target, client_names=client_names or None, wait=False)
             else:
-                result = sess.restart(target, client_names=client_names or None)
+                result = sess.restart(target, client_names=client_names or None, timeout=timeout)
     except (AuthenticationError, NoConnection):
         raise
     except InvalidTarget as e:
@@ -462,16 +496,16 @@ def cmd_system_restart(args):
         raise SystemExit(4)
     except TimeoutError as e:
         output_error_message(
-            "CONNECTION_FAILED",
+            "TIMEOUT",
             message="System restart did not complete before the timeout.",
             hint=(
-                "Check system status, or use 'nvflare system restart <target> --no-wait' "
-                "for fire-and-forget restart."
+                "Increase --timeout, check system status, or use "
+                "'nvflare system restart <target> --no-wait' for fire-and-forget restart."
             ),
-            exit_code=2,
+            exit_code=3,
             detail=str(e),
         )
-        raise SystemExit(2)
+        raise SystemExit(3)
     except Exception as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         raise SystemExit(2)
@@ -480,6 +514,7 @@ def cmd_system_restart(args):
         {
             "target": target,
             "status": "restart initiated" if no_wait else "restarted",
+            "timeout": None if no_wait else timeout,
             "result": result,
         }
     )

@@ -1635,8 +1635,8 @@ resolvable through the active-kit registry or `NVFLARE_STARTUP_KIT_DIR`.
 ```text
 nvflare system status        [server|client] [client_names...]
 nvflare system resources     [server|client] [clients...]
-nvflare system shutdown      <server|client|all> [client_names...] [--force]
-nvflare system restart       <server|client|all> [client_names...] [--force]
+nvflare system shutdown      <server|client|all> [client_names...] [--force] [--no-wait] [--timeout N]
+nvflare system restart       <server|client|all> [client_names...] [--force] [--no-wait] [--timeout N]
 nvflare system remove-client <client_name> [--force]
 nvflare system disable-client <client_name> [--force]
 nvflare system enable-client <client_name> [--force]
@@ -1651,10 +1651,11 @@ rejects subsequent registration or heartbeat from the same client name until
 `enable-client` clears the flag. This is not certificate revocation.
 
 Disabled client state is stored in the server workspace as `disabled_clients.json`.
-Updates must be made under the client manager lock and written with a temporary file plus
+In-memory updates and persistence snapshots must be made under the client manager
+lock. The JSON write uses the snapshot outside the lock with a temporary file plus
 atomic replace so registration/heartbeat handling cannot observe a partially written
-policy file. The file is loaded at server startup so disabled clients remain disabled
-across server restarts.
+policy file and does not block on disk I/O. The file is loaded at server startup so
+disabled clients remain disabled across server restarts.
 
 
 ## Output

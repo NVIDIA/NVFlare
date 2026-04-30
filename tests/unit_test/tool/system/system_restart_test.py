@@ -30,10 +30,13 @@ class TestSystemRestart:
         monkeypatch.setattr(cli_output, "_output_format", "json")
 
     def _make_args(self, target="server", client_names=None, force=False):
+        from nvflare.tool.system.system_cli import _DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT
+
         args = MagicMock()
         args.target = target
         args.client_names = client_names or []
         args.force = force
+        args.timeout = _DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT
         return args
 
     def test_restart_with_force_no_prompt(self, capsys):
@@ -49,6 +52,7 @@ class TestSystemRestart:
                 cmd_system_restart(args)
                 mock_stdin.readline.assert_not_called()
 
+        mock_sess.restart.assert_called_once_with("server", client_names=None, timeout=30.0)
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["status"] == "ok"
@@ -172,7 +176,18 @@ class TestSystemRestart:
         args = parser.parse_args(["restart", "server", "--force", "--no-wait"])
         assert args.no_wait is True
 
-    def test_restart_timeout_exits_connection_failed(self, capsys):
+    def test_restart_parser_accepts_timeout(self):
+        from nvflare.tool.system.system_cli import def_system_cli_parser
+
+        parser = argparse.ArgumentParser(prog="nvflare system")
+        def_system_cli_parser(parser)
+
+        args = parser.parse_args(["restart", "server", "--force", "--timeout", "120"])
+        assert args.timeout == 120.0
+        with pytest.raises(SystemExit):
+            parser.parse_args(["restart", "server", "--force", "--timeout", "-1"])
+
+    def test_restart_timeout_exits_timeout(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_restart
 
         args = self._make_args(force=True)
@@ -183,9 +198,10 @@ class TestSystemRestart:
             with pytest.raises(SystemExit) as exc_info:
                 cmd_system_restart(args)
 
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 3
         data = json.loads(capsys.readouterr().out)
-        assert data["error_code"] == "CONNECTION_FAILED"
+        assert data["error_code"] == "TIMEOUT"
+        assert "--timeout" in data["hint"]
         assert "--no-wait" in data["hint"]
 
     def test_restart_rejects_client_names_for_non_client_target(self, capsys):

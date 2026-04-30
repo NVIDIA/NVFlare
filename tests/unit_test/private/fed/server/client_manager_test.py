@@ -117,22 +117,22 @@ def test_enable_client_persists_and_allows_client(tmp_path):
     assert json.loads(disabled_file.read_text()) == {"disabled_clients": []}
 
 
-def test_disabled_client_save_runs_under_manager_lock():
+def test_disabled_client_save_runs_outside_manager_lock():
     manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
     calls = []
 
-    def assert_locked_save():
+    def assert_unlocked_save(_disabled_clients):
         acquired = manager.lock.acquire(blocking=False)
         if acquired:
             manager.lock.release()
         calls.append(acquired)
 
-    manager._save_disabled_clients = assert_locked_save
+    manager._save_disabled_clients = assert_unlocked_save
 
     manager.disable_client("site-a")
     manager.enable_client("site-a")
 
-    assert calls == [False, False]
+    assert calls == [True, True]
 
 
 def test_disabled_client_registration_is_rejected():

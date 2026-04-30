@@ -20,6 +20,7 @@ import re
 import shutil
 import threading
 import uuid
+import weakref
 from typing import Dict, List, Optional, Set
 from zipfile import BadZipFile, ZipFile
 
@@ -134,7 +135,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     """Command module with commands for job management."""
 
     MAX_RETURNED_JOB_LOG_BYTES = 5 * 1024 * 1024
-    _submit_token_locks = {}
+    _submit_token_locks = weakref.WeakValueDictionary()
     _submit_token_locks_guard = threading.Lock()
 
     def __init__(self):
