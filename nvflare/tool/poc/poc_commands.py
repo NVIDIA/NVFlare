@@ -81,9 +81,7 @@ POC_DEFAULT_ADMIN_PORT = 8003
 POC_LOCAL_HOST = "localhost"
 POC_PORT_PREFLIGHT_HOST = "127.0.0.1"
 POC_PORT_PREFLIGHT_SCOPE = "loopback"
-POC_PORT_PREFLIGHT_NOTE = (
-    "Preflight checks loopback port availability only; poc start may still fail if another local bind address conflicts."
-)
+POC_PORT_PREFLIGHT_NOTE = "Preflight checks loopback port availability only; poc start may still fail if another local bind address conflicts."
 
 
 class AuthorizationError(PermissionError):
