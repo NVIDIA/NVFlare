@@ -25,7 +25,7 @@ class ParticipantType:
     SERVER = "server"
     CLIENT = "client"
     ADMIN = "admin"
-    OVERSEER = "overseer"
+    OVERSEER = "overseer"  # obsolete: kept only to recognize and ignore old entries
     RELAY = "relay"
 
 
@@ -33,7 +33,6 @@ DEFINED_PARTICIPANT_TYPES = [
     ParticipantType.SERVER,
     ParticipantType.CLIENT,
     ParticipantType.ADMIN,
-    ParticipantType.OVERSEER,
     ParticipantType.RELAY,
 ]
 
@@ -53,7 +52,6 @@ class PropKey:
     PROTOCOL = "protocol"
     API_ROOT = "api_root"
     PORT = "port"
-    OVERSEER_END_POINT = "overseer_end_point"
     ADMIN_PORT = "admin_port"
     FED_LEARN_PORT = "fed_learn_port"
     # Renamed from the never-publicly-released "allow_error_sending"; no
@@ -118,12 +116,6 @@ class AdminRole:
 
 
 DEFINED_ROLES = [AdminRole.PROJECT_ADMIN, AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER]
-
-
-class OverseerRole:
-    SERVER = "server"
-    CLIENT = "client"
-    ADMIN = "admin"
 
 
 class TemplateSectionKey:

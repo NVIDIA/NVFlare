@@ -1097,7 +1097,7 @@ class TestClientKitAssembly:
         assert cfg["servers"][0]["name"] == "testproject"  # project_name used
         assert cfg["servers"][0]["service"]["scheme"] == "grpc"
         assert cfg["client"]["fqsn"] == "hospital-1"
-        assert "8002:8002" in cfg["overseer_agent"]["args"]["sp_end_point"]
+        assert cfg["servers"][0]["service"]["target"] == "server.example.com:8002"
 
     def test_dir_mode_auto_discovery(self, cert_env, tmp_path):
         work = tmp_path / "work"
@@ -1716,7 +1716,7 @@ class TestUX2BindTargetVsIdentity:
 
     def test_server_kit_0000_endpoint_name_used_for_target(self, cert_env, tmp_path):
         """Even when endpoint host is 0.0.0.0, fed_server.json target uses server.name (args.name),
-        not the raw endpoint host.  Both target and sp_end_point use the same identity."""
+        not the raw endpoint host."""
         work = tmp_path / "work"
         work.mkdir()
         ca_key = cert_env["ca_key"]
@@ -1739,10 +1739,8 @@ class TestUX2BindTargetVsIdentity:
         out_dir = _kit_dir(ws, "testproject", "fl-server")
         with open(os.path.join(out_dir, "startup", "fed_server.json")) as f:
             cfg = json.load(f)
-        # target and sp_end_point must both use server.name (fl-server), not the raw endpoint host
+        # target must use server.name (fl-server), not the raw endpoint host
         assert cfg["servers"][0]["service"]["target"] == "fl-server:8002"
-        sp = cfg["overseer_agent"]["args"]["sp_end_point"]
-        assert sp.startswith("fl-server:")
 
     def test_server_kit_hostname_endpoint_target_is_hostname(self, cert_env, tmp_path):
         """When endpoint host is a regular hostname, target equals that hostname."""
@@ -3258,7 +3256,7 @@ class TestDistributedProvisioningV2PackageMode:
         with open(os.path.join(kit_dir, "startup", "fed_client.json")) as f:
             cfg = json.load(f)
         assert cfg["servers"][0]["identity"] == "profile-server.hospital-central.org"
-        assert cfg["overseer_agent"]["args"]["sp_end_point"] == "profile-server.hospital-central.org:9002:9003"
+        assert cfg["servers"][0]["service"]["target"] == "profile-server.hospital-central.org:9002"
         assert yaml.safe_load((request_dir / "site.yaml").read_text()) == participant_definition
 
     def test_server_signed_zip_uses_signed_endpoint_without_local_endpoint_fields(self, tmp_path):
@@ -3388,7 +3386,7 @@ class TestDistributedProvisioningV2PackageMode:
         assert cfg["servers"][0]["service"]["scheme"] == "grpc"
         assert cfg["servers"][0]["identity"] == "server1.hospital-central.org"
         assert cfg["client"]["connection_security"] == "tls"
-        assert cfg["overseer_agent"]["args"]["sp_end_point"] == "server1.hospital-central.org:8002:8003"
+        assert cfg["servers"][0]["service"]["target"] == "server1.hospital-central.org:8002"
         assert yaml.safe_load((request_dir / "site.yaml").read_text()) == participant_definition
 
     def test_user_signed_zip_uses_profile_defaults_and_signed_endpoint_without_override_args(self, tmp_path):

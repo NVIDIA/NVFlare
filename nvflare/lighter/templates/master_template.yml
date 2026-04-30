@@ -108,6 +108,7 @@ fed_client: |
       {
         "name": "{~~name~~}",
         "service": {
+          "target": "{~~target~~}",
           "scheme": "{~~scheme~~}"
         },
         "identity": "{~~server_identity~~}"
@@ -120,12 +121,6 @@ fed_client: |
       "fqsn": "{~~fqsn~~}",
       "is_leaf": {~~is_leaf~~},
       "connection_security": "{~~conn_sec~~}"
-    },
-    "overseer_agent": {
-      "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
-      "args": {
-        "sp_end_point": "{~~sp_end_point~~}"
-      }
     }
   }
 
@@ -276,13 +271,7 @@ fed_server: |
             "ssl_root_cert": "rootCA.pem",
             "connection_security": "{~~conn_sec~~}"
         }
-    ],
-    "overseer_agent": {
-      "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
-      "args": {
-        "sp_end_point": "{~~sp_end_point~~}"
-      }
-    }
+    ]
   }
 
 fed_admin: |
@@ -506,22 +495,15 @@ start_svr_sh: |
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
   all_arguments="${@}"
   doCloud=false
-  ha_mode={~~ha_mode~~}
   # parse arguments
   while [[ $# -gt 0 ]]
   do
     key="$1"
     case $key in
       --cloud)
-        if [ $ha_mode == false ]
-        then
-          doCloud=true
-          csp=$2
-          shift
-        else
-          echo "Cloud launch does not support NVFlare HA mode."
-          exit 1
-        fi
+        doCloud=true
+        csp=$2
+        shift
       ;;
     esac
     shift
@@ -779,15 +761,6 @@ docker_adm_sh: |
 
 compose_yaml: |
   services:
-    __overseer__:
-      build: ./nvflare
-      image: ${IMAGE_NAME}
-      volumes:
-        - .:/workspace
-      command: ["${WORKSPACE}/startup/start.sh"]
-      ports:
-        - "8443:8443"
-
     __flserver__:
       image: ${IMAGE_NAME}
       ports:

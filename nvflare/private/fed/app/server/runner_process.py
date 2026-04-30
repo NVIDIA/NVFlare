@@ -97,7 +97,6 @@ def main(args):
         try:
             # create the FL server
             server_config, server = deployer.create_fl_server(args, secure_train=secure_train)
-            server.ha_mode = eval(args.ha_mode)
 
             server.cell = server.create_job_cell(
                 args.job_id, args.root_url, args.parent_url, secure_train, server_config
@@ -164,7 +163,6 @@ def parse_arguments():
         required=False,
         default="",
     )
-    parser.add_argument("--ha_mode", "-ha_mode", type=str, help="HA mode", required=True)
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
     args = parser.parse_args()
     return args

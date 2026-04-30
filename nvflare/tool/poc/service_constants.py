@@ -18,7 +18,6 @@ class FlareServiceConstants(object):
     FLARE_OTHER_ADMINS = "other_admins"
     FLARE_SERVER = "server"
     FLARE_CLIENTS = "clients"
-    FLARE_OVERSEER = "overseer"
     STARTUP = "startup"
     CMD_START = "start"
     CMD_STOP = "stop"

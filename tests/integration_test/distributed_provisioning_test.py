@@ -304,25 +304,21 @@ class TestDistributedProvisioningWorkflow:
     # Config consistency tests — server, client, admin configs must agree
     # ------------------------------------------------------------------
 
-    def test_fed_server_json_target_and_sp_end_point(self, provisioned):
+    def test_fed_server_json_target(self, provisioned):
         with open(os.path.join(provisioned[_SERVER_NAME], "startup", "fed_server.json")) as f:
             cfg = json.load(f)
         svc = cfg["servers"][0]["service"]
         assert svc["target"] == "localhost:8002"
         assert svc["scheme"] == "grpc"
-        sp = cfg["overseer_agent"]["args"]["sp_end_point"]
-        assert sp.startswith("localhost:8002:")
 
-    def test_fed_client_sp_end_point_matches_server(self, provisioned):
+    def test_fed_client_target_matches_server(self, provisioned):
         with open(os.path.join(provisioned[_SERVER_NAME], "startup", "fed_server.json")) as f:
-            srv_cfg = json.load(f)
-        server_sp = srv_cfg["overseer_agent"]["args"]["sp_end_point"]
+            srv_target = json.load(f)["servers"][0]["service"]["target"]
 
         for name in ("site-1", "site-2"):
             with open(os.path.join(provisioned[name], "startup", "fed_client.json")) as f:
-                cli_cfg = json.load(f)
-            client_sp = cli_cfg["overseer_agent"]["args"]["sp_end_point"]
-            assert client_sp == server_sp, f"{name} sp_end_point {client_sp!r} != server sp_end_point {server_sp!r}"
+                cli_target = json.load(f)["servers"][0]["service"]["target"]
+            assert cli_target == srv_target, f"{name} target {cli_target!r} != server target {srv_target!r}"
 
     def test_fed_admin_json_port_matches_server(self, provisioned):
         with open(os.path.join(provisioned[_SERVER_NAME], "startup", "fed_server.json")) as f:
@@ -716,7 +712,7 @@ class TestKitParity:
         assert _json_keys_recursive(c) == _json_keys_recursive(d)
 
     def test_fed_server_json_endpoint_values_match(self, parity_kits):
-        """fed_server.json target, scheme, and sp_end_point must be identical."""
+        """fed_server.json target and scheme must be identical."""
         centralized, distributed = parity_kits
         with open(os.path.join(centralized["localhost"], "startup", "fed_server.json")) as f:
             c = json.load(f)
@@ -725,16 +721,15 @@ class TestKitParity:
         assert c["servers"][0]["service"]["target"] == d["servers"][0]["service"]["target"]
         assert c["servers"][0]["service"]["scheme"] == d["servers"][0]["service"]["scheme"]
         assert c["servers"][0]["admin_port"] == d["servers"][0]["admin_port"]
-        assert c["overseer_agent"]["args"]["sp_end_point"] == d["overseer_agent"]["args"]["sp_end_point"]
 
-    def test_fed_client_sp_end_point_matches_server(self, parity_kits):
-        """fed_client.json sp_end_point must match fed_server.json in both workflows."""
+    def test_fed_client_target_matches_server(self, parity_kits):
+        """fed_client.json target must match fed_server.json in both workflows."""
         for kit_dirs in parity_kits:
             with open(os.path.join(kit_dirs["localhost"], "startup", "fed_server.json")) as f:
-                srv_sp = json.load(f)["overseer_agent"]["args"]["sp_end_point"]
+                srv_target = json.load(f)["servers"][0]["service"]["target"]
             with open(os.path.join(kit_dirs["site-1"], "startup", "fed_client.json")) as f:
-                cli_sp = json.load(f)["overseer_agent"]["args"]["sp_end_point"]
-            assert cli_sp == srv_sp
+                cli_target = json.load(f)["servers"][0]["service"]["target"]
+            assert cli_target == srv_target
 
     def test_cert_key_content_differs(self, parity_kits):
         """Cert and key files must differ — each workflow uses its own CA."""

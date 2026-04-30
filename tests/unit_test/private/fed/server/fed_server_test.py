@@ -22,11 +22,11 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.private.defs import CellMessageHeaderKeys, ClientRegMsgKey, new_cell_message
 from nvflare.private.fed.server.fed_server import FederatedServer
-from nvflare.private.fed.server.server_state import ColdState, HotState
+from nvflare.private.fed.server.server_state import HotState
 
 
 class TestFederatedServer:
-    @pytest.mark.parametrize("server_state, expected", [(HotState(), ["extra_job"]), (ColdState(), [])])
+    @pytest.mark.parametrize("server_state, expected", [(HotState(), ["extra_job"])])
     def test_heart_beat_abort_jobs(self, server_state, expected):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
             server = FederatedServer(
@@ -38,7 +38,6 @@ class TestFederatedServer:
                 args=MagicMock(),
                 secure_train=False,
                 snapshot_persistor=MagicMock(),
-                overseer_agent=MagicMock(),
             )
 
             server.server_state = server_state
@@ -70,7 +69,6 @@ class TestFederatedServer:
                 args=MagicMock(),
                 secure_train=False,
                 snapshot_persistor=MagicMock(),
-                overseer_agent=MagicMock(),
             )
 
             token = "token-1"
@@ -98,7 +96,6 @@ class TestFederatedServer:
                 args=MagicMock(),
                 secure_train=False,
                 snapshot_persistor=MagicMock(),
-                overseer_agent=MagicMock(),
             )
 
             token = "token-1"
@@ -134,7 +131,6 @@ class TestFederatedServer:
                 args=MagicMock(),
                 secure_train=False,
                 snapshot_persistor=MagicMock(),
-                overseer_agent=MagicMock(),
             )
 
             token = "token-1"
@@ -164,7 +160,6 @@ class TestFederatedServer:
                 args=MagicMock(),
                 secure_train=False,
                 snapshot_persistor=MagicMock(),
-                overseer_agent=MagicMock(),
             )
 
             token = "token-1"
@@ -201,7 +196,6 @@ class TestFederatedServer:
                 args=MagicMock(),
                 secure_train=False,
                 snapshot_persistor=MagicMock(),
-                overseer_agent=MagicMock(),
             )
 
             token = "token-1"

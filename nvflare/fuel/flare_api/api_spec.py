@@ -493,7 +493,7 @@ class SessionSpec(ABC):
 
     @abstractmethod
     def shutdown_system(self):
-        """Shut down the whole NVFLARE system including the overseer, FL server(s), and all FL clients.
+        """Shut down the whole NVFLARE system including the FL server and all FL clients.
 
         Returns: None
 

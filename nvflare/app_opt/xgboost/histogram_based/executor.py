@@ -166,12 +166,6 @@ class FedXGBHistogramExecutor(Executor):
             self.initialize(fl_ctx)
 
     def _get_server_address(self, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        if engine.client.overseer_agent:
-            sp = engine.client.overseer_agent.get_primary_sp()
-            if sp and sp.primary is True:
-                return sp.name
-        self.log_info(fl_ctx, "Unable to get primary sp from overseer. Using previously known server address")
         return self._server_address
 
     def _get_certificates(self, fl_ctx: FLContext):
