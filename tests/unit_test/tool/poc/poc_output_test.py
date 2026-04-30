@@ -551,46 +551,6 @@ class TestPocOutput:
         assert "ready_timeout:" not in captured.out
         assert captured.err == ""
 
-    def test_prepare_jobs_dir_user_decline_emits_no_success(self, capsys, tmp_path):
-        """prepare_jobs_dir should not emit output_ok when the user declines replacement."""
-        from nvflare.tool.poc.poc_commands import prepare_jobs_dir
-
-        args = MagicMock()
-        args.jobs_dir = str(tmp_path / "jobs")
-        args.force = False
-        os_jobs = tmp_path / "jobs"
-        os_jobs.mkdir()
-
-        with (
-            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
-            patch("nvflare.tool.poc.poc_commands._prepare_jobs_dir", return_value=False),
-            patch("nvflare.tool.install_skills.install_skills", return_value=None),
-        ):
-            prepare_jobs_dir(args)
-
-        captured = capsys.readouterr()
-        assert captured.out.strip() == ""
-
-    def test_prepare_jobs_dir_human_output_omits_json_payload(self, capsys, monkeypatch, tmp_path):
-        from nvflare.tool.poc.poc_commands import prepare_jobs_dir
-
-        monkeypatch.setattr(cli_output, "_output_format", "txt")
-        args = MagicMock()
-        args.jobs_dir = str(tmp_path / "jobs")
-        args.force = True
-
-        with (
-            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path / "poc")),
-            patch("nvflare.tool.poc.poc_commands._prepare_jobs_dir", return_value=True),
-            patch("nvflare.tool.install_skills.install_skills", return_value=None),
-        ):
-            prepare_jobs_dir(args)
-
-        captured = capsys.readouterr()
-        assert "Jobs directory linked:" in captured.out
-        assert "workspace:" not in captured.out
-        assert "jobs_dir:" not in captured.out
-
     def test_clean_poc_running_system_raises(self, tmp_path):
         """clean_poc should propagate CLIException when the system is still running."""
         from nvflare.tool.poc.poc_commands import clean_poc

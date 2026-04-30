@@ -13,14 +13,14 @@ before a distributed deployment.
 Command Usage
 ***********************
 
-The POC command provides the subcommands ``config``, ``prepare``,
-``prepare-jobs-dir``, ``add``, ``start``, ``stop``, and ``clean``.
+The POC command provides the subcommands ``config``, ``prepare``, ``add``,
+``start``, ``stop``, and ``clean``.
 
 .. code-block:: none
 
    nvflare poc -h
 
-   usage: nvflare poc [-h] {config,prepare,prepare-jobs-dir,add,start,stop,clean} ...
+   usage: nvflare poc [-h] {config,prepare,add,start,stop,clean} ...
 
 *****************
 Common Workflow
@@ -29,11 +29,10 @@ Common Workflow
 1. Optionally run ``nvflare poc config --pw <poc_workspace>`` to choose the
    local workspace path.
 2. Run ``nvflare poc prepare`` to create the local workspace and startup kits.
-3. Optionally run ``nvflare poc prepare-jobs-dir`` to link a jobs folder into
-   the admin transfer area.
-4. Optionally run ``nvflare poc add user`` or ``nvflare poc add site`` to add a
+3. Optionally run ``nvflare poc add user`` or ``nvflare poc add site`` to add a
    local participant startup kit.
-5. Run ``nvflare poc start`` to start the server and clients.
+4. Run ``nvflare poc start`` to start the server and clients.
+5. Submit jobs directly with ``nvflare job submit -j <path/to/job>``.
 6. Start an admin console explicitly only when you need one.
 7. Run ``nvflare poc stop`` to stop the system.
 8. Run ``nvflare poc clean`` after the system is stopped.
@@ -103,36 +102,6 @@ Example:
 
    nvflare poc prepare -n 2
 
-**********************
-Prepare Jobs Directory
-**********************
-
-Use ``nvflare poc prepare-jobs-dir`` to link a jobs directory into the admin
-transfer area:
-
-.. code-block:: none
-
-   nvflare poc prepare-jobs-dir [-h] [-j [JOBS_DIR]] [-debug] [--force] [--schema]
-
-Options:
-
-- ``-j, --jobs_dir``: jobs directory to link.
-- ``-debug, --debug``: debug mode.
-- ``--force``: overwrite an existing linked jobs directory without prompting.
-- ``--schema``: print command schema as JSON and exit.
-
-Behavior notes:
-
-- If the transfer directory already exists and stdin is non-interactive,
-  ``--force`` is required.
-- Jobs in the linked folder become accessible to the FL admin console.
-
-Example:
-
-.. code-block:: shell
-
-   nvflare poc prepare-jobs-dir -j /path/to/jobs --force
-
 ***************
 Add Participant
 ***************
@@ -143,7 +112,7 @@ user or site:
 .. code-block:: none
 
    nvflare poc add user [-h] [--org ORG] [--force] [--schema]
-                        {project_admin,org_admin,lead,member} email
+                        {org_admin,lead,member} email
 
    nvflare poc add site [-h] [--org ORG] [--force] [--schema] name
 
@@ -152,10 +121,11 @@ Behavior notes:
 - ``poc add user`` and ``poc add site`` require the active startup kit to have
   the ``project_admin`` certificate role. Use ``nvflare config use <id>`` to switch
   back to the POC Project Admin kit before adding users or sites.
-- ``poc add user`` adds an admin participant to the persisted POC
+- ``poc add user`` adds a secondary admin participant to the persisted POC
   ``project.yml``, dynamically provisions only that new user with the existing
   POC CA, and registers the generated user startup kit in the shared startup
-  kit registry.
+  kit registry. It cannot add another ``project_admin``; the POC Project Admin
+  is created by ``poc prepare``.
 - ``poc add site`` adds a client participant to the persisted POC
   ``project.yml`` and dynamically provisions only that new site with the
   existing POC CA. The generated site kit is placed in the current POC output

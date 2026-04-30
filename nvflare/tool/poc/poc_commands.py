@@ -71,7 +71,6 @@ DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 DEFAULT_PROJECT_NAME = "example_project"
 
 CMD_PREPARE_POC = "prepare"
-CMD_PREPARE_JOBS_DIR = "prepare-jobs-dir"
 CMD_START_POC = "start"
 CMD_STOP_POC = "stop"
 CMD_CLEAN_POC = "clean"
@@ -195,44 +194,7 @@ def is_dir_empty(path: str):
     return not os.listdir(path)
 
 
-def prepare_jobs_dir(cmd_args):
-    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok
-    from nvflare.tool.cli_schema import handle_schema_flag
-    from nvflare.tool.install_skills import install_skills
-
-    handle_schema_flag(
-        _poc_sub_cmd_parsers.get(CMD_PREPARE_JOBS_DIR),
-        "nvflare poc prepare-jobs-dir",
-        ["nvflare poc prepare-jobs-dir -j /path/to/jobs"],
-        sys.argv[1:],
-    )
-    force = getattr(cmd_args, "force", False)
-    poc_workspace = get_poc_workspace()
-
-    try:
-        result = _prepare_jobs_dir(cmd_args.jobs_dir, poc_workspace, force=force)
-    except CLIException as e:
-        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
-        raise SystemExit(4)
-    except Exception as e:
-        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
-        raise SystemExit(5)
-    if result is False:
-        return
-
-    if is_json_mode():
-        output_ok({"workspace": poc_workspace, "jobs_dir": cmd_args.jobs_dir})
-    from nvflare.tool.cli_output import print_human
-
-    print_human(f"\nJobs directory linked: {cmd_args.jobs_dir}")
-    print_human("  Jobs in that folder are now accessible to the FL admin console.")
-    try:
-        install_skills()
-    except Exception:
-        pass
-
-
-def _prepare_jobs_dir(
+def _link_jobs_dir_to_admin_transfer(
     jobs_dir: str, workspace: str, config_packages: Optional[Tuple] = None, force: bool = False
 ) -> bool:
     project_config, service_config = config_packages if config_packages else setup_service_config(workspace)
@@ -1420,7 +1382,7 @@ def prepare_poc_provision(
         update_storage_locations(local_dir=f"{prod_dir}/{server_name}/local", workspace=workspace)
     examples_dir = get_examples_dir(examples_dir)
     if examples_dir is not None:
-        _prepare_jobs_dir(examples_dir, workspace, None)
+        _link_jobs_dir_to_admin_transfer(examples_dir, workspace, None)
 
     return project_config
 
@@ -2123,7 +2085,6 @@ def config_poc(cmd_args):
 
 poc_sub_cmd_handlers = {
     CMD_PREPARE_POC: prepare_poc,
-    CMD_PREPARE_JOBS_DIR: prepare_jobs_dir,
     CMD_ADD_POC: add_poc,
     CMD_START_POC: start_poc,
     CMD_STOP_POC: stop_poc,
@@ -2146,7 +2107,6 @@ def def_poc_parser(sub_cmd):
     poc_parser = parser.add_subparsers(title=cmd, dest="poc_sub_cmd", help="poc subcommand")
     define_config_parser(poc_parser)
     define_prepare_parser(poc_parser)
-    define_prepare_jobs_parser(poc_parser)
     define_add_parser(poc_parser)
     define_start_parser(poc_parser)
     define_stop_parser(poc_parser)
@@ -2228,26 +2188,6 @@ def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optio
     prepare_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     prepare_parser.add_argument("--force", action="store_true", help="overwrite existing workspace without prompting")
     prepare_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
-
-
-def define_prepare_jobs_parser(poc_parser):
-    prepare_jobs_dir_parser = poc_parser.add_parser(CMD_PREPARE_JOBS_DIR, help="prepare jobs directory")
-    _poc_sub_cmd_parsers[CMD_PREPARE_JOBS_DIR] = prepare_jobs_dir_parser
-    prepare_jobs_dir_parser.add_argument(
-        "-j",
-        "--jobs-dir",
-        "--jobs_dir",  # backward compat
-        dest="jobs_dir",
-        type=str,
-        nargs="?",
-        default=None,
-        help="jobs directory",
-    )
-    prepare_jobs_dir_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
-    prepare_jobs_dir_parser.add_argument(
-        "--force", action="store_true", help="overwrite existing jobs directory without prompting"
-    )
-    prepare_jobs_dir_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
 def define_add_parser(poc_parser):

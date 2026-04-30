@@ -290,8 +290,7 @@ class TestPocForce:
         args = root.parse_args(["poc", "clean", "--force"])
         assert args.force is True
 
-    def test_prepare_jobs_dir_force_flag(self):
-        """poc prepare-jobs-dir parser should accept --force flag."""
+    def test_removed_jobs_dir_parser_rejected(self):
         import argparse
 
         from nvflare.tool.poc.poc_commands import def_poc_parser
@@ -299,8 +298,9 @@ class TestPocForce:
         root = argparse.ArgumentParser()
         subs = root.add_subparsers()
         def_poc_parser(subs)
-        args = root.parse_args(["poc", "prepare-jobs-dir", "--force"])
-        assert args.force is True
+
+        with pytest.raises(SystemExit):
+            root.parse_args(["poc", "prepare-jobs-dir"])
 
     def test_poc_add_user_and_site_parser(self):
         import argparse
@@ -1219,31 +1219,8 @@ poc {{
         assert workspace.exists()
         assert sentinel.exists()
 
-    def test_prepare_jobs_dir_raises_when_output_error_is_mocked(self, tmp_path):
-        from nvflare.tool.poc.poc_commands import prepare_jobs_dir
-
-        args = MagicMock()
-        args.jobs_dir = str(tmp_path / "jobs")
-        args.force = False
-
-        with (
-            patch(
-                "nvflare.tool.poc.poc_commands.get_poc_workspace",
-                return_value=str(tmp_path),
-            ),
-            patch(
-                "nvflare.tool.poc.poc_commands._prepare_jobs_dir",
-                side_effect=Exception("boom"),
-            ),
-            patch("nvflare.tool.cli_output.output_error"),
-        ):
-            with pytest.raises(SystemExit) as exc_info:
-                prepare_jobs_dir(args)
-
-        assert exc_info.value.code == 5
-
-    def test_prepare_jobs_dir_replaces_existing_empty_symlink(self, tmp_path):
-        from nvflare.tool.poc.poc_commands import _prepare_jobs_dir
+    def test_link_jobs_dir_to_admin_transfer_replaces_existing_empty_symlink(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import _link_jobs_dir_to_admin_transfer
 
         workspace = tmp_path / "workspace"
         jobs_src = tmp_path / "jobs_src"
@@ -1263,7 +1240,7 @@ poc {{
         service_config = {SC.FLARE_PROJ_ADMIN: admin_name}
 
         with patch("nvflare.tool.poc.poc_commands.get_upload_dir", return_value=transfer_name):
-            result = _prepare_jobs_dir(
+            result = _link_jobs_dir_to_admin_transfer(
                 str(jobs_src),
                 str(workspace),
                 config_packages=(project_config, service_config),
