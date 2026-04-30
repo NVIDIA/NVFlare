@@ -21,6 +21,32 @@ select compute, switch the software configuration to ``Single-node Kubernetes``,
 open a Brev shell, copy the startup kits to the environment, then deploy with
 ``kubectl`` and ``helm`` inside each Brev environment.
 
+Brev System Overview
+====================
+
+Brev provides managed compute environments that can be created with CPU or GPU
+hardware and an optional single-node Kubernetes software configuration. In this
+guide, each Brev environment is used as a small independent Kubernetes cluster:
+one environment runs the FLARE server, and each client site runs in its own
+environment.
+
+The Brev console is used to create environments, choose hardware, select
+``Single-node Kubernetes``, and expose the FLARE server port. The Brev CLI is
+used from the local workstation to copy files and open shells:
+
+* ``brev copy`` uploads each provisioned startup kit archive.
+* ``brev shell`` opens a shell inside a Brev environment.
+* ``brev exec`` can run non-interactive commands after the environment is ready.
+
+Inside each Brev Kubernetes environment, ``kubectl`` and ``helm`` operate on
+that environment's local cluster. Because the clusters are separate, using the
+same Kubernetes namespace and PVC names in each cluster is safe.
+
+The FLARE server environment needs an inbound TCP port for
+``fed_learn_port``. Client environments usually do not need inbound FLARE
+ports; they connect outbound to the server endpoint configured in
+``project.yml``.
+
 Assumptions
 ===========
 
@@ -43,9 +69,61 @@ cluster has its own Kubernetes API and storage backend.
 
 References:
 
+* `NVIDIA Brev documentation <https://docs.nvidia.com/brev/>`__
 * `NVIDIA Brev console documentation <https://docs.nvidia.com/brev/guides/console-reference>`__
 * `Brev connectivity documentation <https://docs.nvidia.com/brev/cli/connectivity>`__
 * :ref:`helm_chart`
+
+Scripted Three-Environment Variant
+==================================
+
+If you already have three Brev single-node Kubernetes environments named
+``server``, ``site-1``, and ``site-2``, the helper scripts below automate the
+same provisioning, copy, PVC staging, launcher patching, and Helm install flow
+for a server plus two clients:
+
+* :download:`prepare_brev_startup_kits.sh <brev_scripts/prepare_brev_startup_kits.sh>`
+* :download:`launch_brev_nvflare.sh <brev_scripts/launch_brev_nvflare.sh>`
+
+Run the prepare script from a local NVFlare checkout with an external server
+host name and an image that all Brev clusters can pull:
+
+.. code-block:: shell
+
+   export SERVER_HOST=server1.example.com
+   export IMAGE=registry.example.com/nvflare:dev
+   bash docs/user_guide/admin_guide/deployment/brev_scripts/prepare_brev_startup_kits.sh
+
+If your Brev environment names differ from the participant names, set them with
+environment variables or ask the script to prompt for them:
+
+.. code-block:: shell
+
+   SERVER_BREV=nvflare-server-k8s \
+   SITE_1_BREV=nvflare-site-1-k8s \
+   SITE_2_BREV=nvflare-site-2-k8s \
+   bash docs/user_guide/admin_guide/deployment/brev_scripts/prepare_brev_startup_kits.sh
+
+   bash docs/user_guide/admin_guide/deployment/brev_scripts/prepare_brev_startup_kits.sh \
+     --prompt-brev-names
+
+Then run the launch script inside each Brev environment:
+
+.. code-block:: shell
+
+   brev shell "${SERVER_BREV:-server}"
+   IMAGE="$IMAGE" bash /home/ubuntu/launch_brev_nvflare.sh server
+
+   brev shell "${SITE_1_BREV:-site-1}"
+   IMAGE="$IMAGE" SERVER_HOST="$SERVER_HOST" bash /home/ubuntu/launch_brev_nvflare.sh site-1
+
+   brev shell "${SITE_2_BREV:-site-2}"
+   IMAGE="$IMAGE" SERVER_HOST="$SERVER_HOST" bash /home/ubuntu/launch_brev_nvflare.sh site-2
+
+The current Brev CLI exposes ``brev port-forward`` for local forwarding, but it
+does not provide a public TCP port exposure command. Use the Brev UI Access page
+to expose TCP ``8002`` on the ``server`` environment before starting the two
+sites.
 
 Create Brev Kubernetes Environments
 ===================================
