@@ -16,6 +16,7 @@
 import os
 
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
+from nvflare.tool.cli_arg_utils import get_arg_value
 from nvflare.tool.kit.kit_config import (
     NVFLARE_STARTUP_KIT_DIR,
     StartupKitConfigError,
@@ -44,18 +45,9 @@ def add_startup_kit_selection_args(parser) -> None:
     )
 
 
-def _get_arg_value(args, name: str, default=None):
-    if args is None:
-        return default
-    try:
-        return vars(args).get(name, default)
-    except TypeError:
-        return getattr(args, name, default)
-
-
 def _startup_kit_selectors_for_args(args=None):
-    kit_id = _get_arg_value(args, "kit_id")
-    startup_kit = _get_arg_value(args, "startup_kit")
+    kit_id = get_arg_value(args, "kit_id")
+    startup_kit = get_arg_value(args, "startup_kit")
     if kit_id and startup_kit:
         raise StartupKitConfigError(
             "--kit-id and --startup-kit are mutually exclusive",

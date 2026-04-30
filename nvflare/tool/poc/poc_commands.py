@@ -1605,11 +1605,10 @@ def start_poc(cmd_args):
         "default_server_port": endpoint_info["default_server_port"],
         "default_admin_port": endpoint_info["default_admin_port"],
         "ready_timeout": ready_timeout,
+        "ready": ready,
         "clients": clients,
     }
     result.update(port_diagnostics)
-    if no_wait or wait_performed:
-        result["ready"] = ready
     output_ok(result)
     from nvflare.tool.cli_output import print_human
 

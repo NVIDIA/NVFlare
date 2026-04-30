@@ -301,6 +301,8 @@ def _emit_argparse_error_json(parser, message):
     # command handler runs and therefore sit outside the normal command data envelope.
     payload = {
         "schema_version": SCHEMA_VERSION,
+        "event": "terminal",
+        "terminal": True,
         "status": "error",
         "exit_code": 4,
         "error_code": "INVALID_ARGS",

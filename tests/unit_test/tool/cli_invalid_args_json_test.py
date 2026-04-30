@@ -106,5 +106,7 @@ def test_jsonl_rejected_for_non_streaming_command(capsys, monkeypatch):
     assert exc_info.value.code == 4
 
     payload = json.loads(capsys.readouterr().out)
+    assert payload["event"] == "terminal"
+    assert payload["terminal"] is True
     assert payload["error_code"] == "INVALID_ARGS"
     assert "nvflare job monitor" in payload["message"]

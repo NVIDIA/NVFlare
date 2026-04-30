@@ -17,6 +17,7 @@ import os
 import threading
 import time
 import uuid
+from contextlib import suppress
 from typing import Optional
 
 from nvflare.apis.client import Client, ClientPropKey
@@ -84,9 +85,14 @@ class ClientManager:
             os.makedirs(dirname, exist_ok=True)
         data = {"disabled_clients": sorted(disabled_clients)}
         tmp_path = self.disabled_clients_file + ".tmp"
-        with open(tmp_path, "w") as f:
-            json.dump(data, f, indent=2)
-        os.replace(tmp_path, self.disabled_clients_file)
+        try:
+            with open(tmp_path, "w") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp_path, self.disabled_clients_file)
+        except Exception:
+            with suppress(OSError):
+                os.unlink(tmp_path)
+            raise
 
     def is_client_disabled(self, client_name: str) -> bool:
         with self.lock:
@@ -103,17 +109,16 @@ class ClientManager:
                     self.clients.pop(token, None)
             self.name_to_clients.pop(client_name, None)
             disabled_snapshot = set(self.disabled_clients)
-        try:
-            self._save_disabled_clients(disabled_snapshot)
-        except Exception as ex:
-            with self.lock:
+            try:
+                self._save_disabled_clients(disabled_snapshot)
+            except Exception as ex:
                 if not already_disabled:
                     self.disabled_clients.discard(client_name)
                 for token, client in removed_clients:
                     self.clients[token] = client
                     self.name_to_clients[client.name] = client
-            self.logger.error(f"failed to persist disabled-client state for {client_name}: {ex}")
-            raise
+                self.logger.error(f"failed to persist disabled-client state for {client_name}: {ex}")
+                raise
         removed_tokens = [token for token, _client in removed_clients]
         self.logger.info(f"Client {client_name} disabled. Removed active tokens: {removed_tokens}")
         return removed_tokens
@@ -126,14 +131,13 @@ class ClientManager:
                 disabled_snapshot = set(self.disabled_clients)
             else:
                 disabled_snapshot = None
-        if was_disabled:
-            try:
-                self._save_disabled_clients(disabled_snapshot)
-            except Exception as ex:
-                with self.lock:
+            if was_disabled:
+                try:
+                    self._save_disabled_clients(disabled_snapshot)
+                except Exception as ex:
                     self.disabled_clients.add(client_name)
-                self.logger.error(f"failed to persist enabled-client state for {client_name}: {ex}")
-                raise
+                    self.logger.error(f"failed to persist enabled-client state for {client_name}: {ex}")
+                    raise
         self.logger.info(f"Client {client_name} enabled. Was disabled: {was_disabled}")
         return was_disabled
 

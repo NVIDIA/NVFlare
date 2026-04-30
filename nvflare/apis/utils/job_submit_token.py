@@ -17,12 +17,15 @@ import io
 import json
 import os
 import posixpath
+import re
 import zipfile
-from typing import Iterable, Tuple, Union
+from typing import Iterable, Optional, Tuple, Union
 
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
 
 _VOLATILE_SUBMIT_ARTIFACTS = {NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE}
+SUBMIT_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+SUBMIT_TOKEN_ERROR = "submit_token must be non-empty, at most 128 characters, and match ^[A-Za-z0-9._:-]{1,128}$"
 
 
 def canonical_json_hash(value) -> str:
@@ -50,6 +53,14 @@ def submit_record_scope_hashes(study: str, submitter, submit_token: str) -> Tupl
         canonical_json_hash(submitter_to_dict(submitter)),
         canonical_json_hash(submit_token or ""),
     )
+
+
+def validate_submit_token(submit_token: Optional[str]) -> Optional[str]:
+    if submit_token is None:
+        return None
+    if not isinstance(submit_token, str) or not SUBMIT_TOKEN_PATTERN.fullmatch(submit_token):
+        raise ValueError(SUBMIT_TOKEN_ERROR)
+    return submit_token
 
 
 def canonical_job_content_hash(job_content: Union[str, bytes], exclude_names: Iterable[str] = None) -> str:

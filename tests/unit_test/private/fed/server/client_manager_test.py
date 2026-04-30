@@ -122,6 +122,34 @@ def test_disable_client_restores_active_client_when_persist_fails():
     assert manager.name_to_clients["site-a"] is client
 
 
+def test_disable_enable_persist_while_holding_client_manager_lock():
+    manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+    lock_states = []
+
+    def fake_save(_snapshot):
+        lock_states.append(manager.lock.locked())
+
+    manager._save_disabled_clients = fake_save
+
+    manager.disable_client("site-a")
+    manager.enable_client("site-a")
+
+    assert lock_states == [True, True]
+
+
+def test_save_disabled_clients_removes_tmp_on_replace_failure(tmp_path):
+    disabled_file = tmp_path / "disabled_clients.json"
+    tmp_file = tmp_path / "disabled_clients.json.tmp"
+    manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+    manager.set_disabled_clients_file(str(disabled_file))
+
+    with patch("nvflare.private.fed.server.client_manager.os.replace", side_effect=OSError("replace failed")):
+        with pytest.raises(OSError):
+            manager._save_disabled_clients({"site-a"})
+
+    assert not tmp_file.exists()
+
+
 def test_remove_client_unknown_token_returns_none():
     manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
 

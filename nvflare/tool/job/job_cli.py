@@ -28,9 +28,11 @@ from typing import List, Optional, Tuple
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
 
+from nvflare.apis.utils.job_submit_token import validate_submit_token
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.tool.cli_arg_utils import get_arg_value
 from nvflare.tool.cli_session import add_startup_kit_selection_args, new_cli_session, new_cli_session_for_args
 from nvflare.tool.job.config.configer import (
     build_config_file_indices,
@@ -68,15 +70,12 @@ from nvflare.utils.cli_utils import (
     save_config,
 )
 
-_SUBMIT_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
-
 
 def _submit_token_arg(value: str) -> str:
-    if not isinstance(value, str) or not _SUBMIT_TOKEN_PATTERN.fullmatch(value):
-        raise argparse.ArgumentTypeError(
-            "submit token must be non-empty, at most 128 characters, and match ^[A-Za-z0-9._:-]{1,128}$"
-        )
-    return value
+    try:
+        return validate_submit_token(value)
+    except ValueError as ex:
+        raise argparse.ArgumentTypeError(str(ex)) from ex
 
 
 CMD_LIST_TEMPLATES = "list-templates"
@@ -1022,7 +1021,7 @@ def _get_session(args=None, admin_user_dir=None, username=None, study="default")
                 args=args,
                 timeout=timeout,
                 study=study,
-                debug=_get_arg_value(args, "debug", False),
+                debug=get_arg_value(args, "debug", False),
             )
         except ValueError as e:
             output_error(
@@ -1069,17 +1068,8 @@ def _session(args=None, admin_user_dir=None, username=None, study="default"):
             sess.close()
 
 
-def _get_arg_value(args, name, default=None):
-    if args is None:
-        return default
-    try:
-        return vars(args).get(name, default)
-    except TypeError:
-        return getattr(args, name, default)
-
-
 def _has_scoped_startup_kit_args(args) -> bool:
-    return bool(_get_arg_value(args, "kit_id") or _get_arg_value(args, "startup_kit"))
+    return bool(get_arg_value(args, "kit_id") or get_arg_value(args, "startup_kit"))
 
 
 def _job_session_for_args(cmd_args=None, study="default"):
@@ -2202,7 +2192,7 @@ def cmd_job_monitor(cmd_args):
     )
 
     jsonl_mode = is_jsonl_mode()
-    study = _get_arg_value(cmd_args, "study", "default")
+    study = get_arg_value(cmd_args, "study", "default")
     start = time.time()
     start_ts_holder = {"value": None}
     timeout = getattr(cmd_args, "timeout", 0)
@@ -2341,7 +2331,7 @@ def cmd_job_wait(cmd_args):
         retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
 
-    study = _get_arg_value(cmd_args, "study", "default")
+    study = get_arg_value(cmd_args, "study", "default")
     start = time.time()
     timeout = getattr(cmd_args, "timeout", 0)
     interval = getattr(cmd_args, "interval", 2)

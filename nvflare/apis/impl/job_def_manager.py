@@ -130,7 +130,8 @@ class SimpleJobDefManager(JobDefManagerSpec):
         self.job_store_id = job_store_id
         # Submit-token records are a sidecar namespace beside the job store so they are not
         # enumerated as jobs by stores that scan uri_root directly.
-        self.submit_record_uri_root = os.path.join(os.path.dirname(self.uri_root), _SUBMIT_RECORD_URI_ROOT)
+        uri_root = self.uri_root.rstrip(os.sep) or self.uri_root
+        self.submit_record_uri_root = os.path.join(os.path.dirname(uri_root), _SUBMIT_RECORD_URI_ROOT)
         self._submit_record_lock = threading.Lock()
 
     def _get_job_store(self, fl_ctx):

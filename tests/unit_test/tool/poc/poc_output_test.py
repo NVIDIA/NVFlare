@@ -345,6 +345,7 @@ class TestPocOutput:
         data = json.loads(capsys.readouterr().out)
         assert data["status"] == "ok"
         assert data["data"]["status"] == "running"
+        assert data["data"]["ready"] is False
         assert data["data"]["clients"] == []
 
     def test_start_poc_builds_endpoint_info_after_config_load(self, capsys, tmp_path):

@@ -14,7 +14,6 @@
 
 import json
 import os
-import re
 import time
 from typing import List, Optional
 
@@ -22,6 +21,7 @@ from nvflare.apis.fl_constant import SUBMIT_TOKEN_CONFLICT_STATUS, AdminCommandN
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey
 from nvflare.apis.utils.format_check import name_check
+from nvflare.apis.utils.job_submit_token import validate_submit_token
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
@@ -69,7 +69,6 @@ _VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
 _DEFAULT_STATE_CHANGE_TIMEOUT = 30.0
 _STATE_CHANGE_POLL_INTERVAL = 0.5
 _STATE_CHANGE_CONNECT_TIMEOUT = 1.0
-_SUBMIT_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _LEGACY_TERMINAL_JOB_STATUSES = {
     "FINISHED_OK",
     "FINISHED_EXCEPTION",
@@ -90,16 +89,11 @@ def _validate_job_polling_options(timeout: float, poll_interval: float) -> None:
         raise InvalidArgumentError("poll_interval must be > 0")
 
 
-def _validate_submit_token(submit_token: Optional[str]) -> Optional[str]:
-    if submit_token is None:
-        return None
-    if not isinstance(submit_token, str):
-        raise InvalidArgumentError(f"submit_token must be str but got {type(submit_token)}")
-    if not _SUBMIT_TOKEN_PATTERN.fullmatch(submit_token):
-        raise InvalidArgumentError(
-            "submit_token must be non-empty, at most 128 characters, and match ^[A-Za-z0-9._:-]{1,128}$"
-        )
-    return submit_token
+def _validate_submit_token_arg(submit_token: Optional[str]) -> Optional[str]:
+    try:
+        return validate_submit_token(submit_token)
+    except ValueError as ex:
+        raise InvalidArgumentError(str(ex)) from ex
 
 
 __all__ = ["NoConnection", "NoReply", "SystemInfo", "TargetType"]
@@ -346,7 +340,7 @@ class Session(SessionSpec):
                 f"job folder name '{job_folder_name}' contains unsupported characters. "
                 "Use only letters, numbers, dots, underscores, and hyphens, with no spaces."
             )
-        submit_token = _validate_submit_token(submit_token)
+        submit_token = _validate_submit_token_arg(submit_token)
         parts = [AdminCommandNames.SUBMIT_JOB, job_definition_path]
         if submit_token:
             parts.extend(["--submit-token", submit_token])
@@ -429,7 +423,7 @@ class Session(SessionSpec):
             raise ValueError(f"id_prefix must be None or str but got {type(id_prefix)}")
         if name_prefix is not None and not isinstance(name_prefix, str):
             raise ValueError(f"name_prefix must be None or str but got {type(name_prefix)}")
-        submit_token = _validate_submit_token(submit_token)
+        submit_token = _validate_submit_token_arg(submit_token)
 
         parts = [AdminCommandNames.LIST_JOBS]
         if detailed:

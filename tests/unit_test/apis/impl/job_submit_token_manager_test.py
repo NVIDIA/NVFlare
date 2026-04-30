@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from unittest import mock
 
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.impl import job_def_manager as job_def_manager_module
 from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
 from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
 
@@ -69,3 +71,9 @@ def test_creating_record_survives_restart_for_retry_recovery(tmp_path):
 
     assert record["state"] == "creating"
     assert record["job_id"] == "pre-generated-job"
+
+
+def test_submit_record_uri_root_is_beside_trailing_slash_job_root(tmp_path):
+    manager = SimpleJobDefManager(uri_root=str(tmp_path / "jobs") + os.sep)
+
+    assert manager.submit_record_uri_root == str(tmp_path / job_def_manager_module._SUBMIT_RECORD_URI_ROOT)

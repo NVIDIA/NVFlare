@@ -16,7 +16,6 @@ import datetime
 import io
 import json
 import os
-import re
 import shutil
 import threading
 import uuid
@@ -58,7 +57,7 @@ from nvflare.apis.storage import (
     StorageException,
     StorageSpec,
 )
-from nvflare.apis.utils.job_submit_token import canonical_job_content_hash
+from nvflare.apis.utils.job_submit_token import canonical_job_content_hash, validate_submit_token
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -91,16 +90,6 @@ CLONED_META_KEYS = {
     JobMetaKey.DATA_STORAGE_FORMAT.value,
     JobMetaKey.STUDY.value,
 }
-
-_SUBMIT_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
-
-
-def _validate_submit_token(submit_token: str) -> str:
-    if submit_token is None:
-        return None
-    if not isinstance(submit_token, str) or not _SUBMIT_TOKEN_PATTERN.fullmatch(submit_token):
-        raise ValueError("submit_token must be non-empty, at most 128 characters, and match ^[A-Za-z0-9._:-]{1,128}$")
-    return submit_token
 
 
 def _active_study_from_conn(conn: Connection) -> str:
@@ -406,7 +395,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         try:
             parser = _create_list_job_cmd_parser()
             parsed_args = parser.parse_args(args[1:])
-            submit_token = _validate_submit_token(parsed_args.submit_token)
+            submit_token = validate_submit_token(parsed_args.submit_token)
             requested_study = _active_study_from_conn(conn)
 
             engine = conn.app_ctx
@@ -1420,7 +1409,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             parser = _create_submit_job_cmd_parser()
             parsed_args = parser.parse_args(args[1:])
             folder_name = parsed_args.folder_name
-            submit_token = _validate_submit_token(parsed_args.submit_token)
+            submit_token = validate_submit_token(parsed_args.submit_token)
         except ValueError as e:
             conn.append_error(str(e), meta=make_meta(MetaStatusValue.SYNTAX_ERROR, str(e)))
             return
