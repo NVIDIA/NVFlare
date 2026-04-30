@@ -1165,6 +1165,77 @@ class TestBasic(TestController):
         assert lazy_ref_ref() is None
         assert not os.path.exists(temp_dir)
 
+    def test_finalize_run_cleans_inflight_disk_tensor_download(self, tmp_path, monkeypatch):
+        torch = pytest.importorskip("torch", reason="in-flight tensor download cleanup test requires torch")
+        safetensors_torch = pytest.importorskip(
+            "safetensors.torch", reason="in-flight tensor download cleanup test requires safetensors"
+        )
+        tensor_downloader = pytest.importorskip(
+            "nvflare.app_opt.pt.tensor_downloader",
+            reason="in-flight tensor download cleanup test requires tensor downloader",
+        )
+        from nvflare.fuel.f3.cellnet.defs import ReturnCode
+        from nvflare.fuel.f3.cellnet.utils import make_reply
+        from nvflare.fuel.f3.streaming.download_service import ProduceRC
+
+        class BlockingDownloadCell:
+            def __init__(self, chunk: bytes):
+                self.chunk = chunk
+                self.call_count = 0
+                self.second_call_started = threading.Event()
+                self.release_second_call = threading.Event()
+
+            def send_request(self, **kwargs):
+                self.call_count += 1
+                if self.call_count == 1:
+                    return make_reply(
+                        ReturnCode.OK,
+                        body={
+                            "status": ProduceRC.OK,
+                            "state": {"start": 0, "count": 1},
+                            "data": [self.chunk],
+                        },
+                    )
+
+                self.second_call_started.set()
+                self.release_second_call.wait(5.0)
+                return make_reply(ReturnCode.OK, body={"status": ProduceRC.ERROR})
+
+        controller, fl_ctx, _ = self.setup_system()
+
+        temp_dir = tmp_path / "nvflare_tensors_inflight"
+
+        def fake_mkdtemp(prefix):
+            temp_dir.mkdir()
+            return str(temp_dir)
+
+        monkeypatch.setattr(tensor_downloader.tempfile, "mkdtemp", fake_mkdtemp)
+        cell = BlockingDownloadCell(safetensors_torch.save({"w": torch.tensor([1.0])}))
+        result_holder = {}
+
+        def run_download():
+            result_holder["value"] = tensor_downloader.download_tensors_to_disk(
+                from_fqcn="client",
+                ref_id="ref",
+                per_request_timeout=0.1,
+                cell=cell,
+            )
+
+        download_thread = threading.Thread(target=run_download)
+        download_thread.start()
+        assert cell.second_call_started.wait(5.0)
+        assert temp_dir.exists()
+
+        controller.communicator.finalize_run(fl_ctx=fl_ctx)
+
+        assert not temp_dir.exists()
+
+        cell.release_second_call.set()
+        download_thread.join(5.0)
+
+        assert not download_thread.is_alive()
+        assert result_holder["value"][0]
+
 
 @pytest.mark.parametrize("method", ["broadcast", "broadcast_and_wait"])
 class TestBroadcastBehavior(TestController):

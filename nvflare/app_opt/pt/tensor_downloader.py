@@ -15,6 +15,8 @@ import json
 import os
 import struct
 import tempfile
+import threading
+import weakref
 from typing import Any, List, Optional, Tuple
 
 import torch
@@ -29,6 +31,17 @@ from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 from .lazy_tensor_dict import LazyTensorDict, _cleanup_temp_dir
 
 _TWO_MB = 2 * 1024 * 1024
+_ACTIVE_DISK_TENSOR_CONSUMERS = weakref.WeakSet()
+_ACTIVE_DISK_TENSOR_CONSUMERS_LOCK = threading.Lock()
+
+
+def cleanup_active_disk_tensor_downloads(reason: str = "download aborted") -> None:
+    """Clean partial tensor offload dirs still owned by active disk consumers."""
+    with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
+        consumers = list(_ACTIVE_DISK_TENSOR_CONSUMERS)
+
+    for consumer in consumers:
+        consumer.download_failed("active_disk_tensor_download", reason)
 
 
 class TensorDownloadable(CacheableObject):
@@ -167,7 +180,23 @@ class DiskTensorConsumer(ItemConsumer):
     def __init__(self, temp_dir: str):
         ItemConsumer.__init__(self)
         self._temp_dir = temp_dir
+        self._cleaned = False
         self._file_counter = 0
+        with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
+            _ACTIVE_DISK_TENSOR_CONSUMERS.add(self)
+
+    def release(self) -> None:
+        with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
+            _ACTIVE_DISK_TENSOR_CONSUMERS.discard(self)
+
+    def cleanup(self) -> None:
+        with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
+            if self._cleaned:
+                return
+            self._cleaned = True
+            _ACTIVE_DISK_TENSOR_CONSUMERS.discard(self)
+
+        _cleanup_temp_dir(self._temp_dir)
 
     def consume_items(self, items: List[Any], result: Any) -> Any:
         if not isinstance(items, list):
@@ -196,7 +225,7 @@ class DiskTensorConsumer(ItemConsumer):
         # Eager cleanup on download callback error; the outer caller may also
         # attempt cleanup via consumer.error path. Double cleanup is intentional
         # and safe because _cleanup_temp_dir handles already-removed paths.
-        _cleanup_temp_dir(self._temp_dir)
+        self.cleanup()
 
 
 def download_tensors_to_disk(
@@ -227,12 +256,14 @@ def download_tensors_to_disk(
             abort_signal=abort_signal,
         )
     except Exception:
-        _cleanup_temp_dir(temp_dir)
+        consumer.cleanup()
         raise
 
     if consumer.error:
-        _cleanup_temp_dir(temp_dir)
+        consumer.cleanup()
         return consumer.error, None
 
     key_to_file = consumer.result if consumer.result is not None else {}
-    return None, LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+    lazy_tensors = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+    consumer.release()
+    return None, lazy_tensors
