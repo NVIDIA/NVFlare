@@ -327,7 +327,11 @@ for compatibility, but it is deprecated and prints a warning that points to
 
 ``nvflare poc prepare`` writes the POC workspace into the local NVFlare config
 and registers generated admin/user startup kits in the shared startup kit
-registry automatically. Site startup kits remain in the POC workspace for local
+registry automatically. If a generated POC identity collides with an existing
+startup-kit registration outside the POC workspace, prepare preserves the
+existing registration when its path still exists. If the existing registration
+points to a path that no longer exists, prepare treats it as stale local POC
+state and replaces it. Site startup kits remain in the POC workspace for local
 service management.
 
 The default Project Admin startup kit becomes active, so server-connected

@@ -1054,7 +1054,9 @@ Manual production registrations remain untouched.
 - For `nvflare config add` and `nvflare poc add user`, `--force` replaces the config
   registration for an existing ID without deleting old startup kit directories.
 - For `nvflare poc prepare`, `--force` means recreate the POC workspace; it does not
-  override unrelated startup kit registrations outside the POC workspace.
+  override live unrelated startup kit registrations outside the POC workspace. If an
+  outside registration points to a path that no longer exists, it is treated as stale
+  local state and may be replaced by the newly generated POC kit.
 - Persona commands are not needed. The common switching command is `nvflare config use <id>`.
 
 

@@ -52,6 +52,7 @@ from nvflare.tool.kit.kit_config import (
     inspect_startup_kit_metadata,
     load_cli_config,
     remove_entries_under_workspace,
+    remove_startup_kit_entry,
     resolve_startup_kit_dir,
     save_cli_config,
 )
@@ -554,10 +555,13 @@ def _register_poc_startup_kits(
     for kit_id, kit_path in kit_entries.items():
         existing_path = entries.get(kit_id)
         if existing_path:
-            raise CLIException(
-                f"startup kit id '{kit_id}' already exists outside POC workspace; "
-                f"run 'nvflare config remove {kit_id}' or replace it explicitly"
-            )
+            if os.path.exists(os.path.expanduser(existing_path)):
+                raise CLIException(
+                    f"startup kit id '{kit_id}' already exists outside POC workspace; "
+                    f"run 'nvflare config remove {kit_id}' or replace it explicitly"
+                )
+            config = remove_startup_kit_entry(config, kit_id)
+            removed_ids.add(kit_id)
         config = add_startup_kit_entry(config, kit_id, kit_path, force=True)
 
     return config, removed_ids

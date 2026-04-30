@@ -988,7 +988,7 @@ poc {{
 
         workspace = tmp_path / "poc"
         new_admin = _make_admin_startup_kit(workspace / "example_project" / "prod_00", "admin@nvidia.com")
-        manual_admin = tmp_path / "prod" / "admin@nvidia.com"
+        manual_admin = _make_admin_startup_kit(tmp_path / "prod", "admin@nvidia.com")
 
         config = CF.parse_string(
             f"""
@@ -1003,6 +1003,32 @@ startup_kits {{
 
         with pytest.raises(CLIException, match="already exists outside POC workspace"):
             _register_poc_startup_kits(config, str(workspace), {"admin@nvidia.com": str(new_admin)})
+
+    def test_register_poc_startup_kits_replaces_stale_outside_entry(self, tmp_path):
+        from nvflare.tool.kit.kit_config import get_startup_kit_entries
+        from nvflare.tool.poc.poc_commands import _register_poc_startup_kits
+
+        workspace = tmp_path / "poc"
+        new_admin = _make_admin_startup_kit(workspace / "example_project" / "prod_00", "admin@nvidia.com")
+        stale_admin = tmp_path / "deleted-poc" / "example_project" / "prod_00" / "admin@nvidia.com"
+
+        config = CF.parse_string(
+            f"""
+version = 2
+startup_kits {{
+  active = "admin@nvidia.com"
+  entries {{
+    "admin@nvidia.com" = "{stale_admin}"
+  }}
+}}
+"""
+        )
+
+        updated, removed_ids = _register_poc_startup_kits(config, str(workspace), {"admin@nvidia.com": str(new_admin)})
+
+        entries = get_startup_kit_entries(updated)
+        assert removed_ids == {"admin@nvidia.com"}
+        assert entries["admin@nvidia.com"] == str(new_admin.resolve())
 
     def test_clean_poc_removes_workspace_and_only_canonical_workspace_entries(self, tmp_path, monkeypatch):
         from nvflare.tool.poc.poc_commands import _clean_poc
