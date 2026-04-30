@@ -132,7 +132,7 @@ class _FakeJobMetaValidator:
         return True, "", {}
 
 
-class _FakeJobMetaValidatorNoAssert:
+class _FakeJobMetaValidatorFolderOnly:
     def validate(self, folder_name, zip_file_name):
         assert folder_name == "job_folder"
         return True, "", {}
@@ -495,7 +495,7 @@ def test_server_list_parser_accepts_submit_token():
 
 @pytest.mark.parametrize("token", ["", "bad token", "bad/token", "x" * 129])
 def test_submit_job_rejects_invalid_submit_token(monkeypatch, token):
-    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorFolderOnly)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
 
     engine = _FakeEngine()
@@ -509,7 +509,7 @@ def test_submit_job_rejects_invalid_submit_token(monkeypatch, token):
 
 
 def test_same_submit_token_same_content_returns_same_job(monkeypatch):
-    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorFolderOnly)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
 
     engine = _FakeEngine()
@@ -527,7 +527,7 @@ def test_same_submit_token_same_content_returns_same_job(monkeypatch):
 
 
 def test_same_submit_token_different_content_conflicts(monkeypatch):
-    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorFolderOnly)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
 
     engine = _FakeEngine()
@@ -548,7 +548,7 @@ def test_same_submit_token_different_content_conflicts(monkeypatch):
 
 
 def test_same_submit_token_different_study_is_independent(monkeypatch):
-    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorFolderOnly)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
 
     engine = _FakeEngine()
@@ -567,7 +567,7 @@ def test_same_submit_token_different_study_is_independent(monkeypatch):
 
 
 def test_no_submit_token_keeps_duplicate_submit_behavior(monkeypatch):
-    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorFolderOnly)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
 
     engine = _FakeEngine()
@@ -584,7 +584,7 @@ def test_no_submit_token_keeps_duplicate_submit_behavior(monkeypatch):
 
 
 def test_submit_token_is_not_written_to_job_meta(monkeypatch):
-    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorFolderOnly)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
 
     engine = _FakeEngine()
@@ -655,7 +655,7 @@ def test_submit_token_recovery_repairs_record_missing_job_id():
 
 
 def test_user_job_meta_submit_token_is_stripped_before_submit_event(monkeypatch):
-    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorFolderOnly)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
 
     engine = _FakeEngine()
@@ -673,7 +673,7 @@ def test_user_job_meta_submit_token_is_stripped_before_submit_event(monkeypatch)
 
 
 def test_canonical_hash_ignores_signature_artifacts(monkeypatch):
-    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorFolderOnly)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
 
     engine = _FakeEngine()

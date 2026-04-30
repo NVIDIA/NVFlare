@@ -302,7 +302,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
         caller_role = self._caller_role(conn)
         if caller_role == "project_admin":
             return True
-        if caller_role not in {"org_admin", "project_admin"}:
+        if caller_role != "org_admin":
             return self._caller_name(conn) in set((study_def or {}).get("admins", []))
         caller_org = self._caller_org(conn)
         if not caller_org:

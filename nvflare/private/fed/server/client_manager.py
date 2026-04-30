@@ -79,7 +79,9 @@ class ClientManager:
         if disabled_clients is None:
             with self.lock:
                 disabled_clients = set(self.disabled_clients)
-        os.makedirs(os.path.dirname(self.disabled_clients_file), exist_ok=True)
+        dirname = os.path.dirname(self.disabled_clients_file)
+        if dirname:
+            os.makedirs(dirname, exist_ok=True)
         data = {"disabled_clients": sorted(disabled_clients)}
         tmp_path = self.disabled_clients_file + ".tmp"
         with open(tmp_path, "w") as f:
@@ -180,10 +182,11 @@ class ClientManager:
             client = self.clients.pop(token, None)
             if client:
                 self.name_to_clients.pop(client.name, None)
-            client_name = client.name if client else "<unknown>"
-            self.logger.info(
-                "Client Name:{} \tToken: {} left.  Total clients: {}".format(client_name, token, len(self.clients))
-            )
+                self.logger.info(
+                    "Client Name:{} \tToken: {} left.  Total clients: {}".format(client.name, token, len(self.clients))
+                )
+            else:
+                self.logger.warning("remove_client: unknown token %s", token)
             return client
 
     def login_client(self, client_login, fl_ctx: FLContext, client_type):

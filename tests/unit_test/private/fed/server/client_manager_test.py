@@ -140,6 +140,16 @@ def test_enable_client_persists_and_allows_client(tmp_path):
     assert json.loads(disabled_file.read_text()) == {"disabled_clients": []}
 
 
+def test_disabled_clients_file_can_be_bare_filename(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+    manager.set_disabled_clients_file("disabled_clients.json")
+
+    manager.disable_client("site-a")
+
+    assert json.loads((tmp_path / "disabled_clients.json").read_text()) == {"disabled_clients": ["site-a"]}
+
+
 def test_disabled_client_save_runs_outside_manager_lock():
     manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
     calls = []
