@@ -570,6 +570,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def disable_clients(self, client_names: List[str]) -> dict:
         results = []
         for client_name in client_names:
+            already_disabled = self.server.client_manager.is_client_disabled(client_name)
             removed_tokens = self.server.client_manager.disable_client(client_name)
             for token in removed_tokens:
                 self.server.remove_client_data(token)
@@ -579,6 +580,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
                 {
                     "client_name": client_name,
                     "state": "disabled",
+                    "already_disabled": already_disabled,
                     "active_session_removed": bool(removed_tokens),
                     "credential_revoked": False,
                     "rejoin_allowed": False,

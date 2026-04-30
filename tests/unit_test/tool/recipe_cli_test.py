@@ -445,6 +445,25 @@ def test_recipe_list_filters_documented_recipe_variants_without_optional_depende
     assert [entry["name"] for entry in payload["data"]] == ["fedprox-tf"]
 
 
+def test_recipe_show_fedprox_documents_fedavg_constructor(monkeypatch, capsys):
+    import json
+
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_show
+
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+
+    cmd_recipe_show(Namespace(name="fedprox-pt"))
+
+    payload = json.loads(capsys.readouterr().out)
+    data = payload["data"]
+    assert payload["status"] == "ok"
+    assert data["algorithm"] == "fedprox"
+    assert data["class"] == "FedAvgRecipe"
+    assert data["notes"]
+    assert "same recipe constructor as fedavg-pt" in data["notes"][0]
+
+
 def test_recipe_show_uses_static_metadata_when_optional_dependency_is_missing(monkeypatch, capsys):
     import json
 

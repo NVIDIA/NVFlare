@@ -220,7 +220,9 @@ Client Access Control
 Use ``disable-client`` to persistently block a client identity from joining the
 running federation. The server removes any active registry entry for the client
 and rejects later registration or heartbeat attempts until the client is enabled.
-This does not revoke the client's certificate or delete its startup kit.
+This does not revoke the client's certificate or delete its startup kit. JSON
+output includes ``already_disabled`` so callers can distinguish a state change
+from an idempotent no-op.
 
 Use ``enable-client`` to remove the disabled flag. The client can rejoin on its
 next registration or heartbeat.

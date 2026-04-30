@@ -1107,6 +1107,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         if not repaired_job_id:
             raise RuntimeError("submit record repair is missing job_id")
         record.update(repaired)
+        # Submit-token operations acquire the per-token lock before touching submit-record storage.
+        # Do not add reverse ordering that takes the store lock before this per-token lock.
         self._update_submit_record(job_def_manager, record, fl_ctx)
         return repaired_job_id
 

@@ -99,6 +99,9 @@ _DOCUMENTED_RECIPE_SPECS = {
         "aggregation": "weighted_average",
         "state_exchange": "full_model",
         "heterogeneity_support": ["non_iid"],
+        "notes": [
+            "FedProx uses the same recipe constructor as fedavg-pt; FedProx behavior is configured through the client-side loss component."
+        ],
     },
     "fedprox-tf": {
         "module": "nvflare.app_opt.tf.recipes.fedavg",
@@ -109,6 +112,9 @@ _DOCUMENTED_RECIPE_SPECS = {
         "aggregation": "weighted_average",
         "state_exchange": "full_model",
         "heterogeneity_support": ["non_iid"],
+        "notes": [
+            "FedProx uses the same recipe constructor as fedavg-tf; FedProx behavior is configured through the client-side loss component."
+        ],
     },
     "fedopt-pt": {
         "module": "nvflare.app_opt.pt.recipes.fedopt",
@@ -603,6 +609,7 @@ def _recipe_detail(entry: dict) -> dict:
         "framework_support": _framework_support(entry, recipe_cls),
         "heterogeneity_support": _heterogeneity_support(entry, recipe_cls),
         "privacy_compatible": _privacy_compatible(entry, parameters, recipe_cls),
+        "notes": _as_preserved_string_list(entry.get("notes") or _recipe_attr(recipe_cls, "notes")),
         "parameters": parameters,
         "optional_dependencies": _optional_dependencies(entry, recipe_cls),
         "template_references": _as_preserved_string_list(
@@ -665,6 +672,7 @@ def _documented_recipe_entry(name: str, spec: dict, include_recipe_class: bool =
         "privacy_compatible",
         "optional_dependencies",
         "template_references",
+        "notes",
     ):
         if key in spec:
             entry[key] = spec[key]

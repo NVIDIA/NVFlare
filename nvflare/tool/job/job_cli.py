@@ -1592,6 +1592,8 @@ def _parse_log_line_timestamp(line: str):
     if not match:
         return None
     try:
+        # Naive server log timestamps are compared as UTC-equivalent naive values;
+        # explicit timezone offsets are normalized to UTC by _normalize_log_timestamp.
         return _normalize_log_timestamp(match.group("ts"))
     except ValueError:
         return None
@@ -1606,6 +1608,8 @@ def _filter_log_since(text: str, since_ts: datetime.datetime):
     keep_current = False
     saw_timestamp = False
     for line in lines:
+        # This is line-based filtering. Continuation lines are kept with the most
+        # recent parsed timestamp and can be imperfect for heavily interleaved logs.
         line_ts = _parse_log_line_timestamp(line)
         if line_ts is not None:
             saw_timestamp = True
