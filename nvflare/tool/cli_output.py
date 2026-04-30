@@ -149,7 +149,9 @@ def output(data: Any, fmt: Optional[str]) -> None:
 def output_ok(data: Any, exit_code: int = 0) -> None:
     """Print command success output."""
     if _is_jsonl_mode():
-        output_jsonl_event({"event": "terminal", "status": "ok", "exit_code": exit_code, "data": data, "terminal": True})
+        output_jsonl_event(
+            {"event": "terminal", "status": "ok", "exit_code": exit_code, "data": data, "terminal": True}
+        )
     elif _is_json_mode():
         print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "exit_code": exit_code, "data": data}))
     else:
@@ -181,7 +183,7 @@ def output_error(
     if _is_machine_mode():
         payload = {
             "schema_version": SCHEMA_VERSION,
-            "status": "error",
+            "status": error_code if _is_jsonl_mode() else "error",
             "exit_code": exit_code,
             "error_code": error_code,
             "message": message,
@@ -230,7 +232,7 @@ def output_error_message(
     if fmt in {"json", "jsonl"} or (fmt is None and _is_machine_mode()):
         payload = {
             "schema_version": SCHEMA_VERSION,
-            "status": "error",
+            "status": error_code if jsonl_mode else "error",
             "exit_code": exit_code,
             "error_code": error_code,
             "message": message,

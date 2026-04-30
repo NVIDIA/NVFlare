@@ -265,7 +265,7 @@ class TestOutputErrorCertPackage:
         result = json.loads(mock_print.call_args.args[0])
         assert result["schema_version"] == SCHEMA_VERSION
         assert result["event"] == "terminal"
-        assert result["status"] == "error"
+        assert result["status"] == "MY_CODE"
         assert result["terminal"] is True
         assert result["error_code"] == "MY_CODE"
 
@@ -280,7 +280,7 @@ class TestOutputErrorCertPackage:
         result = json.loads(mock_print.call_args.args[0])
         assert result["schema_version"] == SCHEMA_VERSION
         assert result["event"] == "terminal"
-        assert result["status"] == "error"
+        assert result["status"] == "MY_CODE"
         assert result["terminal"] is True
         assert result["error_code"] == "MY_CODE"
 
@@ -302,7 +302,7 @@ class TestOutputErrorWithData:
             output_error("JOB_FAILED", exit_code=1, data={"status": "FAILED", "job_id": "abc123"}, job_id="abc123")
         assert exc_info.value.code == 1
         payload = json.loads(capsys.readouterr().out)
-        assert payload["status"] == "error"
+        assert payload["status"] == "JOB_FAILED"
         assert payload["error_code"] == "JOB_FAILED"
         assert payload["event"] == "terminal"
         assert payload["terminal"] is True

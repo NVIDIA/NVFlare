@@ -400,7 +400,7 @@ class TestJobMonitorOutput:
 
         event = json.loads(capsys.readouterr().out)
         assert event["event"] == "terminal"
-        assert event["status"] == "error"
+        assert event["status"] == "CONNECTION_FAILED"
         assert event["terminal"] is True
         assert event["error_code"] == "CONNECTION_FAILED"
 
@@ -435,7 +435,7 @@ class TestJobMonitorOutput:
 
         event = json.loads(capsys.readouterr().out)
         assert event["event"] == "terminal"
-        assert event["status"] == "error"
+        assert event["status"] == "AUTH_FAILED"
         assert event["terminal"] is True
         assert event["error_code"] == "AUTH_FAILED"
 
@@ -451,6 +451,28 @@ class TestJobMonitorOutput:
 
             with pytest.raises(AuthorizationError):
                 cmd_job_monitor(_make_args())
+
+    def test_jsonl_authorization_error_emits_terminal_event(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+
+        @contextmanager
+        def _fake_session(*args, **kwargs):
+            sess = MagicMock()
+            sess.monitor_job_and_return_job_meta.side_effect = AuthorizationError("not authorized")
+            yield sess
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_monitor(_make_args())
+        assert exc_info.value.code == 2
+
+        event = json.loads(capsys.readouterr().out)
+        assert event["event"] == "terminal"
+        assert event["status"] == "AUTH_FAILED"
+        assert event["terminal"] is True
+        assert event["error_code"] == "AUTH_FAILED"
 
     def test_missing_meta_exits_internal_error(self, capsys):
         ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, None)
