@@ -1337,7 +1337,7 @@ def cmd_job_clone(cmd_args):
 
 def cmd_job_download(cmd_args):
     from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
-    from nvflare.tool.cli_output import output_error, output_ok, print_human
+    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -1386,7 +1386,8 @@ def cmd_job_download(cmd_args):
         payload["artifact_discovery"] = "skipped"
         payload["artifacts"] = None
         payload["missing_artifacts"] = None
-    output_ok(payload)
+    if is_json_mode():
+        output_ok(payload)
 
 
 def cmd_job_delete(cmd_args):
@@ -2143,6 +2144,26 @@ def _build_monitor_output_data(
     return data
 
 
+def _print_monitor_result_human(data: dict, print_func):
+    job_id = data.get("job_id")
+    status = data.get("status", "UNKNOWN")
+    normalized_status = _normalize_monitor_event_status(status)
+    status_text = normalized_status if normalized_status == status else f"{normalized_status} ({status})"
+    print_func(f"Job {job_id} status: {status_text}")
+    duration = data.get("duration_s")
+    if duration is not None:
+        print_func(f"  Duration: {duration}s")
+    job_meta = data.get("job_meta") or {}
+    if job_meta.get("job_name"):
+        print_func(f"  Name: {job_meta['job_name']}")
+    if job_meta.get("study"):
+        print_func(f"  Study: {job_meta['study']}")
+    metrics = data.get("last_stats") or {}
+    if metrics:
+        metric_str = " ".join(f"{k}={v}" for k, v in metrics.items())
+        print_func(f"  Metrics: {metric_str}")
+
+
 def _job_terminal_failure_error(status: str):
     if status == "FAILED":
         return (
@@ -2180,7 +2201,14 @@ def cmd_job_monitor(cmd_args):
         MonitorReturnCode,
         NoConnection,
     )
-    from nvflare.tool.cli_output import is_json_mode, is_jsonl_mode, output_error, output_jsonl_event, output_ok
+    from nvflare.tool.cli_output import (
+        is_json_mode,
+        is_jsonl_mode,
+        output_error,
+        output_jsonl_event,
+        output_ok,
+        print_human,
+    )
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -2300,12 +2328,17 @@ def cmd_job_monitor(cmd_args):
         if jsonl_mode:
             output_jsonl_event(_build_monitor_terminal_event(data, error_code=error_code))
             sys.exit(1)
-        output_error(error_code, exit_code=1, hint=hint, data=data, job_id=cmd_args.job_id)
+        if not is_json_mode():
+            _print_monitor_result_human(data, print_human)
+        output_error(error_code, exit_code=1, hint=hint, data=data if is_json_mode() else None, job_id=cmd_args.job_id)
     else:
         if jsonl_mode:
             output_jsonl_event(_build_monitor_terminal_event(data))
             return
-        output_ok(data)
+        if is_json_mode():
+            output_ok(data)
+        else:
+            _print_monitor_result_human(data, print_human)
 
 
 def cmd_job_wait(cmd_args):
@@ -2317,7 +2350,7 @@ def cmd_job_wait(cmd_args):
         JobTimeout,
         NoConnection,
     )
-    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok
+    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -2390,9 +2423,14 @@ def cmd_job_wait(cmd_args):
     failure = _job_terminal_failure_error(data["status"])
     if failure:
         error_code, hint = failure
-        output_error(error_code, exit_code=1, hint=hint, data=data, job_id=cmd_args.job_id)
+        if not is_json_mode():
+            _print_monitor_result_human(data, print_human)
+        output_error(error_code, exit_code=1, hint=hint, data=data if is_json_mode() else None, job_id=cmd_args.job_id)
     else:
-        output_ok(data)
+        if is_json_mode():
+            output_ok(data)
+        else:
+            _print_monitor_result_human(data, print_human)
 
 
 def cmd_job_log(cmd_args):

@@ -196,7 +196,7 @@ def is_dir_empty(path: str):
 
 
 def prepare_jobs_dir(cmd_args):
-    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
     from nvflare.tool.install_skills import install_skills
 
@@ -220,7 +220,8 @@ def prepare_jobs_dir(cmd_args):
     if result is False:
         return
 
-    output_ok({"workspace": poc_workspace, "jobs_dir": cmd_args.jobs_dir})
+    if is_json_mode():
+        output_ok({"workspace": poc_workspace, "jobs_dir": cmd_args.jobs_dir})
     from nvflare.tool.cli_output import print_human
 
     print_human(f"\nJobs directory linked: {cmd_args.jobs_dir}")
@@ -1107,7 +1108,7 @@ def add_poc(cmd_args):
 
 
 def add_poc_user(cmd_args):
-    from nvflare.tool.cli_output import output_error, output_ok, print_human
+    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -1142,7 +1143,8 @@ def add_poc_user(cmd_args):
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         raise SystemExit(5)
 
-    output_ok(result)
+    if is_json_mode():
+        output_ok(result)
     print_human(f"\nPOC user {result['status']}: {result['identity']}")
     print_human(f"  Startup kit: {result['startup_kit']}")
     if result.get("active"):
@@ -1152,7 +1154,7 @@ def add_poc_user(cmd_args):
 
 
 def add_poc_site(cmd_args):
-    from nvflare.tool.cli_output import output_error, output_ok, print_human
+    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -1186,7 +1188,8 @@ def add_poc_site(cmd_args):
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         raise SystemExit(5)
 
-    output_ok(result)
+    if is_json_mode():
+        output_ok(result)
     print_human(f"\nPOC site {result['status']}: {result['name']}")
     print_human(f"  Startup kit: {result['startup_kit']}")
     print_human(f"  Start with: nvflare poc start -p {result['name']}")
@@ -1623,7 +1626,8 @@ def start_poc(cmd_args):
         "clients": clients,
     }
     result.update(port_diagnostics)
-    output_ok(result)
+    if is_json_mode():
+        output_ok(result)
     from nvflare.tool.cli_output import print_human
 
     if no_wait:
@@ -2065,7 +2069,7 @@ def _clean_poc(poc_workspace: str, force: bool = False):
 
 
 def config_poc(cmd_args):
-    from nvflare.tool.cli_output import output_error, output_ok, print_human
+    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -2085,13 +2089,18 @@ def config_poc(cmd_args):
     nvflare_config = loaded_config or CF.parse_string("{}")
 
     if requested_workspace is None:
-        output_ok(
-            {
-                "config_file": config_file_path,
-                "poc_workspace_dir": get_poc_workspace(),
-                "env_override": os.getenv("NVFLARE_POC_WORKSPACE"),
-            }
-        )
+        data = {
+            "config_file": config_file_path,
+            "poc_workspace_dir": get_poc_workspace(),
+            "env_override": os.getenv("NVFLARE_POC_WORKSPACE"),
+        }
+        if is_json_mode():
+            output_ok(data)
+        else:
+            print_human(f"POC workspace: {data['poc_workspace_dir']}")
+            if data["env_override"]:
+                print_human(f"  Environment override: NVFLARE_POC_WORKSPACE={data['env_override']}")
+            print_human(f"  Config file: {config_file_path}")
         return
 
     try:
@@ -2103,13 +2112,13 @@ def config_poc(cmd_args):
         raise SystemExit(4)
 
     poc_workspace_dir = nvflare_config.get(f"{POC_KEY}.{WORKSPACE_KEY}", None)
+    data = {
+        "config_file": config_file_path,
+        "poc_workspace_dir": poc_workspace_dir,
+    }
+    if is_json_mode():
+        output_ok(data)
     print_human(f"POC workspace configured: {poc_workspace_dir}")
-    output_ok(
-        {
-            "config_file": config_file_path,
-            "poc_workspace_dir": poc_workspace_dir,
-        }
-    )
 
 
 poc_sub_cmd_handlers = {

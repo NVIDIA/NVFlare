@@ -626,6 +626,22 @@ class TestJobMonitorOutput:
         assert len(stdout_lines) == 1
         json.loads(stdout_lines[0])  # must be valid JSON
 
+    def test_human_mode_prints_terminal_summary_without_json_payload(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        meta = _make_meta("FINISHED_OK", job_name="hello-pt")
+        ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, meta)
+        with ctx:
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            cmd_job_monitor(_make_args())
+
+        captured = capsys.readouterr()
+        assert "Job abc123 status: COMPLETED (FINISHED_OK)" in captured.out
+        assert "Name: hello-pt" in captured.out
+        assert "job_meta:" not in captured.out
+        assert "last_stats:" not in captured.out
+        assert captured.err == ""
+
     def test_jsonl_finished_ok_emits_terminal_event(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "jsonl")
         meta = _make_meta("FINISHED_OK")

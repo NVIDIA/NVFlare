@@ -64,6 +64,28 @@ class TestJobDownload:
         assert data["artifacts"] == {}
         assert set(data["missing_artifacts"]) == {"global_model", "metrics_summary", "client_logs"}
 
+    def test_download_human_output_omits_artifact_contract_payload(self, tmp_path, capsys, monkeypatch):
+        """Plain text mode reports a concise download result without dumping JSON contract fields."""
+        from nvflare.tool.job.job_cli import cmd_job_download
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        download_path = tmp_path / "results"
+        download_path.mkdir()
+        args = self._make_args(output_dir=tmp_path / "dest")
+        mock_sess = MagicMock()
+        mock_sess.download_job_result.return_value = str(download_path)
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            cmd_job_download(args)
+
+        captured = capsys.readouterr()
+        assert "Downloading job abc123 ..." in captured.out
+        assert f"Job result downloaded to: {download_path}" in captured.out
+        assert "download_path:" not in captured.out
+        assert "artifact_discovery:" not in captured.out
+        assert "missing_artifacts:" not in captured.out
+        assert captured.err == ""
+
     def test_download_schema_includes_command_contract_metadata(self, capsys):
         import argparse
 

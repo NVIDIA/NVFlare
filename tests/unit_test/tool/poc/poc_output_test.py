@@ -119,7 +119,63 @@ class TestPocOutput:
         assert data["data"]["config_file"] == "/fake/config.conf"
         assert data["data"]["poc_workspace_dir"] == "/path/to/poc"
 
+    def test_poc_config_human_output_omits_json_payload(self, capsys, monkeypatch):
+        from nvflare.tool.poc.poc_commands import config_poc
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        args = MagicMock()
+        args.poc_workspace_dir = "/path/to/poc"
+        config = CF.parse_string("{}")
+
+        with (
+            patch(
+                "nvflare.tool.poc.poc_commands.load_hidden_config_state",
+                return_value=("/fake/config.conf", config, False),
+            ),
+            patch("nvflare.tool.poc.poc_commands.save_config"),
+            patch("nvflare.tool.cli_schema.handle_schema_flag"),
+        ):
+            config_poc(args)
+
+        captured = capsys.readouterr()
+        assert captured.out.strip() == "POC workspace configured: /path/to/poc"
+        assert "config_file:" not in captured.out
+        assert "poc_workspace_dir:" not in captured.out
+        assert captured.err == ""
+
     # ------------------------------------------------------------------ prepare_poc split-stream tests
+
+    def test_add_poc_user_human_output_omits_json_payload(self, capsys, monkeypatch, tmp_path):
+        from nvflare.tool.poc.poc_commands import add_poc_user
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        args = MagicMock()
+        args.cert_role = "lead"
+        args.email = "bob@nvidia.com"
+        args.org = "nvidia"
+        args.force = False
+        result = {
+            "status": "created",
+            "identity": "bob@nvidia.com",
+            "startup_kit": str(tmp_path / "bob@nvidia.com"),
+            "next_step": "nvflare config use bob@nvidia.com",
+        }
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands._require_poc_project_admin"),
+            patch("nvflare.tool.poc.poc_commands._add_poc_user", return_value=result),
+            patch("nvflare.tool.cli_schema.handle_schema_flag"),
+        ):
+            add_poc_user(args)
+
+        captured = capsys.readouterr()
+        assert "POC user created: bob@nvidia.com" in captured.out
+        assert "Startup kit:" in captured.out
+        assert "status:" not in captured.out
+        assert "identity:" not in captured.out
+        assert "next_step:" not in captured.out
+        assert captured.err == ""
 
     def test_prepare_poc_success_stdout_is_one_json_line(self, capsys, tmp_path):
         """prepare_poc success: stdout is exactly one JSON line; nothing else."""
@@ -453,6 +509,48 @@ class TestPocOutput:
         data = json.loads(capsys.readouterr().out)
         assert data["data"]["server_address"] == "localhost:8002"
 
+    def test_start_poc_human_output_omits_agent_diagnostics(self, capsys, monkeypatch, tmp_path):
+        from nvflare.tool.poc.poc_commands import start_poc
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        args = MagicMock()
+        args.service = "all"
+        args.exclude = ""
+        args.gpu = None
+        args.study = None
+        args.no_wait = False
+        project_config = {"participants": [{"type": "client", "name": "site-1"}]}
+        service_config = {}
+        endpoint_info = {
+            "server_url": "grpc://localhost:8002",
+            "server_address": "localhost:8002",
+            "admin_address": "localhost:8003",
+            "default_port": 8002,
+            "default_server_port": 8002,
+            "default_admin_port": 8003,
+        }
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands._start_poc", return_value=None),
+            patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(project_config, service_config)),
+            patch("nvflare.tool.poc.poc_commands._build_poc_endpoint_info", return_value=endpoint_info),
+            patch("nvflare.tool.poc.poc_commands._is_local_port_available", return_value=(True, None)),
+            patch("nvflare.tool.poc.poc_commands._wait_for_poc_system_ready", return_value=True),
+        ):
+            start_poc(args)
+
+        captured = capsys.readouterr()
+        assert "POC system started. Server: grpc://localhost:8002" in captured.out
+        assert "Server address: localhost:8002" in captured.out
+        assert "port_preflight:" not in captured.out
+        assert "default_server_port:" not in captured.out
+        assert "ready_timeout:" not in captured.out
+        assert captured.err == ""
+
     def test_prepare_jobs_dir_user_decline_emits_no_success(self, capsys, tmp_path):
         """prepare_jobs_dir should not emit output_ok when the user declines replacement."""
         from nvflare.tool.poc.poc_commands import prepare_jobs_dir
@@ -472,6 +570,26 @@ class TestPocOutput:
 
         captured = capsys.readouterr()
         assert captured.out.strip() == ""
+
+    def test_prepare_jobs_dir_human_output_omits_json_payload(self, capsys, monkeypatch, tmp_path):
+        from nvflare.tool.poc.poc_commands import prepare_jobs_dir
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        args = MagicMock()
+        args.jobs_dir = str(tmp_path / "jobs")
+        args.force = True
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path / "poc")),
+            patch("nvflare.tool.poc.poc_commands._prepare_jobs_dir", return_value=True),
+            patch("nvflare.tool.install_skills.install_skills", return_value=None),
+        ):
+            prepare_jobs_dir(args)
+
+        captured = capsys.readouterr()
+        assert "Jobs directory linked:" in captured.out
+        assert "workspace:" not in captured.out
+        assert "jobs_dir:" not in captured.out
 
     def test_clean_poc_running_system_raises(self, tmp_path):
         """clean_poc should propagate CLIException when the system is still running."""

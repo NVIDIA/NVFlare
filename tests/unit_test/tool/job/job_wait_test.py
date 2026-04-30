@@ -129,6 +129,23 @@ class TestJobWait:
         assert data["data"]["job_id"] == "abc123"
         assert data["data"]["status"] == "FINISHED_OK"
 
+    def test_human_success_prints_terminal_summary_without_json_payload(self, capsys, monkeypatch):
+        from nvflare.tool.job.job_cli import cmd_job_wait
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        mock_sess = MagicMock()
+        mock_sess.wait_for_job.return_value = _make_meta(job_name="hello-pt")
+
+        with _session_ctx(mock_sess):
+            cmd_job_wait(_make_args())
+
+        captured = capsys.readouterr()
+        assert "Job abc123 status: COMPLETED (FINISHED_OK)" in captured.out
+        assert "Name: hello-pt" in captured.out
+        assert "job_meta:" not in captured.out
+        assert "last_stats:" not in captured.out
+        assert captured.err == ""
+
     def test_timeout_exits_3(self, capsys):
         from nvflare.tool.job.job_cli import cmd_job_wait
 
