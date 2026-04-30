@@ -1193,7 +1193,7 @@ def add_poc_site(cmd_args):
 
 
 def prepare_poc(cmd_args):
-    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
     from nvflare.tool.install_skills import install_skills
 
@@ -1271,18 +1271,18 @@ def prepare_poc(cmd_args):
         raise SystemExit(4)
 
     active_startup_kit = _get_active_startup_kit_id_safely()
-    output_ok(
-        {
-            "workspace": poc_workspace,
-            "clients": clients,
-            "startup_kit": {
-                "prior_active": prior_active_startup_kit,
-                "active": active_startup_kit,
-                "changed": prior_active_startup_kit != active_startup_kit,
-            },
-            "port_preflight": _build_poc_port_preflight(project_config),
-        }
-    )
+    result = {
+        "workspace": poc_workspace,
+        "clients": clients,
+        "startup_kit": {
+            "prior_active": prior_active_startup_kit,
+            "active": active_startup_kit,
+            "changed": prior_active_startup_kit != active_startup_kit,
+        },
+        "port_preflight": _build_poc_port_preflight(project_config),
+    }
+    if is_json_mode():
+        output_ok(result)
     from nvflare.tool.cli_output import print_human
 
     print_human(f"\nPOC workspace ready at: {poc_workspace}")

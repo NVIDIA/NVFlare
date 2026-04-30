@@ -148,6 +148,30 @@ class TestPocOutput:
         assert data["data"]["startup_kit"]["changed"] is False
         assert data["data"]["port_preflight"]["checked"] is False
 
+    def test_prepare_poc_human_output_omits_agent_diagnostics(self, capsys, monkeypatch, tmp_path):
+        from nvflare.tool.poc.poc_commands import prepare_poc
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        args = self._make_prepare_args(force=True)
+        poc_ws = str(tmp_path / "poc")
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=poc_ws),
+            patch("nvflare.tool.poc.poc_commands._prepare_poc", return_value=True),
+            patch("nvflare.tool.install_skills.install_skills", return_value=None),
+            patch("nvflare.tool.poc.poc_commands.os.path.exists", return_value=False),
+        ):
+            prepare_poc(args)
+
+        captured = capsys.readouterr()
+        assert "POC workspace ready at:" in captured.out
+        assert "Clients: site-1, site-2" in captured.out
+        assert "Next: place your jobs" in captured.out
+        assert "startup_kit:" not in captured.out
+        assert "port_preflight:" not in captured.out
+        assert "workspace:" not in captured.out
+        assert "clients:" not in captured.out
+        assert captured.err == ""
+
     def test_prepare_poc_falls_back_to_requested_clients_if_project_reread_fails(self, capsys, tmp_path):
         from nvflare.tool.poc.poc_commands import prepare_poc
 
