@@ -146,6 +146,7 @@ def add_cross_site_evaluation(
     recipe: Recipe,
     submit_model_timeout: int = 600,
     validation_timeout: int = 6000,
+    participating_clients: Optional[List[str]] = None,
 ):
     """Add cross-site evaluation to an existing recipe.
 
@@ -250,6 +251,8 @@ def add_cross_site_evaluation(
         recipe: Recipe instance to augment with cross-site evaluation.
         submit_model_timeout: Timeout (seconds) for submitting models to clients. Defaults to 600.
         validation_timeout: Timeout (seconds) for validation tasks on clients. Defaults to 6000.
+        participating_clients: Optional list of client names to include in cross-site evaluation. If not provided,
+            all clients connected at controller start are used.
 
     Raises:
         ValueError: If the recipe doesn't have a framework attribute or uses an unsupported framework.
@@ -354,6 +357,7 @@ def add_cross_site_evaluation(
         model_locator_id=model_locator_id,
         submit_model_timeout=submit_model_timeout,
         validation_timeout=validation_timeout,
+        participating_clients=participating_clients,
     )
     recipe.job.to_server(eval_controller)
 

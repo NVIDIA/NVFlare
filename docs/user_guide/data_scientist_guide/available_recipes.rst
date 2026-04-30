@@ -785,6 +785,8 @@ Add cross-site evaluation to any training recipe.
     from nvflare.recipe.utils import add_cross_site_evaluation
 
     add_cross_site_evaluation(recipe)
+    # or limit evaluation to selected clients
+    add_cross_site_evaluation(recipe, participating_clients=["site-1", "site-3"])
 
 
 Execution Environments
