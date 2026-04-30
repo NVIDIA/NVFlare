@@ -171,6 +171,25 @@ class TestJobSubmitOutput:
         output_error.assert_called_once()
         output_ok.assert_not_called()
 
+    def test_internal_submit_job_submit_token_conflict_is_registered_in_dev_mode(self, capsys, monkeypatch):
+        from nvflare.fuel.flare_api.api_spec import SubmitTokenConflict
+        from nvflare.tool.job.job_cli import internal_submit_job
+
+        monkeypatch.setenv("NVFLARE_DEV", "1")
+        fake_session = MagicMock()
+        fake_session.submit_job.side_effect = SubmitTokenConflict("same token used for different content", "job-1")
+
+        with patch("nvflare.tool.job.job_cli.new_cli_session", return_value=fake_session):
+            with pytest.raises(SystemExit) as exc_info:
+                internal_submit_job("/tmp/startup", "admin@nvidia.com", "/tmp/job")
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "SUBMIT_TOKEN_CONFLICT"
+        assert "submit token" in data["message"].lower()
+        assert data["data"] == {"existing_job_id": "job-1"}
+
     def test_internal_submit_job_exits_before_output_ok_when_output_error_is_mocked(
         self,
     ):

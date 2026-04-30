@@ -22,6 +22,7 @@ EXPECTED_CODES = [
     "JOB_NOT_FOUND",
     "JOB_NOT_RUNNING",
     "JOB_INVALID",
+    "SUBMIT_TOKEN_CONFLICT",
     "CONNECTION_FAILED",
     "AUTH_FAILED",
     "TIMEOUT",
@@ -196,6 +197,11 @@ class TestGetError:
     def test_job_not_found(self):
         message, hint = get_error("JOB_NOT_FOUND", job_id="abc-123")
         assert "abc-123" in message
+
+    def test_submit_token_conflict(self):
+        message, hint = get_error("SUBMIT_TOKEN_CONFLICT")
+        assert "submit token" in message.lower()
+        assert "new submit token" in hint.lower()
 
     def test_unsigned_job_rejected(self):
         message, hint = get_error("UNSIGNED_JOB_REJECTED")

@@ -115,6 +115,13 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "Job folder is not a valid NVFlare job.",
         "hint": "Check meta.json and config_fed_server.json.",
     },
+    "SUBMIT_TOKEN_CONFLICT": {
+        "message": "A job with this submit token already exists with different content.",
+        "hint": (
+            "Use a new submit token when submitting different job content, "
+            "or resubmit identical job content to reuse the existing job."
+        ),
+    },
     "LOG_NOT_FOUND": {
         "message": "Job logs are not available for site '{site}'.",
         "hint": "Verify that client log streaming is enabled and that the site has run this job.",
