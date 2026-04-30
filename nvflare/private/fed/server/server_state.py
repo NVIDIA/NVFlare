@@ -21,6 +21,7 @@ MESSAGE = "_message"
 NIS = "Not In Service"
 ABORT_RUN = "Abort Run"
 SERVICE = "In Service"
+DEFAULT_SERVICE_SESSION_ID = "NA"
 
 
 class ServerState:
@@ -30,7 +31,7 @@ class ServerState:
 
     logger = get_module_logger(__module__, __qualname__)
 
-    def __init__(self, host: str = "", port: str = "", ssid: str = "") -> None:
+    def __init__(self, host: str = "", port: str = "", ssid: str = DEFAULT_SERVICE_SESSION_ID) -> None:
         self.host = host
         self.service_port = port
         self.ssid = ssid

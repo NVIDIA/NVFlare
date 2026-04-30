@@ -22,10 +22,13 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.private.defs import CellMessageHeaderKeys, ClientRegMsgKey, new_cell_message
 from nvflare.private.fed.server.fed_server import FederatedServer
-from nvflare.private.fed.server.server_state import HotState
+from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState
 
 
 class TestFederatedServer:
+    def test_hot_state_defaults_to_non_empty_session_id(self):
+        assert HotState().ssid == DEFAULT_SERVICE_SESSION_ID
+
     @pytest.mark.parametrize("server_state, expected", [(HotState(), ["extra_job"])])
     def test_heart_beat_abort_jobs(self, server_state, expected):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
