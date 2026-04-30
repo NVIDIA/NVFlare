@@ -35,13 +35,13 @@ _DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT = 30.0
 _system_sub_cmd_parsers = {}
 
 
-def _non_negative_float(value: str) -> float:
+def _positive_float(value: str) -> float:
     try:
         parsed = float(value)
     except ValueError as e:
-        raise argparse.ArgumentTypeError(f"expected a non-negative number, got {value!r}") from e
-    if parsed < 0:
-        raise argparse.ArgumentTypeError(f"expected a non-negative number, got {value!r}")
+        raise argparse.ArgumentTypeError(f"expected a positive number, got {value!r}") from e
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError(f"expected a positive number, got {value!r}")
     return parsed
 
 
@@ -80,7 +80,7 @@ def def_system_cli_parser(system_parser):
     p.add_argument("--no-wait", dest="no_wait", action="store_true")
     p.add_argument(
         "--timeout",
-        type=_non_negative_float,
+        type=_positive_float,
         default=_DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT,
         help="seconds to wait for shutdown completion",
     )
@@ -96,7 +96,7 @@ def def_system_cli_parser(system_parser):
     p.add_argument("--no-wait", dest="no_wait", action="store_true")
     p.add_argument(
         "--timeout",
-        type=_non_negative_float,
+        type=_positive_float,
         default=_DEFAULT_SYSTEM_STATE_CHANGE_TIMEOUT,
         help="seconds to wait for restart completion",
     )

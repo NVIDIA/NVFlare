@@ -178,8 +178,9 @@ Control arguments:
 - ``--force``: skip the confirmation prompt.
 - ``--no-wait``: return after requesting shutdown or restart without waiting
   for completion.
-- ``--timeout SECONDS``: maximum seconds to wait for shutdown or restart
-  completion. Default: ``30``. Ignored with ``--no-wait``.
+- ``--timeout SECONDS``: maximum positive seconds to wait for shutdown or
+  restart completion. Default: ``30``. Use ``--no-wait`` instead of
+  ``--timeout 0`` for fire-and-forget operation.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -201,10 +202,12 @@ Examples:
 In non-interactive contexts, ``--force`` is required.
 
 By default, shutdown waits for the target to stop before returning, and restart
-waits for the target to become reachable again before returning. With
-``--no-wait``, the command returns immediately with an initiated status. When
-``target`` is ``server`` or ``all``, the admin session closes automatically
-after the shutdown or restart request is sent.
+waits for the target to become reachable again before returning. For
+``restart all``, this includes waiting for the server to restart and for
+previously connected clients to reconnect. With ``--no-wait``, the command
+returns immediately with an initiated status. When ``target`` is ``server`` or
+``all``, the admin session closes automatically after the shutdown or restart
+request is sent.
 If the wait exceeds ``--timeout``, the command returns ``TIMEOUT`` with exit
 code ``3`` instead of reporting a connection failure.
 

@@ -199,6 +199,8 @@ class TestSystemShutdown:
         assert args.timeout == 120.0
         with pytest.raises(SystemExit):
             parser.parse_args(["shutdown", "all", "--force", "--timeout", "-1"])
+        with pytest.raises(SystemExit):
+            parser.parse_args(["shutdown", "all", "--force", "--timeout", "0"])
 
     def test_shutdown_timeout_exits_timeout(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_shutdown

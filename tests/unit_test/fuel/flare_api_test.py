@@ -354,6 +354,12 @@ class TestSessionShutdown:
         sess.close.assert_called_once()
         sess._wait_for_server_down.assert_called_once()
 
+    def test_shutdown_rejects_zero_wait_timeout_before_command(self):
+        sess = _make_session_with_meta({})
+        with pytest.raises(ValueError, match="timeout must be a positive number"):
+            sess.shutdown("server", timeout=0)
+        sess._do_command.assert_not_called()
+
     def test_shutdown_all_closes_session(self):
         sess = _make_session_with_meta({})
         sess._wait_for_server_down = MagicMock()
@@ -407,6 +413,29 @@ class TestSessionRestart:
         sess._wait_for_server_restart = MagicMock()
         sess.restart("server")
         sess._wait_for_server_restart.assert_called_once_with(123, 30.0)
+
+    def test_restart_rejects_zero_wait_timeout_before_command(self):
+        sess = _make_session_with_meta({})
+        with pytest.raises(ValueError, match="timeout must be a positive number"):
+            sess.restart("server", timeout=0)
+        sess._do_command.assert_not_called()
+
+    def test_restart_all_waits_for_server_and_clients(self):
+        sess = _make_session_with_meta({})
+        sys_info = MagicMock(
+            server_info=MagicMock(start_time=123),
+            client_info=[ClientInfo("site-1", 10), ClientInfo("site-2", 20)],
+        )
+        sess.get_system_info = MagicMock(return_value=sys_info)
+        sess._wait_for_server_restart = MagicMock()
+        sess._wait_for_clients_restart = MagicMock()
+
+        sess.restart("all")
+
+        sess._wait_for_server_restart.assert_called_once_with(123, 30.0)
+        sess._wait_for_clients_restart.assert_called_once_with(
+            {"site-1": 10, "site-2": 20}, 30.0, use_poll_session=True
+        )
 
     def test_wait_for_server_restart_accepts_immediate_success_when_previous_start_unknown(self):
         sess = _make_session_with_meta({})

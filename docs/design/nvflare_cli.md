@@ -1649,6 +1649,10 @@ nvflare system log-config    [--site server|<client_name>|all] <level>
 nvflare system version       [--site server|<name>|all]
 ```
 
+For `shutdown` and `restart`, `--timeout N` must be positive. Use `--no-wait`
+instead of `--timeout 0` for fire-and-forget operation. `restart all --wait`
+waits for the server restart and for previously connected clients to reconnect.
+
 `remove-client` removes the current active registry entry only. It does not stop the
 client process, revoke credentials, or prevent reconnect. `disable-client` is the durable
 operational control: it persists a disabled flag, removes any active registry entry, and

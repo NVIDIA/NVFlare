@@ -628,7 +628,18 @@ class Session(SessionSpec):
             if sess:
                 sess._close_ignore_errors()
 
+    @staticmethod
+    def _validate_state_change_timeout(timeout: float) -> float:
+        try:
+            timeout = float(timeout)
+        except (TypeError, ValueError) as e:
+            raise ValueError("timeout must be a positive number when wait=True; use wait=False for no-wait") from e
+        if timeout <= 0:
+            raise ValueError("timeout must be a positive number when wait=True; use wait=False for no-wait")
+        return timeout
+
     def _wait_for_server_down(self, timeout: float):
+        timeout = self._validate_state_change_timeout(timeout)
         deadline = time.time() + timeout
         last_error = "server is still reachable"
         while time.time() < deadline:
@@ -645,6 +656,7 @@ class Session(SessionSpec):
         raise TimeoutError(f"server did not stop within {timeout} seconds; last error: {last_error}")
 
     def _wait_for_server_restart(self, previous_start_time, timeout: float):
+        timeout = self._validate_state_change_timeout(timeout)
         deadline = time.time() + timeout
         seen_down = previous_start_time is None
         last_error = "server restart has not completed"
@@ -676,6 +688,7 @@ class Session(SessionSpec):
         return connected
 
     def _wait_for_clients_shutdown(self, client_names: Optional[List[str]], timeout: float):
+        timeout = self._validate_state_change_timeout(timeout)
         deadline = time.time() + timeout
         target_names = set(client_names or [])
         last_error = "clients are still connected"
@@ -690,15 +703,20 @@ class Session(SessionSpec):
 
         raise TimeoutError(f"clients did not stop within {timeout} seconds; last error: {last_error}")
 
-    def _wait_for_clients_restart(self, previous_client_times, timeout: float):
+    def _wait_for_clients_restart(self, previous_client_times, timeout: float, use_poll_session: bool = False):
         if not previous_client_times:
             return
 
+        timeout = self._validate_state_change_timeout(timeout)
         deadline = time.time() + timeout
         expected_names = set(previous_client_times)
         last_error = "clients have not reconnected yet"
         while time.time() < deadline:
-            sys_info = self.get_system_info()
+            if use_poll_session:
+                remaining = max(deadline - time.time(), 0.1)
+                sys_info = self._poll_system_info(min(_STATE_CHANGE_CONNECT_TIMEOUT, remaining))
+            else:
+                sys_info = self.get_system_info()
             connected = {client.name: client.last_connect_time for client in sys_info.client_info}
             waiting = []
             for client_name in expected_names:
@@ -736,15 +754,23 @@ class Session(SessionSpec):
             raise ValueError(f"restart target_type must be one of {_VALID_TARGET_TYPES}")
         if target_type == TargetType.CLIENT and client_names:
             _validate_target_strs(client_names)
+        if wait:
+            timeout = self._validate_state_change_timeout(timeout)
 
         previous_server_start_time = None
         previous_client_times = None
         if wait:
             if target_type in (TargetType.SERVER, TargetType.ALL):
                 try:
-                    previous_server_start_time = self.get_system_info().server_info.start_time
+                    sys_info = self.get_system_info()
+                    previous_server_start_time = sys_info.server_info.start_time
+                    if target_type == TargetType.ALL:
+                        previous_client_times = {
+                            client.name: client.last_connect_time for client in sys_info.client_info
+                        }
                 except Exception:
                     previous_server_start_time = None
+                    previous_client_times = None
             elif target_type == TargetType.CLIENT:
                 previous_client_times = self._client_last_connect_times(client_names)
 
@@ -758,7 +784,9 @@ class Session(SessionSpec):
             if target_type in (TargetType.SERVER, TargetType.ALL):
                 self._close_ignore_errors()
                 self._wait_for_server_restart(previous_server_start_time, timeout)
-            elif target_type == TargetType.CLIENT:
+                if target_type == TargetType.ALL:
+                    self._wait_for_clients_restart(previous_client_times, timeout, use_poll_session=True)
+            else:
                 self._wait_for_clients_restart(previous_client_times, timeout)
         return result[ResultKey.META]
 
@@ -781,6 +809,8 @@ class Session(SessionSpec):
             raise ValueError(f"shutdown target_type must be one of {_VALID_TARGET_TYPES}")
         if target_type == TargetType.CLIENT and client_names:
             _validate_target_strs(client_names)
+        if wait:
+            timeout = self._validate_state_change_timeout(timeout)
 
         parts = [AdminCommandNames.SHUTDOWN, target_type]
         if target_type == TargetType.CLIENT and client_names:

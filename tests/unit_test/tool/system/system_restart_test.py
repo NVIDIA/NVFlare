@@ -186,6 +186,8 @@ class TestSystemRestart:
         assert args.timeout == 120.0
         with pytest.raises(SystemExit):
             parser.parse_args(["restart", "server", "--force", "--timeout", "-1"])
+        with pytest.raises(SystemExit):
+            parser.parse_args(["restart", "server", "--force", "--timeout", "0"])
 
     def test_restart_parser_reports_clean_timeout_type_error(self, capsys):
         from nvflare.tool.system.system_cli import def_system_cli_parser
@@ -197,14 +199,20 @@ class TestSystemRestart:
             parser.parse_args(["restart", "server", "--force", "--timeout", "-1"])
 
         captured = capsys.readouterr()
-        assert "expected a non-negative number, got '-1'" in captured.err
-        assert "invalid _non_negative_float value" not in captured.err
+        assert "expected a positive number, got '-1'" in captured.err
+        assert "invalid _positive_float value" not in captured.err
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["restart", "server", "--force", "--timeout", "0"])
+
+        captured = capsys.readouterr()
+        assert "expected a positive number, got '0'" in captured.err
 
         with pytest.raises(SystemExit):
             parser.parse_args(["restart", "server", "--force", "--timeout", "abc"])
 
         captured = capsys.readouterr()
-        assert "expected a non-negative number, got 'abc'" in captured.err
+        assert "expected a positive number, got 'abc'" in captured.err
 
     def test_restart_timeout_exits_timeout(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_restart
