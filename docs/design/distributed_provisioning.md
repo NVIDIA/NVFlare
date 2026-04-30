@@ -91,8 +91,8 @@ The resulting startup kits are structurally identical to those produced by
 
 - **Root CA trust is explicit.**
   Interactive packaging can use `--confirm-rootca`. Automation can use
-  `--expected-rootca-fingerprint`. If neither is provided, packaging warns that the
-  root CA fingerprint was not verified out-of-band.
+  `--expected-rootca-fingerprint` (short form: `--fingerprint`). If neither is
+  provided, packaging warns that the root CA fingerprint was not verified out-of-band.
 
 - **Custom startup-kit builders are supported.**
   Participant definition files may include a `builders:` section. Packaging honors
@@ -130,8 +130,15 @@ nested path directly, such as `hospital-a/hospital-a.request.zip`.
 User certificates use a participant definition file that contains the certificate role:
 
 ```bash
+# Requester (alice's machine)
 nvflare cert request --participant alice.yaml
+# → sends alice@hospital-alpha.org.request.zip to Project Admin
+
+# Project Admin
 nvflare cert approve alice@hospital-alpha.org.request.zip --ca-dir ./ca --profile project_profile.yaml
+# → returns alice@hospital-alpha.org.signed.zip to requester
+
+# Requester (alice's machine)
 nvflare package alice@hospital-alpha.org.signed.zip --confirm-rootca
 ```
 

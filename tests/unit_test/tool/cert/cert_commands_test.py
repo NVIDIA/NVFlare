@@ -3509,6 +3509,44 @@ class TestDistributedCertRequestApprove:
         assert exc_info.value.code == 4
         assert "does not match project profile" in capsys.readouterr().err
 
+    def test_approve_rejects_server_name_that_differs_from_profile_host(self, tmp_path, capsys, monkeypatch):
+        """Regression: server name != profile host causes wrong sp_end_point in client/server kits."""
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.chdir(tmp_path)
+        ca_dir = tmp_path / "ca"
+        profile_path = tmp_path / "project_profile.yaml"
+        participant_path = tmp_path / "server.yaml"
+
+        _write_project_profile(profile_path, server_host="fl-server")
+        handle_cert_init(_init_args(profile=str(profile_path), org="nvidia", output_dir=str(ca_dir)))
+
+        _write_participant_definition(
+            participant_path,
+            {
+                "name": "example_project",
+                "participants": [{"name": "other-server", "type": "server", "org": "nvidia"}],
+            },
+        )
+        _run_cert_cli(_participant_request_args(participant_path))
+        request_dir = tmp_path / "other-server"
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_cert_cli(
+                [
+                    "approve",
+                    str(request_dir / "other-server.request.zip"),
+                    "--ca-dir",
+                    str(ca_dir),
+                    "--profile",
+                    str(profile_path),
+                ]
+            )
+
+        assert exc_info.value.code == 4
+        assert "does not match project profile server.host" in capsys.readouterr().err
+
     def test_approve_request_zip_read_error_returns_cli_error(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         ca_dir = tmp_path / "ca"

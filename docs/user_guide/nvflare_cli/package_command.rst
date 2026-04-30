@@ -87,6 +87,11 @@ For example:
 
    workspace/hospital_federation/prod_00/hospital-a/
 
+Each ``nvflare package`` invocation that includes a new participant creates or
+increments the ``prod_NN`` counter. Use ``--force`` to package a participant that
+already appears in the current ``prod_NN`` directory; a new ``prod_NN`` is then
+created alongside the existing one.
+
 ****************************
 Connection Configuration
 ****************************

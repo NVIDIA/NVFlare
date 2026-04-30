@@ -182,9 +182,9 @@ def provisioned(tmp_path):
     ws = str(tmp_path / "ws")
     profile = str(tmp_path / "project_profile.yaml")
 
-    # Step 1 — cert init
-    handle_cert_init(_ns(project=_PROJECT, output_dir=ca_dir))
+    # Step 1 — cert init (profile must exist before init so the project name can be read from it)
     _write_project_profile(profile, _PROJECT)
+    handle_cert_init(_ns(profile=profile, output_dir=ca_dir))
 
     request_dirs = {}
     request_zips = {}
@@ -215,7 +215,9 @@ class TestDistributedProvisioningWorkflow:
 
     def test_cert_init_produces_ca_files(self, tmp_path):
         ca_dir = str(tmp_path / "ca")
-        handle_cert_init(_ns(project=_PROJECT, output_dir=ca_dir))
+        profile = str(tmp_path / "project_profile.yaml")
+        _write_project_profile(profile, _PROJECT)
+        handle_cert_init(_ns(profile=profile, output_dir=ca_dir))
         assert os.path.isfile(os.path.join(ca_dir, "rootCA.pem"))
         assert os.path.isfile(os.path.join(ca_dir, "rootCA.key"))
         assert os.path.isfile(os.path.join(ca_dir, "ca.json"))
@@ -236,8 +238,8 @@ class TestDistributedProvisioningWorkflow:
         request_root = str(tmp_path / "requests")
         signed_dir = str(tmp_path / "signed")
         profile = str(tmp_path / "project_profile.yaml")
-        handle_cert_init(_ns(project=_PROJECT, output_dir=ca_dir))
         _write_project_profile(profile, _PROJECT)
+        handle_cert_init(_ns(profile=profile, output_dir=ca_dir))
         _request_dir, request_zip = _run_request("site-1", "client", _PROJECT, request_root)
         signed_zip = _run_approve("site-1", request_zip, ca_dir, signed_dir, profile)
         assert os.path.isfile(signed_zip)
@@ -610,8 +612,8 @@ def _run_distributed_provision(workspace: str) -> dict:
     kits_ws = os.path.join(workspace, "kits")
     profile = os.path.join(workspace, "project_profile.yaml")
 
-    handle_cert_init(_ns(project=_PARITY_PROJECT, output_dir=ca_dir))
     _write_project_profile(profile, _PARITY_PROJECT)
+    handle_cert_init(_ns(profile=profile, output_dir=ca_dir))
 
     request_dirs = {}
     request_zips = {}

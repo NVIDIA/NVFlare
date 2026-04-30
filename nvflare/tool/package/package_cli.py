@@ -81,6 +81,7 @@ def def_package_cli_parser(sub_cmd) -> dict:
     )
     p.add_argument(
         "--expected-rootca-fingerprint",
+        "--fingerprint",
         required=False,
         default=None,
         dest="expected_rootca_fingerprint",

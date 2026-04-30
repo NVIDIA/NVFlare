@@ -816,17 +816,17 @@ A new site joins and sets up its own study without coupling study management to 
 
 ```
 # Step 1 — Site Admin creates a request zip (private key stays local)
-nvflare cert request site hospital-1 --org org_a --project example_project
+nvflare cert request --participant hospital-1.yaml
 
 # Step 2 — Project Admin approves the request zip
-nvflare cert approve hospital-1.request.zip --ca-dir ./ca
+nvflare cert approve hospital-1/hospital-1.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 # Step 3 — Site Admin packages and starts
-nvflare package hospital-1.signed.zip -e grpc://fl-server:8002 --request-dir ./hospital-1
-cd hospital-1 && ./startup/start.sh
+nvflare package hospital-1.signed.zip --request-dir ./hospital-1 --confirm-rootca
+cd workspace/example_project/prod_00/hospital-1 && ./startup/start.sh
 
 # Step 4 — Org Admin creates their admin request and startup kit (same flow)
-nvflare cert request user org-admin admin@org_a.com --org org_a --project example_project
+nvflare cert request --participant org-admin.yaml
 # ... approve, package, then activate the startup kit ...
 
 # Step 5 — Org Admin registers a study with a site from their org

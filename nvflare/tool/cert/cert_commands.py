@@ -2355,6 +2355,18 @@ def handle_cert_approve(args):
         if project_profile is None:
             return 1
 
+        if request_meta.get("cert_type") == "server":
+            profile_host = (project_profile.get("server") or {}).get("host", "")
+            if name != profile_host:
+                output_error_message(
+                    "SERVER_NAME_HOST_MISMATCH",
+                    f"Server participant name {name!r} does not match project profile server.host {profile_host!r}.",
+                    "Set the participant name in your participant definition to match server.host in project_profile.yaml.",
+                    None,
+                    exit_code=4,
+                )
+                return 1
+
         # The values used below survive the tempdir cleanup: output paths are
         # written into the final signed zip location, and metadata is copied.
         server_san_fields = _server_cert_san_fields(site_meta, request_meta, project_profile)
