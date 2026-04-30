@@ -435,6 +435,23 @@ class Project(Entity):
         """
         return self.server
 
+    def remove_server(self) -> Optional[Participant]:
+        """Remove the server definition from the project.
+
+        Returns: removed server participant, or None if no server is defined.
+
+        """
+        server = self.server
+        if not server:
+            return None
+        self._all_names.pop(server.name, None)
+        participants = self._participants_by_types.get(ParticipantType.SERVER)
+        if participants and server in participants:
+            participants.remove(server)
+        server.parent = None
+        self.server = None
+        return server
+
     def get_overseer(self) -> Optional[Participant]:
         """Get the overseer definition.
 
