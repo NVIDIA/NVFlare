@@ -2057,7 +2057,7 @@ def _build_monitor_terminal_event(data: dict, event: str = "terminal", error_cod
         result["stats_raw"] = data.get("stats_raw")
     if error_code:
         result["error_code"] = error_code
-    return {k: v for k, v in result.items() if v is not None}
+    return result
 
 
 def _build_monitor_timeout_event(job_id: str, timeout: int, start: float, start_ts, cb_state: dict) -> dict:

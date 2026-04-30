@@ -644,6 +644,16 @@ class TestJobMonitorOutput:
         assert event["terminal"] is True
         assert event["error_code"] == "JOB_FAILED"
 
+    def test_monitor_terminal_event_keeps_null_protocol_keys(self):
+        from nvflare.tool.job.job_cli import _build_monitor_terminal_event
+
+        event = _build_monitor_terminal_event({"status": "FINISHED_OK", "job_meta": {}})
+
+        assert event["event"] == "terminal"
+        assert event["job_id"] is None
+        assert event["duration_s"] is None
+        assert event["metrics"] is None
+
     # ------------------------------------------------------------------
     # ENDED_BY_CB path (callback stopped monitoring)
     # ------------------------------------------------------------------

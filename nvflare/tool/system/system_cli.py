@@ -40,9 +40,9 @@ def _non_negative_float(value: str) -> float:
     try:
         parsed = float(value)
     except ValueError as e:
-        raise argparse.ArgumentTypeError(str(e))
+        raise argparse.ArgumentTypeError(f"expected a non-negative number, got {value!r}") from e
     if parsed < 0:
-        raise argparse.ArgumentTypeError("value must be >= 0")
+        raise argparse.ArgumentTypeError(f"expected a non-negative number, got {value!r}")
     return parsed
 
 

@@ -53,16 +53,20 @@ def _get_arg_value(args, name: str, default=None):
         return getattr(args, name, default)
 
 
-def resolve_startup_kit_dir_for_args(args=None) -> str:
-    """Resolve per-command startup-kit selectors, falling back to env/active config."""
+def _startup_kit_selectors_for_args(args=None):
     kit_id = _get_arg_value(args, "kit_id")
     startup_kit = _get_arg_value(args, "startup_kit")
-
     if kit_id and startup_kit:
         raise StartupKitConfigError(
             "--kit-id and --startup-kit are mutually exclusive",
             hint="Use only one startup-kit selector for a command.",
         )
+    return kit_id, startup_kit
+
+
+def resolve_startup_kit_dir_for_args(args=None) -> str:
+    """Resolve per-command startup-kit selectors, falling back to env/active config."""
+    kit_id, startup_kit = _startup_kit_selectors_for_args(args)
     if kit_id:
         return resolve_startup_kit_dir_by_id(kit_id)
     if startup_kit:
@@ -73,14 +77,7 @@ def resolve_startup_kit_dir_for_args(args=None) -> str:
 
 def resolve_startup_kit_info_for_args(args=None) -> dict:
     """Resolve startup-kit selection metadata for machine-readable command output."""
-    kit_id = _get_arg_value(args, "kit_id")
-    startup_kit = _get_arg_value(args, "startup_kit")
-
-    if kit_id and startup_kit:
-        raise StartupKitConfigError(
-            "--kit-id and --startup-kit are mutually exclusive",
-            hint="Use only one startup-kit selector for a command.",
-        )
+    kit_id, startup_kit = _startup_kit_selectors_for_args(args)
     if kit_id:
         return {
             "source": "kit_id",
@@ -114,7 +111,10 @@ def resolve_startup_kit_info_for_args(args=None) -> dict:
 
 def resolve_admin_user_and_dir_for_args(args=None):
     """Resolve the admin identity and startup-kit directory for a command invocation."""
-    startup_dir = resolve_startup_kit_dir_for_args(args)
+    kit_id, startup_kit = _startup_kit_selectors_for_args(args)
+    if startup_kit:
+        return resolve_admin_user_and_dir_from_startup_kit(startup_kit)
+    startup_dir = resolve_startup_kit_dir_by_id(kit_id) if kit_id else resolve_startup_kit_dir()
     return resolve_admin_user_and_dir_from_startup_kit(startup_dir)
 
 

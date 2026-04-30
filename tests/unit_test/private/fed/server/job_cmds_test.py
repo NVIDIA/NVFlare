@@ -597,6 +597,29 @@ def test_submit_token_is_not_written_to_job_meta(monkeypatch):
     assert "submit_token" not in engine.job_def_manager.created_metas[0]
 
 
+def test_submit_token_record_handling_does_not_mutate_caller_meta():
+    manager = _FakeSubmitTokenJobDefManager()
+    meta = {JobMetaKey.JOB_NAME.value: "job-name"}
+    original_meta = dict(meta)
+
+    job_id = JobCommandModule()._handle_submit_token_record_locked(
+        conn=_MockConnection(),
+        job_def_manager=manager,
+        study="default",
+        submitter={"name": "admin@nvidia.com", "org": "nvidia", "role": "project_admin"},
+        submit_token="retry-1",
+        job_content_hash="hash-1",
+        meta=meta,
+        folder_name="job_folder",
+        zip_file_name="job.zip",
+        fl_ctx=None,
+    )
+
+    assert job_id == "reserved-job-1"
+    assert meta == original_meta
+    assert manager.created_metas[0][JobMetaKey.JOB_ID.value] == "reserved-job-1"
+
+
 def test_user_job_meta_submit_token_is_stripped_before_submit_event(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorNoAssert)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)

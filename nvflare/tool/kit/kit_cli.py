@@ -47,7 +47,6 @@ KIT_COMMAND = "nvflare config"
 _JSON_OUTPUT_MODES = ["json"]
 _NO_RETRY_TOKEN_SCHEMA = {"supported": False}
 
-_kit_root_parser = None
 _kit_sub_cmd_parsers = {}
 
 
@@ -321,9 +320,6 @@ _KIT_HANDLERS: Dict[str, Callable] = {
 
 
 def def_kit_cli_parser(sub_cmd):
-    global _kit_root_parser
-    _kit_root_parser = None
-
     add_parser = sub_cmd.add_parser(CMD_KIT_ADD, help="register a startup kit path")
     add_parser.add_argument("kit_id", help="local startup kit ID")
     add_parser.add_argument("startup_kit_dir", help="admin/user startup kit directory")

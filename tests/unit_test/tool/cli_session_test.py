@@ -61,6 +61,23 @@ def test_new_cli_session_for_args_uses_explicit_startup_kit(tmp_path):
     assert new_secure.call_args.kwargs["startup_kit_location"] == str(startup_kit)
 
 
+def test_resolve_admin_user_and_dir_for_args_validates_explicit_startup_kit_once():
+    from unittest.mock import patch
+
+    from nvflare.tool.cli_session import resolve_admin_user_and_dir_for_args
+
+    with patch(
+        "nvflare.tool.cli_session.resolve_admin_user_and_dir_from_startup_kit",
+        return_value=("explicit@nvidia.com", "/resolved/startup"),
+    ) as resolver:
+        assert resolve_admin_user_and_dir_for_args(Namespace(startup_kit="/input/startup")) == (
+            "explicit@nvidia.com",
+            "/resolved/startup",
+        )
+
+    resolver.assert_called_once_with("/input/startup")
+
+
 def test_new_cli_session_for_args_uses_kit_id_without_mutating_active(tmp_path, monkeypatch):
     from unittest.mock import MagicMock, patch
 

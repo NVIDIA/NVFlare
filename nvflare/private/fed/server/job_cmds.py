@@ -1168,6 +1168,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         zip_file_name: str,
         fl_ctx,
     ):
+        meta = dict(meta)
         record = self._get_submit_record(job_def_manager, study, submitter, submit_token, fl_ctx)
         if record:
             if record.get(SubmitRecordKey.JOB_CONTENT_HASH.value) != job_content_hash:
