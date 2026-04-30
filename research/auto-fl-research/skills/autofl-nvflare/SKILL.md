@@ -68,16 +68,16 @@ After making edits:
 4. run static checks and syntax validation
 5. run the client contract validator if present
 6. run the smoke test if the prepared environment has `nvflare`
-7. assume one local H100; run one same-budget candidate at a time and default to `PARALLEL_CANDIDATES=1` unless the human explicitly changes the compute assumption
+7. assume one local 80 GB H100; launch up to `PARALLEL_CANDIDATES` same-budget candidates concurrently on that one GPU when memory allows, default to `PARALLEL_CANDIDATES=4`, and reduce the width if candidates hit CUDA OOM or host contention
 8. use the default H100 candidate budget unless told otherwise: 8 clients, 10 rounds, 4 local epochs, training batch size 64, eval batch size 1024, alpha 0.5, seed 0, `model_arch=moderate_cnn`, `max_model_params=5000000`, weighted aggregation, deterministic client training, final global evaluation on site-1, 600-second timeout
-9. use unique `RUN_LOG` and job `--name` values for each candidate; if the environment exposes multiple GPUs but this campaign should use the local H100 only, pin the run with `CUDA_VISIBLE_DEVICES=0`
+9. use unique `RUN_LOG` and job `--name` values for each candidate; if the environment exposes multiple GPUs but this campaign should use the local H100 only, pin each run with `CUDA_VISIBLE_DEVICES=0` instead of spreading candidates across devices
 10. record the outcome in `results.tsv`; successful runs are appended as `candidate`, which means unreviewed, not kept
-11. after every completed run, update reviewed `results.tsv` statuses before launching the next candidate: promote the selected survivor to `keep`, mark reviewed non-survivors as `discard`, leave crashes as `crash`, and leave only unresolved active rows as `candidate`; prefer `scripts/finalize_batch_status.py --last 1`
+11. after every completed batch, update reviewed `results.tsv` statuses before launching the next batch: promote the selected survivor to `keep`, mark reviewed non-survivors as `discard`, leave crashes as `crash`, and leave only unresolved active rows as `candidate`; prefer `scripts/finalize_batch_status.py --last "${PARALLEL_CANDIDATES:-4}"`
 12. commit that ledger on experiment branches after baseline and completed runs/checkpoints
 13. if a candidate implements a paper-derived method, include a compact source ref in the `results.tsv` description field and fuller citation details in `templates/mutation_report.md`
-14. rank the completed run against the ledger before deciding whether to keep, narrow, or revert; rank primarily by score, use runtime as a coarse secondary signal, and prefer the faster/simpler candidate when scores are within noise
-15. after setup and baseline, continue launching same-budget candidates until manually interrupted; do not ask whether to keep going
-16. if progress stalls, run the Camyla-inspired literature loop from `program.md`: generate diverse queries, triage primary papers, extract challenge cards, score contract-safe proposals in `templates/literature_loop.md`, and launch the top compatible candidate next
+14. rank the completed batch against the ledger before deciding whether to keep, narrow, or revert; rank primarily by score, use runtime as a coarse secondary signal, and prefer the faster/simpler candidate when scores are within noise
+15. after setup and baseline, continue launching same-budget candidate batches until manually interrupted; do not ask whether to keep going
+16. if progress stalls, run the Camyla-inspired literature loop from `program.md`: generate diverse queries, triage primary papers, extract challenge cards, score contract-safe proposals in `templates/literature_loop.md`, and launch the top compatible candidate batch next
 17. report the mutation hypothesis, changed files, commands run, observed outcome, literature basis, run analysis, and next mutation
 
 ## References

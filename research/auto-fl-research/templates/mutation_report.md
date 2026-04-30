@@ -23,7 +23,7 @@ Successful runs are appended to `results.tsv` as `candidate`, but the previous i
 ## Observed outcome
 
 - Current local `results.tsv` has 469 `candidate` rows, 25 `crash` rows, and 0 `keep` rows, confirming the prompt gap.
-- `program.md`, README, the autofl skill, and the runbook now state that `candidate` means unreviewed and that every completed run must update statuses before the next candidate.
+- `program.md`, README, the autofl skill, and the runbook now state that `candidate` means unreviewed and that every completed run or batch must update statuses before the next candidate batch.
 - Added `scripts/finalize_batch_status.py` to promote the best reviewed candidate to `keep` and demote reviewed non-survivors to `discard`.
 - `scripts/summarize_results.py` now reminds agents to finalize statuses after reviewing candidate runs.
 - The README and skill provenance now acknowledge the Camyla-inspired literature-loop / QWBE-style proposal workflow.
@@ -48,4 +48,4 @@ Low. The change adds a standalone ledger helper and tightens instructions. It do
 
 ## Next mutation
 
-Use `scripts/finalize_batch_status.py` after every completed run. For stale ledgers, run it once with `--all-candidates --keep-best --discard-others` after confirming the intended cleanup policy.
+Use `scripts/finalize_batch_status.py` after every completed run or batch. For stale ledgers, run it once with `--all-candidates --keep-best --discard-others` after confirming the intended cleanup policy.

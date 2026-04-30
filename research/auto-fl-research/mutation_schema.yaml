@@ -84,21 +84,23 @@ local_sweep:
     gpu_count: 1
     gpu_type: H100
     gpu_memory_gb: 80
-  default_candidate_width: 1
+  default_candidate_width: 4
   candidate_width_source: initial_agent_instruction
   candidate_rule: >
-    Run one same-budget candidate at a time on the local H100. If the
-    environment exposes multiple GPUs but the campaign should use this single
-    GPU, pin the run with CUDA_VISIBLE_DEVICES=0.
+    Run up to PARALLEL_CANDIDATES same-budget candidates concurrently on the
+    one local H100 when memory allows. If the environment exposes multiple GPUs
+    but the campaign should use this single GPU, pin each run with
+    CUDA_VISIBLE_DEVICES=0 instead of spreading candidates across devices.
   per_run_artifacts:
     - RUN_LOG
     - job --name
-  run_decision_rule: >
-    Rank each completed candidate against the ledger before keeping,
-    narrowing, or discarding the sweep axis.
+  batch_decision_rule: >
+    Wait for each launched batch to finish or time out, then rank completed
+    candidates against the ledger before keeping, narrowing, or discarding the
+    sweep axis.
 
 literature_review:
-  trigger_after_non_improving_runs: 2
+  trigger_after_non_improving_batches: 2
   ledger_source_rule: >
     When a candidate implements a method or design choice from a research
     paper, include a compact source reference in the results.tsv description

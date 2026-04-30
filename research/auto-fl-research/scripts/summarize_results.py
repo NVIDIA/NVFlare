@@ -99,7 +99,7 @@ def main():
     if args.status == "candidate" and rows:
         print()
         print(
-            "After reviewing a completed run, finalize statuses with "
+            "After reviewing a completed run or batch, finalize statuses with "
             "`scripts/finalize_batch_status.py` so kept/discarded runs are visible in progress plots."
         )
 

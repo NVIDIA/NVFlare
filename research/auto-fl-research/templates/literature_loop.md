@@ -8,7 +8,7 @@ Use this worksheet only when progress stalls or the next axis is unclear. Keep e
 - Current best:
 - Recent symptoms from `results.tsv`:
 - Confirmed null/worse ideas to avoid:
-- Candidate width: 1
+- Candidate width: `PARALLEL_CANDIDATES` (default 4 on one local 80 GB H100; lower if memory or host contention appears)
 
 ## Search queries
 
@@ -52,11 +52,14 @@ Score each axis from 1-5. Total = `2*expected_gain + 2*contract_safety + simplic
 | --- | --- | --- | --- | --- | --- | --- | --- |
 |  |  |  |  |  |  |  |  |
 
-## QWBE-style next-candidate plan
+## QWBE-style next-candidate batch plan
 
-| rank | proposal | candidate name | args / code variant |
+| slot | proposal | candidate name | args / code variant |
 | --- | --- | --- | --- |
 | 1 |  |  |  |
+| 2 |  |  |  |
+| 3 |  |  |  |
+| 4 |  |  |  |
 
 ## Reflective memory
 
