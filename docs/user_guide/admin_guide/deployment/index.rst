@@ -13,11 +13,10 @@ Deployment Guide
    operation
    containerized_deployment
    helm_chart
+   brev_scripted_deployment
+   brev_deployment
    cloud_deployment
    aws_eks
    dashboard_ui
    notes_on_large_models
-
-
-
 
