@@ -206,6 +206,7 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
     script = (output / "startup" / "start_docker.sh").read_text()
     assert "repo/nvflare:dev" in script
     assert 'NETWORK_NAME="nvflare-test"' in script
+    assert "--network-alias" not in script
     assert "/var/tmp/nvflare/workspace/startup/sub_start.sh" not in script
     assert "/usr/local/bin/python3" in script
     assert "nvflare.private.fed.app.client.client_train" in script
@@ -261,6 +262,25 @@ def test_prepare_docker_server_publishes_admin_port_only_when_distinct(
     assert script.count("-p 8003:8003") == expected_admin_publish_count
 
 
+def test_prepare_docker_server_adds_logical_server_network_alias(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path, name="abc.aws.com")
+    output = tmp_path / "server-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    script = (output / "startup" / "start_docker.sh").read_text()
+    assert "--name abc.aws.com" in script
+    assert "--network-alias server" in script
+
+
 @pytest.mark.parametrize(
     "admin_port, expected_admin_port",
     [
@@ -309,6 +329,30 @@ def test_prepare_docker_reads_org_from_cert_without_sub_start(tmp_path, capsys):
     script = (output / "startup" / "start_docker.sh").read_text()
     assert "org=nvidia" in script
     assert not (output / "startup" / "sub_start.sh").exists()
+
+
+def test_prepare_docker_creates_comm_config_when_missing(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    (kit / "local" / "comm_config.json").unlink()
+    output = tmp_path / "site-1-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    assert comm_config["backbone_conn_gen"] == 2
+    assert comm_config["internal"]["scheme"] == "tcp"
+    assert comm_config["internal"]["resources"] == {
+        "host": "0.0.0.0",
+        "connection_security": "clear",
+    }
 
 
 def test_prepare_uses_conventional_config_and_output_paths(tmp_path, capsys):
@@ -442,25 +486,29 @@ def test_prepare_k8s_client_sanitizes_service_name_without_changing_site_identit
     assert "_" not in values["serviceName"]
 
 
-def test_prepare_k8s_requires_comm_config(tmp_path, capsys):
+def test_prepare_k8s_creates_comm_config_when_missing(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
     (kit / "local" / "comm_config.json").unlink()
     output = tmp_path / "site-1-k8s"
 
-    with pytest.raises(SystemExit):
-        _run_prepare(
-            kit,
-            output,
-            {
-                "runtime": "k8s",
-                "parent": {"docker_image": "repo/nvflare:dev"},
-            },
-        )
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
 
-    err = capsys.readouterr().err
-    assert "INVALID_KIT" in err
-    assert "Missing comm_config.json" in err
-    assert not output.exists()
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    assert comm_config["backbone_conn_gen"] == 2
+    assert comm_config["internal"]["scheme"] == "tcp"
+    assert comm_config["internal"]["resources"] == {
+        "host": "site-1",
+        "port": 8102,
+        "connection_security": "clear",
+    }
 
 
 def test_k8s_release_name_is_safe_for_helm():

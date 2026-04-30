@@ -436,6 +436,10 @@ For Docker:
 
 - `start_docker.sh` creates or uses the configured Docker network.
 - the parent container and job containers use the same Docker network name.
+- server parent containers are reachable through the logical Docker DNS alias
+  `server`, even when the concrete container name differs.
+- `local/comm_config.json` is created if missing, then patched for the runtime
+  parent-process endpoint.
 - the parent process binds its internal listener to `0.0.0.0` so job
   containers can connect over the Docker network.
 - `DockerJobLauncher` uses the same network and parent naming assumptions as
@@ -448,6 +452,8 @@ For K8s:
   Service.
 - the Service name, parent port, launcher config, and internal communication
   config in the prepared kit must be consistent.
+- `local/comm_config.json` is created if missing, then patched for the runtime
+  parent-process endpoint.
 - the internal pod-to-parent communication settings should use the Kubernetes
   Service host, configured parent port, and the scheme/security expected by the
   runtime.
