@@ -25,6 +25,10 @@ JSON output mode (--format json):
         {"schema_version": "1", "status": "ok"|"error", "data": {...}}
     stderr — all human-readable output: progress, warnings, prompts, diagnostics.
 
+JSON Lines output mode (--format jsonl):
+    stdout — newline-delimited JSON events for streaming commands.
+    stderr — all human-readable output: progress, warnings, prompts, diagnostics.
+
 Exceptions (plain text, outside the JSON contract):
     --help / -h         argparse usage text; agents use --schema instead
     --version           top-level utility path, not command output
@@ -42,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 # Module-level CLI state. This process is single-command/single-process, so a pair of globals is
 # sufficient here, but they are intentionally process-global and not thread-safe.
-# Possible values: "txt" (default, human-readable) or "json".
+# Possible values: "txt" (default, human-readable), "json", or "jsonl".
 _output_format: str = "txt"
 _connect_timeout: float = 5.0
 
@@ -81,13 +85,26 @@ def _is_json_mode() -> bool:
     return _output_format == "json"
 
 
+def _is_jsonl_mode() -> bool:
+    return _output_format == "jsonl"
+
+
+def _is_machine_mode() -> bool:
+    return _output_format in {"json", "jsonl"}
+
+
 def is_json_mode() -> bool:
     """Public helper for checking JSON mode without exposing internals."""
     return _is_json_mode()
 
 
+def is_jsonl_mode() -> bool:
+    """Public helper for checking JSON Lines mode without exposing internals."""
+    return _is_jsonl_mode()
+
+
 def _human_stream():
-    return sys.stderr if _is_json_mode() else sys.stdout
+    return sys.stderr if _is_machine_mode() else sys.stdout
 
 
 def _render_table(data: Any) -> None:
@@ -131,7 +148,7 @@ def output(data: Any, fmt: Optional[str]) -> None:
 
 def output_ok(data: Any, exit_code: int = 0) -> None:
     """Print command success output."""
-    if _is_json_mode():
+    if _is_machine_mode():
         print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "exit_code": exit_code, "data": data}))
     else:
         _render_table(data)
@@ -159,7 +176,7 @@ def output_error(
     if detail:
         message = f"{message} \u2014 {detail}"
     resolved_hint = hint if hint is not None else entry["hint"]
-    if _is_json_mode():
+    if _is_machine_mode():
         payload = {
             "schema_version": SCHEMA_VERSION,
             "status": "error",
@@ -170,6 +187,8 @@ def output_error(
         }
         if data is not None:
             payload["data"] = data
+        if _is_jsonl_mode():
+            payload["terminal"] = True
         print(json.dumps(payload))
     else:
         if data is not None:
@@ -179,6 +198,15 @@ def output_error(
             print(f"Hint: {resolved_hint}", file=sys.stderr)
         print(f"Code: {error_code} (exit {exit_code})", file=sys.stderr)
     sys.exit(exit_code)
+
+
+def output_jsonl_event(event: Any) -> None:
+    """Print one JSONL event for streaming command output."""
+    if not isinstance(event, dict):
+        event = {"event": event}
+    payload = {"schema_version": SCHEMA_VERSION}
+    payload.update(event)
+    print(json.dumps(payload))
 
 
 def output_error_message(
@@ -193,19 +221,18 @@ def output_error_message(
     resolved_hint = hint or ""
     if detail:
         message = f"{message} \u2014 {detail}"
-    if fmt == "json" or (fmt is None and _is_json_mode()):
-        print(
-            json.dumps(
-                {
-                    "schema_version": SCHEMA_VERSION,
-                    "status": "error",
-                    "exit_code": exit_code,
-                    "error_code": error_code,
-                    "message": message,
-                    "hint": resolved_hint,
-                }
-            )
-        )
+    if fmt in {"json", "jsonl"} or (fmt is None and _is_machine_mode()):
+        payload = {
+            "schema_version": SCHEMA_VERSION,
+            "status": "error",
+            "exit_code": exit_code,
+            "error_code": error_code,
+            "message": message,
+            "hint": resolved_hint,
+        }
+        if _is_jsonl_mode():
+            payload["terminal"] = True
+        print(json.dumps(payload))
     else:
         print(message, file=sys.stderr)
         if resolved_hint:

@@ -1952,6 +1952,90 @@ def _emit_monitor_progress(job_id: str, job_meta: dict, state: dict, now: float,
     state["last_emit_ts"] = now
 
 
+def _normalize_monitor_event_status(status: str) -> str:
+    if not status:
+        return "UNKNOWN"
+    if status == "FINISHED_OK" or status.startswith("FINISHED:COMPLETED"):
+        return "COMPLETED"
+    if status == "FINISHED_EXCEPTION" or status == "FAILED" or status.startswith("FINISHED:EXECUTION_EXCEPTION"):
+        return "FAILED"
+    if status == "ABORTED" or status.startswith("FINISHED:ABORTED"):
+        return "ABORTED"
+    if status == "ABANDONED" or status.startswith("FINISHED:ABANDONED"):
+        return "ABANDONED"
+    return status
+
+
+def _build_monitor_progress_event(job_id: str, job_meta: dict, state: dict, now: float, start: float, start_ts) -> dict:
+    from nvflare.apis.job_def import JobMetaKey
+
+    raw_status = job_meta.get("status", "UNKNOWN") if job_meta else "UNKNOWN"
+    elapsed_base = start_ts if start_ts is not None else start
+    event = {
+        "event": "progress",
+        "job_id": job_id,
+        "status": _normalize_monitor_event_status(raw_status),
+        "job_status": raw_status,
+        "terminal": False,
+        "elapsed_s": round(now - elapsed_base, 1),
+        "job_meta": _summarize_monitor_meta(job_meta, JobMetaKey),
+    }
+    metrics = state.get("last_stats") or {}
+    if metrics:
+        event["metrics"] = metrics
+    return event
+
+
+def _emit_monitor_jsonl_progress(job_id: str, job_meta: dict, state: dict, now: float, start: float, start_ts):
+    from nvflare.tool.cli_output import output_jsonl_event
+
+    output_jsonl_event(_build_monitor_progress_event(job_id, job_meta, state, now, start, start_ts))
+    state["last_status"] = job_meta.get("status", "UNKNOWN") if job_meta else "UNKNOWN"
+    state["last_emit_ts"] = now
+
+
+def _build_monitor_terminal_event(data: dict, event: str = "terminal", error_code: str = None) -> dict:
+    raw_status = data.get("status", "UNKNOWN") if data else "UNKNOWN"
+    result = {
+        "event": event,
+        "job_id": data.get("job_id") if data else None,
+        "status": _normalize_monitor_event_status(raw_status),
+        "job_status": raw_status,
+        "terminal": True,
+        "duration_s": data.get("duration_s") if data else None,
+        "job_meta": data.get("job_meta") if data else {},
+        "metrics": data.get("last_stats") if data else None,
+    }
+    if data and "stats_raw" in data:
+        result["stats_raw"] = data.get("stats_raw")
+    if error_code:
+        result["error_code"] = error_code
+    return {k: v for k, v in result.items() if v is not None}
+
+
+def _build_monitor_timeout_event(job_id: str, timeout: int, start: float, start_ts, cb_state: dict) -> dict:
+    from nvflare.apis.job_def import JobMetaKey
+
+    elapsed_base = start_ts if start_ts is not None else start
+    event = {
+        "event": "terminal",
+        "job_id": job_id,
+        "status": "TIMEOUT",
+        "terminal": True,
+        "timeout_seconds": timeout,
+        "elapsed_s": round(time.time() - elapsed_base, 1),
+    }
+    last_meta = cb_state.get("last_meta")
+    if last_meta:
+        raw_status = last_meta.get("status", "UNKNOWN")
+        event["job_status"] = raw_status
+        event["job_meta"] = _summarize_monitor_meta(last_meta, JobMetaKey)
+    metrics = cb_state.get("last_stats")
+    if metrics:
+        event["metrics"] = metrics
+    return event
+
+
 def _build_monitor_status_callback(
     start: float,
     start_ts_holder: dict,
@@ -1959,6 +2043,7 @@ def _build_monitor_status_callback(
     stats_interval: int,
     stats_target: str,
     key_aliases: dict,
+    jsonl_mode: bool = False,
 ):
     def _status_cb(sess, job_id, job_meta, state):
         from nvflare.apis.job_def import JobMetaKey
@@ -1974,7 +2059,10 @@ def _build_monitor_status_callback(
             _refresh_monitor_stats(sess, job_id, state, stats_target, key_aliases)
             state["last_stats_ts"] = now
         if status != state["last_status"] or now - state["last_emit_ts"] >= emit_interval:
-            _emit_monitor_progress(job_id, job_meta, state, now, start, start_ts_holder["value"])
+            if jsonl_mode:
+                _emit_monitor_jsonl_progress(job_id, job_meta, state, now, start, start_ts_holder["value"])
+            else:
+                _emit_monitor_progress(job_id, job_meta, state, now, start, start_ts_holder["value"])
         return status not in _TERMINAL_JOB_STATES
 
     return _status_cb
@@ -2042,7 +2130,7 @@ def cmd_job_monitor(cmd_args):
         MonitorReturnCode,
         NoConnection,
     )
-    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok
+    from nvflare.tool.cli_output import is_json_mode, is_jsonl_mode, output_error, output_jsonl_event, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -2052,10 +2140,14 @@ def cmd_job_monitor(cmd_args):
             "nvflare job monitor abc123",
             "nvflare job monitor abc123 --timeout 3600",
             "nvflare job monitor abc123 --study cancer",
+            "nvflare job monitor abc123 --timeout 3600 --format jsonl",
         ],
         sys.argv[1:],
+        streaming=True,
+        output_modes=["json", "jsonl"],
     )
 
+    jsonl_mode = is_jsonl_mode()
     study = _get_arg_value(cmd_args, "study", "default")
     start = time.time()
     start_ts_holder = {"value": None}
@@ -2081,6 +2173,7 @@ def cmd_job_monitor(cmd_args):
         stats_interval=stats_interval,
         stats_target=stats_target,
         key_aliases=key_aliases,
+        jsonl_mode=jsonl_mode,
     )
 
     try:
@@ -2102,6 +2195,17 @@ def cmd_job_monitor(cmd_args):
         return
 
     if rc == MonitorReturnCode.TIMEOUT:
+        if jsonl_mode:
+            output_jsonl_event(
+                _build_monitor_timeout_event(
+                    job_id=cmd_args.job_id,
+                    timeout=timeout,
+                    start=start,
+                    start_ts=start_ts_holder["value"],
+                    cb_state=cb_state,
+                )
+            )
+            sys.exit(3)
         output_error(
             "TIMEOUT",
             exit_code=3,
@@ -2130,14 +2234,20 @@ def cmd_job_monitor(cmd_args):
         start=start,
         start_ts=start_ts_holder["value"],
         cb_state=cb_state,
-        json_mode=is_json_mode(),
+        json_mode=is_json_mode() or jsonl_mode,
     )
 
     failure = _job_terminal_failure_error(status)
     if failure:
         error_code, hint = failure
+        if jsonl_mode:
+            output_jsonl_event(_build_monitor_terminal_event(data, error_code=error_code))
+            sys.exit(1)
         output_error(error_code, exit_code=1, hint=hint, data=data, job_id=cmd_args.job_id)
     else:
+        if jsonl_mode:
+            output_jsonl_event(_build_monitor_terminal_event(data))
+            return
         output_ok(data)
 
 

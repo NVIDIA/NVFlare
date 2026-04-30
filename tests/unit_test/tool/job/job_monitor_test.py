@@ -223,6 +223,9 @@ class TestJobMonitorOutput:
         assert "--study" in schema_text
         assert "--startup-kit" in schema_text
         assert "--kit-id" in schema_text
+        schema = json.loads(schema_text)
+        assert schema["streaming"] is True
+        assert schema["output_modes"] == ["json", "jsonl"]
 
     def test_failed_outputs_error_envelope_exits_1(self, capsys):
         meta = _make_meta("FAILED")
@@ -308,6 +311,21 @@ class TestJobMonitorOutput:
         assert data["status"] == "error"
         assert data["error_code"] == "TIMEOUT"
         assert data["exit_code"] == 3
+
+    def test_jsonl_timeout_emits_terminal_event(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        ctx, _ = _mock_session(MonitorReturnCode.TIMEOUT, None)
+        with ctx:
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_monitor(_make_args(timeout=10))
+        assert exc_info.value.code == 3
+
+        lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert lines[-1]["status"] == "TIMEOUT"
+        assert lines[-1]["terminal"] is True
+        assert lines[-1]["timeout_seconds"] == 10
 
     def test_job_not_found_exits_1(self, capsys):
         @contextmanager
@@ -500,6 +518,42 @@ class TestJobMonitorOutput:
         assert len(stdout_lines) == 1
         json.loads(stdout_lines[0])  # must be valid JSON
 
+    def test_jsonl_finished_ok_emits_terminal_event(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        meta = _make_meta("FINISHED_OK")
+        ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, meta)
+        with ctx:
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            cmd_job_monitor(_make_args())
+
+        stdout_lines = [json.loads(ln) for ln in capsys.readouterr().out.splitlines()]
+        assert len(stdout_lines) == 1
+        event = stdout_lines[0]
+        assert event["schema_version"] == "1"
+        assert event["event"] == "terminal"
+        assert event["status"] == "COMPLETED"
+        assert event["job_status"] == "FINISHED_OK"
+        assert event["terminal"] is True
+
+    def test_jsonl_failed_job_emits_terminal_event_and_exits_1(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        meta = _make_meta("FAILED")
+        ctx, _ = _mock_session(MonitorReturnCode.JOB_FINISHED, meta)
+        with ctx:
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_monitor(_make_args())
+        assert exc_info.value.code == 1
+
+        event = json.loads(capsys.readouterr().out.splitlines()[-1])
+        assert event["event"] == "terminal"
+        assert event["status"] == "FAILED"
+        assert event["job_status"] == "FAILED"
+        assert event["terminal"] is True
+        assert event["error_code"] == "JOB_FAILED"
+
     # ------------------------------------------------------------------
     # ENDED_BY_CB path (callback stopped monitoring)
     # ------------------------------------------------------------------
@@ -530,6 +584,38 @@ class TestJobMonitorOutput:
         data = json.loads(capsys.readouterr().out)
         assert data["status"] == "ok"
         assert data["data"]["status"] == "FINISHED_OK"
+
+    def test_jsonl_progress_and_terminal_events(self, capsys, monkeypatch):
+        """JSONL monitor emits progress events plus one terminal event."""
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        running_meta = _make_meta("RUNNING")
+        terminal_meta = _make_meta("FINISHED_OK")
+
+        def _side_effect(job_id, timeout, poll_interval, cb, state):
+            cb(mock_sess, job_id, running_meta, state)
+            state["last_meta"] = terminal_meta
+            cb(mock_sess, job_id, terminal_meta, state)
+            return MonitorReturnCode.ENDED_BY_CB, None
+
+        mock_sess = MagicMock()
+        mock_sess.monitor_job_and_return_job_meta.side_effect = _side_effect
+        mock_sess.show_stats.return_value = {"server": {"round": 1, "loss": 0.5}}
+
+        @contextmanager
+        def _fake_session(*args, **kwargs):
+            yield mock_sess
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            cmd_job_monitor(_make_args())
+
+        events = [json.loads(ln) for ln in capsys.readouterr().out.splitlines()]
+        assert [event["event"] for event in events] == ["progress", "progress", "terminal"]
+        assert events[0]["status"] == "RUNNING"
+        assert events[0]["terminal"] is False
+        assert events[-1]["status"] == "COMPLETED"
+        assert events[-1]["terminal"] is True
 
     # ------------------------------------------------------------------
     # Parser

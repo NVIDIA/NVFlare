@@ -66,6 +66,10 @@ CMD_DEPLOY = "deploy"
 CMD_SYSTEM = "system"
 CMD_STUDY = "study"
 
+_JSONL_COMMANDS = {
+    (CMD_JOB, "monitor"),
+}
+
 
 def def_provision_parser(sub_cmd):
     cmd = CMD_PROVISION
@@ -379,9 +383,12 @@ def _build_global_arg_parser():
     parser.add_argument(
         "--format",
         dest="format",
-        choices=["txt", "json"],
+        choices=["txt", "json", "jsonl"],
         default="txt",
-        help="output format: 'txt' (default, human-readable to stdout/stderr) or 'json' for machine-readable JSON envelope on stdout",
+        help=(
+            "output format: 'txt' (default, human-readable), 'json' for one machine-readable "
+            "JSON envelope, or 'jsonl' for supported streaming commands"
+        ),
     )
     parser.add_argument(
         "--connect-timeout",
@@ -485,7 +492,7 @@ def parse_args(prog_name: str):
         return _parser, ns, sub_cmd_parsers
 
     # Patch every parser so it prints full help before exiting on error.
-    _patch_help_on_error(_parser, json_mode=global_args.format == "json")
+    _patch_help_on_error(_parser, json_mode=global_args.format in {"json", "jsonl"})
 
     args, unknown = _parser.parse_known_args(normalized_argv)
     args._raw_sub_command = args.__dict__.get("sub_command")
@@ -496,10 +503,15 @@ def parse_args(prog_name: str):
     if unknown:
         display_unknown = _display_unknown_args(normalized_argv, cmd, args, unknown)
         msg = f"unrecognized arguments: {' '.join(display_unknown)}"
-        if args.format == "json":
+        if args.format in {"json", "jsonl"}:
             _emit_argparse_error_json(sub_cmd_parser or _parser, f"{prog_name} {cmd}: {msg}")
         else:
             _emit_argparse_error_human(sub_cmd_parser or _parser, msg, exit_code=4)
+    if args.format == "jsonl":
+        command_path = (getattr(args, "sub_command", None), getattr(args, "job_sub_cmd", None))
+        if command_path not in _JSONL_COMMANDS:
+            detail = "--format jsonl is only supported by streaming commands: nvflare job monitor"
+            _emit_argparse_error_json(sub_cmd_parser or _parser, detail)
     return _parser, args, sub_cmd_parsers
 
 

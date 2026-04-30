@@ -166,6 +166,13 @@ class TestOutputOk:
         assert envelope["data"] == {"key": "value"}
         assert "progress message" in captured.err
 
+    def test_jsonl_mode_human_output_goes_to_stderr(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        print_human("progress message")
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "progress message" in captured.err
+
     def test_human_mode_dict_renders_as_table(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         output_ok({"status": "running", "id": "abc"})
@@ -231,6 +238,16 @@ class TestOutputErrorWithData:
         assert payload["status"] == "error"
         assert payload["error_code"] == "JOB_FAILED"
         assert payload["data"] == {"status": "FAILED", "job_id": "abc123"}
+
+    def test_jsonl_error_is_terminal_event(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        with pytest.raises(SystemExit) as exc_info:
+            output_error("JOB_FAILED", exit_code=1, data={"status": "FAILED", "job_id": "abc123"}, job_id="abc123")
+        assert exc_info.value.code == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["status"] == "error"
+        assert payload["error_code"] == "JOB_FAILED"
+        assert payload["terminal"] is True
 
     def test_human_error_with_data_renders_context_then_hint_and_code(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")

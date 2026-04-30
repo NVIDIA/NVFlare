@@ -13,10 +13,16 @@
 # limitations under the License.
 
 import argparse
+import datetime
+import json
 import sys
 from pathlib import Path
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 from pyhocon import ConfigFactory as CF
 
 
@@ -44,6 +50,40 @@ def _make_site_startup_kit(parent: Path, name: str = "site-1") -> Path:
     startup_dir.mkdir(parents=True)
     (startup_dir / "fed_client.json").write_text("{}\n")
     return kit_dir
+
+
+def _write_client_cert(
+    kit_dir: Path,
+    *,
+    common_name: str = "lead@nvidia.com",
+    org: str = "NVIDIA",
+    role: str = "lead",
+    issuer_project: str = "CancerProject",
+    expires_delta: datetime.timedelta = datetime.timedelta(days=90),
+):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    not_valid_after = now + expires_delta
+    not_valid_before = min(now - datetime.timedelta(minutes=1), not_valid_after - datetime.timedelta(days=1))
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(
+            x509.Name(
+                [
+                    x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, org),
+                    x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, role),
+                ]
+            )
+        )
+        .issuer_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, issuer_project)]))
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(not_valid_before.replace(tzinfo=None))
+        .not_valid_after(not_valid_after.replace(tzinfo=None))
+        .sign(key, hashes.SHA256())
+    )
+    (kit_dir / "startup" / "client.crt").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
 
 
 def _run_kit_command(argv, monkeypatch):
@@ -227,6 +267,73 @@ class TestKitCli:
         assert "invalid_admin" in out
         assert "invalid" in out
         assert any(line.startswith("*") and "missing_admin" in line for line in out.splitlines())
+
+    def test_show_and_list_json_include_identity_certificate_and_findings(
+        self, tmp_path, monkeypatch, capsys, _isolated_cli
+    ):
+        from nvflare.tool import cli_output
+
+        home = _isolated_cli
+        valid_kit = _make_admin_startup_kit(tmp_path, "lead@nvidia.com")
+        _write_client_cert(
+            valid_kit,
+            common_name="lead@nvidia.com",
+            org="NVIDIA",
+            role="lead",
+            issuer_project="CancerProject",
+            expires_delta=datetime.timedelta(days=90),
+        )
+        missing_kit = tmp_path / "missing_admin"
+        _write_config(
+            home,
+            f"""
+            version = 2
+            startup_kits {{
+              active = "project_admin"
+              entries {{
+                project_admin = "{valid_kit}"
+                missing_admin = "{missing_kit}"
+              }}
+            }}
+            """,
+        )
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+
+        _run_kit_command(["show"], monkeypatch)
+        show_payload = json.loads(capsys.readouterr().out)
+        show_data = show_payload["data"]
+        assert show_data["status"] == "ok"
+        assert show_data["identity"] == "lead@nvidia.com"
+        assert show_data["cert_role"] == "lead"
+        assert show_data["role"] == "lead"
+        assert show_data["org"] == "NVIDIA"
+        assert show_data["project"] == "CancerProject"
+        assert show_data["certificate"]["status"] == "ok"
+        assert show_data["findings"] == []
+
+        _run_kit_command(["list"], monkeypatch)
+        list_payload = json.loads(capsys.readouterr().out)
+        rows = {row["id"]: row for row in list_payload["data"]}
+        assert rows["project_admin"]["org"] == "NVIDIA"
+        assert rows["project_admin"]["project"] == "CancerProject"
+        assert rows["project_admin"]["certificate"]["status"] == "ok"
+        assert rows["missing_admin"]["status"] == "missing"
+        assert any(f["code"] == "STARTUP_KIT_PATH_MISSING" for f in rows["missing_admin"]["findings"])
+
+    def test_use_json_warns_that_active_kit_is_global_state(self, tmp_path, monkeypatch, capsys):
+        from nvflare.tool import cli_output
+
+        kit_dir = _make_admin_startup_kit(tmp_path, "admin@nvidia.com")
+        _write_client_cert(kit_dir, common_name="admin@nvidia.com", role="project_admin")
+        _run_kit_command(["add", "project_admin", kit_dir], monkeypatch)
+        capsys.readouterr()
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+
+        _run_kit_command(["use", "project_admin"], monkeypatch)
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["status"] == "ok"
+        assert any(f["code"] == "CONFIG_USE_MUTATES_GLOBAL_STATE" for f in payload["data"]["findings"])
 
     def test_use_unknown_or_stale_registration_does_not_change_active(self, tmp_path, monkeypatch):
         home = Path.home()

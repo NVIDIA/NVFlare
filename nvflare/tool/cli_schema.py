@@ -47,6 +47,8 @@ def parser_to_schema(
     examples: Optional[List[str]] = None,
     deprecated: bool = False,
     deprecated_message: str = "",
+    streaming: Optional[bool] = None,
+    output_modes: Optional[List[str]] = None,
 ) -> dict:
     """Serialize an argparse parser to a JSON-compatible schema dict."""
     # argparse exposes parser structure via the private _actions list; this is the standard
@@ -99,6 +101,10 @@ def parser_to_schema(
     if deprecated:
         result["deprecated"] = True
         result["deprecated_message"] = deprecated_message
+    if streaming is not None:
+        result["streaming"] = streaming
+    if output_modes is not None:
+        result["output_modes"] = output_modes
     return result
 
 
@@ -109,6 +115,8 @@ def handle_schema_flag(
     args_list: List[str],
     deprecated: bool = False,
     deprecated_message: str = "",
+    streaming: Optional[bool] = None,
+    output_modes: Optional[List[str]] = None,
 ) -> None:
     """Handle the pre-parse --schema fast path.
 
@@ -126,8 +134,20 @@ def handle_schema_flag(
             if deprecated:
                 schema["deprecated"] = True
                 schema["deprecated_message"] = deprecated_message
+            if streaming is not None:
+                schema["streaming"] = streaming
+            if output_modes is not None:
+                schema["output_modes"] = output_modes
         else:
-            schema = parser_to_schema(parser, command, examples, deprecated, deprecated_message)
+            schema = parser_to_schema(
+                parser,
+                command,
+                examples,
+                deprecated,
+                deprecated_message,
+                streaming=streaming,
+                output_modes=output_modes,
+            )
         # --schema intentionally bypasses the normal command-output envelope so agent/tool callers
         # always get the raw schema document.
         print(json.dumps(schema, indent=2))

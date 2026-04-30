@@ -285,6 +285,159 @@ def test_recipe_list_empty_framework_catalog_still_exits_when_output_error_is_mo
     output_ok.assert_not_called()
 
 
+def test_recipe_show_returns_queryable_metadata(monkeypatch, capsys):
+    import json
+
+    from nvflare.recipe.spec import Recipe
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe.recipe_cli import _CATALOG_RECIPE_CLASS_KEY, cmd_recipe_show
+
+    class FakeRecipe(Recipe):
+        """Fake detailed recipe."""
+
+        optional_dependencies = ["pip install fake-framework"]
+        template_references = ["nvflare/agent/templates/fake"]
+
+        def __init__(
+            self,
+            *,
+            min_clients: int,
+            num_rounds: int = 2,
+            train_script: str = "client.py",
+            secure: bool = False,
+        ):
+            pass
+
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+    monkeypatch.setattr(
+        "nvflare.tool.recipe.recipe_cli._load_catalog",
+        lambda include_recipe_class=False, framework=None: [
+            {
+                "name": "fake-pt",
+                "description": "Fake detailed recipe.",
+                "framework": "pytorch",
+                "module": "fake.recipes.fake",
+                "class": "FakeRecipe",
+                "algorithm": "fedavg",
+                "aggregation": "weighted_average",
+                "state_exchange": "full_model",
+                "privacy": [],
+                _CATALOG_RECIPE_CLASS_KEY: FakeRecipe,
+            }
+        ],
+    )
+
+    cmd_recipe_show(Namespace(name="fake-pt"))
+
+    payload = json.loads(capsys.readouterr().out)
+    data = payload["data"]
+    assert payload["status"] == "ok"
+    assert data["name"] == "fake-pt"
+    assert data["framework"] == "pytorch"
+    assert data["privacy"] == []
+    assert data["framework_support"] == ["pytorch"]
+    assert data["privacy_compatible"] == ["homomorphic_encryption"]
+    assert data["optional_dependencies"] == ["pip install fake-framework"]
+    assert data["template_references"] == ["nvflare/agent/templates/fake"]
+    assert data["client_requirements"]["min_clients"] == {"required": True, "default": None}
+    assert data["client_requirements"]["requires_training_script"] is True
+    assert {p["name"]: p for p in data["parameters"]}["num_rounds"]["default"] == 2
+
+
+def test_recipe_show_unknown_recipe_errors(monkeypatch, capsys):
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_show
+
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._load_catalog", lambda include_recipe_class=False: [])
+
+    with pytest.raises(SystemExit) as exc_info:
+        cmd_recipe_show(Namespace(name="missing"))
+
+    assert exc_info.value.code == 4
+    captured = capsys.readouterr()
+    assert '"error_code": "INVALID_ARGS"' in captured.out
+    assert "unknown recipe 'missing'" in captured.out
+    assert "nvflare recipe list --format json" in captured.out
+
+
+def test_recipe_show_schema_succeeds_without_name():
+    from unittest.mock import patch
+
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_show, def_recipe_parser
+
+    parser = ArgumentParser(prog="nvflare")
+    subparsers = parser.add_subparsers(dest="sub_command")
+    def_recipe_parser(subparsers)
+
+    with patch("sys.argv", ["nvflare", "recipe", "show", "--schema"]):
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_recipe_show(Namespace())
+
+    assert exc_info.value.code == 0
+
+
+def test_recipe_detail_can_be_built_for_each_discovered_recipe():
+    from nvflare.tool.recipe.recipe_cli import _load_catalog, _recipe_detail
+
+    catalog = _load_catalog(include_recipe_class=True)
+    assert catalog
+
+    for entry in catalog:
+        detail = _recipe_detail(entry)
+        assert detail["name"] == entry["name"]
+        assert "parameters" in detail
+        assert "framework_support" in detail
+        assert "privacy_compatible" in detail
+
+
+def test_recipe_catalog_includes_all_documented_recipe_variants():
+    from nvflare.tool.recipe.recipe_cli import _DOCUMENTED_RECIPE_SPECS, _load_catalog
+
+    catalog = _load_catalog()
+    names = {entry["name"] for entry in catalog}
+
+    assert len(_DOCUMENTED_RECIPE_SPECS) == 21
+    assert set(_DOCUMENTED_RECIPE_SPECS).issubset(names)
+
+
+def test_recipe_list_filters_documented_recipe_variants_without_optional_dependencies(monkeypatch, capsys):
+    import json
+
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_list
+
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+
+    cmd_recipe_list(Namespace(framework="tensorflow", filters=["algorithm=fedprox"]))
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ok"
+    assert [entry["name"] for entry in payload["data"]] == ["fedprox-tf"]
+
+
+def test_recipe_show_uses_static_metadata_when_optional_dependency_is_missing(monkeypatch, capsys):
+    import json
+
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_show
+
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+
+    cmd_recipe_show(Namespace(name="xgb-horizontal"))
+
+    payload = json.loads(capsys.readouterr().out)
+    data = payload["data"]
+    assert payload["status"] == "ok"
+    assert data["name"] == "xgb-horizontal"
+    assert data["framework"] == "xgboost"
+    assert data["algorithm"] == "xgboost_horizontal"
+    assert data["framework_support"] == ["xgboost"]
+    assert data["privacy_compatible"] == ["homomorphic_encryption"]
+    assert data["optional_dependencies"] == ["pip install xgboost"]
+    assert data["parameters"]
+
+
 def test_recipe_catalog_is_discovered_from_package_modules(monkeypatch):
     from nvflare.recipe.spec import Recipe
     from nvflare.tool.recipe.recipe_cli import _load_catalog
@@ -306,6 +459,7 @@ def test_recipe_catalog_is_discovered_from_package_modules(monkeypatch):
         "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
         [{"package": "fake.recipes", "framework": "pytorch"}],
     )
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._DOCUMENTED_RECIPE_SPECS", {})
 
     def fake_import_module(name):
         if name == "fake.recipes":
@@ -358,6 +512,7 @@ def test_recipe_catalog_prefers_specific_algorithm_marker_over_fedavg_class_name
         "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
         [{"package": "fake.recipes", "framework": "sklearn"}],
     )
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._DOCUMENTED_RECIPE_SPECS", {})
 
     def fake_import_module(name):
         if name == "fake.recipes":
@@ -403,6 +558,7 @@ def test_recipe_catalog_core_framework_is_not_special_catch_all(monkeypatch):
             {"package": "fake.pt", "framework": "pytorch"},
         ],
     )
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._DOCUMENTED_RECIPE_SPECS", {})
 
     def fake_import_module(name):
         if name == "fake.core":
@@ -443,6 +599,7 @@ def test_recipe_catalog_skips_plain_import_errors_from_optional_recipes(monkeypa
         "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
         [{"package": "fake.recipes", "framework": "pytorch"}],
     )
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._DOCUMENTED_RECIPE_SPECS", {})
 
     def fake_import_module(name):
         if name == "fake.recipes":
@@ -470,6 +627,7 @@ def test_recipe_catalog_skips_syntax_errors_from_optional_recipes(monkeypatch):
         "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
         [{"package": "fake.recipes", "framework": "pytorch"}],
     )
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._DOCUMENTED_RECIPE_SPECS", {})
 
     def fake_import_module(name):
         if name == "fake.recipes":
@@ -516,6 +674,7 @@ def test_recipe_catalog_prefers_leaf_recipe_class_when_module_has_base_and_subcl
         "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
         [{"package": "fake.recipes", "framework": "pytorch"}],
     )
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._DOCUMENTED_RECIPE_SPECS", {})
 
     def fake_import_module(name):
         if name == "fake.recipes":

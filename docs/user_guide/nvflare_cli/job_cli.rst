@@ -217,6 +217,7 @@ reaches a terminal state:
 
    nvflare job monitor <job_id>
    nvflare job monitor <job_id> --study cancer_research
+   nvflare job monitor <job_id> --timeout 3600 --format jsonl
 
 Monitor options:
 
@@ -237,6 +238,19 @@ Monitor options:
 - exit code ``1``: job reached a terminal failure state: ``FAILED``, ``FINISHED_EXCEPTION``, ``ABORTED``, or ``ABANDONED``
 - exit code ``2``: connection, authentication, or authorization failure prevented monitoring
 - exit code ``3``: monitor timeout
+
+For automation that needs progress events, use ``--format jsonl``. Each stdout
+line is one complete JSON object. Progress events include ``terminal: false``;
+the final event always includes ``terminal: true``. Timeout emits a final event
+with ``status: "TIMEOUT"`` and exits with code ``3``. Successful terminal job
+statuses such as ``FINISHED_OK`` are normalized to ``status: "COMPLETED"`` and
+the raw server status is preserved in ``job_status``.
+
+Example JSONL terminal event:
+
+.. code-block:: json
+
+   {"schema_version":"1","event":"terminal","job_id":"abc123","status":"COMPLETED","job_status":"FINISHED_OK","terminal":true}
 
 *********************
 List and Inspect Jobs

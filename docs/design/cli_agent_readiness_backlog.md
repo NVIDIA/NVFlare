@@ -11,22 +11,26 @@ This backlog tracks the remaining larger CLI enhancement groups after the
 - `nvflare job wait`
 - `poc prepare` port and startup-kit preflight
 - `poc start` readiness, bound addresses, port conflict metadata, and `--timeout`
-- `recipe list --filter` with list-time metadata for `framework`, `privacy`,
-  `algorithm`, `aggregation`, and `state_exchange`
+- `recipe list --filter` for all documented built-in recipe variants, with
+  list-time metadata for `framework`, `privacy`, `algorithm`, `aggregation`,
+  and `state_exchange`
+- `recipe show <name>` for all documented built-in recipe variants, with
+  queryable metadata, constructor parameters, optional dependencies, privacy
+  compatibility, and framework support
 - `study list` identity, startup-kit metadata, visible-study details, and
   membership-level `can_submit_job`
+- `--format jsonl` support for `nvflare job monitor`
+- `job monitor` JSONL stream contract: progress events, `terminal: true`, and
+  structured timeout event
 
 ## 1. CLI Contract
 
-- Rich `--schema` fields: `output_modes`, `streaming`, `idempotent`, `mutating`,
-  and related command metadata.
-- `--format jsonl` support for streaming commands.
+- Rich `--schema` fields beyond monitor `output_modes` and `streaming`:
+  `idempotent`, `mutating`, and related command metadata.
 - `recovery_category` in error envelopes.
 
 ## 2. Job Lifecycle
 
-- `job monitor` JSONL stream contract: progress events, `terminal: true`, and
-  structured timeout event.
 - `job download` artifact/path contract: `download_path`, `artifacts`, and
   `missing_artifacts`.
 
@@ -36,9 +40,8 @@ This backlog tracks the remaining larger CLI enhancement groups after the
 
 ## 4. Recipe Discovery
 
-- `recipe show`
-- Detailed recipe metadata beyond the list-time fields, including parameters,
-  examples, and compatibility guidance.
+- Richer recipe compatibility guidance and packaged template/example references
+  as recipe classes add explicit metadata.
 
 ## 5. Study / Production Preflight
 
@@ -58,7 +61,3 @@ This backlog tracks the remaining larger CLI enhancement groups after the
 - Required-file checks.
 - Source freshness checks.
 - `poc_validated` warning or approval behavior.
-
-## 8. Diagnostics
-
-- Log source boundary markers: `[USER_CODE_EXCEPTION]` and `[FLARE]`.

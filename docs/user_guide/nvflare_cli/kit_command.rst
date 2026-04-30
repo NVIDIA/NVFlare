@@ -129,6 +129,11 @@ Activate a Startup Kit
 ``nvflare config use`` validates that the registered path is an admin/user startup kit and
 then sets ``startup_kits.active``.
 
+This command mutates the global active startup-kit setting in
+``~/.nvflare/config.conf``. For automation, scripts, notebooks, and agents,
+prefer per-command selectors such as ``--kit-id <id>`` or
+``--startup-kit <path>`` on server-connected commands.
+
 Example:
 
 .. code-block:: shell
@@ -143,6 +148,9 @@ Example output:
    identity: lead@nvidia.com
    cert_role: lead
    path: /secure/startup_kits/cancer/lead@nvidia.com
+
+In JSON mode, ``nvflare config use`` includes a warning finding that the command
+changes global CLI state.
 
 **********************
 Show Active Startup Kit
@@ -162,6 +170,17 @@ Example output:
    status: ok
    identity: lead@nvidia.com
    cert_role: lead
+
+In JSON mode, ``nvflare config show`` also includes best-effort identity and
+certificate metadata for the active startup kit:
+
+- ``role``: same certificate role as ``cert_role``.
+- ``org``: organization from the certificate subject when available.
+- ``project``: issuer common name, usually the project CA name.
+- ``certificate``: certificate path, expiration timestamp, days remaining, and
+  status.
+- ``findings``: non-fatal local findings such as expired, expiring, unreadable,
+  missing, or invalid startup-kit material.
 
 If ``NVFLARE_STARTUP_KIT_DIR`` is set, ``nvflare config show`` still shows the configured
 active kit and prints a warning that normal commands will use the environment
@@ -194,6 +213,11 @@ The active startup kit is marked with ``*``. Status values:
 
 ``nvflare config list`` does not contact the server and does not fail just because one
 registered path is stale.
+
+In JSON mode, each row keeps the human-facing fields above and adds ``role``,
+``org``, ``project``, ``certificate``, and ``findings`` when those values can be
+determined locally. Missing and invalid paths remain in the list with stale-path
+findings so agents can report and repair local configuration without guessing.
 
 *********************
 Remove a Registration

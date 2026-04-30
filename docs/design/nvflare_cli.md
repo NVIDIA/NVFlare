@@ -37,8 +37,9 @@ This CLI is Stage 1 of the agent-consumer readiness plan. The design must satisf
 ### 1. Machine-readable output on every command
 
 Every command supports a stable, versioned JSON envelope via ``--format json``.
-The default output format remains human-readable text (``txt``). When JSON mode is
-requested, the output envelope is stable and versioned:
+The default output format remains human-readable text (``txt``). Streaming
+commands can additionally support newline-delimited JSON via ``--format jsonl``.
+When JSON mode is requested, the output envelope is stable and versioned:
 
 ```json
 {
@@ -55,6 +56,13 @@ Contract — stream split in JSON mode:
 - For normal command handler execution with ``--format json``, stdout contains exactly one JSON envelope and nothing else.
 - Human-readable progress, warnings, prompts, and diagnostics go to stderr.
 - Lower-level provisioning diagnostics must be accumulated and attached to the final structured error in JSON mode, rather than printed directly as ad hoc fallback text.
+
+Contract — stream split in JSONL mode:
+
+- ``--format jsonl`` is supported only by commands that declare ``streaming: true`` in ``--schema``.
+- Each stdout line is one complete JSON object.
+- Human-readable progress, warnings, prompts, and diagnostics go to stderr.
+- The final stream event for wait-like streaming commands must include ``terminal: true``.
 
 Exceptions: the following are plain text and are explicitly outside the JSON command-output contract:
 
@@ -377,12 +385,14 @@ New top-level subcommand. No server connection required.
 | Command | Description |
 | --- | --- |
 | `nvflare recipe list` | List all built-in FL workflow recipes |
+| `nvflare recipe show <name>` | Show structured metadata for one built-in FL workflow recipe |
 
 ```text
 nvflare recipe list [--framework <framework>] [--filter key=value]...
+nvflare recipe show <name>
 ```
 
-`--framework` filters by framework (for example `pytorch`, `tensorflow`, `sklearn`) and is a shorthand for `--filter framework=<framework>`.
+`--framework` filters by framework (for example `core`, `numpy`, `pytorch`, `tensorflow`, `sklearn`, `xgboost`) and is a shorthand for `--filter framework=<framework>`.
 `--filter` is repeatable and supports these metadata keys:
 
 - `framework`
@@ -392,10 +402,19 @@ nvflare recipe list [--framework <framework>] [--filter key=value]...
 - `state_exchange`
 
 Filter values are normalized so hyphenated and underscored values match the same metadata value, for example `homomorphic-encryption` and `homomorphic_encryption`.
-Repeated filters for different keys are combined as an intersection. Repeated filters for the same key are treated as alternatives. Without filters, the command returns all recipes whose optional dependencies are installed.
+Repeated filters for different keys are combined as an intersection. Repeated filters for the same key are treated as alternatives. Without filters, the command returns the documented built-in recipe catalog plus dynamically discovered recipe entries.
 Valid metadata filters that match no available recipes return an empty list.
 
-Recipe classes may declare metadata as class-level attributes (`recipe_algorithm`, `recipe_aggregation`, `recipe_state_exchange`, `recipe_privacy`) or the shorter forms (`algorithm`, `aggregation`, `state_exchange`, `privacy`). When explicit metadata is absent, the CLI infers the common fields from the recipe module, class, and CLI name. The CLI discovers recipes at runtime via `importlib` + `inspect`.
+Recipe classes may declare metadata as class-level attributes (`recipe_algorithm`, `recipe_aggregation`, `recipe_state_exchange`, `recipe_privacy`) or the shorter forms (`algorithm`, `aggregation`, `state_exchange`, `privacy`). When explicit metadata is absent, the CLI infers the common fields from the recipe module, class, and CLI name. The CLI discovers recipes at runtime via `importlib` + `inspect` and supplements that with a documented recipe manifest so recipes remain queryable even when optional framework dependencies are not installed.
+
+`recipe show` returns a single recipe detail document keyed by the same recipe
+name returned from `recipe list`. The detail response includes the list-time
+metadata plus `client_requirements`, `framework_support`,
+`heterogeneity_support`, `privacy_compatible`, constructor `parameters`,
+`optional_dependencies`, and `template_references`. Parameter metadata is
+derived from the recipe constructor signature when the recipe can be imported,
+or from static source parsing when optional dependencies are missing. The CLI
+must not instantiate the recipe.
 
 Example:
 
@@ -429,10 +448,11 @@ contains exactly one JSON envelope after completion, failure, or timeout; diagno
 to stderr following the normal CLI output contract.
 
 `nvflare job monitor <job_id>` is the interactive/progress command. It also polls until
-the job reaches a terminal state via `monitor_job_and_return_job_meta()` callback, but
-status lines print to stderr before the final result. For named-study jobs, pass the same
-`--study` value used at submit/list time so wait or monitor opens the correct study
-session.
+the job reaches a terminal state via `monitor_job_and_return_job_meta()` callback. In
+human and JSON modes, status lines print to stderr before the final result. In JSONL mode,
+status events print to stdout as newline-delimited JSON and the final event has
+`terminal: true`. For named-study jobs, pass the same `--study` value used at submit/list
+time so wait or monitor opens the correct study session.
 
 ```bash
 JOB=$(nvflare job submit -j ./my_job | jq -r .data.job_id)
@@ -624,6 +644,11 @@ Behavior:
 No server call is made. The next server-connected command creates a session using the
 selected startup kit.
 
+`config use` is a human convenience command and intentionally mutates global CLI
+state. Agent and notebook workflows should prefer `--kit-id <id>` or
+`--startup-kit <path>` on each server-connected command. In JSON mode, `config
+use` returns a warning finding with code `CONFIG_USE_MUTATES_GLOBAL_STATE`.
+
 #### `nvflare config show`
 
 Shows the configured active startup kit:
@@ -634,6 +659,17 @@ identity: lead@nvidia.com
 cert_role: lead
 path: /secure/startup_kits/cancer/lead@nvidia.com
 ```
+
+The JSON payload preserves the existing fields and adds best-effort local
+identity metadata:
+
+- `role`: same certificate role as `cert_role`.
+- `org`: certificate subject organization when available.
+- `project`: certificate issuer common name, normally the project CA name.
+- `certificate`: certificate path, `expires_at`, `days_remaining`, and
+  `status` (`ok`, `expiring_soon`, `expired`, `unreadable`, or `unknown`).
+- `findings`: non-fatal local findings for stale paths, invalid kits, unreadable
+  certs, expired certs, or certs expiring soon.
 
 `nvflare config show` reports `startup_kits.active`. It does not replace that value with
 `NVFLARE_STARTUP_KIT_DIR`, but it should warn when the environment variable is set:
@@ -659,6 +695,8 @@ stale entries without contacting the server:
 
 The active startup kit is marked with `*`. Missing or invalid paths are shown as
 `missing` or `invalid`. Valid site kits are not shown because they are not CLI identities.
+In JSON mode, each list row includes the same enriched `role`, `org`, `project`,
+`certificate`, and `findings` fields as `config show`.
 
 #### `nvflare config remove <id>`
 
@@ -1306,6 +1344,21 @@ automation, use `nvflare job wait`.
 
 Exit behavior matches `nvflare job wait`.
 
+Output modes:
+
+- Human mode: progress status lines plus a final status summary.
+- JSON mode: progress status lines go to stderr; stdout contains exactly one final JSON
+  envelope.
+- JSONL mode: stdout contains progress events and exactly one final terminal event. Each
+  line is a complete JSON object. A successful raw job status such as `FINISHED_OK` is
+  normalized to `status: "COMPLETED"` with the original value preserved as `job_status`.
+  Timeout emits `status: "TIMEOUT"` and `terminal: true`.
+
+Schema contract:
+
+- `streaming: true`
+- `output_modes: ["json", "jsonl"]`
+
 #### `nvflare job list-templates` — deprecated
 
 Retain with stderr warning; use `nvflare recipe list` instead. Underscore alias `list_templates` accepted for backward compatibility.
@@ -1500,6 +1553,7 @@ job submit can still fail for unrelated validation or policy checks.
 
 ```text
 nvflare recipe list [--framework <framework>] [--filter key=value]...
+nvflare recipe show <name>
 ```
 
 ### Add `nvflare network`

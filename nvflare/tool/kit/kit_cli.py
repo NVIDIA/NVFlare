@@ -57,6 +57,11 @@ def _metadata_for_output(path: str) -> Dict[str, str]:
     return {
         "identity": metadata.get("identity") or "-",
         "cert_role": metadata.get("cert_role") or "-",
+        "role": metadata.get("role") or metadata.get("cert_role") or "-",
+        "org": metadata.get("org") or "-",
+        "project": metadata.get("project") or "-",
+        "certificate": metadata.get("certificate"),
+        "findings": metadata.get("findings") or [],
     }
 
 
@@ -113,14 +118,31 @@ def cmd_kit_use(args):
 
     path = entries[kit_id]
     metadata = _metadata_for_output(path)
-    output_ok(
-        {
-            "active_startup_kit": kit_id,
-            "identity": metadata["identity"],
-            "cert_role": metadata["cert_role"],
-            "path": path,
-        }
-    )
+    data = {
+        "active_startup_kit": kit_id,
+        "identity": metadata["identity"],
+        "cert_role": metadata["cert_role"],
+        "path": path,
+    }
+    if is_json_mode():
+        data.update(
+            {
+                "role": metadata["role"],
+                "org": metadata["org"],
+                "project": metadata["project"],
+                "certificate": metadata["certificate"],
+                "findings": metadata["findings"]
+                + [
+                    {
+                        "code": "CONFIG_USE_MUTATES_GLOBAL_STATE",
+                        "severity": "warning",
+                        "message": "nvflare config use changes the global active startup kit.",
+                        "hint": "Automation should prefer --kit-id or --startup-kit on each server-connected command.",
+                    }
+                ],
+            }
+        )
+    output_ok(data)
 
 
 def _print_env_warning():
@@ -150,7 +172,20 @@ def cmd_kit_show(args):
     if not active:
         _print_env_warning()
         if is_json_mode():
-            output_ok({"active": None, "config_file": str(get_cli_config_path())})
+            output_ok(
+                {
+                    "active": None,
+                    "config_file": str(get_cli_config_path()),
+                    "findings": [
+                        {
+                            "code": "NO_ACTIVE_STARTUP_KIT",
+                            "severity": "info",
+                            "message": "No active startup kit is configured.",
+                            "hint": f"Run {KIT_COMMAND} use <id>, or pass --kit-id/--startup-kit per command.",
+                        }
+                    ],
+                }
+            )
         else:
             print_human("No active startup kit.")
             print_human(f"Hint: Run {KIT_COMMAND} use <id>.")
@@ -168,10 +203,22 @@ def cmd_kit_show(args):
         if status == "ok":
             data["identity"] = metadata.get("identity") or "-"
             data["cert_role"] = metadata.get("cert_role") or "-"
+            if is_json_mode():
+                data["role"] = metadata.get("role") or metadata.get("cert_role") or "-"
+                data["org"] = metadata.get("org") or "-"
+                data["project"] = metadata.get("project") or "-"
+                data["certificate"] = metadata.get("certificate")
+                data["findings"] = metadata.get("findings") or []
         else:
             data["identity"] = "-"
             data["cert_role"] = "-"
             data["hint"] = f"run {KIT_COMMAND} use <id> or {KIT_COMMAND} remove {active}"
+            if is_json_mode():
+                data["role"] = "-"
+                data["org"] = "-"
+                data["project"] = "-"
+                data["certificate"] = None
+                data["findings"] = metadata.get("findings") or []
 
     _print_env_warning()
     output_ok(data)
@@ -196,16 +243,25 @@ def cmd_kit_list(args):
     rows = []
     for kit_id, path in sorted(entries.items()):
         status, normalized_path, metadata = get_startup_kit_status(path)
-        rows.append(
-            {
-                "active": "*" if kit_id == active else "",
-                "id": kit_id,
-                "status": status,
-                "identity": metadata.get("identity") or "-",
-                "cert_role": metadata.get("cert_role") or "-",
-                "path": normalized_path or path,
-            }
-        )
+        row = {
+            "active": "*" if kit_id == active else "",
+            "id": kit_id,
+            "status": status,
+            "identity": metadata.get("identity") or "-",
+            "cert_role": metadata.get("cert_role") or "-",
+            "path": normalized_path or path,
+        }
+        if is_json_mode():
+            row.update(
+                {
+                    "role": metadata.get("role") or metadata.get("cert_role") or "-",
+                    "org": metadata.get("org") or "-",
+                    "project": metadata.get("project") or "-",
+                    "certificate": metadata.get("certificate"),
+                    "findings": metadata.get("findings") or [],
+                }
+            )
+        rows.append(row)
 
     if not rows and not is_json_mode():
         print_human("No startup kits registered.")
