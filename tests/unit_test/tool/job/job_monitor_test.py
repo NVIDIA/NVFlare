@@ -400,7 +400,7 @@ class TestJobMonitorOutput:
 
         event = json.loads(capsys.readouterr().out)
         assert event["event"] == "terminal"
-        assert event["status"] == "CONNECTION_FAILED"
+        assert event["status"] == "error"
         assert event["terminal"] is True
         assert event["error_code"] == "CONNECTION_FAILED"
 
@@ -435,7 +435,7 @@ class TestJobMonitorOutput:
 
         event = json.loads(capsys.readouterr().out)
         assert event["event"] == "terminal"
-        assert event["status"] == "AUTH_FAILED"
+        assert event["status"] == "error"
         assert event["terminal"] is True
         assert event["error_code"] == "AUTH_FAILED"
 
@@ -470,7 +470,7 @@ class TestJobMonitorOutput:
 
         event = json.loads(capsys.readouterr().out)
         assert event["event"] == "terminal"
-        assert event["status"] == "AUTH_FAILED"
+        assert event["status"] == "error"
         assert event["terminal"] is True
         assert event["error_code"] == "AUTH_FAILED"
 

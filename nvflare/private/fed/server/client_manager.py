@@ -180,8 +180,9 @@ class ClientManager:
             client = self.clients.pop(token, None)
             if client:
                 self.name_to_clients.pop(client.name, None)
+            client_name = client.name if client else "<unknown>"
             self.logger.info(
-                "Client Name:{} \tToken: {} left.  Total clients: {}".format(client.name, token, len(self.clients))
+                "Client Name:{} \tToken: {} left.  Total clients: {}".format(client_name, token, len(self.clients))
             )
             return client
 

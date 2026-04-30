@@ -22,7 +22,6 @@ Command Usage
      resources      show server and client resource usage
      shutdown       shut down server, clients, or all
      restart        restart server, clients, or all
-     remove-client  remove a client registry entry
      disable-client disable a client from reconnecting
      enable-client  enable a disabled client to reconnect
      version        show NVFlare version on each remote site
@@ -239,11 +238,6 @@ Examples:
 
    nvflare system disable-client site-1 --force
    nvflare system enable-client site-1 --force
-
-``remove-client`` remains a low-level registry cleanup command. It removes the
-current server registry entry for a connected client, but it does not stop the
-client process, revoke credentials, or prevent reconnect. Prefer
-``disable-client`` when the intent is to keep a client out of the federation.
 
 ****************
 Version

@@ -183,7 +183,7 @@ def output_error(
     if _is_machine_mode():
         payload = {
             "schema_version": SCHEMA_VERSION,
-            "status": error_code if _is_jsonl_mode() else "error",
+            "status": "error",
             "exit_code": exit_code,
             "error_code": error_code,
             "message": message,
@@ -232,7 +232,7 @@ def output_error_message(
     if fmt in {"json", "jsonl"} or (fmt is None and _is_machine_mode()):
         payload = {
             "schema_version": SCHEMA_VERSION,
-            "status": error_code if jsonl_mode else "error",
+            "status": "error",
             "exit_code": exit_code,
             "error_code": error_code,
             "message": message,

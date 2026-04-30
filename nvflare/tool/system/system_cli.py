@@ -25,7 +25,6 @@ CMD_SYSTEM_STATUS = "status"
 CMD_SYSTEM_RESOURCES = "resources"
 CMD_SYSTEM_SHUTDOWN = "shutdown"
 CMD_SYSTEM_RESTART = "restart"
-CMD_SYSTEM_REMOVE_CLIENT = "remove-client"
 CMD_SYSTEM_DISABLE_CLIENT = "disable-client"
 CMD_SYSTEM_ENABLE_CLIENT = "enable-client"
 CMD_SYSTEM_VERSION = "version"
@@ -104,14 +103,6 @@ def def_system_cli_parser(system_parser):
     add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true")
     _system_sub_cmd_parsers[CMD_SYSTEM_RESTART] = p
-
-    # remove-client
-    p = sub.add_parser(CMD_SYSTEM_REMOVE_CLIENT, help="remove a client registry entry")
-    p.add_argument("client_name", help="name of the client registry entry to remove")
-    p.add_argument("--force", action="store_true")
-    add_startup_kit_selection_args(p)
-    p.add_argument("--schema", action="store_true")
-    _system_sub_cmd_parsers[CMD_SYSTEM_REMOVE_CLIENT] = p
 
     # disable-client
     p = sub.add_parser(CMD_SYSTEM_DISABLE_CLIENT, help="disable a client from reconnecting")
@@ -616,43 +607,6 @@ def cmd_system_log(args):
     output_ok({"site": site, "log_config": level, "status": "applied"})
 
 
-def cmd_system_remove_client(args):
-    from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, NoConnection
-    from nvflare.tool.cli_schema import handle_schema_flag
-
-    handle_schema_flag(
-        _system_sub_cmd_parsers.get(CMD_SYSTEM_REMOVE_CLIENT),
-        "nvflare system remove-client",
-        ["nvflare system remove-client site-1 --force"],
-        sys.argv[1:],
-    )
-
-    client_name = args.client_name
-    _confirm_or_force(f"Really remove client '{client_name}'?", args)
-
-    try:
-        with _system_session(args) as sess:
-            sess.remove_client(client_name)
-    except (AuthenticationError, NoConnection):
-        raise
-    except InvalidTarget as e:
-        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
-        raise SystemExit(4)
-    except Exception as e:
-        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-        raise SystemExit(2)
-
-    output_ok(
-        {
-            "client_name": client_name,
-            "status": "deregistered_from_server_registry",
-            "reconnect_prevented": False,
-            "credential_revoked": False,
-            "next_step": "Use nvflare system disable-client to prevent this client from reconnecting.",
-        }
-    )
-
-
 def _first_client_result(result: dict, client_name: str, state: str, rejoin_allowed: bool) -> dict:
     clients = result.get("clients") if isinstance(result, dict) else None
     if clients and isinstance(clients, list):
@@ -724,7 +678,6 @@ _system_handlers = {
     CMD_SYSTEM_RESOURCES: cmd_system_resources,
     CMD_SYSTEM_SHUTDOWN: cmd_system_shutdown,
     CMD_SYSTEM_RESTART: cmd_system_restart,
-    CMD_SYSTEM_REMOVE_CLIENT: cmd_system_remove_client,
     CMD_SYSTEM_DISABLE_CLIENT: cmd_system_disable_client,
     CMD_SYSTEM_ENABLE_CLIENT: cmd_system_enable_client,
     CMD_SYSTEM_VERSION: cmd_system_version,

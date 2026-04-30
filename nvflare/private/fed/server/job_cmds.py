@@ -1074,6 +1074,37 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             state=state,
         )
 
+    def _ensure_submit_record_job_id(
+        self,
+        job_def_manager: JobDefManagerSpec,
+        record: dict,
+        *,
+        study: str,
+        submitter: dict,
+        submit_token: str,
+        job_content_hash: str,
+        meta: dict,
+        folder_name: str,
+        fl_ctx,
+    ):
+        job_id = record.get(SubmitRecordKey.JOB_ID.value)
+        if job_id:
+            return job_id
+
+        repaired = self._new_submit_record(
+            job_def_manager,
+            study=study,
+            submitter=submitter,
+            submit_token=submit_token,
+            job_content_hash=job_content_hash,
+            job_name=record.get(SubmitRecordKey.JOB_NAME.value) or CommandUtil.get_job_name(meta),
+            job_folder_name=record.get(SubmitRecordKey.JOB_FOLDER_NAME.value) or folder_name,
+            state=record.get(SubmitRecordKey.STATE.value) or SubmitRecordState.CREATING.value,
+        )
+        record.update(repaired)
+        self._update_submit_record(job_def_manager, record, fl_ctx)
+        return record.get(SubmitRecordKey.JOB_ID.value)
+
     @staticmethod
     def _append_submit_token_conflict(conn: Connection, record: dict):
         existing_job_id = record.get(SubmitRecordKey.JOB_ID.value) if isinstance(record, dict) else None
@@ -1178,9 +1209,17 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             existing_job_id = self._job_id_from_job(job)
             if existing_job_id:
                 return existing_job_id
-            recorded_job_id = record.get(SubmitRecordKey.JOB_ID.value)
-            if not recorded_job_id:
-                raise RuntimeError("submit record is missing job_id")
+            recorded_job_id = self._ensure_submit_record_job_id(
+                job_def_manager,
+                record,
+                study=study,
+                submitter=submitter,
+                submit_token=submit_token,
+                job_content_hash=job_content_hash,
+                meta=meta,
+                folder_name=folder_name,
+                fl_ctx=fl_ctx,
+            )
             meta[JobMetaKey.JOB_ID.value] = recorded_job_id
             created_meta = job_def_manager.create(meta, zip_file_name, fl_ctx)
             record[SubmitRecordKey.STATE.value] = SubmitRecordState.CREATED.value
@@ -1214,7 +1253,18 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             existing_job_id = self._job_id_from_job(job)
             if existing_job_id:
                 return existing_job_id
-            meta[JobMetaKey.JOB_ID.value] = existing.get(SubmitRecordKey.JOB_ID.value)
+            recovered_job_id = self._ensure_submit_record_job_id(
+                job_def_manager,
+                existing,
+                study=study,
+                submitter=submitter,
+                submit_token=submit_token,
+                job_content_hash=job_content_hash,
+                meta=meta,
+                folder_name=folder_name,
+                fl_ctx=fl_ctx,
+            )
+            meta[JobMetaKey.JOB_ID.value] = recovered_job_id
             created_meta = job_def_manager.create(meta, zip_file_name, fl_ctx)
             existing[SubmitRecordKey.STATE.value] = SubmitRecordState.CREATED.value
             self._update_submit_record(job_def_manager, existing, fl_ctx)
@@ -1230,9 +1280,17 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             resolved_job_id = self._job_id_from_job(job)
             if resolved_job_id:
                 return resolved_job_id
-            existing_job_id = existing.get(SubmitRecordKey.JOB_ID.value)
-            if not existing_job_id:
-                raise RuntimeError("submit record is missing job_id")
+            existing_job_id = self._ensure_submit_record_job_id(
+                job_def_manager,
+                existing,
+                study=study,
+                submitter=submitter,
+                submit_token=submit_token,
+                job_content_hash=job_content_hash,
+                meta=meta,
+                folder_name=folder_name,
+                fl_ctx=fl_ctx,
+            )
             meta[JobMetaKey.JOB_ID.value] = existing_job_id
             created_meta = job_def_manager.create(meta, zip_file_name, fl_ctx)
             existing[SubmitRecordKey.STATE.value] = SubmitRecordState.CREATED.value

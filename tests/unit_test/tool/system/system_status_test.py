@@ -298,7 +298,6 @@ class TestSystemStatus:
             ["resources"],
             ["shutdown", "server", "--force"],
             ["restart", "server", "--force"],
-            ["remove-client", "site-1", "--force"],
             ["disable-client", "site-1", "--force"],
             ["enable-client", "site-1", "--force"],
             ["version"],
@@ -329,7 +328,6 @@ class TestSystemStatus:
             ["resources"],
             ["shutdown", "server", "--force"],
             ["restart", "server", "--force"],
-            ["remove-client", "site-1", "--force"],
             ["disable-client", "site-1", "--force"],
             ["enable-client", "site-1", "--force"],
             ["version"],
@@ -390,7 +388,6 @@ class TestSystemStatus:
             ("resources", system_cli.cmd_system_resources),
             ("shutdown", system_cli.cmd_system_shutdown),
             ("restart", system_cli.cmd_system_restart),
-            ("remove-client", system_cli.cmd_system_remove_client),
             ("disable-client", system_cli.cmd_system_disable_client),
             ("enable-client", system_cli.cmd_system_enable_client),
             ("version", system_cli.cmd_system_version),
@@ -406,6 +403,15 @@ class TestSystemStatus:
                 assert token not in schema_text
             assert "--startup-kit" in schema_text
             assert "--kit-id" in schema_text
+
+    def test_system_parser_rejects_unsupported_remove_client_command(self):
+        from nvflare.tool.system.system_cli import def_system_cli_parser
+
+        parser = argparse.ArgumentParser(prog="nvflare system")
+        def_system_cli_parser(parser)
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["remove-client", "site-1", "--force"])
 
 
 class TestSystemActiveStartupKit:
@@ -887,95 +893,6 @@ class TestSystemRestart:
         args = parser.parse_args(["restart", "client", "site-1", "site-2"])
         assert args.target == "client"
         assert args.client_names == ["site-1", "site-2"]
-
-
-class TestSystemRemoveClient:
-    """Tests for nvflare system remove-client command."""
-
-    @pytest.fixture(autouse=True)
-    def json_mode(self, monkeypatch):
-        monkeypatch.setattr(cli_output, "_output_format", "json")
-
-    def _make_args(self, client_name="site-1", force=True):
-        args = MagicMock()
-        args.client_name = client_name
-        args.force = force
-        return args
-
-    def test_remove_client_calls_session_remove_client(self, capsys):
-        from nvflare.tool.system.system_cli import cmd_system_remove_client
-
-        args = self._make_args(client_name="site-1")
-        sess = MagicMock()
-        sess.remove_client.return_value = None
-
-        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
-            cmd_system_remove_client(args)
-
-        sess.remove_client.assert_called_once_with("site-1")
-
-    def test_remove_client_ok_output_shape(self, capsys):
-        from nvflare.tool.system.system_cli import cmd_system_remove_client
-
-        args = self._make_args(client_name="site-1")
-        sess = MagicMock()
-        sess.remove_client.return_value = None
-
-        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=sess):
-            cmd_system_remove_client(args)
-
-        data = json.loads(capsys.readouterr().out)
-        assert data["status"] == "ok"
-        assert data["data"]["client_name"] == "site-1"
-        assert data["data"]["status"] == "deregistered_from_server_registry"
-        assert data["data"]["reconnect_prevented"] is False
-        assert data["data"]["credential_revoked"] is False
-
-    def test_remove_client_invalid_target_exits_4(self, capsys):
-        from nvflare.tool.system.system_cli import cmd_system_remove_client
-
-        args = self._make_args(client_name="ghost")
-        with patch(
-            "nvflare.tool.system.system_cli._get_system_session",
-            side_effect=InvalidTarget("invalid client(s): ghost"),
-        ):
-            with pytest.raises(SystemExit) as exc_info:
-                cmd_system_remove_client(args)
-
-        assert exc_info.value.code == 4
-        data = json.loads(capsys.readouterr().out)
-        assert data["error_code"] == "INVALID_ARGS"
-
-    def test_remove_client_no_connection_reraises(self):
-        from nvflare.tool.system.system_cli import cmd_system_remove_client
-
-        args = self._make_args()
-        with patch(
-            "nvflare.tool.system.system_cli._get_system_session",
-            side_effect=NoConnection("no server"),
-        ):
-            with pytest.raises(NoConnection):
-                cmd_system_remove_client(args)
-
-    def test_remove_client_auth_error_reraises(self):
-        from nvflare.tool.system.system_cli import cmd_system_remove_client
-
-        args = self._make_args()
-        with patch(
-            "nvflare.tool.system.system_cli._get_system_session",
-            side_effect=AuthenticationError("bad cert"),
-        ):
-            with pytest.raises(AuthenticationError):
-                cmd_system_remove_client(args)
-
-    def test_remove_client_parser_accepts_client_name(self):
-        from nvflare.tool.system.system_cli import def_system_cli_parser
-
-        parser = argparse.ArgumentParser(prog="nvflare system")
-        def_system_cli_parser(parser)
-        args = parser.parse_args(["remove-client", "site-1", "--force"])
-        assert args.client_name == "site-1"
-        assert args.force is True
 
 
 class TestSystemDisableEnableClient:

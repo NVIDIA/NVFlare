@@ -148,6 +148,8 @@ class StudyCommandModule(CommandModule, CommandUtil):
 
     def authorize_list_studies(self, conn: Connection, args: List[str]):
         role = conn.get_prop(ConnProps.USER_ROLE, "")
+        # This only authorizes invoking the list command. cmd_list_studies still
+        # filters each returned study by caller role, org, and explicit user mapping.
         if role in {"project_admin", "org_admin", "lead", "member"}:
             return PreAuthzReturnCode.OK
         conn.append_error(f"NOT_AUTHORIZED for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))
@@ -292,6 +294,11 @@ class StudyCommandModule(CommandModule, CommandUtil):
         return bad
 
     def _is_visible_to_caller(self, conn: Connection, study_def: dict) -> bool:
+        # Visibility policy:
+        # - project_admin can see every study.
+        # - org_admin can see studies that include at least one site from the caller's org.
+        # - lead/member and other non-admin roles can see only studies where the
+        #   caller is explicitly listed in the study admins mapping.
         caller_role = self._caller_role(conn)
         if caller_role == "project_admin":
             return True
@@ -310,6 +317,9 @@ class StudyCommandModule(CommandModule, CommandUtil):
         return self._caller_name(conn) in set((study_def or {}).get("admins", []))
 
     def _study_list_item(self, conn: Connection, study_name: str) -> dict:
+        # The current server authorization model has no per-study submit ACL beyond
+        # study visibility/membership. If a study is returned here, submit is allowed
+        # for the selected identity in this release.
         return {
             "name": study_name,
             "role": self._caller_role(conn),

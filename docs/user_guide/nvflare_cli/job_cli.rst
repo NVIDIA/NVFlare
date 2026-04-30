@@ -244,7 +244,9 @@ line is one complete JSON object. Progress events include ``terminal: false``;
 the final event always includes ``terminal: true``. Timeout emits a final event
 with ``status: "TIMEOUT"`` and exits with code ``3``. Successful terminal job
 statuses such as ``FINISHED_OK`` are normalized to ``status: "COMPLETED"`` and
-the raw server status is preserved in ``job_status``.
+the raw server status is preserved in ``job_status``. Connection,
+authentication, and authorization failures emit a terminal error event with
+``status: "error"`` and the specific code in ``error_code``.
 
 Example JSONL terminal event:
 
