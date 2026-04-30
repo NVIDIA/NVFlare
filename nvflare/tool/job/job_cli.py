@@ -2238,7 +2238,15 @@ def cmd_job_monitor(cmd_args):
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         return
-    except (AuthenticationError, AuthorizationError, NoConnection):
+    except NoConnection as e:
+        if jsonl_mode:
+            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+            return
+        raise
+    except (AuthenticationError, AuthorizationError) as e:
+        if jsonl_mode:
+            output_error("AUTH_FAILED", exit_code=2, detail=str(e))
+            return
         raise
     except Exception as e:
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))

@@ -149,7 +149,7 @@ def output(data: Any, fmt: Optional[str]) -> None:
 def output_ok(data: Any, exit_code: int = 0) -> None:
     """Print command success output."""
     if _is_jsonl_mode():
-        output_jsonl_event({"status": "ok", "exit_code": exit_code, "data": data, "terminal": True})
+        output_jsonl_event({"event": "terminal", "status": "ok", "exit_code": exit_code, "data": data, "terminal": True})
     elif _is_json_mode():
         print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "exit_code": exit_code, "data": data}))
     else:
@@ -190,8 +190,11 @@ def output_error(
         if data is not None:
             payload["data"] = data
         if _is_jsonl_mode():
+            payload["event"] = "terminal"
             payload["terminal"] = True
-        print(json.dumps(payload))
+            print(json.dumps(payload), flush=True)
+        else:
+            print(json.dumps(payload))
     else:
         if data is not None:
             _render_table(data)
@@ -223,6 +226,7 @@ def output_error_message(
     resolved_hint = hint or ""
     if detail:
         message = f"{message} \u2014 {detail}"
+    jsonl_mode = fmt == "jsonl" or (fmt is None and _is_jsonl_mode())
     if fmt in {"json", "jsonl"} or (fmt is None and _is_machine_mode()):
         payload = {
             "schema_version": SCHEMA_VERSION,
@@ -232,9 +236,12 @@ def output_error_message(
             "message": message,
             "hint": resolved_hint,
         }
-        if _is_jsonl_mode():
+        if jsonl_mode:
+            payload["event"] = "terminal"
             payload["terminal"] = True
-        print(json.dumps(payload))
+            print(json.dumps(payload), flush=True)
+        else:
+            print(json.dumps(payload))
     else:
         print(message, file=sys.stderr)
         if resolved_hint:

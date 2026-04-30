@@ -187,6 +187,7 @@ class TestOutputOk:
         output_ok({"key": "value"})
         payload = json.loads(capsys.readouterr().out)
         assert payload["schema_version"] == SCHEMA_VERSION
+        assert payload["event"] == "terminal"
         assert payload["status"] == "ok"
         assert payload["terminal"] is True
         assert payload["data"] == {"key": "value"}
@@ -252,6 +253,37 @@ class TestOutputErrorCertPackage:
         assert result["hint"] == "Fix hint."
         assert captured.err == ""
 
+    def test_jsonl_format_goes_to_stdout_as_terminal_event(self, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        with patch("builtins.print") as mock_print:
+            with pytest.raises(SystemExit) as exc_info:
+                output_error_message("MY_CODE", "Error message here.", "Fix hint.", None)
+        assert exc_info.value.code == 1
+
+        mock_print.assert_called_once()
+        assert mock_print.call_args.kwargs["flush"] is True
+        result = json.loads(mock_print.call_args.args[0])
+        assert result["schema_version"] == SCHEMA_VERSION
+        assert result["event"] == "terminal"
+        assert result["status"] == "error"
+        assert result["terminal"] is True
+        assert result["error_code"] == "MY_CODE"
+
+    def test_explicit_jsonl_format_goes_to_stdout_as_terminal_event(self):
+        with patch("builtins.print") as mock_print:
+            with pytest.raises(SystemExit) as exc_info:
+                output_error_message("MY_CODE", "Error message here.", "Fix hint.", "jsonl")
+        assert exc_info.value.code == 1
+
+        mock_print.assert_called_once()
+        assert mock_print.call_args.kwargs["flush"] is True
+        result = json.loads(mock_print.call_args.args[0])
+        assert result["schema_version"] == SCHEMA_VERSION
+        assert result["event"] == "terminal"
+        assert result["status"] == "error"
+        assert result["terminal"] is True
+        assert result["error_code"] == "MY_CODE"
+
 
 class TestOutputErrorWithData:
     def test_json_error_can_include_data(self, capsys, monkeypatch):
@@ -272,6 +304,20 @@ class TestOutputErrorWithData:
         payload = json.loads(capsys.readouterr().out)
         assert payload["status"] == "error"
         assert payload["error_code"] == "JOB_FAILED"
+        assert payload["event"] == "terminal"
+        assert payload["terminal"] is True
+
+    def test_jsonl_error_flushes_stdout(self, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        with patch("builtins.print") as mock_print:
+            with pytest.raises(SystemExit) as exc_info:
+                output_error("JOB_FAILED", exit_code=1, data={"status": "FAILED"}, job_id="abc123")
+        assert exc_info.value.code == 1
+
+        mock_print.assert_called_once()
+        assert mock_print.call_args.kwargs["flush"] is True
+        payload = json.loads(mock_print.call_args.args[0])
+        assert payload["event"] == "terminal"
         assert payload["terminal"] is True
 
     def test_human_error_with_data_renders_context_then_hint_and_code(self, capsys, monkeypatch):

@@ -79,7 +79,7 @@ POC_START_READY_TIMEOUT = 30
 POC_DEFAULT_FED_LEARN_PORT = 8002
 POC_DEFAULT_ADMIN_PORT = 8003
 POC_LOCAL_HOST = "localhost"
-POC_PORT_PREFLIGHT_HOST = "127.0.0.1"
+POC_PORT_PREFLIGHT_HOST = "0.0.0.0"
 
 
 class AuthorizationError(PermissionError):
@@ -700,7 +700,7 @@ def _get_poc_server_port_specs(project_config: Dict) -> List[Dict]:
             continue
 
         fed_learn_port = participant.get(PropKey.FED_LEARN_PORT, POC_DEFAULT_FED_LEARN_PORT)
-        admin_port = participant.get(PropKey.ADMIN_PORT, fed_learn_port)
+        admin_port = participant.get(PropKey.ADMIN_PORT, POC_DEFAULT_ADMIN_PORT)
         specs = [
             {"name": PropKey.FED_LEARN_PORT, "port": fed_learn_port},
             {"name": PropKey.ADMIN_PORT, "port": admin_port},
@@ -792,11 +792,11 @@ def _get_poc_server_ports(project_config: Dict, service_config: Dict = None) -> 
     except (TypeError, ValueError):
         fed_learn_port = POC_DEFAULT_FED_LEARN_PORT
 
-    admin_port = server_participant.get(PropKey.ADMIN_PORT, fed_learn_port)
+    admin_port = server_participant.get(PropKey.ADMIN_PORT, POC_DEFAULT_ADMIN_PORT)
     try:
         admin_port = int(admin_port)
     except (TypeError, ValueError):
-        admin_port = fed_learn_port
+        admin_port = POC_DEFAULT_ADMIN_PORT
 
     return fed_learn_port, admin_port
 

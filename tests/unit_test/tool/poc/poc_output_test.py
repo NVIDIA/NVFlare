@@ -140,7 +140,7 @@ class TestPocOutput:
             ]
         }
 
-        def fake_port_available(port, host="127.0.0.1"):
+        def fake_port_available(port, host="0.0.0.0"):
             return (False, "in_use") if port == 8002 else (True, None)
 
         with (
@@ -166,7 +166,7 @@ class TestPocOutput:
         }
         port_preflight = data["data"]["port_preflight"]
         assert port_preflight["checked"] is True
-        assert port_preflight["host"] == "127.0.0.1"
+        assert port_preflight["host"] == "0.0.0.0"
         assert port_preflight["conflicts"] == [
             {
                 "name": "fed_learn_port",
@@ -174,7 +174,7 @@ class TestPocOutput:
                 "available": False,
                 "conflict": True,
                 "reason": "in_use",
-                "message": "Port 8002 is not available on 127.0.0.1: in_use",
+                "message": "Port 8002 is not available on 0.0.0.0: in_use",
             }
         ]
         assert {item["port"]: item["available"] for item in port_preflight["ports"]} == {8002: False, 8003: True}
@@ -473,7 +473,7 @@ class TestPocOutput:
         assert data["status"] == "ok"
         assert data["data"]["server_url"] == "grpc://localhost:9443"
         assert data["data"]["server_address"] == "localhost:9443"
-        assert data["data"]["admin_address"] == "localhost:9443"
+        assert data["data"]["admin_address"] == "localhost:8003"
         assert data["data"]["default_port"] == 8002
         assert data["data"]["default_server_port"] == 8002
         assert data["data"]["default_admin_port"] == 8003
@@ -512,7 +512,7 @@ class TestPocOutput:
             SC.FLARE_CLIENTS: ["site-1"],
         }
 
-        def fake_port_available(port, host="127.0.0.1"):
+        def fake_port_available(port, host="0.0.0.0"):
             return (False, "in_use") if port == 8002 else (True, None)
 
         with (
@@ -533,7 +533,7 @@ class TestPocOutput:
         assert data["data"]["server_address"] == "localhost:8002"
         assert data["data"]["admin_address"] == "localhost:8003"
         assert data["data"]["port_conflict"] is True
-        assert data["data"]["warnings"] == ["Port 8002 is not available on 127.0.0.1: in_use"]
+        assert data["data"]["warnings"] == ["Port 8002 is not available on 0.0.0.0: in_use"]
         assert data["data"]["port_preflight"]["checked"] is True
         assert data["data"]["port_preflight"]["conflicts"] == [
             {
@@ -542,7 +542,7 @@ class TestPocOutput:
                 "available": False,
                 "conflict": True,
                 "reason": "in_use",
-                "message": "Port 8002 is not available on 127.0.0.1: in_use",
+                "message": "Port 8002 is not available on 0.0.0.0: in_use",
             }
         ]
         assert {item["port"]: item["available"] for item in data["data"]["port_preflight"]["ports"]} == {
@@ -641,7 +641,7 @@ class TestPocOutput:
             SC.FLARE_CLIENTS: [],
         }
 
-        def fake_port_available(port, host="127.0.0.1"):
+        def fake_port_available(port, host="0.0.0.0"):
             return (False, "in_use") if port == 8002 else (True, None)
 
         with (
@@ -660,7 +660,7 @@ class TestPocOutput:
         data = json.loads(capsys.readouterr().out)
         assert data["status"] == "error"
         assert data["data"]["port_conflict"] is True
-        assert data["data"]["warnings"] == ["Port 8002 is not available on 127.0.0.1: in_use"]
+        assert data["data"]["warnings"] == ["Port 8002 is not available on 0.0.0.0: in_use"]
         assert data["data"]["port_preflight"]["conflicts"][0]["port"] == 8002
 
     def test_start_poc_no_wait_reports_starting_and_skips_readiness(self, capsys, tmp_path):
@@ -698,7 +698,7 @@ class TestPocOutput:
         assert data["data"]["status"] == "starting"
         assert data["data"]["ready"] is False
         assert data["data"]["server_address"] == "localhost:8002"
-        assert data["data"]["admin_address"] == "localhost:8002"
+        assert data["data"]["admin_address"] == "localhost:8003"
         assert data["data"]["default_admin_port"] == 8003
         assert data["data"]["port_conflict"] is False
 
