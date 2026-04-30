@@ -243,14 +243,17 @@ class DockerJobLauncher(JobLauncherSpec):
     WORKSPACE_MOUNT = "/var/tmp/nvflare/workspace"
     STUDY_DATA_PATH_FILE = "local/study_data.yaml"
 
+    DEFAULT_PYTHON_PATH = "/usr/local/bin/python"
+
     def __init__(
         self,
         workspace: str = None,
         network: str = "nvflare-network",
-        python_path: str = "/usr/local/bin/python",
+        python_path: str = None,
         timeout: int = 30,
         default_job_container_kwargs: dict = None,
         default_job_env: dict = None,
+        default_python_path: str = None,
     ):
         """
         Args:
@@ -259,7 +262,7 @@ class DockerJobLauncher(JobLauncherSpec):
                        environment variable. Must be the HOST path because it is passed directly to the
                        Docker daemon as a volume bind source.
             network: Docker network name. Must already exist.
-            python_path: Python executable path inside the job container.
+            python_path: Deprecated alias for default_python_path.
             timeout: max seconds to wait for container to reach RUNNING state (default 30).
             default_job_container_kwargs: site-level default docker run kwargs applied to every job
                                           container launched by this site. Job-level resource_spec[site][docker]
@@ -273,6 +276,8 @@ class DockerJobLauncher(JobLauncherSpec):
                              container launched by this site. Useful for site/runtime-specific
                              settings such as NCCL workarounds. Launcher-controlled variables
                              like USER, HOME, and PYTHONPATH still take precedence.
+            default_python_path: Default Python executable path inside job containers. Jobs can override
+                                 it with launcher_spec[site]["docker"]["python_path"].
         """
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -282,7 +287,11 @@ class DockerJobLauncher(JobLauncherSpec):
 
         self.workspace = workspace
         self.network = network
-        self.python_path = python_path
+        self.default_python_path = default_python_path if default_python_path is not None else python_path
+        if self.default_python_path is None:
+            self.default_python_path = self.DEFAULT_PYTHON_PATH
+        if not isinstance(self.default_python_path, str) or not self.default_python_path:
+            raise ValueError("default_python_path must be a non-empty string")
         self.timeout = timeout
         default_job_container_kwargs = default_job_container_kwargs or {}
         _RESERVED_KWARGS = {
@@ -343,7 +352,8 @@ class DockerJobLauncher(JobLauncherSpec):
         _, exe_module = exe_module_entry
 
         site_name = fl_ctx.get_identity_name()
-        job_image = get_job_launcher_spec(job_meta, site_name, "docker").get("image")
+        docker_spec = get_job_launcher_spec(job_meta, site_name, "docker")
+        job_image = docker_spec.get("image")
         container_name = _sanitize_container_name(f"{site_name}-{job_id}")
         if not job_image:
             raise RuntimeError(
@@ -383,7 +393,10 @@ class DockerJobLauncher(JobLauncherSpec):
         if set_list:
             module_args_list.extend(["--set"] + set_list)
 
-        command = [self.python_path, "-u", "-m", exe_module] + module_args_list
+        python_path = docker_spec.get("python_path", self.default_python_path)
+        if not isinstance(python_path, str) or not python_path:
+            raise RuntimeError(f"launcher_spec['{site_name}']['docker']['python_path'] must be a non-empty string")
+        command = [python_path, "-u", "-m", exe_module] + module_args_list
 
         # PYTHONPATH: translate app_custom_folder host path to container-internal path
         # so custom Python code in the job app is importable inside the container.
@@ -413,7 +426,6 @@ class DockerJobLauncher(JobLauncherSpec):
         # launcher_spec[site][docker]. Falls back to nested resource_spec[site][docker] for
         # backward compatibility. num_of_gpus falls back to flat resource_spec[site] (Option 4).
         # Site-level defaults (default_job_container_kwargs) are merged in; job-level takes precedence on conflict.
-        docker_spec = get_job_launcher_spec(job_meta, site_name, "docker")
         _site_rs = (job_meta.get(JobMetaKey.RESOURCE_SPEC.value) or {}).get(site_name) or {}
         _flat_gpus = 0 if any(k in _site_rs for k in ("process", "docker", "k8s")) else _site_rs.get("num_of_gpus", 0)
         num_gpus = docker_spec["num_of_gpus"] if "num_of_gpus" in docker_spec else _flat_gpus
@@ -428,7 +440,7 @@ class DockerJobLauncher(JobLauncherSpec):
             "user",
             "working_dir",
         }
-        _NON_CONTAINER_KEYS = {"num_of_gpus", "image"} | _RESERVED_KWARGS
+        _NON_CONTAINER_KEYS = {"num_of_gpus", "image", "python_path"} | _RESERVED_KWARGS
         reserved_in_spec = _RESERVED_KWARGS & set(docker_spec.keys())
         if reserved_in_spec:
             self.logger.warning(

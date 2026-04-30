@@ -200,7 +200,7 @@ parent:
   network: nvflare-network
 
 job_launcher:
-  python_path: /usr/local/bin/python
+  default_python_path: /usr/local/bin/python
   default_job_env:
     NCCL_P2P_DISABLE: "1"
   default_job_container_kwargs:
@@ -244,10 +244,11 @@ already known from the kit and can be published by the generated script.
 
 Supported `job_launcher` keys:
 
-- `python_path`
+- `default_python_path`
   - Required: no
   - Default: `/usr/local/bin/python`
-  - Description: Python executable used in job containers.
+  - Description: Default Python executable used in job containers. Individual
+    jobs can override it with `launcher_spec[<site>][docker].python_path`.
 
 - `default_job_env`
   - Required: no
@@ -291,7 +292,7 @@ parent:
 job_launcher:
   config_file_path: null
   pending_timeout: null
-  python_path: /usr/local/bin/python
+  default_python_path: /usr/local/bin/python
   job_pod_security_context: {}
 ```
 
@@ -325,7 +326,8 @@ Supported `parent` keys:
   - Required: no
   - Default: `nvflws`
   - Description: PVC claim name containing the runtime workspace/startup kit
-    content.
+    content. This raw value is rendered only as `claimName`; the pod volume
+    name is a fixed Kubernetes DNS label.
 
 - `workspace_mount_path`
   - Required: no
@@ -356,10 +358,11 @@ Supported `job_launcher` keys:
   - Default: launcher default
   - Description: timeout for pending job pods.
 
-- `python_path`
+- `default_python_path`
   - Required: no
   - Default: `/usr/local/bin/python`
-  - Description: Python executable used in job pods.
+  - Description: Default Python executable used in job pods. Individual jobs
+    can override it with `launcher_spec[<site>][k8s].python_path`.
 
 - `job_pod_security_context`
   - Required: no
@@ -468,16 +471,17 @@ Both launchers and `workspace_cell_transfer.py` must be updated to use
 
 The detailed study data schema follows [Study Dataset Mapping](https://docs.google.com/document/d/1JCKHbjQaDto_SBuTB-wSAaEvfIO8NLA_T2I_u8rf2sQ/edit?tab=t.0#heading=h.s3ol8f3q17a5).
 
-## GPU and Job Resource Handling
+## Job Python, GPU, and Resource Handling
 
-GPU allocation for Docker and K8s job containers should continue to use the
-existing job launcher metadata path instead of a deployment-prepare-only
-configuration field.
+Job-image-specific settings for Docker and K8s job containers should continue
+to use job launcher metadata instead of deployment-prepare-only configuration
+fields.
 
-For Docker job containers, `DockerJobLauncher` already supports GPU allocation
-through job metadata:
+For Docker job containers, `DockerJobLauncher` uses job metadata for settings
+that belong to the selected job image:
 
 - `launcher_spec[<site>][docker].num_of_gpus`
+- `launcher_spec[<site>][docker].python_path`
 - legacy `resource_spec[<site>][docker].num_of_gpus`
 - legacy flat `resource_spec[<site>].num_of_gpus`
 - explicit Docker SDK `device_requests` in the Docker launcher spec
@@ -486,17 +490,25 @@ through job metadata:
 `device_requests`, and job-level settings take precedence over site-level
 defaults. Site-local defaults can still be supplied through
 `default_job_container_kwargs` in `docker.yaml` when needed.
+`launcher_spec[<site>][docker].python_path` overrides
+`job_launcher.default_python_path` for jobs whose image uses a different Python
+location.
 
 For K8s job pods, `K8sJobLauncher` already supports GPU and basic resource
-limits through job metadata:
+limits through job metadata, and it uses the same metadata path for
+image-specific Python overrides:
 
 - `launcher_spec[<site>][k8s].num_of_gpus`
+- `launcher_spec[<site>][k8s].python_path`
 - legacy `resource_spec[<site>][k8s].num_of_gpus`
 - `launcher_spec[<site>][k8s].cpu`
 - `launcher_spec[<site>][k8s].memory`
 
 `K8sJobLauncher` maps `num_of_gpus` to the pod container limit
 `nvidia.com/gpu`.
+`launcher_spec[<site>][k8s].python_path` overrides
+`job_launcher.default_python_path` for jobs whose image uses a different Python
+location.
 
 `nvflare deploy prepare` does not need to invent a separate top-level GPU
 setting for job containers. If the parent server/client container or pod itself

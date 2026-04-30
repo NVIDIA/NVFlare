@@ -116,6 +116,55 @@ def _make_client_kit(tmp_path, name="site-1"):
     return kit
 
 
+def _make_server_kit(tmp_path, fed_learn_port=8002, admin_port=8003, name="server"):
+    kit = tmp_path / name
+    startup = kit / "startup"
+    local = kit / "local"
+    startup.mkdir(parents=True)
+    local.mkdir()
+    _write_json(
+        startup / "fed_server.json",
+        {
+            "format_version": 2,
+            "servers": [
+                {
+                    "identity": name,
+                    "service": {"scheme": "tcp", "target": f"{name}:{fed_learn_port}"},
+                    "admin_port": admin_port,
+                }
+            ],
+        },
+    )
+    _write_cert(startup / "server.crt", common_name=name)
+    (startup / "server.key").write_text("key")
+    (startup / "rootCA.pem").write_text("ca")
+    (startup / "start.sh").write_text("#!/usr/bin/env bash\n./sub_start.sh &\n")
+    (startup / "sub_start.sh").write_text(
+        "python3 -m nvflare.private.fed.app.server.server_train --set org=nvidia config_folder=config\n"
+    )
+    _write_json(
+        local / "resources.json.default",
+        {
+            "format_version": 2,
+            "components": [
+                {"id": "process_launcher", "path": "old.ProcessLauncher", "args": {}},
+            ],
+        },
+    )
+    _write_json(
+        local / "comm_config.json",
+        {
+            "allow_adhoc_conns": False,
+            "backbone_conn_gen": 2,
+            "internal": {
+                "scheme": "tcp",
+                "resources": {"host": "localhost", "port": 8102, "connection_security": "clear"},
+            },
+        },
+    )
+    return kit
+
+
 def _run_prepare(kit, output, config):
     config_path = output.parent / f"{output.name}.yaml"
     config_path.write_text(yaml.safe_dump(config, sort_keys=False))
@@ -137,7 +186,7 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
             "runtime": "docker",
             "parent": {"docker_image": "repo/nvflare:dev", "network": "nvflare-test"},
             "job_launcher": {
-                "python_path": "/usr/bin/python",
+                "default_python_path": "/usr/bin/python",
                 "default_job_env": {"NCCL_P2P_DISABLE": "1"},
                 "default_job_container_kwargs": {"shm_size": "8g"},
             },
@@ -175,13 +224,71 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
     launcher = _component(resources, "docker_launcher")
     assert launcher["path"] == "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher"
     assert launcher["args"]["network"] == "nvflare-test"
-    assert launcher["args"]["python_path"] == "/usr/bin/python"
+    assert launcher["args"]["default_python_path"] == "/usr/bin/python"
     assert launcher["args"]["default_job_env"] == {"NCCL_P2P_DISABLE": "1"}
     assert launcher["args"]["default_job_container_kwargs"] == {"shm_size": "8g"}
 
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"]["resources"]["host"] == "0.0.0.0"
     assert (output / "local" / "study_data.yaml").exists()
+
+
+@pytest.mark.parametrize(
+    "admin_port, expected_admin_publish_count",
+    [
+        (8002, 0),
+        (8003, 1),
+    ],
+)
+def test_prepare_docker_server_publishes_admin_port_only_when_distinct(
+    tmp_path, capsys, admin_port, expected_admin_publish_count
+):
+    kit = _make_server_kit(tmp_path, fed_learn_port=8002, admin_port=admin_port)
+    output = tmp_path / "server-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    script = (output / "startup" / "start_docker.sh").read_text()
+    assert script.count("-p 8002:8002") == 1
+    assert script.count("-p 8003:8003") == expected_admin_publish_count
+
+
+@pytest.mark.parametrize(
+    "admin_port, expected_admin_port",
+    [
+        (8002, None),
+        (8003, 8003),
+    ],
+)
+def test_prepare_k8s_server_exposes_admin_port_only_when_distinct(tmp_path, capsys, admin_port, expected_admin_port):
+    kit = _make_server_kit(tmp_path, fed_learn_port=8002, admin_port=admin_port)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["fedLearnPort"] == 8002
+    assert values["adminPort"] == expected_admin_port
+
+    tcp_services = (output / "helm_chart" / "templates" / "server-tcp-services.yaml").read_text()
+    assert ".Values.fedLearnPort" in tcp_services
+    assert ".Values.adminPort" in tcp_services
 
 
 def test_prepare_docker_reads_org_from_cert_without_sub_start(tmp_path, capsys):
@@ -260,7 +367,7 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
             "parent": {
                 "docker_image": "repo/nvflare:dev",
                 "parent_port": 9102,
-                "workspace_pvc": "nvflws-test",
+                "workspace_pvc": "nvflws.team.example.com",
                 "workspace_mount_path": "/workspace",
                 "resources": {"requests": {"cpu": "1", "memory": "2Gi"}},
                 "pod_security_context": {"runAsUser": 1000},
@@ -268,7 +375,7 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
             "job_launcher": {
                 "config_file_path": None,
                 "pending_timeout": 7,
-                "python_path": "/usr/bin/python",
+                "default_python_path": "/usr/bin/python",
                 "job_pod_security_context": {"runAsNonRoot": True},
             },
         },
@@ -281,6 +388,7 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert launcher["path"] == "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
     assert launcher["args"]["namespace"] == "flare"
     assert launcher["args"]["study_data_pvc_file_path"] == "/workspace/local/study_data.yaml"
+    assert launcher["args"]["default_python_path"] == "/usr/bin/python"
     assert launcher["args"]["pending_timeout"] == 7
     assert launcher["args"]["security_context"] == {"runAsNonRoot": True}
 
@@ -301,7 +409,8 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert values["siteName"] == "site-1"
     assert values["serviceName"] == "site-1"
     assert values["image"] == {"repository": "repo/nvflare", "tag": "dev", "pullPolicy": "Always"}
-    assert values["persistence"]["workspace"]["claimName"] == "nvflws-test"
+    assert values["persistence"]["workspace"]["claimName"] == "nvflws.team.example.com"
+    assert values["persistence"]["workspace"]["volumeName"] == "workspace"
     assert values["persistence"]["workspace"]["mountPath"] == "/workspace"
     assert values["port"] == 9102
     assert values["securityContext"] == {"runAsUser": 1000}
@@ -400,8 +509,12 @@ def test_prepare_rejects_admin_kit_without_writing_output(tmp_path, capsys):
     "config, expected",
     [
         (
-            {"runtime": "docker", "parent": {"docker_image": "repo/nvflare:dev"}, "job_launcher": {"python_path": 7}},
-            "job_launcher.python_path",
+            {
+                "runtime": "docker",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+                "job_launcher": {"default_python_path": 7},
+            },
+            "job_launcher.default_python_path",
         ),
         (
             {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev", "workspace_pvc": 7}},
@@ -423,9 +536,9 @@ def test_prepare_rejects_admin_kit_without_writing_output(tmp_path, capsys):
             {
                 "runtime": "k8s",
                 "parent": {"docker_image": "repo/nvflare:dev"},
-                "job_launcher": {"python_path": False},
+                "job_launcher": {"default_python_path": False},
             },
-            "job_launcher.python_path",
+            "job_launcher.default_python_path",
         ),
     ],
 )

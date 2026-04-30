@@ -28,7 +28,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       volumes:
-        - name: {{ .Values.persistence.workspace.friendlyName }}
+        - name: {{ .Values.persistence.workspace.volumeName }}
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.workspace.claimName }}
       containers:
@@ -47,5 +47,5 @@ spec:
             {{- toYaml .Values.args | nindent 12 }}
             - uid={{ default .Values.name .Values.siteName }}
           volumeMounts:
-            - name: {{ .Values.persistence.workspace.friendlyName }}
+            - name: {{ .Values.persistence.workspace.volumeName }}
               mountPath: {{ .Values.persistence.workspace.mountPath }}

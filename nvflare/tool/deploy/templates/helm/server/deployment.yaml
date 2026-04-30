@@ -28,7 +28,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       volumes:
-        - name: {{ .Values.persistence.workspace.friendlyName }}
+        - name: {{ .Values.persistence.workspace.volumeName }}
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.workspace.claimName }}
       containers:
@@ -36,7 +36,7 @@ spec:
           image: {{ include "nvflare-server.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           volumeMounts:
-            - name: {{ .Values.persistence.workspace.friendlyName }}
+            - name: {{ .Values.persistence.workspace.volumeName }}
               mountPath: {{ .Values.persistence.workspace.mountPath }}
           {{- with .Values.resources }}
           resources:

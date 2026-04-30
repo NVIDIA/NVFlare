@@ -705,6 +705,22 @@ class TestDockerJobLauncherLaunchJob:
         assert environment["USER"] == "actual-user"
         assert environment["HOME"] == "/real/home"
 
+    def test_launch_python_path_from_launcher_spec_overrides_default(self):
+        launcher = _make_launcher(default_python_path="/usr/bin/python")
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1", docker_spec={"python_path": "/opt/conda/bin/python"})
+        launcher.launch_job(job_meta, fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        assert call_kwargs["command"][0] == "/opt/conda/bin/python"
+        assert "python_path" not in call_kwargs
+
     def test_launch_gpu_via_resource_spec_num_of_gpus(self):
         """num_of_gpus in resource_spec.docker is translated to device_requests for the job container."""
         launcher = _make_launcher()
