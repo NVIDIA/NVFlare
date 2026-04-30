@@ -661,10 +661,7 @@ class Session(SessionSpec):
                 current_start_time = sys_info.server_info.start_time
                 if seen_down or (previous_start_time is not None and current_start_time != previous_start_time):
                     return sys_info
-                if previous_start_time is None:
-                    last_error = "waiting for server to go down before confirming restart"
-                else:
-                    last_error = "server is still running with the previous start time"
+                last_error = "server is still running with the previous start time"
             except NoConnection:
                 seen_down = True
                 last_error = "server is not reachable yet"
