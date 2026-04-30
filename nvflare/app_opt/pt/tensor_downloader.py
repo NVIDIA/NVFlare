@@ -264,6 +264,5 @@ def download_tensors_to_disk(
         return consumer.error, None
 
     key_to_file = consumer.result if consumer.result is not None else {}
-    lazy_tensors = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
     consumer.release()
-    return None, lazy_tensors
+    return None, LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
