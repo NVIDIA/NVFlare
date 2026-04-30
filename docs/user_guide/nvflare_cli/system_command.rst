@@ -229,9 +229,11 @@ next registration or heartbeat.
 
 The disabled-client policy is stored on the server in
 ``<server_workspace>/disabled_clients.json`` and is loaded at server startup.
-Updates are serialized by the server client-manager lock and written with a
-temporary file followed by atomic replacement, so the policy survives server
-restart without partially written files.
+Updates and persistence writes are serialized by the server client-manager lock
+and written with a temporary file followed by atomic replacement, so the policy
+survives server restart without partially written files. If the file exists but
+cannot be loaded, the server fails closed during startup instead of admitting
+previously disabled clients.
 
 Client access arguments:
 

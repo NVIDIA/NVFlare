@@ -65,3 +65,32 @@ def test_canonical_job_content_hash_skips_directory_symlinks(tmp_path):
     (without_link / "meta.json").write_text("{}")
 
     assert canonical_job_content_hash(str(job_dir)) == canonical_job_content_hash(str(without_link))
+
+
+def test_canonical_job_content_hash_matches_directory_and_wrapped_zip(tmp_path):
+    job_dir = tmp_path / "hello"
+    app_dir = job_dir / "app" / "config"
+    app_dir.mkdir(parents=True)
+    (job_dir / "meta.json").write_text("{}", encoding="utf-8")
+    (app_dir / "config_fed_server.json").write_text("{}", encoding="utf-8")
+    wrapped_zip = _zip_bytes(
+        {
+            "hello/meta.json": "{}",
+            "hello/app/config/config_fed_server.json": "{}",
+        }
+    )
+
+    assert canonical_job_content_hash(str(job_dir)) == canonical_job_content_hash(wrapped_zip)
+
+
+def test_canonical_job_content_hash_treats_parent_directory_as_different_content(tmp_path):
+    job_dir = tmp_path / "hello"
+    job_dir.mkdir()
+    (job_dir / "meta.json").write_text("{}", encoding="utf-8")
+
+    assert canonical_job_content_hash(str(tmp_path)) != canonical_job_content_hash(str(job_dir))
+
+
+def test_canonical_job_content_hash_rejects_dot_zip_member():
+    with pytest.raises(ValueError, match="unsafe path"):
+        canonical_job_content_hash(_zip_bytes({".": "not a valid job member"}))

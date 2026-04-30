@@ -72,7 +72,11 @@ class ClientManager:
             with self.lock:
                 self.disabled_clients = {str(client_name) for client_name in clients if client_name}
         except Exception as ex:
-            self.logger.error(f"failed to load disabled clients from {self.disabled_clients_file}: {ex}")
+            self.logger.critical(
+                f"failed to load disabled clients from {self.disabled_clients_file}: {ex}; "
+                "refusing to start to preserve disable-client policy"
+            )
+            raise
 
     def _save_disabled_clients(self, disabled_clients=None):
         if not self.disabled_clients_file:

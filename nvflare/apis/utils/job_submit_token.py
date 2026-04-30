@@ -64,6 +64,14 @@ def validate_submit_token(submit_token: Optional[str]) -> Optional[str]:
 
 
 def canonical_job_content_hash(job_content: Union[str, bytes], exclude_names: Iterable[str] = None) -> str:
+    """Hash the canonical submitted job content used for submit-token retry validation.
+
+    The caller must provide the job content root. Directory input is hashed exactly relative
+    to the provided directory. Zip input may contain one wrapper directory around the job
+    content; that wrapper is stripped so a normal ``zip -r job.zip job/`` archive hashes the
+    same as submitting ``job/`` directly. Passing the parent of a job directory is not
+    equivalent to passing the job directory itself.
+    """
     exclude = set(exclude_names or _VOLATILE_SUBMIT_ARTIFACTS)
     digest = hashlib.sha256()
     for rel_path, data in _iter_canonical_job_files(job_content, exclude):
@@ -112,7 +120,7 @@ def _iter_zip_bytes(zip_bytes: bytes, exclude_names: set):
             if info.is_dir():
                 continue
             rel_path = posixpath.normpath(info.filename)
-            if rel_path.startswith("../") or rel_path == ".." or posixpath.isabs(rel_path):
+            if rel_path.startswith("../") or rel_path in {".", ".."} or posixpath.isabs(rel_path):
                 raise ValueError(f"zip member has unsafe path: {info.filename!r}")
             if posixpath.basename(rel_path) in exclude_names:
                 continue

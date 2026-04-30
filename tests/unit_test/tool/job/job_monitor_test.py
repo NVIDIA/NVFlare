@@ -369,7 +369,7 @@ class TestJobMonitorOutput:
         data = json.loads(captured.out)
         assert data["error_code"] == "JOB_NOT_FOUND"
 
-    def test_connection_error_propagates_to_top_level_handler(self):
+    def test_connection_error_emits_structured_envelope(self, capsys):
         @contextmanager
         def _fake_session(*args, **kwargs):
             sess = MagicMock()
@@ -379,8 +379,14 @@ class TestJobMonitorOutput:
         with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
             from nvflare.tool.job.job_cli import cmd_job_monitor
 
-            with pytest.raises(NoConnection):
+            with pytest.raises(SystemExit) as exc_info:
                 cmd_job_monitor(_make_args())
+        assert exc_info.value.code == 2
+
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["status"] == "error"
+        assert envelope["error_code"] == "CONNECTION_FAILED"
+        assert envelope["exit_code"] == 2
 
     def test_jsonl_connection_error_emits_terminal_event(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "jsonl")
@@ -404,7 +410,7 @@ class TestJobMonitorOutput:
         assert event["terminal"] is True
         assert event["error_code"] == "CONNECTION_FAILED"
 
-    def test_authentication_error_propagates_to_top_level_handler(self):
+    def test_authentication_error_emits_structured_envelope(self, capsys):
         @contextmanager
         def _fake_session(*args, **kwargs):
             sess = MagicMock()
@@ -414,8 +420,14 @@ class TestJobMonitorOutput:
         with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
             from nvflare.tool.job.job_cli import cmd_job_monitor
 
-            with pytest.raises(AuthenticationError):
+            with pytest.raises(SystemExit) as exc_info:
                 cmd_job_monitor(_make_args())
+        assert exc_info.value.code == 2
+
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["status"] == "error"
+        assert envelope["error_code"] == "AUTH_FAILED"
+        assert envelope["exit_code"] == 2
 
     def test_jsonl_authentication_error_emits_terminal_event(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "jsonl")
@@ -439,7 +451,7 @@ class TestJobMonitorOutput:
         assert event["terminal"] is True
         assert event["error_code"] == "AUTH_FAILED"
 
-    def test_authorization_error_propagates_to_top_level_handler(self):
+    def test_authorization_error_emits_structured_envelope(self, capsys):
         @contextmanager
         def _fake_session(*args, **kwargs):
             sess = MagicMock()
@@ -449,8 +461,14 @@ class TestJobMonitorOutput:
         with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
             from nvflare.tool.job.job_cli import cmd_job_monitor
 
-            with pytest.raises(AuthorizationError):
+            with pytest.raises(SystemExit) as exc_info:
                 cmd_job_monitor(_make_args())
+        assert exc_info.value.code == 2
+
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["status"] == "error"
+        assert envelope["error_code"] == "AUTH_FAILED"
+        assert envelope["exit_code"] == 2
 
     def test_jsonl_authorization_error_emits_terminal_event(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "jsonl")
@@ -716,6 +734,31 @@ class TestJobMonitorOutput:
         assert events[0]["terminal"] is False
         assert events[-1]["status"] == "COMPLETED"
         assert events[-1]["terminal"] is True
+
+    def test_jsonl_status_callback_stops_on_colon_finished_status(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+
+        from nvflare.tool.job.job_cli import _build_monitor_status_callback, _make_monitor_state
+
+        state = _make_monitor_state()
+        cb = _build_monitor_status_callback(
+            start=0.0,
+            start_ts_holder={"value": None},
+            emit_interval=1,
+            stats_interval=10,
+            stats_target="server",
+            key_aliases={},
+            jsonl_mode=True,
+        )
+
+        should_continue = cb(MagicMock(), "abc123", _make_meta("FINISHED:COMPLETED"), state)
+
+        assert should_continue is False
+        event = json.loads(capsys.readouterr().out)
+        assert event["event"] == "progress"
+        assert event["status"] == "COMPLETED"
+        assert event["job_status"] == "FINISHED:COMPLETED"
+        assert event["terminal"] is False
 
     # ------------------------------------------------------------------
     # Parser

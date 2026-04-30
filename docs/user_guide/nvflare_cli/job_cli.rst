@@ -153,6 +153,13 @@ the same scope returns the existing ``job_id``. Reusing it with different job
 content fails with ``SUBMIT_TOKEN_CONFLICT``. The same token may be used in a
 different study because studies are separate job namespaces.
 
+The submitted job path should point to the job content root. When the submitted
+artifact is a zip file with one wrapper directory around the job content, the
+wrapper is ignored for submit-token content hashing so a normal
+``zip -r my_job.zip my_job/`` archive matches submitting ``my_job/`` directly.
+Submitting the parent directory that contains ``my_job/`` is different content
+and may conflict when retried with the same token.
+
 The token is stored only as server-owned submission metadata. It is not written
 to the job's ``meta.json``; that file remains job-owned execution metadata such
 as ``deploy_map``, ``resource_spec``, ``min_clients``, and launcher settings.
@@ -325,6 +332,7 @@ The JSON success response reports local paths on the machine running the CLI:
        "job_id": "abc123",
        "download_path": "/abs/path/downloads/abc123",
        "path": "/abs/path/downloads/abc123",
+       "artifact_discovery": "completed",
        "artifacts": {
          "global_model": "/abs/path/downloads/abc123/workspace/FL_global_model.pt",
          "metrics_summary": "/abs/path/downloads/abc123/workspace/metrics_summary.json",
@@ -347,6 +355,9 @@ consumable files instead of assuming a server workspace layout or constructing
 paths from ``download_path``. ``missing_artifacts`` lists expected categories,
 such as model, metrics, or client logs, that were not found locally. Missing
 artifacts do not make the command fail when the download itself succeeds.
+When ``artifact_discovery`` is ``skipped``, the CLI did not have a local
+directory to inspect, so ``artifacts`` and ``missing_artifacts`` are ``null``
+instead of claiming that expected artifacts were verified absent.
 
 The server download protocol is unchanged; artifact discovery is a local CLI
 post-processing step after the result has been downloaded.

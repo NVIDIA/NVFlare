@@ -148,6 +148,22 @@ class TestJobLogHuman:
         assert "abc123" in envelope["message"]
         assert "{job_id}" not in envelope["message"]
 
+    def test_log_job_not_running_colon_finished_status_exits_1(self, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_log
+
+        args = _make_args(level="INFO")
+        mock_sess = self._make_session(status="FINISHED:COMPLETED")
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_log(args)
+
+        assert exc_info.value.code == 1
+        mock_sess.configure_job_log.assert_not_called()
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "JOB_NOT_RUNNING"
+        assert "job is in terminal state: FINISHED:COMPLETED" in envelope["message"]
+
     def test_log_job_not_running_aborted_exits_1(self, capsys):
         """meta status 'ABORTED' → JOB_NOT_RUNNING error, exit 1."""
         from nvflare.tool.job.job_cli import cmd_job_log

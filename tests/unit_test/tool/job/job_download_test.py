@@ -60,6 +60,7 @@ class TestJobDownload:
         assert data["job_id"] == "abc123"
         assert data["download_path"] == str(download_path)
         assert data["path"] == data["download_path"]
+        assert data["artifact_discovery"] == "completed"
         assert data["artifacts"] == {}
         assert set(data["missing_artifacts"]) == {"global_model", "metrics_summary", "client_logs"}
 
@@ -170,16 +171,17 @@ class TestJobDownload:
         assert envelope["data"]["artifacts"] == {"metrics_summary": str(metrics_path)}
         assert set(envelope["data"]["missing_artifacts"]) == {"global_model", "client_logs"}
 
-    def test_download_nonexistent_path_reports_empty_artifacts(self, tmp_path, capsys):
-        """nonexistent final download paths still produce a successful empty artifact response."""
+    def test_download_nonexistent_path_skips_artifact_discovery(self, tmp_path, capsys):
+        """nonexistent final download paths do not claim expected artifacts are missing."""
         missing_path = tmp_path / "does-not-exist"
 
         _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), missing_path, capsys)
 
         assert envelope["status"] == "ok"
         assert envelope["data"]["download_path"] == str(missing_path)
-        assert envelope["data"]["artifacts"] == {}
-        assert set(envelope["data"]["missing_artifacts"]) == {"global_model", "metrics_summary", "client_logs"}
+        assert envelope["data"]["artifact_discovery"] == "skipped"
+        assert envelope["data"]["artifacts"] is None
+        assert envelope["data"]["missing_artifacts"] is None
 
     def test_download_artifact_discovery_skips_symlink_escapes(self, tmp_path, capsys):
         """reported artifacts must stay under download_path and skip symlink escapes."""
@@ -208,8 +210,9 @@ class TestJobDownload:
         assert envelope["status"] == "ok"
         assert envelope["data"]["download_path"] is None
         assert envelope["data"]["path"] == "https://download.example/jobs/abc123"
-        assert envelope["data"]["artifacts"] == {}
-        assert set(envelope["data"]["missing_artifacts"]) == {"global_model", "metrics_summary", "client_logs"}
+        assert envelope["data"]["artifact_discovery"] == "skipped"
+        assert envelope["data"]["artifacts"] is None
+        assert envelope["data"]["missing_artifacts"] is None
 
     def test_download_not_found_exits_1(self):
         """JOB_NOT_FOUND exits with code 1."""

@@ -1371,17 +1371,22 @@ def cmd_job_download(cmd_args):
 
     path = str(path or destination)
     download_path = _local_download_path(path)
-    artifacts, missing_artifacts = _discover_job_download_artifacts(download_path)
     print_human(f"Job result downloaded to: {download_path or path}")
-    output_ok(
-        {
-            "job_id": cmd_args.job_id,
-            "download_path": download_path,
-            "path": download_path or path,
-            "artifacts": artifacts,
-            "missing_artifacts": missing_artifacts,
-        }
-    )
+    payload = {
+        "job_id": cmd_args.job_id,
+        "download_path": download_path,
+        "path": download_path or path,
+    }
+    if download_path and os.path.isdir(download_path):
+        artifacts, missing_artifacts = _discover_job_download_artifacts(download_path)
+        payload["artifact_discovery"] = "completed"
+        payload["artifacts"] = artifacts
+        payload["missing_artifacts"] = missing_artifacts
+    else:
+        payload["artifact_discovery"] = "skipped"
+        payload["artifacts"] = None
+        payload["missing_artifacts"] = None
+    output_ok(payload)
 
 
 def cmd_job_delete(cmd_args):
@@ -1511,6 +1516,10 @@ _TERMINAL_JOB_STATES = {
     "ABANDONED",
     "FAILED",
 }
+
+
+def _is_terminal_job_status(status: str) -> bool:
+    return isinstance(status, str) and (status.startswith("FINISHED:") or status in _TERMINAL_JOB_STATES)
 
 
 def cmd_job_stats(cmd_args):
@@ -2104,7 +2113,7 @@ def _build_monitor_status_callback(
                 _emit_monitor_jsonl_progress(job_id, job_meta, state, now, start, start_ts_holder["value"])
             else:
                 _emit_monitor_progress(job_id, job_meta, state, now, start, start_ts_holder["value"])
-        return status not in _TERMINAL_JOB_STATES
+        return not _is_terminal_job_status(status)
 
     return _status_cb
 
@@ -2233,15 +2242,11 @@ def cmd_job_monitor(cmd_args):
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         return
     except NoConnection as e:
-        if jsonl_mode:
-            output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
-            return
-        raise
+        output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
+        return
     except (AuthenticationError, AuthorizationError) as e:
-        if jsonl_mode:
-            output_error("AUTH_FAILED", exit_code=2, detail=str(e))
-            return
-        raise
+        output_error("AUTH_FAILED", exit_code=2, detail=str(e))
+        return
     except Exception as e:
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         return
@@ -2435,7 +2440,7 @@ def cmd_job_log(cmd_args):
         with _job_session_for_args(cmd_args) as sess:
             meta = sess.get_job_meta(cmd_args.job_id)
             job_status = meta.get("status", "UNKNOWN") if meta else "UNKNOWN"
-            if job_status in _TERMINAL_JOB_STATES:
+            if _is_terminal_job_status(job_status):
                 output_error(
                     "JOB_NOT_RUNNING",
                     exit_code=1,

@@ -14,6 +14,8 @@
 
 from enum import Enum
 
+# Server-to-CLI protocol value used in job metadata to signal that a retry-safe
+# submit token conflicts with an existing submission.
 SUBMIT_TOKEN_CONFLICT_STATUS = "submit_token_conflict"
 
 

@@ -107,6 +107,15 @@ def test_disable_client_persists_and_removes_active_client(tmp_path):
     assert reloaded.is_client_disabled("site-a")
 
 
+def test_disabled_clients_file_load_failure_fails_closed(tmp_path):
+    disabled_file = tmp_path / "disabled_clients.json"
+    disabled_file.write_text("{broken-json", encoding="utf-8")
+    manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+
+    with pytest.raises(json.JSONDecodeError):
+        manager.set_disabled_clients_file(str(disabled_file))
+
+
 def test_disable_client_restores_active_client_when_persist_fails():
     manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
     client = Client("site-a", "token-a")
@@ -178,7 +187,7 @@ def test_disabled_clients_file_can_be_bare_filename(tmp_path, monkeypatch):
     assert json.loads((tmp_path / "disabled_clients.json").read_text()) == {"disabled_clients": ["site-a"]}
 
 
-def test_disabled_client_save_runs_outside_manager_lock():
+def test_disabled_client_save_runs_under_manager_lock():
     manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
     calls = []
 
@@ -193,7 +202,7 @@ def test_disabled_client_save_runs_outside_manager_lock():
     manager.disable_client("site-a")
     manager.enable_client("site-a")
 
-    assert calls == [True, True]
+    assert calls == [False, False]
 
 
 def test_disabled_client_registration_is_rejected():

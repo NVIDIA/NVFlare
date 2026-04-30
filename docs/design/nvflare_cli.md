@@ -1243,6 +1243,12 @@ submission attempt; the content hash proves whether a retry is the same submissi
 the hash were part of the lookup key, accidental token reuse for a different job would
 silently create a second job instead of surfacing a conflict.
 
+Submit-token content hashing is defined over the submitted job content root. Directory
+input is hashed relative to the provided directory. Zip input may contain one wrapper
+directory around the job content; that wrapper is stripped so a normal `zip -r job.zip
+job/` archive hashes the same as submitting `job/` directly. Passing the parent
+directory that contains `job/` is not equivalent to passing `job/` itself.
+
 Server storage model:
 
 - Persist a separate study-scoped submit record in the server job store. The persistent
@@ -1544,15 +1550,19 @@ The success envelope's `data` object includes:
   machine. This may differ from the requested destination if collision handling or the
   transfer layer chooses a different final directory.
 - `path`: compatibility alias for `download_path` when present.
+- `artifact_discovery`: `"completed"` when local artifact discovery ran, or `"skipped"`
+  when the CLI did not have a real local directory to inspect.
 - `artifacts`: discovered local artifact paths under `download_path`, such as global
-  model, metrics summary, and client log paths.
+  model, metrics summary, and client log paths. This is `null` when discovery is skipped.
 - `missing_artifacts`: expected artifact categories that were not found locally.
+  This is `null` when discovery is skipped.
 
 `missing_artifacts` is informational. The command must still succeed when expected
 model, metrics, or log artifacts are absent, as long as the download operation itself
 succeeded. Agents must use `data.artifacts.*` as the source of truth for consumable
 files instead of inferring paths from server locations or assuming a fixed layout under
-`download_path`.
+`download_path`. Agents must treat `artifact_discovery: "skipped"` as "not inspected",
+not as proof that expected artifacts are absent.
 
 ### Add `nvflare study`
 
@@ -1673,11 +1683,12 @@ any active registry entry, and rejects subsequent registration or heartbeat from
 client name until `enable-client` clears the flag. This is not certificate revocation.
 
 Disabled client state is stored in the server workspace as `disabled_clients.json`.
-In-memory updates and persistence snapshots must be made under the client manager
-lock. The JSON write uses the snapshot outside the lock with a temporary file plus
-atomic replace so registration/heartbeat handling cannot observe a partially written
-policy file and does not block on disk I/O. The file is loaded at server startup so
-disabled clients remain disabled across server restarts.
+In-memory updates and persistence writes must be made under the client manager lock.
+The JSON write uses a temporary file plus atomic replace so registration/heartbeat
+handling cannot observe a partially written policy file. The file is loaded at server
+startup so disabled clients remain disabled across server restarts. If this file exists
+but cannot be loaded, the server must fail closed by raising during startup instead of
+admitting previously disabled clients.
 
 
 ## Output
