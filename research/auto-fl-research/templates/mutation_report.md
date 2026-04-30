@@ -2,7 +2,7 @@
 
 ## Hypothesis
 
-Successful runs are appended to `results.tsv` as `candidate`, but the previous instructions did not force agents to rewrite reviewed rows to `keep` or `discard` after batch analysis. This leaves long campaigns with hundreds of stale candidates and progress plots with no kept markers. Batch review needs an explicit ledger-finalization step and a helper script.
+Successful runs are appended to `results.tsv` as `candidate`, but the previous instructions did not force agents to rewrite reviewed rows to `keep` or `discard` after run analysis. This leaves long campaigns with hundreds of stale candidates and progress plots with no kept markers. Run review needs an explicit ledger-finalization step and a helper script.
 
 ## Files changed
 
@@ -23,9 +23,9 @@ Successful runs are appended to `results.tsv` as `candidate`, but the previous i
 ## Observed outcome
 
 - Current local `results.tsv` has 469 `candidate` rows, 25 `crash` rows, and 0 `keep` rows, confirming the prompt gap.
-- `program.md`, README, the autofl skill, and the runbook now state that `candidate` means unreviewed and that every completed batch must update statuses before the next batch.
+- `program.md`, README, the autofl skill, and the runbook now state that `candidate` means unreviewed and that every completed run must update statuses before the next candidate.
 - Added `scripts/finalize_batch_status.py` to promote the best reviewed candidate to `keep` and demote reviewed non-survivors to `discard`.
-- `scripts/summarize_results.py` now reminds agents to finalize statuses after reviewing candidate batches.
+- `scripts/summarize_results.py` now reminds agents to finalize statuses after reviewing candidate runs.
 - The README and skill provenance now acknowledge the Camyla-inspired literature-loop / QWBE-style proposal workflow.
 - No local `results.tsv` rows were modified by this harness change.
 
@@ -33,7 +33,7 @@ Successful runs are appended to `results.tsv` as `candidate`, but the previous i
 
 None. This is ledger hygiene and prompt hardening.
 
-## Batch analysis
+## Run analysis
 
 Not run. This change does not affect training behavior.
 
@@ -48,4 +48,4 @@ Low. The change adds a standalone ledger helper and tightens instructions. It do
 
 ## Next mutation
 
-Use `scripts/finalize_batch_status.py` after every completed batch. For stale ledgers, run it once with `--all-candidates --keep-best --discard-others` after confirming the intended cleanup policy.
+Use `scripts/finalize_batch_status.py` after every completed run. For stale ledgers, run it once with `--all-candidates --keep-best --discard-others` after confirming the intended cleanup policy.

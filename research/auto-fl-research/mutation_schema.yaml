@@ -79,28 +79,26 @@ comparison_budget_args:
     n_clients, alpha, and seed. Candidate job names must not create new splits
     when these fixed data-budget fields are unchanged.
 
-parallel_sweep:
+local_sweep:
   node_profile:
-    gpu_count: 4
+    gpu_count: 1
     gpu_type: H100
     gpu_memory_gb: 80
-  default_parallel_candidates: 4
-  parallel_candidates_source: initial_agent_instruction
-  example_parallel_candidates: 8
-  oversubscribe_rule: >
-    If PARALLEL_CANDIDATES is greater than gpu_count, map lane i to
-    GPU_IDS[i % len(GPU_IDS)] so each GPU may run multiple independent
-    simulations. Require unique RUN_LOG and job --name values for every lane.
-  gpu_binding_env: CUDA_VISIBLE_DEVICES
+  default_candidate_width: 1
+  candidate_width_source: initial_agent_instruction
+  candidate_rule: >
+    Run one same-budget candidate at a time on the local H100. If the
+    environment exposes multiple GPUs but the campaign should use this single
+    GPU, pin the run with CUDA_VISIBLE_DEVICES=0.
   per_run_artifacts:
     - RUN_LOG
     - job --name
-  batch_decision_rule: >
-    Run PARALLEL_CANDIDATES same-budget candidates in parallel, then rank all
-    results before keeping, narrowing, or discarding the sweep axis.
+  run_decision_rule: >
+    Rank each completed candidate against the ledger before keeping,
+    narrowing, or discarding the sweep axis.
 
 literature_review:
-  trigger_after_non_improving_batches: 2
+  trigger_after_non_improving_runs: 2
   ledger_source_rule: >
     When a candidate implements a method or design choice from a research
     paper, include a compact source reference in the results.tsv description

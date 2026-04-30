@@ -345,7 +345,7 @@ def generate_report(
                 ],
             ),
             "",
-            "The runtime total is aggregate candidate runtime from `runtime_seconds`, not wall-clock elapsed time for parallel batches.",
+            "The runtime total is aggregate candidate runtime from `runtime_seconds`, not wall-clock elapsed campaign time.",
             "",
         ]
     )

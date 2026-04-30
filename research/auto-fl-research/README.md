@@ -33,14 +33,14 @@ The public `autoresearch` repo keeps the setup intentionally small and treats `p
 - **Bounded edit surface:** mutations should mostly target `client.py`, then `custom_aggregators.py`, then `job.py`; registered, parameter-capped architecture variants may also touch `model.py`.
 - **Fixed evaluation budget:** compare candidates under the same recipe budget (`n_clients`, `num_rounds`, `aggregation_epochs`, `batch_size`, `eval_batch_size`, `alpha`, `seed`, `model_arch`, `max_model_params`).
 - **Comparable metric extraction:** recommended runs enable cross-site evaluation and extract a single score from `cross_val_results.json`.
-- **Batch keep / discard loop:** on a 4 x H100 node, the agent can launch a configurable number of same-budget hyperparameter candidates in parallel, rank the batch, and then keep, narrow, or revert.
-- **Autonomous continuation:** after setup and baseline, the agent keeps running same-budget batches until manually interrupted.
+- **Run keep / discard loop:** on one local H100, the agent runs one same-budget candidate at a time, ranks it against the ledger, and then keeps, narrows, or reverts.
+- **Autonomous continuation:** after setup and baseline, the agent keeps running same-budget candidates until manually interrupted.
 - **Literature-grounded recovery:** when progress stalls, the agent should use the Camyla-inspired loop in `program.md` to generate diverse paper queries, extract challenge cards, score compatible proposals, fill `templates/literature_loop.md`, and branch into the top contract-safe ideas.
 - **Tracked experiment ledger:** `results.tsv` is committed on experiment branches so the branch carries its run provenance.
 
 This is not a literal clone of `karpathy/autoresearch`; it is an NVFlare-specific adaptation of the same operating model.
 
-## QWBE-style literature batches
+## QWBE-style literature proposals
 
 QWBE is currently implemented as an **instruction and artifact workflow**, not as imported Camyla code or a separate tree-search scheduler. When progress stalls, `program.md` directs the agent to use the Camyla-inspired literature loop and fill `templates/literature_loop.md`.
 
@@ -55,8 +55,8 @@ The current flow is:
    2*expected_gain + 2*contract_safety + simplicity + evidence + novelty - runtime_cost
    ```
 
-5. Allocate the next `PARALLEL_CANDIDATES` batch quality-weighted across the best proposals. The strongest proposal may receive multiple nearby variants, but at least one lane should go to a distinct second idea when a safe alternative exists.
-6. Launch those lanes with the normal `scripts/run_iteration.sh` mechanism, then rank the completed batch before deciding keep, narrow, or discard.
+5. Rank the next compatible proposals with the scoring rubric and select the best next candidate. Keep the runner-up ideas in the worksheet for later runs.
+6. Launch the selected candidate with the normal `scripts/run_iteration.sh` mechanism, then rank the completed run before deciding keep, narrow, or discard.
 7. Finalize the reviewed ledger rows so completed `candidate` rows become `keep` or `discard`.
 
 This keeps the Camyla/QWBE idea inside the existing harness contract: no new dependencies, no evaluation changes, and no server-client protocol changes except explicitly labeled modes such as `--aggregator scaffold`. Architecture changes are allowed only as registered `--model_arch` variants under the active `--max_model_params` budget.
@@ -128,7 +128,7 @@ PYTHON="$PYTHON" make validate
 PYTHON="$PYTHON" make smoke
 ```
 
-On the H100 node, verify that the container can see the GPUs before starting an overnight campaign:
+On the H100 node, verify that the container can see the GPU before starting an overnight campaign:
 
 ```bash
 nvidia-smi
@@ -157,32 +157,32 @@ Use the autofl-nvflare skill.
 
 Read `program.md` first and treat it as the single research control plane. Inspect supporting files only when `program.md` directs you to them or when needed for the next action.
 
-Start a fresh autoresearch campaign for the local 4 x H100 80 GB node. If no campaign is initialized yet, derive a descriptive run tag from the current date at runtime using `<node>-<campaign-topic>-$(date +%Y%m%d)`, for example `h100-fedavgm-$(date +%Y%m%d)`, `h100-archsearch-$(date +%Y%m%d)`, or `h100-baseline-$(date +%Y%m%d)`. Do not use date-only names like `h100-$(date +%Y%m%d)`, initialize the ledger, and establish the baseline first. Do not copy stale example dates from this prompt.
+Start a fresh autoresearch campaign for the local single-H100 node. If no campaign is initialized yet, derive a descriptive run tag from the current date at runtime using `<node>-<campaign-topic>-$(date +%Y%m%d)`, for example `h100-fedavgm-$(date +%Y%m%d)`, `h100-archsearch-$(date +%Y%m%d)`, or `h100-baseline-$(date +%Y%m%d)`. Do not use date-only names like `h100-$(date +%Y%m%d)`, initialize the ledger, and establish the baseline first. Do not copy stale example dates from this prompt.
 
 Use this prepared Python environment for all validation and runs:
 PYTHON=<absolute path to the environment's python>
 Treat that PYTHON value as authoritative. First verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; print(sys.executable)"`, then use that exact interpreter for validation, smoke tests, candidate runs, plotting, summaries, and reports.
 Do not create a virtual environment or install dependencies unless I explicitly ask you to. Do not search for alternate Python interpreters with commands like `ls /usr/bin/python*`, `ls /workspace/.venv*/bin/python*`, `which python`, or similar discovery commands. If PYTHON is missing or invalid, stop and ask me for the prepared interpreter path.
 
-Set PARALLEL_CANDIDATES=4 for this campaign.
+Set PARALLEL_CANDIDATES=1 for this campaign.
 
-Use the default H100 candidate budget unless program.md says otherwise:
+Use the default single-H100 candidate budget unless program.md says otherwise:
 --n_clients 8 --num_rounds 10 --aggregation_epochs 4 --batch_size 64 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted
 
 Use cross-site evaluation and keep RUN_TIMEOUT_SECONDS=600.
 
 Preserve the hard invariants: keep the NVFlare Client API loop, ParamsType.DIFF uploads, NUM_STEPS_CURRENT_ROUND, flare.is_evaluate(), the selected registered model architecture on both server and clients, and no dependencies or protocol changes outside explicitly selected modes like `--aggregator scaffold`. Treat `model_arch` and `max_model_params` as fixed budget fields unless you explicitly label a new architecture subcampaign.
 
-After the first weighted baseline run, run the baseline algorithm calibration batch before any open-ended tuning. Compare the same fixed budget across FedAvg, FedProx, FedOpt, and SCAFFOLD options from program.md, using PARALLEL_CANDIDATES lanes and unique RUN_LOG and --name values. Rank the batch, pick the best algorithm family, and only then start narrower hyperparameter sweeps.
+After the first weighted baseline run, run the baseline algorithm calibration sequence before any open-ended tuning. Compare the same fixed budget across FedAvg, FedProx, FedOpt, and SCAFFOLD options from program.md, one candidate at a time, using unique RUN_LOG and --name values. Rank the completed calibration runs, pick the best algorithm family, and only then start narrower hyperparameter sweeps.
 
 Architecture search is allowed through registered model variants only. Keep --max_model_params fixed at 5000000 unless I explicitly start a new architecture budget. After algorithm calibration, you may compare --model_arch moderate_cnn, moderate_cnn_norm, and moderate_cnn_small_head under the same fixed budget. Rank primarily by score; use runtime_seconds only as a coarse cost signal and tie-breaker for near-equal results.
 
-After baseline, run autonomous PARALLEL_CANDIDATES-candidate same-budget sweeps with assigned CUDA_VISIBLE_DEVICES values and unique RUN_LOG and --name values. On the 4 x H100 node, map lane i to GPU i % 4 unless GPU_IDS is provided; for PARALLEL_CANDIDATES=8 this means two independent simulations per GPU. Rank results with scripts/summarize_results.py and decide keep / narrow / discard only after all candidates finish or time out.
+After baseline, run autonomous one-candidate same-budget iterations with unique RUN_LOG and --name values. Assume one local H100 and run one candidate at a time. If the environment exposes multiple GPUs but this campaign should use the local H100 only, pin the run with CUDA_VISIBLE_DEVICES=0. Rank results with scripts/summarize_results.py after each run and decide keep / narrow / discard before starting the next candidate.
 
-After every completed batch, update results.tsv statuses before starting the next batch. Successful runs are appended as `candidate`; that only means "unreviewed." Promote the selected survivor to `keep` and mark reviewed non-survivors as `discard`, for example:
-`${PYTHON} scripts/finalize_batch_status.py results.tsv --last "${PARALLEL_CANDIDATES:-4}" --keep-best --discard-others`.
+After every completed run, update results.tsv statuses before starting the next candidate. Successful runs are appended as `candidate`; that only means "unreviewed." Promote the selected survivor to `keep` and mark reviewed non-survivors as `discard`, for example:
+`${PYTHON} scripts/finalize_batch_status.py results.tsv --last 1 --keep-best --discard-others`.
 
-If progress stalls, think harder with the Camyla-inspired literature loop in program.md: generate diverse FL paper queries, triage primary papers, extract three challenge cards, score only contract-safe proposal cards in templates/literature_loop.md, and launch the top PARALLEL_CANDIDATES compatible candidates.
+If progress stalls, think harder with the Camyla-inspired literature loop in program.md: generate diverse FL paper queries, triage primary papers, extract three challenge cards, score only contract-safe proposal cards in templates/literature_loop.md, and launch the top compatible candidate next.
 
 When a new method is based on a research paper, include a compact paper source in the `results.tsv` description field, for example `[src: Li20 FedProx arXiv:1812.06127]`, and put the full citation or URL in `templates/mutation_report.md`.
 
@@ -201,7 +201,7 @@ The helper script `scripts/extract_score.py` reads metrics for the final server/
 It tries common metric keys such as `accuracy`, `val_accuracy`, and `test_accuracy`.
 Because the current CIFAR-10 validation loader is the same full test set on every simulated client, the harness defaults to final global-model evaluation on `site-1` only. This keeps the same score definition while avoiding redundant client evaluations. Use `--final_eval_clients all` for a full audit run or after making validation site-specific.
 
-The default 4 x H100 candidate budget is:
+The default single-H100 candidate budget is:
 
 ```bash
 --n_clients 8 --num_rounds 10 --aggregation_epochs 4 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
@@ -233,9 +233,9 @@ The current harness covers the NVFlare CIFAR-10 simulation benchmark modes that 
 
 SCAFFOLD is an explicit opt-in protocol mode. It still preserves the core model contract (`ParamsType.DIFF`, same model keys, `NUM_STEPS_CURRENT_ROUND`) but it does add SCAFFOLD-specific metadata, so keep SCAFFOLD comparisons labeled separately from strict no-extra-meta baselines.
 
-The first post-baseline batch should calibrate these algorithm families before broader tuning. With `PARALLEL_CANDIDATES=8`, use:
+The first post-baseline calibration should run these algorithm families before broader tuning. Run them one candidate at a time under the same fixed budget:
 
-| Lane | Description | Extra args |
+| Step | Description | Extra args |
 | --- | --- | --- |
 | 0 | built-in FedAvg audit | `--aggregator default` |
 | 1 | explicit FedAvg audit | `--aggregator fedavg` |
@@ -246,18 +246,18 @@ The first post-baseline batch should calibrate these algorithm families before b
 | 6 | FedAdam | `--aggregator fedadam --server_lr 1.0 --fedopt_beta1 0.9 --fedopt_beta2 0.99 --fedopt_tau 1e-3` |
 | 7 | SCAFFOLD metadata mode | `--aggregator scaffold` |
 
-If `PARALLEL_CANDIDATES` is smaller than 8, run the first lanes in order and schedule the remainder before moving to unrelated sweeps. If it is larger than 8, fill the extra lanes with small variants around FedAvgM and FedProx.
+Run the steps in order and schedule any unfinished calibration steps before moving to unrelated sweeps. After the sequence is complete, use the ledger summary to pick the family for narrower follow-up runs.
 
-For multi-run sweeps, set `PARALLEL_CANDIDATES` in the initial agent prompt, use unique `RUN_LOG` and `--name` values for each candidate, then rank the ledger:
+For single-H100 sweeps, use unique `RUN_LOG` and `--name` values for each candidate, then rank the ledger:
 
 ```bash
-"${PYTHON:-python3}" scripts/summarize_results.py results.tsv --status candidate --top "${PARALLEL_CANDIDATES:-4}"
+"${PYTHON:-python3}" scripts/summarize_results.py results.tsv --status candidate --top 1
 ```
 
-After reviewing the table, finalize the completed batch statuses:
+After reviewing the table, finalize the completed candidate status:
 
 ```bash
-"${PYTHON:-python3}" scripts/finalize_batch_status.py results.tsv --last "${PARALLEL_CANDIDATES:-4}" --keep-best --discard-others
+"${PYTHON:-python3}" scripts/finalize_batch_status.py results.tsv --last 1 --keep-best --discard-others
 ```
 
 The progress plot reads the `status` column directly. If all successful rows remain `candidate`, the plot will correctly show no kept runs.

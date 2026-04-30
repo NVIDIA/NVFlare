@@ -64,16 +64,16 @@ Default H100 candidate budget:
 - `RUN_TIMEOUT_SECONDS=600`
 - deterministic PyTorch/DataLoader training enabled
 
-This targets roughly a 10-minute candidate on the 4 x H100 node. If runs consistently finish much sooner, increase only one budget axis at a time and label the new subcampaign. If they time out, reduce `num_rounds` before changing model, parameter-cap, or data contracts.
+This targets roughly a 10-minute candidate on one local H100. If runs consistently finish much sooner, increase only one budget axis at a time and label the new subcampaign. If they time out, reduce `num_rounds` before changing model, parameter-cap, or data contracts.
 The current CIFAR-10 validation loader is identical on every simulated client, so final scoring evaluates the server/global model on `site-1` by default and keeps the output in NVFlare's `cross_site_val/cross_val_results.json` path. Use `--final_eval_clients all` only for an audit run or after changing validation to be site-specific.
-Training splits are cached by fixed data-budget fields under `/tmp/cifar10_splits/autofl_cifar10_<n>sites_alpha<a>_seed<s>`. Do not make the split path depend on the candidate `--name`; repeated and parallel candidates with the same `n_clients`, `alpha`, and `seed` should reuse the same `.npy` indices.
+Training splits are cached by fixed data-budget fields under `/tmp/cifar10_splits/autofl_cifar10_<n>sites_alpha<a>_seed<s>`. Do not make the split path depend on the candidate `--name`; repeated candidates with the same `n_clients`, `alpha`, and `seed` should reuse the same `.npy` indices.
 Client training derives stable per-site RNG seeds from `--seed`, enables PyTorch deterministic algorithms, disables cuDNN benchmarking, and seeds DataLoader shuffling/workers. Treat `--no_deterministic_training` as a separate noisy subcampaign.
 
 ### Initial algorithm calibration
 
-After the first weighted baseline run in a fresh campaign, run an algorithm calibration batch before open-ended hyperparameter tuning. Keep the same fixed budget and compare the available baseline implementations:
+After the first weighted baseline run in a fresh campaign, run an algorithm calibration sequence before open-ended hyperparameter tuning. Keep the same fixed budget and compare the available baseline implementations:
 
-| Lane | Description | Extra args |
+| Step | Description | Extra args |
 | --- | --- | --- |
 | 0 | built-in FedAvg audit | `--aggregator default` |
 | 1 | explicit FedAvg audit | `--aggregator fedavg` |
@@ -84,53 +84,50 @@ After the first weighted baseline run in a fresh campaign, run an algorithm cali
 | 6 | FedAdam | `--aggregator fedadam --server_lr 1.0 --fedopt_beta1 0.9 --fedopt_beta2 0.99 --fedopt_tau 1e-3` |
 | 7 | SCAFFOLD metadata mode | `--aggregator scaffold` |
 
-Use `PARALLEL_CANDIDATES` lanes with unique `RUN_LOG`, `--name`, and result descriptions. If `PARALLEL_CANDIDATES` is smaller than 8, run the first lanes in order and schedule the remainder before moving to unrelated sweeps. If it is larger than 8, fill the extra lanes with small variants around FedAvgM and FedProx. Rank this batch, choose the most promising algorithm family, and only then start narrower hyperparameter sweeps.
+Run the calibration steps one candidate at a time with unique `RUN_LOG`, `--name`, and result descriptions. Run the first steps in order and schedule the remainder before moving to unrelated sweeps. Rank the completed calibration runs, choose the most promising algorithm family, and only then start narrower hyperparameter sweeps.
 
 ### Architecture calibration
 
 Architecture search is allowed after the baseline algorithm family has been established. Keep the same data, round, optimizer, evaluation, and timeout budget, and keep `--max_model_params 5000000` unless the human explicitly starts a new architecture budget. Compare registered variants first:
 
-| Lane | Description | Extra args |
+| Step | Description | Extra args |
 | --- | --- | --- |
 | 0 | original architecture audit | `--model_arch moderate_cnn` |
 | 1 | normalized architecture | `--model_arch moderate_cnn_norm` |
 | 2 | smaller classifier head | `--model_arch moderate_cnn_small_head` |
 
-If there are extra lanes, use nearby optimizer settings around the current best architecture rather than increasing the parameter cap. Rank primarily by score; use `runtime_seconds` only as a coarse cost signal and tie-breaker for near-equal results. A registered architecture can change the model parameter key/shape schema by design, so compare it only inside a labeled architecture subcampaign.
+After the first three architecture audits, use nearby optimizer settings around the current best architecture rather than increasing the parameter cap. Rank primarily by score; use `runtime_seconds` only as a coarse cost signal and tie-breaker for near-equal results. A registered architecture can change the model parameter key/shape schema by design, so compare it only inside a labeled architecture subcampaign.
 
-### Local multi-GPU sweep mode
+### Local single-H100 iteration mode
 
-The target research machine is a local node with **4 x H100 80 GB** GPUs.
-Use the node as independent experiment lanes unless a human explicitly asks for a single larger distributed job.
-For NVFlare simulation runs, bind each candidate run to one physical GPU with `CUDA_VISIBLE_DEVICES=<gpu_id>`.
+The target research machine is a local node with **one H100 GPU**.
+Run one NVFlare simulation candidate at a time unless a human explicitly changes the compute assumption.
+If the environment exposes multiple GPUs but this campaign should use the local H100 only, pin runs with `CUDA_VISIBLE_DEVICES=0`; otherwise do not add GPU selection logic.
 
-The initial agent instruction may set the batch width with:
+The initial agent instruction should keep the candidate width at one:
 
 ```text
-PARALLEL_CANDIDATES=<N>
+PARALLEL_CANDIDATES=1
 ```
 
-Default to `PARALLEL_CANDIDATES=4` when the initial instruction does not specify it. On the 4 x H100 node, `PARALLEL_CANDIDATES=8` means eight same-budget candidates per batch, mapped two independent simulations per GPU. Assign lane `i` to GPU `i % 4` unless the human provides a different `GPU_IDS` list.
+Default to `PARALLEL_CANDIDATES=1` when the initial instruction does not specify it. Keep this value as a compatibility knob for scripts and worksheets, not as permission to launch parallel runs.
 
-Prefer **batch decisions** over one-run decisions on this node:
+Prefer **ledger-backed decisions** over ad hoc one-off guesses:
 1. Keep the code state fixed.
-2. Generate `PARALLEL_CANDIDATES` small hyperparameter candidates under the same fixed budget.
-3. Launch all candidates with unique `--name`, `RUN_LOG`, and description values.
-4. Wait for all candidates to finish.
-5. Rank all completed candidates by score, inspect crashes with `tail -n 50 <run_log>`, and only then decide the next mutation or sweep.
+2. Generate one small hyperparameter candidate under the same fixed budget.
+3. Launch it with a unique `--name`, `RUN_LOG`, and description value.
+4. Wait for the candidate to finish or time out.
+5. Rank the completed candidate against the ledger by score, inspect crashes with `tail -n 50 <run_log>`, and only then decide the next mutation or sweep.
 
-Example configurable sweep skeleton:
+Example single-H100 calibration skeleton:
 
 ```bash
 mkdir -p run_logs
 PYTHON=${PYTHON:?set PYTHON to the prepared Python interpreter}
-PARALLEL_CANDIDATES=${PARALLEL_CANDIDATES:-4}
-GPU_IDS=(${GPU_IDS:-0 1 2 3})
+PARALLEL_CANDIDATES=${PARALLEL_CANDIDATES:-1}
 COMMON_ARGS="--n_clients 8 --num_rounds 10 --aggregation_epochs 4 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --final_eval_clients site-1"
 
-for i in $(seq 0 $((PARALLEL_CANDIDATES - 1))); do
-  gpu=${GPU_IDS[$((i % ${#GPU_IDS[@]}))]}
-  # Replace this case block with the actual batch candidates selected by the agent.
+for i in 0 1 2 3 4 5 6 7; do
   case "$i" in
     0) desc="builtin FedAvg audit"; extra_args="--aggregator default"; name="algo_builtin_fedavg" ;;
     1) desc="explicit FedAvg audit"; extra_args="--aggregator fedavg"; name="algo_fedavg" ;;
@@ -140,23 +137,20 @@ for i in $(seq 0 $((PARALLEL_CANDIDATES - 1))); do
     5) desc="FedAvgM server lr 2.0 momentum 0.4"; extra_args="--aggregator fedavgm --server_lr 2.0 --server_momentum 0.4"; name="algo_fedavgm_lr20_m04" ;;
     6) desc="FedAdam"; extra_args="--aggregator fedadam --server_lr 1.0 --fedopt_beta1 0.9 --fedopt_beta2 0.99 --fedopt_tau 1e-3"; name="algo_fedadam" ;;
     7) desc="SCAFFOLD metadata mode"; extra_args="--aggregator scaffold"; name="algo_scaffold" ;;
-    *) desc="candidate ${i}"; extra_args=""; name="sweep_candidate_${i}" ;;
   esac
-  CUDA_VISIBLE_DEVICES="${gpu}" PYTHON="${PYTHON}" RUN_LOG="run_logs/${name}.log" RUN_TIMEOUT_SECONDS=600 \
+  PYTHON="${PYTHON}" RUN_LOG="run_logs/${name}.log" RUN_TIMEOUT_SECONDS=600 \
     bash scripts/run_iteration.sh --description "${desc}" --target client.py -- \
-    ${COMMON_ARGS} ${extra_args} --name "${name}" &
+    ${COMMON_ARGS} ${extra_args} --name "${name}"
 done
-wait
 ```
 
-For parallel runs, never share the same `RUN_LOG`.
+Never reuse the same `RUN_LOG` for different candidates.
 Use unique `--name` values so NVFlare result directories and CIFAR split directories do not collide.
-If `PARALLEL_CANDIDATES` is larger than the number of GPUs, expect per-candidate runtime to increase and watch early logs for out-of-memory failures; reduce `PARALLEL_CANDIDATES` or the fixed budget if the node becomes unhealthy.
-The shared `results.tsv` ledger may receive one row per finished candidate; if you need stricter isolation, set `RESULTS_TSV=results_<tag>.tsv` for the whole sweep and merge it manually after review.
-After the batch finishes, rank the ledger with:
+If a candidate repeatedly runs out of memory on the local H100, reduce the fixed budget or start a clearly labeled smaller-budget subcampaign.
+After each candidate, rank the ledger with:
 
 ```bash
-"${PYTHON}" scripts/summarize_results.py results.tsv --status candidate --top "${PARALLEL_CANDIDATES:-4}"
+"${PYTHON}" scripts/summarize_results.py results.tsv --status candidate --top 1
 ```
 
 ### What you CAN do
@@ -247,12 +241,12 @@ Where:
 
 Use `runtime_seconds` when comparing research cost. A tiny score gain that consumes much more runtime is weaker evidence than a similar gain at the same cost.
 
-`candidate` is a temporary status for a run that has finished but has not yet gone through batch review. After every completed batch, update the reviewed rows in `results.tsv`: mark the selected survivor as `keep` when it materially improves the score or is comparable with simpler/faster behavior, and mark reviewed non-survivors as `discard`. Do not let stale reviewed rows remain `candidate`; the progress plot uses this status column directly.
+`candidate` is a temporary status for a run that has finished but has not yet gone through review. After every completed run, update the reviewed rows in `results.tsv`: mark the selected survivor as `keep` when it materially improves the score or is comparable with simpler/faster behavior, and mark reviewed non-survivors as `discard`. Do not let stale reviewed rows remain `candidate`; the progress plot uses this status column directly.
 
 Use the helper to avoid hand-editing TSV rows:
 
 ```bash
-"${PYTHON}" scripts/finalize_batch_status.py results.tsv --last "${PARALLEL_CANDIDATES:-4}" --keep-best --discard-others
+"${PYTHON}" scripts/finalize_batch_status.py results.tsv --last 1 --keep-best --discard-others
 ```
 
 If an old campaign already has many stale candidate rows, clean it once with:
@@ -263,7 +257,7 @@ If an old campaign already has many stale candidate rows, clean it once with:
 
 If a candidate implements a method or design choice from a research paper, include a compact source reference in the `description` field, for example `fedprox mu=0.01 [src: Li20 FedProx arXiv:1812.06127]`. Keep the TSV single-line and tab-free; use semicolon-separated short refs for multiple sources. Put fuller citations, URLs, and the extracted hypothesis in `templates/mutation_report.md`.
 
-Commit `results.tsv` after the baseline and after each completed batch or checkpoint so the experiment branch records its run provenance.
+Commit `results.tsv` after the baseline and after each completed run or checkpoint so the experiment branch records its run provenance.
 Do not commit bulky runtime artifacts such as `run.log`, `run_logs/`, NVFlare result directories, or generated `progress.png`.
 
 ## The experiment loop
@@ -290,31 +284,31 @@ Default serial loop:
 9. If the score improved materially, or stayed comparable with simpler code, keep the commit.
 10. If the score got worse or the change is not worth the added complexity, revert to the previous good commit.
 
-Batch loop for the 4 x H100 node:
+Same-budget campaign loop for the local H100:
 
 1. Look at the git state: current branch and current commit.
 2. Choose one narrow sweep axis, for example LR, momentum, weight decay, scheduler, or FedProx.
-3. Propose `PARALLEL_CANDIDATES` candidates that fit the fixed campaign budget.
-4. Run all candidates in parallel, mapped across the configured GPU IDs, with unique `RUN_LOG` and `--name`.
+3. Propose one candidate that fits the fixed campaign budget.
+4. Run the candidate with a unique `RUN_LOG` and `--name`.
 5. Build a short comparison table from `results.tsv`: description, score, status, budget, artifact.
-   Prefer `"${PYTHON}" scripts/summarize_results.py results.tsv --status candidate --top "${PARALLEL_CANDIDATES:-4}"`.
+   Prefer `"${PYTHON}" scripts/summarize_results.py results.tsv --status candidate --top 1`.
 6. Inspect only failed-run tails and the best result artifacts; do not flood context with full logs.
-7. Decide after the batch:
+7. Decide after the run:
    - keep the best candidate if it materially improves score;
    - run a narrower follow-up sweep around the best candidate if results are close;
    - discard the whole axis if all candidates regress or add complexity without gain.
-8. Update the `status` column for the reviewed batch in `results.tsv`. Use `scripts/finalize_batch_status.py` or edit the TSV carefully: promoted rows must be `keep`, reviewed non-survivors must be `discard`, crashes remain `crash`, and only unresolved active rows may remain `candidate`.
-9. Commit code mutations that survive the batch analysis. Also commit `results.tsv` at batch/checkpoint boundaries, even when the batch only tested runtime hyperparameters.
+8. Update the `status` column for the reviewed run in `results.tsv`. Use `scripts/finalize_batch_status.py --last 1` or edit the TSV carefully: promoted rows must be `keep`, reviewed non-survivors must be `discard`, crashes remain `crash`, and only unresolved active rows may remain `candidate`.
+9. Commit code mutations that survive the run analysis. Also commit `results.tsv` at checkpoint boundaries, even when the run only tested runtime hyperparameters.
 
 ### Never stop
 
 Once the experiment loop has begun after setup and the initial baseline, do **not** pause to ask the human whether to continue, whether to keep going, or whether this is a good stopping point.
 The human may be asleep or away from the machine and expects the agent to continue autonomously until manually interrupted.
 
-On the 4 x H100 node, keep cycling through `PARALLEL_CANDIDATES`-candidate same-budget batches:
-- launch candidates,
-- wait for all lanes to finish or time out,
-- rank the batch,
+On the local H100, keep cycling through one same-budget candidate at a time:
+- launch the candidate,
+- wait for it to finish or time out,
+- rank the result against the ledger,
 - keep, narrow, or discard according to score and complexity,
 - rewrite reviewed `results.tsv` statuses so completed candidates become `keep` or `discard`,
 - choose the next sweep axis,
@@ -323,7 +317,7 @@ On the 4 x H100 node, keep cycling through `PARALLEL_CANDIDATES`-candidate same-
 If you run out of obvious ideas, re-read the in-scope files, inspect recent near-misses in `results.tsv`, combine promising settings, or try a new allowed axis from `mutation_schema.yaml`.
 Stay within the hard invariants and current bounds: do not change the FL protocol, evaluation substrate, dependency set, or registered architecture budget unless a human explicitly authorizes a protocol upgrade or new architecture subcampaign.
 
-With the default 10-minute candidate budget and `PARALLEL_CANDIDATES=4`, the expected throughput is roughly 24 candidates per hour, or about 190 candidates across an eight-hour overnight run if the environment is healthy. With `PARALLEL_CANDIDATES=8`, treat the initial throughput estimate as experimental because two simulations share each H100.
+With the default 10-minute candidate budget, the expected throughput is roughly 6 candidates per hour, or about 48 candidates across an eight-hour overnight run if the environment is healthy.
 The loop runs until the human interrupts it.
 
 ### Think harder with literature
@@ -334,7 +328,7 @@ Camyla's public repo (`https://github.com/yifangao112/Camyla`) exposes this as a
 For this harness, adapt the process only at the instruction/artifact level; do not import Camyla code or add new dependencies.
 
 Trigger literature mode when any of these happen:
-- two consecutive `PARALLEL_CANDIDATES`-candidate batches fail to improve;
+- two consecutive same-budget candidates fail to improve;
 - several crashes share the same root cause;
 - the next sweep axis is unclear;
 - all remaining ideas are minor variations of already-tested settings.
@@ -344,7 +338,7 @@ Before searching, gather the working memory:
 - the last 20 scored rows and any repeated crashes;
 - confirmed null/worse axes, including settings the human said not to retry;
 - available mutation surface from `mutation_schema.yaml`;
-- active budget, `PARALLEL_CANDIDATES`, and GPU mapping.
+- active budget and any explicit `CUDA_VISIBLE_DEVICES` pinning.
 
 Use `templates/literature_loop.md` as a scratch worksheet. Keep it compact enough to read during a long run.
 
@@ -356,8 +350,8 @@ Literature mode workflow:
 5. Generate 3 proposal cards. Each card must include: mechanism, source refs, exact implementation surface (`client.py`, `custom_aggregators.py`, `job.py`, or CLI-only), proposed args/code change, expected effect, runtime cost, contract risk, and what observation would falsify it.
 6. Run duplicate/null filtering before scoring. Reject proposals that are the same core idea as existing kept/null rows or that require forbidden protocol changes, new dependencies, unregistered or over-budget model architectures, evaluation changes, or server-coupled tensors beyond explicit SCAFFOLD metadata mode.
 7. Score each remaining proposal from 1-5 on: expected score gain, contract safety, implementation simplicity, evidence strength, novelty relative to `results.tsv`, and runtime cost. Use total score `2*expected_gain + 2*contract_safety + simplicity + evidence + novelty - runtime_cost`.
-8. Allocate the next batch QWBE-style across the top proposals. Give the strongest proposal multiple nearby variants when useful, but reserve at least one lane for a distinct second idea if any safe alternative remains. The batch size must equal `PARALLEL_CANDIDATES` unless the machine is unhealthy.
-9. Launch the selected candidates under the same compute budget and GPU mapping. Rank only after all lanes finish or time out.
+8. Select the next candidate QWBE-style from the top proposals. Give the strongest proposal a nearby variant when useful, but keep a distinct second idea in reserve if any safe alternative remains.
+9. Launch the selected candidate under the same compute budget. Rank after it finishes or times out.
 10. Record reflective memory: what paper-derived hypothesis helped, what failed, and which source-backed idea should not be retried. Put full source details in `templates/mutation_report.md`; include short refs in `results.tsv` descriptions, for example `[src: Li20 FedProx arXiv:1812.06127]`.
 
 Examples of compatible literature-derived directions:
