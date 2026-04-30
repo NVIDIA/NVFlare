@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
+from pyhocon import ConfigFactory as CF
 
 from nvflare.cli_exception import CLIException
 from nvflare.tool import cli_output
@@ -76,6 +77,47 @@ class TestPocOutput:
         with pytest.raises(SystemExit) as exc_info:
             output_error("INVALID_ARGS", exit_code=4)
         assert exc_info.value.code == 4
+
+    def test_poc_config_parser_accepts_workspace_flag(self):
+        import argparse
+
+        from nvflare.tool.poc.poc_commands import def_poc_parser
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        def_poc_parser(subs)
+
+        args = root.parse_args(["poc", "config", "--pw", "/path/to/poc"])
+
+        assert args.poc_sub_cmd == "config"
+        assert args.poc_workspace_dir == "/path/to/poc"
+
+    def test_poc_config_writes_workspace(self, capsys):
+        from nvflare.tool.poc.poc_commands import config_poc
+
+        args = MagicMock()
+        args.poc_workspace_dir = "/path/to/poc"
+        config = CF.parse_string("{}")
+
+        with (
+            patch(
+                "nvflare.tool.poc.poc_commands.load_hidden_config_state",
+                return_value=("/fake/config.conf", config, False),
+            ),
+            patch("nvflare.tool.poc.poc_commands.save_config") as save_config,
+            patch("nvflare.tool.cli_schema.handle_schema_flag"),
+        ):
+            config_poc(args)
+
+        saved_config = save_config.call_args.args[0]
+        assert saved_config.get("poc.workspace") == "/path/to/poc"
+        assert save_config.call_args.args[1] == "/fake/config.conf"
+        captured = capsys.readouterr()
+        assert "POC workspace configured: /path/to/poc" in captured.err
+        data = json.loads(captured.out)
+        assert data["status"] == "ok"
+        assert data["data"]["config_file"] == "/fake/config.conf"
+        assert data["data"]["poc_workspace_dir"] == "/path/to/poc"
 
     # ------------------------------------------------------------------ prepare_poc split-stream tests
 

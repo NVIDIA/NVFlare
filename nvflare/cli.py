@@ -204,6 +204,7 @@ def handle_config_cmd(args):
         "nvflare config",
         [
             "nvflare config -pw /path/to/poc_workspace",
+            "nvflare poc config --pw /path/to/poc_workspace",
             "nvflare config add project_admin /path/to/startup-kit",
             "nvflare config use project_admin",
         ],
@@ -246,6 +247,10 @@ def handle_config_cmd(args):
             nvflare_config = add_startup_kit_entry(nvflare_config, kit_id, requested_startup_kit, force=True)
             nvflare_config = set_active_startup_kit(nvflare_config, kit_id)
         if requested_poc_workspace is not None:
+            print_human(
+                "Warning: 'nvflare config -pw/--poc_workspace_dir' is deprecated; "
+                "use 'nvflare poc config --pw <poc-workspace-dir>'."
+            )
             nvflare_config = create_poc_workspace_config(nvflare_config, requested_poc_workspace)
         if requested_job_templates is not None:
             print_human(

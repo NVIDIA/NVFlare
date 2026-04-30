@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, OrderedDict, Tuple
 
 import yaml
+from pyhocon import ConfigFactory as CF
 
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
@@ -55,7 +56,15 @@ from nvflare.tool.kit.kit_config import (
     save_cli_config,
 )
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
-from nvflare.utils.cli_utils import get_hidden_nvflare_config_path, get_or_create_hidden_nvflare_dir
+from nvflare.utils.cli_utils import (
+    CONFIG_VERSION,
+    CURRENT_CONFIG_VERSION,
+    create_poc_workspace_config,
+    get_hidden_nvflare_config_path,
+    get_or_create_hidden_nvflare_dir,
+    load_hidden_config_state,
+    save_config,
+)
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 DEFAULT_PROJECT_NAME = "example_project"
@@ -65,6 +74,7 @@ CMD_PREPARE_JOBS_DIR = "prepare-jobs-dir"
 CMD_START_POC = "start"
 CMD_STOP_POC = "stop"
 CMD_CLEAN_POC = "clean"
+CMD_CONFIG_POC = "config"
 CMD_ADD_POC = "add"
 CMD_ADD_USER = "user"
 CMD_ADD_SITE = "site"
@@ -2050,6 +2060,54 @@ def _clean_poc(poc_workspace: str, force: bool = False):
         raise CLIException(f"{poc_workspace} is not valid poc directory")
 
 
+def config_poc(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok, print_human
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        _poc_sub_cmd_parsers.get(CMD_CONFIG_POC),
+        "nvflare poc config",
+        ["nvflare poc config", "nvflare poc config --pw /path/to/poc_workspace"],
+        sys.argv[1:],
+        output_modes=["json"],
+        streaming=False,
+        mutating=True,
+        idempotent=True,
+        retry_token={"supported": False},
+    )
+
+    requested_workspace = getattr(cmd_args, "poc_workspace_dir", None)
+    config_file_path, loaded_config, _migration_needed = load_hidden_config_state()
+    nvflare_config = loaded_config or CF.parse_string("{}")
+
+    if requested_workspace is None:
+        output_ok(
+            {
+                "config_file": config_file_path,
+                "poc_workspace_dir": get_poc_workspace(),
+                "env_override": os.getenv("NVFLARE_POC_WORKSPACE"),
+            }
+        )
+        return
+
+    try:
+        nvflare_config = create_poc_workspace_config(nvflare_config, requested_workspace)
+        nvflare_config.put(CONFIG_VERSION, CURRENT_CONFIG_VERSION)
+        save_config(nvflare_config, config_file_path)
+    except ValueError as e:
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+        raise SystemExit(4)
+
+    poc_workspace_dir = nvflare_config.get(f"{POC_KEY}.{WORKSPACE_KEY}", None)
+    print_human(f"POC workspace configured: {poc_workspace_dir}")
+    output_ok(
+        {
+            "config_file": config_file_path,
+            "poc_workspace_dir": poc_workspace_dir,
+        }
+    )
+
+
 poc_sub_cmd_handlers = {
     CMD_PREPARE_POC: prepare_poc,
     CMD_PREPARE_JOBS_DIR: prepare_jobs_dir,
@@ -2057,6 +2115,7 @@ poc_sub_cmd_handlers = {
     CMD_START_POC: start_poc,
     CMD_STOP_POC: stop_poc,
     CMD_CLEAN_POC: clean_poc,
+    CMD_CONFIG_POC: config_poc,
 }
 
 # Populated by define_*_parser functions; used by handlers for --schema support
@@ -2072,6 +2131,7 @@ def def_poc_parser(sub_cmd):
     _poc_root_parser = parser
 
     poc_parser = parser.add_subparsers(title=cmd, dest="poc_sub_cmd", help="poc subcommand")
+    define_config_parser(poc_parser)
     define_prepare_parser(poc_parser)
     define_prepare_jobs_parser(poc_parser)
     define_add_parser(poc_parser)
@@ -2079,6 +2139,23 @@ def def_poc_parser(sub_cmd):
     define_stop_parser(poc_parser)
     define_clean_parser(poc_parser)
     return {cmd: parser}
+
+
+def define_config_parser(poc_parser):
+    config_parser = poc_parser.add_parser(CMD_CONFIG_POC, help="configure local POC settings")
+    _poc_sub_cmd_parsers[CMD_CONFIG_POC] = config_parser
+    config_parser.add_argument(
+        "-pw",
+        "--pw",
+        "--poc_workspace_dir",
+        "--poc-workspace-dir",
+        dest="poc_workspace_dir",
+        type=str,
+        nargs="?",
+        default=None,
+        help="POC workspace location",
+    )
+    config_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
 def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optional[str] = None):
@@ -2300,6 +2377,7 @@ def handle_poc_cmd(cmd_args):
         _poc_root_parser,
         "nvflare poc",
         [
+            "nvflare poc config --schema",
             "nvflare poc prepare --schema",
             "nvflare poc start --schema",
             "nvflare poc stop --schema",

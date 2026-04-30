@@ -43,8 +43,9 @@ Configuration notes:
 - ``nvflare config -d/--startup_kit_dir`` remains accepted for compatibility
   with 2.7.x scripts, but is deprecated. Use ``nvflare config add`` and
   ``nvflare config use`` for new workflows.
-- ``nvflare config -pw/--poc_workspace_dir`` remains the supported way to set
-  the local POC workspace from the root ``config`` command.
+- ``nvflare config -pw/--poc_workspace_dir`` remains accepted for compatibility,
+  but is deprecated. Use ``nvflare poc config --pw <poc-workspace-dir>`` for new
+  workflows.
 - ``nvflare config -jt/--job_templates_dir`` remains accepted for compatibility,
   but job template config is deprecated. Prefer passing custom template
   locations to job commands that need them.

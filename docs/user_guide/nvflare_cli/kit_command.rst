@@ -269,7 +269,8 @@ accepts:
 - ``-d`` / ``--startup_kit_dir``: deprecated. Registers the path under the
   default startup kit ID and makes it active. New workflows should use
   ``nvflare config add`` and ``nvflare config use``.
-- ``-pw`` / ``--poc_workspace_dir``: supported POC workspace flag.
+- ``-pw`` / ``--poc_workspace_dir``: deprecated POC workspace compatibility flag.
+  New workflows should use ``nvflare poc config --pw <poc-workspace-dir>``.
 - ``-jt`` / ``--job_templates_dir``: deprecated job template config flag.
 
 The interim development spellings ``--poc.workspace``, ``--poc.startup_kit``,

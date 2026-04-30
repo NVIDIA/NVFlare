@@ -143,7 +143,10 @@ class TestConfigOutput:
         create_poc.assert_called_once_with(mock_config, "/path/to/poc")
         save_config.assert_called_once_with(mock_config, "/fake/config.conf")
 
-        data = json.loads(capsys.readouterr().out)
+        captured = capsys.readouterr()
+        assert "-pw/--poc_workspace_dir" in captured.err
+        assert "nvflare poc config --pw" in captured.err
+        data = json.loads(captured.out)
         assert data["status"] == "ok"
         assert data["data"]["config_file"] == "/fake/config.conf"
         assert data["data"]["poc_workspace_dir"] == "/path/to/poc"
@@ -234,6 +237,8 @@ class TestConfigOutput:
         assert saved_config.get("prod.startup_kit", None) is None
 
         captured = capsys.readouterr()
+        assert "-pw/--poc_workspace_dir" in captured.err
+        assert "nvflare poc config --pw" in captured.err
         assert "removed startup kit config keys" in captured.err
         assert "poc.startup_kit" in captured.err
         assert "prod.startup_kit" in captured.err

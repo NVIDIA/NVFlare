@@ -163,8 +163,9 @@ The JSON output shape and error codes defined here become the MCP tool schemas i
 | Command | Subcommands | Agent Readiness Status |
 | --- | --- | --- |
 | `nvflare simulator` | — | Deprecated — retain with stderr warning; use Job Recipe SimEnv directly (`python job.py`) |
-| `nvflare poc` | `prepare`, `start`, `stop`, `clean`, `add user`, `add site` | Add JSON output, exit codes, `--schema`; add `--force` to `prepare` for workspace deletion prompt bypass and to `clean` for stop-before-cleanup; register generated user/admin kits in the shared startup kit registry |
-| `nvflare config` | `add`, `use`, `show`, `list`, `remove` | User-facing startup kit registry commands; keeps 2.7.x root flags `-d/--startup_kit_dir`, `-pw/--poc_workspace_dir`, and deprecated `-jt/--job_templates_dir`; no server connection |
+| `nvflare poc` | `config`, `prepare`, `start`, `stop`, `clean`, `add user`, `add site` | Add JSON output, exit codes, `--schema`; add `--force` to `prepare` for workspace deletion prompt bypass and to `clean` for stop-before-cleanup; register generated user/admin kits in the shared startup kit registry |
+| `nvflare config` | `add`, `use`, `show`, `list`, `remove` | User-facing startup kit registry commands; keeps 2.7.x root flags `-d/--startup_kit_dir`, deprecated `-pw/--poc_workspace_dir`, and deprecated `-jt/--job_templates_dir`; no server connection |
+| `nvflare poc config` | — | POC-specific local config, including the POC workspace path |
 | `nvflare study` | `register`, `show`, `list`, `remove`, `add-site`, `remove-site`, `add-user`, `remove-user` | Add multi-study lifecycle CLI using the active startup kit |
 | `nvflare provision` | — | Add JSON output, `--schema`, `--force` for Y/N prompts; restore pre-2.7.0 default: no args = generate `project.yml` |
 | `nvflare preflight-check` | — | Add JSON output, `--schema`; exit 0=pass, 1=fail. Underscore alias `preflight_check` accepted for backward compatibility. |
@@ -614,7 +615,8 @@ Root compatibility flags:
 - `-d` / `--startup_kit_dir`: accepted for compatibility with 2.7.x scripts, but
   deprecated. The path is registered under the default startup kit ID and made active.
   New workflows should use `nvflare config add` and `nvflare config use`.
-- `-pw` / `--poc_workspace_dir`: accepted as the supported POC workspace flag spelling.
+- `-pw` / `--poc_workspace_dir`: accepted for compatibility with 2.7.x scripts, but
+  deprecated. New workflows should use `nvflare poc config --pw <poc-workspace-dir>`.
 - `-jt` / `--job_templates_dir`: accepted for compatibility with 2.7.x scripts, but job
   template config is deprecated.
 - Interim development-only spellings such as `--poc.workspace`,
@@ -1040,8 +1042,8 @@ Manual production registrations remain untouched.
   provided, they take precedence over the active startup kit for that command
   only and must not mutate `startup_kits.active`.
 - `nvflare config` is the user-facing startup kit management interface.
-- `nvflare config` is the parent command namespace; the normal user workflow in this
-  design is `nvflare config`.
+- POC-specific local settings belong under `nvflare poc config`; the root
+  `nvflare config -pw` flag is compatibility-only.
 - `poc add user` registers generated user kits in `startup_kits.entries`.
 - `poc add site` generates site kits and updates POC workspace metadata, but it does not
   register site kits in `startup_kits.entries`.
@@ -1061,6 +1063,19 @@ Manual production registrations remain untouched.
 All commands need `--schema` and always emit a JSON envelope unless marked otherwise.
 
 ### `nvflare poc`
+
+#### `nvflare poc config`
+
+| Argument | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `-pw`, `--pw`, `--poc_workspace_dir`, `--poc-workspace-dir` | str | No | — | Set the local POC workspace path |
+| `--schema` | flag | No | — | Print command schema and exit |
+
+`nvflare poc config --pw <path>` is the preferred command for setting the local
+POC workspace. It writes `poc.workspace` in `~/.nvflare/config.conf`, the same
+storage key used by `poc prepare`, `poc start`, `poc stop`, and `poc clean`.
+Running `nvflare poc config` without `--pw` reports the effective POC workspace
+and any `NVFLARE_POC_WORKSPACE` environment override.
 
 #### `nvflare poc prepare`
 

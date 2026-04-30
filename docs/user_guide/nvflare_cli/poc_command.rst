@@ -13,28 +13,52 @@ before a distributed deployment.
 Command Usage
 ***********************
 
-The POC command provides the subcommands ``prepare``, ``prepare-jobs-dir``,
-``add``, ``start``, ``stop``, and ``clean``.
+The POC command provides the subcommands ``config``, ``prepare``,
+``prepare-jobs-dir``, ``add``, ``start``, ``stop``, and ``clean``.
 
 .. code-block:: none
 
    nvflare poc -h
 
-   usage: nvflare poc [-h] {prepare,prepare-jobs-dir,add,start,stop,clean} ...
+   usage: nvflare poc [-h] {config,prepare,prepare-jobs-dir,add,start,stop,clean} ...
 
 *****************
 Common Workflow
 *****************
 
-1. Run ``nvflare poc prepare`` to create the local workspace and startup kits.
-2. Optionally run ``nvflare poc prepare-jobs-dir`` to link a jobs folder into
+1. Optionally run ``nvflare poc config --pw <poc_workspace>`` to choose the
+   local workspace path.
+2. Run ``nvflare poc prepare`` to create the local workspace and startup kits.
+3. Optionally run ``nvflare poc prepare-jobs-dir`` to link a jobs folder into
    the admin transfer area.
-3. Optionally run ``nvflare poc add user`` or ``nvflare poc add site`` to add a
+4. Optionally run ``nvflare poc add user`` or ``nvflare poc add site`` to add a
    local participant startup kit.
-4. Run ``nvflare poc start`` to start the server and clients.
-5. Start an admin console explicitly only when you need one.
-6. Run ``nvflare poc stop`` to stop the system.
-7. Run ``nvflare poc clean`` after the system is stopped.
+5. Run ``nvflare poc start`` to start the server and clients.
+6. Start an admin console explicitly only when you need one.
+7. Run ``nvflare poc stop`` to stop the system.
+8. Run ``nvflare poc clean`` after the system is stopped.
+
+*******************
+Configure Workspace
+*******************
+
+Use ``nvflare poc config`` to show or set the local POC workspace path:
+
+.. code-block:: none
+
+   nvflare poc config [-h] [-pw [POC_WORKSPACE_DIR]] [--schema]
+
+Options:
+
+- ``-pw, --pw, --poc_workspace_dir, --poc-workspace-dir``: POC workspace location.
+- ``--schema``: print the command schema as JSON and exit.
+
+Examples:
+
+.. code-block:: shell
+
+   nvflare poc config
+   nvflare poc config --pw /tmp/nvflare/poc
 
 *******************
 Prepare Workspace
@@ -288,7 +312,18 @@ The default POC workspace is ``/tmp/nvflare/poc``.
 The workspace can also be controlled by:
 
 - ``NVFLARE_POC_WORKSPACE``
-- ``~/.nvflare/config.conf`` via ``nvflare config -pw <poc_workspace>``
+- ``~/.nvflare/config.conf`` via ``nvflare poc config --pw <poc_workspace>``
+
+Use ``nvflare poc config`` to show or set the local POC workspace:
+
+.. code-block:: shell
+
+   nvflare poc config
+   nvflare poc config --pw /tmp/nvflare/poc
+
+The older root command ``nvflare config -pw <poc_workspace>`` remains accepted
+for compatibility, but it is deprecated and prints a warning that points to
+``nvflare poc config --pw``.
 
 ``nvflare poc prepare`` writes the POC workspace into the local NVFlare config
 and registers generated admin/user startup kits in the shared startup kit
