@@ -226,7 +226,11 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         client_names = self._client_names_from_args(conn, args)
         if not client_names:
             return
-        result = engine.disable_clients(client_names)
+        try:
+            result = engine.disable_clients(client_names)
+        except Exception as e:
+            conn.append_error(str(e), meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+            return
         conn.append_dict(result, meta=make_meta(MetaStatusValue.OK))
 
     def enable_client(self, conn: Connection, args: List[str]):
@@ -236,7 +240,11 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         client_names = self._client_names_from_args(conn, args)
         if not client_names:
             return
-        result = engine.enable_clients(client_names)
+        try:
+            result = engine.enable_clients(client_names)
+        except Exception as e:
+            conn.append_error(str(e), meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+            return
         conn.append_dict(result, meta=make_meta(MetaStatusValue.OK))
 
     # Restart

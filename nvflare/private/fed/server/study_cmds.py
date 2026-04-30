@@ -311,10 +311,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
         return caller_org in site_orgs
 
     def _is_list_visible_to_caller(self, conn: Connection, study_def: dict) -> bool:
-        caller_role = self._caller_role(conn)
-        if caller_role in {"project_admin", "org_admin"}:
-            return self._is_visible_to_caller(conn, study_def)
-        return self._caller_name(conn) in set((study_def or {}).get("admins", []))
+        return self._is_visible_to_caller(conn, study_def)
 
     def _study_list_item(self, conn: Connection, study_name: str) -> dict:
         # The current server authorization model has no per-study submit ACL beyond

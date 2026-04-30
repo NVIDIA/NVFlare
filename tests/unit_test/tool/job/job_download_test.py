@@ -207,7 +207,7 @@ class TestJobDownload:
 
         assert envelope["status"] == "ok"
         assert envelope["data"]["download_path"] is None
-        assert envelope["data"]["path"] is None
+        assert envelope["data"]["path"] == "https://download.example/jobs/abc123"
         assert envelope["data"]["artifacts"] == {}
         assert set(envelope["data"]["missing_artifacts"]) == {"global_model", "metrics_summary", "client_logs"}
 

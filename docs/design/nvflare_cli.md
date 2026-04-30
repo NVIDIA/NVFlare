@@ -120,7 +120,7 @@ Exit code is non-zero. Error message templates support `str.format_map()` substi
 
 ### 3. No interactive prompts for agents
 
-All confirmation-required commands (`abort`, `delete`, `shutdown`, `restart`, `remove-client`, `disable-client`, `enable-client`) accept `--force` to skip confirmation. `--force` must be passed explicitly. Non-interactive contexts (stdin not a tty) without `--force` exit with code 4.
+All confirmation-required commands (`abort`, `delete`, `shutdown`, `restart`, `disable-client`, `enable-client`) accept `--force` to skip confirmation. `--force` must be passed explicitly. Non-interactive contexts (stdin not a tty) without `--force` exit with code 4.
 
 ### 4. Exit codes for agent branching
 
@@ -202,7 +202,7 @@ Only commands that serve common end-user or admin tasks are exposed. Diagnostic,
 | `report_resources` | Admin | Yes -> `nvflare system resources` |
 | `shutdown` | Admin | Yes -> `nvflare system shutdown` |
 | `restart` | Admin | Yes -> `nvflare system restart` |
-| `remove_client` | Admin | Yes -> `nvflare system remove-client`; registry cleanup only |
+| `remove_client` | Admin | No — legacy interactive-console registry cleanup only |
 | `disable_client` | Admin | Yes -> `nvflare system disable-client`; persists a server-side disabled flag and rejects reconnect/heartbeat |
 | `enable_client` | Admin | Yes -> `nvflare system enable-client`; clears the server-side disabled flag |
 | `sys_info` | Both | Yes -> `nvflare system version` |
@@ -1199,9 +1199,11 @@ Output:
 ```
 
 `--submit-token` is the canonical name for the job submission idempotency/recovery
-token. It is a caller-generated opaque value for one intended job submission. It is not
-an auth token, session token, startup-kit credential, API key, or certificate secret. It
-does not grant access; normal startup-kit authentication and authorization still apply.
+token. It is optional and, when provided, is a caller-generated opaque value for one
+intended job submission. NVFlare does not auto-generate a submit token when the flag is
+omitted. It is not an auth token, session token, startup-kit credential, API key, or
+certificate secret. It does not grant access; normal startup-kit authentication and
+authorization still apply.
 
 The submit token is not part of the submitted job's `meta.json`. Job `meta.json` remains
 job-owned metadata for FLARE execution, such as `deploy_map`, `resource_spec`,
@@ -1225,8 +1227,9 @@ Submit-token scope:
 - Same scope + same token + different job content: fail with a conflict such as
   `SUBMIT_TOKEN_CONFLICT`.
 - Same token in a different study is allowed because studies are separate job namespaces.
-- Same submitter and same study without `--submit-token`: keep normal behavior and create
-  a new job for each submit.
+- Same submitter and same study without `--submit-token`: keep normal behavior, create
+  a new job for each submit, and track it through the normal job store/job history only.
+  Do not create a retry-safe submit-token record.
 - Same submitter and same study with different `--submit-token` values: keep normal
   behavior and create separate jobs, even if the submitted content is identical.
 
@@ -1272,7 +1275,9 @@ Recommended submit record payload:
 
 Submit handling:
 
-1. If `--submit-token` is absent, use the existing submit path and create a new job.
+1. If `--submit-token` is absent, do not auto-generate a token. Use the existing submit
+   path, create a new job, and rely on normal job-store/job-history tracking only. Do
+   not create a retry-safe submit-token record.
 2. If `--submit-token` is present, compute the study-scoped submit-record key.
 3. If a submit record exists:
    - same content hash: return the existing `job_id`;
@@ -1645,7 +1650,6 @@ nvflare system status        [server|client] [client_names...]
 nvflare system resources     [server|client] [clients...]
 nvflare system shutdown      <server|client|all> [client_names...] [--force] [--no-wait] [--timeout N]
 nvflare system restart       <server|client|all> [client_names...] [--force] [--no-wait] [--timeout N]
-nvflare system remove-client <client_name> [--force]
 nvflare system disable-client <client_name> [--force]
 nvflare system enable-client <client_name> [--force]
 nvflare system log-config    [--site server|<client_name>|all] <level>
@@ -1656,11 +1660,12 @@ For `shutdown` and `restart`, `--timeout N` must be positive. Use `--no-wait`
 instead of `--timeout 0` for fire-and-forget operation. `restart all --wait`
 waits for the server restart and for previously connected clients to reconnect.
 
-`remove-client` removes the current active registry entry only. It does not stop the
-client process, revoke credentials, or prevent reconnect. `disable-client` is the durable
-operational control: it persists a disabled flag, removes any active registry entry, and
-rejects subsequent registration or heartbeat from the same client name until
-`enable-client` clears the flag. This is not certificate revocation.
+`remove-client` is not exposed as a supported `nvflare system` CLI command. The legacy
+interactive-console `remove_client` operation removes only the current active registry
+entry; it does not stop the client process, revoke credentials, or prevent reconnect.
+`disable-client` is the durable operational control: it persists a disabled flag, removes
+any active registry entry, and rejects subsequent registration or heartbeat from the same
+client name until `enable-client` clears the flag. This is not certificate revocation.
 
 Disabled client state is stored in the server workspace as `disabled_clients.json`.
 In-memory updates and persistence snapshots must be made under the client manager
@@ -1848,7 +1853,7 @@ On upgrade, existing `nvflare/` skill subdirectory is backed up to `.bak/<timest
 
 ## Confirmation-Required Commands
 
-`shutdown`, `restart`, `remove-client`, `disable-client`, `enable-client`, `delete`, and `abort` prompt for confirmation in the interactive console. CLI behavior:
+`shutdown`, `restart`, `disable-client`, `enable-client`, `delete`, and `abort` prompt for confirmation in the interactive console. CLI behavior:
 
 - Default: prompt for confirmation in interactive terminal, or exit 4 in non-interactive mode
 - `--force`: execute without confirmation

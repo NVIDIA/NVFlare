@@ -712,11 +712,20 @@ class Session(SessionSpec):
         expected_names = set(previous_client_times)
         last_error = "clients have not reconnected yet"
         while time.time() < deadline:
-            if use_poll_session:
-                remaining = max(deadline - time.time(), 0.1)
-                sys_info = self._poll_system_info(min(_STATE_CHANGE_CONNECT_TIMEOUT, remaining))
-            else:
-                sys_info = self.get_system_info()
+            try:
+                if use_poll_session:
+                    remaining = max(deadline - time.time(), 0.1)
+                    sys_info = self._poll_system_info(min(_STATE_CHANGE_CONNECT_TIMEOUT, remaining))
+                else:
+                    sys_info = self.get_system_info()
+            except NoConnection:
+                last_error = "server is not reachable yet"
+                time.sleep(min(_STATE_CHANGE_POLL_INTERVAL, max(deadline - time.time(), 0.0)))
+                continue
+            except Exception as e:
+                last_error = str(e)
+                time.sleep(min(_STATE_CHANGE_POLL_INTERVAL, max(deadline - time.time(), 0.0)))
+                continue
             connected = {client.name: client.last_connect_time for client in sys_info.client_info}
             waiting = []
             for client_name in expected_names:

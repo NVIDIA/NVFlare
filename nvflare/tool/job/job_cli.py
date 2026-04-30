@@ -1387,7 +1387,7 @@ def cmd_job_download(cmd_args):
         {
             "job_id": cmd_args.job_id,
             "download_path": download_path,
-            "path": download_path,
+            "path": download_path or path,
             "artifacts": artifacts,
             "missing_artifacts": missing_artifacts,
         }

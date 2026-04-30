@@ -445,6 +445,17 @@ class TestSessionRestart:
         assert sess._wait_for_server_restart(None, timeout=1.0) is sys_info
         sess._poll_system_info.assert_called_once()
 
+    def test_wait_for_clients_restart_uses_poll_session_through_transient_no_connection(self):
+        sess = _make_session_with_meta({})
+        sys_info = MagicMock(client_info=[ClientInfo("site-1", 456)])
+        sess._poll_system_info = MagicMock(side_effect=[NoConnection("server unavailable"), sys_info])
+
+        with patch("nvflare.fuel.flare_api.flare_api.time.sleep") as sleep:
+            sess._wait_for_clients_restart({"site-1": 123}, timeout=1.0, use_poll_session=True)
+
+        assert sess._poll_system_info.call_count == 2
+        sleep.assert_called_once()
+
     def test_restart_client_waits_by_default(self):
         sess = _make_session_with_meta({})
         sess._client_last_connect_times = MagicMock(return_value={"site-1": 123})

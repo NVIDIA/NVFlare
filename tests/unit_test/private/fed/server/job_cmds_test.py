@@ -245,7 +245,7 @@ class _FakeSubmitTokenJobDefManager:
         if key in self.records:
             raise RuntimeError("submit record already exists")
         self.records[key] = dict(record)
-        return dict(record)
+        return True
 
     def update_submit_record(self, record, fl_ctx):
         submitter = {
@@ -263,6 +263,26 @@ class _FakeSubmitTokenJobDefManager:
         if not record:
             return None
         return self.get_job(record.get(SubmitRecordKey.JOB_ID.value), fl_ctx)
+
+
+class _BrokenSubmitTokenJobDefManager(_FakeSubmitTokenJobDefManager):
+    def new_submit_record(self, *args, **kwargs):
+        record = super().new_submit_record(*args, **kwargs)
+        record.pop(SubmitRecordKey.JOB_ID.value, None)
+        return record
+
+
+class _DelayedVisibleSubmitTokenJobDefManager(_FakeSubmitTokenJobDefManager):
+    def __init__(self):
+        super().__init__()
+        self.get_job_count = 0
+        self.visible_job_id = None
+
+    def get_job(self, jid, fl_ctx):
+        self.get_job_count += 1
+        if self.get_job_count >= 2 and jid == self.visible_job_id:
+            return _FakeListedJob({JobMetaKey.JOB_ID.value: jid})
+        return None
 
 
 class _FakeEngine:
@@ -620,9 +640,11 @@ def test_submit_token_record_handling_does_not_mutate_caller_meta():
     assert manager.created_metas[0][JobMetaKey.JOB_ID.value] == "reserved-job-1"
 
 
-def test_submit_token_recovery_repairs_record_missing_job_id():
+def test_submit_token_recovery_repairs_record_missing_job_id(tmp_path):
     manager = _FakeSubmitTokenJobDefManager()
     submitter = {"name": "admin@nvidia.com", "org": "nvidia", "role": "project_admin"}
+    zip_file = tmp_path / "job.zip"
+    zip_file.write_bytes(b"job content")
     existing = manager.new_submit_record(
         study="default",
         submitter=submitter,
@@ -643,7 +665,7 @@ def test_submit_token_recovery_repairs_record_missing_job_id():
         job_content_hash="hash-1",
         meta={JobMetaKey.JOB_NAME.value: "job-name"},
         folder_name="job_folder",
-        zip_file_name="job.zip",
+        zip_file_name=str(zip_file),
         fl_ctx=None,
     )
 
@@ -651,6 +673,148 @@ def test_submit_token_recovery_repairs_record_missing_job_id():
     assert job_id == "reserved-job-2"
     assert repaired[SubmitRecordKey.JOB_ID.value] == job_id
     assert repaired[SubmitRecordKey.STATE.value] == SubmitRecordState.CREATED.value
+    assert manager.created_metas[0][JobMetaKey.JOB_ID.value] == job_id
+
+
+def test_submit_token_recovery_rejects_repaired_record_without_job_id(tmp_path):
+    manager = _BrokenSubmitTokenJobDefManager()
+    submitter = {"name": "admin@nvidia.com", "org": "nvidia", "role": "project_admin"}
+    zip_file = tmp_path / "job.zip"
+    zip_file.write_bytes(b"job content")
+    existing = _FakeSubmitTokenJobDefManager.new_submit_record(
+        manager,
+        study="default",
+        submitter=submitter,
+        submit_token="retry-1",
+        job_content_hash="hash-1",
+        job_name="job-name",
+        job_folder_name="job_folder",
+    )
+    existing.pop(SubmitRecordKey.JOB_ID.value)
+    manager.records[manager._record_key("default", submitter, "retry-1")] = existing
+
+    with pytest.raises(RuntimeError, match="missing job_id"):
+        JobCommandModule()._handle_submit_token_record_locked(
+            conn=_MockConnection(),
+            job_def_manager=manager,
+            study="default",
+            submitter=submitter,
+            submit_token="retry-1",
+            job_content_hash="hash-1",
+            meta={JobMetaKey.JOB_NAME.value: "job-name"},
+            folder_name="job_folder",
+            zip_file_name=str(zip_file),
+            fl_ctx=None,
+        )
+
+    assert manager.create_count == 0
+
+
+def test_submit_token_recovery_rejects_missing_uploaded_content():
+    manager = _FakeSubmitTokenJobDefManager()
+    submitter = {"name": "admin@nvidia.com", "org": "nvidia", "role": "project_admin"}
+    existing = manager.new_submit_record(
+        study="default",
+        submitter=submitter,
+        submit_token="retry-1",
+        job_content_hash="hash-1",
+        job_name="job-name",
+        job_folder_name="job_folder",
+    )
+    existing.pop(SubmitRecordKey.JOB_ID.value)
+    manager.records[manager._record_key("default", submitter, "retry-1")] = existing
+
+    with pytest.raises(RuntimeError, match="uploaded job content is no longer available"):
+        JobCommandModule()._handle_submit_token_record_locked(
+            conn=_MockConnection(),
+            job_def_manager=manager,
+            study="default",
+            submitter=submitter,
+            submit_token="retry-1",
+            job_content_hash="hash-1",
+            meta={JobMetaKey.JOB_NAME.value: "job-name"},
+            folder_name="job_folder",
+            zip_file_name="missing-job.zip",
+            fl_ctx=None,
+        )
+
+    assert manager.create_count == 0
+
+
+def test_submit_token_recovery_rechecks_existing_job_before_create(tmp_path):
+    manager = _DelayedVisibleSubmitTokenJobDefManager()
+    submitter = {"name": "admin@nvidia.com", "org": "nvidia", "role": "project_admin"}
+    zip_file = tmp_path / "job.zip"
+    zip_file.write_bytes(b"job content")
+    existing = manager.new_submit_record(
+        study="default",
+        submitter=submitter,
+        submit_token="retry-1",
+        job_content_hash="hash-1",
+        job_name="job-name",
+        job_folder_name="job_folder",
+    )
+    job_id = existing[SubmitRecordKey.JOB_ID.value]
+    manager.visible_job_id = job_id
+    manager.records[manager._record_key("default", submitter, "retry-1")] = existing
+
+    recovered_job_id = JobCommandModule()._handle_submit_token_record_locked(
+        conn=_MockConnection(),
+        job_def_manager=manager,
+        study="default",
+        submitter=submitter,
+        submit_token="retry-1",
+        job_content_hash="hash-1",
+        meta={JobMetaKey.JOB_NAME.value: "job-name"},
+        folder_name="job_folder",
+        zip_file_name=str(zip_file),
+        fl_ctx=None,
+    )
+
+    repaired = manager.get_submit_record("default", submitter, "retry-1", None)
+    assert recovered_job_id == job_id
+    assert repaired[SubmitRecordKey.STATE.value] == SubmitRecordState.CREATED.value
+    assert manager.create_count == 0
+
+
+def test_submit_token_create_record_false_recovers_existing_record(monkeypatch, tmp_path):
+    manager = _FakeSubmitTokenJobDefManager()
+    submitter = {"name": "admin@nvidia.com", "org": "nvidia", "role": "project_admin"}
+    zip_file = tmp_path / "job.zip"
+    zip_file.write_bytes(b"job content")
+
+    def fake_create_submit_record(self, job_def_manager, record, fl_ctx):
+        submitter_info = {
+            "name": record.get(SubmitRecordKey.SUBMITTER_NAME.value, ""),
+            "org": record.get(SubmitRecordKey.SUBMITTER_ORG.value, ""),
+            "role": record.get(SubmitRecordKey.SUBMITTER_ROLE.value, ""),
+        }
+        manager.records[
+            manager._record_key(
+                record[SubmitRecordKey.STUDY.value], submitter_info, record[SubmitRecordKey.SUBMIT_TOKEN.value]
+            )
+        ] = dict(record)
+        return False
+
+    monkeypatch.setattr(JobCommandModule, "_create_submit_record", fake_create_submit_record)
+
+    job_id = JobCommandModule()._handle_submit_token_record_locked(
+        conn=_MockConnection(),
+        job_def_manager=manager,
+        study="default",
+        submitter=submitter,
+        submit_token="retry-1",
+        job_content_hash="hash-1",
+        meta={JobMetaKey.JOB_NAME.value: "job-name"},
+        folder_name="job_folder",
+        zip_file_name=str(zip_file),
+        fl_ctx=None,
+    )
+
+    record = manager.get_submit_record("default", submitter, "retry-1", None)
+    assert job_id == record[SubmitRecordKey.JOB_ID.value]
+    assert record[SubmitRecordKey.STATE.value] == SubmitRecordState.CREATED.value
+    assert manager.create_count == 1
     assert manager.created_metas[0][JobMetaKey.JOB_ID.value] == job_id
 
 

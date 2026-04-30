@@ -56,9 +56,9 @@ class JobDefManagerSpec(FLComponent, ABC):
         """Get the persistent submit-token record for the scoped submit token."""
         pass
 
+    @staticmethod
     @abstractmethod
     def new_submit_record(
-        self,
         study: str,
         submitter,
         submit_token: str,

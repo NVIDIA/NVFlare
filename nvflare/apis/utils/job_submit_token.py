@@ -84,6 +84,8 @@ def _iter_directory(root_dir: str, exclude_names: set):
             if name in exclude_names:
                 continue
             full_path = os.path.join(root, name)
+            if os.path.islink(full_path):
+                continue
             rel_path = os.path.relpath(full_path, root_dir)
             rel_path = posixpath.join(*rel_path.split(os.sep))
             files.append((rel_path, full_path))

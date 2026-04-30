@@ -1494,6 +1494,9 @@ def start_poc(cmd_args):
         "nvflare poc start",
         ["nvflare poc start", "nvflare poc start -p server"],
         sys.argv[1:],
+        output_modes=["json"],
+        streaming=False,
+        mutating=True,
     )
     poc_workspace = get_poc_workspace()
 
@@ -1651,17 +1654,22 @@ def _wait_for_poc_system_ready(
 
     project_name = project_config.get("name") if project_config else DEFAULT_PROJECT_NAME
     prod_dir = get_prod_dir(poc_workspace, project_name)
-    wait_for_system_start(
-        len(expected_clients),
-        prod_dir,
-        username=service_config[SC.FLARE_PROJ_ADMIN],
-        secure_mode=True,
-        second_to_wait=0,
-        timeout_in_sec=timeout_in_sec,
-        poll_interval=1.0,
-        conn_timeout=1.0,
-        expected_clients=expected_clients,
-    )
+    try:
+        wait_for_system_start(
+            len(expected_clients),
+            prod_dir,
+            username=service_config[SC.FLARE_PROJ_ADMIN],
+            secure_mode=True,
+            second_to_wait=0,
+            timeout_in_sec=timeout_in_sec,
+            poll_interval=1.0,
+            conn_timeout=1.0,
+            expected_clients=expected_clients,
+        )
+    except SystemStartTimeout:
+        raise
+    except Exception as e:
+        raise SystemStartTimeout(str(e)) from e
     return True
 
 

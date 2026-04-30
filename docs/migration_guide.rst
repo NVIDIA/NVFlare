@@ -82,13 +82,13 @@ Impact:
 If you have older scripts that use ``-pw`` or ``--poc_workspace_dir``, they
 continue to work.
 
-Client Disable and Remove-Client Semantics
-------------------------------------------
+Client Disable Semantics
+------------------------
 
-On the current ``main`` branch, ``nvflare system remove-client`` is kept as a
-registry cleanup operation, but its CLI output now makes that scope explicit.
-It removes the current active server registry entry only; it does not stop the
-client process, revoke credentials, or prevent reconnect.
+``nvflare system remove-client`` is not exposed as a supported public CLI
+command. The legacy interactive-console ``remove_client`` operation remains a
+registry cleanup operation only; it does not stop the client process, revoke
+credentials, or prevent reconnect.
 
 Use the new durable access-control commands when the intent is to keep a client
 out of the federation:

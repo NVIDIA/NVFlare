@@ -15,6 +15,8 @@
 import io
 from zipfile import ZipFile
 
+import pytest
+
 from nvflare.apis.utils.job_submit_token import canonical_job_content_hash
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
 
@@ -44,3 +46,22 @@ def test_canonical_job_content_hash_ignores_signing_artifacts():
     )
 
     assert canonical_job_content_hash(base) == canonical_job_content_hash(signed)
+
+
+def test_canonical_job_content_hash_skips_directory_symlinks(tmp_path):
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside")
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+    (job_dir / "meta.json").write_text("{}")
+    link = job_dir / "linked-outside.txt"
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        pytest.skip("filesystem does not support symlinks")
+
+    without_link = tmp_path / "job-without-link"
+    without_link.mkdir()
+    (without_link / "meta.json").write_text("{}")
+
+    assert canonical_job_content_hash(str(job_dir)) == canonical_job_content_hash(str(without_link))

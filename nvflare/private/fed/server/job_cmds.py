@@ -1101,9 +1101,39 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             job_folder_name=record.get(SubmitRecordKey.JOB_FOLDER_NAME.value) or folder_name,
             state=record.get(SubmitRecordKey.STATE.value) or SubmitRecordState.CREATING.value,
         )
+        if not isinstance(repaired, dict):
+            raise RuntimeError("submit record repair did not return a record")
+        repaired_job_id = repaired.get(SubmitRecordKey.JOB_ID.value)
+        if not repaired_job_id:
+            raise RuntimeError("submit record repair is missing job_id")
         record.update(repaired)
         self._update_submit_record(job_def_manager, record, fl_ctx)
-        return record.get(SubmitRecordKey.JOB_ID.value)
+        return repaired_job_id
+
+    def _create_job_for_submit_record(
+        self,
+        job_def_manager: JobDefManagerSpec,
+        record: dict,
+        *,
+        job_id: str,
+        meta: dict,
+        zip_file_name: str,
+        fl_ctx,
+    ):
+        job = self._job_for_submit_record(job_def_manager, record, fl_ctx)
+        existing_job_id = self._job_id_from_job(job)
+        if existing_job_id:
+            if record.get(SubmitRecordKey.STATE.value) != SubmitRecordState.CREATED.value:
+                record[SubmitRecordKey.STATE.value] = SubmitRecordState.CREATED.value
+                self._update_submit_record(job_def_manager, record, fl_ctx)
+            return existing_job_id
+        if isinstance(zip_file_name, str) and not os.path.exists(zip_file_name):
+            raise RuntimeError("uploaded job content is no longer available for submit-token recovery")
+        meta[JobMetaKey.JOB_ID.value] = job_id
+        created_meta = job_def_manager.create(meta, zip_file_name, fl_ctx)
+        record[SubmitRecordKey.STATE.value] = SubmitRecordState.CREATED.value
+        self._update_submit_record(job_def_manager, record, fl_ctx)
+        return created_meta.get(JobMetaKey.JOB_ID.value)
 
     @staticmethod
     def _append_submit_token_conflict(conn: Connection, record: dict):
@@ -1220,11 +1250,14 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 folder_name=folder_name,
                 fl_ctx=fl_ctx,
             )
-            meta[JobMetaKey.JOB_ID.value] = recorded_job_id
-            created_meta = job_def_manager.create(meta, zip_file_name, fl_ctx)
-            record[SubmitRecordKey.STATE.value] = SubmitRecordState.CREATED.value
-            self._update_submit_record(job_def_manager, record, fl_ctx)
-            return created_meta.get(JobMetaKey.JOB_ID.value)
+            return self._create_job_for_submit_record(
+                job_def_manager,
+                record,
+                job_id=recorded_job_id,
+                meta=meta,
+                zip_file_name=zip_file_name,
+                fl_ctx=fl_ctx,
+            )
 
         record = self._new_submit_record(
             job_def_manager,
@@ -1264,11 +1297,14 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 folder_name=folder_name,
                 fl_ctx=fl_ctx,
             )
-            meta[JobMetaKey.JOB_ID.value] = recovered_job_id
-            created_meta = job_def_manager.create(meta, zip_file_name, fl_ctx)
-            existing[SubmitRecordKey.STATE.value] = SubmitRecordState.CREATED.value
-            self._update_submit_record(job_def_manager, existing, fl_ctx)
-            return created_meta.get(JobMetaKey.JOB_ID.value)
+            return self._create_job_for_submit_record(
+                job_def_manager,
+                existing,
+                job_id=recovered_job_id,
+                meta=meta,
+                zip_file_name=zip_file_name,
+                fl_ctx=fl_ctx,
+            )
         if create_result is False:
             existing = self._get_submit_record(job_def_manager, study, submitter, submit_token, fl_ctx)
             if not existing:
@@ -1291,11 +1327,14 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 folder_name=folder_name,
                 fl_ctx=fl_ctx,
             )
-            meta[JobMetaKey.JOB_ID.value] = existing_job_id
-            created_meta = job_def_manager.create(meta, zip_file_name, fl_ctx)
-            existing[SubmitRecordKey.STATE.value] = SubmitRecordState.CREATED.value
-            self._update_submit_record(job_def_manager, existing, fl_ctx)
-            return created_meta.get(JobMetaKey.JOB_ID.value)
+            return self._create_job_for_submit_record(
+                job_def_manager,
+                existing,
+                job_id=existing_job_id,
+                meta=meta,
+                zip_file_name=zip_file_name,
+                fl_ctx=fl_ctx,
+            )
 
         created_meta = job_def_manager.create(meta, zip_file_name, fl_ctx)
         record[SubmitRecordKey.STATE.value] = SubmitRecordState.CREATED.value

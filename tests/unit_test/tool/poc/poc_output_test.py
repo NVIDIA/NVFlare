@@ -749,6 +749,29 @@ class TestPocOutput:
         assert data["exit_code"] == 2
         assert "--no-wait" in data["hint"]
 
+    def test_wait_for_poc_system_ready_wraps_unexpected_wait_errors(self, tmp_path):
+        from nvflare.tool.api_utils import SystemStartTimeout
+        from nvflare.tool.poc.poc_commands import _wait_for_poc_system_ready
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        project_config = {"name": "test_project"}
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_CLIENTS: ["site-1"],
+        }
+
+        with patch("nvflare.tool.poc.poc_commands.wait_for_system_start", side_effect=RuntimeError("boom")):
+            with pytest.raises(SystemStartTimeout, match="boom"):
+                _wait_for_poc_system_ready(
+                    str(tmp_path),
+                    project_config,
+                    service_config,
+                    services_list=[],
+                    excluded=[],
+                    timeout_in_sec=1,
+                )
+
     # ------------------------------------------------------------------ poc prepare parsers
 
     def test_poc_prepare_parser_has_force_flag(self):
@@ -841,6 +864,26 @@ class TestPocOutput:
 
         args = root.parse_args(["poc", "prepare", "--schema"])
         assert args.schema is True
+
+    def test_poc_start_schema_includes_command_contract_metadata(self, capsys):
+        import argparse
+
+        from nvflare.tool.poc.poc_commands import def_poc_parser, start_poc
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        def_poc_parser(subs)
+
+        with patch("sys.argv", ["nvflare", "poc", "start", "--schema"]):
+            with pytest.raises(SystemExit) as exc_info:
+                start_poc(MagicMock())
+
+        assert exc_info.value.code == 0
+        schema = json.loads(capsys.readouterr().out)
+        assert schema["command"] == "nvflare poc start"
+        assert schema["output_modes"] == ["json"]
+        assert schema["streaming"] is False
+        assert schema["mutating"] is True
 
     def test_poc_root_schema_outputs_schema_json(self, capsys):
         """nvflare poc --schema should render root schema instead of touching runtime-only flags."""
