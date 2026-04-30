@@ -188,6 +188,7 @@ class DiskTensorConsumer(ItemConsumer):
     def release(self) -> None:
         with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
             _ACTIVE_DISK_TENSOR_CONSUMERS.discard(self)
+            self._cleaned = True
 
     def cleanup(self) -> None:
         with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
