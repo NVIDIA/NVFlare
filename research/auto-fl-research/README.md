@@ -2,6 +2,13 @@
 
 This bundle is a practical starting point for an **autoresearch-style** Auto-FL loop on top of NVFlare.
 
+## Example progress
+
+The plot below is an example result from using this harness with Claude Code, model: Opus 4.7 (1M context),
+effort level: max.
+
+![Example Auto-FL progress plot](assets/example_progress.png)
+
 It is designed to combine:
 - NVFlare's **Client API + Recipe API** patterns for `client.py`, `FedAvgRecipe`, `SimEnv`, TensorBoard tracking, and optional cross-site evaluation;
 - the CIFAR-10 simulation path for **diff-based uploads** and **custom aggregators**; and
