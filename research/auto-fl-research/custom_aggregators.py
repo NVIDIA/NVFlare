@@ -110,7 +110,7 @@ class FedAvgAggregator(WeightedAggregator):
 class FedOptAggregator(ModelAggregator):
     """Server-side optimizer over weighted client DIFFs.
 
-    This keeps the v0 FL contract intact: clients still send model DIFFs with
+    This keeps the FL contract intact: clients still send model DIFFs with
     NUM_STEPS_CURRENT_ROUND, and the server returns a DIFF update with the same
     parameter keys and params_type.
     """

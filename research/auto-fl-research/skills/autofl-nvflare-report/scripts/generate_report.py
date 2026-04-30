@@ -187,7 +187,7 @@ def classify_contract(row: ResultRow) -> str:
     budget = row.budget.lower()
     if "--aggregator scaffold" in budget:
         return "Explicit SCAFFOLD metadata mode"
-    return "Strict v0 DIFF contract"
+    return "Strict DIFF contract"
 
 
 def mechanism_hint(row: ResultRow) -> str:

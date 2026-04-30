@@ -10,7 +10,7 @@ Use `mutation_schema.yaml` only when `program.md` directs you to the hard mutati
 
 Improve this Auto-FL NVFlare harness without breaking the federated contract.
 
-## Files you may edit in v0
+## Files you may edit
 
 Preferred mutation files:
 - `client.py`

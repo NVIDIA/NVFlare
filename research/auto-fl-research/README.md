@@ -1,4 +1,4 @@
-# Auto-FL NVFlare starter bundle
+# Auto-FL-Research with NVFlare
 
 This bundle is a practical starting point for an **autoresearch-style** Auto-FL loop on top of NVFlare.
 
@@ -15,7 +15,7 @@ It is designed to combine:
 - `client.py` — merged client with DIFF updates and `flare.is_evaluate()` support
 - `custom_aggregators.py` — FedAvg, FedOpt-style, SCAFFOLD, and median aggregators
 - `model.py`, `train_utils.py`, `data/` — minimal supporting code
-- `mutation_schema.yaml` — bounded mutation surface for v0
+- `mutation_schema.yaml` — bounded mutation surface for the current harness
 - `scripts/init_run.sh` — creates an autoresearch branch and initializes `results.tsv`
 - `scripts/run_iteration.sh` — runs one candidate mutation with log redirection and score extraction
 - `scripts/finalize_batch_status.py` — promotes reviewed candidates to `keep` or demotes them to `discard`
@@ -30,12 +30,12 @@ It is designed to combine:
 The public `autoresearch` repo keeps the setup intentionally small and treats `program.md` as the agent-facing control plane. The core repo only has a few files that matter, with one main editable target and a fixed evaluation harness. This starter follows that spirit, but adapts it to NVFlare:
 
 - **Primary control plane:** `program.md` is the first file the agent should read.
-- **Bounded edit surface:** v0 mutations should mostly target `client.py`, then `custom_aggregators.py`, then `job.py`; registered, parameter-capped architecture variants may also touch `model.py`.
+- **Bounded edit surface:** mutations should mostly target `client.py`, then `custom_aggregators.py`, then `job.py`; registered, parameter-capped architecture variants may also touch `model.py`.
 - **Fixed evaluation budget:** compare candidates under the same recipe budget (`n_clients`, `num_rounds`, `aggregation_epochs`, `batch_size`, `eval_batch_size`, `alpha`, `seed`, `model_arch`, `max_model_params`).
 - **Comparable metric extraction:** recommended runs enable cross-site evaluation and extract a single score from `cross_val_results.json`.
 - **Batch keep / discard loop:** on a 4 x H100 node, the agent can launch a configurable number of same-budget hyperparameter candidates in parallel, rank the batch, and then keep, narrow, or revert.
 - **Autonomous continuation:** after setup and baseline, the agent keeps running same-budget batches until manually interrupted.
-- **Literature-grounded recovery:** when progress stalls, the agent should use the Camyla-inspired loop in `program.md` to generate diverse paper queries, extract challenge cards, score compatible proposals, fill `templates/literature_loop.md`, and branch into the top v0-safe ideas.
+- **Literature-grounded recovery:** when progress stalls, the agent should use the Camyla-inspired loop in `program.md` to generate diverse paper queries, extract challenge cards, score compatible proposals, fill `templates/literature_loop.md`, and branch into the top contract-safe ideas.
 - **Tracked experiment ledger:** `results.tsv` is committed on experiment branches so the branch carries its run provenance.
 
 This is not a literal clone of `karpathy/autoresearch`; it is an NVFlare-specific adaptation of the same operating model.
@@ -47,7 +47,7 @@ QWBE is currently implemented as an **instruction and artifact workflow**, not a
 The current flow is:
 
 1. Generate source-backed proposal cards from recent `results.tsv` symptoms and relevant papers.
-2. Filter out duplicates, known null/worse ideas, and proposals that violate the v0 contract.
+2. Filter out duplicates, known null/worse ideas, and proposals that violate the current contract.
 3. Score each remaining proposal from 1-5 on expected gain, contract safety, simplicity, evidence, novelty, and runtime cost.
 4. Compute:
 
@@ -224,14 +224,14 @@ The harness now permits architecture search through a registered model selector 
 
 ## Baseline algorithm knobs
 
-The v0 harness covers the NVFlare CIFAR-10 simulation benchmark modes that fit the existing DIFF-upload contract:
+The current harness covers the NVFlare CIFAR-10 simulation benchmark modes that fit the existing DIFF-upload contract:
 
 - FedAvg: `--aggregator weighted`, `--aggregator fedavg`, or NVFlare's built-in `--aggregator default`.
 - FedProx: keep a FedAvg-style aggregator and set `--fedproxloss_mu <mu>`.
 - FedOpt: use `--aggregator fedavgm` or `--aggregator fedopt` for server SGD momentum over aggregated DIFFs, or `--aggregator fedadam` for a server Adam variant. Tune with `--server_lr`, `--server_momentum`, `--fedopt_beta1`, `--fedopt_beta2`, and `--fedopt_tau`.
 - SCAFFOLD: use `--aggregator scaffold`. This automatically passes `--scaffold` to `client.py`, sends client control deltas in `FLModel.meta["scaffold_c_diff"]`, and sends server global controls back in `FLModel.meta["scaffold_c_global"]`.
 
-SCAFFOLD is an explicit opt-in protocol mode. It still preserves the core model contract (`ParamsType.DIFF`, same model keys, `NUM_STEPS_CURRENT_ROUND`) but it does add SCAFFOLD-specific metadata, so keep SCAFFOLD comparisons labeled separately from strict v0 no-extra-meta baselines.
+SCAFFOLD is an explicit opt-in protocol mode. It still preserves the core model contract (`ParamsType.DIFF`, same model keys, `NUM_STEPS_CURRENT_ROUND`) but it does add SCAFFOLD-specific metadata, so keep SCAFFOLD comparisons labeled separately from strict no-extra-meta baselines.
 
 The first post-baseline batch should calibrate these algorithm families before broader tuning. With `PARALLEL_CANDIDATES=8`, use:
 

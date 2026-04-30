@@ -33,7 +33,7 @@ Mutate local client behavior and bounded registered model architectures without 
 - `model_arch`
 - `max_model_params`
 
-## Forbidden mutations in v0
+## Forbidden mutations
 - switch DIFF uploads to FULL uploads
 - remove `NUM_STEPS_CURRENT_ROUND`
 - rewrite the flare task loop

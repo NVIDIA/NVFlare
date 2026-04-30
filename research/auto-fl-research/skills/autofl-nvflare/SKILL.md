@@ -57,7 +57,7 @@ Preserve these invariants unless the user explicitly asks for a protocol change:
    - no new dependencies
 
 Do not change model architecture outside registered `model_arch` variants or the active `max_model_params` budget. Do not add server-coupled protocol fields outside an explicitly requested protocol mode.
-FedProx is v0-safe as a client-local loss term. FedOpt is v0-safe only when it is implemented inside the custom aggregator over already-received DIFFs. SCAFFOLD is available only as an explicit opt-in mode that uses `FLModel.meta` for `scaffold_c_diff` and `scaffold_c_global`.
+FedProx is compatible as a client-local loss term. FedOpt is compatible only when it is implemented inside the custom aggregator over already-received DIFFs. SCAFFOLD is available only as an explicit opt-in mode that uses `FLModel.meta` for `scaffold_c_diff` and `scaffold_c_global`.
 
 ## Required workflow
 

@@ -51,7 +51,7 @@ Relevant Camyla source locations consulted for the instruction design:
 - QWBE experiment utilities — https://github.com/yifangao112/Camyla/tree/main/camyla/treesearch
 
 This bundle does not copy Camyla code or its medical-segmentation task setup.
-It adapts the high-level research-process pattern to a bounded NVFlare Auto-FL loop, where every literature-derived idea must still fit `mutation_schema.yaml` and preserve the v0 FL contract.
+It adapts the high-level research-process pattern to a bounded NVFlare Auto-FL loop, where every literature-derived idea must still fit `mutation_schema.yaml` and preserve the current FL contract.
 
 ## NVFlare code lineage
 

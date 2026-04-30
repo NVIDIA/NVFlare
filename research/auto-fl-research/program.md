@@ -181,7 +181,7 @@ Typical safe ideas:
 Baseline algorithm knobs:
 - FedAvg is available as `--aggregator weighted`, `--aggregator fedavg`, or the built-in NVFlare path `--aggregator default`.
 - FedProx is a client-local loss term: keep a FedAvg-style aggregator and set `--fedproxloss_mu`.
-- FedOpt is available within the v0 custom aggregator surface as server optimization over aggregated DIFFs: `--aggregator fedavgm`, `--aggregator fedopt`, or `--aggregator fedadam`, with `--server_lr`, `--server_momentum`, `--fedopt_beta1`, `--fedopt_beta2`, and `--fedopt_tau`.
+- FedOpt is available within the current custom aggregator surface as server optimization over aggregated DIFFs: `--aggregator fedavgm`, `--aggregator fedopt`, or `--aggregator fedadam`, with `--server_lr`, `--server_momentum`, `--fedopt_beta1`, `--fedopt_beta2`, and `--fedopt_tau`.
 - SCAFFOLD is available as `--aggregator scaffold`, which opts into SCAFFOLD-specific `FLModel.meta` fields while preserving DIFF uploads, `NUM_STEPS_CURRENT_ROUND`, and the model key/shape schema.
 
 Registered architecture knobs:
@@ -190,7 +190,7 @@ Registered architecture knobs:
 - `--model_arch moderate_cnn_small_head` keeps the convolutional trunk and reduces the classifier head.
 - `--max_model_params 5000000` is the default hard cap. Keep the cap fixed inside an architecture campaign and reject any candidate that exceeds it before running.
 
-### What you CANNOT do in v0
+### What you CANNOT do
 
 - modify the evaluation substrate in a way that breaks comparability
 - change `ParamsType.DIFF` to full-weight uploads
@@ -321,7 +321,7 @@ On the 4 x H100 node, keep cycling through `PARALLEL_CANDIDATES`-candidate same-
 - repeat.
 
 If you run out of obvious ideas, re-read the in-scope files, inspect recent near-misses in `results.tsv`, combine promising settings, or try a new allowed axis from `mutation_schema.yaml`.
-Stay within the hard invariants and v0 bounds: do not change the FL protocol, evaluation substrate, dependency set, or registered architecture budget unless a human explicitly authorizes a protocol upgrade or new architecture subcampaign.
+Stay within the hard invariants and current bounds: do not change the FL protocol, evaluation substrate, dependency set, or registered architecture budget unless a human explicitly authorizes a protocol upgrade or new architecture subcampaign.
 
 With the default 10-minute candidate budget and `PARALLEL_CANDIDATES=4`, the expected throughput is roughly 24 candidates per hour, or about 190 candidates across an eight-hour overnight run if the environment is healthy. With `PARALLEL_CANDIDATES=8`, treat the initial throughput estimate as experimental because two simulations share each H100.
 The loop runs until the human interrupts it.
@@ -353,14 +353,14 @@ Literature mode workflow:
 2. Search at least two available sources when possible: arXiv, Semantic Scholar, OpenAlex, PubMed, official project pages, or paper PDFs. If API access is unavailable, browser/web search is acceptable. Prefer primary papers over blog posts.
 3. Triage 6-10 candidate papers down to 3-5 relevant papers. For each kept paper, record title, year, URL/arXiv id, the training challenge it addresses, and the method family. Do not paste long paper excerpts.
 4. Extract exactly 3 challenge cards. Each card must include: challenge name, evidence from the paper(s), matching symptom in `results.tsv`, why it matters for this harness, and which allowed file(s) could express it.
-5. Generate 3 proposal cards. Each card must include: mechanism, source refs, exact v0 implementation surface (`client.py`, `custom_aggregators.py`, `job.py`, or CLI-only), proposed args/code change, expected effect, runtime cost, contract risk, and what observation would falsify it.
+5. Generate 3 proposal cards. Each card must include: mechanism, source refs, exact implementation surface (`client.py`, `custom_aggregators.py`, `job.py`, or CLI-only), proposed args/code change, expected effect, runtime cost, contract risk, and what observation would falsify it.
 6. Run duplicate/null filtering before scoring. Reject proposals that are the same core idea as existing kept/null rows or that require forbidden protocol changes, new dependencies, unregistered or over-budget model architectures, evaluation changes, or server-coupled tensors beyond explicit SCAFFOLD metadata mode.
 7. Score each remaining proposal from 1-5 on: expected score gain, contract safety, implementation simplicity, evidence strength, novelty relative to `results.tsv`, and runtime cost. Use total score `2*expected_gain + 2*contract_safety + simplicity + evidence + novelty - runtime_cost`.
 8. Allocate the next batch QWBE-style across the top proposals. Give the strongest proposal multiple nearby variants when useful, but reserve at least one lane for a distinct second idea if any safe alternative remains. The batch size must equal `PARALLEL_CANDIDATES` unless the machine is unhealthy.
 9. Launch the selected candidates under the same compute budget and GPU mapping. Rank only after all lanes finish or time out.
 10. Record reflective memory: what paper-derived hypothesis helped, what failed, and which source-backed idea should not be retried. Put full source details in `templates/mutation_report.md`; include short refs in `results.tsv` descriptions, for example `[src: Li20 FedProx arXiv:1812.06127]`.
 
-Examples of v0-compatible literature-derived directions:
+Examples of compatible literature-derived directions:
 - FedProx coefficient sweeps for client drift.
 - FedOpt server momentum or adaptive updates implemented only inside `custom_aggregators.py`.
 - SCAFFOLD control-variate sweeps through `--aggregator scaffold`, tracked as an opt-in protocol-mode subcampaign.
@@ -369,7 +369,7 @@ Examples of v0-compatible literature-derived directions:
 - More careful `NUM_STEPS_CURRENT_ROUND` weighting or robust aggregation that preserves parameter keys and `ParamsType.DIFF`.
 - Registered architecture variants in `model.py`, selected through `--model_arch`, when they stay under the active `--max_model_params` cap.
 
-Examples that are **not** v0-compatible without human approval:
+Examples that are **not** compatible without human approval:
 - New server-coupled state tensors outside the existing SCAFFOLD metadata keys.
 - FedOpt variants that require changing the recipe protocol or adding server-client metadata.
 - Unregistered architecture changes, architectures above `--max_model_params`, or architecture/data/evaluation changes that are not labeled as a separate budget.

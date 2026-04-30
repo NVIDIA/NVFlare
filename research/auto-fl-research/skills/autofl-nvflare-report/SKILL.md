@@ -78,7 +78,7 @@ The report should lead with an executive summary, then include a technical appen
 - embedded progress plot image;
 - best run index, description, commit, budget, runtime, status, and artifact path;
 - major running-best milestones and likely improvement mechanisms;
-- final recommended stack and whether it preserves the v0 contract or uses an explicit protocol mode such as SCAFFOLD;
+- final recommended stack and whether it preserves the current contract or uses an explicit protocol mode such as SCAFFOLD;
 - total aggregate candidate runtime, average runtime per candidate, crash count, and failure notes;
 - agent model/effort settings and agent/tooling cost if provided by the human, or explicit unavailable notes;
 - literature-derived ideas, source refs, and whether each helped;
