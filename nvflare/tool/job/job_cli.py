@@ -78,6 +78,7 @@ def _submit_token_arg(value: str) -> str:
         )
     return value
 
+
 CMD_LIST_TEMPLATES = "list-templates"
 CMD_SHOW_VARIABLES = "show-variables"
 CMD_CREATE_JOB = "create"

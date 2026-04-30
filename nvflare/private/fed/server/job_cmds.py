@@ -92,9 +92,7 @@ def _validate_submit_token(submit_token: str) -> str:
     if submit_token is None:
         return None
     if not isinstance(submit_token, str) or not _SUBMIT_TOKEN_PATTERN.fullmatch(submit_token):
-        raise ValueError(
-            "submit_token must be non-empty, at most 128 characters, and match ^[A-Za-z0-9._:-]{1,128}$"
-        )
+        raise ValueError("submit_token must be non-empty, at most 128 characters, and match ^[A-Za-z0-9._:-]{1,128}$")
     return submit_token
 
 
@@ -429,9 +427,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 user_name = conn.get_prop(ConnProps.USER_NAME, "") if parsed_args.u else None
 
                 filtered_jobs = [
-                    job
-                    for job in jobs
-                    if self._job_match(job.meta, id_prefix, name_prefix, user_name, requested_study)
+                    job for job in jobs if self._job_match(job.meta, id_prefix, name_prefix, user_name, requested_study)
                 ]
                 if not filtered_jobs:
                     conn.append_string(

@@ -102,6 +102,7 @@ def _validate_submit_token(submit_token: Optional[str]) -> Optional[str]:
         )
     return submit_token
 
+
 __all__ = ["NoConnection", "NoReply", "SystemInfo", "TargetType"]
 
 

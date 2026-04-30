@@ -793,9 +793,7 @@ class FederatedServer(BaseServer):
             client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
             client_fqcn = request.get_header(MessageHeaderKey.ORIGIN)
             if self.client_manager.is_client_disabled(client_name):
-                return make_cellnet_reply(
-                    rc=F3ReturnCode.UNAUTHENTICATED, error=f"Client '{client_name}' is disabled"
-                )
+                return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=f"Client '{client_name}' is disabled")
             if self.client_manager.heartbeat(token, client_name, client_fqcn, fl_ctx):
                 self.tokens[token] = self.task_meta_info(client_name)
             unauthenticated = fl_ctx.get_prop(FLContextKey.UNAUTHENTICATED, None)
