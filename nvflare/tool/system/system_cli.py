@@ -17,12 +17,7 @@ import time
 from contextlib import contextmanager
 
 import nvflare
-from nvflare.tool.cli_output import (
-    output_error,
-    output_error_message,
-    output_ok,
-    output_usage_error,
-)
+from nvflare.tool.cli_output import output_error, output_error_message, output_ok, output_usage_error
 from nvflare.tool.cli_session import add_startup_kit_selection_args
 
 CMD_SYSTEM_STATUS = "status"
@@ -367,11 +362,7 @@ def cmd_system_resources(args):
 
 
 def cmd_system_shutdown(args):
-    from nvflare.fuel.flare_api.api_spec import (
-        AuthenticationError,
-        InvalidTarget,
-        NoConnection,
-    )
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, NoConnection
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -433,11 +424,7 @@ def cmd_system_shutdown(args):
 
 
 def cmd_system_restart(args):
-    from nvflare.fuel.flare_api.api_spec import (
-        AuthenticationError,
-        InvalidTarget,
-        NoConnection,
-    )
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, NoConnection
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -594,11 +581,7 @@ def cmd_system_log(args):
 
 
 def cmd_system_remove_client(args):
-    from nvflare.fuel.flare_api.api_spec import (
-        AuthenticationError,
-        InvalidTarget,
-        NoConnection,
-    )
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, NoConnection
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(

@@ -89,6 +89,7 @@ class ClientManager:
 
     def disable_client(self, client_name: str) -> list:
         with self.lock:
+            already_disabled = client_name in self.disabled_clients
             self.disabled_clients.add(client_name)
             removed_tokens = []
             for token, client in list(self.clients.items()):
@@ -96,7 +97,13 @@ class ClientManager:
                     removed_tokens.append(token)
                     self.clients.pop(token, None)
             self.name_to_clients.pop(client_name, None)
-            self._save_disabled_clients()
+            try:
+                self._save_disabled_clients()
+            except Exception as ex:
+                if not already_disabled:
+                    self.disabled_clients.discard(client_name)
+                self.logger.error(f"failed to persist disabled-client state for {client_name}: {ex}")
+                raise
         self.logger.info(f"Client {client_name} disabled. Removed active tokens: {removed_tokens}")
         return removed_tokens
 
@@ -105,7 +112,12 @@ class ClientManager:
             was_disabled = client_name in self.disabled_clients
             if was_disabled:
                 self.disabled_clients.remove(client_name)
-                self._save_disabled_clients()
+                try:
+                    self._save_disabled_clients()
+                except Exception as ex:
+                    self.disabled_clients.add(client_name)
+                    self.logger.error(f"failed to persist enabled-client state for {client_name}: {ex}")
+                    raise
         self.logger.info(f"Client {client_name} enabled. Was disabled: {was_disabled}")
         return was_disabled
 

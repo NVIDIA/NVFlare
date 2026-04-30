@@ -704,9 +704,10 @@ class Session(SessionSpec):
             for client_name in expected_names:
                 current_time = connected.get(client_name)
                 previous_time = previous_client_times.get(client_name)
-                if current_time is None:
-                    waiting.append(client_name)
-                elif previous_time is not None and current_time == previous_time:
+                if previous_time is None:
+                    # Client was not connected before restart; skip — no reconnection to wait for.
+                    continue
+                if current_time is None or current_time == previous_time:
                     waiting.append(client_name)
 
             if not waiting:

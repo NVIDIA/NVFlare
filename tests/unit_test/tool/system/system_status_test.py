@@ -18,11 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import (
-    AuthenticationError,
-    InvalidTarget,
-    NoConnection,
-)
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, InvalidTarget, NoConnection
 from nvflare.tool import cli_output
 
 
