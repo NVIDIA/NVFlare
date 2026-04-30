@@ -735,9 +735,11 @@ next_step: nvflare config use <id>
 All server-connected commands, including `nvflare job`, `nvflare study`, `nvflare system`,
 and `nvflare network`, resolve the startup kit using this ordered lookup:
 
-1. If `--kit-id <id>` is provided, resolve that registered startup-kit ID without
-   changing `startup_kits.active`.
-2. If `--startup-kit <path>` is provided, validate that explicit admin startup-kit path.
+1. Optional `--kit-id <id>` — if provided, override the active startup kit for
+   this command only by resolving that registered startup-kit ID without changing
+   `startup_kits.active`.
+2. Optional `--startup-kit <path>` — if provided, override the active startup
+   kit for this command only by validating that explicit admin startup-kit path.
 3. If `NVFLARE_STARTUP_KIT_DIR` is set, validate it with the same three-file admin
    startup kit check and use it.
 4. Otherwise, use `startup_kits.active` from `~/.nvflare/config.conf`.
@@ -1034,8 +1036,9 @@ Manual production registrations remain untouched.
 - Normal server-connected commands do not expose `--startup-target`.
 - Commands resolve the startup kit through `--kit-id` / `--startup-kit` first, then
   `NVFLARE_STARTUP_KIT_DIR`, then `startup_kits.active`.
-- `--kit-id` and `--startup-kit` are scoped to one command and must not mutate
-  `startup_kits.active`.
+- `--kit-id` and `--startup-kit` are optional per-command overrides. If
+  provided, they take precedence over the active startup kit for that command
+  only and must not mutate `startup_kits.active`.
 - `nvflare config` is the user-facing startup kit management interface.
 - `nvflare config` is the parent command namespace; the normal user workflow in this
   design is `nvflare config`.
@@ -1713,9 +1716,11 @@ Example:
 All server-connected commands (`nvflare job`, `nvflare study`, `nvflare system`,
 `nvflare network`) resolve the startup kit using the same ordered lookup:
 
-1. `--kit-id <id>` — resolve a registered startup-kit ID from `~/.nvflare/config.conf`
+1. Optional `--kit-id <id>` — override the active startup kit for this command
+   only by resolving a registered startup-kit ID from `~/.nvflare/config.conf`
    without changing `startup_kits.active`.
-2. `--startup-kit <path>` — validate the explicit path as an admin/user startup kit.
+2. Optional `--startup-kit <path>` — override the active startup kit for this
+   command only by validating the explicit path as an admin/user startup kit.
 3. `NVFLARE_STARTUP_KIT_DIR` — validate the environment path as an admin/user startup kit.
 4. `startup_kits.active` — resolve the active ID from `~/.nvflare/config.conf`, then
    validate the registered path.
@@ -1725,8 +1730,8 @@ All server-connected commands (`nvflare job`, `nvflare study`, `nvflare system`,
 This resolution order applies uniformly. Command-level descriptions that say "same resolution order as `nvflare job`" refer to this list.
 
 Normal commands do not expose `--startup-target`. Users usually switch local identity with
-`nvflare config use <id>`. Automation can use `--kit-id <id>`, `--startup-kit <path>`, or
-`NVFLARE_STARTUP_KIT_DIR` when mutating local config is undesirable.
+`nvflare config use <id>`. Automation can optionally use `--kit-id <id>`,
+`--startup-kit <path>`, or `NVFLARE_STARTUP_KIT_DIR` when mutating local config is undesirable.
 
 Resolution error examples:
 

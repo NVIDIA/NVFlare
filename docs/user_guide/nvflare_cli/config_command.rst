@@ -37,8 +37,9 @@ Configuration notes:
   include best-effort startup-kit identity, certificate expiration, and local
   stale-path findings for automation.
 - ``nvflare config use`` changes global CLI state. Automation should prefer
-  per-command ``--kit-id`` or ``--startup-kit`` selectors when running
-  server-connected commands.
+  optional per-command ``--kit-id`` or ``--startup-kit`` selectors when running
+  server-connected commands. These selectors override the active startup kit for
+  one command only and do not mutate ``startup_kits.active``.
 - ``nvflare config -d/--startup_kit_dir`` remains accepted for compatibility
   with 2.7.x scripts, but is deprecated. Use ``nvflare config add`` and
   ``nvflare config use`` for new workflows.

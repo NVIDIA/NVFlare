@@ -131,8 +131,10 @@ then sets ``startup_kits.active``.
 
 This command mutates the global active startup-kit setting in
 ``~/.nvflare/config.conf``. For automation, scripts, notebooks, and agents,
-prefer per-command selectors such as ``--kit-id <id>`` or
-``--startup-kit <path>`` on server-connected commands.
+prefer optional per-command selectors such as ``--kit-id <id>`` or
+``--startup-kit <path>`` on server-connected commands. These selectors override
+the active startup kit for one command only and do not mutate
+``startup_kits.active``.
 
 Example:
 

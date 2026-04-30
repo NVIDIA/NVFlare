@@ -59,15 +59,18 @@ Startup Kit Selection
 
 Server-connected job commands use this startup kit resolution order:
 
-1. ``--kit-id <id>``: use a registered startup-kit ID for this command only.
-2. ``--startup-kit <path>``: use an explicit admin startup-kit directory for this command only.
+1. Optional ``--kit-id <id>``: override the active startup kit for this command
+   only by using a registered startup-kit ID.
+2. Optional ``--startup-kit <path>``: override the active startup kit for this
+   command only by using an explicit admin startup-kit directory.
 3. ``NVFLARE_STARTUP_KIT_DIR`` when set.
 4. ``startup_kits.active`` from ``~/.nvflare/config.conf``.
 5. If no source resolves to a valid admin startup kit, the command fails before connecting.
 
-``--kit-id`` and ``--startup-kit`` do not change the globally active startup kit.
-They are useful for scripts, notebooks, and concurrent workflows that must not
-mutate ``~/.nvflare/config.conf``.
+``--kit-id`` and ``--startup-kit`` are not required. When provided, they take
+precedence over the active startup kit for the current command only and do not
+change the globally active startup kit. They are useful for scripts, notebooks,
+and concurrent workflows that must not mutate ``~/.nvflare/config.conf``.
 
 ****************
 Submit a Job
