@@ -56,17 +56,18 @@ def _is_stream_channel(channel: str) -> bool:
 
 
 def _is_server_job_cell(my_info) -> bool:
-    """Return True only for the server child cell that owns one job run.
+    """Return True only for server cells owned by one job run.
 
-    Parent server cell FQCN is "server"; server job cells are "server.<job_id>".
-    The fail-fast path must only exit the job process, never the parent server.
+    Parent server cell FQCN is "server"; server job cells start with
+    "server.<job_id>" and may have nested children like "server.<job_id>.cell_pipe".
+    The fail-fast path must only exit a job process, never the parent server.
     """
     fqcn = getattr(my_info, "fqcn", "")
     if not fqcn:
         return False
 
     path = FQCN.split(fqcn)
-    return len(path) == 2 and path[0] == FQCN.ROOT_SERVER
+    return len(path) >= 2 and path[0] == FQCN.ROOT_SERVER
 
 
 class SimpleWaiter:

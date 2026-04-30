@@ -127,6 +127,18 @@ def _headers_without_pass_through(stream_req_id=""):
     }
 
 
+def _stream_headers(channel, topic):
+    return {
+        StreamHeaderKey.STREAM_REQ_ID: "stream-1",
+        StreamHeaderKey.CHANNEL: channel,
+        StreamHeaderKey.TOPIC: topic,
+        MessageHeaderKey.ORIGIN: "client1",
+        MessageHeaderKey.REQ_ID: "req-1",
+        MessageHeaderKey.SECURE: False,
+        MessageHeaderKey.OPTIONAL: False,
+    }
+
+
 # ---------------------------------------------------------------------------
 # 1-3: Adapter.call() — per-message decode_ctx construction
 # ---------------------------------------------------------------------------
@@ -283,21 +295,14 @@ class TestAdapterPassThroughHeader:
         cell = adapter.cell
         cell.get_fobs_context.assert_called_once_with(props={FOBSContextKey.PASS_THROUGH: True})
 
-    def test_submit_update_decode_failure_exits_server_job_process(self):
+    @pytest.mark.parametrize("fqcn", ["server.job-1", "server.job-1.cell_pipe"])
+    def test_submit_update_decode_failure_exits_server_job_process(self, fqcn):
         captured = {}
         cell = _make_mock_cell(captured)
         cb = MagicMock()
-        adapter = Adapter(cb=cb, my_info=SimpleNamespace(fqcn="server.job-1"), cell=cell)
+        adapter = Adapter(cb=cb, my_info=SimpleNamespace(fqcn=fqcn), cell=cell)
 
-        headers = {
-            StreamHeaderKey.STREAM_REQ_ID: "stream-1",
-            StreamHeaderKey.CHANNEL: CellChannel.SERVER_COMMAND,
-            StreamHeaderKey.TOPIC: ServerCommandNames.SUBMIT_UPDATE,
-            MessageHeaderKey.ORIGIN: "client1",
-            MessageHeaderKey.REQ_ID: "req-1",
-            MessageHeaderKey.SECURE: False,
-            MessageHeaderKey.OPTIONAL: False,
-        }
+        headers = _stream_headers(CellChannel.SERVER_COMMAND, ServerCommandNames.SUBMIT_UPDATE)
         future = _make_future(headers, payload=b"encoded-result")
 
         with patch("nvflare.fuel.f3.cellnet.cell.decode_payload", side_effect=OSError("No space left on device")):
@@ -316,15 +321,31 @@ class TestAdapterPassThroughHeader:
         cb = MagicMock()
         adapter = Adapter(cb=cb, my_info=SimpleNamespace(fqcn="server"), cell=cell)
 
-        headers = {
-            StreamHeaderKey.STREAM_REQ_ID: "stream-1",
-            StreamHeaderKey.CHANNEL: CellChannel.SERVER_COMMAND,
-            StreamHeaderKey.TOPIC: ServerCommandNames.SUBMIT_UPDATE,
-            MessageHeaderKey.ORIGIN: "client1",
-            MessageHeaderKey.REQ_ID: "req-1",
-            MessageHeaderKey.SECURE: False,
-            MessageHeaderKey.OPTIONAL: False,
-        }
+        headers = _stream_headers(CellChannel.SERVER_COMMAND, ServerCommandNames.SUBMIT_UPDATE)
+        future = _make_future(headers, payload=b"encoded-result")
+
+        with patch("nvflare.fuel.f3.cellnet.cell.decode_payload", side_effect=OSError("No space left on device")):
+            with patch("nvflare.fuel.f3.cellnet.cell.os._exit") as mock_exit:
+                with pytest.raises(OSError, match="No space left on device"):
+                    adapter.call(future)
+
+        mock_exit.assert_not_called()
+        cb.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "channel, topic",
+        [
+            (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK),
+            (CellChannel.AUX_COMMUNICATION, ServerCommandNames.SUBMIT_UPDATE),
+        ],
+    )
+    def test_decode_failure_on_other_server_job_streams_is_raised(self, channel, topic):
+        captured = {}
+        cell = _make_mock_cell(captured)
+        cb = MagicMock()
+        adapter = Adapter(cb=cb, my_info=SimpleNamespace(fqcn="server.job-1"), cell=cell)
+
+        headers = _stream_headers(channel, topic)
         future = _make_future(headers, payload=b"encoded-result")
 
         with patch("nvflare.fuel.f3.cellnet.cell.decode_payload", side_effect=OSError("No space left on device")):
