@@ -796,7 +796,7 @@ These commands mutate runtime study state only.
 
 ## Relationship to Distributed Provisioning
 
-The distributed provisioning workflow (`docs/design/distributed_provisioning.md`) decentralizes the **identity layer**: each site generates its own private key, sends only a CSR to the Project Admin, and receives a signed certificate in return. Once the site packages its startup kit and connects to the server, it is a fully authenticated participant — without the Project Admin ever holding its private key.
+The distributed provisioning workflow (`docs/design/distributed_provisioning.md`) decentralizes the **identity layer**: each requester generates its own private key, sends only a request zip to the Project Admin, and receives a signed zip in return. Once the requester packages its startup kit and connects to the server, it is a fully authenticated participant — without the Project Admin ever holding its private key.
 
 The multi-study CLI owns the **study authorization layer** at runtime: once sites are authenticated and connected, an org admin can register studies, enroll sites within their org, and manage study-user membership without involving provisioning. Project-admin mutations may enroll sites for multiple orgs in one call by supplying explicit `--site-org` groups.
 
@@ -804,7 +804,7 @@ Together, the two capabilities make a **fully decentralized federation lifecycle
 
 | Operation | Mechanism | Provisioning step required? |
 |-------|-----------|--------------------------|
-| Site joins the federation | `nvflare cert csr` → `nvflare cert sign` → `nvflare package` | No — cert signing is the act of authorization |
+| Site joins the federation | `nvflare cert request` → `nvflare cert approve` → `nvflare package <signed.zip>` | No — cert approval is the act of authorization |
 | Study created by org admin | `nvflare study register --sites` (org admin supplies explicit site list) | No |
 | Users added to the study | `nvflare study add-user` | No |
 | Cross-org study created | `nvflare study register --site-org ...` (project admin, sites grouped by org) | No |
@@ -815,28 +815,28 @@ Together, the two capabilities make a **fully decentralized federation lifecycle
 A new site joins and sets up its own study without coupling study management to provisioning:
 
 ```
-# Step 1 — Site Admin generates a CSR (once per participant)
-nvflare cert csr -n hospital-1 -t client -o ./csr
+# Step 1 — Site Admin creates a request zip (private key stays local)
+nvflare cert request --participant hospital-1.yaml
 
-# Step 2 — Project Admin signs it
-nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed --accept-csr-role
+# Step 2 — Project Admin approves the request zip
+nvflare cert approve hospital-1/hospital-1.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 # Step 3 — Site Admin packages and starts
-nvflare package -e grpc://fl-server:8002 --dir ./csr
-cd hospital-1 && ./startup/start.sh
+nvflare package hospital-1.signed.zip --request-dir ./hospital-1 --confirm-rootca
+cd workspace/example_project/prod_00/hospital-1 && ./startup/start.sh
 
-# Step 4 — Org Admin generates their admin CSR and startup kit (same flow)
-nvflare cert csr -n admin@org_a.com -t org_admin -o ./admin-csr
-# ... sign, package, start admin console ...
+# Step 4 — Org Admin creates their admin request and startup kit (same flow)
+nvflare cert request --participant org-admin.yaml
+# ... approve, package, then activate the startup kit ...
 
 # Step 5 — Org Admin registers a study with a site from their org
-nvflare study register cancer-research --sites hospital-1 --startup-target prod
+nvflare study register cancer-research --sites hospital-1
 
 # Step 6 — Org Admin adds a researcher from their org
-nvflare study add-user cancer-research researcher@org_a.com --startup-target prod
+nvflare study add-user cancer-research researcher@org_a.com
 
 # Step 7 — Lead submits a job to the study
-nvflare job submit -j ./my_job --startup-target prod --study cancer-research
+nvflare job submit -j ./my_job --study cancer-research
 ```
 
 Steps 1–3 follow the distributed provisioning workflow. Steps 4–7 use the multi-study CLI. The Project Admin is only involved in step 2 (signing the CSR); study creation and study-user membership management happen later through runtime study commands.
