@@ -49,11 +49,9 @@ from nvflare.tool.kit.kit_config import (
     classify_startup_kit,
     get_active_startup_kit_id,
     get_startup_kit_entries,
-    inspect_startup_kit_metadata,
     load_cli_config,
     remove_entries_under_workspace,
     remove_startup_kit_entry,
-    resolve_startup_kit_dir,
     save_cli_config,
 )
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
@@ -81,8 +79,6 @@ CMD_ADD_SITE = "site"
 
 # POC prepare creates the single Project Admin. Dynamic POC add can only add secondary users.
 POC_USER_CERT_ROLES = ("org_admin", "lead", "member")
-POC_ADD_REQUIRED_CERT_ROLE = "project_admin"
-
 POC_KEY = "poc"
 STARTUP_KIT_KEY = "startup_kit"
 WORKSPACE_KEY = "workspace"
@@ -93,10 +89,6 @@ POC_LOCAL_HOST = "localhost"
 POC_PORT_PREFLIGHT_HOST = "127.0.0.1"
 POC_PORT_PREFLIGHT_SCOPE = "loopback"
 POC_PORT_PREFLIGHT_NOTE = "Preflight checks loopback port availability only; poc start may still fail if another local bind address conflicts."
-
-
-class AuthorizationError(PermissionError):
-    """The current CLI identity is not authorized for the command."""
 
 
 def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, List[int]]:
@@ -1041,23 +1033,6 @@ def _add_poc_site(poc_workspace: str, name: str, org: str, force: bool = False) 
     }
 
 
-def _require_poc_project_admin():
-    startup_kit_dir = resolve_startup_kit_dir()
-    metadata = inspect_startup_kit_metadata(startup_kit_dir)
-    cert_role = metadata.get("cert_role")
-    identity = metadata.get("identity") or "<unknown>"
-    if not cert_role:
-        raise AuthorizationError(
-            f"nvflare poc add requires an active startup kit with role '{POC_ADD_REQUIRED_CERT_ROLE}'; "
-            f"could not determine the certificate role for active identity '{identity}'"
-        )
-    if cert_role != POC_ADD_REQUIRED_CERT_ROLE:
-        raise AuthorizationError(
-            f"nvflare poc add requires an active startup kit with role '{POC_ADD_REQUIRED_CERT_ROLE}'; "
-            f"active identity '{identity}' has role '{cert_role}'"
-        )
-
-
 def add_poc(cmd_args):
     sub_cmd = getattr(cmd_args, "poc_add_sub_cmd", None)
     if sub_cmd == CMD_ADD_USER:
@@ -1087,7 +1062,6 @@ def add_poc_user(cmd_args):
     )
     poc_workspace = get_poc_workspace()
     try:
-        _require_poc_project_admin()
         result = _add_poc_user(
             poc_workspace,
             cmd_args.cert_role,
@@ -1101,9 +1075,6 @@ def add_poc_user(cmd_args):
     except ValueError as e:
         output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e))
         raise SystemExit(4)
-    except AuthorizationError as e:
-        output_error("NOT_AUTHORIZED", exit_code=1, detail=str(e))
-        raise SystemExit(1)
     except CLIException as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
@@ -1133,7 +1104,6 @@ def add_poc_site(cmd_args):
     )
     poc_workspace = get_poc_workspace()
     try:
-        _require_poc_project_admin()
         result = _add_poc_site(
             poc_workspace,
             cmd_args.name,
@@ -1146,9 +1116,6 @@ def add_poc_site(cmd_args):
     except ValueError as e:
         output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e))
         raise SystemExit(4)
-    except AuthorizationError as e:
-        output_error("NOT_AUTHORIZED", exit_code=1, detail=str(e))
-        raise SystemExit(1)
     except CLIException as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)

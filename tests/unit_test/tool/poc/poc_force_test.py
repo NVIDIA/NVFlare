@@ -324,95 +324,7 @@ class TestPocForce:
         assert site_args.name == "site-3"
         assert site_args.org == "nvidia"
 
-    def test_poc_add_project_admin_guard_allows_project_admin(self):
-        from nvflare.tool.poc.poc_commands import _require_poc_project_admin
-
-        with (
-            patch("nvflare.tool.poc.poc_commands.resolve_startup_kit_dir", return_value="/startup-kit"),
-            patch(
-                "nvflare.tool.poc.poc_commands.inspect_startup_kit_metadata",
-                return_value={"identity": "admin@nvidia.com", "cert_role": "project_admin"},
-            ),
-        ):
-            _require_poc_project_admin()
-
-    def test_poc_add_project_admin_guard_rejects_non_project_admin(self):
-        from nvflare.tool.poc.poc_commands import AuthorizationError, _require_poc_project_admin
-
-        with (
-            patch("nvflare.tool.poc.poc_commands.resolve_startup_kit_dir", return_value="/startup-kit"),
-            patch(
-                "nvflare.tool.poc.poc_commands.inspect_startup_kit_metadata",
-                return_value={"identity": "lead@nvidia.com", "cert_role": "lead"},
-            ),
-        ):
-            with pytest.raises(AuthorizationError, match="project_admin"):
-                _require_poc_project_admin()
-
-    def test_poc_add_project_admin_guard_rejects_missing_cert_role(self):
-        from nvflare.tool.poc.poc_commands import AuthorizationError, _require_poc_project_admin
-
-        with (
-            patch("nvflare.tool.poc.poc_commands.resolve_startup_kit_dir", return_value="/startup-kit"),
-            patch(
-                "nvflare.tool.poc.poc_commands.inspect_startup_kit_metadata",
-                return_value={"identity": "admin@nvidia.com", "cert_role": None},
-            ),
-        ):
-            with pytest.raises(AuthorizationError, match="could not determine the certificate role"):
-                _require_poc_project_admin()
-
-    def test_poc_add_user_rejects_non_project_admin_before_mutation(self, capsys):
-        from nvflare.tool.poc.poc_commands import AuthorizationError, add_poc_user
-
-        args = MagicMock()
-        args.cert_role = "lead"
-        args.email = "bob@nvidia.com"
-        args.org = "nvidia"
-        args.force = False
-        with (
-            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value="/tmp/poc"),
-            patch(
-                "nvflare.tool.poc.poc_commands._require_poc_project_admin",
-                side_effect=AuthorizationError("active identity 'lead@nvidia.com' has role 'lead'"),
-            ),
-            patch("nvflare.tool.poc.poc_commands._add_poc_user") as add_user,
-        ):
-            with pytest.raises(SystemExit) as exc_info:
-                add_poc_user(args)
-
-        assert exc_info.value.code == 1
-        add_user.assert_not_called()
-        captured = capsys.readouterr()
-        assert "Not authorized" in captured.err
-        assert "lead@nvidia.com" in captured.err
-
-    def test_poc_add_site_rejects_non_project_admin_before_mutation(self, capsys):
-        from nvflare.tool.poc.poc_commands import AuthorizationError, add_poc_site
-
-        args = MagicMock()
-        args.name = "site-3"
-        args.org = "nvidia"
-        args.force = False
-        with (
-            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value="/tmp/poc"),
-            patch(
-                "nvflare.tool.poc.poc_commands._require_poc_project_admin",
-                side_effect=AuthorizationError("active identity 'lead@nvidia.com' has role 'lead'"),
-            ),
-            patch("nvflare.tool.poc.poc_commands._add_poc_site") as add_site,
-        ):
-            with pytest.raises(SystemExit) as exc_info:
-                add_poc_site(args)
-
-        assert exc_info.value.code == 1
-        add_site.assert_not_called()
-        captured = capsys.readouterr()
-        assert "Not authorized" in captured.err
-        assert "lead@nvidia.com" in captured.err
-
-    def test_poc_add_user_preserves_startup_kit_resolution_hint(self, capsys):
-        from nvflare.tool.kit.kit_config import StartupKitConfigError
+    def test_poc_add_user_is_not_gated_by_active_startup_kit_role(self, capsys):
         from nvflare.tool.poc.poc_commands import add_poc_user
 
         args = MagicMock()
@@ -420,51 +332,43 @@ class TestPocForce:
         args.email = "bob@nvidia.com"
         args.org = "nvidia"
         args.force = False
+        result = {
+            "status": "added",
+            "identity": "bob@nvidia.com",
+            "startup_kit": "/tmp/poc/example_project/prod_00/bob@nvidia.com",
+            "next_step": "nvflare config use bob@nvidia.com",
+        }
         with (
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value="/tmp/poc"),
-            patch(
-                "nvflare.tool.poc.poc_commands._require_poc_project_admin",
-                side_effect=StartupKitConfigError(
-                    "active startup kit is stale", hint="Run 'nvflare config use admin@nvidia.com'"
-                ),
-            ),
-            patch("nvflare.tool.poc.poc_commands._add_poc_user") as add_user,
+            patch("nvflare.tool.poc.poc_commands._add_poc_user", return_value=result) as add_user,
         ):
-            with pytest.raises(SystemExit) as exc_info:
-                add_poc_user(args)
+            add_poc_user(args)
 
-        assert exc_info.value.code == 4
-        add_user.assert_not_called()
+        add_user.assert_called_once_with("/tmp/poc", "lead", "bob@nvidia.com", "nvidia", force=False)
         captured = capsys.readouterr()
-        assert "active startup kit is stale" in captured.err
-        assert "Run 'nvflare config use admin@nvidia.com'" in captured.err
+        assert "POC user added: bob@nvidia.com" in captured.out
 
-    def test_poc_add_site_preserves_startup_kit_resolution_hint(self, capsys):
-        from nvflare.tool.kit.kit_config import StartupKitConfigError
+    def test_poc_add_site_is_not_gated_by_active_startup_kit_role(self, capsys):
         from nvflare.tool.poc.poc_commands import add_poc_site
 
         args = MagicMock()
         args.name = "site-3"
         args.org = "nvidia"
         args.force = False
+        result = {
+            "status": "added",
+            "name": "site-3",
+            "startup_kit": "/tmp/poc/example_project/prod_00/site-3",
+        }
         with (
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value="/tmp/poc"),
-            patch(
-                "nvflare.tool.poc.poc_commands._require_poc_project_admin",
-                side_effect=StartupKitConfigError(
-                    "active startup kit is stale", hint="Run 'nvflare config use admin@nvidia.com'"
-                ),
-            ),
-            patch("nvflare.tool.poc.poc_commands._add_poc_site") as add_site,
+            patch("nvflare.tool.poc.poc_commands._add_poc_site", return_value=result) as add_site,
         ):
-            with pytest.raises(SystemExit) as exc_info:
-                add_poc_site(args)
+            add_poc_site(args)
 
-        assert exc_info.value.code == 4
-        add_site.assert_not_called()
+        add_site.assert_called_once_with("/tmp/poc", "site-3", "nvidia", force=False)
         captured = capsys.readouterr()
-        assert "active startup kit is stale" in captured.err
-        assert "Run 'nvflare config use admin@nvidia.com'" in captured.err
+        assert "POC site added: site-3" in captured.out
 
     def test_interactive_without_force_prompts(self, tmp_path):
         """In interactive mode without --force, should ask for confirmation."""

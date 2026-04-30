@@ -118,9 +118,9 @@ user or site:
 
 Behavior notes:
 
-- ``poc add user`` and ``poc add site`` require the active startup kit to have
-  the ``project_admin`` certificate role. Use ``nvflare config use <id>`` to switch
-  back to the POC Project Admin kit before adding users or sites.
+- ``poc add user`` and ``poc add site`` are local POC workspace operations.
+  They use the local POC project metadata and local POC CA created by
+  ``poc prepare``; they are not gated by the currently active startup kit.
 - ``poc add user`` adds a secondary admin participant to the persisted POC
   ``project.yml``, dynamically provisions only that new user with the existing
   POC CA, and registers the generated user startup kit in the shared startup

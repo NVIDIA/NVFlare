@@ -805,10 +805,9 @@ certificate roles, not study-specific roles. `poc add user` must not add another
 Behavior:
 
 1. Resolve the default POC workspace the same way existing POC commands do.
-2. Resolve the active startup kit and require its certificate role to be `project_admin`.
-   If `NVFLARE_STARTUP_KIT_DIR` is set, it participates in normal startup-kit resolution
-   and must also point to a `project_admin` kit. Otherwise fail with `NOT_AUTHORIZED`
-   before mutating project metadata.
+2. Treat the command as a local POC workspace operation. It uses the local POC project
+   metadata and local POC CA created by `poc prepare`; it is not gated by the currently
+   active startup kit role.
 3. Read the persisted POC `project.yml` from that workspace. This file is originally
    generated from the default POC `dummy_project.yml` baseline, then becomes the local
    source of truth for later POC additions.
@@ -870,10 +869,9 @@ interactive CLI user identities.
 Behavior:
 
 1. Resolve the default POC workspace the same way existing POC commands do.
-2. Resolve the active startup kit and require its certificate role to be `project_admin`.
-   If `NVFLARE_STARTUP_KIT_DIR` is set, it participates in normal startup-kit resolution
-   and must also point to a `project_admin` kit. Otherwise fail with `NOT_AUTHORIZED`
-   before mutating project metadata.
+2. Treat the command as a local POC workspace operation. It uses the local POC project
+   metadata and local POC CA created by `poc prepare`; it is not gated by the currently
+   active startup kit role.
 3. Read the persisted POC `project.yml` from that workspace.
 4. Read the service metadata from that POC workspace.
 5. If the site does not exist, append one client participant with the requested site name
@@ -1024,9 +1022,10 @@ duplicate participant.
 `poc add site` follows the same duplicate rule for sites. If services are running, the
 command may add the new site kit but must not restart existing services automatically.
 
-Both `poc add user` and `poc add site` require the active startup kit to have the
-`project_admin` certificate role. A lead, org admin, member, missing role, or stale kit
-must fail before project metadata is changed.
+`poc add user` and `poc add site` do not use the active startup kit as an authorization
+boundary. POC is a local deployment owned by the local operator, so the meaningful safety
+checks are local integrity checks: valid requested user role, duplicate participant
+handling, existing POC project metadata, and generated startup kit shape.
 
 `poc clean` removes only startup kit entries whose canonical paths are under the canonical
 POC workspace path. If the active startup kit is removed, clear `startup_kits.active`.

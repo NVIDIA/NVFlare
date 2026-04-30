@@ -180,7 +180,6 @@ class TestPocOutput:
 
         with (
             patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
-            patch("nvflare.tool.poc.poc_commands._require_poc_project_admin"),
             patch("nvflare.tool.poc.poc_commands._add_poc_user", return_value=result),
             patch("nvflare.tool.cli_schema.handle_schema_flag"),
         ):
