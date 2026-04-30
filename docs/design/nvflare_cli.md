@@ -1130,8 +1130,13 @@ configured endpoint.
 | --- | --- | --- | --- | --- |
 | `-p`, `--service` | str | No | `"all"` | Participant to stop |
 | `-ex`, `--exclude` | str | No | `""` | Exclude service directory |
+| `--no-wait` | flag | No | — | Request shutdown and return without waiting for completion |
 | `-debug`, `--debug` | flag | No | — | Debug mode |
 | `--schema` | flag | No | — | Print command schema and exit |
+
+When stopping the server path, `poc stop` uses coordinated system shutdown logic. By
+default it waits until shutdown completes and returns `status: stopped`; with
+`--no-wait`, it returns after requesting shutdown with `status: shutdown_initiated`.
 
 #### `nvflare poc clean`
 
