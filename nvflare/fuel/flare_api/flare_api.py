@@ -18,7 +18,7 @@ import re
 import time
 from typing import List, Optional
 
-from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.apis.fl_constant import SUBMIT_TOKEN_CONFLICT_STATUS, AdminCommandNames
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey
 from nvflare.apis.utils.format_check import name_check
@@ -70,7 +70,6 @@ _DEFAULT_STATE_CHANGE_TIMEOUT = 30.0
 _STATE_CHANGE_POLL_INTERVAL = 0.5
 _STATE_CHANGE_CONNECT_TIMEOUT = 1.0
 _SUBMIT_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
-_SUBMIT_TOKEN_CONFLICT_STATUS = "submit_token_conflict"
 _LEGACY_TERMINAL_JOB_STATUSES = {
     "FINISHED_OK",
     "FINISHED_EXCEPTION",
@@ -225,7 +224,7 @@ class Session(SessionSpec):
             info = meta.get(MetaKey.INFO, "")
             if cmd_status == MetaStatusValue.INVALID_JOB_DEFINITION:
                 raise InvalidJobDefinition(f"invalid job definition: {info}")
-            elif cmd_status == _SUBMIT_TOKEN_CONFLICT_STATUS:
+            elif cmd_status == SUBMIT_TOKEN_CONFLICT_STATUS:
                 raise SubmitTokenConflict(
                     info or "submit token was already used for different job content",
                     meta.get(MetaKey.JOB_ID),
@@ -647,7 +646,7 @@ class Session(SessionSpec):
 
     def _wait_for_server_restart(self, previous_start_time, timeout: float):
         deadline = time.time() + timeout
-        seen_down = False
+        seen_down = previous_start_time is None
         last_error = "server restart has not completed"
         while time.time() < deadline:
             try:

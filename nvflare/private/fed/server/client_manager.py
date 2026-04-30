@@ -94,10 +94,10 @@ class ClientManager:
         with self.lock:
             already_disabled = client_name in self.disabled_clients
             self.disabled_clients.add(client_name)
-            removed_tokens = []
+            removed_clients = []
             for token, client in list(self.clients.items()):
                 if client.name == client_name:
-                    removed_tokens.append(token)
+                    removed_clients.append((token, client))
                     self.clients.pop(token, None)
             self.name_to_clients.pop(client_name, None)
             disabled_snapshot = set(self.disabled_clients)
@@ -107,8 +107,12 @@ class ClientManager:
             with self.lock:
                 if not already_disabled:
                     self.disabled_clients.discard(client_name)
+                for token, client in removed_clients:
+                    self.clients[token] = client
+                    self.name_to_clients[client.name] = client
             self.logger.error(f"failed to persist disabled-client state for {client_name}: {ex}")
             raise
+        removed_tokens = [token for token, _client in removed_clients]
         self.logger.info(f"Client {client_name} disabled. Removed active tokens: {removed_tokens}")
         return removed_tokens
 
@@ -293,6 +297,7 @@ class ClientManager:
                 pass
 
         with self.lock:
+            # Recheck under lock so disable_client cannot race with registration after the fast-path checks above.
             if client_name in self.disabled_clients:
                 fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, f"Client '{client_name}' is disabled", sticky=False)
                 self.logger.warning(f"Reject disabled client registration: {client_name}")

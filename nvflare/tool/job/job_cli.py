@@ -1123,6 +1123,8 @@ def _iter_files_under(path: str):
 
     root_real_path = os.path.realpath(path)
     for root, dirs, files in os.walk(path):
+        # Keep the manifest local even if a symlink or concurrent filesystem change
+        # points a visited entry outside the requested download tree.
         dirs[:] = sorted(
             d
             for d in dirs
@@ -1575,6 +1577,16 @@ def _normalize_log_timestamp(value: str) -> datetime.datetime:
     return ts
 
 
+def _log_since_arg(value: str) -> str:
+    try:
+        _normalize_log_timestamp(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(
+            f"{e}; accepted formats include ISO timestamps such as 2026-04-28T10:00:00 or 2026-04-28T10:00:00Z"
+        ) from e
+    return value
+
+
 def _parse_log_line_timestamp(line: str):
     match = _JOB_LOG_TS_RE.match(line)
     if not match:
@@ -1808,6 +1820,7 @@ def define_job_logs_parser(job_subparser):
     )
     p.add_argument(
         "--since",
+        type=_log_since_arg,
         default=None,
         help="return log lines at or after this timestamp; any explicit bound disables the default 500-line tail",
     )

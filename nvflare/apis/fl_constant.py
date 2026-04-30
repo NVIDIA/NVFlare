@@ -14,6 +14,8 @@
 
 from enum import Enum
 
+SUBMIT_TOKEN_CONFLICT_STATUS = "submit_token_conflict"
+
 
 class ReturnCode(object):
 

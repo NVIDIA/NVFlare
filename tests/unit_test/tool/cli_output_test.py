@@ -182,6 +182,15 @@ class TestOutputOk:
         assert captured.out == ""
         assert "progress message" in captured.err
 
+    def test_jsonl_mode_output_ok_emits_terminal_event(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        output_ok({"key": "value"})
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["schema_version"] == SCHEMA_VERSION
+        assert payload["status"] == "ok"
+        assert payload["terminal"] is True
+        assert payload["data"] == {"key": "value"}
+
     def test_jsonl_event_flushes_stdout(self):
         with patch("builtins.print") as mock_print:
             output_jsonl_event({"event": "progress"})

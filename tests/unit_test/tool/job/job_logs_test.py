@@ -363,3 +363,5 @@ class TestJobLogs:
             parser.parse_args(["abc123", "--tail", "-1"])
         with pytest.raises(SystemExit):
             parser.parse_args(["abc123", "--max-bytes", "-1"])
+        with pytest.raises(SystemExit):
+            parser.parse_args(["abc123", "--since", "2026/04/28"])

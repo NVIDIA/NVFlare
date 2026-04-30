@@ -148,7 +148,9 @@ def output(data: Any, fmt: Optional[str]) -> None:
 
 def output_ok(data: Any, exit_code: int = 0) -> None:
     """Print command success output."""
-    if _is_machine_mode():
+    if _is_jsonl_mode():
+        output_jsonl_event({"status": "ok", "exit_code": exit_code, "data": data, "terminal": True})
+    elif _is_json_mode():
         print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "exit_code": exit_code, "data": data}))
     else:
         _render_table(data)

@@ -104,7 +104,7 @@ def _iter_zip_bytes(zip_bytes: bytes, exclude_names: set):
             if posixpath.basename(rel_path) in exclude_names:
                 continue
             files.append((rel_path, info.filename))
-        strip_prefix = _single_top_level_prefix(rel_path for rel_path, _ in files)
+        strip_prefix = _single_top_level_prefix(path for path, _zip_name in files)
         for rel_path, zip_name in sorted(files):
             if strip_prefix:
                 rel_path = rel_path[len(strip_prefix) :]

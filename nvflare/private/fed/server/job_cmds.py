@@ -26,7 +26,14 @@ from zipfile import BadZipFile, ZipFile
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ReturnCode, ServerCommandKey, WorkspaceConstants
+from nvflare.apis.fl_constant import (
+    SUBMIT_TOKEN_CONFLICT_STATUS,
+    AdminCommandNames,
+    FLContextKey,
+    ReturnCode,
+    ServerCommandKey,
+    WorkspaceConstants,
+)
 from nvflare.apis.job_def import (
     ALL_SITES,
     DEFAULT_STUDY,
@@ -86,7 +93,6 @@ CLONED_META_KEYS = {
 }
 
 _SUBMIT_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
-_SUBMIT_TOKEN_CONFLICT_STATUS = "submit_token_conflict"
 
 
 def _validate_submit_token(submit_token: str) -> str:
@@ -1078,7 +1084,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             "SUBMIT_TOKEN_CONFLICT: submit token was already used for different job content. "
             "Use a new submit token for a new job.",
             meta=make_meta(
-                _SUBMIT_TOKEN_CONFLICT_STATUS,
+                SUBMIT_TOKEN_CONFLICT_STATUS,
                 "submit token was already used for different job content",
                 extra=extra,
             ),

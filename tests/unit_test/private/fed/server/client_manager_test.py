@@ -15,6 +15,8 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from nvflare.apis.client import Client, ClientPropKey
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.shareable import Shareable
@@ -103,6 +105,21 @@ def test_disable_client_persists_and_removes_active_client(tmp_path):
     reloaded = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
     reloaded.set_disabled_clients_file(str(disabled_file))
     assert reloaded.is_client_disabled("site-a")
+
+
+def test_disable_client_restores_active_client_when_persist_fails():
+    manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+    client = Client("site-a", "token-a")
+    manager.clients[client.token] = client
+    manager.name_to_clients[client.name] = client
+    manager._save_disabled_clients = MagicMock(side_effect=OSError("disk full"))
+
+    with pytest.raises(OSError):
+        manager.disable_client("site-a")
+
+    assert not manager.is_client_disabled("site-a")
+    assert manager.clients["token-a"] is client
+    assert manager.name_to_clients["site-a"] is client
 
 
 def test_enable_client_persists_and_allows_client(tmp_path):

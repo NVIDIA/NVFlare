@@ -187,6 +187,19 @@ class TestSystemRestart:
         with pytest.raises(SystemExit):
             parser.parse_args(["restart", "server", "--force", "--timeout", "-1"])
 
+    def test_restart_parser_reports_clean_timeout_type_error(self, capsys):
+        from nvflare.tool.system.system_cli import def_system_cli_parser
+
+        parser = argparse.ArgumentParser(prog="nvflare system")
+        def_system_cli_parser(parser)
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["restart", "server", "--force", "--timeout", "-1"])
+
+        captured = capsys.readouterr()
+        assert "value must be >= 0" in captured.err
+        assert "invalid _non_negative_float value" not in captured.err
+
     def test_restart_timeout_exits_timeout(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_restart
 

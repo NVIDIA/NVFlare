@@ -408,6 +408,14 @@ class TestSessionRestart:
         sess.restart("server")
         sess._wait_for_server_restart.assert_called_once_with(123, 30.0)
 
+    def test_wait_for_server_restart_accepts_immediate_success_when_previous_start_unknown(self):
+        sess = _make_session_with_meta({})
+        sys_info = MagicMock(server_info=MagicMock(start_time=123))
+        sess._poll_system_info = MagicMock(return_value=sys_info)
+
+        assert sess._wait_for_server_restart(None, timeout=1.0) is sys_info
+        sess._poll_system_info.assert_called_once()
+
     def test_restart_client_waits_by_default(self):
         sess = _make_session_with_meta({})
         sess._client_last_connect_times = MagicMock(return_value={"site-1": 123})

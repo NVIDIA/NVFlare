@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import sys
 import time
 from contextlib import contextmanager
@@ -39,9 +40,9 @@ def _non_negative_float(value: str) -> float:
     try:
         parsed = float(value)
     except ValueError as e:
-        raise ValueError(str(e))
+        raise argparse.ArgumentTypeError(str(e))
     if parsed < 0:
-        raise ValueError("value must be >= 0")
+        raise argparse.ArgumentTypeError("value must be >= 0")
     return parsed
 
 
