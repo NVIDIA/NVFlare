@@ -79,7 +79,11 @@ POC_START_READY_TIMEOUT = 30
 POC_DEFAULT_FED_LEARN_PORT = 8002
 POC_DEFAULT_ADMIN_PORT = 8003
 POC_LOCAL_HOST = "localhost"
-POC_PORT_PREFLIGHT_HOST = "0.0.0.0"
+POC_PORT_PREFLIGHT_HOST = "127.0.0.1"
+POC_PORT_PREFLIGHT_SCOPE = "loopback"
+POC_PORT_PREFLIGHT_NOTE = (
+    "Preflight checks loopback port availability only; poc start may still fail if another local bind address conflicts."
+)
 
 
 class AuthorizationError(PermissionError):
@@ -724,9 +728,11 @@ def _build_poc_port_preflight(project_config: Dict, host: str = POC_PORT_PREFLIG
         return {
             "checked": False,
             "host": host,
+            "scope": POC_PORT_PREFLIGHT_SCOPE,
             "ports": [],
             "conflicts": [],
             "message": "server port configuration is not available",
+            "note": POC_PORT_PREFLIGHT_NOTE,
         }
 
     checked_ports = []
@@ -752,8 +758,10 @@ def _build_poc_port_preflight(project_config: Dict, host: str = POC_PORT_PREFLIG
     return {
         "checked": True,
         "host": host,
+        "scope": POC_PORT_PREFLIGHT_SCOPE,
         "ports": checked_ports,
         "conflicts": conflicts,
+        "note": POC_PORT_PREFLIGHT_NOTE,
     }
 
 
@@ -822,9 +830,11 @@ def _build_poc_start_port_preflight(
         return {
             "checked": False,
             "host": POC_PORT_PREFLIGHT_HOST,
+            "scope": POC_PORT_PREFLIGHT_SCOPE,
             "ports": [],
             "conflicts": [],
             "message": "server port configuration is not available",
+            "note": POC_PORT_PREFLIGHT_NOTE,
         }
 
     starts_server, _ = _get_started_readiness_participants(service_config, services_list, excluded)
@@ -832,9 +842,11 @@ def _build_poc_start_port_preflight(
         return {
             "checked": False,
             "host": POC_PORT_PREFLIGHT_HOST,
+            "scope": POC_PORT_PREFLIGHT_SCOPE,
             "ports": [],
             "conflicts": [],
             "message": "server was not selected for startup",
+            "note": POC_PORT_PREFLIGHT_NOTE,
         }
 
     return _build_poc_port_preflight(project_config)
@@ -1502,9 +1514,11 @@ def start_poc(cmd_args):
     port_preflight = {
         "checked": False,
         "host": POC_PORT_PREFLIGHT_HOST,
+        "scope": POC_PORT_PREFLIGHT_SCOPE,
         "ports": [],
         "conflicts": [],
         "message": "server port configuration is not available",
+        "note": POC_PORT_PREFLIGHT_NOTE,
     }
     try:
         pre_project_config, pre_service_config = setup_service_config(poc_workspace)

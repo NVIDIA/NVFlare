@@ -308,16 +308,19 @@ identity after the POC workflow.
 
 ``nvflare poc prepare`` also reports a best-effort local server port preflight
 under ``data.port_preflight``. The command checks the generated POC server ports
-when the project configuration can be read and lists unavailable ports in
-``data.port_preflight.conflicts``. These conflicts are warnings for the later
-``nvflare poc start`` step; they do not make ``poc prepare`` fail.
+on the loopback address when the project configuration can be read and lists
+unavailable ports in ``data.port_preflight.conflicts``. These conflicts are
+warnings for the later ``nvflare poc start`` step; they do not make
+``poc prepare`` fail. Since the preflight does not bind wildcard interfaces,
+``data.port_preflight.note`` describes the check as best effort.
 
 In JSON mode, ``nvflare poc start`` reports the bound POC endpoints under
 ``data.server_address`` and ``data.admin_address``. The command waits for
 readiness by default unless ``--no-wait`` is used. It also repeats a best-effort
 local server port preflight before startup and reports unavailable configured
 ports under ``data.port_preflight.conflicts`` with ``data.port_conflict`` set to
-``true``.
+``true``. The preflight is loopback-scoped and is intended as an early warning;
+startup can still fail if another local bind address conflicts.
 
 Use :ref:`kit_command` to inspect generated POC startup kit registrations or
 switch between POC-generated user startup kits.

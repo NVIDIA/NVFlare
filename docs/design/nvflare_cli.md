@@ -1079,8 +1079,12 @@ activates the first Project Admin kit. The JSON success payload includes:
 - `startup_kit.active`: startup-kit ID active after prepare, or `null`.
 - `startup_kit.changed`: whether prepare changed the active startup-kit ID.
 - `port_preflight.checked`: whether server port preflight could be performed.
+- `port_preflight.host`: loopback host used for the local availability probe.
+- `port_preflight.scope`: `"loopback"` because preflight does not bind wildcard interfaces.
 - `port_preflight.ports`: checked local server ports and availability.
 - `port_preflight.conflicts`: unavailable ports that may prevent `poc start`.
+- `port_preflight.note`: caveat that this is a best-effort loopback check and
+  `poc start` can still fail if another local bind address conflicts.
 
 #### `nvflare poc start`
 
@@ -1107,7 +1111,8 @@ explicitly selected. In JSON mode, success data includes:
   comparison and diagnostics.
 - `port_conflict`: true when the pre-start local port check found unavailable configured
   server ports.
-- `port_preflight`: checked ports and conflict details.
+- `port_preflight`: checked ports and conflict details. It uses the same loopback-scoped
+  best-effort contract as `poc prepare`.
 - `warnings`: human-readable warning strings derived from `port_preflight.conflicts`.
 - `clients`: configured POC client names.
 
