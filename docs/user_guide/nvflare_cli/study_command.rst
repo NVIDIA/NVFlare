@@ -114,9 +114,42 @@ List all studies the caller has access to.
 .. code-block:: shell
 
    nvflare study list
+   nvflare study list --format json
 
 - ``project_admin`` sees all studies.
 - ``org_admin`` sees studies in which their organisation has enrolled sites.
+- ``lead`` and ``member`` users see studies where they are explicitly mapped.
+
+In JSON mode, the command includes the startup kit selected by the CLI, the
+identity authenticated by the server, and per-study submit preflight fields:
+
+.. code-block:: json
+
+   {
+     "startup_kit": {
+       "source": "active",
+       "id": "lead@nvidia.com",
+       "path": "/path/to/lead@nvidia.com"
+     },
+     "identity": {
+       "name": "lead@nvidia.com",
+       "org": "nvidia",
+       "role": "lead"
+     },
+     "studies": ["cancer-research"],
+     "study_details": [
+       {
+         "name": "cancer-research",
+         "role": "lead",
+         "capabilities": {"submit_job": true},
+         "can_submit_job": true
+       }
+     ]
+   }
+
+``can_submit_job`` reflects the current server-side study visibility/mapping
+preflight. It does not expose future custom authorization-policy details; a
+later submit may still fail for other server-side validation or policy reasons.
 
 *********************
 Remove a Study

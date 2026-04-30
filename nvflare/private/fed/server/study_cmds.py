@@ -109,7 +109,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
                     description="list visible studies",
                     usage=AdminCommandNames.LIST_STUDIES,
                     handler_func=self.cmd_list_studies,
-                    authz_func=self.authorize_study_admin,
+                    authz_func=self.authorize_list_studies,
                     visible=True,
                 ),
                 CommandSpec(
@@ -142,6 +142,13 @@ class StudyCommandModule(CommandModule, CommandUtil):
     def authorize_study_admin(self, conn: Connection, args: List[str]):
         role = conn.get_prop(ConnProps.USER_ROLE, "")
         if role in {"project_admin", "org_admin"}:
+            return PreAuthzReturnCode.OK
+        conn.append_error(f"NOT_AUTHORIZED for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))
+        return PreAuthzReturnCode.ERROR
+
+    def authorize_list_studies(self, conn: Connection, args: List[str]):
+        role = conn.get_prop(ConnProps.USER_ROLE, "")
+        if role in {"project_admin", "org_admin", "lead", "member"}:
             return PreAuthzReturnCode.OK
         conn.append_error(f"NOT_AUTHORIZED for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))
         return PreAuthzReturnCode.ERROR
@@ -292,6 +299,27 @@ class StudyCommandModule(CommandModule, CommandUtil):
             return False
         site_orgs = (study_def or {}).get("site_orgs", {})
         return caller_org in site_orgs
+
+    def _is_list_visible_to_caller(self, conn: Connection, study_def: dict) -> bool:
+        caller_role = self._caller_role(conn)
+        if caller_role in {"project_admin", "org_admin"}:
+            return self._is_visible_to_caller(conn, study_def)
+        return self._caller_name(conn) in set((study_def or {}).get("admins", []))
+
+    def _study_list_item(self, conn: Connection, study_name: str) -> dict:
+        return {
+            "name": study_name,
+            "role": self._caller_role(conn),
+            "capabilities": {"submit_job": True},
+            "can_submit_job": True,
+        }
+
+    def _caller_identity_payload(self, conn: Connection) -> dict:
+        return {
+            "name": self._caller_name(conn),
+            "org": self._caller_org(conn),
+            "role": self._caller_role(conn),
+        }
 
     @staticmethod
     def _normalize_admins(study_def: dict) -> List[str]:
@@ -599,11 +627,20 @@ class StudyCommandModule(CommandModule, CommandUtil):
             return
         registry = StudyRegistryService.get_registry()
         studies = []
+        study_details = []
         if registry:
             for study_name, study_def in registry.get_studies().items():
-                if self._caller_role(conn) == "project_admin" or self._is_visible_to_caller(conn, study_def):
+                if self._is_list_visible_to_caller(conn, study_def):
                     studies.append(study_name)
-        self._reply(conn, {"studies": sorted(studies)})
+                    study_details.append(self._study_list_item(conn, study_name))
+        self._reply(
+            conn,
+            {
+                "identity": self._caller_identity_payload(conn),
+                "studies": sorted(studies),
+                "study_details": sorted(study_details, key=lambda item: item["name"]),
+            },
+        )
 
     def cmd_show_study(self, conn: Connection, args: List[str]):
         parser = _study_parser(AdminCommandNames.SHOW_STUDY)

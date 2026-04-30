@@ -33,7 +33,7 @@ from nvflare.tool.cli_output import (
     output_ok,
     output_usage_error,
 )
-from nvflare.tool.cli_session import add_startup_kit_selection_args
+from nvflare.tool.cli_session import add_startup_kit_selection_args, resolve_startup_kit_info_for_args
 
 CMD_STUDY_REGISTER = "register"
 CMD_STUDY_ADD_SITE = "add-site"
@@ -242,6 +242,12 @@ def _run_with_payload(args, func, *func_args, parser=None):
         _handle_command_error(e)
 
 
+def _with_startup_kit_info(args, data: dict) -> dict:
+    data = dict(data or {})
+    data["startup_kit"] = resolve_startup_kit_info_for_args(args)
+    return data
+
+
 def cmd_register(args):
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -336,7 +342,11 @@ def cmd_list(args):
         ["nvflare study list"],
         sys.argv[1:],
     )
-    _run_with_payload(args, lambda s: s.list_studies(), parser=_study_sub_cmd_parsers[CMD_STUDY_LIST])
+    _run_with_payload(
+        args,
+        lambda s: _with_startup_kit_info(args, s.list_studies()),
+        parser=_study_sub_cmd_parsers[CMD_STUDY_LIST],
+    )
 
 
 def cmd_show(args):

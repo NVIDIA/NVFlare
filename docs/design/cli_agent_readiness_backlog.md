@@ -13,6 +13,8 @@ This backlog tracks the remaining larger CLI enhancement groups after the
 - `poc start` readiness, bound addresses, port conflict metadata, and `--timeout`
 - `recipe list --filter` with list-time metadata for `framework`, `privacy`,
   `algorithm`, `aggregation`, and `state_exchange`
+- `study list` identity, startup-kit metadata, visible-study details, and
+  membership-level `can_submit_job`
 
 ## 1. CLI Contract
 
@@ -40,8 +42,8 @@ This backlog tracks the remaining larger CLI enhancement groups after the
 
 ## 5. Study / Production Preflight
 
-- Enrich `study list` with role, capabilities, `can_submit_job`, and denial
-  reason fields.
+- Full authorization-policy introspection for production submit preflight when
+  server-side policy reporting is added.
 
 ## 6. Cert / Provisioning Lifecycle
 

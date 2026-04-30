@@ -71,17 +71,37 @@ class TestStudyCli:
 
         args = MagicMock()
         mock_sess = MagicMock()
-        mock_sess.list_studies.return_value = {"studies": ["cancer-research"]}
+        mock_sess.list_studies.return_value = {
+            "identity": {"name": "lead@nvidia.com", "org": "nvidia", "role": "lead"},
+            "studies": ["cancer-research"],
+            "study_details": [
+                {
+                    "name": "cancer-research",
+                    "role": "lead",
+                    "capabilities": {"submit_job": True},
+                    "can_submit_job": True,
+                }
+            ],
+        }
 
-        with patch(
-            "nvflare.tool.study.study_cli._study_session",
-            return_value=nullcontext(mock_sess),
+        with (
+            patch(
+                "nvflare.tool.study.study_cli._study_session",
+                return_value=nullcontext(mock_sess),
+            ),
+            patch(
+                "nvflare.tool.study.study_cli.resolve_startup_kit_info_for_args",
+                return_value={"source": "active", "id": "lead", "path": "/kits/lead"},
+            ),
         ):
             cmd_list(args)
 
         payload = json.loads(capsys.readouterr().out)
         assert payload["status"] == "ok"
         assert payload["data"]["studies"] == ["cancer-research"]
+        assert payload["data"]["identity"] == {"name": "lead@nvidia.com", "org": "nvidia", "role": "lead"}
+        assert payload["data"]["study_details"][0]["can_submit_job"] is True
+        assert payload["data"]["startup_kit"] == {"source": "active", "id": "lead", "path": "/kits/lead"}
 
     def test_study_show_maps_command_error(self, capsys):
         from nvflare.tool.study.study_cli import cmd_show
@@ -147,6 +167,34 @@ class TestStudyCli:
 
         assert new_secure.call_args.kwargs["username"] == "scoped@nvidia.com"
         assert new_secure.call_args.kwargs["startup_kit_location"] == str(scoped_admin_dir)
+
+    def test_resolve_startup_kit_info_uses_active_startup_kit(self, tmp_path, monkeypatch):
+        from nvflare.tool.cli_session import resolve_startup_kit_info_for_args
+
+        active_admin_dir = _configure_active_startup_kit(tmp_path, monkeypatch)
+
+        info = resolve_startup_kit_info_for_args(Namespace())
+
+        assert info == {
+            "source": "active",
+            "id": "admin@nvidia.com",
+            "path": str(active_admin_dir.resolve()),
+        }
+
+    def test_resolve_startup_kit_info_uses_explicit_startup_kit(self, tmp_path, monkeypatch):
+        from nvflare.tool.cli_session import resolve_startup_kit_info_for_args
+
+        scoped_admin_dir = _make_admin_startup_kit(tmp_path, "scoped@nvidia.com")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
+
+        info = resolve_startup_kit_info_for_args(Namespace(startup_kit=str(scoped_admin_dir), kit_id=None))
+
+        assert info == {
+            "source": "startup_kit",
+            "id": None,
+            "path": str(scoped_admin_dir.resolve()),
+        }
 
     def test_try_get_caller_role_uses_active_startup_kit(self, tmp_path, monkeypatch):
         from nvflare.tool.study.study_cli import _try_get_caller_role

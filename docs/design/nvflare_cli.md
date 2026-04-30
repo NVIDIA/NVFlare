@@ -1483,6 +1483,17 @@ Site enrollment is role-sensitive:
 - `project_admin` uses `--site-org <org>:<site>[,<site>...]`.
 - `org_admin` uses `--sites <site> [<site> ...]`.
 - `--sites` accepts either space-delimited or comma-delimited input.
+
+`nvflare study list --format json` is the production submit preflight for the current
+phase. The server returns the authenticated identity plus visible studies and per-study
+details. The CLI adds startup-kit selection metadata (`source`, `id`, `path`) because
+only the CLI knows whether the kit came from `--kit-id`, `--startup-kit`, environment, or
+active config. The server remains the source of truth for identity and visibility.
+
+For each returned study, `can_submit_job` and `capabilities.submit_job` are `true` under
+the current membership-level model. Hidden or unmapped studies are omitted rather than
+returned with denial details. This is not full future authorization-policy introspection;
+job submit can still fail for unrelated validation or policy checks.
 - `--sites` and `--site-org` are mutually exclusive.
 
 ### Add `nvflare recipe`

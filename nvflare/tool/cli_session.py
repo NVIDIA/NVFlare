@@ -13,9 +13,14 @@
 # limitations under the License.
 """CLI-scoped session helpers."""
 
+import os
+
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 from nvflare.tool.kit.kit_config import (
+    NVFLARE_STARTUP_KIT_DIR,
     StartupKitConfigError,
+    get_active_startup_kit_id,
+    load_cli_config,
     resolve_admin_user_and_dir_from_startup_kit,
     resolve_startup_kit_dir,
     resolve_startup_kit_dir_by_id,
@@ -64,6 +69,47 @@ def resolve_startup_kit_dir_for_args(args=None) -> str:
         _username, admin_user_dir = resolve_admin_user_and_dir_from_startup_kit(startup_kit)
         return admin_user_dir
     return resolve_startup_kit_dir()
+
+
+def resolve_startup_kit_info_for_args(args=None) -> dict:
+    """Resolve startup-kit selection metadata for machine-readable command output."""
+    kit_id = _get_arg_value(args, "kit_id")
+    startup_kit = _get_arg_value(args, "startup_kit")
+
+    if kit_id and startup_kit:
+        raise StartupKitConfigError(
+            "--kit-id and --startup-kit are mutually exclusive",
+            hint="Use only one startup-kit selector for a command.",
+        )
+    if kit_id:
+        return {
+            "source": "kit_id",
+            "id": kit_id,
+            "path": resolve_startup_kit_dir_by_id(kit_id),
+        }
+    if startup_kit:
+        _username, admin_user_dir = resolve_admin_user_and_dir_from_startup_kit(startup_kit)
+        return {
+            "source": "startup_kit",
+            "id": None,
+            "path": admin_user_dir,
+        }
+
+    env_startup_kit_dir = os.getenv(NVFLARE_STARTUP_KIT_DIR)
+    if env_startup_kit_dir is not None and env_startup_kit_dir.strip():
+        return {
+            "source": "env",
+            "id": None,
+            "path": resolve_startup_kit_dir(),
+        }
+
+    config = load_cli_config()
+    active_id = get_active_startup_kit_id(config)
+    return {
+        "source": "active",
+        "id": active_id,
+        "path": resolve_startup_kit_dir(),
+    }
 
 
 def resolve_admin_user_and_dir_for_args(args=None):
