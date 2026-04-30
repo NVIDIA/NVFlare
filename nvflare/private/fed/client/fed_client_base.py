@@ -145,8 +145,14 @@ class FederatedClientBase:
             self.engine.shutdown()
             return
 
-        sp = overseer_agent.get_primary_sp()
-        self.set_primary_sp(sp)
+        try:
+            sp = overseer_agent.get_primary_sp()
+            self.set_primary_sp(sp)
+        except Exception as ex:
+            self.logger.warning(
+                f"Could not complete primary SP update from overseer. The client will keep running. "
+                f"Exception: {secure_format_exception(ex)}"
+            )
 
     def set_sp(self, project_name, sp: SP):
         if sp and sp.primary is True:
