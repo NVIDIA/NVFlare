@@ -79,7 +79,8 @@ CMD_ADD_POC = "add"
 CMD_ADD_USER = "user"
 CMD_ADD_SITE = "site"
 
-POC_USER_CERT_ROLES = ("project_admin", "org_admin", "lead", "member")
+# POC prepare creates the single Project Admin. Dynamic POC add can only add secondary users.
+POC_USER_CERT_ROLES = ("org_admin", "lead", "member")
 POC_ADD_REQUIRED_CERT_ROLE = "project_admin"
 
 POC_KEY = "poc"
@@ -970,6 +971,11 @@ def _dynamic_poc_provision(
 
 
 def _add_poc_user(poc_workspace: str, cert_role: str, email: str, org: str, force: bool = False) -> Dict:
+    if cert_role not in POC_USER_CERT_ROLES:
+        raise CLIException(
+            f"unsupported POC user certificate role '{cert_role}'; "
+            f"valid roles are: {', '.join(POC_USER_CERT_ROLES)}"
+        )
     project_file, project_config = _load_poc_project_config(poc_workspace)
     previous_active = get_active_startup_kit_id(load_cli_config())
     participant = {"name": email, "type": "admin", "org": org, "role": cert_role}

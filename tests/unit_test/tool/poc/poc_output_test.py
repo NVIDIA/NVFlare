@@ -92,6 +92,23 @@ class TestPocOutput:
         assert args.poc_sub_cmd == "config"
         assert args.poc_workspace_dir == "/path/to/poc"
 
+    def test_poc_add_user_parser_excludes_project_admin_role(self):
+        import argparse
+
+        from nvflare.tool.poc import poc_commands
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        poc_commands.def_poc_parser(subs)
+
+        help_text = poc_commands._poc_add_sub_cmd_parsers["user"].format_help()
+        assert "project_admin,org_admin,lead,member" not in help_text
+        assert "{org_admin,lead,member}" in help_text
+        args = root.parse_args(["poc", "add", "user", "lead", "bob@nvidia.com"])
+        assert args.cert_role == "lead"
+        with pytest.raises(SystemExit):
+            root.parse_args(["poc", "add", "user", "project_admin", "bob@nvidia.com"])
+
     def test_poc_config_writes_workspace(self, capsys):
         from nvflare.tool.poc.poc_commands import config_poc
 

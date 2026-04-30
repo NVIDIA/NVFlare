@@ -713,6 +713,39 @@ poc {{
         assert entries["bob@nvidia.com"] == str(workspace / project_name / "prod_00" / "bob@nvidia.com")
         assert "site-1" not in entries
 
+    def test_poc_add_user_rejects_project_admin_role_before_mutation(self, tmp_path, monkeypatch):
+        from nvflare.tool.poc.poc_commands import _add_poc_user
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        workspace = tmp_path / "poc_ws"
+        workspace.mkdir(parents=True, exist_ok=True)
+        project_file = workspace / "project.yml"
+        project_file.write_text(
+            """
+name: example_project
+participants:
+  - name: admin@nvidia.com
+    type: admin
+    role: project_admin
+    org: nvidia
+"""
+        )
+
+        with patch("nvflare.tool.poc.poc_commands._provision_poc_participant_only") as mock_prepare:
+            with pytest.raises(CLIException, match="unsupported POC user certificate role 'project_admin'"):
+                _add_poc_user(str(workspace), "project_admin", "other-admin@nvidia.com", "nvidia")
+
+        mock_prepare.assert_not_called()
+        persisted = yaml.safe_load(project_file.read_text())
+        assert persisted["participants"] == [
+            {
+                "name": "admin@nvidia.com",
+                "type": "admin",
+                "role": "project_admin",
+                "org": "nvidia",
+            }
+        ]
+
     def test_poc_add_user_auto_activates_when_no_active_kit_exists(self, tmp_path, monkeypatch):
         from nvflare.tool.poc.poc_commands import _add_poc_user
 

@@ -797,9 +797,10 @@ startup_kits.entries."lead@nvidia.com"      -> .../prod_00/lead@nvidia.com
 
 #### `nvflare poc add user <cert-role> <email> --org <org>`
 
-Creates a new local POC user startup kit and registers it in the shared registry. Valid
-`<cert-role>` values are `project_admin`, `org_admin`, `lead`, and `member`. These are
-certificate roles, not study-specific roles.
+Creates a new local secondary POC user startup kit and registers it in the shared
+registry. Valid `<cert-role>` values are `org_admin`, `lead`, and `member`. These are
+certificate roles, not study-specific roles. `poc add user` must not add another
+`project_admin`; the single POC Project Admin is created by `poc prepare`.
 
 Behavior:
 
@@ -1172,6 +1173,8 @@ nvflare poc add user <cert-role> <email> --org <org> [--force] [--schema]
 Creates or refreshes a local POC admin/user participant from the default POC project YAML,
 dynamically generates only that participant's startup kit with the existing POC CA, and
 registers that user kit under startup kit ID `<email>`.
+Allowed `<cert-role>` values are `org_admin`, `lead`, and `member`; this command
+does not add another `project_admin`.
 
 #### `nvflare poc add site`
 
