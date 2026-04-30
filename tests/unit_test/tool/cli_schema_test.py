@@ -210,6 +210,23 @@ class TestParserToSchema:
         assert "--output-dir" in names
         assert "--force" in names
 
+    def test_command_contract_metadata_included_when_provided(self):
+        parser = _make_parser()
+        schema = parser_to_schema(
+            parser,
+            "nvflare job submit",
+            output_modes=["json"],
+            streaming=False,
+            mutating=True,
+            idempotent=False,
+            retry_token={"supported": True, "flag": "--submit-token", "scope": "study + submitter + token"},
+        )
+        assert schema["output_modes"] == ["json"]
+        assert schema["streaming"] is False
+        assert schema["mutating"] is True
+        assert schema["idempotent"] is False
+        assert schema["retry_token"]["flag"] == "--submit-token"
+
 
 class TestHandleSchemaFlag:
     def test_with_schema_flag_prints_json_and_exits(self, capsys):
@@ -220,6 +237,28 @@ class TestHandleSchemaFlag:
         captured = capsys.readouterr()
         schema = json.loads(captured.out)
         assert schema["command"] == "nvflare job get"
+
+    def test_with_schema_flag_prints_command_contract_metadata(self, capsys):
+        parser = _make_parser()
+        with pytest.raises(SystemExit) as exc_info:
+            handle_schema_flag(
+                parser,
+                "nvflare job monitor",
+                ["example"],
+                ["--schema"],
+                output_modes=["json", "jsonl"],
+                streaming=True,
+                mutating=False,
+                idempotent=True,
+                retry_token={"supported": False},
+            )
+        assert exc_info.value.code == 0
+        schema = json.loads(capsys.readouterr().out)
+        assert schema["output_modes"] == ["json", "jsonl"]
+        assert schema["streaming"] is True
+        assert schema["mutating"] is False
+        assert schema["idempotent"] is True
+        assert schema["retry_token"] == {"supported": False}
 
     def test_without_schema_flag_does_nothing(self, capsys):
         parser = _make_parser()

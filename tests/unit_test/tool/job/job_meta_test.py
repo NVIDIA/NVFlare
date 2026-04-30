@@ -191,11 +191,7 @@ class TestJobMeta:
     def test_meta_help_and_schema_include_scoped_startup_selectors(self, capsys):
         import argparse
 
-        from nvflare.tool.job.job_cli import (
-            cmd_job_meta,
-            def_job_cli_parser,
-            job_sub_cmd_parser,
-        )
+        from nvflare.tool.job.job_cli import cmd_job_meta, def_job_cli_parser, job_sub_cmd_parser
 
         root = argparse.ArgumentParser()
         def_job_cli_parser(root.add_subparsers())
@@ -216,3 +212,9 @@ class TestJobMeta:
             assert token not in schema_text
         assert "--startup-kit" in schema_text
         assert "--kit-id" in schema_text
+        schema = json.loads(schema_text)
+        assert schema["output_modes"] == ["json"]
+        assert schema["streaming"] is False
+        assert schema["mutating"] is False
+        assert schema["idempotent"] is True
+        assert schema["retry_token"] == {"supported": False}

@@ -27,12 +27,7 @@ from nvflare.fuel.flare_api.api_spec import (
     InvalidArgumentError,
     NoConnection,
 )
-from nvflare.tool.cli_output import (
-    output_error,
-    output_error_message,
-    output_ok,
-    output_usage_error,
-)
+from nvflare.tool.cli_output import output_error, output_error_message, output_ok, output_usage_error
 from nvflare.tool.cli_session import add_startup_kit_selection_args, resolve_startup_kit_info_for_args
 
 CMD_STUDY_REGISTER = "register"
@@ -48,6 +43,8 @@ POC_DEFAULT_ORG = "nvidia"
 _study_sub_cmd_parsers = {}
 _study_handlers = {}
 _study_root_parser = None
+_JSON_OUTPUT_MODES = ["json"]
+_NO_RETRY_TOKEN_SCHEMA = {"supported": False}
 
 
 class _WideSubcmdFormatter(argparse.HelpFormatter):
@@ -341,6 +338,11 @@ def cmd_list(args):
         "nvflare study list",
         ["nvflare study list"],
         sys.argv[1:],
+        output_modes=_JSON_OUTPUT_MODES,
+        streaming=False,
+        mutating=False,
+        idempotent=True,
+        retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
     _run_with_payload(
         args,

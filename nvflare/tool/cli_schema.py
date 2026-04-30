@@ -49,6 +49,9 @@ def parser_to_schema(
     deprecated_message: str = "",
     streaming: Optional[bool] = None,
     output_modes: Optional[List[str]] = None,
+    mutating: Optional[bool] = None,
+    idempotent: Optional[bool] = None,
+    retry_token: Optional[dict] = None,
 ) -> dict:
     """Serialize an argparse parser to a JSON-compatible schema dict."""
     # argparse exposes parser structure via the private _actions list; this is the standard
@@ -105,6 +108,12 @@ def parser_to_schema(
         result["streaming"] = streaming
     if output_modes is not None:
         result["output_modes"] = output_modes
+    if mutating is not None:
+        result["mutating"] = mutating
+    if idempotent is not None:
+        result["idempotent"] = idempotent
+    if retry_token is not None:
+        result["retry_token"] = retry_token
     return result
 
 
@@ -117,6 +126,9 @@ def handle_schema_flag(
     deprecated_message: str = "",
     streaming: Optional[bool] = None,
     output_modes: Optional[List[str]] = None,
+    mutating: Optional[bool] = None,
+    idempotent: Optional[bool] = None,
+    retry_token: Optional[dict] = None,
 ) -> None:
     """Handle the pre-parse --schema fast path.
 
@@ -138,6 +150,12 @@ def handle_schema_flag(
                 schema["streaming"] = streaming
             if output_modes is not None:
                 schema["output_modes"] = output_modes
+            if mutating is not None:
+                schema["mutating"] = mutating
+            if idempotent is not None:
+                schema["idempotent"] = idempotent
+            if retry_token is not None:
+                schema["retry_token"] = retry_token
         else:
             schema = parser_to_schema(
                 parser,
@@ -147,6 +165,9 @@ def handle_schema_flag(
                 deprecated_message,
                 streaming=streaming,
                 output_modes=output_modes,
+                mutating=mutating,
+                idempotent=idempotent,
+                retry_token=retry_token,
             )
         # --schema intentionally bypasses the normal command-output envelope so agent/tool callers
         # always get the raw schema document.

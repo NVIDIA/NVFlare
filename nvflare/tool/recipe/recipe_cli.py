@@ -30,6 +30,8 @@ _RECIPE_PACKAGE_ROOTS = [
     {"package": "nvflare.app_opt.xgboost.recipes", "framework": "xgboost"},
 ]
 _FILTER_KEYS = {"framework", "privacy", "algorithm", "aggregation", "state_exchange"}
+_JSON_OUTPUT_MODES = ["json"]
+_NO_RETRY_TOKEN_SCHEMA = {"supported": False}
 _LIST_METADATA_KEYS = {"privacy"}
 _CATALOG_RECIPE_CLASS_KEY = "_recipe_cls"
 _CORE_FRAMEWORK_SUPPORT = {
@@ -834,6 +836,11 @@ def cmd_recipe_list(cmd_args):
             "nvflare recipe list --filter framework=pytorch --filter algorithm=fedavg",
         ],
         sys.argv[1:],
+        output_modes=_JSON_OUTPUT_MODES,
+        streaming=False,
+        mutating=False,
+        idempotent=True,
+        retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
 
     framework = getattr(cmd_args, "framework", None)
@@ -920,6 +927,11 @@ def cmd_recipe_show(cmd_args):
             "nvflare recipe show fedavg-pt --format json",
         ],
         sys.argv[1:],
+        output_modes=_JSON_OUTPUT_MODES,
+        streaming=False,
+        mutating=False,
+        idempotent=True,
+        retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
 
     requested_name = _normalize_recipe_name(getattr(cmd_args, "name", ""))

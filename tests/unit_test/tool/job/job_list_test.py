@@ -208,6 +208,12 @@ class TestJobList:
             assert token not in schema_text
         assert "--startup-kit" in schema_text
         assert "--kit-id" in schema_text
+        schema = json.loads(schema_text)
+        assert schema["output_modes"] == ["json"]
+        assert schema["streaming"] is False
+        assert schema["mutating"] is False
+        assert schema["idempotent"] is True
+        assert schema["retry_token"]["flag"] == "--submit-token"
 
     def test_list_forwards_named_study_to_session(self):
         from nvflare.tool.job.job_cli import cmd_job_list

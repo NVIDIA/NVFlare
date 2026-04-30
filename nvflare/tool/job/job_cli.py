@@ -100,6 +100,14 @@ CMD_JOB_WAIT = "wait"
 CMD_JOB_LOG_CONFIG = "log-config"
 CMD_JOB_LOG_ALIAS = "log"
 
+_JSON_OUTPUT_MODES = ["json"]
+_JOB_SUBMIT_RETRY_TOKEN_SCHEMA = {
+    "supported": True,
+    "flag": "--submit-token",
+    "scope": "study + submitter + token",
+}
+_NO_RETRY_TOKEN_SCHEMA = {"supported": False}
+
 _JOB_HELP_FORMATTER = partial(argparse.HelpFormatter, max_help_position=24, width=120)
 _ACTIVE_STARTUP_KIT_HINT = (
     "Run 'nvflare config list' and 'nvflare config use <id>', pass --kit-id <id> or --startup-kit <path>, "
@@ -477,6 +485,11 @@ def submit_job(cmd_args):
             "nvflare job submit -j ./my_job --submit-token retry-001",
         ],
         sys.argv[1:],
+        output_modes=_JSON_OUTPUT_MODES,
+        streaming=False,
+        mutating=True,
+        idempotent=False,
+        retry_token=_JOB_SUBMIT_RETRY_TOKEN_SCHEMA,
     )
 
     def _has_job_meta(path: str) -> bool:
@@ -1192,6 +1205,11 @@ def cmd_job_list(cmd_args):
             "nvflare job list --study cancer_research",
         ],
         sys.argv[1:],
+        output_modes=_JSON_OUTPUT_MODES,
+        streaming=False,
+        mutating=False,
+        idempotent=True,
+        retry_token=_JOB_SUBMIT_RETRY_TOKEN_SCHEMA,
     )
 
     study = getattr(cmd_args, "study", "default")
@@ -1228,6 +1246,11 @@ def cmd_job_meta(cmd_args):
         "nvflare job meta",
         ["nvflare job meta <job_id>"],
         sys.argv[1:],
+        output_modes=_JSON_OUTPUT_MODES,
+        streaming=False,
+        mutating=False,
+        idempotent=True,
+        retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
 
     try:
@@ -1333,6 +1356,11 @@ def cmd_job_download(cmd_args):
             "nvflare job download <job_id> -o /path/to/results",
         ],
         sys.argv[1:],
+        output_modes=_JSON_OUTPUT_MODES,
+        streaming=False,
+        mutating=True,
+        idempotent=False,
+        retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
 
     destination = _job_download_destination(cmd_args.job_id, getattr(cmd_args, "output_dir", None))
@@ -1654,6 +1682,11 @@ def cmd_job_logs(cmd_args):
             "nvflare job logs abc123 --site all --tail 200",
         ],
         sys.argv[1:],
+        output_modes=_JSON_OUTPUT_MODES,
+        streaming=False,
+        mutating=False,
+        idempotent=True,
+        retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
 
     site = getattr(cmd_args, "site", "server")
@@ -2146,6 +2179,9 @@ def cmd_job_monitor(cmd_args):
         sys.argv[1:],
         streaming=True,
         output_modes=["json", "jsonl"],
+        mutating=False,
+        idempotent=True,
+        retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
 
     jsonl_mode = is_jsonl_mode()
@@ -2273,6 +2309,11 @@ def cmd_job_wait(cmd_args):
             "nvflare job wait abc123 --study cancer",
         ],
         sys.argv[1:],
+        output_modes=_JSON_OUTPUT_MODES,
+        streaming=False,
+        mutating=False,
+        idempotent=True,
+        retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
 
     study = _get_arg_value(cmd_args, "study", "default")

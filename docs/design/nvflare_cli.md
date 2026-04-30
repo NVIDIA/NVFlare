@@ -72,6 +72,27 @@ Exceptions: the following are plain text and are explicitly outside the JSON com
 
 Agents must use `--schema` for machine-readable command discovery, not `--help`.
 
+Agent-facing commands add explicit command-contract metadata to the existing
+argparse-derived schema. The `args` and `examples` fields remain unchanged; the
+additional fields describe command behavior that cannot be inferred safely from
+argparse:
+
+- `output_modes`: supported machine output modes, for example `["json"]` or
+  `["json", "jsonl"]`.
+- `streaming`: whether the command can emit multiple machine-readable events.
+- `mutating`: whether the command can change local files, local CLI state, or
+  server state.
+- `idempotent`: whether repeating the same command with the same arguments is
+  expected to leave the same final state.
+- `retry_token`: optional retry/deduplication token contract. For job submit,
+  this is `{"supported": true, "flag": "--submit-token", "scope": "study + submitter + token"}`.
+
+These fields are explicit per-command metadata, not inferred from argparse. The
+initial scope is limited to the agent-facing command set: `job submit`, `job
+list`, `job meta`, `job wait`, `job monitor`, `job download`, `job logs`,
+`config list`, `config show`, `config use`, `recipe list`, `recipe show`, and
+`study list`.
+
 ```text
 --schema        Print JSON description of this command's arguments and exit
 ```

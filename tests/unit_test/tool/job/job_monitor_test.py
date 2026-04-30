@@ -226,6 +226,9 @@ class TestJobMonitorOutput:
         schema = json.loads(schema_text)
         assert schema["streaming"] is True
         assert schema["output_modes"] == ["json", "jsonl"]
+        assert schema["mutating"] is False
+        assert schema["idempotent"] is True
+        assert schema["retry_token"] == {"supported": False}
 
     def test_failed_outputs_error_envelope_exits_1(self, capsys):
         meta = _make_meta("FAILED")

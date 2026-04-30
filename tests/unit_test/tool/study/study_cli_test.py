@@ -399,6 +399,13 @@ class TestStudyCli:
             assert token not in schema_text
         assert "--startup-kit" in schema_text
         assert "--kit-id" in schema_text
+        schema = json.loads(schema_text)
+        if cmd_name == "list":
+            assert schema["output_modes"] == ["json"]
+            assert schema["streaming"] is False
+            assert schema["mutating"] is False
+            assert schema["idempotent"] is True
+            assert schema["retry_token"] == {"supported": False}
 
     def test_register_missing_sites_is_structured_usage_error(self, capsys):
         from nvflare.tool.study.study_cli import cmd_register

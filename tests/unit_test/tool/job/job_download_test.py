@@ -63,6 +63,26 @@ class TestJobDownload:
         assert data["artifacts"] == {}
         assert set(data["missing_artifacts"]) == {"global_model", "metrics_summary", "client_logs"}
 
+    def test_download_schema_includes_command_contract_metadata(self, capsys):
+        import argparse
+
+        from nvflare.tool.job.job_cli import cmd_job_download, def_job_cli_parser
+
+        root = argparse.ArgumentParser()
+        def_job_cli_parser(root.add_subparsers())
+
+        with patch("sys.argv", ["nvflare", "job", "download", "--schema"]):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_download(MagicMock())
+
+        assert exc_info.value.code == 0
+        schema = json.loads(capsys.readouterr().out)
+        assert schema["output_modes"] == ["json"]
+        assert schema["streaming"] is False
+        assert schema["mutating"] is True
+        assert schema["idempotent"] is False
+        assert schema["retry_token"] == {"supported": False}
+
     def test_download_default_output_dir_is_absolute_current_dir_parent(self, capsys):
         """omitted output_dir requests cwd as parent so the final path is ./<job_id>, not ./<job_id>/<job_id>."""
         args = self._make_args(job_id="abc123")

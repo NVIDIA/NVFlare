@@ -44,6 +44,9 @@ CMD_KIT_REMOVE = "remove"
 # The startup kit commands are registered directly under nvflare config.
 KIT_COMMAND = "nvflare config"
 
+_JSON_OUTPUT_MODES = ["json"]
+_NO_RETRY_TOKEN_SCHEMA = {"supported": False}
+
 _kit_root_parser = None
 _kit_sub_cmd_parsers = {}
 
@@ -104,6 +107,11 @@ def cmd_kit_use(args):
         f"{KIT_COMMAND} use",
         [f"{KIT_COMMAND} use cancer_lead"],
         sys.argv[1:],
+        output_modes=_JSON_OUTPUT_MODES,
+        streaming=False,
+        mutating=True,
+        idempotent=True,
+        retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
 
     kit_id = args.kit_id.strip()
@@ -158,6 +166,11 @@ def cmd_kit_show(args):
         f"{KIT_COMMAND} show",
         [f"{KIT_COMMAND} show"],
         sys.argv[1:],
+        output_modes=_JSON_OUTPUT_MODES,
+        streaming=False,
+        mutating=False,
+        idempotent=True,
+        retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
 
     try:
@@ -230,6 +243,11 @@ def cmd_kit_list(args):
         f"{KIT_COMMAND} list",
         [f"{KIT_COMMAND} list"],
         sys.argv[1:],
+        output_modes=_JSON_OUTPUT_MODES,
+        streaming=False,
+        mutating=False,
+        idempotent=True,
+        retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
 
     try:

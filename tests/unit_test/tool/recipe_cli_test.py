@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 from argparse import ArgumentParser, Namespace
 from types import ModuleType
 
@@ -361,7 +362,7 @@ def test_recipe_show_unknown_recipe_errors(monkeypatch, capsys):
     assert "nvflare recipe list --format json" in captured.out
 
 
-def test_recipe_show_schema_succeeds_without_name():
+def test_recipe_show_schema_succeeds_without_name(capsys):
     from unittest.mock import patch
 
     from nvflare.tool.recipe.recipe_cli import cmd_recipe_show, def_recipe_parser
@@ -375,6 +376,34 @@ def test_recipe_show_schema_succeeds_without_name():
             cmd_recipe_show(Namespace())
 
     assert exc_info.value.code == 0
+    schema = json.loads(capsys.readouterr().out)
+    assert schema["output_modes"] == ["json"]
+    assert schema["streaming"] is False
+    assert schema["mutating"] is False
+    assert schema["idempotent"] is True
+    assert schema["retry_token"] == {"supported": False}
+
+
+def test_recipe_list_schema_includes_command_contract_metadata(capsys):
+    from unittest.mock import patch
+
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_list, def_recipe_parser
+
+    parser = ArgumentParser(prog="nvflare")
+    subparsers = parser.add_subparsers(dest="sub_command")
+    def_recipe_parser(subparsers)
+
+    with patch("sys.argv", ["nvflare", "recipe", "list", "--schema"]):
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_recipe_list(Namespace())
+
+    assert exc_info.value.code == 0
+    schema = json.loads(capsys.readouterr().out)
+    assert schema["output_modes"] == ["json"]
+    assert schema["streaming"] is False
+    assert schema["mutating"] is False
+    assert schema["idempotent"] is True
+    assert schema["retry_token"] == {"supported": False}
 
 
 def test_recipe_detail_can_be_built_for_each_discovered_recipe():

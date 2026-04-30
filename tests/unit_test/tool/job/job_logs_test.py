@@ -65,6 +65,26 @@ class TestJobLogs:
         assert data["target"] == "server"
         assert data["logs"] == {"server": "line1\nline2\n"}
 
+    def test_logs_schema_includes_command_contract_metadata(self, capsys):
+        import argparse
+
+        from nvflare.tool.job.job_cli import cmd_job_logs, def_job_cli_parser
+
+        root = argparse.ArgumentParser()
+        def_job_cli_parser(root.add_subparsers())
+
+        with patch("sys.argv", ["nvflare", "job", "logs", "--schema"]):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_logs(MagicMock())
+
+        assert exc_info.value.code == 0
+        schema = json.loads(capsys.readouterr().out)
+        assert schema["output_modes"] == ["json"]
+        assert schema["streaming"] is False
+        assert schema["mutating"] is False
+        assert schema["idempotent"] is True
+        assert schema["retry_token"] == {"supported": False}
+
     def test_logs_no_log_source_field(self, capsys):
         """log_source is not present in the output data."""
         from nvflare.tool.job.job_cli import cmd_job_logs

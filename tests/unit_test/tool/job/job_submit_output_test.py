@@ -276,6 +276,16 @@ class TestJobSubmitOutput:
         assert "--startup_kit" not in schema_text
         assert "--startup-kit" in schema_text
         assert "--kit-id" in schema_text
+        schema = json.loads(schema_text)
+        assert schema["output_modes"] == ["json"]
+        assert schema["streaming"] is False
+        assert schema["mutating"] is True
+        assert schema["idempotent"] is False
+        assert schema["retry_token"] == {
+            "supported": True,
+            "flag": "--submit-token",
+            "scope": "study + submitter + token",
+        }
 
     def test_submit_parser_rejects_legacy_target_alias(self):
         root = argparse.ArgumentParser()

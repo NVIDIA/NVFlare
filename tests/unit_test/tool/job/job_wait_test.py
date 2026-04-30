@@ -107,6 +107,12 @@ class TestJobWait:
         assert "--study" in schema_text
         assert "--startup-kit" in schema_text
         assert "--kit-id" in schema_text
+        schema = json.loads(schema_text)
+        assert schema["output_modes"] == ["json"]
+        assert schema["streaming"] is False
+        assert schema["mutating"] is False
+        assert schema["idempotent"] is True
+        assert schema["retry_token"] == {"supported": False}
 
     def test_success_outputs_ok_envelope(self, capsys):
         from nvflare.tool.job.job_cli import cmd_job_wait

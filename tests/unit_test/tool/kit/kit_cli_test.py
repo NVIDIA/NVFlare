@@ -145,6 +145,38 @@ class TestKitCli:
         assert root.parse_args(["config", "remove", "admin"]).config_sub_cmd == "remove"
         assert root.parse_args(["config", "show", "--schema"]).schema is True
 
+    @pytest.mark.parametrize(
+        ("cmd_name", "mutating", "idempotent"),
+        [
+            ("show", False, True),
+            ("list", False, True),
+            ("use", True, True),
+        ],
+    )
+    def test_agent_facing_config_schema_includes_command_contract_metadata(
+        self, cmd_name, mutating, idempotent, capsys
+    ):
+        from unittest.mock import MagicMock, patch
+
+        from nvflare.cli import def_config_parser
+        from nvflare.tool.kit import kit_cli as kit_cli_mod
+
+        root = argparse.ArgumentParser(prog="nvflare")
+        subparsers = root.add_subparsers(dest="sub_command")
+        def_config_parser(subparsers)
+
+        with patch("sys.argv", ["nvflare", "config", cmd_name, "--schema"]):
+            with pytest.raises(SystemExit) as exc_info:
+                getattr(kit_cli_mod, f"cmd_kit_{cmd_name}")(MagicMock())
+
+        assert exc_info.value.code == 0
+        schema = json.loads(capsys.readouterr().out)
+        assert schema["output_modes"] == ["json"]
+        assert schema["streaming"] is False
+        assert schema["mutating"] is mutating
+        assert schema["idempotent"] is idempotent
+        assert schema["retry_token"] == {"supported": False}
+
     def test_root_config_command_prints_current_config_without_usage_error(self, monkeypatch, capsys):
         _run_kit_command([], monkeypatch)
 
