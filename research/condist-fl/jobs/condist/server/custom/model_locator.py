@@ -65,7 +65,7 @@ class SimpleModelLocator(ModelLocator):
             # Load checkpoint
             model_data = None
             try:
-                checkpoint = torch.load(model_load_path, map_location="cpu")
+                checkpoint = torch.load(model_load_path, map_location="cpu", weights_only=True)
                 model_data = checkpoint["model"]
                 for var_name in model_data:
                     w = model_data[var_name]
