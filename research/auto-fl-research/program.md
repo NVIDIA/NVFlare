@@ -9,12 +9,12 @@ The coding agent should mostly iterate on a **small bounded code surface**.
 
 To set up a new experiment campaign, work with the user to:
 
-1. Assume the README preflight created the local environment in this directory and set `PYTHON=.venv/bin/python` by default. If the human explicitly provides a different `PYTHON` value, treat that override as authoritative.
+1. Assume the README preflight created a Python 3.12 local environment in this directory and set `PYTHON=.venv/bin/python` by default. If the human explicitly provides a different `PYTHON` value, treat that override as authoritative, but still require Python 3.12 for this harness.
 2. Do not create virtual environments or install dependencies unless the human explicitly asks you to. Do not search for Python interpreters with filesystem globs such as `ls /usr/bin/python*`, `ls /workspace/.venv*/bin/python*`, `which python`, or similar discovery commands.
-3. If `PYTHON` is missing, empty, or not executable, tell the human to rerun the README preflight in this directory or provide an explicit `PYTHON` override. Do not guess.
+3. If `PYTHON` is missing, empty, not executable, or not Python 3.12, tell the human to rerun the README preflight in this directory with `python3.12` or provide an explicit Python 3.12 override. Do not guess.
 4. Verify the prepared interpreter before running repo commands:
    - `test -x "$PYTHON"`
-   - `"$PYTHON" -c "import sys; print(sys.executable)"`
+   - `"$PYTHON" -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version; print(sys.executable)"`
 5. Agree on a descriptive run tag derived from the current date at runtime. Use the pattern `<node>-<campaign-topic>-$(date +%Y%m%d)`, for example `h100-fedavgm-$(date +%Y%m%d)`, `h100-archsearch-$(date +%Y%m%d)`, or `h100-baseline-$(date +%Y%m%d)`. Do not use date-only tags such as `h100-$(date +%Y%m%d)`, and do not copy stale example dates from docs.
 6. Create a fresh branch: `autoresearch/<tag>`.
 7. Treat this file as the agent entry point, then inspect only the supporting files needed for the next action:

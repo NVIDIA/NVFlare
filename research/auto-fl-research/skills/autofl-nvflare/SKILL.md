@@ -62,8 +62,8 @@ FedProx is compatible as a client-local loss term. FedOpt is compatible only whe
 ## Required workflow
 
 After making edits:
-1. set and use `PYTHON=.venv/bin/python` by default, unless the human explicitly provides a different `PYTHON` value; treat the selected value as authoritative, verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; print(sys.executable)"`, and do not search for alternate interpreters with glob or discovery commands such as `ls /usr/bin/python*`, `ls /workspace/.venv*/bin/python*`, or `which python`
-2. do not create virtual environments or install dependencies unless the user explicitly asks; if `.venv/bin/python` is missing or invalid and no override was provided, tell the user to rerun the README preflight in this directory instead of guessing
+1. set and use `PYTHON=.venv/bin/python` by default, unless the human explicitly provides a different `PYTHON` value; treat the selected value as authoritative, verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version; print(sys.executable)"`, and do not search for alternate interpreters with glob or discovery commands such as `ls /usr/bin/python*`, `ls /workspace/.venv*/bin/python*`, or `which python`
+2. do not create virtual environments or install dependencies unless the user explicitly asks; if `.venv/bin/python` is missing, invalid, or not Python 3.12 and no override was provided, tell the user to rerun the README preflight in this directory with `python3.12` instead of guessing
 3. when initializing a campaign, use a descriptive branch tag with the pattern `<node>-<campaign-topic>-YYYYMMDD`, such as `h100-fedavgm-20260430` or `h100-archsearch-20260430`; never use date-only branch names
 4. run static checks and syntax validation
 5. run the client contract validator if present

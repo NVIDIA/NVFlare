@@ -126,13 +126,16 @@ ssh -T git@github.com
 
 If you use a devcontainer, make sure your SSH agent is forwarded into the container or an appropriate GitHub SSH key is available there. Without this, the agent can still run local experiments, but it will stop when it needs to push a branch or commit reporting artifacts.
 
-Inside the container, install this harness' Python requirements once, export the prepared interpreter, and run preflight before handing control to the agent:
+Inside the container, install this harness' Python requirements once with Python 3.12, export the prepared interpreter, and run preflight before handing control to the agent. Do not use the container's default `python3` if it points to Python 3.13. If `python3.12` is not available, update the devcontainer image or install Python 3.12 before continuing:
 
 ```bash
-python3 -m venv .venv
+python3.12 --version
+python3.12 -m venv .venv
 . .venv/bin/activate
+python -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
 python -m pip install -r requirements.txt
 export PYTHON=.venv/bin/python
+"$PYTHON" -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
 make validate
 make smoke
 ```
@@ -166,10 +169,10 @@ Start in this directory and read `program.md` first. Treat it as the complete re
 
 Start a fresh autoresearch campaign for the local single-H100 node. If no campaign is initialized yet, derive a descriptive run tag at runtime using `<node>-<campaign-topic>-$(date +%Y%m%d)`, initialize the ledger, and establish the baseline first. Do not use date-only names or copy stale example dates.
 
-Use the local Python environment created by preflight. Set:
+Use the local Python 3.12 environment created by preflight. Set:
 export PYTHON=.venv/bin/python
-Treat that PYTHON value as authoritative. First verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; print(sys.executable)"`, then use that exact interpreter for validation, smoke tests, candidate runs, plotting, summaries, and reports.
-Do not create a virtual environment, install dependencies, or search for alternate Python interpreters unless I explicitly ask you to. If `.venv/bin/python` is missing or invalid, stop and tell me to rerun the README preflight in this directory.
+Treat that PYTHON value as authoritative. First verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version; print(sys.executable)"`, then use that exact interpreter for validation, smoke tests, candidate runs, plotting, summaries, and reports.
+Do not create a virtual environment, install dependencies, or search for alternate Python interpreters unless I explicitly ask you to. If `.venv/bin/python` is missing, invalid, or not Python 3.12, stop and tell me to rerun the README preflight in this directory with `python3.12`.
 
 Set PARALLEL_CANDIDATES=4 unless I override it. Use one local 80 GB H100; if multiple GPUs are visible, pin candidate runs to CUDA_VISIBLE_DEVICES=0 rather than spreading candidates across devices. Lower the candidate width if CUDA memory, host memory, or I/O contention appears.
 
