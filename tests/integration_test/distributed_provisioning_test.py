@@ -89,7 +89,7 @@ _STARTUP_ADMIN = {"client.crt", "client.key", "fed_admin.json", "fl_admin.sh"}
 
 def _ns(**kwargs):
     """Build a SimpleNamespace with common defaults for CLI args."""
-    defaults = dict(force=True, output_fmt=None, schema=False, org=None)
+    defaults = dict(force=False, output_fmt=None, schema=False, org=None)
     defaults.update(kwargs)
     return types.SimpleNamespace(**defaults)
 
@@ -112,6 +112,7 @@ def _request_participant(project: str, name: str, cert_type: str, org: str = "my
 
 
 def _write_project_profile(path: str, project: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(
             {
@@ -161,8 +162,7 @@ def _run_package(signed_zip: str, request_dir: str, workspace: str, endpoint: st
         endpoint=endpoint,
         request_dir=request_dir,
         workspace=workspace,
-        expected_rootca_fingerprint=None,
-        confirm_rootca=False,
+        expected_fingerprint=None,
     )
     with unittest.mock.patch("nvflare.tool.package.package_commands.output_ok", side_effect=_capture):
         handle_package(args)
@@ -357,13 +357,13 @@ class TestDistributedProvisioningWorkflow:
             else:
                 assert content == ref, f"rootCA.pem in {name} differs from {_PARTICIPANTS[0][0]}"
 
-    def test_no_server_placeholder_dir_in_non_server_kits(self, provisioned):
-        """The server placeholder directory must be removed for non-server kits."""
-        for name in ("site-1", "site-2", "admin@myfl.com"):
-            prod_dir = os.path.dirname(provisioned[name])
-            assert not os.path.exists(
-                os.path.join(prod_dir, _SERVER_NAME)
-            ), f"Server placeholder dir found in prod dir for {name}"
+    def test_all_participants_land_in_same_provision_version_dir(self, provisioned):
+        """Distributed packages signed by the same CA/version land in one prod_00 directory."""
+        prod_dirs = {os.path.dirname(provisioned[name]) for name, _ in _PARTICIPANTS}
+        assert len(prod_dirs) == 1
+        prod_dir = prod_dirs.pop()
+        assert os.path.basename(prod_dir) == "prod_00"
+        assert os.path.isdir(os.path.join(prod_dir, _SERVER_NAME))
 
 
 # ---------------------------------------------------------------------------

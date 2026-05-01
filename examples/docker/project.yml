@@ -33,6 +33,3 @@ builders:
           sp_end_point: server:8002:8002
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder
-  - path: nvflare.lighter.impl.docker_launcher.DockerLauncherBuilder
-    args:
-      docker_image: nvflare-site:latest   # SP/CP image; site admin builds this
