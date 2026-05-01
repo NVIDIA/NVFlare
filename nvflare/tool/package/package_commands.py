@@ -45,7 +45,16 @@ from nvflare.lighter.provision import prepare_project
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import load_crt_bytes, load_yaml, verify_cert, verify_content
-from nvflare.tool.cert.cert_constants import ADMIN_CERT_TYPES, KIT_TYPE_TO_ROLE, VALID_CERT_TYPES
+from nvflare.tool.cert.cert_constants import (
+    ADMIN_CERT_TYPES,
+    CA_INFO_FIELD,
+    DEFAULT_PROVISION_VERSION,
+    KIT_TYPE_TO_ROLE,
+    PROVISION_VERSION_FIELD,
+    ROOTCA_FINGERPRINT_FIELD,
+    VALID_CERT_TYPES,
+    is_valid_provision_version,
+)
 from nvflare.tool.cert.file_utils import read_file_nofollow as _shared_read_file_nofollow
 from nvflare.tool.cert.file_utils import safe_project_name_error
 from nvflare.tool.cert.file_utils import write_file_nofollow as _shared_write_file_nofollow
@@ -57,7 +66,6 @@ from nvflare.tool.cli_output import (
     output_ok,
     output_usage_error,
     print_human,
-    prompt_yn,
 )
 from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -69,6 +77,10 @@ _KIT_TYPE_TO_ROLE = KIT_TYPE_TO_ROLE
 _DUMMY_SERVER_NAME = "__nvflare_dummy_server__"
 _DUMMY_ORG = "myorg"
 _MAX_ZIP_MEMBER_SIZE = 10 * 1024 * 1024
+_PACKAGE_ERROR_CODE = "_package_error_code"
+_PACKAGE_ERROR_MESSAGE = "_package_error_message"
+_PACKAGE_ERROR_HINT = "_package_error_hint"
+_PACKAGE_ERROR_EXIT_CODE = "_package_error_exit_code"
 _REQUEST_ID_PATTERN = re.compile(
     r"(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
 )
@@ -106,6 +118,19 @@ def _validate_safe_project_name(
         _reject_invalid_project_name(project_name, code=code, hint=hint, field_label=field_label)
         return False
     return True
+
+
+def _validate_provision_version(value: str, *, code: str = "INVALID_SIGNED_ZIP") -> bool:
+    if is_valid_provision_version(value):
+        return True
+    output_error_message(
+        code,
+        f"Invalid provision version: {value!r}.",
+        "Provision version must be exactly two digits, for example 00.",
+        None,
+        exit_code=4,
+    )
+    return False
 
 
 def _validate_request_id(request_id: str, *, code: str = "INVALID_SIGNED_ZIP") -> bool:
@@ -315,6 +340,70 @@ class PrebuiltCertBuilder(Builder):
             )
 
 
+def _remove_existing_path(path: str) -> None:
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path)
+    else:
+        os.remove(path)
+
+
+class FixedProdWorkspaceBuilder(WorkspaceBuilder):
+    """Workspace builder variant that finalizes signed-zip kits into a fixed provision directory."""
+
+    def __init__(
+        self,
+        target_prod_dir: str,
+        participant_name: str,
+        force: bool = False,
+        exclude_names=None,
+        template_files=None,
+    ):
+        super().__init__(template_file=template_files)
+        self.target_prod_dir = target_prod_dir
+        self.participant_name = participant_name
+        self.force = force
+        self.exclude_names = set(exclude_names or [])
+
+    def initialize(self, project: Project, ctx):
+        # Keep template loading behavior from WorkspaceBuilder without using its prod_NN incrementing state.
+        ctx.load_templates(self.template_files)
+        ctx[CtxKey.LAST_PROD_STAGE] = -1
+
+    def finalize(self, project: Project, ctx):
+        target_parent = os.path.dirname(self.target_prod_dir)
+        os.makedirs(target_parent, exist_ok=True)
+        target_exists = os.path.exists(self.target_prod_dir)
+        if target_exists and not os.path.isdir(self.target_prod_dir):
+            raise ValueError(f"target production path exists but is not a directory: {self.target_prod_dir}")
+        os.makedirs(self.target_prod_dir, exist_ok=True)
+
+        wip_dir = ctx.get_wip_dir()
+        for name in os.listdir(wip_dir):
+            if name in self.exclude_names:
+                continue
+            src = os.path.join(wip_dir, name)
+            dst = os.path.join(self.target_prod_dir, name)
+            if name == self.participant_name and os.path.exists(dst):
+                if not self.force:
+                    ctx[CtxKey.BUILD_ERROR] = True
+                    ctx[_PACKAGE_ERROR_CODE] = "OUTPUT_DIR_EXISTS"
+                    ctx[_PACKAGE_ERROR_MESSAGE] = f"Participant output already exists: {dst}."
+                    ctx[_PACKAGE_ERROR_HINT] = (
+                        "Use --force to replace this participant output. "
+                        "--force does not bypass root CA mismatch checks."
+                    )
+                    ctx[_PACKAGE_ERROR_EXIT_CODE] = 1
+                    return
+                _remove_existing_path(dst)
+            if os.path.exists(dst):
+                # Preserve existing root-level files when adding another participant to the same provision directory.
+                continue
+            shutil.move(src, dst)
+
+        ctx[CtxKey.CURRENT_PROD_DIR] = self.target_prod_dir
+        ctx.info(f"Generated results can be found under {self.target_prod_dir}. ")
+
+
 def _parse_endpoint(endpoint: str) -> tuple:
     """Return (scheme, host, port: int). Raises ValueError on invalid format."""
     parsed = urlparse(endpoint)
@@ -366,6 +455,55 @@ def _latest_prod_dir(workspace: str, project_name: str):
     if not dirs:
         return None
     return os.path.join(project_dir, max(dirs))
+
+
+def _prod_dir_rootca_fingerprints(prod_dir: str):
+    fingerprints = set()
+    for root, dirs, files in os.walk(prod_dir):
+        dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(root, d))]
+        if "rootCA.pem" not in files:
+            continue
+        rootca_path = os.path.join(root, "rootCA.pem")
+        try:
+            fingerprints.add(cert_fingerprint_sha256(_load_crt_nofollow(rootca_path)))
+        except Exception as e:
+            output_error_message(
+                "ROOTCA_LOAD_FAILED",
+                f"Existing production directory contains unreadable rootCA.pem: {rootca_path}.",
+                "Inspect the existing provision directory before packaging into it.",
+                None,
+                exit_code=4,
+                detail=str(e),
+            )
+            return None
+    return fingerprints
+
+
+def _ensure_prod_dir_rootca_matches(prod_dir: str, expected_fingerprint: str) -> bool:
+    if not os.path.exists(prod_dir):
+        return True
+    fingerprints = _prod_dir_rootca_fingerprints(prod_dir)
+    if fingerprints is None:
+        return False
+    mismatches = sorted(f for f in fingerprints if f != expected_fingerprint)
+    if mismatches:
+        output_error_message(
+            "ROOTCA_FINGERPRINT_MISMATCH",
+            f"Existing production directory {prod_dir} uses a different root CA.",
+            "Use the signed zip for the same CA, choose the matching CA provision version, or clear the stale provision directory.",
+            None,
+            exit_code=4,
+            detail=f"expected {expected_fingerprint}; found {', '.join(mismatches)}",
+        )
+        return False
+    return True
+
+
+def _fixed_signed_prod_dir(workspace: str, project_name: str, provision_version: str):
+    project_dir = _project_dir_under_workspace(workspace, project_name)
+    if not project_dir:
+        return None
+    return os.path.join(project_dir, f"prod_{provision_version}")
 
 
 def _load_project_from_file(path: str) -> tuple:
@@ -523,7 +661,7 @@ def _validate_cert_material(cert_path: str, key_path: str, rootca_path: str, *, 
     return cert
 
 
-def _build_package_builders(custom_builders, cert_builder, scheme):
+def _build_package_builders(custom_builders, cert_builder, scheme, workspace_builder=None):
     has_cert = False
     all_builders = []
     for b in custom_builders or []:
@@ -541,12 +679,20 @@ def _build_package_builders(custom_builders, cert_builder, scheme):
         else:
             all_builders.append(b)
 
-    if not has_cert:
-        ws_pos = next((i for i, b in enumerate(all_builders) if isinstance(b, WorkspaceBuilder)), -1)
-        all_builders.insert(ws_pos + 1, cert_builder)
-
-    if not any(isinstance(b, WorkspaceBuilder) for b in all_builders):
-        all_builders.insert(0, WorkspaceBuilder())
+    if workspace_builder is not None:
+        existing_workspace_builder = next((b for b in all_builders if isinstance(b, WorkspaceBuilder)), None)
+        if existing_workspace_builder is not None:
+            workspace_builder.template_files = existing_workspace_builder.template_files
+        all_builders = [b for b in all_builders if not isinstance(b, WorkspaceBuilder)]
+        all_builders.insert(0, workspace_builder)
+        if not has_cert:
+            all_builders.insert(1, cert_builder)
+    else:
+        if not has_cert:
+            ws_pos = next((i for i, b in enumerate(all_builders) if isinstance(b, WorkspaceBuilder)), -1)
+            all_builders.insert(ws_pos + 1, cert_builder)
+        if not any(isinstance(b, WorkspaceBuilder) for b in all_builders):
+            all_builders.insert(0, WorkspaceBuilder())
 
     if not any(isinstance(b, StaticFileBuilder) for b in all_builders):
         cert_pos = next((i for i, b in enumerate(all_builders) if isinstance(b, PrebuiltCertBuilder)), None)
@@ -594,6 +740,8 @@ def _build_selected_participant_package(
     participant_props: dict = None,
     project_props: dict = None,
     custom_builders=None,
+    provision_version: str = None,
+    rootca_fingerprint: str = None,
 ):
     """Build exactly one participant through the existing provisioner/builders."""
     if name == _DUMMY_SERVER_NAME:
@@ -632,12 +780,41 @@ def _build_selected_participant_package(
     if _project_dir_under_workspace(workspace, project_name) is None:
         return 1
 
-    latest_prod = _latest_prod_dir(workspace, project_name)
-    if latest_prod:
-        existing_path = os.path.join(latest_prod, name)
-        if os.path.exists(existing_path) and not args.force:
-            output_error("OUTPUT_DIR_EXISTS", exit_code=1, path=existing_path)
+    target_prod_dir = None
+    workspace_builder = None
+    if provision_version is not None:
+        # Defense in depth for direct internal callers. Signed-zip mode validates this earlier in _resolve_signed_ca_info.
+        if not _validate_provision_version(provision_version):
             return 1
+        target_prod_dir = _fixed_signed_prod_dir(workspace, project_name, provision_version)
+        if target_prod_dir is None:
+            return 1
+        if rootca_fingerprint and not _ensure_prod_dir_rootca_matches(target_prod_dir, rootca_fingerprint):
+            return 1
+        existing_path = os.path.join(target_prod_dir, name)
+        if os.path.exists(existing_path) and not getattr(args, "force", False):
+            output_error_message(
+                "OUTPUT_DIR_EXISTS",
+                f"Participant output already exists: {existing_path}.",
+                "Use --force to replace this participant output. --force does not bypass root CA mismatch checks.",
+                None,
+                exit_code=1,
+            )
+            return 1
+        exclude_names = {host} if kit_type != "server" else set()
+        workspace_builder = FixedProdWorkspaceBuilder(
+            target_prod_dir=target_prod_dir,
+            participant_name=name,
+            force=getattr(args, "force", False),
+            exclude_names=exclude_names,
+        )
+    else:
+        latest_prod = _latest_prod_dir(workspace, project_name)
+        if latest_prod:
+            existing_path = os.path.join(latest_prod, name)
+            if os.path.exists(existing_path) and not getattr(args, "force", False):
+                output_error("OUTPUT_DIR_EXISTS", exit_code=1, path=existing_path)
+                return 1
 
     is_server = kit_type == "server"
     server_props = {
@@ -667,11 +844,20 @@ def _build_selected_participant_package(
     )
     provisioner = Provisioner(
         root_dir=workspace,
-        builders=_build_package_builders(custom_builders, cert_builder, scheme),
+        builders=_build_package_builders(custom_builders, cert_builder, scheme, workspace_builder),
     )
     ctx = provisioner.provision(project)
 
     if ctx.get(CtxKey.BUILD_ERROR):
+        if ctx.get(_PACKAGE_ERROR_CODE):
+            output_error_message(
+                ctx[_PACKAGE_ERROR_CODE],
+                ctx.get(_PACKAGE_ERROR_MESSAGE, "Kit assembly failed during provisioning."),
+                ctx.get(_PACKAGE_ERROR_HINT, "See error output above for details."),
+                None,
+                exit_code=ctx.get(_PACKAGE_ERROR_EXIT_CODE, 1),
+            )
+            return 1
         output_error_message(
             "BUILD_FAILED",
             "Kit assembly failed during provisioning.",
@@ -683,7 +869,8 @@ def _build_selected_participant_package(
 
     prod_dir = ctx[CtxKey.CURRENT_PROD_DIR]
     if not is_server:
-        shutil.rmtree(os.path.join(prod_dir, host), ignore_errors=True)
+        if target_prod_dir is None:
+            shutil.rmtree(os.path.join(prod_dir, host), ignore_errors=True)
         project.remove_server()
 
     return _make_package_result(prod_dir, name, kit_type, f"{scheme}://{host}:{port}")
@@ -845,7 +1032,7 @@ def _normalize_hash(value: str) -> str:
 
 
 def _verify_rootca_fingerprint_options(args, actual_fingerprint: str) -> bool:
-    expected = getattr(args, "expected_rootca_fingerprint", None)
+    expected = getattr(args, "expected_fingerprint", None)
     if expected:
         normalized_expected = normalize_sha256_fingerprint(expected)
         if not normalized_expected:
@@ -870,37 +1057,55 @@ def _verify_rootca_fingerprint_options(args, actual_fingerprint: str) -> bool:
             )
             return False
 
-    if getattr(args, "confirm_rootca", False):
-        if is_json_mode():
-            output_error_message(
-                "INVALID_ARGS",
-                "--confirm-rootca cannot be used with JSON output.",
-                "Use --expected-rootca-fingerprint for non-interactive verification.",
-                None,
-                exit_code=4,
-            )
-            return False
-        if not sys.stdin.isatty():
-            output_error_message(
-                "INVALID_ARGS",
-                "--confirm-rootca requires an interactive terminal.",
-                "Use --expected-rootca-fingerprint for non-interactive verification.",
-                None,
-                exit_code=4,
-            )
-            return False
-        print_human("Root CA SHA256 fingerprint from signed zip:")
-        print_human(actual_fingerprint)
-        if not prompt_yn("Fingerprint verified out-of-band?"):
-            print_human("Cancelled.")
-            return False
-    elif not expected:
-        print_human(
-            "Warning: Root CA SHA256 fingerprint was not verified. "
-            "Use --expected-rootca-fingerprint or --confirm-rootca to verify it out-of-band."
-        )
+    if not expected:
+        print_human("Warning: Root CA SHA256 fingerprint was not verified. Use --fingerprint to verify it out-of-band.")
 
     return True
+
+
+def _resolve_signed_ca_info(signed_meta: dict, actual_rootca_fingerprint: str):
+    ca_info = signed_meta.get(CA_INFO_FIELD)
+    if ca_info is None:
+        return {
+            PROVISION_VERSION_FIELD: DEFAULT_PROVISION_VERSION,
+            ROOTCA_FINGERPRINT_FIELD: actual_rootca_fingerprint,
+        }
+    if not isinstance(ca_info, dict):
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            "Signed zip ca_info must be a mapping.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+        return None
+    provision_version = ca_info.get(PROVISION_VERSION_FIELD)
+    if not _validate_provision_version(provision_version):
+        return None
+    signed_fingerprint = normalize_sha256_fingerprint(ca_info.get(ROOTCA_FINGERPRINT_FIELD))
+    if not signed_fingerprint:
+        output_error_message(
+            "INVALID_ROOTCA_FINGERPRINT",
+            f"Invalid signed ca_info root CA fingerprint: {ca_info.get(ROOTCA_FINGERPRINT_FIELD)!r}.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+        return None
+    if signed_fingerprint != actual_rootca_fingerprint:
+        output_error_message(
+            "ROOTCA_FINGERPRINT_MISMATCH",
+            "Signed ca_info root CA fingerprint does not match included rootCA.pem.",
+            "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+            detail=f"signed {signed_fingerprint}; included {actual_rootca_fingerprint}",
+        )
+        return None
+    return {
+        PROVISION_VERSION_FIELD: provision_version,
+        ROOTCA_FINGERPRINT_FIELD: signed_fingerprint,
+    }
 
 
 def _expected_hash(meta: dict, *names):
@@ -1037,6 +1242,28 @@ def _validate_signed_metadata(signed_meta: dict, site_meta: dict, cert_name: str
             exit_code=4,
         )
         return False
+    ca_info = signed_meta.get(CA_INFO_FIELD)
+    if ca_info is not None:
+        if not isinstance(ca_info, dict):
+            output_error_message(
+                "INVALID_SIGNED_ZIP",
+                "Signed zip ca_info must be a mapping.",
+                "Ask the Project Admin to regenerate the signed zip.",
+                None,
+                exit_code=4,
+            )
+            return False
+        if not _validate_provision_version(ca_info.get(PROVISION_VERSION_FIELD)):
+            return False
+        if not normalize_sha256_fingerprint(ca_info.get(ROOTCA_FINGERPRINT_FIELD)):
+            output_error_message(
+                "INVALID_ROOTCA_FINGERPRINT",
+                f"Invalid signed ca_info root CA fingerprint: {ca_info.get(ROOTCA_FINGERPRINT_FIELD)!r}.",
+                "Ask the Project Admin to regenerate the signed zip.",
+                None,
+                exit_code=4,
+            )
+            return False
     scheme = signed_meta.get("scheme")
     if scheme is not None and (not isinstance(scheme, str) or scheme.strip().lower() not in _VALID_SCHEMES):
         output_error_message(
@@ -2018,6 +2245,9 @@ def _handle_signed_zip_package(args):
             return 1
 
         rootca_fingerprint_sha256 = cert_fingerprint_sha256(rootca)
+        ca_info = _resolve_signed_ca_info(signed_meta, rootca_fingerprint_sha256)
+        if ca_info is None:
+            return 1
         if not _verify_rootca_fingerprint_options(args, rootca_fingerprint_sha256):
             return 1
 
@@ -2104,9 +2334,12 @@ def _handle_signed_zip_package(args):
             participant_props=participant_props,
             project_props=project_props,
             custom_builders=custom_builders,
+            provision_version=ca_info[PROVISION_VERSION_FIELD],
+            rootca_fingerprint=ca_info[ROOTCA_FINGERPRINT_FIELD],
         )
         if not isinstance(result, dict):
             return result
+        result[PROVISION_VERSION_FIELD] = ca_info[PROVISION_VERSION_FIELD]
         result["rootca_fingerprint_sha256"] = rootca_fingerprint_sha256
     output_ok(result)
     return 0
@@ -2293,9 +2526,7 @@ def handle_package(args):
         )
         return 1
 
-    has_rootca_verify_option = bool(getattr(args, "expected_rootca_fingerprint", None)) or bool(
-        getattr(args, "confirm_rootca", False)
-    )
+    has_rootca_verify_option = bool(getattr(args, "expected_fingerprint", None))
     if has_rootca_verify_option and not has_signed_zip_input:
         output_error_message(
             "INVALID_ARGS",
