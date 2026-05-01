@@ -41,7 +41,6 @@ class JobDefManagerSpec(FLComponent, ABC):
         """
         pass
 
-    @abstractmethod
     def get_job_content_hash(self, uploaded_content: Union[str, bytes]) -> str:
         """Compute the canonical content hash for uploaded job content.
 
@@ -49,14 +48,14 @@ class JobDefManagerSpec(FLComponent, ABC):
         submit signing artifacts. It is stable across repeated signed uploads of the
         same job content.
         """
-        pass
+        raise NotImplementedError("job content hashing is not supported by this JobDefManager")
 
     def get_submit_record(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> Optional[dict]:
         """Get the persistent submit-token record for the scoped submit token."""
         raise NotImplementedError("submit-token records are not supported by this JobDefManager")
 
-    @staticmethod
     def new_submit_record(
+        self,
         study: str,
         submitter,
         submit_token: str,

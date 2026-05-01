@@ -1315,7 +1315,9 @@ def sign_csr_files(
         return None
 
     subject_cn = _get_cn(csr.subject)
-    if not _validate_safe_cert_name(subject_cn, field_label="CSR subject CN"):
+    if not _validate_safe_cert_name(
+        subject_cn, field_label="CSR subject CN", max_length=_cert_name_max_length(cert_type)
+    ):
         return None
     output_filename = f"{subject_cn}.crt"
 

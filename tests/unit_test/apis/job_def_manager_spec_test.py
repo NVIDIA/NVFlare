@@ -18,7 +18,8 @@ from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 
 
 def test_submit_token_extension_methods_are_not_abstract():
-    submit_token_methods = {
+    extension_methods = {
+        "get_job_content_hash",
         "get_submit_record",
         "new_submit_record",
         "create_submit_record",
@@ -26,14 +27,20 @@ def test_submit_token_extension_methods_are_not_abstract():
         "get_job_by_submit_token",
     }
 
-    assert submit_token_methods.isdisjoint(JobDefManagerSpec.__abstractmethods__)
+    assert extension_methods.isdisjoint(JobDefManagerSpec.__abstractmethods__)
+
+
+def test_new_submit_record_default_is_instance_method():
+    assert not isinstance(JobDefManagerSpec.__dict__["new_submit_record"], staticmethod)
 
 
 def test_submit_token_extension_defaults_raise_not_implemented():
     with pytest.raises(NotImplementedError):
+        JobDefManagerSpec.get_job_content_hash(object(), b"job")
+    with pytest.raises(NotImplementedError):
         JobDefManagerSpec.get_submit_record(object(), "study", {}, "token", None)
     with pytest.raises(NotImplementedError):
-        JobDefManagerSpec.new_submit_record("study", {}, "token", "hash")
+        JobDefManagerSpec.new_submit_record(object(), "study", {}, "token", "hash")
     with pytest.raises(NotImplementedError):
         JobDefManagerSpec.create_submit_record(object(), {}, None)
     with pytest.raises(NotImplementedError):
