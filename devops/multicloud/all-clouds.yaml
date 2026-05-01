@@ -1,5 +1,11 @@
 name: all-clouds
 
+participants:
+  - { name: gcp-server,     cloud: gcp,   namespace: nvflare-server,   role: server }
+  - { name: gcp-client-1,   cloud: gcp,   namespace: nvflare-client-1, role: client }
+  - { name: aws-client-2,   cloud: aws,   namespace: nvflare-client-2, role: client }
+  - { name: azure-client-3, cloud: azure, namespace: nvflare-client-3, role: client }
+
 clouds:
   gcp:
     prepare:
@@ -55,9 +61,3 @@ clouds:
     study_data:
       default:
         data: { pvc: nvfldata, mode: ro }
-
-participants:
-  - { name: gcp-server,     cloud: gcp,   namespace: nvflare-server,   role: server }
-  - { name: gcp-client-1,   cloud: gcp,   namespace: nvflare-client-1, role: client }
-  - { name: aws-client-2,   cloud: aws,   namespace: nvflare-client-2, role: client }
-  - { name: azure-client-3, cloud: azure, namespace: nvflare-client-3, role: client }

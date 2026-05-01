@@ -3,6 +3,15 @@
 YAML-driven deploy of one NVFlare server + N clients across existing
 Kubernetes clusters.
 
+## Audience And Scope
+
+This example is for NVFlare developers and users who want a simple Kubernetes
+deployment for multicloud testing, experimentation, and learning. It is not a
+production deployment blueprint. Real production deployments usually have
+site-specific cluster ownership, security policy, networking, registry,
+storage, monitoring, and operational requirements that are outside the scope of
+this example.
+
 Shipped config:
 - `all-clouds.yaml` — GCP server with GCP, AWS, and Azure clients
 
@@ -15,6 +24,27 @@ The deploy tool still supports GCP, AWS, or Azure as the server cloud.
 Cloud-specific behavior lives in provider modules under
 `devops/multicloud/clouds/`; `deploy.py` owns the common flow.
 
+## Topology Selection
+
+The `participants:` section is the primary control for what is deployed. The
+default `all-clouds.yaml` topology creates one server and three clients:
+
+```yaml
+participants:
+  - { name: gcp-server,     cloud: gcp,   namespace: nvflare-server,   role: server }
+  - { name: gcp-client-1,   cloud: gcp,   namespace: nvflare-client-1, role: client }
+  - { name: aws-client-2,   cloud: aws,   namespace: nvflare-client-2, role: client }
+  - { name: azure-client-3, cloud: azure, namespace: nvflare-client-3, role: client }
+```
+
+Edit that list to choose a smaller topology. For example, to deploy only on
+GCP, keep the GCP server and GCP client entries and remove the AWS/Azure client
+entries. To deploy two clouds, keep only participants for those clouds. Exactly
+one participant must have `role: server`; all other participants are clients.
+
+`fetch_kubeconfigs.py`, `build_and_push.py`, and `deploy.py` operate on the
+clouds referenced by `participants:`.
+
 ## Prerequisites
 
 - Clusters created via `devops/gcp/gke/create_cluster.sh` and
@@ -26,6 +56,38 @@ Cloud-specific behavior lives in provider modules under
 - `helm`, `kubectl`, and the cloud CLIs on `$PATH`.
 - Python with `pyyaml` installed.
 - `nvflare` available on `$PATH` or at `.venv/bin/nvflare`.
+
+## Roles And Permissions
+
+Cluster creation and FLARE deployment can be separate roles:
+
+- Cluster creator: permission to create and manage the target GKE, EKS, or AKS
+  clusters, node pools/autoscaling settings, storage classes, and container
+  registries.
+- FLARE deployer: cloud CLI login, kubeconfig access, registry pull access, and
+  Kubernetes permissions to create/delete namespaces, PVCs, pods, services,
+  deployments, and Helm release resources.
+- Server cloud deployer: permission to reserve and release the public/static IP
+  used by the server service. For GCP this is regional compute addresses; for
+  AWS this is Elastic IPs; for Azure this is Public IPs in the configured
+  resource group.
+
+When AWS is the server cloud, the deployer also needs permission to describe
+the EKS cluster and public subnets. When Azure is the server cloud,
+`clouds.azure.resource_group` and `clouds.azure.location` must identify where
+the Public IP is managed.
+
+## Hardware And Sizing
+
+This flow is intended for auto/autoscaling Kubernetes clusters. The FLARE
+server and client parent pods are lightweight; the real CPU, memory, GPU, and
+storage needs are driven by the jobs you submit. Job pod resources come from
+the job/runtime configuration. Workspace and study-data PVC sizes are configured
+under each cloud's `pvc_config`.
+
+GPU jobs have not been validated by this example yet. GPU deployments need
+cluster GPU capacity, device plugin/runtime support, and job resource requests
+that match the target cloud and cluster setup.
 
 ## Fetch kubeconfigs
 
@@ -84,6 +146,25 @@ The server is deployed first and must become available before clients are
 started. Clients are deployed in parallel. `down` tears down clients in
 parallel first, then tears down the server and releases the deterministic
 cloud IP.
+
+## What Gets Created
+
+`up` creates or refreshes:
+
+- Local provision output under `devops/multicloud/.work/provision`.
+- A prepared K8s runtime kit per participant from `nvflare deploy prepare`.
+- A deterministic public/static server IP named from config `name`, for example
+  `nvflare-all-clouds`.
+- One Kubernetes namespace per participant.
+- The configured PVCs in each participant namespace, including `nvflws` for the
+  workspace and `nvfldata` for study data in the shipped config.
+- A temporary `kit-copy-*` pod per participant to stage `startup/` and `local/`
+  files into the workspace PVC.
+- One Helm release per participant, which installs the parent Deployment and
+  Service.
+
+Job pods are not created by deploy. They are created later by the FLARE runtime
+when jobs are submitted.
 
 ## Dev Cluster Runbook
 

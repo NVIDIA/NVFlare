@@ -6,6 +6,7 @@ Use this file when prompted to create an NVFlare multicloud dev cluster. Keep al
 
 - The target config shape is `devops/multicloud/all-clouds.yaml`.
 - The default topology is GCP server plus GCP, AWS, and Azure clients.
+- The `participants:` section controls which clouds and sites are deployed.
 - Real image tags are required for `clouds.<cloud>.prepare.parent.docker_image`.
 - Kubeconfig discovery uses active cloud CLI contexts plus env overrides, not local YAML override files.
 
@@ -26,6 +27,57 @@ Edit `$CONFIG`:
 - Replace all placeholder `clouds.<cloud>.prepare.parent.docker_image` values with real registry tags.
 - Do not add project names, cluster names, subscription IDs, or account IDs to the YAML.
 - Do not add kubeconfig paths to the YAML; deploy reads `.tmp/kubeconfigs/<cloud>.yaml`.
+
+To select clouds, edit `participants:`. The config must have exactly one server.
+For a GCP-only smoke setup:
+
+```yaml
+participants:
+  - { name: gcp-server,   cloud: gcp, namespace: nvflare-server,   role: server }
+  - { name: gcp-client-1, cloud: gcp, namespace: nvflare-client-1, role: client }
+```
+
+For a two-cloud setup with a GCP server and AWS client:
+
+```yaml
+participants:
+  - { name: gcp-server,   cloud: gcp, namespace: nvflare-server,   role: server }
+  - { name: aws-client-2, cloud: aws, namespace: nvflare-client-2, role: client }
+```
+
+If all clouds can pull the same image, use a YAML anchor so the tag is edited in
+one place:
+
+```yaml
+x-dev-image: &dev_image pcnudde03194/nvflare-dev-pcnudde:pcnudde-dev
+
+clouds:
+  gcp:
+    prepare:
+      parent:
+        docker_image: *dev_image
+```
+
+Repeat `docker_image: *dev_image` for the other clouds. YAML resolves the
+anchor before the deploy scripts read the config.
+
+## Preflight
+
+Confirm the deployer has access before starting:
+
+```bash
+gcloud auth print-access-token >/dev/null
+aws sts get-caller-identity
+az account show
+kubectl --kubeconfig .tmp/kubeconfigs/gcp.yaml auth can-i create namespaces
+helm version
+```
+
+For AWS, also confirm the configured region:
+
+```bash
+aws configure get region
+```
 
 ## Build And Push The Image
 
@@ -79,6 +131,8 @@ Expected behavior:
 - The server is deployed first.
 - Clients are deployed in parallel.
 - The deterministic cloud IP name comes from the config `name`.
+- One namespace and Helm release are created per participant.
+- Job pods are created only after a job is submitted.
 
 ## Validate
 
