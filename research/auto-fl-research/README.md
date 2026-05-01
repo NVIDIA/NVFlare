@@ -169,7 +169,9 @@ Keep the devcontainer boundary meaningful: mount only the repository and deliber
 For Codex or Claude Code, the first instruction should be close to:
 
 ```text
-Use the autofl-nvflare skill.
+Make the bundled local `autofl-nvflare` skill available first if your runtime has not already loaded it. Use `skills/autofl-nvflare/SKILL.md` and its `references/` files as the skill source; do not recreate the skill from memory.
+
+Then use the autofl-nvflare skill.
 
 Start in this directory and read `program.md` first. Treat it as the complete research control plane and follow its setup, mutation, budget, ledger, literature-loop, and continuation instructions.
 
