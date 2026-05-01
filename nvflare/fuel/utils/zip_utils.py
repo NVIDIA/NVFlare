@@ -14,8 +14,9 @@
 
 import io
 import os
+import stat
 from pathlib import Path
-from zipfile import ZipFile
+from zipfile import ZipFile, ZipInfo
 
 
 def normpath_for_zip(path):
@@ -140,6 +141,42 @@ def ls_zip_from_bytes(zip_data: bytes):
         return z.infolist()
 
 
+def _validate_zip_entry_name(name: str, real_out: str) -> None:
+    """Reject a zip entry name with an absolute path or ".." component."""
+    if os.path.isabs(name) or name.startswith("/") or name.startswith("\\"):
+        raise ValueError(f"unsafe absolute path in zip entry: {name!r}")
+    if ".." in name.replace("\\", "/").split("/"):
+        raise ValueError(f"unsafe '..' component in zip entry: {name!r}")
+    resolved = os.path.realpath(os.path.join(real_out, name))
+    if resolved != real_out and not resolved.startswith(real_out + os.sep):
+        raise ValueError(f"zip entry escapes output dir: {name!r}")
+
+
+def _is_symlink_entry(info: ZipInfo) -> bool:
+    """Return True when the zip entry's stored Unix mode marks it as a symlink."""
+    mode = info.external_attr >> 16
+    return stat.S_ISLNK(mode)
+
+
+def _validate_zip_entries(z: ZipFile, output_dir_name: str) -> None:
+    """Reject zip entries with absolute paths, ".." components, or symlink mode.
+
+    Note: ``zipfile.ZipFile.extractall`` is already safe against path-traversal
+    entries — CPython strips ".." components and absolute-path roots from
+    member names before extraction (see the zipfile docs and CVE-2014-4616
+    hardening), and CPython does not honor stored symlink modes during
+    extraction. This pre-check is defense-in-depth: it rejects suspicious
+    archives up front with a clear error rather than silently rewriting paths,
+    and forbids symlink entries so that any future or non-CPython zipfile that
+    *does* honor symlinks cannot be used to set up a TOCTOU traversal.
+    """
+    real_out = os.path.realpath(output_dir_name)
+    for info in z.infolist():
+        if _is_symlink_entry(info):
+            raise ValueError(f"unsafe symlink entry in zip: {info.filename!r}")
+        _validate_zip_entry_name(info.filename, real_out)
+
+
 def unzip_single_file_from_bytes(zip_data: bytes, output_dir_name: str, file_path: str):
     """Decompresses a zip and extracts single specified file to the specified output directory.
 
@@ -148,6 +185,11 @@ def unzip_single_file_from_bytes(zip_data: bytes, output_dir_name: str, file_pat
         output_dir_name: the output directory for extracted content
         file_path: file path to file to unzip
     """
+    # Validate the requested file_path before any directory creation, so an
+    # absolute / ".." file_path can't cause os.makedirs to touch a path
+    # outside output_dir_name.
+    _validate_zip_entry_name(file_path, os.path.realpath(output_dir_name))
+
     path_to_file, _ = split_path(file_path)
     output_dir_name = os.path.join(output_dir_name, path_to_file)
     os.makedirs(output_dir_name)
@@ -158,27 +200,10 @@ def unzip_single_file_from_bytes(zip_data: bytes, output_dir_name: str, file_pat
         raise NotADirectoryError(f'"{output_dir_name}" is not a valid directory')
 
     with ZipFile(io.BytesIO(zip_data), "r") as z:
+        info = z.getinfo(file_path)
+        if _is_symlink_entry(info):
+            raise ValueError(f"unsafe symlink entry in zip: {file_path!r}")
         z.extract(file_path, path=output_dir_name)
-
-
-def _validate_zip_entries(z: ZipFile, output_dir_name: str) -> None:
-    """Reject zip entries with absolute paths or ".." components.
-
-    Note: ``zipfile.ZipFile.extractall`` is already safe against path-traversal
-    entries — CPython strips ".." components and absolute-path roots from
-    member names before extraction (see the zipfile docs and CVE-2014-4616
-    hardening). This pre-check is defense-in-depth: it rejects suspicious
-    archives up front with a clear error rather than silently rewriting paths.
-    """
-    real_out = os.path.realpath(output_dir_name)
-    for name in z.namelist():
-        if os.path.isabs(name) or name.startswith("/") or name.startswith("\\"):
-            raise ValueError(f"unsafe absolute path in zip entry: {name!r}")
-        if ".." in name.replace("\\", "/").split("/"):
-            raise ValueError(f"unsafe '..' component in zip entry: {name!r}")
-        resolved = os.path.realpath(os.path.join(real_out, name))
-        if resolved != real_out and not resolved.startswith(real_out + os.sep):
-            raise ValueError(f"zip entry escapes output dir: {name!r}")
 
 
 def unzip_all_from_bytes(zip_data: bytes, output_dir_name: str):
