@@ -619,6 +619,21 @@ def _recipe_detail(entry: dict) -> dict:
     return detail
 
 
+def _recipe_parameter(detail: dict, name: str) -> dict:
+    return next((p for p in detail.get("parameters", []) if p.get("name") == name), {})
+
+
+def _state_exchange_text(detail: dict) -> str:
+    state_exchange = detail.get("state_exchange") or "none"
+    transfer_param = _recipe_parameter(detail, "params_transfer_type")
+    if transfer_param:
+        default = transfer_param.get("default")
+        if default:
+            return f"{state_exchange} (default; params_transfer_type={default}, supports FULL or DIFF)"
+        return f"{state_exchange} (configurable with params_transfer_type)"
+    return state_exchange
+
+
 def _parse_recipe_filters(raw_filters: list) -> dict:
     parsed = {}
     for raw_filter in raw_filters or []:
@@ -832,7 +847,7 @@ def _load_catalog(framework: str = None, include_recipe_class: bool = False) -> 
 
 
 def cmd_recipe_list(cmd_args):
-    from nvflare.tool.cli_output import is_json_mode, output_error_message, output_ok, print_human
+    from nvflare.tool.cli_output import is_json_mode, is_jsonl_mode, output_error_message, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -875,6 +890,9 @@ def cmd_recipe_list(cmd_args):
             )
             raise SystemExit(4)
         filters.setdefault("framework", set()).add(normalized_framework)
+
+    if not is_json_mode() and not is_jsonl_mode():
+        print_human("Loading installed recipe catalog...", flush=True)
 
     catalog = _load_catalog(framework=framework)
 
@@ -924,7 +942,7 @@ def cmd_recipe_list(cmd_args):
 
 
 def cmd_recipe_show(cmd_args):
-    from nvflare.tool.cli_output import is_json_mode, output_error_message, output_ok, print_human
+    from nvflare.tool.cli_output import is_json_mode, is_jsonl_mode, output_error_message, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
     handle_schema_flag(
@@ -943,6 +961,9 @@ def cmd_recipe_show(cmd_args):
     )
 
     requested_name = _normalize_recipe_name(getattr(cmd_args, "name", ""))
+    if not is_json_mode() and not is_jsonl_mode():
+        print_human(f"Loading installed recipe metadata for '{getattr(cmd_args, 'name', '')}'...", flush=True)
+
     catalog = _load_catalog(include_recipe_class=True)
     entry = next((e for e in catalog if _normalize_recipe_name(e["name"]) == requested_name), None)
     if entry is None:
@@ -965,10 +986,15 @@ def cmd_recipe_show(cmd_args):
     print_human(f"  description: {detail['description']}")
     print_human(f"  algorithm: {detail['algorithm']}")
     print_human(f"  aggregation: {detail['aggregation']}")
-    print_human(f"  state_exchange: {detail['state_exchange']}")
+    print_human(f"  state_exchange: {_state_exchange_text(detail)}")
     print_human(f"  framework_support: {', '.join(detail['framework_support'])}")
-    print_human(f"  privacy_compatible: {', '.join(detail['privacy_compatible']) or 'none'}")
-    print_human(f"  parameters: {len(detail['parameters'])}")
+    print_human(f"  privacy: {', '.join(detail['privacy']) or 'none enabled by default'}")
+    print_human(
+        f"  privacy compatibility: {', '.join(detail['privacy_compatible']) or 'not declared in recipe metadata'}"
+    )
+    print_human(
+        f"  parameters: {len(detail['parameters'])} available; run 'nvflare recipe show {detail['name']} --format json'"
+    )
     print_human()
 
 

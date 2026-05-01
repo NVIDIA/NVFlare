@@ -493,6 +493,48 @@ Filter values are normalized so hyphenated and underscored values match the same
 Repeated filters for different keys are combined as an intersection. Repeated filters for the same key are treated as alternatives. Without filters, the command returns the documented built-in recipe catalog plus dynamically discovered recipe entries.
 Valid metadata filters that match no available recipes return an empty list.
 
+Built-in metadata filter values are tied to the recipes that declare them; most values are framework-specific and should be combined with `framework` when a workflow needs a precise match.
+
+| Filter key | Value | Frameworks |
+| --- | --- | --- |
+| `algorithm` | `cyclic` | `core`, `pytorch`, `tensorflow` |
+| `algorithm` | `fedavg` | `core`, `numpy`, `pytorch`, `sklearn`, `tensorflow` |
+| `algorithm` | `fedavg_logistic_regression` | `numpy` |
+| `algorithm` | `fedeval` | `pytorch` |
+| `algorithm` | `fedopt` | `pytorch`, `tensorflow` |
+| `algorithm` | `fedprox` | `pytorch`, `tensorflow` |
+| `algorithm` | `fedstats` | `core` |
+| `algorithm` | `kmeans` | `sklearn` |
+| `algorithm` | `scaffold` | `pytorch`, `tensorflow` |
+| `algorithm` | `svm` | `sklearn` |
+| `algorithm` | `swarm` | `pytorch` |
+| `algorithm` | `xgboost_bagging` | `xgboost` |
+| `algorithm` | `xgboost_horizontal` | `xgboost` |
+| `algorithm` | `xgboost_vertical` | `xgboost` |
+| `aggregation` | `cluster_centers` | `sklearn` |
+| `aggregation` | `server_optimizer` | `pytorch`, `tensorflow` |
+| `aggregation` | `support_vectors` | `sklearn` |
+| `aggregation` | `tree_ensemble` | `xgboost` |
+| `aggregation` | `weighted_average` | `core`, `numpy`, `pytorch`, `sklearn`, `tensorflow` |
+| `state_exchange` | `cluster_centers` | `sklearn` |
+| `state_exchange` | `full_model` | `core`, `numpy`, `pytorch`, `sklearn`, `tensorflow` |
+| `state_exchange` | `model_weights` | `numpy` |
+| `state_exchange` | `support_vectors` | `sklearn` |
+| `state_exchange` | `trees` | `xgboost` |
+| `state_exchange` | `weight_diff` | `pytorch`, `tensorflow` |
+| `privacy` | `homomorphic_encryption` | `pytorch` |
+
+The `privacy` filter means a privacy feature is declared by the recipe entry; it is not a general claim about whether the underlying algorithm can be combined with PETs. For example, generic FedAvg does not enable a PET by default, but it can be combined with privacy/security components in workflows that support them.
+
+Examples:
+
+```bash
+nvflare recipe list --filter framework=pytorch --filter algorithm=fedopt
+nvflare recipe list --filter framework=xgboost --filter state_exchange=trees
+nvflare recipe list --filter framework=sklearn --filter aggregation=cluster_centers
+nvflare recipe list --filter privacy=homomorphic_encryption
+```
+
 Recipe classes may declare metadata as class-level attributes (`recipe_algorithm`, `recipe_aggregation`, `recipe_state_exchange`, `recipe_privacy`) or the shorter forms (`algorithm`, `aggregation`, `state_exchange`, `privacy`). When explicit metadata is absent, the CLI infers the common fields from the recipe module, class, and CLI name. The CLI discovers recipes at runtime via `importlib` + `inspect` and supplements that with a documented recipe manifest so recipes remain queryable even when optional framework dependencies are not installed.
 
 `recipe show` returns a single recipe detail document keyed by the same recipe
@@ -503,6 +545,18 @@ metadata plus `client_requirements`, `framework_support`,
 derived from the recipe constructor signature when the recipe can be imported,
 or from static source parsing when optional dependencies are missing. The CLI
 must not instantiate the recipe.
+
+Text-mode recipe commands print a short loading status before local catalog or
+metadata discovery because recipe discovery imports and inspects installed
+Python modules and can take several seconds. These progress lines are human
+output only and must not appear in `--format json` output. `recipe show` text
+output summarizes the main fields; full constructor parameters remain available
+through `nvflare recipe show <name> --format json`.
+
+For recipes with a configurable transfer type, text output must identify the
+displayed `state_exchange` as the default rather than an absolute behavior. For
+example, FedAvg defaults to `params_transfer_type=FULL` and therefore reports
+`full_model`, but it also supports `DIFF`.
 
 Example:
 

@@ -66,6 +66,7 @@ def test_recipe_list_human_output_not_duplicated(monkeypatch, capsys):
 
     captured = capsys.readouterr()
     assert captured.err == ""
+    assert "Loading installed recipe catalog..." in captured.out
     assert captured.out.count("fedavg") == 1
     assert "description: demo" not in captured.out
 
@@ -226,6 +227,15 @@ def test_recipe_list_valid_filter_with_no_matches_returns_empty_result(monkeypat
                 "aggregation": "weighted_average",
                 "state_exchange": "full_model",
                 "privacy": [],
+                "parameters": [
+                    {
+                        "name": "params_transfer_type",
+                        "type": "TransferType",
+                        "required": False,
+                        "default": "FULL",
+                        "kind": "keyword_only",
+                    }
+                ],
             }
         ],
     )
@@ -343,6 +353,46 @@ def test_recipe_show_returns_queryable_metadata(monkeypatch, capsys):
     assert data["client_requirements"]["min_clients"] == {"required": True, "default": None}
     assert data["client_requirements"]["requires_training_script"] is True
     assert {p["name"]: p for p in data["parameters"]}["num_rounds"]["default"] == 2
+
+
+def test_recipe_show_human_output_reports_loading_status(monkeypatch, capsys):
+    from nvflare.recipe.spec import Recipe
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe.recipe_cli import _CATALOG_RECIPE_CLASS_KEY, cmd_recipe_show
+
+    class FakeRecipe(Recipe):
+        def __init__(self, *, params_transfer_type: str = "FULL"):
+            pass
+
+    monkeypatch.setattr(cli_output, "_output_format", "txt")
+    monkeypatch.setattr(
+        "nvflare.tool.recipe.recipe_cli._load_catalog",
+        lambda include_recipe_class=False, framework=None: [
+            {
+                "name": "fedavg",
+                "description": "FedAvg recipe.",
+                "framework": "core",
+                "module": "nvflare.recipe.fedavg",
+                "class": "FedAvgRecipe",
+                "algorithm": "fedavg",
+                "aggregation": "weighted_average",
+                "state_exchange": "full_model",
+                "privacy": [],
+                _CATALOG_RECIPE_CLASS_KEY: FakeRecipe,
+            }
+        ],
+    )
+
+    cmd_recipe_show(Namespace(name="fedavg"))
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "Loading installed recipe metadata for 'fedavg'..." in captured.out
+    assert "recipe: fedavg" in captured.out
+    assert "state_exchange: full_model (default; params_transfer_type=FULL, supports FULL or DIFF)" in captured.out
+    assert "privacy: none enabled by default" in captured.out
+    assert "privacy compatibility: not declared in recipe metadata" in captured.out
+    assert "parameters: 1 available; run 'nvflare recipe show fedavg --format json'" in captured.out
 
 
 def test_recipe_show_unknown_recipe_errors(monkeypatch, capsys):
