@@ -22,7 +22,8 @@ Command Usage
      resources      show server and client resource usage
      shutdown       shut down server, clients, or all
      restart        restart server, clients, or all
-     remove-client  remove a client from the federation
+     disable-client disable a client from reconnecting
+     enable-client  enable a disabled client to reconnect
      version        show NVFlare version on each remote site
      log-config     change logging level on server or client sites
 
@@ -72,11 +73,17 @@ Shut down specific clients:
 
    nvflare system shutdown client site-1 site-2 --force
 
-Remove a client from the federation:
+Disable a client from reconnecting:
 
 .. code-block:: shell
 
-   nvflare system remove-client site-1 --force
+   nvflare system disable-client site-1 --force
+
+Enable a disabled client:
+
+.. code-block:: shell
+
+   nvflare system enable-client site-1 --force
 
 Show deployed NVFlare versions:
 
@@ -96,9 +103,14 @@ Change runtime logging:
 .. note::
 
    All server-connected ``nvflare system`` commands resolve the startup kit in
-   this order: ``NVFLARE_STARTUP_KIT_DIR``, then ``startup_kits.active`` from
-   ``~/.nvflare/config.conf``. Use ``nvflare config kit add`` and ``nvflare config kit use``
-   to manage the active startup kit. See :ref:`kit_command`.
+   this order: ``--kit-id <id>``, ``--startup-kit <path>``,
+   ``NVFLARE_STARTUP_KIT_DIR``, then ``startup_kits.active`` from
+   ``~/.nvflare/config.conf``. ``--kit-id`` and ``--startup-kit`` are optional
+   per-command overrides. When provided, they take precedence over the active
+   startup kit for the current invocation only and do not change
+   ``startup_kits.active``. Use ``nvflare config add`` and
+   ``nvflare config use`` to manage the active startup kit. See
+   :ref:`kit_command`.
 
 ****************
 Status and Resources
@@ -166,6 +178,11 @@ Control arguments:
 - positional ``target``: required. One of ``server``, ``client``, or ``all``.
 - positional ``client_names``: optional. One or more client names. Only meaningful when ``target`` is ``client``.
 - ``--force``: skip the confirmation prompt.
+- ``--no-wait``: return after requesting shutdown or restart without waiting
+  for completion.
+- ``--timeout SECONDS``: maximum positive seconds to wait for shutdown or
+  restart completion. Default: ``30``. Use ``--no-wait`` instead of
+  ``--timeout 0`` for fire-and-forget operation.
 - ``--schema``: print the command schema as JSON and exit.
 
 Examples:
@@ -175,34 +192,61 @@ Examples:
    nvflare system shutdown server --force
    nvflare system shutdown client site-1 site-2 --force
    nvflare system shutdown all --force
+   nvflare system shutdown all --force --no-wait
+   nvflare system shutdown all --force --timeout 120
 
    nvflare system restart server --force
    nvflare system restart client site-1 --force
    nvflare system restart all --force
+   nvflare system restart server --force --no-wait
+   nvflare system restart all --force --timeout 120
 
 In non-interactive contexts, ``--force`` is required.
 
-When ``target`` is ``server`` or ``all``, the admin session closes automatically
-after the command completes.
+By default, shutdown waits for the target to stop before returning, and restart
+waits for the target to become reachable again before returning. For
+``restart all``, this includes waiting for the server to restart and for
+previously connected clients to reconnect. With ``--no-wait``, the command
+returns immediately with an initiated status. When ``target`` is ``server`` or
+``all``, the admin session closes automatically after the shutdown or restart
+request is sent.
+If the wait exceeds ``--timeout``, the command returns ``TIMEOUT`` with exit
+code ``3`` instead of reporting a connection failure.
 
 ****************
-Remove Client
+Client Access Control
 ****************
 
-Use ``nvflare system remove-client`` to remove a client from the running
-federation (equivalent to the admin console ``remove_client`` command).
+Use ``disable-client`` to persistently block a client identity from joining the
+running federation. The server removes any active registry entry for the client
+and rejects later registration or heartbeat attempts until the client is enabled.
+This does not revoke the client's certificate or delete its startup kit. JSON
+output includes ``already_disabled`` so callers can distinguish a state change
+from an idempotent no-op.
 
-Remove-client arguments:
+Use ``enable-client`` to remove the disabled flag. The client can rejoin on its
+next registration or heartbeat.
 
-- positional ``client_name``: required. The name of the client to remove.
+The disabled-client policy is stored on the server in
+``<server_workspace>/disabled_clients.json`` and is loaded at server startup.
+Updates and persistence writes are serialized by the server client-manager lock
+and written with a temporary file followed by atomic replacement, so the policy
+survives server restart without partially written files. If the file exists but
+cannot be loaded, the server fails closed during startup instead of admitting
+previously disabled clients.
+
+Client access arguments:
+
+- positional ``client_name``: required. The name of the client to disable or enable.
 - ``--force``: skip the confirmation prompt.
 - ``--schema``: print the command schema as JSON and exit.
 
-Example:
+Examples:
 
 .. code-block:: shell
 
-   nvflare system remove-client site-1 --force
+   nvflare system disable-client site-1 --force
+   nvflare system enable-client site-1 --force
 
 ****************
 Version

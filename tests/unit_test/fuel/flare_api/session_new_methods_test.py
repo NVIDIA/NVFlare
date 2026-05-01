@@ -259,7 +259,8 @@ class TestShutdown:
         session = _make_session()
         session.close = MagicMock()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()):
-            session.shutdown(TargetType.SERVER)
+            with patch.object(session, "_wait_for_server_down"):
+                session.shutdown(TargetType.SERVER)
         session.close.assert_called_once()
 
     def test_shutdown_preserves_result_if_close_fails(self):
@@ -268,7 +269,8 @@ class TestShutdown:
         expected_meta = _ok_meta_result()[ResultKey.META]
 
         with patch.object(session, "_do_command", return_value=_ok_meta_result()):
-            result = session.shutdown(TargetType.SERVER)
+            with patch.object(session, "_wait_for_server_down"):
+                result = session.shutdown(TargetType.SERVER)
 
         assert result == expected_meta
         session.close.assert_called_once()
@@ -288,7 +290,7 @@ class TestShutdown:
         session = _make_session()
         session.close = MagicMock()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
-            session.shutdown(TargetType.CLIENT, ["site-1"])
+            session.shutdown(TargetType.CLIENT, ["site-1"], wait=False)
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [AdminCommandNames.SHUTDOWN, TargetType.CLIENT, "site-1"]
         session.close.assert_not_called()
@@ -300,7 +302,7 @@ class TestShutdown:
         session = _make_session()
         session.close = MagicMock()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
-            session.shutdown(TargetType.CLIENT, ["site-1", "site-2", "site-3"])
+            session.shutdown(TargetType.CLIENT, ["site-1", "site-2", "site-3"], wait=False)
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [
             AdminCommandNames.SHUTDOWN,
@@ -316,7 +318,7 @@ class TestRestart:
     def test_sends_restart_command(self):
         session = _make_session()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
-            session.restart(TargetType.SERVER)
+            session.restart(TargetType.SERVER, wait=False)
         cmd = mock_cmd.call_args[0][0]
         assert AdminCommandNames.RESTART in cmd
 
@@ -328,7 +330,7 @@ class TestRestart:
     def test_restart_client_quotes_single_target(self):
         session = _make_session()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
-            session.restart(TargetType.CLIENT, ["site-1"])
+            session.restart(TargetType.CLIENT, ["site-1"], wait=False)
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [AdminCommandNames.RESTART, TargetType.CLIENT, "site-1"]
 
@@ -338,7 +340,7 @@ class TestRestart:
         # over-quoting pattern — this test guards against that regression.
         session = _make_session()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
-            session.restart(TargetType.CLIENT, ["site-1", "site-2"])
+            session.restart(TargetType.CLIENT, ["site-1", "site-2"], wait=False)
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [
             AdminCommandNames.RESTART,
@@ -367,6 +369,47 @@ class TestRemoveClient:
         session = _make_session()
         with pytest.raises(ValueError):
             session.remove_client("")
+
+
+class TestDisableEnableClient:
+    def test_disable_client_sends_command_and_returns_payload(self):
+        session = _make_session()
+        payload = {"clients": [{"client_name": "site-1", "state": "disabled"}]}
+        reply = _ok_meta_result()
+        reply["data"] = [{"type": "dict", "data": payload}]
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            result = session.disable_client("site-1")
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.DISABLE_CLIENT, "site-1"]
+        assert result == payload
+
+    def test_enable_client_sends_command_and_returns_payload(self):
+        session = _make_session()
+        payload = {"clients": [{"client_name": "site-1", "state": "enabled"}]}
+        reply = _ok_meta_result()
+        reply["data"] = [{"type": "dict", "data": payload}]
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            result = session.enable_client("site-1")
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.ENABLE_CLIENT, "site-1"]
+        assert result == payload
+
+    def test_disable_enable_quote_spaced_client_name(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.disable_client("site 1")
+        assert split_to_args(mock_cmd.call_args[0][0]) == [AdminCommandNames.DISABLE_CLIENT, "site 1"]
+
+        with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
+            session.enable_client("site 1")
+        assert split_to_args(mock_cmd.call_args[0][0]) == [AdminCommandNames.ENABLE_CLIENT, "site 1"]
+
+    def test_disable_enable_raise_on_empty_client_name(self):
+        session = _make_session()
+        with pytest.raises(ValueError):
+            session.disable_client("")
+        with pytest.raises(ValueError):
+            session.enable_client("")
 
 
 class TestStudyCommands:
@@ -531,6 +574,16 @@ class TestGetJobLogs:
             session.get_job_logs("job1", target="all")
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "all"]
+
+    def test_can_request_json_log_file_without_public_cli_flag(self):
+        session = _make_session()
+        from nvflare.fuel.hci.client.api import APIStatus
+
+        reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            session.get_job_logs("job1", target="site-1", log_file_name="log.json")
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "site-1", "log.json"]
 
     def test_accepts_legacy_tail_and_grep_keywords_without_changing_command(self):
         session = _make_session()

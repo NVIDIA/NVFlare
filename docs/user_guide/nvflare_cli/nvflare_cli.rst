@@ -34,8 +34,8 @@ Command groups
 - ``job``: submit and manage jobs
 - ``study``: manage multi-study lifecycle (register, enroll sites, manage users)
 - ``system``: inspect and operate a running FL system
-- ``config``: manage local CLI settings, including ``config kit`` startup-kit
-  registration and active-kit selection
+- ``config``: manage local CLI settings, including startup-kit registration
+  and active-kit selection
 - ``recipe``: list built-in recipe families for exported jobs
 - ``preflight_check`` / ``preflight``: validate a provisioned startup kit
   before deployment (``preflight`` is the preferred alias)

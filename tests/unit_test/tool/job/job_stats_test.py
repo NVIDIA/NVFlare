@@ -79,6 +79,8 @@ class TestJobStats:
         assert envelope["status"] == "error"
         assert envelope["error_code"] == "JOB_NOT_FOUND"
         assert envelope["exit_code"] == 1
+        assert "searched study 'default'" in envelope["message"]
+        assert "nvflare job list --study <study_name>" in envelope["hint"]
 
     def test_stats_job_not_found_via_not_found_phrase(self, capsys):
         """JobNotFound also maps to JOB_NOT_FOUND."""
@@ -95,6 +97,7 @@ class TestJobStats:
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert envelope["error_code"] == "JOB_NOT_FOUND"
+        assert "searched study 'default'" in envelope["message"]
 
     def test_stats_connection_failed_exits_2(self, capsys):
         """NoConnection maps to CONNECTION_FAILED, exit 2."""

@@ -154,6 +154,8 @@ As mentioned above, you can run NVIDIA FLARE in the public cloud.  If you prefer
 you can find the deployment guide in :ref:`aws_eks`.
 
 
+.. _starting_fl_servers:
+
 Starting Federated Learning Servers
 =============================================
 The FL Server will coordinate the federated learning training and be the main hub all clients and admin
@@ -174,6 +176,17 @@ If clients from other machines cannot connect to the server, make sure that the 
 participants in project.yml) specified when generating the startup kits in the provisioning process resolves to the
 correct IP. If the FL server is on an internal network without a DNS hostname, in Ubuntu, an entry may need to be added
 to ``/etc/hosts`` with the internal IP and the hostname.
+
+.. note::
+
+   For PyTorch FedAvg jobs that enable ``enable_tensor_disk_offload=True``, the FL server writes incoming streamed
+   tensors to the server process temporary directory. This directory is resolved by Python ``tempfile`` from
+   ``TMPDIR``, ``TEMP``, ``TMP``, and the OS default, often ``/tmp``. If ``TMPDIR`` is unset, does not exist, or is not
+   writable, Python may silently fall back to another writable temp directory. Configure the server service or shell
+   that starts ``startup/start.sh`` so ``TMPDIR`` points to an existing, writable, disk-backed mount with enough free
+   space for the expected tensor payloads. Avoid RAM-backed temporary filesystems such as ``tmpfs`` or ``ramfs`` for
+   tensor disk offload, because they do not reduce server memory usage. Verify both the resolved temp directory and its
+   backing filesystem as part of server IT setup.
 
 Starting Federated Learning Clients
 ============================================
@@ -347,9 +360,6 @@ Administrator side folder and file structure
                 config/
                 models/
                 resources/
-
-
-
 
 
 
