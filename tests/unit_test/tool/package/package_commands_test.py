@@ -48,7 +48,12 @@ from nvflare.lighter.utils import (
     sign_content,
 )
 from nvflare.tool import cli_output
-from nvflare.tool.cert.cert_constants import CA_INFO_FIELD, PROVISION_VERSION_FIELD, ROOTCA_FINGERPRINT_FIELD
+from nvflare.tool.cert.cert_constants import (
+    CA_INFO_FIELD,
+    DEFAULT_PROVISION_VERSION,
+    PROVISION_VERSION_FIELD,
+    ROOTCA_FINGERPRINT_FIELD,
+)
 from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256, normalize_sha256_fingerprint
 from nvflare.tool.package.package_commands import (
     _DUMMY_SERVER_NAME,
@@ -3073,8 +3078,9 @@ def _rewrite_signed_zip_metadata(signed_zip, mutate):
     mutate(metadata)
     members["signed.json"] = json.dumps(metadata, sort_keys=True).encode("utf-8")
     ca_key = _SIGNED_ZIP_CA_KEYS.get(str(signed_zip))
-    if ca_key:
-        members["signed.json.sig"] = sign_content(members["signed.json"], ca_key).encode("utf-8")
+    if ca_key is None:
+        raise RuntimeError(f"missing CA key for signed zip test fixture: {signed_zip}")
+    members["signed.json.sig"] = sign_content(members["signed.json"], ca_key).encode("utf-8")
     with zipfile.ZipFile(signed_zip, "w") as zf:
         for name, content in members.items():
             zf.writestr(name, content)
@@ -3678,7 +3684,8 @@ class TestSignedZipPackageMode:
         assert os.path.isdir(os.path.join(workspace, "example_project", "prod_00", "site-b"))
         assert not os.path.exists(os.path.join(workspace, "example_project", "prod_01"))
 
-    def test_signed_zip_missing_ca_info_defaults_to_prod_00(self, tmp_path):
+    def test_signed_zip_missing_ca_info_defaults_to_prod_00(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
         ca_key, ca_cert, rootca_path = _make_shared_package_ca(tmp_path)
         signed_a, request_a, _ = _make_signed_zip(
             tmp_path,
@@ -3698,11 +3705,14 @@ class TestSignedZipPackageMode:
         )
 
         handle_package(_signed_zip_args(signed_a, tmp_path, request_dir=str(request_a)))
+        first_output = json.loads(capsys.readouterr().out)
         handle_package(_signed_zip_args(signed_b, tmp_path, request_dir=str(request_b)))
 
         workspace = str(tmp_path / "ws")
         assert os.path.isdir(os.path.join(workspace, "example_project", "prod_00", "site-a"))
         assert os.path.isdir(os.path.join(workspace, "example_project", "prod_00", "site-b"))
+        assert first_output["data"]["provision_version"] == DEFAULT_PROVISION_VERSION
+        assert first_output["data"]["rootca_fingerprint_sha256"] == _rootca_fingerprint_from_signed_zip(signed_a)
         assert not os.path.exists(os.path.join(workspace, "example_project", "prod_01"))
 
     def test_signed_zip_rejects_malformed_ca_info_provision_version(self, tmp_path, capsys, monkeypatch):
