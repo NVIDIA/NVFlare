@@ -226,7 +226,7 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "OUTPUT_DIR_EXISTS": {
         "message": "Output directory already exists: {path}.",
-        "hint": "Use --force to package into a new prod_NN stage directory.",
+        "hint": "Use --force only when intentionally replacing the existing participant output.",
     },
     "SIGNED_ZIP_NOT_FOUND": {
         "message": "Signed zip not found: {path}.",
