@@ -457,7 +457,7 @@ def cmd_system_shutdown(args):
     output_ok(
         {
             "target": target,
-            "status": "shutdown initiated" if no_wait else "stopped",
+            "status": "shutdown_initiated" if no_wait else "stopped",
             "timeout": None if no_wait else timeout,
             "result": result,
         }
@@ -521,7 +521,7 @@ def cmd_system_restart(args):
     output_ok(
         {
             "target": target,
-            "status": "restart initiated" if no_wait else "restarted",
+            "status": "restart_initiated" if no_wait else "restarted",
             "timeout": None if no_wait else timeout,
             "result": result,
         }

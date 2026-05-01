@@ -74,7 +74,7 @@ class TestSystemShutdown:
 
         mock_sess.shutdown.assert_called_once_with("server", client_names=None, wait=False)
         data = json.loads(capsys.readouterr().out)
-        assert data["data"]["status"] == "shutdown initiated"
+        assert data["data"]["status"] == "shutdown_initiated"
 
     def test_shutdown_preserves_server_reply(self, capsys):
         from nvflare.tool.system.system_cli import cmd_system_shutdown

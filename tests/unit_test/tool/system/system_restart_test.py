@@ -74,7 +74,7 @@ class TestSystemRestart:
 
         mock_sess.restart.assert_called_once_with("server", client_names=None, wait=False)
         data = json.loads(capsys.readouterr().out)
-        assert data["data"]["status"] == "restart initiated"
+        assert data["data"]["status"] == "restart_initiated"
 
     def test_restart_non_interactive_without_force_exits_4(self):
         """Non-interactive mode without --force exits with code 4."""
