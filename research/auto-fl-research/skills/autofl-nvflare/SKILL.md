@@ -1,6 +1,6 @@
 ---
 name: autofl-nvflare
-description: help chatgpt work on an nvflare-based auto-fl harness that follows an autoresearch-style loop. use when the user wants to create, edit, debug, or extend program.md, job.py, client.py, custom_aggregators.py, model.py, mutation policies, results.tsv logging, or coding-agent prompts for a bounded federated-learning research loop. this skill is specifically for nvflare harness work where the client api loop, diff upload contract, and num_steps_current_round metadata must stay intact unless the user explicitly asks for a protocol upgrade.
+description: Help coding agents work on an NVFlare-based Auto-FL harness that follows an autoresearch-style loop. Use when the user wants to create, edit, debug, or extend program.md, job.py, client.py, custom_aggregators.py, model.py, mutation policies, results.tsv logging, or coding-agent prompts for a bounded federated-learning research loop. This skill is specifically for NVFlare harness work where the Client API loop, DIFF upload contract, and NUM_STEPS_CURRENT_ROUND metadata must stay intact unless the user explicitly asks for a protocol upgrade.
 ---
 
 # autofl-nvflare

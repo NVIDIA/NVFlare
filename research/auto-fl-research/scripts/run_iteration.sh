@@ -9,34 +9,21 @@ RUN_ITERATION_LOG_RESULTS=${RUN_ITERATION_LOG_RESULTS:-1}
 RUN_ITERATION_REQUIRE_SCORE=${RUN_ITERATION_REQUIRE_SCORE:-1}
 DESCRIPTION=""
 TARGET=""
-EXPECTED_RESULTS_HEADER=$'commit\tscore\truntime_seconds\tbudget\tstatus\ttarget\tdescription\tartifacts'
-OLD_RESULTS_HEADER=$'commit\tscore\tbudget\tstatus\ttarget\tdescription\tartifacts'
 
-ensure_results_tsv() {
-  if [[ ! -f "${RESULTS_TSV}" ]]; then
-    cp templates/results_header.tsv "${RESULTS_TSV}"
-    return
-  fi
-
-  local current_header
-  current_header=$(head -n 1 "${RESULTS_TSV}")
-  if [[ "${current_header}" == "${EXPECTED_RESULTS_HEADER}" ]]; then
-    return
-  fi
-
-  if [[ "${current_header}" == "${OLD_RESULTS_HEADER}" ]]; then
-    local tmp_results
-    tmp_results=$(mktemp "${RESULTS_TSV}.XXXXXX")
-    {
-      printf '%s\n' "${EXPECTED_RESULTS_HEADER}"
-      tail -n +2 "${RESULTS_TSV}" | awk -F '\t' 'BEGIN { OFS = "\t" } { print $1, $2, "", $3, $4, $5, $6, $7 }'
-    } > "${tmp_results}"
-    mv "${tmp_results}" "${RESULTS_TSV}"
-    return
-  fi
-
-  echo "Unknown ${RESULTS_TSV} header: ${current_header}" >&2
-  exit 2
+append_result() {
+  local score="$1"
+  local status="$2"
+  local artifacts="$3"
+  "${PYTHON}" scripts/append_result.py \
+    --results="${RESULTS_TSV}" \
+    --commit="${COMMIT}" \
+    --score="${score}" \
+    --runtime-seconds="${RUNTIME_SECONDS}" \
+    --budget="${BUDGET}" \
+    --status="${status}" \
+    --target="${TARGET}" \
+    --description="${DESCRIPTION}" \
+    --artifacts="${artifacts}"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -81,6 +68,15 @@ printf '\n'
 echo "log=${RUN_LOG}"
 mkdir -p "$(dirname "${RUN_LOG}")"
 
+CLEANUP_RESULT_DIR_FILE=0
+if [[ -z "${AUTOFL_RESULT_DIR_FILE:-}" ]]; then
+  AUTOFL_RESULT_DIR_FILE=$(mktemp "${RUN_LOG}.result_dir.XXXXXX")
+  CLEANUP_RESULT_DIR_FILE=1
+fi
+export AUTOFL_RESULT_DIR_FILE
+rm -f "${AUTOFL_RESULT_DIR_FILE}"
+trap 'if [[ "${CLEANUP_RESULT_DIR_FILE}" == "1" ]]; then rm -f "${AUTOFL_RESULT_DIR_FILE}"; fi' EXIT
+
 START_SECONDS=$(date +%s)
 set +e
 if [[ "${RUN_TIMEOUT_SECONDS}" != "0" ]]; then
@@ -95,14 +91,13 @@ RUNTIME_SECONDS=$((END_SECONDS - START_SECONDS))
 
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo no-git)
 BUDGET=$(printf '%s ' "$@" | sed 's/[[:space:]]\+$//')
-RESULT_DIR=$(grep '^Results:' "${RUN_LOG}" | tail -n 1 | sed 's/^Results:[[:space:]]*//' || true)
+RESULT_DIR=$(sed -n '1p' "${AUTOFL_RESULT_DIR_FILE}" 2>/dev/null || true)
 
 if [[ $RC -ne 0 || -z "${RESULT_DIR}" ]]; then
   echo "Run failed. See ${RUN_LOG}"
   tail -n 50 "${RUN_LOG}" || true
   if [[ "${RUN_ITERATION_LOG_RESULTS}" != "0" ]]; then
-    ensure_results_tsv
-    printf '%s\t0.000000\t%s\t%s\tcrash\t%s\t%s\t%s\n' "$COMMIT" "$RUNTIME_SECONDS" "$BUDGET" "$TARGET" "$DESCRIPTION" "${RUN_LOG}" >> "${RESULTS_TSV}"
+    append_result "0.000000" "crash" "${RUN_LOG}"
   else
     echo "Skipped ${RESULTS_TSV} logging because RUN_ITERATION_LOG_RESULTS=0"
   fi
@@ -126,8 +121,7 @@ if [[ ${SCORE_RC} -ne 0 ]]; then
     exit 0
   fi
   if [[ "${RUN_ITERATION_LOG_RESULTS}" != "0" ]]; then
-    ensure_results_tsv
-    printf '%s\t0.000000\t%s\t%s\tcrash\t%s\t%s\t%s\n' "$COMMIT" "$RUNTIME_SECONDS" "$BUDGET" "$TARGET" "$DESCRIPTION" "$RESULT_DIR" >> "${RESULTS_TSV}"
+    append_result "0.000000" "crash" "$RESULT_DIR"
   fi
   echo "${SCORE_OUTPUT}" >&2
   exit "${SCORE_RC}"
@@ -138,8 +132,7 @@ echo "score=${SCORE}"
 echo "result_dir=${RESULT_DIR}"
 
 if [[ "${RUN_ITERATION_LOG_RESULTS}" != "0" ]]; then
-  ensure_results_tsv
-  printf '%s\t%s\t%s\t%s\tcandidate\t%s\t%s\t%s\n' "$COMMIT" "$SCORE" "$RUNTIME_SECONDS" "$BUDGET" "$TARGET" "$DESCRIPTION" "$RESULT_DIR" >> "${RESULTS_TSV}"
+  append_result "$SCORE" "candidate" "$RESULT_DIR"
   echo "Appended candidate result to ${RESULTS_TSV}"
 else
   echo "Skipped ${RESULTS_TSV} logging because RUN_ITERATION_LOG_RESULTS=0"

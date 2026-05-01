@@ -31,15 +31,10 @@ except Exception:
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
+from nvflare.app_common.app_constant import AlgorithmConstants
 
-try:
-    from nvflare.app_common.app_constant import AlgorithmConstants
-
-    SCAFFOLD_CTRL_DIFF = AlgorithmConstants.SCAFFOLD_CTRL_DIFF
-    SCAFFOLD_CTRL_GLOBAL = AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL
-except Exception:
-    SCAFFOLD_CTRL_DIFF = "scaffold_c_diff"
-    SCAFFOLD_CTRL_GLOBAL = "scaffold_c_global"
+SCAFFOLD_CTRL_DIFF = AlgorithmConstants.SCAFFOLD_CTRL_DIFF
+SCAFFOLD_CTRL_GLOBAL = AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL
 
 
 def _as_numpy(value):
@@ -251,7 +246,11 @@ class FedAdamAggregator(FedOptAggregator):
 
 
 class ScaffoldAggregator(ModelAggregator):
-    """SCAFFOLD aggregation over DIFF params plus control-variate metadata."""
+    """SCAFFOLD aggregation over DIFF params plus control-variate metadata.
+
+    Control deltas are step-weighted by NUM_STEPS_CURRENT_ROUND to match NVFlare's
+    built-in scaffold workflow aggregation.
+    """
 
     def __init__(self):
         super().__init__()
@@ -350,7 +349,7 @@ class MedianAggregator(ModelAggregator):
         param_keys = self.client_models[0].keys()
         for key in param_keys:
             stacked = np.stack([_as_numpy(m[key]) for m in self.client_models], axis=0)
-            aggregated_params[key] = np.median(stacked, axis=0)
+            aggregated_params[key] = _to_output_type(np.median(stacked, axis=0), self.client_models[0][key])
 
         return FLModel(params=aggregated_params, params_type=self.params_type)
 

@@ -32,6 +32,28 @@ def set_seed(seed: int):
     torch.backends.cudnn.deterministic = True
 
 
+def _capture_rng_state():
+    cuda_state = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+    return {
+        "python": random.getstate(),
+        "numpy": np.random.get_state(),
+        "torch": torch.random.get_rng_state(),
+        "cuda": cuda_state,
+        "cudnn_benchmark": torch.backends.cudnn.benchmark,
+        "cudnn_deterministic": torch.backends.cudnn.deterministic,
+    }
+
+
+def _restore_rng_state(state):
+    random.setstate(state["python"])
+    np.random.set_state(state["numpy"])
+    torch.random.set_rng_state(state["torch"])
+    if state["cuda"] is not None and torch.cuda.is_available():
+        torch.cuda.set_rng_state_all(state["cuda"])
+    torch.backends.cudnn.benchmark = state["cudnn_benchmark"]
+    torch.backends.cudnn.deterministic = state["cudnn_deterministic"]
+
+
 class ModerateCNN(nn.Module):
     def __init__(self, seed: int = 42):
         set_seed(seed)
@@ -154,7 +176,12 @@ def build_model(
         choices = ", ".join(available_model_architectures())
         raise ValueError(f"Unknown model_arch={model_arch!r}; expected one of: {choices}")
 
-    model = MODEL_ARCHITECTURES[model_arch](seed=seed)
+    rng_state = _capture_rng_state()
+    try:
+        model = MODEL_ARCHITECTURES[model_arch](seed=seed)
+    finally:
+        _restore_rng_state(rng_state)
+
     param_count = count_parameters(model)
     if max_model_params is not None and max_model_params > 0 and param_count > max_model_params:
         raise ValueError(

@@ -25,6 +25,7 @@ Provenance:
 import argparse
 import os
 import shlex
+from pathlib import Path
 
 from custom_aggregators import (
     FedAdamAggregator,
@@ -258,6 +259,18 @@ def get_aggregator(args):
     raise ValueError(f"Unknown aggregator: {kind}")
 
 
+def write_result_dir_sidecar(result_dir: str):
+    sidecar_path = os.environ.get("AUTOFL_RESULT_DIR_FILE")
+    if not sidecar_path:
+        return
+
+    path = Path(sidecar_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.tmp")
+    tmp_path.write_text(f"{result_dir}\n", encoding="utf-8")
+    os.replace(tmp_path, path)
+
+
 def main():
     args = define_parser()
 
@@ -349,11 +362,13 @@ def main():
 
     env = SimEnv(num_clients=args.n_clients)
     run = recipe.execute(env)
+    result_dir = str(run.get_result())
+    write_result_dir_sidecar(result_dir)
 
     print()
     print("Job Status:", run.get_status())
-    print("Results:", run.get_result())
-    print(f"tensorboard --logdir={run.get_result()}")
+    print("Results:", result_dir)
+    print(f"tensorboard --logdir={result_dir}")
     print()
 
 

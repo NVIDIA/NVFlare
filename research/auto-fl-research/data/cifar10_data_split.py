@@ -17,6 +17,8 @@
 import argparse
 import json
 import os
+import shutil
+import tempfile
 import time
 
 import numpy as np
@@ -83,6 +85,26 @@ def _write_split(split_dir, num_sites, alpha, seed):
         np.save(_site_file_name(split_dir, site + 1), np.array(site_idx[site]))
 
 
+def _write_split_atomically(split_dir, num_sites, alpha, seed):
+    parent_dir = os.path.dirname(split_dir) or "."
+    tmp_dir = tempfile.mkdtemp(
+        prefix=f".{os.path.basename(split_dir)}.",
+        suffix=".tmp",
+        dir=parent_dir,
+    )
+    try:
+        _write_split(tmp_dir, num_sites, alpha, seed)
+        if os.path.exists(split_dir):
+            if os.path.isdir(split_dir):
+                shutil.rmtree(split_dir)
+            else:
+                os.remove(split_dir)
+        os.replace(tmp_dir, split_dir)
+    except Exception:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
+
+
 def split_and_save(
     split_dir_prefix,
     num_sites,
@@ -124,7 +146,7 @@ def split_and_save(
         if reuse and _split_complete(split_dir, num_sites):
             print(f"Reusing CIFAR-10 split: {split_dir}")
             return split_dir
-        _write_split(split_dir, num_sites, alpha, seed)
+        _write_split_atomically(split_dir, num_sites, alpha, seed)
     finally:
         os.rmdir(lock_dir)
 

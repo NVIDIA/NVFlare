@@ -47,22 +47,12 @@ from train_utils import compute_model_diff, evaluate, get_lr_values  # noqa: E40
 
 import nvflare.client as flare  # noqa: E402
 from nvflare.app_common.abstract.fl_model import ParamsType  # noqa: E402
+from nvflare.app_common.app_constant import AlgorithmConstants  # noqa: E402
+from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss  # noqa: E402
 from nvflare.client.tracking import SummaryWriter  # noqa: E402
 
-try:
-    from nvflare.app_common.app_constant import AlgorithmConstants
-
-    SCAFFOLD_CTRL_DIFF = AlgorithmConstants.SCAFFOLD_CTRL_DIFF
-    SCAFFOLD_CTRL_GLOBAL = AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL
-except Exception:
-    SCAFFOLD_CTRL_DIFF = "scaffold_c_diff"
-    SCAFFOLD_CTRL_GLOBAL = "scaffold_c_global"
-
-try:
-    from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
-except Exception:
-    PTFedProxLoss = None
-
+SCAFFOLD_CTRL_DIFF = AlgorithmConstants.SCAFFOLD_CTRL_DIFF
+SCAFFOLD_CTRL_GLOBAL = AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -85,7 +75,7 @@ def build_parser():
         default=DEFAULT_MAX_MODEL_PARAMS,
         help="Maximum allowed model parameters for architecture-search campaigns. Use 0 to disable.",
     )
-    parser.add_argument("--lr", type=float, default=1e-2)
+    parser.add_argument("--lr", type=float, default=5e-2)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--eval_batch_size", type=int, default=1024)
     parser.add_argument("--num_workers", type=int, default=2)
@@ -187,9 +177,9 @@ def _create_seeded_data_loaders(
 
 def _zero_scaffold_controls(model):
     return {
-        key: torch.zeros_like(value, device=DEVICE)
-        for key, value in model.state_dict().items()
-        if torch.is_floating_point(value)
+        key: torch.zeros_like(param, device=DEVICE)
+        for key, param in model.named_parameters()
+        if torch.is_floating_point(param)
     }
 
 
@@ -201,13 +191,33 @@ def _scaffold_controls_match(controls, model):
 def _load_scaffold_global_controls(model, meta):
     controls = _zero_scaffold_controls(model)
     raw_controls = (meta or {}).get(SCAFFOLD_CTRL_GLOBAL) or {}
-    for key in controls:
-        if key in raw_controls:
-            controls[key] = torch.as_tensor(
-                raw_controls[key],
-                dtype=controls[key].dtype,
-                device=DEVICE,
+    if not raw_controls:
+        return controls
+
+    expected_keys = set(controls)
+    raw_keys = set(raw_controls)
+    if raw_keys != expected_keys:
+        missing = sorted(expected_keys - raw_keys)
+        extra = sorted(raw_keys - expected_keys)
+        details = []
+        if missing:
+            details.append(f"missing={missing}")
+        if extra:
+            details.append(f"extra={extra}")
+        raise ValueError("SCAFFOLD global controls do not match model parameters: " + ", ".join(details))
+
+    for key, value in raw_controls.items():
+        tensor_value = torch.as_tensor(
+            value,
+            dtype=controls[key].dtype,
+            device=DEVICE,
+        )
+        if tensor_value.shape != controls[key].shape:
+            raise ValueError(
+                f"SCAFFOLD global control {key!r} has shape {tuple(tensor_value.shape)}, "
+                f"expected {tuple(controls[key].shape)}"
             )
+        controls[key] = tensor_value
     return controls
 
 
@@ -275,8 +285,6 @@ def main(args):
     scheduler = None
     criterion_prox = None
     if args.fedproxloss_mu > 0:
-        if PTFedProxLoss is None:
-            raise RuntimeError("fedproxloss_mu was set but nvflare.app_opt.pt.fedproxloss is unavailable")
         criterion_prox = PTFedProxLoss(mu=args.fedproxloss_mu)
 
     print(f"Creating datasets for site={site_name}")
@@ -327,6 +335,8 @@ def main(args):
             )
             flare.send(
                 flare.FLModel(
+                    params={},
+                    params_type=ParamsType.DIFF,
                     metrics={"accuracy": val_acc_global_model},
                     meta={"NUM_STEPS_CURRENT_ROUND": 0},
                 )
