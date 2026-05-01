@@ -374,7 +374,13 @@ class FixedProdWorkspaceBuilder(WorkspaceBuilder):
             dst = os.path.join(self.target_prod_dir, name)
             if name == self.participant_name and os.path.exists(dst):
                 if not self.force:
-                    raise ValueError(f"participant output already exists: {dst}")
+                    output_error_message(
+                        "OUTPUT_DIR_EXISTS",
+                        f"Participant output already exists: {dst}.",
+                        "Use --force to replace this participant output. --force does not bypass root CA mismatch checks.",
+                        None,
+                        exit_code=1,
+                    )
                 _remove_existing_path(dst)
             if os.path.exists(dst):
                 # Preserve existing root-level files when adding another participant to the same provision directory.

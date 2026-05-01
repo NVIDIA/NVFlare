@@ -57,6 +57,7 @@ from nvflare.tool.cert.cert_constants import (
 from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256, normalize_sha256_fingerprint
 from nvflare.tool.package.package_commands import (
     _DUMMY_SERVER_NAME,
+    FixedProdWorkspaceBuilder,
     PrebuiltCertBuilder,
     _discover_name_from_dir,
     _flat_site_to_project_dict,
@@ -3866,6 +3867,34 @@ class TestSignedZipPackageMode:
 
         assert os.path.isdir(os.path.join(workspace, "example_project", "prod_00", "site-3"))
         assert not os.path.exists(os.path.join(workspace, "example_project", "prod_01", "site-3"))
+
+    def test_signed_zip_toctou_existing_participant_reports_output_exists_without_removing_prod_dir(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(
+            tmp_path,
+            request_id="a" * 32,
+            provision_version="00",
+        )
+        original_finalize = FixedProdWorkspaceBuilder.finalize
+        sentinel_path = tmp_path / "ws" / "example_project" / "prod_00" / "site-3" / "sentinel.txt"
+
+        def _finalize_with_race(builder, project, ctx):
+            os.makedirs(str(sentinel_path.parent), exist_ok=True)
+            sentinel_path.write_text("existing participant output")
+            return original_finalize(builder, project, ctx)
+
+        monkeypatch.setattr(FixedProdWorkspaceBuilder, "finalize", _finalize_with_race)
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(_signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir), force=False))
+
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        assert "OUTPUT_DIR_EXISTS" in err
+        assert "Participant output already exists" in err
+        assert sentinel_path.exists()
 
     def test_signed_zip_returns_build_error_without_success_output(self, tmp_path, monkeypatch):
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
