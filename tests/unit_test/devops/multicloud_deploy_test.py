@@ -362,6 +362,23 @@ class TestAwsRegionResolution:
                 state={"aws_region": None},
             )
 
+    def test_release_ip_aws_warns_on_lookup_failure(self, capsys):
+        provider = DEPLOY_MODULE.get_provider("aws")
+        calls = []
+
+        def _run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            if cmd[:3] == ["aws", "ec2", "describe-addresses"]:
+                return DEPLOY_MODULE.FakeProc(255, stderr="expired token")
+            return DEPLOY_MODULE.FakeProc(0)
+
+        provider.release_ip(run=_run, ip_name="nvflare-test", state={"aws_region": "us-west-2"})
+
+        describe_call = next(call for call in calls if call[0][:3] == ["aws", "ec2", "describe-addresses"])
+        assert describe_call[1]["check"] is False
+        assert not any(cmd[:3] == ["aws", "ec2", "release-address"] for cmd, _kwargs in calls)
+        assert "Warning: failed to describe Elastic IPs tagged Name=nvflare-test" in capsys.readouterr().out
+
 
 class TestGcpProjectResolution:
     def test_release_ip_gcp_uses_active_project_when_state_missing(self):

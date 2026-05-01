@@ -100,7 +100,14 @@ class AwsProvider(CloudProvider):
                 "json",
             ],
             capture=True,
+            check=False,
         )
+        if r.returncode != 0:
+            detail = ""
+            stderr = getattr(r, "stderr", "") or ""
+            if stderr.strip():
+                detail = f": {stderr.strip()}"
+            raise RuntimeError(f"failed to describe Elastic IPs tagged Name={ip_name} in region {region}{detail}")
         addresses = json.loads(r.stdout) if r.stdout.strip() else []
         if not isinstance(addresses, list):
             raise RuntimeError(f"describe-addresses returned unexpected response: {r.stdout!r}")
@@ -164,7 +171,11 @@ class AwsProvider(CloudProvider):
 
     def release_ip(self, *, run, ip_name, state):
         aws_region = self._resolve_region(run, state.get("aws_region"))
-        addresses = self._find_addresses_by_name(run, ip_name, aws_region)
+        try:
+            addresses = self._find_addresses_by_name(run, ip_name, aws_region)
+        except RuntimeError as e:
+            print(f"  Warning: {e}. The Elastic IP may still be allocated and require manual cleanup.")
+            return
         if not addresses:
             print(f"No Elastic IP tagged Name={ip_name} found.")
             return
