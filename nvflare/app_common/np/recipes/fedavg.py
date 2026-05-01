@@ -16,7 +16,6 @@ from typing import Any, Dict, Optional, Union
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -125,7 +124,7 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         # New FedAvg features
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
-        best_model_filename: str = DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
+        best_model_filename: Optional[str] = None,
         save_filename: Optional[str] = None,
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,

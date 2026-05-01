@@ -138,9 +138,9 @@ class FedAvgRecipe(Recipe):
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
             Only applies if stop_cond is set. Defaults to None.
-        best_model_filename: Filename for saving the best model. Defaults to
-            DefaultCheckpointFileName.BEST_GLOBAL_MODEL. This is honored by framework persistors
-            that expose a separate best-model filename, such as the default PyTorch persistor.
+        best_model_filename: Filename for saving the best model. If unset, framework persistors
+            that expose a separate best-model filename use their own default, such as
+            DefaultCheckpointFileName.BEST_GLOBAL_MODEL for the default PyTorch persistor.
         save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
@@ -185,7 +185,7 @@ class FedAvgRecipe(Recipe):
         # New FedAvg features
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
-        best_model_filename: str = DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
+        best_model_filename: Optional[str] = None,
         save_filename: Optional[str] = None,
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
@@ -194,7 +194,9 @@ class FedAvgRecipe(Recipe):
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
     ):
-        best_model_filename = self._resolve_best_model_filename(best_model_filename, save_filename)
+        best_model_filename, controller_save_filename = self._resolve_model_filenames(
+            best_model_filename, save_filename
+        )
 
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -260,7 +262,7 @@ class FedAvgRecipe(Recipe):
         self.stop_cond = v.stop_cond
         self.patience = v.patience
         self.best_model_filename = v.best_model_filename
-        self.save_filename = self.best_model_filename
+        self.save_filename = controller_save_filename
         self.exclude_vars = v.exclude_vars
         self.aggregation_weights = v.aggregation_weights
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
@@ -310,7 +312,7 @@ class FedAvgRecipe(Recipe):
             num_rounds=self.num_rounds,
             persistor_id=persistor_id,
             model=model_params,
-            save_filename=self.best_model_filename,
+            save_filename=self.save_filename,
             aggregator=model_aggregator,
             stop_cond=self.stop_cond,
             patience=self.patience,
@@ -392,14 +394,16 @@ class FedAvgRecipe(Recipe):
         Recipe.__init__(self, job)
 
     @staticmethod
-    def _resolve_best_model_filename(best_model_filename: str, save_filename: Optional[str]) -> str:
+    def _resolve_model_filenames(best_model_filename: Optional[str], save_filename: Optional[str]) -> tuple[str, str]:
         if save_filename is None:
-            return best_model_filename
+            resolved_best_model_filename = best_model_filename or DefaultCheckpointFileName.BEST_GLOBAL_MODEL
+            controller_save_filename = best_model_filename or DefaultCheckpointFileName.GLOBAL_MODEL
+            return resolved_best_model_filename, controller_save_filename
 
-        if best_model_filename != DefaultCheckpointFileName.BEST_GLOBAL_MODEL and best_model_filename != save_filename:
+        if best_model_filename is not None and best_model_filename != save_filename:
             raise ValueError("Specify either best_model_filename or save_filename, not conflicting values for both.")
 
-        return save_filename
+        return save_filename, save_filename
 
     @staticmethod
     def _validate_per_site_config(per_site_config: Optional[Dict[str, Dict]]) -> None:

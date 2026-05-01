@@ -17,7 +17,6 @@ from typing import Any, Optional, Union
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -121,7 +120,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
-        best_model_filename: str = DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
+        best_model_filename: Optional[str] = None,
         save_filename: Optional[str] = None,
         server_memory_gc_rounds: int = 0,
         client_memory_gc_rounds: int = 0,

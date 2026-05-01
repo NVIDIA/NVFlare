@@ -22,6 +22,7 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
+from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
@@ -152,6 +153,11 @@ def get_server_component(recipe, component_id):
     return server_app.app_config.components.get(component_id)
 
 
+def get_server_controller(recipe):
+    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    return server_app.app_config.workflows[0].controller
+
+
 class TestFedAvgRecipe:
     """Test cases for FedAvgRecipe class."""
 
@@ -187,6 +193,39 @@ class TestFedAvgRecipe:
         assert recipe.best_model_filename == "custom_best_model.pt"
         assert recipe.save_filename == "custom_best_model.pt"
         assert persistor.best_global_model_file_name == "custom_best_model.pt"
+
+    def test_default_controller_save_filename_preserved_for_no_persistor(self, mock_file_system, base_recipe_params):
+        """The base no-persistor fallback must keep the legacy default save filename."""
+        from nvflare.recipe import FedAvgRecipe as UnifiedFedAvgRecipe
+
+        recipe = UnifiedFedAvgRecipe(
+            name="test_default_fallback_filename",
+            model={"class_path": "model.SimpleNetwork", "args": {}},
+            **base_recipe_params,
+        )
+
+        controller = get_server_controller(recipe)
+        assert recipe.best_model_filename == DefaultCheckpointFileName.BEST_GLOBAL_MODEL
+        assert recipe.save_filename == DefaultCheckpointFileName.GLOBAL_MODEL
+        assert controller.save_filename == DefaultCheckpointFileName.GLOBAL_MODEL
+
+    def test_best_model_filename_configures_no_persistor_controller_fallback(
+        self, mock_file_system, base_recipe_params
+    ):
+        """Explicit best_model_filename should still affect the controller fallback path."""
+        from nvflare.recipe import FedAvgRecipe as UnifiedFedAvgRecipe
+
+        recipe = UnifiedFedAvgRecipe(
+            name="test_custom_fallback_filename",
+            model={"class_path": "model.SimpleNetwork", "args": {}},
+            best_model_filename="custom_best_model.pt",
+            **base_recipe_params,
+        )
+
+        controller = get_server_controller(recipe)
+        assert recipe.best_model_filename == "custom_best_model.pt"
+        assert recipe.save_filename == "custom_best_model.pt"
+        assert controller.save_filename == "custom_best_model.pt"
 
     def test_custom_aggregator_initialization(
         self, mock_file_system, base_recipe_params, custom_aggregator, simple_model

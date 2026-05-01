@@ -18,7 +18,6 @@ from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -70,8 +69,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
-        best_model_filename: Filename for saving the best model. Defaults to
-            DefaultCheckpointFileName.BEST_GLOBAL_MODEL.
+        best_model_filename: Filename for saving the best model. If unset, the default
+            PyTorch persistor uses DefaultCheckpointFileName.BEST_GLOBAL_MODEL.
         save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
@@ -124,7 +123,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         # New FedAvg features
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
-        best_model_filename: str = DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
+        best_model_filename: Optional[str] = None,
         save_filename: Optional[str] = None,
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[dict[str, float]] = None,
