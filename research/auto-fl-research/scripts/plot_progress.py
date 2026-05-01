@@ -124,6 +124,25 @@ def compact_label(text: str, limit: int) -> str:
     return truncate(text, limit)
 
 
+def percentile(values: list[float], fraction: float) -> float:
+    if not values:
+        raise ValueError("percentile requires at least one value")
+    if len(values) == 1:
+        return values[0]
+
+    ordered = sorted(values)
+    position = min(max(fraction, 0.0), 1.0) * (len(ordered) - 1)
+    lower_index = math.floor(position)
+    upper_index = math.ceil(position)
+    if lower_index == upper_index:
+        return ordered[lower_index]
+
+    lower = ordered[lower_index]
+    upper = ordered[upper_index]
+    weight = position - lower_index
+    return lower + (upper - lower) * weight
+
+
 def select_observed_milestones(valid: list[ResultRow], max_labels: int) -> list[tuple[float, ResultRow]]:
     if max_labels <= 0:
         return []
@@ -155,14 +174,65 @@ def select_observed_milestones(valid: list[ResultRow], max_labels: int) -> list[
     return [(delta, row) for delta, row in milestones if row.index in selected_indices]
 
 
-def label_offset(label_number: int, cluster_level: int) -> tuple[int, int]:
-    if cluster_level:
-        return 34 + 88 * cluster_level, 28 + 30 * cluster_level
-    offsets = [(22, 18), (26, 34), (30, 24), (34, 44), (38, 28), (42, 38)]
-    return offsets[label_number % len(offsets)]
+def label_placement(
+    label_number: int,
+    row: ResultRow,
+    x_limits: tuple[float, float],
+    y_limits: tuple[float, float],
+) -> tuple[tuple[int, int], str, str]:
+    x_min, x_max = x_limits
+    y_min, y_max = y_limits
+    x_span = max(x_max - x_min, 1.0)
+    y_span = max(y_max - y_min, 1e-9)
+    x_fraction = (row.index - x_min) / x_span
+    y_fraction = ((row.score or y_min) - y_min) / y_span
+
+    near_right = x_fraction > 0.72
+    near_top = y_fraction > 0.78
+    x_offset = -10 if near_right else 10
+    y_base = -12 if near_top else 12
+    y_step = (label_number % 3) * 8
+    y_offset = y_base - y_step if near_top else y_base + y_step
+    return (
+        (x_offset, y_offset),
+        ("right" if near_right else "left"),
+        ("top" if near_top else "bottom"),
+    )
 
 
-def plot_progress(rows: list[ResultRow], output: Path, max_labels: int):
+def default_y_limits(
+    scores: list[float], baseline: float, y_min: float | None, full_y_range: bool
+) -> tuple[float, float]:
+    score_min = min(scores)
+    score_max = max(scores)
+
+    if y_min is not None:
+        lower = y_min
+        span = max(score_max - lower, 0.01)
+        return lower, score_max + max(0.01, span * 0.18)
+
+    if full_y_range:
+        span = max(score_max - score_min, 0.01)
+        return score_min - max(0.01, span * 0.08), score_max + max(0.01, span * 0.16)
+
+    useful_min = min(baseline, percentile(scores, 0.20))
+    useful_span = max(score_max - useful_min, 0.01)
+    lower = useful_min - max(0.01, useful_span * 0.20)
+    upper = score_max + max(0.015, useful_span * 0.35)
+
+    if score_min >= lower:
+        full_span = max(score_max - score_min, 0.01)
+        lower = score_min - max(0.01, full_span * 0.08)
+    return lower, upper
+
+
+def plot_progress(
+    rows: list[ResultRow],
+    output: Path,
+    max_labels: int,
+    y_min: float | None,
+    full_y_range: bool,
+):
     try:
         import matplotlib
 
@@ -242,34 +312,6 @@ def plot_progress(rows: list[ResultRow], output: Path, max_labels: int):
         label="Running best observed",
     )
 
-    milestone_rows = select_observed_milestones(valid, max_labels)
-    previous_label_index = None
-    cluster_level = 0
-    for i, (delta, row) in enumerate(milestone_rows):
-        if previous_label_index is not None and row.index - previous_label_index <= 12:
-            cluster_level += 1
-        else:
-            cluster_level = 0
-        previous_label_index = row.index
-        ax.annotate(
-            f"#{row.index} {row.score:.4f}: {compact_label(row.description, 24)}",
-            (row.index, row.score),
-            textcoords="offset points",
-            xytext=label_offset(i, cluster_level),
-            fontsize=8.0,
-            color="#1a7a3a",
-            alpha=0.9,
-            rotation=0,
-            ha="left",
-            va="bottom",
-            arrowprops={
-                "arrowstyle": "-",
-                "color": "#1a7a3a",
-                "alpha": 0.35,
-                "linewidth": 0.8,
-            },
-        )
-
     n_total = len(rows)
     n_valid = len(valid)
     n_keep = sum(row.status == "KEEP" for row in rows)
@@ -307,11 +349,36 @@ def plot_progress(rows: list[ResultRow], output: Path, max_labels: int):
     ax.legend(loc="best", fontsize=9)
 
     scores = [row.score for row in valid if row.score is not None]
-    score_min = min(scores)
-    score_max = max(scores)
-    span = score_max - score_min
-    margin = max(0.01, abs(score_max) * 0.03, span * 0.025)
-    ax.set_ylim(score_min - margin, score_max + margin)
+    y_limits = default_y_limits(scores, baseline, y_min, full_y_range)
+    ax.set_ylim(*y_limits)
+
+    milestone_rows = select_observed_milestones(valid, max_labels)
+    x_limits = ax.get_xlim()
+    y_limits = ax.get_ylim()
+    for i, (delta, row) in enumerate(milestone_rows):
+        offset, horizontal_align, vertical_align = label_placement(i, row, x_limits, y_limits)
+        annotation = ax.annotate(
+            f"#{row.index} {row.score:.4f}: {compact_label(row.description, 28)}",
+            (row.index, row.score),
+            textcoords="offset points",
+            xytext=offset,
+            fontsize=8.0,
+            color="#1a7a3a",
+            alpha=0.9,
+            rotation=0,
+            ha=horizontal_align,
+            va=vertical_align,
+            annotation_clip=True,
+            arrowprops={
+                "arrowstyle": "-",
+                "color": "#1a7a3a",
+                "alpha": 0.35,
+                "linewidth": 0.8,
+                "shrinkA": 0,
+                "shrinkB": 4,
+            },
+        )
+        annotation.set_clip_on(True)
 
     summary_lines = [
         f"Baseline: {baseline:.6f}",
@@ -342,9 +409,16 @@ def plot_progress(rows: list[ResultRow], output: Path, max_labels: int):
 
     output.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
-    plt.savefig(output, dpi=150, bbox_inches="tight")
+    plt.savefig(output, dpi=150)
     plt.close(fig)
-    return baseline, best_score, best_row, total_runtime, average_runtime, len(runtime_rows)
+    return (
+        baseline,
+        best_score,
+        best_row,
+        total_runtime,
+        average_runtime,
+        len(runtime_rows),
+    )
 
 
 def main():
@@ -357,6 +431,17 @@ def main():
         default=6,
         help="Maximum running-best jumps to annotate; always includes the final running-best experiment.",
     )
+    parser.add_argument(
+        "--y-min",
+        type=float,
+        default=None,
+        help="Optional lower y-axis bound. Defaults to dynamic score_min - margin.",
+    )
+    parser.add_argument(
+        "--full-y-range",
+        action="store_true",
+        help="Use the full score range instead of the robust default that focuses on the running-best region.",
+    )
     args = parser.parse_args()
 
     rows = load_results(Path(args.path))
@@ -367,7 +452,7 @@ def main():
         total_runtime,
         average_runtime,
         runtime_candidate_count,
-    ) = plot_progress(rows, Path(args.output), args.max_labels)
+    ) = plot_progress(rows, Path(args.output), args.max_labels, args.y_min, args.full_y_range)
     print(f"Saved {args.output}")
     print(f"baseline={baseline:.6f}")
     print(f"best={best_score:.6f}")
