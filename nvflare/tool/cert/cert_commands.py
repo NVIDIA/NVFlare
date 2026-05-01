@@ -467,7 +467,7 @@ def _write_private_key(path: str, pem_bytes: bytes) -> None:
         with os.fdopen(fd, "wb") as f:
             fd = -1  # ownership transferred to f
             f.write(pem_bytes)
-    except Exception:
+    except BaseException:
         if fd != -1:
             os.close(fd)
         try:

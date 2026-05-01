@@ -262,7 +262,7 @@ def output_usage_error(
     hint: str = "Run with -h for usage.",
 ) -> None:
     """Print usage/help followed by a structured usage error and exit."""
-    if not _is_json_mode() and parser is not None:
+    if not _is_machine_mode() and parser is not None:
         parser.print_help(sys.stderr)
         print(file=sys.stderr)
     output_error_message(error_code, message, hint, None, exit_code=exit_code, detail=detail)

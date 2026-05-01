@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import json
 from unittest.mock import patch
 
@@ -25,6 +26,7 @@ from nvflare.tool.cli_output import (
     output_error_message,
     output_jsonl_event,
     output_ok,
+    output_usage_error,
     print_human,
 )
 
@@ -283,6 +285,24 @@ class TestOutputErrorCertPackage:
         assert result["status"] == "error"
         assert result["terminal"] is True
         assert result["error_code"] == "MY_CODE"
+
+
+class TestOutputUsageError:
+    def test_jsonl_mode_suppresses_argparse_help(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        parser = argparse.ArgumentParser(prog="nvflare test")
+        parser.add_argument("--flag")
+
+        with pytest.raises(SystemExit) as exc_info:
+            output_usage_error(parser, "bad flag")
+
+        assert exc_info.value.code == 4
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out)
+        assert payload["event"] == "terminal"
+        assert payload["terminal"] is True
+        assert payload["error_code"] == "INVALID_ARGS"
+        assert "usage:" not in captured.err
 
 
 class TestOutputErrorWithData:

@@ -51,13 +51,11 @@ class JobDefManagerSpec(FLComponent, ABC):
         """
         pass
 
-    @abstractmethod
     def get_submit_record(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> Optional[dict]:
         """Get the persistent submit-token record for the scoped submit token."""
-        pass
+        raise NotImplementedError("submit-token records are not supported by this JobDefManager")
 
     @staticmethod
-    @abstractmethod
     def new_submit_record(
         study: str,
         submitter,
@@ -69,21 +67,19 @@ class JobDefManagerSpec(FLComponent, ABC):
         state: str = SubmitRecordState.CREATING.value,
     ) -> dict:
         """Build a submit-token record with a pre-generated job_id for reservation before job creation."""
-        pass
+        raise NotImplementedError("submit-token records are not supported by this JobDefManager")
 
-    @abstractmethod
     def create_submit_record(self, record: dict, fl_ctx: FLContext) -> bool:
         """Create a persistent submit-token record with no-overwrite semantics.
 
         Returns True when the record is created, False when a record already exists
         for the same study, submitter, and submit token.
         """
-        pass
+        raise NotImplementedError("submit-token records are not supported by this JobDefManager")
 
-    @abstractmethod
     def update_submit_record(self, record: dict, fl_ctx: FLContext) -> dict:
         """Replace the persistent submit-token record with updated metadata."""
-        pass
+        raise NotImplementedError("submit-token records are not supported by this JobDefManager")
 
     def mark_submit_records_job_deleted(self, job_id: str, deleted_by, fl_ctx: FLContext) -> List[dict]:
         """Mark submit-token records that reference a deleted job.
@@ -93,10 +89,9 @@ class JobDefManagerSpec(FLComponent, ABC):
         """
         return []
 
-    @abstractmethod
     def get_job_by_submit_token(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> Optional[Job]:
         """Resolve a submit-token record to its referenced Job, if both exist."""
-        pass
+        raise NotImplementedError("submit-token records are not supported by this JobDefManager")
 
     @abstractmethod
     def clone(self, from_jid: str, meta: dict, fl_ctx: FLContext) -> Dict[str, Any]:

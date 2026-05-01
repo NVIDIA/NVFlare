@@ -257,6 +257,24 @@ def test_write_private_key_removes_created_file_when_write_fails(tmp_path):
     assert not path.exists()
 
 
+@pytest.mark.skipif(platform.system() == "Windows", reason="unlinking open files differs on Windows")
+def test_write_private_key_removes_created_file_on_keyboard_interrupt(tmp_path):
+    path = tmp_path / "site-3.key"
+
+    class _InterruptingFdOpen(_FailingFdOpen):
+        def write(self, _content):
+            raise KeyboardInterrupt()
+
+    def interrupting_fdopen(fd, _mode):
+        return _InterruptingFdOpen(fd)
+
+    with patch("nvflare.tool.cert.cert_commands.os.fdopen", side_effect=interrupting_fdopen):
+        with pytest.raises(KeyboardInterrupt):
+            _write_private_key(str(path), b"private key")
+
+    assert not path.exists()
+
+
 def test_write_private_key_forces_owner_only_mode(tmp_path):
     path = tmp_path / "site-3.key"
 

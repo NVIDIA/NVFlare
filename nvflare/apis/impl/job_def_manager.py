@@ -242,7 +242,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         store = self._get_job_store(fl_ctx)
         index_uri = self._submit_record_job_index_uri(job_id)
         deleted_by_info = submitter_to_dict(deleted_by)
-        deleted_time = datetime.datetime.now().astimezone().isoformat()
+        deleted_time = datetime.datetime.now(datetime.timezone.utc).isoformat()
         updated_records = []
 
         with self._submit_record_lock:

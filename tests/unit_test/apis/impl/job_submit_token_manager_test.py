@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import os
 from unittest import mock
 
@@ -90,6 +91,7 @@ def test_mark_submit_record_job_deleted_preserves_record_for_audit(tmp_path):
     assert record["state"] == "job_deleted"
     assert record["job_id"] == "job-1"
     assert record["deleted_time"]
+    assert datetime.datetime.fromisoformat(record["deleted_time"]).tzinfo == datetime.timezone.utc
     assert record["deleted_by"] == {
         "name": "admin@nvidia.com",
         "org": "nvidia",

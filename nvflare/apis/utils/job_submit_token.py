@@ -125,6 +125,8 @@ def _iter_zip_bytes(zip_bytes: bytes, exclude_names: set):
                 raise ValueError(f"zip member has unsafe path: {info.filename!r}")
             if posixpath.basename(rel_path) in exclude_names:
                 continue
+            # This central-directory size is attacker-controlled and only a fast-fail hint.
+            # _read_zip_member_limited enforces the real bound while reading member bytes.
             if info.file_size > _MAX_HASH_ZIP_MEMBER_SIZE:
                 raise ValueError(f"zip member exceeds size limit: {info.filename!r}")
             files.append((rel_path, info))

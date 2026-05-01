@@ -145,6 +145,23 @@ class TestJobLogs:
         assert mock_sess.get_job_logs.call_args_list[0].kwargs == {"target": "server", "log_file_name": "log.json"}
         assert mock_sess.get_job_logs.call_args_list[1].kwargs == {"target": "server", "log_file_name": "log.txt"}
 
+    def test_logs_explicit_server_unavailable_does_not_trigger_fallback(self, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.return_value = {
+            "logs": {},
+            "unavailable": {"server": "server log not available for this job"},
+        }
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            cmd_job_logs(_make_args(site="server"))
+
+        data = json.loads(capsys.readouterr().out)["data"]
+        assert data["logs"] == {}
+        assert data["unavailable"] == {"server": "server log not available for this job"}
+        mock_sess.get_job_logs.assert_called_once_with("abc123", target="server", log_file_name="log.json")
+
     def test_logs_json_mode_falls_back_per_missing_site_for_all_sites(self, capsys):
         from nvflare.tool.job.job_cli import cmd_job_logs
 

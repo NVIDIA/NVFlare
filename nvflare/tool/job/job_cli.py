@@ -2101,12 +2101,14 @@ def _job_log_result_needs_fallback(result: dict, site: str) -> bool:
     if not isinstance(result, dict):
         return True
     logs = result.get("logs", {})
-    if not isinstance(logs, dict) or not logs:
+    if not isinstance(logs, dict):
         return True
     unavailable = result.get("unavailable", {})
-    if not isinstance(unavailable, dict) or not unavailable:
+    if isinstance(unavailable, dict) and unavailable:
+        if site == "all":
+            return any(site_name not in logs for site_name in unavailable)
         return False
-    return site == "all" or (site in unavailable and site not in logs)
+    return not logs
 
 
 def _merge_job_log_fallback_result(primary: dict, fallback: dict) -> dict:
