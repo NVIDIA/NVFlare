@@ -267,12 +267,14 @@ To generate an autoresearch-style progress image from the ledger:
 
 ## Post-run campaign report
 
-After manually stopping an autoresearch experiment, leave the agent on the experiment branch that contains `results.tsv` and prompt it to run the reporting skill. The skill should not launch more experiments; it only refreshes the plot, writes the report, and commits those reporting artifacts.
+After manually stopping an autoresearch experiment, leave the agent on the experiment branch that contains `results.tsv` and prompt it to make the bundled reporting skill available and run it. The skill should not launch more experiments; it only refreshes the plot, writes the report, and commits those reporting artifacts.
 
 Copy-paste prompt:
 
 ```text
-Use the autofl-nvflare-report skill.
+Make the bundled local `autofl-nvflare-report` skill available first if your runtime has not already loaded it. Use `skills/autofl-nvflare-report/SKILL.md` and its `scripts/` files as the skill source; do not recreate the skill from memory.
+
+Then use the autofl-nvflare-report skill.
 
 The autoresearch run has been manually stopped. Do not launch new experiments.
 Use the current branch and its results.tsv as the source of truth.
