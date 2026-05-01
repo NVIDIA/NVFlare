@@ -73,6 +73,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
             Defaults to "accuracy".
         best_model_filename: Filename for saving the best model. Accepted for API compatibility.
+            The default TensorFlow persistor does not currently create a separate best-model artifact.
         save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
 
     Example:

@@ -139,7 +139,8 @@ class FedAvgRecipe(Recipe):
         patience: Number of rounds with no improvement after which FL will be stopped.
             Only applies if stop_cond is set. Defaults to None.
         best_model_filename: Filename for saving the best model. Defaults to
-            DefaultCheckpointFileName.BEST_GLOBAL_MODEL.
+            DefaultCheckpointFileName.BEST_GLOBAL_MODEL. This is honored by framework persistors
+            that expose a separate best-model filename, such as the default PyTorch persistor.
         save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.

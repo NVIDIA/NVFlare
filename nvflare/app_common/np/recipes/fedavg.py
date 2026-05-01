@@ -68,8 +68,8 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
-        best_model_filename: Filename for saving the best model. Defaults to
-            DefaultCheckpointFileName.BEST_GLOBAL_MODEL.
+        best_model_filename: Filename for saving the best model. Accepted for API compatibility.
+            The default NumPy persistor does not currently create a separate best-model artifact.
         save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
