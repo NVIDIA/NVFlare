@@ -44,6 +44,25 @@ class TestProject:
         assert len(c) == len(p)
         assert all(c[i].name == p[i].name and c[i].org == p[i].org for i in range(len(p)))
 
+    def test_remove_server(self):
+        server = Participant(name="server1", org="org", type="server")
+        client = Participant(name="client1", org="org", type="client")
+        prj = Project("name", "description", [server, client])
+
+        removed = prj.remove_server()
+
+        assert removed is server
+        assert removed.parent is None
+        assert prj.get_server() is None
+        assert prj.get_all_participants("server") == []
+        assert [p.name for p in prj.get_all_participants()] == ["client1"]
+
+    def test_remove_server_when_absent(self):
+        prj = Project("name", "description")
+
+        assert prj.remove_server() is None
+        assert prj.get_all_participants() == []
+
     def test_get_admins(self):
         p = create_participants(
             type="admin", number=3, org="org", name="admin@nvidia.com", props={"role": "project_admin"}

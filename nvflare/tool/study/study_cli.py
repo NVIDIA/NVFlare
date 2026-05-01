@@ -28,6 +28,7 @@ from nvflare.fuel.flare_api.api_spec import (
     NoConnection,
 )
 from nvflare.tool.cli_output import output_error, output_error_message, output_ok, output_usage_error
+from nvflare.tool.cli_session import add_startup_kit_selection_args, resolve_startup_kit_info_for_args
 
 CMD_STUDY_REGISTER = "register"
 CMD_STUDY_ADD_SITE = "add-site"
@@ -42,6 +43,8 @@ POC_DEFAULT_ORG = "nvidia"
 _study_sub_cmd_parsers = {}
 _study_handlers = {}
 _study_root_parser = None
+_JSON_OUTPUT_MODES = ["json"]
+_NO_RETRY_TOKEN_SCHEMA = {"supported": False}
 
 
 class _WideSubcmdFormatter(argparse.HelpFormatter):
@@ -66,21 +69,26 @@ def _ensure_study_parsers():
     _study_root_parser = root
 
 
-def _resolve_active_startup_kit_dir() -> str:
-    from nvflare.tool.kit.kit_config import resolve_startup_kit_dir
+def _resolve_startup_kit_dir_for_args(args=None) -> str:
+    from nvflare.tool.cli_session import resolve_startup_kit_dir_for_args
 
-    return resolve_startup_kit_dir()
+    return resolve_startup_kit_dir_for_args(args)
 
 
 @contextmanager
 def _study_session(args):
     from nvflare.tool.cli_output import get_connect_timeout
-    from nvflare.tool.cli_session import new_active_cli_session
+    from nvflare.tool.cli_session import new_cli_session_for_args
 
     try:
-        sess = new_active_cli_session(timeout=get_connect_timeout(), study=DEFAULT_STUDY)
+        sess = new_cli_session_for_args(args=args, timeout=get_connect_timeout(), study=DEFAULT_STUDY)
     except ValueError as e:
-        output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e))
+        output_error(
+            "STARTUP_KIT_MISSING",
+            exit_code=4,
+            detail=str(e),
+            hint=getattr(e, "hint", None),
+        )
         raise SystemExit(4)
     try:
         yield sess
@@ -131,7 +139,7 @@ def _get_caller_role_from_startup_kit(admin_user_dir: str) -> str:
 
 def _try_get_caller_role(args) -> str:
     try:
-        admin_user_dir = _resolve_active_startup_kit_dir()
+        admin_user_dir = _resolve_startup_kit_dir_for_args(args)
         return _get_caller_role_from_startup_kit(admin_user_dir)
     except Exception:
         return ""
@@ -220,15 +228,98 @@ def _resolve_lifecycle_inputs(args, command_label: str):
     _output_invalid_lifecycle_args("provide --sites for org_admin or --site-org for project_admin")
 
 
-def _run_with_payload(args, func, *func_args, parser=None):
+def _run_with_payload(args, func, *func_args, parser=None, output_func=output_ok):
     try:
         with _study_session(args) as sess:
             data = func(sess, *func_args)
-        output_ok(data)
+        output_func(data)
     except (ValueError, InvalidArgumentError) as e:
         output_usage_error(parser, detail=str(e), exit_code=4)
     except Exception as e:
         _handle_command_error(e)
+
+
+def _with_startup_kit_info(args, data: dict) -> dict:
+    data = dict(data or {})
+    data["startup_kit"] = resolve_startup_kit_info_for_args(args)
+    return data
+
+
+def _render_study_list_human(data: dict):
+    from nvflare.tool.cli_output import print_human
+
+    data = data or {}
+    identity = data.get("identity") or {}
+    startup_kit = data.get("startup_kit") or {}
+    study_details = data.get("study_details") or []
+    studies = data.get("studies") or []
+
+    identity_name = identity.get("name") or "unknown"
+    identity_parts = []
+    if identity.get("role"):
+        identity_parts.append(f"role: {identity['role']}")
+    if identity.get("org"):
+        identity_parts.append(f"org: {identity['org']}")
+    identity_suffix = f" ({', '.join(identity_parts)})" if identity_parts else ""
+    print_human(f"Identity: {identity_name}{identity_suffix}")
+
+    startup_label = startup_kit.get("id") or startup_kit.get("path") or "unknown"
+    startup_source = startup_kit.get("source")
+    if startup_source:
+        print_human(f"Startup kit: {startup_label} ({startup_source})")
+    else:
+        print_human(f"Startup kit: {startup_label}")
+
+    rows = []
+    if isinstance(study_details, list):
+        rows.extend(detail for detail in study_details if isinstance(detail, dict))
+    known_names = {row.get("name") for row in rows}
+    for name in studies:
+        if name not in known_names:
+            rows.append({"name": name})
+
+    if not rows:
+        print_human("Studies: none")
+        return
+
+    print_human("")
+    print_human("Studies:")
+    headers = ("NAME", "ROLE", "CAN SUBMIT", "REASON")
+    table_rows = []
+    for row in rows:
+        can_submit = row.get("can_submit_job")
+        if can_submit is True:
+            can_submit_text = "yes"
+        elif can_submit is False:
+            can_submit_text = "no"
+        else:
+            can_submit_text = "-"
+        table_rows.append(
+            (
+                str(row.get("name") or "-"),
+                str(row.get("role") or "-"),
+                can_submit_text,
+                str(row.get("reason") or "-"),
+            )
+        )
+
+    widths = [len(header) for header in headers]
+    for row in table_rows:
+        widths = [max(width, len(cell)) for width, cell in zip(widths, row)]
+
+    print_human("  " + "  ".join(header.ljust(width) for header, width in zip(headers, widths)))
+    print_human("  " + "  ".join("-" * width for width in widths))
+    for row in table_rows:
+        print_human("  " + "  ".join(cell.ljust(width) for cell, width in zip(row, widths)))
+
+
+def _output_study_list(data: dict):
+    from nvflare.tool.cli_output import is_json_mode
+
+    if is_json_mode():
+        output_ok(data)
+    else:
+        _render_study_list_human(data)
 
 
 def cmd_register(args):
@@ -308,7 +399,10 @@ def cmd_remove(args):
         sys.argv[1:],
     )
     _run_with_payload(
-        args, lambda s, name: s.remove_study(name), args.name, parser=_study_sub_cmd_parsers[CMD_STUDY_REMOVE]
+        args,
+        lambda s, name: s.remove_study(name),
+        args.name,
+        parser=_study_sub_cmd_parsers[CMD_STUDY_REMOVE],
     )
 
 
@@ -321,8 +415,18 @@ def cmd_list(args):
         "nvflare study list",
         ["nvflare study list"],
         sys.argv[1:],
+        output_modes=_JSON_OUTPUT_MODES,
+        streaming=False,
+        mutating=False,
+        idempotent=True,
+        retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
-    _run_with_payload(args, lambda s: s.list_studies(), parser=_study_sub_cmd_parsers[CMD_STUDY_LIST])
+    _run_with_payload(
+        args,
+        lambda s: _with_startup_kit_info(args, s.list_studies()),
+        parser=_study_sub_cmd_parsers[CMD_STUDY_LIST],
+        output_func=_output_study_list,
+    )
 
 
 def cmd_show(args):
@@ -336,7 +440,10 @@ def cmd_show(args):
         sys.argv[1:],
     )
     _run_with_payload(
-        args, lambda s, name: s.show_study(name), args.name, parser=_study_sub_cmd_parsers[CMD_STUDY_SHOW]
+        args,
+        lambda s, name: s.show_study(name),
+        args.name,
+        parser=_study_sub_cmd_parsers[CMD_STUDY_SHOW],
     )
 
 
@@ -385,6 +492,7 @@ def _define_study_subcommands(parser):
     p.add_argument("name")
     p.add_argument("--sites", nargs="+", required=False)
     p.add_argument("--site-org", action="append", default=[])
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_REGISTER] = p
     _study_handlers[CMD_STUDY_REGISTER] = cmd_register
@@ -393,6 +501,7 @@ def _define_study_subcommands(parser):
     p.add_argument("name")
     p.add_argument("--sites", nargs="+", required=False)
     p.add_argument("--site-org", action="append", default=[])
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_ADD_SITE] = p
     _study_handlers[CMD_STUDY_ADD_SITE] = cmd_add_site
@@ -401,23 +510,27 @@ def _define_study_subcommands(parser):
     p.add_argument("name")
     p.add_argument("--sites", nargs="+", required=False)
     p.add_argument("--site-org", action="append", default=[])
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_REMOVE_SITE] = p
     _study_handlers[CMD_STUDY_REMOVE_SITE] = cmd_remove_site
 
     p = sub.add_parser(CMD_STUDY_REMOVE, help="remove a study")
     p.add_argument("name")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_REMOVE] = p
     _study_handlers[CMD_STUDY_REMOVE] = cmd_remove
 
     p = sub.add_parser(CMD_STUDY_LIST, help="list visible studies")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_LIST] = p
     _study_handlers[CMD_STUDY_LIST] = cmd_list
 
     p = sub.add_parser(CMD_STUDY_SHOW, help="show a study")
     p.add_argument("name")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_SHOW] = p
     _study_handlers[CMD_STUDY_SHOW] = cmd_show
@@ -425,6 +538,7 @@ def _define_study_subcommands(parser):
     p = sub.add_parser(CMD_STUDY_ADD_USER, help="add a study user")
     p.add_argument("study")
     p.add_argument("user")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_ADD_USER] = p
     _study_handlers[CMD_STUDY_ADD_USER] = cmd_add_user
@@ -432,6 +546,7 @@ def _define_study_subcommands(parser):
     p = sub.add_parser(CMD_STUDY_REMOVE_USER, help="remove a study user")
     p.add_argument("study")
     p.add_argument("user")
+    add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _study_sub_cmd_parsers[CMD_STUDY_REMOVE_USER] = p
     _study_handlers[CMD_STUDY_REMOVE_USER] = cmd_remove_user

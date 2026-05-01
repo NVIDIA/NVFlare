@@ -95,7 +95,7 @@ class FileTransferModule(CommandModule):
                 CommandSpec(
                     name="push_folder",
                     description="Submit application to the server",
-                    usage="submit_job job_folder",
+                    usage="submit_job job_folder [submit_args...]",
                     handler_func=self.push_folder,
                     visible=False,
                 ),
@@ -295,10 +295,11 @@ class FileTransferModule(CommandModule):
         # upload with binary protocol
         cmd_entry = ctx.get_command_entry()
         assert isinstance(cmd_entry, CommandEntry)
-        if len(args) != 2:
+        if len(args) < 2:
             return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: {}".format(cmd_entry.usage)}
 
         folder_name = args[1]
+        submit_args = args[2:]
         if folder_name.endswith("/"):
             folder_name = folder_name.rstrip("/")
 
@@ -324,6 +325,7 @@ class FileTransferModule(CommandModule):
 
         folder_name = split_path(full_path)[1]
         parts = [cmd_entry.full_command_name(), folder_name]
+        parts.extend(submit_args)
         command = join_args(parts)
         sender = _FileSender(out_file)
         ctx.set_requester(sender)

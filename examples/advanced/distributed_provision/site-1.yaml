@@ -1,0 +1,7 @@
+name: fed_project
+description: Site 1 client
+
+participants:
+  - name: site-1
+    type: client
+    org: org1

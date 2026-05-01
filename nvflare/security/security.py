@@ -46,6 +46,8 @@ COMMAND_CATEGORIES = {
     AC.RESTART: CommandCategory.OPERATE,
     AC.SHUTDOWN: CommandCategory.OPERATE,
     AC.REMOVE_CLIENT: CommandCategory.OPERATE,
+    AC.DISABLE_CLIENT: CommandCategory.OPERATE,
+    AC.ENABLE_CLIENT: CommandCategory.OPERATE,
     AC.SET_TIMEOUT: CommandCategory.OPERATE,
     AC.CALL: CommandCategory.OPERATE,
     AC.CONFIGURE_SITE_LOG: CommandCategory.OPERATE,

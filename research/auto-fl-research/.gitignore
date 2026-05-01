@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.mypy_cache/
+.pytest_cache/
+results/
+runs/
+artifacts/
+/tmp/
+results.tsv
+run.log
+*.log
+.DS_Store

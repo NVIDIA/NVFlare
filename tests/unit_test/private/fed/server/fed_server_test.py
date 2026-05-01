@@ -18,6 +18,8 @@ import pytest
 
 from nvflare.apis.fl_constant import RunProcessKey
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.private.defs import CellMessageHeaderKeys, new_cell_message
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.server_state import ColdState, HotState
@@ -220,3 +222,38 @@ class TestFederatedServer:
             other_request = new_cell_message({CellMessageHeaderKeys.JOB_IDS: []}, Shareable())
             server._sync_client_jobs(other_request, token)
             assert "job1" not in server._job_reported_clients
+
+    def test_disabled_client_heartbeat_is_rejected(self, tmp_path):
+        with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
+            args = MagicMock()
+            args.workspace = str(tmp_path)
+            server = FederatedServer(
+                project_name="project_name",
+                min_num_clients=1,
+                max_num_clients=10,
+                cmd_modules=None,
+                heart_beat_timeout=600,
+                args=args,
+                secure_train=False,
+                snapshot_persistor=MagicMock(),
+                overseer_agent=MagicMock(),
+            )
+            server.server_state = HotState()
+            server.client_manager.disable_client("client_name")
+
+            request = new_cell_message(
+                {
+                    CellMessageHeaderKeys.TOKEN: "token",
+                    CellMessageHeaderKeys.SSID: "ssid",
+                    CellMessageHeaderKeys.CLIENT_NAME: "client_name",
+                    CellMessageHeaderKeys.PROJECT_NAME: "project_name",
+                    CellMessageHeaderKeys.JOB_IDS: [],
+                },
+                Shareable(),
+            )
+
+            result = server.client_heartbeat(request)
+
+            assert result.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+            assert "disabled" in result.get_header(MessageHeaderKey.ERROR)
+            assert "token" not in server.client_manager.clients
