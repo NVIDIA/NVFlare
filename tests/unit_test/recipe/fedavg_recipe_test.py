@@ -326,8 +326,6 @@ class TestNumpyFedAvgRecipe:
 
         assert recipe.best_model_filename == "numpy_model.pt"
         assert recipe.save_filename == "numpy_model.pt"
-        persistor = get_server_component(recipe, "persistor")
-        assert persistor.best_model_filename == "numpy_model.pt"
 
     def test_numpy_recipe_with_per_site_config(self, mock_file_system):
         """Test NumpyFedAvgRecipe with per-site configuration."""
@@ -387,8 +385,6 @@ class TestNumpyFedAvgRecipe:
         assert recipe.patience == 5
         assert recipe.best_model_filename == "best_numpy_model.pt"
         assert recipe.save_filename == "best_numpy_model.pt"
-        persistor = get_server_component(recipe, "persistor")
-        assert persistor.best_model_filename == "best_numpy_model.pt"
         assert recipe.exclude_vars == "temp_.*"
         assert recipe.aggregation_weights == {"site-1": 1.0, "site-2": 2.0, "site-3": 1.5}
 

@@ -72,7 +72,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
             Defaults to "accuracy".
-        best_model_filename: Filename for saving the best model when generated TensorFlow persistors support it.
+        best_model_filename: Filename for saving the best model. Accepted for API compatibility.
         save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
 
     Example:
@@ -166,9 +166,5 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         if self.model is None and not ckpt_path:
             return ""
 
-        best_model_filename = self.best_model_filename
-        if best_model_filename == DefaultCheckpointFileName.BEST_GLOBAL_MODEL:
-            best_model_filename = None
-
-        tf_model = TFModel(model=self.model, initial_ckpt=ckpt_path, best_model_filename=best_model_filename)
+        tf_model = TFModel(model=self.model, initial_ckpt=ckpt_path)
         return extract_persistor_id(job.to_server(tf_model, id="persistor"))

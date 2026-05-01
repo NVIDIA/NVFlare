@@ -27,7 +27,6 @@ class TFModel:
         model: Union[tf.keras.Model, Dict[str, Any], None] = None,
         persistor: Optional[ModelPersistor] = None,
         initial_ckpt: Optional[str] = None,
-        best_model_filename: Optional[str] = None,
     ):
         """TensorFlow model wrapper.
 
@@ -46,11 +45,9 @@ class TFModel:
             initial_ckpt (str, optional): Absolute path to checkpoint file or SavedModel dir.
                 May not exist locally (server-side path).
                 TensorFlow can load full model from .h5 or SavedModel directory.
-            best_model_filename (str, optional): Filename for saving the best model weights.
         """
         self.model = model
         self.initial_ckpt = initial_ckpt
-        self.best_model_filename = best_model_filename
 
         if persistor:
             validate_object_for_job("persistor", persistor, ModelPersistor)
@@ -105,8 +102,6 @@ class TFModel:
 
         if self.initial_ckpt:
             persistor_kwargs["source_ckpt_file_full_name"] = self.initial_ckpt
-        if self.best_model_filename:
-            persistor_kwargs["best_model_filename"] = self.best_model_filename
 
         return TFModelPersistor(**persistor_kwargs)
 
@@ -117,8 +112,6 @@ class TFModel:
 
         if self.initial_ckpt:
             persistor_kwargs["source_ckpt_file_full_name"] = self.initial_ckpt
-        if self.best_model_filename:
-            persistor_kwargs["best_model_filename"] = self.best_model_filename
 
         return TFModelPersistor(**persistor_kwargs)
 
@@ -127,5 +120,4 @@ class TFModel:
         return TFModelPersistor(
             model=None,
             source_ckpt_file_full_name=self.initial_ckpt,
-            best_model_filename=self.best_model_filename,
         )

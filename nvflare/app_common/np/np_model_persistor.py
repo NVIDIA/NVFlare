@@ -20,8 +20,6 @@ import numpy as np
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.app_event_type import AppEventType
 
 from .constants import NPConstants
 from .utils import load_numpy_model
@@ -42,7 +40,6 @@ class NPModelPersistor(ModelPersistor):
         model_name="server.npy",
         model: Optional[list] = None,
         source_ckpt_file_full_name: Optional[str] = None,
-        best_model_filename: Optional[str] = None,
     ):
         """Model persistor for numpy arrays.
 
@@ -63,13 +60,11 @@ class NPModelPersistor(ModelPersistor):
             source_ckpt_file_full_name (str, optional): Full path to source checkpoint file.
                 This path may not exist locally (server-side path). If provided and exists
                 at runtime, it takes priority over other loading methods.
-            best_model_filename (str, optional): Filename for saving the best model.
         """
         super().__init__()
 
         self.model_dir = model_dir
         self.model_name = model_name
-        self.best_model_filename = best_model_filename
         # Keep as list for JSON serialization during job config generation.
         # Conversion to numpy happens in load_model().
         self.model = model
@@ -105,21 +100,12 @@ class NPModelPersistor(ModelPersistor):
         return model_learnable
 
     def save_model(self, model_learnable: ModelLearnable, fl_ctx: FLContext):
-        self._save_model(model_learnable, fl_ctx, self.model_name)
-
-    def _save_model(self, model_learnable: ModelLearnable, fl_ctx: FLContext, model_name: str):
         workspace = fl_ctx.get_workspace()
         job_id = fl_ctx.get_job_id()
         model_root_dir = os.path.join(workspace.get_result_root(job_id), self.model_dir)
         if not os.path.exists(model_root_dir):
             os.makedirs(model_root_dir)
 
-        model_path = os.path.join(model_root_dir, model_name)
+        model_path = os.path.join(model_root_dir, self.model_name)
         np.save(model_path, model_learnable[ModelLearnableKey.WEIGHTS][NPConstants.NUMPY_KEY])
         self.log_info(fl_ctx, f"Saved numpy model to: {model_path}")
-
-    def handle_event(self, event: str, fl_ctx: FLContext):
-        if event == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE and self.best_model_filename:
-            model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
-            if model:
-                self._save_model(model, fl_ctx, self.best_model_filename)

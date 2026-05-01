@@ -489,15 +489,9 @@ class FedAvgRecipe(Recipe):
                 )
 
         ckpt_path = resolve_initial_ckpt(initial_ckpt, getattr(self, "_prepared_initial_ckpt", None), job)
-        best_model_filename = (
-            self.best_model_filename
-            if self.best_model_filename != DefaultCheckpointFileName.BEST_GLOBAL_MODEL
-            else None
-        )
         persistor = NPModelPersistor(
             model=model_list,
             source_ckpt_file_full_name=ckpt_path,
-            best_model_filename=best_model_filename,
         )
         persistor_id = extract_persistor_id(job.to_server(persistor, id="persistor"))
         if persistor_id and hasattr(job, "comp_ids"):
