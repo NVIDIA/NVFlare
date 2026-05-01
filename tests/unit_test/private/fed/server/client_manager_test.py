@@ -19,6 +19,7 @@ import pytest
 
 from nvflare.apis.client import Client, ClientPropKey
 from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
 from nvflare.private.defs import CellMessageHeaderKeys, ClientRegSession, ClientType, InternalFLContextKey
@@ -235,3 +236,14 @@ def test_disabled_client_heartbeat_does_not_reactivate():
     assert reactivated is False
     assert "token-a" not in manager.clients
     fl_ctx.set_prop.assert_called_with(FLContextKey.UNAUTHENTICATED, "Client 'site-a' is disabled", sticky=False)
+
+
+def test_set_client_props_sets_site_config():
+    site_config = {"format_version": 1, "labels": {"region": "us-east"}}
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(FLContextKey.CLIENT_SITE_CONFIG, site_config, private=True, sticky=False)
+
+    client = Client(name="site-1", token="token")
+    ClientManager._set_client_props(client, "server.site-1", fl_ctx)
+
+    assert client.get_site_config() == site_config
