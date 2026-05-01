@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
 from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel
@@ -194,9 +195,21 @@ class FedAvgRecipe(Recipe):
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
     ):
+        explicit_best_model_filename = best_model_filename is not None
+        explicit_save_filename = save_filename is not None
         best_model_filename, controller_save_filename = self._resolve_model_filenames(
             best_model_filename, save_filename
         )
+        if framework in (FrameworkType.TENSORFLOW, FrameworkType.NUMPY) and (
+            explicit_best_model_filename or explicit_save_filename
+        ):
+            warnings.warn(
+                "best_model_filename/save_filename is accepted for API compatibility by TensorFlow and NumPy "
+                "FedAvg recipes, but their default persistors do not currently create a separate best-model artifact "
+                "because adding new best-model event save paths would increase model memory use.",
+                UserWarning,
+                stacklevel=3,
+            )
 
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -403,6 +416,12 @@ class FedAvgRecipe(Recipe):
         if best_model_filename is not None and best_model_filename != save_filename:
             raise ValueError("Specify either best_model_filename or save_filename, not conflicting values for both.")
 
+        warnings.warn(
+            "save_filename is deprecated; use best_model_filename instead. FedAvg recipes treat save_filename as "
+            "an alias for the best-model checkpoint filename.",
+            FutureWarning,
+            stacklevel=3,
+        )
         return save_filename, save_filename
 
     @staticmethod

@@ -227,6 +227,26 @@ class TestFedAvgRecipe:
         assert recipe.save_filename == "custom_best_model.pt"
         assert controller.save_filename == "custom_best_model.pt"
 
+    def test_tensorflow_best_model_filename_warns_api_compatibility(self, mock_file_system, base_recipe_params):
+        """TF currently accepts best_model_filename without wiring it into the default persistor."""
+        from nvflare.fuel.utils.constants import FrameworkType
+        from nvflare.recipe import FedAvgRecipe as UnifiedFedAvgRecipe
+
+        with (
+            patch("nvflare.job_config.script_runner.optional_import", return_value=(None, True)),
+            pytest.warns(UserWarning, match="default persistors do not currently create"),
+        ):
+            recipe = UnifiedFedAvgRecipe(
+                name="test_tf_best_filename_warning",
+                framework=FrameworkType.TENSORFLOW,
+                model_persistor=DummyPersistor(),
+                best_model_filename="custom_tf_best_model.keras",
+                **base_recipe_params,
+            )
+
+        assert recipe.best_model_filename == "custom_tf_best_model.keras"
+        assert recipe.save_filename == "custom_tf_best_model.keras"
+
     def test_custom_aggregator_initialization(
         self, mock_file_system, base_recipe_params, custom_aggregator, simple_model
     ):
@@ -354,17 +374,36 @@ class TestNumpyFedAvgRecipe:
 
     def test_numpy_recipe_with_save_filename(self, mock_file_system):
         """Test NumpyFedAvgRecipe with custom save filename."""
-        recipe = NumpyFedAvgRecipe(
-            name="test_numpy_save",
-            model=[1.0, 2.0, 3.0],
-            min_clients=2,
-            num_rounds=5,
-            train_script="client.py",
-            save_filename="numpy_model.pt",
-        )
+        with pytest.warns(Warning) as warning_records:
+            recipe = NumpyFedAvgRecipe(
+                name="test_numpy_save",
+                model=[1.0, 2.0, 3.0],
+                min_clients=2,
+                num_rounds=5,
+                train_script="client.py",
+                save_filename="numpy_model.pt",
+            )
+
+        warning_messages = [str(record.message) for record in warning_records]
+        assert any("save_filename is deprecated" in message for message in warning_messages)
+        assert any("default persistors do not currently create" in message for message in warning_messages)
 
         assert recipe.best_model_filename == "numpy_model.pt"
         assert recipe.save_filename == "numpy_model.pt"
+
+    def test_numpy_recipe_with_best_model_filename_warns_api_compatibility(self, mock_file_system):
+        """NumPy currently accepts best_model_filename without wiring it into the default persistor."""
+        with pytest.warns(UserWarning, match="default persistors do not currently create"):
+            recipe = NumpyFedAvgRecipe(
+                name="test_numpy_best_filename_warning",
+                model=[1.0, 2.0, 3.0],
+                min_clients=2,
+                train_script="client.py",
+                best_model_filename="custom_numpy_best_model.npy",
+            )
+
+        assert recipe.best_model_filename == "custom_numpy_best_model.npy"
+        assert recipe.save_filename == "custom_numpy_best_model.npy"
 
     def test_numpy_recipe_with_per_site_config(self, mock_file_system):
         """Test NumpyFedAvgRecipe with per-site configuration."""
@@ -396,22 +435,27 @@ class TestNumpyFedAvgRecipe:
 
     def test_numpy_recipe_full_configuration(self, mock_file_system):
         """Test NumpyFedAvgRecipe with all new features."""
-        recipe = NumpyFedAvgRecipe(
-            name="test_numpy_full",
-            model=[[1, 2], [3, 4], [5, 6]],
-            min_clients=3,
-            num_rounds=20,
-            train_script="train.py",
-            train_args="--epochs 10",
-            launch_external_process=True,
-            command="python3 -u",
-            key_metric="f1_score",
-            stop_cond="f1_score >= 0.9",
-            patience=5,
-            save_filename="best_numpy_model.pt",
-            exclude_vars="temp_.*",
-            aggregation_weights={"site-1": 1.0, "site-2": 2.0, "site-3": 1.5},
-        )
+        with pytest.warns(Warning) as warning_records:
+            recipe = NumpyFedAvgRecipe(
+                name="test_numpy_full",
+                model=[[1, 2], [3, 4], [5, 6]],
+                min_clients=3,
+                num_rounds=20,
+                train_script="train.py",
+                train_args="--epochs 10",
+                launch_external_process=True,
+                command="python3 -u",
+                key_metric="f1_score",
+                stop_cond="f1_score >= 0.9",
+                patience=5,
+                save_filename="best_numpy_model.pt",
+                exclude_vars="temp_.*",
+                aggregation_weights={"site-1": 1.0, "site-2": 2.0, "site-3": 1.5},
+            )
+
+        warning_messages = [str(record.message) for record in warning_records]
+        assert any("save_filename is deprecated" in message for message in warning_messages)
+        assert any("default persistors do not currently create" in message for message in warning_messages)
 
         assert recipe.name == "test_numpy_full"
         assert recipe.min_clients == 3
@@ -447,12 +491,13 @@ class TestFedAvgRecipeEarlyStopping:
 
     def test_save_filename_configuration(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedAvgRecipe accepts save_filename as a backward-compatible alias."""
-        recipe = FedAvgRecipe(
-            name="test_save_file",
-            model=simple_model,
-            save_filename="best_model.pt",
-            **base_recipe_params,
-        )
+        with pytest.warns(FutureWarning, match="save_filename is deprecated"):
+            recipe = FedAvgRecipe(
+                name="test_save_file",
+                model=simple_model,
+                save_filename="best_model.pt",
+                **base_recipe_params,
+            )
 
         persistor = get_server_component(recipe, "persistor")
         assert recipe.best_model_filename == "best_model.pt"
