@@ -1,0 +1,186 @@
+Checking cloud auth ...
+  ? gcloud auth print-access-token
+  ? aws sts get-caller-identity
+  ? az account show
+  Auth OK
+Ensuring static IP nvflare-all-clouds ...
+  $ gcloud compute addresses create nvflare-all-clouds --region=test-location --project=test-project --quiet
+  $ gcloud compute addresses describe nvflare-all-clouds --region=test-location --project=test-project '--format=value(address)'
+  Using: <server-ip> (nvflare-all-clouds)
+Provisioning ...
+  $ nvflare provision -p <repo>/devops/multicloud/.work/project.yml -w <repo>/devops/multicloud/.work/provision
+Preparing K8s runtime kits ...
+  Would write <prod_dir>/gcp-server/local/study_data.yaml:
+    | default:
+    |   data:
+    |     source: nvfldata
+    |     mode: ro
+  Would write <repo>/devops/multicloud/.work/prepare-configs/gcp-server.yaml:
+    | runtime: k8s
+    | parent:
+    |   docker_image: gcp-registry.example.com/nvflare/nvflare:dev
+    |   workspace_pvc: nvflws
+    |   workspace_mount_path: /var/tmp/nvflare/workspace
+    | job_launcher:
+    |   default_python_path: /usr/local/bin/python3
+    | namespace: nvflare-server
+  $ nvflare deploy prepare --kit '<prod_dir>/gcp-server' --output '<prod_dir>/gcp-server/prepared/k8s' --config <repo>/devops/multicloud/.work/prepare-configs/gcp-server.yaml
+  Would write <prod_dir>/gcp-client-1/local/study_data.yaml:
+    | default:
+    |   data:
+    |     source: nvfldata
+    |     mode: ro
+  Would write <repo>/devops/multicloud/.work/prepare-configs/gcp-client-1.yaml:
+    | runtime: k8s
+    | parent:
+    |   docker_image: gcp-registry.example.com/nvflare/nvflare:dev
+    |   workspace_pvc: nvflws
+    |   workspace_mount_path: /var/tmp/nvflare/workspace
+    | job_launcher:
+    |   default_python_path: /usr/local/bin/python3
+    | namespace: nvflare-client-1
+  $ nvflare deploy prepare --kit '<prod_dir>/gcp-client-1' --output '<prod_dir>/gcp-client-1/prepared/k8s' --config <repo>/devops/multicloud/.work/prepare-configs/gcp-client-1.yaml
+  Would write <prod_dir>/aws-client-2/local/study_data.yaml:
+    | default:
+    |   data:
+    |     source: nvfldata
+    |     mode: ro
+  Would write <repo>/devops/multicloud/.work/prepare-configs/aws-client-2.yaml:
+    | runtime: k8s
+    | parent:
+    |   docker_image: aws-registry.example.com/nvflare/nvflare:dev
+    |   workspace_pvc: nvflws
+    |   workspace_mount_path: /var/tmp/nvflare/workspace
+    |   pod_security_context:
+    |     seLinuxOptions:
+    |       type: spc_t
+    | job_launcher:
+    |   default_python_path: /usr/local/bin/python3
+    |   job_pod_security_context:
+    |     seLinuxOptions:
+    |       type: spc_t
+    | namespace: nvflare-client-2
+  $ nvflare deploy prepare --kit '<prod_dir>/aws-client-2' --output '<prod_dir>/aws-client-2/prepared/k8s' --config <repo>/devops/multicloud/.work/prepare-configs/aws-client-2.yaml
+  Would write <prod_dir>/azure-client-3/local/study_data.yaml:
+    | default:
+    |   data:
+    |     source: nvfldata
+    |     mode: ro
+  Would write <repo>/devops/multicloud/.work/prepare-configs/azure-client-3.yaml:
+    | runtime: k8s
+    | parent:
+    |   docker_image: azure-registry.example.com/nvflare/nvflare:dev
+    |   workspace_pvc: nvflws
+    |   workspace_mount_path: /var/tmp/nvflare/workspace
+    | job_launcher:
+    |   default_python_path: /usr/local/bin/python3
+    | namespace: nvflare-client-3
+  $ nvflare deploy prepare --kit '<prod_dir>/azure-client-3' --output '<prod_dir>/azure-client-3/prepared/k8s' --config <repo>/devops/multicloud/.work/prepare-configs/azure-client-3.yaml
+
+============================================================
+Deploying gcp-server → nvflare-server
+============================================================
+  ? gcloud auth print-access-token
+  ? kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml get ns nvflare-server
+  Creating namespace nvflare-server
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml create ns nvflare-server
+  Applying PVCs ...
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-server apply -f -
+    | {"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "nvflws", "namespace": "nvflare-server"}, "spec": {"storageClassName": "standard-rwo", "accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "1Gi"}}}}
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-server apply -f -
+    | {"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "nvfldata", "namespace": "nvflare-server"}, "spec": {"storageClassName": "standard-rwo", "accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "1Gi"}}}}
+  ? helm --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml status gcp-server -n nvflare-server
+  Staging kit files via temp pod ...
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-server delete pod kit-copy-gcp-server --ignore-not-found --timeout=60s
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-server run kit-copy-gcp-server --image=busybox:1.36 --restart=Never '--overrides={"spec": {"volumes": [{"name": "ws", "persistentVolumeClaim": {"claimName": "nvflws"}}], "containers": [{"name": "copy", "image": "busybox:1.36", "command": ["sleep", "600"], "volumeMounts": [{"name": "ws", "mountPath": "/ws"}], "resources": {"requests": {"cpu": "10m", "memory": "64Mi"}, "limits": {"cpu": "100m", "memory": "128Mi"}}}]}}'
+  Waiting for staging pod ...
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-server wait --for=condition=Ready pod/kit-copy-gcp-server --timeout=600s
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-server exec kit-copy-gcp-server -- rm -rf /ws/startup /ws/local
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-server cp '<prod_dir>/gcp-server/prepared/k8s/startup' kit-copy-gcp-server:/ws/startup
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-server cp '<prod_dir>/gcp-server/prepared/k8s/local' kit-copy-gcp-server:/ws/local
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-server delete pod kit-copy-gcp-server --timeout=60s
+  Helm installing gcp-server ...
+  $ helm --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml upgrade --install gcp-server '<prod_dir>/gcp-server/prepared/k8s/helm_chart' -n nvflare-server --set service.type=LoadBalancer --set 'service.loadBalancerIP=<server-ip>' --set image.pullPolicy=Always
+  Waiting for server to be ready ...
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-server wait --for=condition=available deployment/gcp-server --timeout=600s
+
+============================================================
+Deploying gcp-client-1 → nvflare-client-1
+============================================================
+  ? gcloud auth print-access-token
+  ? kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml get ns nvflare-client-1
+  Creating namespace nvflare-client-1
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml create ns nvflare-client-1
+  Applying PVCs ...
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-client-1 apply -f -
+    | {"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "nvflws", "namespace": "nvflare-client-1"}, "spec": {"storageClassName": "standard-rwo", "accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "1Gi"}}}}
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-client-1 apply -f -
+    | {"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "nvfldata", "namespace": "nvflare-client-1"}, "spec": {"storageClassName": "standard-rwo", "accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "1Gi"}}}}
+  ? helm --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml status gcp-client-1 -n nvflare-client-1
+  Staging kit files via temp pod ...
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-client-1 delete pod kit-copy-gcp-client-1 --ignore-not-found --timeout=60s
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-client-1 run kit-copy-gcp-client-1 --image=busybox:1.36 --restart=Never '--overrides={"spec": {"volumes": [{"name": "ws", "persistentVolumeClaim": {"claimName": "nvflws"}}], "containers": [{"name": "copy", "image": "busybox:1.36", "command": ["sleep", "600"], "volumeMounts": [{"name": "ws", "mountPath": "/ws"}], "resources": {"requests": {"cpu": "10m", "memory": "64Mi"}, "limits": {"cpu": "100m", "memory": "128Mi"}}}]}}'
+  Waiting for staging pod ...
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-client-1 wait --for=condition=Ready pod/kit-copy-gcp-client-1 --timeout=600s
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-client-1 exec kit-copy-gcp-client-1 -- rm -rf /ws/startup /ws/local
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-client-1 cp '<prod_dir>/gcp-client-1/prepared/k8s/startup' kit-copy-gcp-client-1:/ws/startup
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-client-1 cp '<prod_dir>/gcp-client-1/prepared/k8s/local' kit-copy-gcp-client-1:/ws/local
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml -n nvflare-client-1 delete pod kit-copy-gcp-client-1 --timeout=60s
+  Helm installing gcp-client-1 ...
+  $ helm --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml upgrade --install gcp-client-1 '<prod_dir>/gcp-client-1/prepared/k8s/helm_chart' -n nvflare-client-1 --set image.pullPolicy=Always
+
+============================================================
+Deploying aws-client-2 → nvflare-client-2
+============================================================
+  ? aws sts get-caller-identity
+  ? kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml get ns nvflare-client-2
+  Creating namespace nvflare-client-2
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml create ns nvflare-client-2
+  Applying PVCs ...
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml -n nvflare-client-2 apply -f -
+    | {"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "nvflws", "namespace": "nvflare-client-2"}, "spec": {"storageClassName": "auto-ebs-sc", "accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "1Gi"}}}}
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml -n nvflare-client-2 apply -f -
+    | {"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "nvfldata", "namespace": "nvflare-client-2"}, "spec": {"storageClassName": "auto-ebs-sc", "accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "1Gi"}}}}
+  ? helm --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml status aws-client-2 -n nvflare-client-2
+  Staging kit files via temp pod ...
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml -n nvflare-client-2 delete pod kit-copy-aws-client-2 --ignore-not-found --timeout=60s
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml -n nvflare-client-2 run kit-copy-aws-client-2 --image=busybox:1.36 --restart=Never '--overrides={"spec": {"securityContext": {"seLinuxOptions": {"type": "spc_t"}}, "volumes": [{"name": "ws", "persistentVolumeClaim": {"claimName": "nvflws"}}], "containers": [{"name": "copy", "image": "busybox:1.36", "command": ["sleep", "600"], "volumeMounts": [{"name": "ws", "mountPath": "/ws"}], "resources": {"requests": {"cpu": "10m", "memory": "64Mi"}, "limits": {"cpu": "100m", "memory": "128Mi"}}}]}}'
+  Waiting for staging pod ...
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml -n nvflare-client-2 wait --for=condition=Ready pod/kit-copy-aws-client-2 --timeout=600s
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml -n nvflare-client-2 exec kit-copy-aws-client-2 -- rm -rf /ws/startup /ws/local
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml -n nvflare-client-2 cp '<prod_dir>/aws-client-2/prepared/k8s/startup' kit-copy-aws-client-2:/ws/startup
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml -n nvflare-client-2 cp '<prod_dir>/aws-client-2/prepared/k8s/local' kit-copy-aws-client-2:/ws/local
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml -n nvflare-client-2 delete pod kit-copy-aws-client-2 --timeout=60s
+  Helm installing aws-client-2 ...
+  $ helm --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml upgrade --install aws-client-2 '<prod_dir>/aws-client-2/prepared/k8s/helm_chart' -n nvflare-client-2 --set-string 'podAnnotations.karpenter\.sh\/do-not-disrupt=true' --set image.pullPolicy=Always
+
+============================================================
+Deploying azure-client-3 → nvflare-client-3
+============================================================
+  ? az account show
+  ? kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/azure.yaml get ns nvflare-client-3
+  Creating namespace nvflare-client-3
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/azure.yaml create ns nvflare-client-3
+  Applying PVCs ...
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/azure.yaml -n nvflare-client-3 apply -f -
+    | {"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "nvflws", "namespace": "nvflare-client-3"}, "spec": {"storageClassName": "managed-csi", "accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "10Gi"}}}}
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/azure.yaml -n nvflare-client-3 apply -f -
+    | {"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": "nvfldata", "namespace": "nvflare-client-3"}, "spec": {"storageClassName": "managed-csi", "accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "1Gi"}}}}
+  ? helm --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/azure.yaml status azure-client-3 -n nvflare-client-3
+  Staging kit files via temp pod ...
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/azure.yaml -n nvflare-client-3 delete pod kit-copy-azure-client-3 --ignore-not-found --timeout=60s
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/azure.yaml -n nvflare-client-3 run kit-copy-azure-client-3 --image=busybox:1.36 --restart=Never '--overrides={"spec": {"volumes": [{"name": "ws", "persistentVolumeClaim": {"claimName": "nvflws"}}], "containers": [{"name": "copy", "image": "busybox:1.36", "command": ["sleep", "600"], "volumeMounts": [{"name": "ws", "mountPath": "/ws"}], "resources": {"requests": {"cpu": "10m", "memory": "64Mi"}, "limits": {"cpu": "100m", "memory": "128Mi"}}}]}}'
+  Waiting for staging pod ...
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/azure.yaml -n nvflare-client-3 wait --for=condition=Ready pod/kit-copy-azure-client-3 --timeout=600s
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/azure.yaml -n nvflare-client-3 exec kit-copy-azure-client-3 -- rm -rf /ws/startup /ws/local
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/azure.yaml -n nvflare-client-3 cp '<prod_dir>/azure-client-3/prepared/k8s/startup' kit-copy-azure-client-3:/ws/startup
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/azure.yaml -n nvflare-client-3 cp '<prod_dir>/azure-client-3/prepared/k8s/local' kit-copy-azure-client-3:/ws/local
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/azure.yaml -n nvflare-client-3 delete pod kit-copy-azure-client-3 --timeout=60s
+  Helm installing azure-client-3 ...
+  $ helm --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/azure.yaml upgrade --install azure-client-3 '<prod_dir>/azure-client-3/prepared/k8s/helm_chart' -n nvflare-client-3
+
+============================================================
+Deployment complete.
+  Server IP:   <server-ip>
+  Admin kit:   <prod_dir>/admin@nvidia.com
+============================================================

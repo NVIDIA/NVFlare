@@ -13,118 +13,149 @@
 # limitations under the License.
 
 import importlib.util
-import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
 
 DEPLOY_PY = Path(__file__).resolve().parents[3] / "devops" / "multicloud" / "deploy.py"
+REPO_ROOT = DEPLOY_PY.parents[2]
+DRY_RUN_CONFIG_DIR = Path(__file__).resolve().parent / "multicloud_dry_run_configs"
+DRY_RUN_GOLD_DIR = Path(__file__).resolve().parent / "multicloud_dry_run_gold"
+sys.path.insert(0, str(DEPLOY_PY.parent))
 SPEC = importlib.util.spec_from_file_location("multicloud_deploy", DEPLOY_PY)
 DEPLOY_MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = DEPLOY_MODULE
 SPEC.loader.exec_module(DEPLOY_MODULE)
 
 
-class TestPatchResourcesJson:
-    def test_replaces_process_launcher_without_writing_default_study_pvc_file(self, tmp_path):
-        kit_dir = tmp_path
-        local_dir = kit_dir / "local"
-        local_dir.mkdir()
-        resources = {
-            "components": [
-                {
-                    "id": "process_launcher",
-                    "path": "nvflare.app_common.job_launcher.process_launcher.ProcessJobLauncher",
-                    "args": {},
-                }
-            ]
-        }
-        (local_dir / "resources.json.default").write_text(json.dumps(resources))
-
-        DEPLOY_MODULE.patch_resources_json(
-            kit_dir,
-            "nvflare-client-1",
-            "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
-            {"seLinuxOptions": {"type": "spc_t"}},
-        )
-
-        updated = json.loads((local_dir / "resources.json").read_text())
-        component = updated["components"][0]
-        assert component["id"] == "k8s_launcher"
-        assert component["path"] == "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
-        assert component["args"]["namespace"] == "nvflare-client-1"
-        assert "workspace_pvc" not in component["args"]
-        assert component["args"]["study_data_pvc_file_path"] == "/var/tmp/nvflare/workspace/local/study_data.yaml"
-        assert component["args"]["security_context"] == {"seLinuxOptions": {"type": "spc_t"}}
-        assert not (kit_dir / "local" / "study_data.yaml").exists()
-
-    def test_writes_configured_study_data_file(self, tmp_path):
-        kit_dir = tmp_path
-        local_dir = kit_dir / "local"
-        local_dir.mkdir()
-        resources = {
-            "components": [
-                {
-                    "id": "process_launcher",
-                    "path": "nvflare.app_common.job_launcher.process_launcher.ProcessJobLauncher",
-                    "args": {},
-                }
-            ]
-        }
+class TestPrepareRuntimeKits:
+    def test_writes_study_data_config_and_invokes_deploy_prepare(self, monkeypatch, tmp_path):
+        prod_dir = tmp_path / "prod"
+        kit_dir = prod_dir / "site-1"
+        (kit_dir / "local").mkdir(parents=True)
+        work_dir = tmp_path / ".work"
         study_data = {"default": {"data": {"source": "nvfldata", "mode": "ro"}}}
-        (local_dir / "resources.json.default").write_text(json.dumps(resources))
-
-        DEPLOY_MODULE.patch_resources_json(
-            kit_dir,
-            "nvflare-client-1",
-            "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
+        participant = DEPLOY_MODULE.Participant(
+            name="site-1",
+            namespace="ns-1",
+            kubeconfig="/tmp/kubeconfig",
+            role="client",
+            cloud="gcp",
+            prepare={
+                "runtime": "k8s",
+                "namespace": "ns-1",
+                "parent": {
+                    "docker_image": "repo/image:tag",
+                    "workspace_pvc": "nvflws",
+                    "workspace_mount_path": "/var/tmp/nvflare/workspace",
+                    "pod_security_context": {"runAsUser": 1000},
+                },
+                "job_launcher": {
+                    "default_python_path": "/usr/local/bin/python3",
+                    "job_pod_security_context": {"runAsUser": 1000},
+                    "pending_timeout": 7,
+                },
+            },
             study_data=study_data,
         )
+        calls = []
 
-        assert yaml.safe_load((local_dir / "study_data.yaml").read_text()) == study_data
+        monkeypatch.setattr(DEPLOY_MODULE, "WORK_DIR", work_dir)
+        monkeypatch.setattr(DEPLOY_MODULE, "nvflare_cmd", lambda: "nvflare")
+        monkeypatch.setattr(DEPLOY_MODULE, "run", lambda cmd, **kwargs: calls.append(cmd) or DEPLOY_MODULE.FakeProc(0))
 
-    def test_dry_run_previews_configured_study_data_file(self, monkeypatch, tmp_path, capsys):
-        study_data = {"default": {"data": {"source": "nvfldata", "mode": "ro"}}}
-        monkeypatch.setattr(DEPLOY_MODULE, "DRY_RUN", True)
+        prepared = DEPLOY_MODULE.prepare_runtime_kits(prod_dir, [participant])
 
-        DEPLOY_MODULE.patch_resources_json(
-            tmp_path,
-            "nvflare-client-1",
-            "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
-            study_data=study_data,
-        )
-
-        out = capsys.readouterr().out
-        assert "Would patch" in out
-        assert "Would write" in out
-        assert "study_data.yaml" in out
-        assert "source: nvfldata" in out
-
-    def test_raises_when_process_launcher_component_is_missing(self, tmp_path):
-        kit_dir = tmp_path
-        local_dir = kit_dir / "local"
-        local_dir.mkdir()
-        (local_dir / "resources.json.default").write_text(json.dumps({"components": [{"id": "other", "path": "x"}]}))
-
-        with pytest.raises(RuntimeError, match="No ProcessJobLauncher component found"):
-            DEPLOY_MODULE.patch_resources_json(
-                kit_dir,
-                "nvflare-client-1",
-                "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
-            )
+        output_dir = kit_dir / "prepared" / "k8s"
+        config_path = work_dir / "prepare-configs" / "site-1.yaml"
+        assert prepared == {"site-1": output_dir}
+        assert yaml.safe_load((kit_dir / "local" / "study_data.yaml").read_text()) == study_data
+        assert not (kit_dir / "local" / "comm_config.json").exists()
+        assert yaml.safe_load(config_path.read_text()) == {
+            "runtime": "k8s",
+            "namespace": "ns-1",
+            "parent": {
+                "docker_image": "repo/image:tag",
+                "workspace_pvc": "nvflws",
+                "workspace_mount_path": "/var/tmp/nvflare/workspace",
+                "pod_security_context": {"runAsUser": 1000},
+            },
+            "job_launcher": {
+                "default_python_path": "/usr/local/bin/python3",
+                "job_pod_security_context": {"runAsUser": 1000},
+                "pending_timeout": 7,
+            },
+        }
+        assert calls == [
+            [
+                "nvflare",
+                "deploy",
+                "prepare",
+                "--kit",
+                str(kit_dir),
+                "--output",
+                str(output_dir),
+                "--config",
+                str(config_path),
+            ]
+        ]
 
 
 class TestLoadConfig:
+    def test_defaults_kubeconfig_to_repo_tmp_by_cloud(self, tmp_path):
+        config_path = tmp_path / "deploy.yaml"
+        config_path.write_text(
+            """
+clouds:
+  gcp:
+    prepare:
+      runtime: k8s
+      parent:
+        docker_image: repo/image:tag
+participants:
+  - {name: gcp-server, cloud: gcp, namespace: nvflare-server, role: server}
+"""
+        )
+
+        config = DEPLOY_MODULE.load_config(config_path)
+
+        assert config.participants[0].kubeconfig == str(REPO_ROOT / ".tmp" / "kubeconfigs" / "gcp.yaml")
+
+    def test_deployment_state_uses_deterministic_ip_name_from_config_name(self, tmp_path):
+        config_path = tmp_path / "deploy.yaml"
+        config_path.write_text(
+            """
+name: Test Cluster 01
+clouds:
+  gcp:
+    prepare:
+      runtime: k8s
+      parent:
+        docker_image: repo/image:tag
+participants:
+  - {name: gcp-server, cloud: gcp, namespace: nvflare-server, role: server}
+"""
+        )
+
+        config = DEPLOY_MODULE.load_config(config_path)
+        state = DEPLOY_MODULE.deployment_state(config, gcp_project="test-project")
+
+        assert state["ip_name"] == "nvflare-test-cluster-01"
+        assert state["participants"]["gcp-server"]["role"] == "server"
+
     def test_translates_study_data_pvc_to_runtime_source(self, tmp_path):
         config_path = tmp_path / "deploy.yaml"
         config_path.write_text(
             """
 clouds:
   gcp:
-    kubeconfig: missing-kubeconfig.yaml
-    image: repo/image:tag
+    prepare:
+      runtime: k8s
+      parent:
+        docker_image: repo/image:tag
     pvc_config:
       nvflws: {sc: standard-rwo, access: ReadWriteOnce, size: 1Gi}
       nvfldata: {sc: standard-rwo, access: ReadWriteOnce, size: 1Gi}
@@ -148,8 +179,10 @@ participants:
                 {
                     "clouds": {
                         "gcp": {
-                            "kubeconfig": "missing-kubeconfig.yaml",
-                            "image": "repo/image:tag",
+                            "prepare": {
+                                "runtime": "k8s",
+                                "parent": {"docker_image": "repo/image:tag"},
+                            },
                             "study_data": {"default": {"data": entry}},
                         }
                     },
@@ -164,18 +197,40 @@ participants:
             DEPLOY_MODULE.load_config(config_path)
 
 
-class TestHelmDeployFlow:
-    def test_helm_release_status_parses_status(self, monkeypatch):
-        monkeypatch.setattr(
-            DEPLOY_MODULE,
-            "run_quiet",
-            lambda cmd: DEPLOY_MODULE.FakeProc(0, stdout=json.dumps({"info": {"status": "failed"}})),
+class TestDryRunGoldenOutput:
+    @pytest.mark.parametrize(
+        ("config_name", "command"),
+        [
+            ("gcp-server", "up"),
+            ("aws-server", "up"),
+            ("azure-server", "up"),
+            ("all-clouds", "up"),
+            ("gcp-server", "down"),
+            ("aws-server", "down"),
+            ("azure-server", "down"),
+            ("all-clouds", "down"),
+        ],
+    )
+    def test_dry_run_output_matches_gold(self, config_name, command, monkeypatch, capsys):
+        monkeypatch.setattr(DEPLOY_MODULE, "DEFAULT_KUBECONFIG_DIR", DRY_RUN_CONFIG_DIR / "kubeconfigs")
+        monkeypatch.setattr(DEPLOY_MODULE, "DRY_RUN", True)
+
+        getattr(DEPLOY_MODULE, f"cmd_{command}")(
+            SimpleNamespace(config=str(DRY_RUN_CONFIG_DIR / f"{config_name}.yaml"))
         )
 
-        assert DEPLOY_MODULE.helm_release_status("/tmp/kubeconfig", "site-1", "ns-1") == "failed"
+        assert capsys.readouterr().out == (DRY_RUN_GOLD_DIR / f"{config_name}.{command}.txt").read_text()
 
-    def test_failed_release_restage_and_upgrade_install(self, monkeypatch, tmp_path):
-        kit_dir = tmp_path / "site-1"
+
+class TestHelmDeployFlow:
+    @pytest.mark.parametrize("returncode,expected", [(0, True), (1, False)])
+    def test_helm_release_exists_checks_status(self, monkeypatch, returncode, expected):
+        monkeypatch.setattr(DEPLOY_MODULE, "run_quiet", lambda cmd: DEPLOY_MODULE.FakeProc(returncode))
+
+        assert DEPLOY_MODULE.helm_release_exists("/tmp/kubeconfig", "site-1", "ns-1") is expected
+
+    def test_deploy_recreates_release_stages_kit_and_installs(self, monkeypatch, tmp_path):
+        kit_dir = tmp_path / "site-1" / "prepared" / "k8s"
         chart_dir = kit_dir / "helm_chart"
         (kit_dir / "startup").mkdir(parents=True)
         (kit_dir / "local").mkdir()
@@ -188,8 +243,17 @@ class TestHelmDeployFlow:
             kubeconfig="/tmp/kubeconfig",
             role="client",
             cloud="gcp",
-            launcher_class="launcher",
-            image="repo/image:tag",
+            prepare={
+                "runtime": "k8s",
+                "namespace": "ns-1",
+                "parent": {
+                    "docker_image": "repo/image:tag",
+                    "workspace_pvc": "nvflws",
+                    "workspace_mount_path": "/var/tmp/nvflare/workspace",
+                    "pod_security_context": {"runAsUser": 1000},
+                },
+                "job_launcher": {"default_python_path": "/usr/local/bin/python3"},
+            },
             pvc_config={"nvflws": {"sc": "sc", "access": "ReadWriteMany", "size": "10Gi"}},
             pod_annotations={"karpenter.sh/do-not-disrupt": r"value,with=helm\chars"},
         )
@@ -199,69 +263,167 @@ class TestHelmDeployFlow:
 
         monkeypatch.setattr(DEPLOY_MODULE, "check_auth_for", lambda cloud: None)
         monkeypatch.setattr(DEPLOY_MODULE, "namespace_exists", lambda kubeconfig, ns: True)
-        monkeypatch.setattr(DEPLOY_MODULE, "helm_release_status", lambda kubeconfig, name, ns: "failed")
-        monkeypatch.setattr(DEPLOY_MODULE, "pod_exists", lambda kubeconfig, ns, name: False)
+        monkeypatch.setattr(DEPLOY_MODULE, "helm_release_exists", lambda kubeconfig, name, ns: True)
         monkeypatch.setattr(DEPLOY_MODULE, "kubectl", lambda *args: kubectl_calls.append(args))
         monkeypatch.setattr(DEPLOY_MODULE, "helm", lambda kubeconfig, *args: helm_calls.append((kubeconfig, args)))
-        monkeypatch.setattr(
-            DEPLOY_MODULE,
-            "run_quiet",
-            lambda cmd: DEPLOY_MODULE.FakeProc(0) if "get" in cmd and "pvc" in cmd else DEPLOY_MODULE.FakeProc(1),
-        )
         monkeypatch.setattr(DEPLOY_MODULE, "run", lambda *args, **kwargs: DEPLOY_MODULE.FakeProc(0))
 
-        DEPLOY_MODULE.deploy_participant(participant, tmp_path)
+        DEPLOY_MODULE.deploy_participant(participant, kit_dir)
 
         assert any("cp" in call for call in kubectl_calls)
-        assert helm_calls
-        kubeconfig, helm_args = helm_calls[0]
+        assert any("exec" in call and "rm" in call for call in kubectl_calls)
+        assert len(helm_calls) == 2
+        assert helm_calls[0][1][:4] == ("uninstall", "site-1", "-n", "ns-1")
+        kubeconfig, helm_args = helm_calls[1]
         assert kubeconfig == "/tmp/kubeconfig"
         assert helm_args[:4] == ("upgrade", "--install", "site-1", str(chart_dir))
         assert "--set-string" in helm_args
         assert r"podAnnotations.karpenter\.sh\/do-not-disrupt=value\,with\=helm\\chars" in helm_args
+        assert not any(str(arg).startswith("image.repository=") for arg in helm_args)
+        assert not any(str(arg).startswith("image.tag=") for arg in helm_args)
+        assert not any(str(arg).startswith("securityContext.") for arg in helm_args)
+
+
+class TestTeardownFlow:
+    def test_cmd_down_attempts_server_after_client_failure(self, monkeypatch):
+        config = DEPLOY_MODULE.DeployConfig(
+            name="test-cluster",
+            participants=[
+                DEPLOY_MODULE.Participant(
+                    name="gcp-server",
+                    namespace="nvflare-server",
+                    kubeconfig="/tmp/gcp",
+                    role="server",
+                    cloud="gcp",
+                    prepare={},
+                ),
+                DEPLOY_MODULE.Participant(
+                    name="gcp-client-1",
+                    namespace="nvflare-client-1",
+                    kubeconfig="/tmp/gcp",
+                    role="client",
+                    cloud="gcp",
+                    prepare={},
+                ),
+            ],
+            server_cloud="gcp",
+            gcp_project="test-project",
+            gcp_region="us-central1",
+            aws_region=None,
+            aws_eks_cluster_name=None,
+            azure_resource_group=None,
+            azure_location=None,
+        )
+        calls = []
+
+        def _teardown_participants(items, parallel=True):
+            calls.append([name for name, _info in items])
+            return not any(info["role"] != "server" for _name, info in items)
+
+        monkeypatch.setattr(DEPLOY_MODULE, "load_config", lambda _path: config)
+        monkeypatch.setattr(DEPLOY_MODULE, "teardown_participants", _teardown_participants)
+
+        with pytest.raises(SystemExit) as e:
+            DEPLOY_MODULE.cmd_down(SimpleNamespace(config="/tmp/config.yaml"))
+
+        assert e.value.code == 1
+        assert calls == [["gcp-client-1"], ["gcp-server"]]
+
+
+class TestAwsRegionResolution:
+    def test_release_ip_aws_uses_configured_region_when_state_missing(self):
+        provider = DEPLOY_MODULE.get_provider("aws")
+        calls = []
+
+        def _run(cmd, **kwargs):
+            calls.append(cmd)
+            if cmd == ["aws", "configure", "get", "region"]:
+                return DEPLOY_MODULE.FakeProc(0, stdout="us-west-2\n")
+            if cmd[:3] == ["aws", "ec2", "describe-addresses"]:
+                return DEPLOY_MODULE.FakeProc(
+                    0,
+                    stdout='[{"PublicIp": "1.2.3.4", "AllocationId": "eipalloc-1"}]\n',
+                )
+            return DEPLOY_MODULE.FakeProc(0)
+
+        provider.release_ip(run=_run, ip_name="nvflare-test", state={"aws_region": None})
+
+        assert ["aws", "configure", "get", "region"] in calls
+        release_cmd = next(cmd for cmd in calls if cmd[:3] == ["aws", "ec2", "release-address"])
+        assert release_cmd[-2:] == ["--region", "us-west-2"]
+
+    def test_release_ip_aws_requires_region(self):
+        provider = DEPLOY_MODULE.get_provider("aws")
+
+        with pytest.raises(RuntimeError, match="AWS region is required"):
+            provider.release_ip(
+                run=lambda *args, **kwargs: DEPLOY_MODULE.FakeProc(1),
+                ip_name="nvflare-test",
+                state={"aws_region": None},
+            )
+
+
+class TestGcpProjectResolution:
+    def test_release_ip_gcp_uses_active_project_when_state_missing(self):
+        provider = DEPLOY_MODULE.get_provider("gcp")
+        calls = []
+
+        def _run(cmd, **kwargs):
+            calls.append(cmd)
+            if cmd == ["gcloud", "config", "get-value", "project"]:
+                return DEPLOY_MODULE.FakeProc(0, stdout="test-project\n")
+            return DEPLOY_MODULE.FakeProc(0)
+
+        provider.release_ip(
+            run=_run,
+            ip_name="nvflare-test",
+            state={"gcp_project": None, "gcp_region": None},
+        )
+
+        delete_cmd = calls[-1]
+        assert "--project=test-project" in delete_cmd
+        assert "--region=us-central1" in delete_cmd
 
 
 class TestAzureIpValidation:
     def test_reserve_ip_azure_requires_resource_group_and_location(self, monkeypatch):
         called = False
+        provider = DEPLOY_MODULE.get_provider("azure")
 
         def _run(*args, **kwargs):
             nonlocal called
             called = True
             return DEPLOY_MODULE.FakeProc(0)
 
-        monkeypatch.setattr(DEPLOY_MODULE, "run", _run)
-
         with pytest.raises(ValueError, match="resource_group"):
-            DEPLOY_MODULE._reserve_ip_azure(None, "westus2")
+            provider.reserve_ip(run=_run, ip_tag="pip-name", azure_resource_group=None, azure_location="westus2")
         with pytest.raises(ValueError, match="location"):
-            DEPLOY_MODULE._reserve_ip_azure("my-rg", "")
+            provider.reserve_ip(run=_run, ip_tag="pip-name", azure_resource_group="my-rg", azure_location="")
 
         assert called is False
 
     def test_release_ip_azure_requires_resource_group(self, monkeypatch):
         called = False
+        provider = DEPLOY_MODULE.get_provider("azure")
 
         def _run(*args, **kwargs):
             nonlocal called
             called = True
             return DEPLOY_MODULE.FakeProc(0)
 
-        monkeypatch.setattr(DEPLOY_MODULE, "run", _run)
-
         with pytest.raises(ValueError, match="resource_group"):
-            DEPLOY_MODULE._release_ip_azure("pip-name", None)
+            provider.release_ip(run=_run, ip_name="pip-name", state={"azure_resource_group": None})
 
         assert called is False
 
     def test_release_ip_azure_warns_on_delete_failure(self, monkeypatch, capsys):
-        monkeypatch.setattr(
-            DEPLOY_MODULE,
-            "run",
-            lambda *args, **kwargs: DEPLOY_MODULE.FakeProc(1, stderr="public IP is still in use"),
-        )
+        provider = DEPLOY_MODULE.get_provider("azure")
 
-        DEPLOY_MODULE._release_ip_azure("pip-name", "my-rg")
+        provider.release_ip(
+            run=lambda *args, **kwargs: DEPLOY_MODULE.FakeProc(1, stderr="public IP is still in use"),
+            ip_name="pip-name",
+            state={"azure_resource_group": "my-rg"},
+        )
 
         out = capsys.readouterr().out
         assert "Warning: failed to delete Azure Public IP pip-name" in out
