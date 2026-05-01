@@ -21,6 +21,37 @@ import signal
 import subprocess
 import sys
 
+TERMINATE_GRACE_SECONDS = 30
+KILL_GRACE_SECONDS = 5
+
+
+def terminate_process_group(process, log):
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+
+    try:
+        process.wait(timeout=TERMINATE_GRACE_SECONDS)
+        return
+    except subprocess.TimeoutExpired:
+        log.write(
+            f"ERROR: process group did not exit after SIGTERM within {TERMINATE_GRACE_SECONDS} seconds; "
+            "sending SIGKILL\n"
+        )
+        log.flush()
+
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+
+    try:
+        process.wait(timeout=KILL_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        log.write(f"ERROR: process did not exit within {KILL_GRACE_SECONDS} seconds after SIGKILL\n")
+        log.flush()
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -47,15 +78,7 @@ def main():
         except subprocess.TimeoutExpired:
             log.write(f"\nERROR: run exceeded timeout of {args.timeout:.0f} seconds\n")
             log.flush()
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-                process.wait(timeout=10)
-            except Exception:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                process.wait()
+            terminate_process_group(process, log)
             return 124
 
 

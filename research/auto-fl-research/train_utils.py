@@ -30,6 +30,8 @@ def evaluate(model, data_loader, device=None):
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
+    if total == 0:
+        raise ValueError("evaluate() called with an empty data_loader; no samples were processed.")
     return correct / total
 
 

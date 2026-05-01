@@ -147,6 +147,7 @@ class FedOptAggregator(ModelAggregator):
 
         self.first_moment = {}
         self.second_moment = {}
+        self.adam_step = 0
         self.reset_stats()
 
     def accept_model(self, model: FLModel):
@@ -201,6 +202,10 @@ class FedOptAggregator(ModelAggregator):
 
     def _adam_update(self, mean_diff):
         updates = {}
+        self.adam_step += 1
+        first_bias_correction = 1.0 - self.beta1**self.adam_step
+        second_bias_correction = 1.0 - self.beta2**self.adam_step
+
         for key, diff in mean_diff.items():
             first = self.first_moment.get(key)
             if first is None:
@@ -213,7 +218,9 @@ class FedOptAggregator(ModelAggregator):
             second = self.beta2 * second + (1.0 - self.beta2) * np.square(diff)
             self.first_moment[key] = first
             self.second_moment[key] = second
-            updates[key] = self.server_lr * first / (np.sqrt(second) + self.tau)
+            first_hat = first / first_bias_correction
+            second_hat = second / second_bias_correction
+            updates[key] = self.server_lr * first_hat / (np.sqrt(second_hat) + self.tau)
         return updates
 
 
