@@ -126,9 +126,14 @@ ssh -T git@github.com
 
 If you use a devcontainer, make sure your SSH agent is forwarded into the container or an appropriate GitHub SSH key is available there. Without this, the agent can still run local experiments, but it will stop when it needs to push a branch or commit reporting artifacts.
 
-Inside the container, install this harness' Python requirements once with Python 3.12, export the prepared interpreter, and run preflight before handing control to the agent. Do not use the container's default `python3` if it points to Python 3.13. If `python3.12` is not available, update the devcontainer image or install Python 3.12 before continuing:
+Inside the container, install this harness' Python requirements once with Python 3.12, export the prepared interpreter, and run preflight before handing control to the agent. Do not use the container's default `python3` if it points to Python 3.13. For Debian/Ubuntu-based devcontainers, install Python 3.12 first if it is missing:
 
 ```bash
+if ! command -v python3.12 >/dev/null 2>&1; then
+  sudo apt-get update
+  sudo apt-get install -y python3.12 python3.12-venv python3.12-dev
+fi
+
 python3.12 --version
 python3.12 -m venv .venv
 . .venv/bin/activate
@@ -139,6 +144,8 @@ export PYTHON=.venv/bin/python
 make validate
 make smoke
 ```
+
+If `apt-get` cannot find the Python 3.12 packages, update the devcontainer image or add an appropriate Python 3.12 package source before continuing; do not fall back to Python 3.13.
 
 On the H100 node, verify that the container can see the GPU before starting an overnight campaign:
 
