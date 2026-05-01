@@ -115,6 +115,17 @@ Then start the container shell:
 devc shell
 ```
 
+This workflow assumes the checkout is a writable git clone, not a source archive, and that the agent can create commits and push branches without another credentials handoff. Before an overnight run, verify the container has git identity and SSH access to the fork or working remote:
+
+```bash
+git remote -v
+git config user.name
+git config user.email
+ssh -T git@github.com
+```
+
+If you use a devcontainer, make sure your SSH agent is forwarded into the container or an appropriate GitHub SSH key is available there. Without this, the agent can still run local experiments, but it will stop when it needs to push a branch or commit reporting artifacts.
+
 Inside the container, install this harness' Python requirements once, export the prepared interpreter, and run preflight before handing control to the agent:
 
 ```bash
