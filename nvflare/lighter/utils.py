@@ -27,9 +27,15 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
-from cryptography.x509.oid import NameOID
+from cryptography.x509.oid import ExtensionOID, NameOID
 
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
+
+_GENERATE_CERT_RESERVED_EXTENSION_OIDS = {
+    ExtensionOID.SUBJECT_KEY_IDENTIFIER,
+    ExtensionOID.AUTHORITY_KEY_IDENTIFIER,
+    ExtensionOID.SUBJECT_ALTERNATIVE_NAME,
+}
 
 
 class Identity:
@@ -117,9 +123,13 @@ def generate_cert(
         )
 
     if extra_extensions:
-        # Callers must not pass extensions added by this function below.
-        # cryptography rejects duplicate SubjectKeyIdentifier, AuthorityKeyIdentifier, or SAN extensions.
+        seen_extension_oids = set()
         for extension, critical in extra_extensions:
+            if extension.oid in _GENERATE_CERT_RESERVED_EXTENSION_OIDS:
+                raise ValueError(f"extra_extensions must not include reserved extension OID '{extension.oid._name}'")
+            if extension.oid in seen_extension_oids:
+                raise ValueError(f"duplicate extra extension OID '{extension.oid._name}'")
+            seen_extension_oids.add(extension.oid)
             builder = builder.add_extension(extension, critical=critical)
 
     builder = builder.add_extension(

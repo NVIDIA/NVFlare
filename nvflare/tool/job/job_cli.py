@@ -2097,6 +2097,55 @@ def _fallback_job_log_file(json_mode: bool) -> str:
     return "log.txt" if json_mode else "log.json"
 
 
+def _job_log_result_needs_fallback(result: dict, site: str) -> bool:
+    if not isinstance(result, dict):
+        return True
+    logs = result.get("logs", {})
+    if not isinstance(logs, dict) or not logs:
+        return True
+    unavailable = result.get("unavailable", {})
+    if not isinstance(unavailable, dict) or not unavailable:
+        return False
+    return site == "all" or (site in unavailable and site not in logs)
+
+
+def _merge_job_log_fallback_result(primary: dict, fallback: dict) -> dict:
+    if not isinstance(primary, dict):
+        primary = {}
+    if not isinstance(fallback, dict):
+        fallback = {}
+
+    primary_logs = primary.get("logs", {})
+    if not isinstance(primary_logs, dict):
+        primary_logs = {}
+    logs = dict(primary_logs)
+
+    primary_unavailable = primary.get("unavailable", {})
+    if not isinstance(primary_unavailable, dict):
+        primary_unavailable = {}
+    unavailable = dict(primary_unavailable)
+
+    fallback_logs = fallback.get("logs", {})
+    if isinstance(fallback_logs, dict):
+        for site_name, log_text in fallback_logs.items():
+            logs.setdefault(site_name, log_text)
+            unavailable.pop(site_name, None)
+
+    fallback_unavailable = fallback.get("unavailable", {})
+    if isinstance(fallback_unavailable, dict):
+        for site_name, reason in fallback_unavailable.items():
+            if site_name not in logs:
+                unavailable[site_name] = reason
+
+    result = dict(primary)
+    result["logs"] = logs
+    if unavailable:
+        result["unavailable"] = unavailable
+    else:
+        result.pop("unavailable", None)
+    return result
+
+
 def cmd_job_logs(cmd_args):
     from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
@@ -2138,10 +2187,11 @@ def cmd_job_logs(cmd_args):
     try:
         with _job_session_for_args(cmd_args, study=study) as sess:
             result = sess.get_job_logs(cmd_args.job_id, target=site, log_file_name=_preferred_job_log_file(json_mode))
-            if not result.get("logs"):
-                result = sess.get_job_logs(
+            if _job_log_result_needs_fallback(result, site):
+                fallback_result = sess.get_job_logs(
                     cmd_args.job_id, target=site, log_file_name=_fallback_job_log_file(json_mode)
                 )
+                result = _merge_job_log_fallback_result(result, fallback_result)
     except JobNotFound:
         output_error(
             "JOB_NOT_FOUND",

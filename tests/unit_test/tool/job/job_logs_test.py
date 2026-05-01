@@ -145,6 +145,28 @@ class TestJobLogs:
         assert mock_sess.get_job_logs.call_args_list[0].kwargs == {"target": "server", "log_file_name": "log.json"}
         assert mock_sess.get_job_logs.call_args_list[1].kwargs == {"target": "server", "log_file_name": "log.txt"}
 
+    def test_logs_json_mode_falls_back_per_missing_site_for_all_sites(self, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        json_line = '{"asctime": "2026-04-30 10:00:00", "message": "server structured"}\n'
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.side_effect = [
+            {
+                "logs": {"server": json_line},
+                "unavailable": {"site-1": "client log stream not available for this job"},
+            },
+            {"logs": {"site-1": "client text fallback\n"}},
+        ]
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            cmd_job_logs(_make_args(site="all"))
+
+        data = json.loads(capsys.readouterr().out)["data"]
+        assert data["logs"] == {"server": json_line, "site-1": "client text fallback\n"}
+        assert "unavailable" not in data
+        assert mock_sess.get_job_logs.call_args_list[0].kwargs == {"target": "all", "log_file_name": "log.json"}
+        assert mock_sess.get_job_logs.call_args_list[1].kwargs == {"target": "all", "log_file_name": "log.txt"}
+
     def test_logs_human_mode_converts_json_log_when_text_log_absent(self, capsys, monkeypatch):
         from nvflare.tool.job.job_cli import cmd_job_logs
 

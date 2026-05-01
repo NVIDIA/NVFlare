@@ -24,6 +24,7 @@ from typing import Iterable, Optional, Tuple, Union
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
 
 _VOLATILE_SUBMIT_ARTIFACTS = {NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE}
+_MAX_HASH_ZIP_MEMBER_SIZE = 512 * 1024 * 1024
 SUBMIT_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 SUBMIT_TOKEN_ERROR = "submit_token must be non-empty, at most 128 characters, and match ^[A-Za-z0-9._:-]{1,128}$"
 
@@ -124,15 +125,25 @@ def _iter_zip_bytes(zip_bytes: bytes, exclude_names: set):
                 raise ValueError(f"zip member has unsafe path: {info.filename!r}")
             if posixpath.basename(rel_path) in exclude_names:
                 continue
-            files.append((rel_path, info.filename))
+            if info.file_size > _MAX_HASH_ZIP_MEMBER_SIZE:
+                raise ValueError(f"zip member exceeds size limit: {info.filename!r}")
+            files.append((rel_path, info))
         rel_paths = [path for path, _zip_name in files]
         strip_prefix = _single_top_level_prefix(rel_paths)
-        for rel_path, zip_name in sorted(files):
+        for rel_path, info in sorted(files, key=lambda item: item[0]):
             if strip_prefix:
                 rel_path = rel_path[len(strip_prefix) :]
             if not rel_path:
                 continue
-            yield rel_path, zf.read(zip_name)
+            yield rel_path, _read_zip_member_limited(zf, info)
+
+
+def _read_zip_member_limited(zf: zipfile.ZipFile, info: zipfile.ZipInfo) -> bytes:
+    with zf.open(info, "r") as member_file:
+        data = member_file.read(_MAX_HASH_ZIP_MEMBER_SIZE + 1)
+    if len(data) > _MAX_HASH_ZIP_MEMBER_SIZE:
+        raise ValueError(f"zip member exceeds size limit: {info.filename!r}")
+    return data
 
 
 def _single_top_level_prefix(rel_paths):

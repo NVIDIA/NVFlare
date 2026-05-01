@@ -419,6 +419,20 @@ class TestSignedZipHelpers:
         error.assert_called_once()
         assert names is None
 
+    def test_safe_zip_names_rejects_private_key_pem_content_when_error_is_mocked(self, tmp_path):
+        zip_path = tmp_path / "signed.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("signed.json", "{}")
+            zf.writestr("private.pem", "-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----\n")
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+                names = _safe_zip_names(zf, str(zip_path))
+
+        error.assert_called_once()
+        assert "private key" in str(error.call_args)
+        assert names is None
+
     def test_read_zip_json_returns_none_after_error_when_error_is_mocked(self, tmp_path):
         zip_path = tmp_path / "signed.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
@@ -3565,6 +3579,17 @@ class TestSignedZipPackageMode:
         assert normalize_sha256_fingerprint(value) == (
             "SHA256:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:" "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"
         )
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "SHA256:AA:BB",
+            "SHA256:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:ZZ",
+            "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:",
+        ],
+    )
+    def test_normalize_rootca_fingerprint_rejects_invalid_forms(self, value):
+        assert normalize_sha256_fingerprint(value) == ""
 
     def test_signed_zip_output_includes_rootca_fingerprint_by_default(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")

@@ -77,6 +77,14 @@ _SIGNED_KIND_TO_CERT_TYPE = {
     "server": "server",
 }
 _SIGNED_USER_CERT_TYPES = _VALID_CERT_TYPES - {"client", "server"}
+_PEM_PRIVATE_KEY_MARKERS = (
+    b"-----BEGIN PRIVATE KEY-----",
+    b"-----BEGIN ENCRYPTED PRIVATE KEY-----",
+    b"-----BEGIN RSA PRIVATE KEY-----",
+    b"-----BEGIN EC PRIVATE KEY-----",
+    b"-----BEGIN DSA PRIVATE KEY-----",
+    b"-----BEGIN OPENSSH PRIVATE KEY-----",
+)
 
 
 def _reject_invalid_project_name(project_name: str, *, code: str, hint: str, field_label: str = "Project") -> None:
@@ -722,9 +730,15 @@ def _safe_zip_names(zf: zipfile.ZipFile, zip_path: str):
                 exit_code=4,
             )
             return None
+        if name.lower().endswith(".pem") and _read_zip_member_limited(zf, name, zip_path) is None:
+            return None
         seen.add(name)
         names.append(name)
     return names
+
+
+def _contains_private_key_material(content: bytes) -> bool:
+    return any(marker in content for marker in _PEM_PRIVATE_KEY_MARKERS)
 
 
 def _read_zip_member_limited(zf: zipfile.ZipFile, name: str, zip_path: str) -> Optional[bytes]:
@@ -745,6 +759,15 @@ def _read_zip_member_limited(zf: zipfile.ZipFile, name: str, zip_path: str) -> O
             "INVALID_SIGNED_ZIP",
             f"Signed zip member exceeds size limit: {name}.",
             "Ask the Project Admin to regenerate the signed zip.",
+            None,
+            exit_code=4,
+        )
+        return None
+    if _contains_private_key_material(content):
+        output_error_message(
+            "INVALID_SIGNED_ZIP",
+            "Signed zip must not contain private key material.",
+            "Use the local request directory that contains the private key.",
             None,
             exit_code=4,
         )

@@ -49,6 +49,16 @@ def test_cli_sets_connect_timeout(monkeypatch):
     mock_set_timeout.assert_called_once_with(7.5)
 
 
+def test_set_connect_timeout_warns_and_uses_default_for_invalid_value(caplog):
+    from nvflare.tool import cli_output
+
+    cli_output.set_connect_timeout(9.0)
+    cli_output.set_connect_timeout("not-a-number")
+
+    assert cli_output.get_connect_timeout() == 5.0
+    assert "invalid CLI connection timeout" in caplog.text
+
+
 def test_job_get_session_uses_active_session_with_connect_timeout(monkeypatch):
     from nvflare.tool.job import job_cli
 

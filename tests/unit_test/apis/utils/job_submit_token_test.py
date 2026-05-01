@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import io
+import zipfile
 from zipfile import ZipFile
 
 import pytest
@@ -94,3 +95,15 @@ def test_canonical_job_content_hash_treats_parent_directory_as_different_content
 def test_canonical_job_content_hash_rejects_dot_zip_member():
     with pytest.raises(ValueError, match="unsafe path"):
         canonical_job_content_hash(_zip_bytes({".": "not a valid job member"}))
+
+
+def test_canonical_job_content_hash_rejects_oversized_zip_member(monkeypatch):
+    import nvflare.apis.utils.job_submit_token as job_submit_token
+
+    monkeypatch.setattr(job_submit_token, "_MAX_HASH_ZIP_MEMBER_SIZE", 16)
+    output = io.BytesIO()
+    with ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+        zip_file.writestr("hello/meta.json", "x" * 17)
+
+    with pytest.raises(ValueError, match="zip member exceeds size limit"):
+        canonical_job_content_hash(output.getvalue())

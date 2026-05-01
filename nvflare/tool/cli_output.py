@@ -74,6 +74,7 @@ def set_connect_timeout(value: float) -> None:
     try:
         _connect_timeout = float(value)
     except (TypeError, ValueError):
+        logger.warning("invalid CLI connection timeout %r; using default 5.0 seconds", value)
         _connect_timeout = 5.0
 
 

@@ -388,6 +388,20 @@ class TestCertValidationHelpers:
         output_error.assert_called_once()
         assert names is None
 
+    def test_request_zip_safe_names_rejects_private_key_pem_content_when_error_is_mocked(self, tmp_path):
+        zip_path = tmp_path / "request.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("request.json", "{}")
+            zf.writestr("private.pem", "-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----\n")
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+                names = _safe_zip_names(zf)
+
+        output_error.assert_called_once()
+        assert "private keys" in output_error.call_args.kwargs["detail"]
+        assert names is None
+
     def test_request_metadata_returns_after_missing_fields_when_error_is_mocked(self, tmp_path):
         with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
             result = _validate_request_metadata(
@@ -1732,6 +1746,22 @@ class TestCertSign:
             handle_cert_sign(args)
         assert exc_info.value.code == 1
         assert "expired" in capsys.readouterr().err
+
+    def test_sign_rejects_ca_that_is_not_valid_yet(self, tmp_path, capsys, monkeypatch):
+        import datetime
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = _setup_ca(tmp_path)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        _overwrite_ca_cert(ca_dir, now + datetime.timedelta(days=1), now + datetime.timedelta(days=30), ca=True)
+
+        csr_path = _setup_csr(tmp_path, name="site-1")
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 1
+        assert "not valid until" in capsys.readouterr().err
 
     def test_sign_rejects_non_ca_issuer_cert(self, tmp_path, capsys, monkeypatch):
         import datetime
