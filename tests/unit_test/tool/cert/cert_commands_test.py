@@ -257,12 +257,40 @@ def test_write_private_key_removes_created_file_when_write_fails(tmp_path):
     assert not path.exists()
 
 
+@pytest.mark.skipif(platform.system() == "Windows", reason="unlinking open files differs on Windows")
+def test_write_private_key_removes_created_file_on_keyboard_interrupt(tmp_path):
+    path = tmp_path / "site-3.key"
+
+    class _InterruptingFdOpen(_FailingFdOpen):
+        def write(self, _content):
+            raise KeyboardInterrupt()
+
+    def interrupting_fdopen(fd, _mode):
+        return _InterruptingFdOpen(fd)
+
+    with patch("nvflare.tool.cert.cert_commands.os.fdopen", side_effect=interrupting_fdopen):
+        with pytest.raises(KeyboardInterrupt):
+            _write_private_key(str(path), b"private key")
+
+    assert not path.exists()
+
+
 def test_write_private_key_forces_owner_only_mode(tmp_path):
     path = tmp_path / "site-3.key"
 
     _write_private_key(str(path), b"private key")
 
     assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+
+
+def test_write_private_key_does_not_overwrite_existing_key(tmp_path):
+    path = tmp_path / "site-3.key"
+    path.write_bytes(b"existing key")
+
+    with pytest.raises(FileExistsError):
+        _write_private_key(str(path), b"new key")
+
+    assert path.read_bytes() == b"existing key"
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +414,20 @@ class TestCertValidationHelpers:
                 names = _safe_zip_names(zf)
 
         output_error.assert_called_once()
+        assert names is None
+
+    def test_request_zip_safe_names_rejects_private_key_pem_content_when_error_is_mocked(self, tmp_path):
+        zip_path = tmp_path / "request.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("request.json", "{}")
+            zf.writestr("private.pem", "-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----\n")
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+                names = _safe_zip_names(zf)
+
+        output_error.assert_called_once()
+        assert "private keys" in output_error.call_args.kwargs["detail"]
         assert names is None
 
     def test_request_metadata_returns_after_missing_fields_when_error_is_mocked(self, tmp_path):
@@ -1732,6 +1774,22 @@ class TestCertSign:
             handle_cert_sign(args)
         assert exc_info.value.code == 1
         assert "expired" in capsys.readouterr().err
+
+    def test_sign_rejects_ca_that_is_not_valid_yet(self, tmp_path, capsys, monkeypatch):
+        import datetime
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_dir = _setup_ca(tmp_path)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        _overwrite_ca_cert(ca_dir, now + datetime.timedelta(days=1), now + datetime.timedelta(days=30), ca=True)
+
+        csr_path = _setup_csr(tmp_path, name="site-1")
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 1
+        assert "not valid until" in capsys.readouterr().err
 
     def test_sign_rejects_non_ca_issuer_cert(self, tmp_path, capsys, monkeypatch):
         import datetime

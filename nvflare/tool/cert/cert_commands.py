@@ -80,6 +80,15 @@ _REQUEST_KIND_TO_CERT_TYPE = {
     "site": "client",
     "server": "server",
 }
+_REQUEST_METADATA_ARTIFACTS = frozenset({(_REQUEST_ARTIFACT_TYPE, _ARTIFACT_VERSION)})
+_PEM_PRIVATE_KEY_MARKERS = (
+    b"-----BEGIN PRIVATE KEY-----",
+    b"-----BEGIN ENCRYPTED PRIVATE KEY-----",
+    b"-----BEGIN RSA PRIVATE KEY-----",
+    b"-----BEGIN EC PRIVATE KEY-----",
+    b"-----BEGIN DSA PRIVATE KEY-----",
+    b"-----BEGIN OPENSSH PRIVATE KEY-----",
+)
 _USER_ROLE_TO_CERT_TYPE = {
     "org-admin": "org_admin",
     "org_admin": "org_admin",
@@ -448,7 +457,7 @@ def _generate_csr(name: str, org: str = None, role: str = None):
 
 def _write_private_key(path: str, pem_bytes: bytes) -> None:
     """Write private key PEM to path with 0600 permissions set atomically at creation."""
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     fd = os.open(path, flags, 0o600)
@@ -458,7 +467,7 @@ def _write_private_key(path: str, pem_bytes: bytes) -> None:
         with os.fdopen(fd, "wb") as f:
             fd = -1  # ownership transferred to f
             f.write(pem_bytes)
-    except Exception:
+    except BaseException:
         if fd != -1:
             os.close(fd)
         try:
@@ -634,9 +643,15 @@ def _safe_zip_names(zf: zipfile.ZipFile) -> list:
                 detail=f"request zip must not contain private keys: {name}",
             )
             return None
+        if name.lower().endswith(".pem") and _read_zip_member_limited(zf, name) is None:
+            return None
         seen.add(name)
         names.append(name)
     return names
+
+
+def _contains_private_key_material(content: bytes) -> bool:
+    return any(marker in content for marker in _PEM_PRIVATE_KEY_MARKERS)
 
 
 def _read_zip_member_limited(zf: zipfile.ZipFile, member: str) -> Optional[bytes]:
@@ -649,6 +664,15 @@ def _read_zip_member_limited(zf: zipfile.ZipFile, member: str) -> Optional[bytes
             _USAGE_HINT,
             exit_code=4,
             detail=f"zip member exceeds size limit: {member}",
+        )
+        return None
+    if _contains_private_key_material(content):
+        output_error_message(
+            "INVALID_ARGS",
+            "Invalid arguments.",
+            _USAGE_HINT,
+            exit_code=4,
+            detail=f"request zip must not contain private keys: {member}",
         )
         return None
     return content
@@ -1044,6 +1068,18 @@ def _get_cert_not_valid_after(cert: x509.Certificate) -> datetime.datetime:
         )
 
 
+def _get_cert_not_valid_before(cert: x509.Certificate) -> datetime.datetime:
+    try:
+        return cert.not_valid_before_utc
+    except AttributeError:
+        not_before = cert.not_valid_before
+        return (
+            not_before.replace(tzinfo=datetime.timezone.utc)
+            if not_before.tzinfo is None
+            else not_before.astimezone(datetime.timezone.utc)
+        )
+
+
 def _validate_signing_ca(ca_cert: x509.Certificate, now: datetime.datetime) -> datetime.datetime:
     try:
         basic_constraints = ca_cert.extensions.get_extension_for_class(x509.BasicConstraints).value
@@ -1053,6 +1089,14 @@ def _validate_signing_ca(ca_cert: x509.Certificate, now: datetime.datetime) -> d
 
     if not basic_constraints.ca:
         output_error("CERT_SIGNING_FAILED", reason="CA certificate is not a CA certificate")
+        return None
+
+    ca_not_valid_before = _get_cert_not_valid_before(ca_cert)
+    if ca_not_valid_before > now:
+        output_error(
+            "CERT_SIGNING_FAILED",
+            reason=f"CA certificate is not valid until {ca_not_valid_before.strftime('%Y-%m-%dT%H:%M:%SZ')}",
+        )
         return None
 
     ca_not_valid_after = _get_cert_not_valid_after(ca_cert)
@@ -1994,7 +2038,7 @@ def _validate_request_metadata(
             detail=f"request metadata missing required field(s): {', '.join(missing)}",
         )
         return None
-    if request_meta["artifact_type"] != _REQUEST_ARTIFACT_TYPE or request_meta["schema_version"] != _ARTIFACT_VERSION:
+    if (request_meta["artifact_type"], request_meta["schema_version"]) not in _REQUEST_METADATA_ARTIFACTS:
         output_error_message(
             "INVALID_ARGS",
             "Invalid arguments.",

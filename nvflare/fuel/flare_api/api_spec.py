@@ -41,6 +41,20 @@ class InvalidJobDefinition(Exception):
     pass
 
 
+class SubmitTokenConflict(Exception):
+    def __init__(self, message: str, existing_job_id: str = None):
+        super().__init__(message)
+        self.existing_job_id = existing_job_id
+
+
+class SubmitTokenJobDeleted(Exception):
+    def __init__(self, message: str, job_id: str = None, state: str = None, deleted_time: str = None):
+        super().__init__(message)
+        self.job_id = job_id
+        self.state = state
+        self.deleted_time = deleted_time
+
+
 class JobNotFound(Exception):
     pass
 
@@ -121,7 +135,7 @@ class ClientInfo:
         last_connect_time = (
             "unknown" if self.last_connect_time is None else time.asctime(time.localtime(self.last_connect_time))
         )
-        return f"{self.name}(last_connect_time: {last_connect_time})"
+        return f"{self.name} (last_connect_time: {last_connect_time})"
 
 
 class JobInfo:
@@ -149,11 +163,12 @@ class SystemInfo:
 
 class SessionSpec(ABC):
     @abstractmethod
-    def submit_job(self, job_definition_path: str) -> str:
+    def submit_job(self, job_definition_path: str, submit_token: str = None) -> str:
         """Submit a predefined job to the NVFLARE system
 
         Args:
             job_definition_path: path to the folder that defines a NVFLARE job
+            submit_token: optional retry-safe submit token scoped by study and submitter
 
         Returns: the job id if accepted by the system
 
@@ -194,6 +209,7 @@ class SessionSpec(ABC):
         id_prefix: Optional[str] = None,
         name_prefix: Optional[str] = None,
         reverse: bool = False,
+        submit_token: Optional[str] = None,
         **kwargs,
     ) -> List[dict]:
         """Get the job info from the server
@@ -204,6 +220,7 @@ class SessionSpec(ABC):
             id_prefix: if included, only return jobs with the beginning of the job ID matching the prefix
             name_prefix: if included, only return jobs with the beginning of the job name matching the prefix
             reverse: if specified, list jobs in the reverse order of submission times
+            submit_token: optional retry-safe submit token to resolve the submitted job
             **kwargs: deprecated legacy aliases accepted for compatibility
 
         Returns: a list of job metadata
@@ -276,7 +293,7 @@ class SessionSpec(ABC):
         Args:
             job_id: job to be deleted
 
-        Returns: None
+        Returns: delete result metadata, including the number of submit-token records marked deleted.
 
         If the job is being executed, the job will be stopped first.
         Everything of the job will be deleted from the job store, as well as workspaces on
@@ -292,6 +309,7 @@ class SessionSpec(ABC):
         target: str = "server",
         tail_lines: Optional[int] = None,
         grep_pattern: Optional[str] = None,
+        log_file_name: str = "log.txt",
     ) -> dict:
         """Retrieve logs for the specified job.
 
@@ -300,6 +318,7 @@ class SessionSpec(ABC):
             target: ``server``, ``all``, or a client site name
             tail_lines: deprecated compatibility option to return the last N lines
             grep_pattern: deprecated compatibility option to return matching lines
+            log_file_name: internal log file selector. Defaults to ``log.txt``.
 
         Returns: dict with ``logs`` mapping site names to log content, and
             optional ``unavailable`` mapping site names to reasons.
@@ -394,13 +413,21 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def restart(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
+    def restart(
+        self,
+        target_type: str,
+        client_names: Optional[List[str]] = None,
+        wait: bool = True,
+        timeout: float = 30.0,
+    ) -> dict:
         """
         Restart the FL server.
 
         Args:
             target_type: must be ``server``
             client_names: unused; retained for signature compatibility
+            wait: whether to wait for the restart to complete before returning
+            timeout: maximum seconds to wait for completion
 
         Returns: a dict that contains detailed info about the restart request:
         status - the overall status of the result.
@@ -410,12 +437,20 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None) -> dict:
+    def shutdown(
+        self,
+        target_type: TargetType,
+        client_names: Optional[List[str]] = None,
+        wait: bool = True,
+        timeout: float = 30.0,
+    ) -> dict:
         """Shut down the FL server.
 
         Args:
             target_type: must be ``server``
             client_names: unused; retained for signature compatibility
+            wait: whether to wait for shutdown completion before returning
+            timeout: maximum seconds to wait for completion
 
         Returns: a dict that contains detailed info about the shutdown request.
         """
@@ -650,6 +685,30 @@ class SessionSpec(ABC):
             client_name: name of the client to remove
 
         Returns: None
+
+        """
+        pass
+
+    @abstractmethod
+    def disable_client(self, client_name: str) -> dict:
+        """Disable a client from reconnecting to the system.
+
+        Args:
+            client_name: name of the client to disable
+
+        Returns: command result dictionary
+
+        """
+        pass
+
+    @abstractmethod
+    def enable_client(self, client_name: str) -> dict:
+        """Enable a disabled client to reconnect to the system.
+
+        Args:
+            client_name: name of the client to enable
+
+        Returns: command result dictionary
 
         """
         pass

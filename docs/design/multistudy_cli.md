@@ -160,13 +160,14 @@ Every `nvflare study` subcommand accepts `--schema` to print a machine-readable 
 
 All server-backed `nvflare study` commands require a connection to the server. Startup kit resolution is identical to all other server-connected `nvflare` commands (`job`, `system`, etc.) and follows this priority order:
 
-1. `--startup-kit <dir>` — explicit path to the startup kit directory (or its `startup/` subdirectory)
-2. `NVFLARE_STARTUP_KIT_DIR` environment variable
-3. `~/.nvflare/config.conf` — reads `poc.startup_kit` by default, or `prod.startup_kit` when `--startup-target prod` is given
+1. `--kit-id <id>` — registered startup-kit ID for this command only
+2. `--startup-kit <dir>` — explicit path to the startup kit directory (or its `startup/` subdirectory) for this command only
+3. `NVFLARE_STARTUP_KIT_DIR` environment variable
+4. `startup_kits.active` from `~/.nvflare/config.conf`
 
-`~/.nvflare/config.conf` is written by `nvflare config`. When no explicit source is provided the config file is consulted automatically and defaults to the `poc` target, so a user who has run `nvflare config` once does not need to pass any flag on every command.
+`~/.nvflare/config.conf` is written by `nvflare config`. When no explicit source is provided the config file is consulted automatically for the active registered startup kit, so a user who has run `nvflare config add` and `nvflare config use` once does not need to pass any flag on every command.
 
-`--startup-kit` and `--startup-target` are mutually exclusive. If all three sources fail to resolve a valid directory, the command exits with code 4 and `STARTUP_KIT_MISSING`.
+`--kit-id` and `--startup-kit` are mutually exclusive. If no source resolves to a valid directory, the command exits with code 4 and `STARTUP_KIT_MISSING`.
 
 ---
 
@@ -178,21 +179,21 @@ All server-backed `nvflare study` commands require a connection to the server. S
 
 ```
 # org_admin input
-nvflare study register    <name> --sites <s1,s2,...> [--startup-kit <dir> | --startup-target poc|prod] [--schema]
-nvflare study add-site    <name> --sites <s1,s2,...> [--startup-kit <dir> | --startup-target poc|prod] [--schema]
-nvflare study remove-site <name> --sites <s1,s2,...> [--startup-kit <dir> | --startup-target poc|prod] [--schema]
+nvflare study register    <name> --sites <s1,s2,...> [--kit-id <id> | --startup-kit <dir>] [--schema]
+nvflare study add-site    <name> --sites <s1,s2,...> [--kit-id <id> | --startup-kit <dir>] [--schema]
+nvflare study remove-site <name> --sites <s1,s2,...> [--kit-id <id> | --startup-kit <dir>] [--schema]
 
 # project_admin input
-nvflare study register    <name> --site-org <org:s1,s2,...> [--site-org <org:s3,...> ...] [--startup-kit <dir> | --startup-target poc|prod] [--schema]
-nvflare study add-site    <name> --site-org <org:s1,s2,...> [--site-org <org:s3,...> ...] [--startup-kit <dir> | --startup-target poc|prod] [--schema]
-nvflare study remove-site <name> --site-org <org:s1,s2,...> [--site-org <org:s3,...> ...] [--startup-kit <dir> | --startup-target poc|prod] [--schema]
+nvflare study register    <name> --site-org <org:s1,s2,...> [--site-org <org:s3,...> ...] [--kit-id <id> | --startup-kit <dir>] [--schema]
+nvflare study add-site    <name> --site-org <org:s1,s2,...> [--site-org <org:s3,...> ...] [--kit-id <id> | --startup-kit <dir>] [--schema]
+nvflare study remove-site <name> --site-org <org:s1,s2,...> [--site-org <org:s3,...> ...] [--kit-id <id> | --startup-kit <dir>] [--schema]
 
 # project_admin only
-nvflare study remove      <name> [--startup-kit <dir> | --startup-target poc|prod] [--schema]
+nvflare study remove      <name> [--kit-id <id> | --startup-kit <dir>] [--schema]
 
 # project_admin (all studies) or org_admin (studies where caller's org is enrolled)
-nvflare study list        [--startup-kit <dir> | --startup-target poc|prod] [--schema]
-nvflare study show        <name> [--startup-kit <dir> | --startup-target poc|prod] [--schema]
+nvflare study list        [--kit-id <id> | --startup-kit <dir>] [--schema]
+nvflare study show        <name> [--kit-id <id> | --startup-kit <dir>] [--schema]
 ```
 
 | Command | Description | Required cert role |
@@ -211,11 +212,11 @@ nvflare study show        <name> [--startup-kit <dir> | --startup-target poc|pro
 | `<name>` | str | Yes | Study name; must match the existing `name_check(..., "study")` contract: `^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$` |
 | `--sites` | str | Yes (`org_admin`) | Comma-separated site names to enroll under the caller's cert org. An empty list is rejected with `INVALID_SITE`. `project_admin` use of `--sites` is rejected with `INVALID_ARGS`. |
 | `--site-org` | str | Yes (`project_admin`) | Repeatable `org:s1,s2,...` group. Each group enrolls the listed sites under the named org in `site_orgs`. `org_admin` use of `--site-org` is rejected with `INVALID_ARGS`. |
+| `--kit-id` | str | No* | Registered startup-kit ID for this command only |
 | `--startup-kit` | str | No* | Explicit path to the startup kit directory |
-| `--startup-target` | `poc\|prod` | No* | Resolves startup kit path from `~/.nvflare/config.conf` |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
-\* `--startup-kit` and `--startup-target` are mutually exclusive optional selectors. The startup kit must be resolvable via `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or `~/.nvflare/config.conf` using the explicit `--startup-target` or the default `poc` target — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
+\* `--kit-id` and `--startup-kit` are mutually exclusive optional selectors. The startup kit must be resolvable via `--kit-id`, `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or the active startup kit in `~/.nvflare/config.conf` — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
 
 `--sites` and `--site-org` are mutually exclusive on the same invocation. If both are provided, the command fails with `INVALID_ARGS`.
 
@@ -225,14 +226,14 @@ nvflare study show        <name> [--startup-kit <dir> | --startup-target poc|pro
 
 ```bash
 # logged in as org_admin@org_a.com
-nvflare study register cancer-research --sites hospital-a --startup-target prod
+nvflare study register cancer-research --sites hospital-a --kit-id prod_admin
 ```
 
 **org_admin re-registers an existing study they belong to (merge — adds supplied sites not yet enrolled)**
 
 ```bash
 # logged in as org_admin@org_a.com; caller's org is already enrolled in the study
-nvflare study register cancer-research --sites hospital-b --startup-target prod
+nvflare study register cancer-research --sites hospital-b --kit-id prod_admin
 ```
 
 **project_admin registers a cross-org study**
@@ -244,7 +245,7 @@ nvflare study register cancer-research --sites hospital-b --startup-target prod
 nvflare study register cancer-research \
   --site-org org_a:hospital-a \
   --site-org org_b:hospital-b,hospital-c \
-  --startup-target prod
+  --kit-id prod_admin
 ```
 
 #### Arguments — `add-site` and `remove-site`
@@ -254,11 +255,11 @@ nvflare study register cancer-research \
 | `<name>` | str | Yes | Existing study name |
 | `--sites` | str | Yes (`org_admin`) | Comma-separated site names in the caller's cert org. `project_admin` use of `--sites` is rejected with `INVALID_ARGS`. |
 | `--site-org` | str | Yes (`project_admin`) | Repeatable `org:s1,s2,...` group describing which sites are being mutated under which org. `org_admin` use of `--site-org` is rejected with `INVALID_ARGS`. |
+| `--kit-id` | str | No* | Registered startup-kit ID for this command only |
 | `--startup-kit` | str | No* | Explicit path to the startup kit directory |
-| `--startup-target` | `poc\|prod` | No* | Resolves startup kit path from `~/.nvflare/config.conf` |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
-\* `--startup-kit` and `--startup-target` are mutually exclusive optional selectors. The startup kit must be resolvable via `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or `~/.nvflare/config.conf` using the explicit `--startup-target` or the default `poc` target — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
+\* `--kit-id` and `--startup-kit` are mutually exclusive optional selectors. The startup kit must be resolvable via `--kit-id`, `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or the active startup kit in `~/.nvflare/config.conf` — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
 
 `--sites` and `--site-org` are mutually exclusive on the same invocation. If both are provided, the command fails with `INVALID_ARGS`.
 
@@ -271,17 +272,17 @@ Both commands return per-site outcome lists. `add-site`: already-enrolled sites 
 | Flag | Type | Required | Description |
 |------|------|----------|-------------|
 | `<name>` | str | Yes | Study name to remove |
+| `--kit-id` | str | No* | Registered startup-kit ID for this command only |
 | `--startup-kit` | str | No* | Explicit path to the startup kit directory |
-| `--startup-target` | `poc\|prod` | No* | Resolves startup kit path from `~/.nvflare/config.conf` |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
-\* `--startup-kit` and `--startup-target` are mutually exclusive optional selectors. The startup kit must be resolvable via `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or `~/.nvflare/config.conf` using the explicit `--startup-target` or the default `poc` target — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
+\* `--kit-id` and `--startup-kit` are mutually exclusive optional selectors. The startup kit must be resolvable via `--kit-id`, `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or the active startup kit in `~/.nvflare/config.conf` — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
 
 ### User Membership Management
 
 ```
-nvflare study add-user    <study> <user> [--startup-kit <dir> | --startup-target poc|prod] [--schema]
-nvflare study remove-user <study> <user> [--startup-kit <dir> | --startup-target poc|prod] [--schema]
+nvflare study add-user    <study> <user> [--kit-id <id> | --startup-kit <dir>] [--schema]
+nvflare study remove-user <study> <user> [--kit-id <id> | --startup-kit <dir>] [--schema]
 ```
 
 | Command | Description | Required cert role |
@@ -295,11 +296,11 @@ nvflare study remove-user <study> <user> [--startup-kit <dir> | --startup-target
 |------|------|----------|-------------|
 | `<study>` | str | Yes | Registered study name |
 | `<user>` | str | Yes | Username or cert CN string to store in the study membership list |
+| `--kit-id` | str | No* | Registered startup-kit ID for this command only |
 | `--startup-kit` | str | No* | Explicit path to the startup kit directory |
-| `--startup-target` | `poc\|prod` | No* | Resolves startup kit path from `~/.nvflare/config.conf` |
 | `--schema` | flag | No | Print command schema as JSON and exit |
 
-\* `--startup-kit` and `--startup-target` are mutually exclusive optional selectors. The startup kit must be resolvable via `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or `~/.nvflare/config.conf` using the explicit `--startup-target` or the default `poc` target — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
+\* `--kit-id` and `--startup-kit` are mutually exclusive optional selectors. The startup kit must be resolvable via `--kit-id`, `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or the active startup kit in `~/.nvflare/config.conf` — see [Connection Flags](#connection-flags). If no source resolves, the command fails.
 
 #### Usage Examples — user membership commands
 
@@ -309,21 +310,21 @@ The org admin adds `trainer@org_a.com` to a study where the caller's org is enro
 
 ```bash
 # logged in as org_admin@org_a.com
-nvflare study add-user cancer-research trainer@org_a.com --startup-target prod
+nvflare study add-user cancer-research trainer@org_a.com --kit-id prod_admin
 ```
 
 **org_admin adds another user entry in their study**
 
 ```bash
 # logged in as org_admin@org_a.com
-nvflare study add-user cancer-research analyst@org_a.com --startup-target prod
+nvflare study add-user cancer-research analyst@org_a.com --kit-id prod_admin
 ```
 
 **project_admin adds a user from any org**
 
 ```bash
 # logged in as admin@nvidia.com (project_admin)
-nvflare study add-user cancer-research trainer@org_b.com --startup-target prod
+nvflare study add-user cancer-research trainer@org_b.com --kit-id prod_admin
 ```
 
 **project_admin adds a cross-org user using an explicit startup kit path**
@@ -336,7 +337,7 @@ nvflare study add-user cancer-research analyst@org_c.com --startup-kit /opt/nvfl
 
 ```bash
 # logged in as org_admin@org_a.com
-nvflare study remove-user cancer-research trainer@org_a.com --startup-target prod
+nvflare study remove-user cancer-research trainer@org_a.com --kit-id prod_admin
 ```
 
 ---
@@ -585,8 +586,8 @@ The response returns per-site outcome lists. `site_orgs` is the authoritative gr
 | `USER_ALREADY_IN_STUDY` | 1 | `add-user` rejected: user is already in this study's membership list |
 | `USER_NOT_IN_STUDY` | 1 | `remove-user` rejected: user is not in this study's membership list |
 | `NOT_AUTHORIZED` | 1 | Caller's cert role is insufficient for this operation |
-| `STARTUP_KIT_NOT_CONFIGURED` | 4 | `--startup-target` given but no matching entry in `~/.nvflare/config.conf` |
-| `STARTUP_KIT_MISSING` | 4 | No startup kit could be resolved from `--startup-kit`, `--startup-target`, or `NVFLARE_STARTUP_KIT_DIR` |
+| `STARTUP_KIT_NOT_CONFIGURED` | 4 | No active startup kit is configured and no per-command selector or environment override was provided |
+| `STARTUP_KIT_MISSING` | 4 | No startup kit could be resolved from `--kit-id`, `--startup-kit`, `NVFLARE_STARTUP_KIT_DIR`, or the active config entry |
 | `LOCK_TIMEOUT` | 3 | Mutation lock could not be acquired within 30 seconds — another mutation is in progress |
 | `CONNECTION_FAILED` | 2 | Cannot connect to or authenticate with the server |
 
@@ -830,13 +831,13 @@ nvflare cert request --participant org-admin.yaml
 # ... approve, package, then activate the startup kit ...
 
 # Step 5 — Org Admin registers a study with a site from their org
-nvflare study register cancer-research --sites hospital-1
+nvflare study register cancer-research --sites hospital-1 --kit-id prod_admin
 
 # Step 6 — Org Admin adds a researcher from their org
-nvflare study add-user cancer-research researcher@org_a.com
+nvflare study add-user cancer-research researcher@org_a.com --kit-id prod_admin
 
 # Step 7 — Lead submits a job to the study
-nvflare job submit -j ./my_job --study cancer-research
+nvflare job submit -j ./my_job --kit-id lead_prod --study cancer-research
 ```
 
 Steps 1–3 follow the distributed provisioning workflow. Steps 4–7 use the multi-study CLI. The Project Admin is only involved in step 2 (signing the CSR); study creation and study-user membership management happen later through runtime study commands.

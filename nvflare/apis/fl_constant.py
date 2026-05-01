@@ -14,6 +14,14 @@
 
 from enum import Enum
 
+# Server-to-CLI protocol value used in job metadata to signal that a retry-safe
+# submit token conflicts with an existing submission.
+SUBMIT_TOKEN_CONFLICT_STATUS = "submit_token_conflict"
+
+# Server-to-CLI protocol value used when a retry-safe submit token points to a job
+# that was deliberately deleted.
+SUBMIT_TOKEN_JOB_DELETED_STATUS = "submit_token_job_deleted"
+
 
 class ReturnCode(object):
 
@@ -250,6 +258,8 @@ class AdminCommandNames(object):
     ABORT = "abort"
     ABORT_TASK = "abort_task"
     REMOVE_CLIENT = "remove_client"
+    DISABLE_CLIENT = "disable_client"
+    ENABLE_CLIENT = "enable_client"
     SHUTDOWN = "shutdown"
     RESTART = "restart"
     SET_TIMEOUT = "set_timeout"
