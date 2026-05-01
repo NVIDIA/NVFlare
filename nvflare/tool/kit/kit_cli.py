@@ -67,6 +67,10 @@ def _metadata_for_output(path: str) -> Dict[str, str]:
     }
 
 
+def _json_value(value):
+    return None if value in (None, "-") else value
+
+
 def default_startup_kit_id(path: str) -> str:
     """Return the default local registry ID for a compatibility startup-kit path."""
     metadata = inspect_startup_kit_metadata(path)
@@ -125,30 +129,30 @@ def cmd_kit_use(args):
 
     path = entries[kit_id]
     metadata = _metadata_for_output(path)
-    data = {
-        "active_startup_kit": kit_id,
-        "identity": metadata["identity"],
-        "cert_role": metadata["cert_role"],
-        "path": path,
-    }
     if is_json_mode():
-        data.update(
-            {
-                "role": metadata["role"],
-                "org": metadata["org"],
-                "project": metadata["project"],
-                "certificate": metadata["certificate"],
-                "findings": metadata["findings"]
-                + [
-                    {
-                        "code": "CONFIG_USE_MUTATES_GLOBAL_STATE",
-                        "severity": "warning",
-                        "message": "nvflare config use changes the global active startup kit.",
-                        "hint": "Automation should prefer --kit-id or --startup-kit on each server-connected command.",
-                    }
-                ],
-            }
-        )
+        data = {
+            "startup_kit": {
+                "source": "active",
+                "id": kit_id,
+                "path": path,
+            },
+            "identity": {
+                "name": _json_value(metadata["identity"]),
+                "org": _json_value(metadata["org"]),
+                "role": _json_value(metadata["role"]),
+            },
+            "project": _json_value(metadata["project"]),
+            "certificate": metadata["certificate"],
+            "findings": metadata["findings"]
+            + [
+                {
+                    "code": "CONFIG_USE_MUTATES_GLOBAL_STATE",
+                    "severity": "warning",
+                    "message": "nvflare config use changes the global active startup kit.",
+                    "hint": "Automation should prefer --kit-id or --startup-kit on each server-connected command.",
+                }
+            ],
+        }
         output_ok(data)
     else:
         _render_startup_kit_table(

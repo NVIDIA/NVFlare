@@ -740,9 +740,9 @@ Behavior:
 5. Write config atomically.
 6. In human mode, print the selected startup kit in the same table shape as
    `config list` / `config inspect`. Identity and role can be displayed when
-   they can be inspected from the startup kit. In JSON mode, preserve the
-   structured payload with `active_startup_kit`, `identity`, `cert_role`, and
-   `path`.
+   they can be inspected from the startup kit. In JSON mode, return the
+   normalized `startup_kit` and `identity` objects used by agent-facing
+   server-connected commands.
 
 No server call is made. The next server-connected command creates a session using the
 selected startup kit.
@@ -751,6 +751,38 @@ selected startup kit.
 state. Agent and notebook workflows should prefer `--kit-id <id>` or
 `--startup-kit <path>` on each server-connected command. In JSON mode, `config
 use` returns a warning finding with code `CONFIG_USE_MUTATES_GLOBAL_STATE`.
+
+JSON response shape:
+
+```json
+{
+  "startup_kit": {
+    "source": "active",
+    "id": "cancer_lead",
+    "path": "/secure/startup_kits/cancer/lead@nvidia.com"
+  },
+  "identity": {
+    "name": "lead@nvidia.com",
+    "org": "nvidia",
+    "role": "lead"
+  },
+  "project": "cancer_project",
+  "certificate": {
+    "path": "/secure/startup_kits/cancer/lead@nvidia.com/startup/client.crt",
+    "expires_at": "2027-04-26T00:01:14Z",
+    "days_remaining": 359,
+    "status": "ok"
+  },
+  "findings": [
+    {
+      "code": "CONFIG_USE_MUTATES_GLOBAL_STATE",
+      "severity": "warning",
+      "message": "nvflare config use changes the global active startup kit.",
+      "hint": "Automation should prefer --kit-id or --startup-kit on each server-connected command."
+    }
+  ]
+}
+```
 
 #### `nvflare config inspect`
 
@@ -1717,10 +1749,12 @@ details. The CLI adds startup-kit selection metadata (`source`, `id`, `path`) be
 only the CLI knows whether the kit came from `--kit-id`, `--startup-kit`, environment, or
 active config. The server remains the source of truth for identity and visibility.
 
-For each returned study, `can_submit_job` and `capabilities.submit_job` are `true` under
-the current membership-level model. Hidden or unmapped studies are omitted rather than
-returned with denial details. This is not full future authorization-policy introspection;
-job submit can still fail for unrelated validation or policy checks.
+For each returned study, `can_submit_job` and `capabilities.submit_job` are evaluated
+against the active server authorization policy for the `submit_job` right. Identities
+may see studies that they are not authorized to submit to; those rows include a denial
+`reason` from authorization. Hidden or unmapped studies are omitted rather than
+returned with denial details. This is a submit preflight only; job submit can still fail
+for unrelated validation or policy checks.
 - `--sites` and `--site-org` are mutually exclusive.
 
 ### Add `nvflare recipe`

@@ -150,8 +150,40 @@ Example output:
    ------------------------------------------------------------------------
    *       cancer_lead  ok      lead@nvidia.com  lead       /secure/startup_kits/cancer/lead@nvidia.com
 
-In JSON mode, ``nvflare config use`` includes a warning finding that the command
+In JSON mode, ``nvflare config use`` returns the selected startup kit and
+identity using the same nested shape as server-connected commands such as
+``nvflare study list``. It also includes a warning finding that the command
 changes global CLI state.
+
+.. code-block:: json
+
+   {
+     "startup_kit": {
+       "source": "active",
+       "id": "cancer_lead",
+       "path": "/secure/startup_kits/cancer/lead@nvidia.com"
+     },
+     "identity": {
+       "name": "lead@nvidia.com",
+       "org": "nvidia",
+       "role": "lead"
+     },
+     "project": "cancer_project",
+     "certificate": {
+       "path": "/secure/startup_kits/cancer/lead@nvidia.com/startup/client.crt",
+       "expires_at": "2027-04-26T00:01:14Z",
+       "days_remaining": 359,
+       "status": "ok"
+     },
+     "findings": [
+       {
+         "code": "CONFIG_USE_MUTATES_GLOBAL_STATE",
+         "severity": "warning",
+         "message": "nvflare config use changes the global active startup kit.",
+         "hint": "Automation should prefer --kit-id or --startup-kit on each server-connected command."
+       }
+     ]
+   }
 
 **************************
 Inspect Active Startup Kit

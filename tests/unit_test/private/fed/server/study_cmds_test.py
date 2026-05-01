@@ -595,6 +595,15 @@ class TestListStudiesVisibility:
     def _module(self):
         return StudyCommandModule()
 
+    @staticmethod
+    def _authorize_submit_for_roles(*allowed_roles):
+        def _authorize(ctx):
+            if ctx.right == "submit_job" and ctx.user.role in allowed_roles:
+                return True, ""
+            return False, f"user '{ctx.user.name}' is not authorized for '{ctx.right}'"
+
+        return _authorize
+
     def test_lead_role_is_authorized_to_list_studies(self):
         conn = _FakeConnection(role="lead", org="org_a", user="lead@example.com")
 
@@ -608,7 +617,13 @@ class TestListStudiesVisibility:
             }
         )
         conn = _FakeConnection(role="project_admin", org="project")
-        with patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.get_registry", return_value=registry):
+        with (
+            patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.get_registry", return_value=registry),
+            patch(
+                "nvflare.private.fed.server.study_cmds.AuthorizationService.authorize",
+                side_effect=self._authorize_submit_for_roles("project_admin", "lead"),
+            ),
+        ):
             self._module().cmd_list_studies(conn, ["list_studies"])
         assert set(conn.last_reply["studies"]) == {"study-alpha", "study-beta"}
         assert conn.last_reply["identity"] == {
@@ -639,11 +654,22 @@ class TestListStudiesVisibility:
             }
         )
         conn = _FakeConnection(role="org_admin", org="org_a")
-        with patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.get_registry", return_value=registry):
+        with (
+            patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.get_registry", return_value=registry),
+            patch(
+                "nvflare.private.fed.server.study_cmds.AuthorizationService.authorize",
+                side_effect=self._authorize_submit_for_roles("project_admin", "lead"),
+            ),
+        ):
             self._module().cmd_list_studies(conn, ["list_studies"])
         assert conn.last_reply["studies"] == ["study-alpha"]
         assert conn.last_reply["study_details"][0]["name"] == "study-alpha"
-        assert conn.last_reply["study_details"][0]["can_submit_job"] is True
+        assert conn.last_reply["study_details"][0]["capabilities"] == {"submit_job": False}
+        assert conn.last_reply["study_details"][0]["can_submit_job"] is False
+        assert (
+            conn.last_reply["study_details"][0]["reason"]
+            == "user 'admin@example.com' is not authorized for 'submit_job'"
+        )
 
     def test_org_admin_with_no_enrollment_sees_empty_list(self):
         registry = _make_registry({"study-alpha": {"site_orgs": {"org_b": ["site-b"]}}})
@@ -667,7 +693,13 @@ class TestListStudiesVisibility:
             }
         )
         conn = _FakeConnection(role="lead", org="org_a", user="lead@example.com")
-        with patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.get_registry", return_value=registry):
+        with (
+            patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.get_registry", return_value=registry),
+            patch(
+                "nvflare.private.fed.server.study_cmds.AuthorizationService.authorize",
+                side_effect=self._authorize_submit_for_roles("project_admin", "lead"),
+            ),
+        ):
             self._module().cmd_list_studies(conn, ["list_studies"])
 
         assert conn.last_reply["studies"] == ["study-alpha"]
@@ -677,6 +709,36 @@ class TestListStudiesVisibility:
                 "role": "lead",
                 "capabilities": {"submit_job": True},
                 "can_submit_job": True,
+            }
+        ]
+
+    def test_member_visible_study_cannot_submit(self):
+        registry = _make_registry(
+            {
+                "study-alpha": {
+                    "site_orgs": {"org_a": ["site-a"]},
+                    "admins": ["member@example.com"],
+                },
+            }
+        )
+        conn = _FakeConnection(role="member", org="org_a", user="member@example.com")
+        with (
+            patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.get_registry", return_value=registry),
+            patch(
+                "nvflare.private.fed.server.study_cmds.AuthorizationService.authorize",
+                side_effect=self._authorize_submit_for_roles("project_admin", "lead"),
+            ),
+        ):
+            self._module().cmd_list_studies(conn, ["list_studies"])
+
+        assert conn.last_reply["studies"] == ["study-alpha"]
+        assert conn.last_reply["study_details"] == [
+            {
+                "name": "study-alpha",
+                "role": "member",
+                "capabilities": {"submit_job": False},
+                "can_submit_job": False,
+                "reason": "user 'member@example.com' is not authorized for 'submit_job'",
             }
         ]
 

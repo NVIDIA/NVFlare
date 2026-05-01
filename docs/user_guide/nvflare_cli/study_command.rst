@@ -150,9 +150,11 @@ identity authenticated by the server, and per-study submit preflight fields:
      ]
    }
 
-``can_submit_job`` reflects the current server-side study visibility/mapping
-preflight. It does not expose future custom authorization-policy details; a
-later submit may still fail for other server-side validation or policy reasons.
+``can_submit_job`` is evaluated against the active server authorization policy
+for the ``submit_job`` right. An identity may see a study but still be denied
+job submission; those rows include a denial ``reason`` from authorization. This
+is a submit preflight only; a later submit may still fail for other server-side
+validation or policy reasons.
 
 *********************
 Remove a Study

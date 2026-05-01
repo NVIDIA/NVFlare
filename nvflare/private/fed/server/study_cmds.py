@@ -16,7 +16,7 @@ import json
 import os
 import tempfile
 from copy import deepcopy
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from nvflare.apis.client import ClientPropKey
 from nvflare.apis.fl_constant import AdminCommandNames
@@ -28,6 +28,7 @@ from nvflare.fuel.hci.proto import ConfirmMethod, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.security.study_registry import StudyRegistry, StudyRegistryService
@@ -314,15 +315,27 @@ class StudyCommandModule(CommandModule, CommandUtil):
         return self._is_visible_to_caller(conn, study_def)
 
     def _study_list_item(self, conn: Connection, study_name: str) -> dict:
-        # The current server authorization model has no per-study submit ACL beyond
-        # study visibility/membership. If a study is returned here, submit is allowed
-        # for the selected identity in this release.
-        return {
+        role = self._caller_role(conn)
+        can_submit, reason = self._can_submit_job(conn)
+        item = {
             "name": study_name,
-            "role": self._caller_role(conn),
-            "capabilities": {"submit_job": True},
-            "can_submit_job": True,
+            "role": role,
+            "capabilities": {"submit_job": can_submit},
+            "can_submit_job": can_submit,
         }
+        if not can_submit:
+            item["reason"] = reason or f"user '{self._caller_name(conn)}' is not authorized for 'submit_job'"
+        return item
+
+    def _can_submit_job(self, conn: Connection) -> Tuple[bool, str]:
+        user = Person(
+            name=self._caller_name(conn),
+            org=self._caller_org(conn),
+            role=self._caller_role(conn),
+        )
+        submitter = Person(name="", org="", role="")
+        ctx = AuthzContext(user=user, submitter=submitter, right=AdminCommandNames.SUBMIT_JOB)
+        return AuthorizationService.authorize(ctx)
 
     def _caller_identity_payload(self, conn: Connection) -> dict:
         return {

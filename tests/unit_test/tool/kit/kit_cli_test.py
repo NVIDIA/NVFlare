@@ -390,6 +390,20 @@ class TestKitCli:
 
         payload = json.loads(capsys.readouterr().out)
         assert payload["status"] == "ok"
+        assert payload["data"]["startup_kit"] == {
+            "source": "active",
+            "id": "project_admin",
+            "path": str(kit_dir),
+        }
+        assert payload["data"]["identity"] == {
+            "name": "admin@nvidia.com",
+            "org": "NVIDIA",
+            "role": "project_admin",
+        }
+        assert payload["data"]["project"] == "CancerProject"
+        assert payload["data"]["certificate"]["status"] == "ok"
+        assert "active_startup_kit" not in payload["data"]
+        assert "cert_role" not in payload["data"]
         assert any(f["code"] == "CONFIG_USE_MUTATES_GLOBAL_STATE" for f in payload["data"]["findings"])
 
     def test_inspect_json_does_not_print_env_warning(self, tmp_path, monkeypatch, capsys):
