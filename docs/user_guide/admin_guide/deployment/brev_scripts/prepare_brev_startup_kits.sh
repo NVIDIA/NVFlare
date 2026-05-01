@@ -155,14 +155,23 @@ builders:
     args:
       config_folder: config
       scheme: tcp
-  - path: nvflare.lighter.impl.helm_chart.HelmChartBuilder
-    args:
-      docker_image: "${IMAGE}"
-      parent_port: ${PARENT_PORT}
-      workspace_pvc: ${WORKSPACE_PVC}
-      workspace_mount_path: ${WORKSPACE_MOUNT_PATH}
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder
+EOF
+}
+
+write_prepare_config() {
+  cat >"${PREPARE_CONFIG}" <<EOF
+runtime: k8s
+parent:
+  docker_image: "${IMAGE}"
+  parent_port: ${PARENT_PORT}
+  workspace_pvc: ${WORKSPACE_PVC}
+  workspace_mount_path: ${WORKSPACE_MOUNT_PATH}
+job_launcher:
+  config_file_path:
+  default_python_path: /usr/local/bin/python3
+  pending_timeout: 300
 EOF
 }
 
@@ -190,19 +199,71 @@ latest_prod_dir() {
   printf '%s\n' "${dirs[@]}" | sort | tail -n 1
 }
 
+dir_is_empty() {
+  local dir=$1
+  local entries=()
+  shopt -s nullglob dotglob
+  entries=("${dir}"/*)
+  shopt -u nullglob dotglob
+  ((${#entries[@]} == 0))
+}
+
+prepare_output_dir() {
+  local prepared_dir=$1
+  local kit_dir=$2
+  local prepared_real
+  local kit_real
+
+  if [[ -e "${prepared_dir}" && ! -d "${prepared_dir}" ]]; then
+    fail "PREPARED_DIR exists but is not a directory: ${prepared_dir}"
+  fi
+
+  if [[ ! -e "${prepared_dir}" ]]; then
+    mkdir -p "${prepared_dir}"
+    return
+  fi
+
+  if dir_is_empty "${prepared_dir}"; then
+    mkdir -p "${prepared_dir}"
+    return
+  fi
+
+  prepared_real="$(cd "${prepared_dir}" && pwd -P)"
+  kit_real="$(cd "${kit_dir}" && pwd -P)"
+  case "${prepared_real}" in
+    "${kit_real}"/*)
+      rm -rf "${prepared_dir}"
+      mkdir -p "${prepared_dir}"
+      ;;
+    *)
+      fail "Refusing to remove non-empty PREPARED_DIR outside KIT_DIR: ${prepared_dir} (KIT_DIR=${kit_dir})"
+      ;;
+  esac
+}
+
 copy_participant() {
   local participant=$1
   local brev_env=$2
   local archive="${KIT_DIR}/nvflare-${participant}.tgz"
+  local participant_dir="${PREPARED_DIR}/${participant}"
 
-  [[ -d "${PROD_DIR}/${participant}" ]] || fail "Provisioned participant folder not found: ${PROD_DIR}/${participant}"
-  [[ -d "${PROD_DIR}/${participant}/helm_chart" ]] || fail "Helm chart not found for participant: ${participant}"
+  [[ -d "${participant_dir}" ]] || fail "Prepared participant folder not found: ${participant_dir}"
+  [[ -d "${participant_dir}/helm_chart" ]] || fail "Helm chart not found for participant: ${participant}"
 
-  tar -czf "${archive}" -C "${PROD_DIR}" "${participant}"
+  tar -czf "${archive}" -C "${PREPARED_DIR}" "${participant}"
   brev copy "${archive}" "${brev_env}:${REMOTE_DIR}/"
   brev copy "${LAUNCH_SCRIPT}" "${brev_env}:${REMOTE_DIR}/"
 
   echo "Copied ${archive} and $(basename "${LAUNCH_SCRIPT}") to ${brev_env}:${REMOTE_DIR}/"
+}
+
+prepare_participant() {
+  local participant=$1
+  local source_dir="${PROD_DIR}/${participant}"
+  local output_dir="${PREPARED_DIR}/${participant}"
+
+  [[ -d "${source_dir}" ]] || fail "Provisioned participant folder not found: ${source_dir}"
+  nvflare deploy prepare "${source_dir}" --output "${output_dir}" --config "${PREPARE_CONFIG}"
 }
 
 report_port_exposure() {
@@ -235,6 +296,8 @@ SITE_2_PARTICIPANT="${SITE_2_PARTICIPANT:-site-2}"
 REMOTE_DIR="${REMOTE_DIR:-/home/ubuntu}"
 PROVISION_WORKSPACE="${PROVISION_WORKSPACE:-/tmp/nvflare/brev-provision}"
 KIT_DIR="${KIT_DIR:-/tmp/nvflare/brev-kits}"
+PREPARED_DIR="${PREPARED_DIR:-${KIT_DIR}/prepared}"
+PREPARE_CONFIG="${PREPARE_CONFIG:-${KIT_DIR}/deploy-prepare-k8s.yaml}"
 FED_LEARN_PORT="${FED_LEARN_PORT:-8002}"
 PARENT_PORT="${PARENT_PORT:-8102}"
 WORKSPACE_PVC="${WORKSPACE_PVC:-nvflws}"
@@ -274,6 +337,12 @@ nvflare provision -p "${PROJECT_FILE}" -w "${PROVISION_WORKSPACE}"
 PROD_PARENT="${PROVISION_WORKSPACE}/${PROJECT_NAME_IN_FILE}"
 PROD_DIR="$(latest_prod_dir "${PROD_PARENT}")" || fail "No prod_* folder found under ${PROD_PARENT}"
 echo "Using provisioned production folder: ${PROD_DIR}"
+
+prepare_output_dir "${PREPARED_DIR}" "${KIT_DIR}"
+write_prepare_config
+prepare_participant "${SERVER_PARTICIPANT}"
+prepare_participant "${SITE_1_PARTICIPANT}"
+prepare_participant "${SITE_2_PARTICIPANT}"
 
 copy_participant "${SERVER_PARTICIPANT}" "${SERVER_BREV}"
 copy_participant "${SITE_1_PARTICIPANT}" "${SITE_1_BREV}"
