@@ -161,6 +161,26 @@ def unzip_single_file_from_bytes(zip_data: bytes, output_dir_name: str, file_pat
         z.extract(file_path, path=output_dir_name)
 
 
+def _validate_zip_entries(z: ZipFile, output_dir_name: str) -> None:
+    """Reject zip entries with absolute paths or ".." components.
+
+    Note: ``zipfile.ZipFile.extractall`` is already safe against path-traversal
+    entries — CPython strips ".." components and absolute-path roots from
+    member names before extraction (see the zipfile docs and CVE-2014-4616
+    hardening). This pre-check is defense-in-depth: it rejects suspicious
+    archives up front with a clear error rather than silently rewriting paths.
+    """
+    real_out = os.path.realpath(output_dir_name)
+    for name in z.namelist():
+        if os.path.isabs(name) or name.startswith("/") or name.startswith("\\"):
+            raise ValueError(f"unsafe absolute path in zip entry: {name!r}")
+        if ".." in name.replace("\\", "/").split("/"):
+            raise ValueError(f"unsafe '..' component in zip entry: {name!r}")
+        resolved = os.path.realpath(os.path.join(real_out, name))
+        if resolved != real_out and not resolved.startswith(real_out + os.sep):
+            raise ValueError(f"zip entry escapes output dir: {name!r}")
+
+
 def unzip_all_from_bytes(zip_data: bytes, output_dir_name: str):
     """Decompresses a zip and extracts all files to the specified output directory.
 
@@ -175,6 +195,7 @@ def unzip_all_from_bytes(zip_data: bytes, output_dir_name: str):
         raise NotADirectoryError(f'"{output_dir_name}" is not a valid directory')
 
     with ZipFile(io.BytesIO(zip_data), "r") as z:
+        _validate_zip_entries(z, output_dir_name)
         z.extractall(output_dir_name)
 
 
@@ -192,4 +213,5 @@ def unzip_all_from_file(zip_file_path: str, output_dir_name: str):
         raise ValueError(f'zip file "{zip_file_path}" is not a valid file')
 
     with ZipFile(zip_file_path, "r") as z:
+        _validate_zip_entries(z, output_dir_name)
         z.extractall(output_dir_name)
