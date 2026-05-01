@@ -422,6 +422,10 @@ def _normalize_global_args(argv, global_parser):
         arg = argv[i]
         option, has_inline_value = (arg.split("=", 1)[0], True) if arg.startswith("--") and "=" in arg else (arg, False)
         action = option_actions.get(option)
+        if option in {"--version", "-V"} and remaining_args:
+            remaining_args.append(arg)
+            i += 1
+            continue
         if action is None:
             remaining_args.append(arg)
             i += 1

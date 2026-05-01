@@ -39,10 +39,12 @@ The shared demo input files are checked in the parent directory:
 ## Step 1 - Project Admin: Initialize Root CA
 
 ```bash
-nvflare cert init --profile project_profile.yaml -o ca
+nvflare cert init --profile project_profile.yaml -o ca --version 00
 ```
 
-This creates `ca/rootCA.pem`, `ca/rootCA.key`, and `ca/ca.json`.
+This creates `ca/rootCA.pem`, `ca/rootCA.key`, and `ca/ca.json`. The
+`ca.json` metadata records `provision_version: "00"` and the root CA
+fingerprint used in signed approvals.
 
 ## Step 2 - Requesters: Create Request Zips
 
@@ -89,16 +91,18 @@ packaging.
 Each requester runs:
 
 ```bash
-nvflare package server.example.com/server.example.com.signed.zip --confirm-rootca
-nvflare package site-1/site-1.signed.zip --confirm-rootca
-nvflare package site-2/site-2.signed.zip --confirm-rootca
-nvflare package alice@nvidia.com/alice@nvidia.com.signed.zip --confirm-rootca
+nvflare package server.example.com/server.example.com.signed.zip --fingerprint <expected_fingerprint>
+nvflare package site-1/site-1.signed.zip --fingerprint <expected_fingerprint>
+nvflare package site-2/site-2.signed.zip --fingerprint <expected_fingerprint>
+nvflare package alice@nvidia.com/alice@nvidia.com.signed.zip --fingerprint <expected_fingerprint>
 ```
 
 `nvflare package` uses the signed zip endpoint information and the local request
 folder containing the private key. No endpoint, project-file, or template
 argument is needed. The startup kits are written under
-`workspace/<project>/prod_NN/<name>/`.
+`workspace/<project>/prod_00/<name>/` because this demo initializes the CA with
+provision version `00`. All four packages land under the same `prod_00`
+directory.
 
 ## Dynamic Provisioning - Add Participants Later
 
@@ -113,7 +117,7 @@ Example: add a new client site:
 ```bash
 nvflare cert request --participant site-3.yaml
 nvflare cert approve site-3/site-3.request.zip --ca-dir ca --profile project_profile.yaml
-nvflare package site-3/site-3.signed.zip --confirm-rootca
+nvflare package site-3/site-3.signed.zip --fingerprint <expected_fingerprint>
 ```
 
 Example: add a new admin user:
@@ -121,11 +125,12 @@ Example: add a new admin user:
 ```bash
 nvflare cert request --participant bob.yaml
 nvflare cert approve bob@nvidia.com/bob@nvidia.com.request.zip --ca-dir ca --profile project_profile.yaml
-nvflare package bob@nvidia.com/bob@nvidia.com.signed.zip --confirm-rootca
+nvflare package bob@nvidia.com/bob@nvidia.com.signed.zip --fingerprint <expected_fingerprint>
 ```
 
 The new participant receives a new startup kit under
-`workspace/fed_project/prod_NN/<name>/`. Existing startup kits are left as-is.
+`workspace/fed_project/prod_00/<name>/` when using the existing version `00`
+CA. Existing startup kits are left as-is.
 Provisioning creates the identity and startup kit; study membership and other
 runtime policy changes are managed separately.
 
@@ -146,12 +151,12 @@ find workspace/fed_project -path '*/startup' -type d | sort
 find centralized_workspace/fed_project -path '*/startup' -type d | sort
 ```
 
-Expected difference:
+Expected layout:
 
-- Distributed interactive provisioning packages one signed zip at a time, so the
-  kits are generated under separate `prod_NN` folders, for example
-  `workspace/fed_project/prod_00/server.example.com/startup`,
-  `workspace/fed_project/prod_01/site-1/startup`, and so on.
+- Distributed interactive provisioning packages one signed zip at a time, but
+  the provision version comes from the CA. Because this demo uses version `00`,
+  all distributed kits are generated under
+  `workspace/fed_project/prod_00/<name>/startup`.
 - Centralized provisioning generates all participant kits in one run, so the
   kits are together under
   `centralized_workspace/fed_project/prod_00/<name>/startup`.

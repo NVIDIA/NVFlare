@@ -49,11 +49,18 @@ from nvflare.lighter.utils import (
     x509_name,
 )
 from nvflare.tool import cli_output
-from nvflare.tool.cert.cert_constants import ADMIN_CERT_TYPES, VALID_CERT_TYPES
+from nvflare.tool.cert.cert_constants import (
+    ADMIN_CERT_TYPES,
+    CA_INFO_FIELD,
+    DEFAULT_PROVISION_VERSION,
+    PROVISION_VERSION_FIELD,
+    ROOTCA_FINGERPRINT_FIELD,
+    VALID_CERT_TYPES,
+)
 from nvflare.tool.cert.file_utils import read_file_nofollow as _shared_read_file_nofollow
 from nvflare.tool.cert.file_utils import safe_project_name_error
 from nvflare.tool.cert.file_utils import write_file_nofollow as _write_file_nofollow
-from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256
+from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256, normalize_sha256_fingerprint
 from nvflare.tool.cli_output import (
     output_error,
     output_error_message,
@@ -170,6 +177,19 @@ def _validate_org_name(org: str) -> bool:
         )
         return False
     return True
+
+
+def _validate_provision_version(value: str, *, field_label: str = "provision version") -> bool:
+    if isinstance(value, str) and len(value) == 2 and value.isdigit():
+        return True
+    output_error_message(
+        "INVALID_ARGS",
+        "Invalid arguments.",
+        _USAGE_HINT,
+        exit_code=4,
+        detail=f"{field_label} must be exactly two digits, for example 00",
+    )
+    return False
 
 
 def _validate_request_kind(kind: str) -> bool:
@@ -327,6 +347,9 @@ def handle_cert_init(args):
     if project_profile_name is None:
         return 1
     project = project_profile_name
+    provision_version = getattr(args, "version", DEFAULT_PROVISION_VERSION) or DEFAULT_PROVISION_VERSION
+    if not _validate_provision_version(provision_version):
+        return 1
 
     # 3. Resolve force
     force = args.force
@@ -350,6 +373,21 @@ def handle_cert_init(args):
         if not force:
             output_error("CA_ALREADY_EXISTS", path=output_dir)
             return 1
+        existing_ca_meta_path = os.path.join(output_dir, "ca.json")
+        if os.path.exists(existing_ca_meta_path):
+            existing_ca_meta = _read_json(existing_ca_meta_path)
+            if existing_ca_meta is None:
+                return 1
+            existing_version = existing_ca_meta.get(PROVISION_VERSION_FIELD) or DEFAULT_PROVISION_VERSION
+            if existing_version == provision_version:
+                output_error_message(
+                    "CA_VERSION_ALREADY_EXISTS",
+                    f"Provision version {provision_version!r} already exists in CA directory {output_dir}.",
+                    "Use a new --version value when intentionally creating a new root CA, or use a fresh CA directory.",
+                    None,
+                    exit_code=4,
+                )
+                return 1
         # --force: back up existing files
         _backup_existing_ca(output_dir)
 
@@ -394,6 +432,8 @@ def handle_cert_init(args):
         ca_meta = {
             "project": project,
             "created_at": created_at,
+            PROVISION_VERSION_FIELD: provision_version,
+            ROOTCA_FINGERPRINT_FIELD: cert_fingerprint_sha256(cert),
         }
         if profile_path:
             ca_meta["project_profile"] = os.path.abspath(profile_path)
@@ -418,6 +458,8 @@ def handle_cert_init(args):
     result = {
         "ca_cert": rootca_path,
         "project": project,
+        PROVISION_VERSION_FIELD: provision_version,
+        "rootca_fingerprint_sha256": cert_fingerprint_sha256(cert),
         "subject_cn": project,
         "valid_until": valid_until_str,
     }
@@ -2227,6 +2269,35 @@ def _validate_request_project_matches_ca(ca_dir: str, project: str) -> dict:
     except Exception as e:
         output_error("CA_LOAD_FAILED", ca_dir=ca_dir, detail=str(e))
         return None
+    provision_version = ca_meta.get(PROVISION_VERSION_FIELD) or DEFAULT_PROVISION_VERSION
+    if not _validate_provision_version(provision_version, field_label=f"CA {PROVISION_VERSION_FIELD}"):
+        return None
+    ca_meta[PROVISION_VERSION_FIELD] = provision_version
+
+    actual_fingerprint = cert_fingerprint_sha256(ca_cert)
+    recorded_fingerprint = ca_meta.get(ROOTCA_FINGERPRINT_FIELD)
+    if recorded_fingerprint:
+        normalized_recorded = normalize_sha256_fingerprint(recorded_fingerprint)
+        if not normalized_recorded:
+            output_error_message(
+                "INVALID_ROOTCA_FINGERPRINT",
+                f"Invalid root CA fingerprint in ca.json: {recorded_fingerprint!r}.",
+                "Reinitialize the CA directory, or restore ca.json from the matching CA backup.",
+                None,
+                exit_code=4,
+            )
+            return None
+        if normalized_recorded != actual_fingerprint:
+            output_error_message(
+                "ROOTCA_FINGERPRINT_MISMATCH",
+                "Root CA fingerprint in ca.json does not match rootCA.pem.",
+                "Use the CA metadata generated with this rootCA.pem.",
+                None,
+                exit_code=4,
+            )
+            return None
+    ca_meta[ROOTCA_FINGERPRINT_FIELD] = actual_fingerprint
+
     ca_subject = _get_cn(ca_cert.subject)
     if ca_subject != project:
         output_error_message(
@@ -2456,6 +2527,10 @@ def handle_cert_approve(args):
             },
             "cert_file": f"{name}.crt",
             "rootca_file": "rootCA.pem",
+            CA_INFO_FIELD: {
+                PROVISION_VERSION_FIELD: ca_meta[PROVISION_VERSION_FIELD],
+                ROOTCA_FINGERPRINT_FIELD: ca_meta[ROOTCA_FINGERPRINT_FIELD],
+            },
             "hashes": {
                 "csr_sha256": _sha256_file(csr_path),
                 "site_yaml_sha256": _sha256_file(signed_site_yaml_path),
@@ -2538,6 +2613,7 @@ def handle_cert_approve(args):
             "cert_role": request_meta.get("cert_role"),
             "cert_type": request_meta["cert_type"],
             "csr_sha256": request_meta["csr_sha256"],
+            PROVISION_VERSION_FIELD: ca_meta[PROVISION_VERSION_FIELD],
             "signed_zip": signed_zip_path,
             "request_id": request_meta["request_id"],
             "rootca_fingerprint_sha256": sign_result["rootca_fingerprint_sha256"],

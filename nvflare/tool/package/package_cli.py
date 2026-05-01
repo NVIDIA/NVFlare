@@ -20,17 +20,17 @@ from typing import Optional
 _package_parser: Optional[argparse.ArgumentParser] = None
 
 _PACKAGE_EXAMPLES = [
-    "nvflare package hospital-1.signed.zip --confirm-rootca",
-    "nvflare package hospital-1.signed.zip --request-dir ./hospital-1 --expected-rootca-fingerprint <sha256>",
+    "nvflare package hospital-1.signed.zip --fingerprint <expected_fingerprint>",
+    "nvflare package hospital-1.signed.zip --request-dir ./hospital-1 --fingerprint <expected_fingerprint>",
 ]
 
 _PACKAGE_HELP_EXAMPLES = """Examples:
   Build one kit from an approved signed zip:
-    nvflare package hospital-1.signed.zip --confirm-rootca
+    nvflare package hospital-1.signed.zip --fingerprint <expected_fingerprint>
 
   Build with an explicit local request directory and non-interactive root CA verification:
     nvflare package hospital-1.signed.zip --request-dir ./hospital-1 \\
-      --expected-rootca-fingerprint <sha256>
+      --fingerprint <expected_fingerprint>
 
   Custom builders are honored when they are present in the local participant definition
   saved by nvflare cert request.
@@ -70,7 +70,10 @@ def def_package_cli_parser(sub_cmd) -> dict:
         required=False,
         default="workspace",
         dest="workspace",
-        help="Workspace root directory. Output goes to <workspace>/<project-name>/prod_NN/<name>/. Default: workspace",
+        help=(
+            "Workspace root directory. Signed zip output goes to "
+            "<workspace>/<project-name>/prod_<provision_version>/<name>/. Default: workspace"
+        ),
     )
     p.add_argument(
         "--request-dir",
@@ -80,28 +83,21 @@ def def_package_cli_parser(sub_cmd) -> dict:
         help="Local request directory containing the private key for signed zip mode.",
     )
     p.add_argument(
-        "--expected-rootca-fingerprint",
         "--fingerprint",
+        "--expected-fingerprint",
         required=False,
         default=None,
-        dest="expected_rootca_fingerprint",
+        dest="expected_fingerprint",
         help=(
             "Expected SHA256 fingerprint for rootCA.pem in signed zip. "
             "Use this for non-interactive out-of-band root CA verification."
         ),
     )
     p.add_argument(
-        "--confirm-rootca",
-        action="store_true",
-        default=False,
-        dest="confirm_rootca",
-        help="Prompt to confirm the signed zip root CA fingerprint was verified out-of-band before packaging.",
-    )
-    p.add_argument(
         "--force",
         action="store_true",
         default=False,
-        help="Allow re-packaging when this participant name already appears in the most recent prod_NN directory (a new prod_NN is created alongside).",
+        help="Allow replacing an existing participant output when packaging into the signed provision version.",
     )
     p.add_argument(
         "--schema",

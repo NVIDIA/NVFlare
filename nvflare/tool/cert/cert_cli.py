@@ -41,6 +41,12 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
+def _provision_version_type(value: str) -> str:
+    if not isinstance(value, str) or len(value) != 2 or not value.isdigit():
+        raise argparse.ArgumentTypeError("version must be exactly two digits, for example 00")
+    return value
+
+
 def _add_compat_output_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--output",
@@ -95,10 +101,19 @@ def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         help="Validity period for the root CA certificate in days. Default: 3650.",
     )
     p.add_argument(
+        "--version",
+        required=False,
+        type=_provision_version_type,
+        default="00",
+        dest="version",
+        metavar="NN",
+        help="Distributed provisioning version used for package output directory prod_<NN>. Default: 00.",
+    )
+    p.add_argument(
         "--force",
         action="store_true",
         default=False,
-        help="Overwrite existing CA files without prompting. Backs up existing files first.",
+        help="Replace existing CA files only when using a new provision version. Backs up existing files first.",
     )
     p.add_argument(
         "--schema",
