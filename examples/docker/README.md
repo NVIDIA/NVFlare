@@ -73,6 +73,9 @@ same federation.
 
 Run each in a separate terminal:
 
+The first `start_docker.sh` command creates `nvflare-network` if it does not
+already exist, so no separate `docker network create` command is required.
+
 ```bash
 # Server (Docker mode)
 cd workspace/docker_test_project/docker/server
