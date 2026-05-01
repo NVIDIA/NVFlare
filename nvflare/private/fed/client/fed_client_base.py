@@ -123,7 +123,6 @@ class FederatedClientBase:
         set_scope_property(scope_name=self.client_name, value=host_name, key=FLContextKey.SERVER_HOST_NAME)
 
         self.servers[project_name]["target"] = target
-        self.sp_established = True
 
         scheme_location = scheme + "://" + target
         if self.cell:
@@ -131,6 +130,9 @@ class FederatedClientBase:
         else:
             self._create_cell(target, scheme)
 
+        # Mark established only after the cell is ready, so client_train.py's
+        # busy-wait loop does not exit before _create_cell raises.
+        self.sp_established = True
         self.logger.info(f"Connected to server: {scheme_location}")
 
     def _create_cell(self, location, scheme):
