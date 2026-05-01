@@ -20,6 +20,7 @@ from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
@@ -56,7 +57,8 @@ class _FedAvgValidator(BaseModel):
     # New FedAvg features
     stop_cond: Optional[str] = None
     patience: Optional[int] = None
-    save_filename: str = "FL_global_model.pt"
+    best_model_filename: str = DefaultCheckpointFileName.BEST_GLOBAL_MODEL
+    save_filename: Optional[str] = None
     exclude_vars: Optional[str] = None
     aggregation_weights: Optional[Dict[str, float]] = None
     # Memory management
@@ -111,8 +113,8 @@ class FedAvgRecipe(Recipe):
             Defaults to ExchangeFormat.NUMPY.
         params_transfer_type: How to transfer the parameters. FULL means the whole model parameters
             are sent. DIFF means that only the difference is sent. Defaults to TransferType.FULL.
-        model_persistor: Custom model persistor for any framework. If None, uses simple
-            file-based saving with save_filename.
+        model_persistor: Custom model persistor for any framework. If None, uses the
+            framework's default persistor when one is available.
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. Each config dict can contain optional overrides:
             - train_script (str): Training script path
@@ -136,7 +138,9 @@ class FedAvgRecipe(Recipe):
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
             Only applies if stop_cond is set. Defaults to None.
-        save_filename: Filename for saving the best model. Defaults to "FL_global_model.pt".
+        best_model_filename: Filename for saving the best model. Defaults to
+            DefaultCheckpointFileName.BEST_GLOBAL_MODEL.
+        save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
         server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
@@ -180,7 +184,8 @@ class FedAvgRecipe(Recipe):
         # New FedAvg features
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
-        save_filename: str = "FL_global_model.pt",
+        best_model_filename: str = DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
+        save_filename: Optional[str] = None,
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
         server_memory_gc_rounds: int = 0,
@@ -188,6 +193,8 @@ class FedAvgRecipe(Recipe):
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
     ):
+        best_model_filename = self._resolve_best_model_filename(best_model_filename, save_filename)
+
         # Validate inputs internally
         v = _FedAvgValidator(
             name=name,
@@ -211,6 +218,7 @@ class FedAvgRecipe(Recipe):
             key_metric=key_metric,
             stop_cond=stop_cond,
             patience=patience,
+            best_model_filename=best_model_filename,
             save_filename=save_filename,
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
@@ -250,7 +258,8 @@ class FedAvgRecipe(Recipe):
         self.key_metric = v.key_metric
         self.stop_cond = v.stop_cond
         self.patience = v.patience
-        self.save_filename = v.save_filename
+        self.best_model_filename = v.best_model_filename
+        self.save_filename = self.best_model_filename
         self.exclude_vars = v.exclude_vars
         self.aggregation_weights = v.aggregation_weights
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
@@ -300,7 +309,7 @@ class FedAvgRecipe(Recipe):
             num_rounds=self.num_rounds,
             persistor_id=persistor_id,
             model=model_params,
-            save_filename=self.save_filename,
+            save_filename=self.best_model_filename,
             aggregator=model_aggregator,
             stop_cond=self.stop_cond,
             patience=self.patience,
@@ -380,6 +389,16 @@ class FedAvgRecipe(Recipe):
             job.to_clients(executor)
 
         Recipe.__init__(self, job)
+
+    @staticmethod
+    def _resolve_best_model_filename(best_model_filename: str, save_filename: Optional[str]) -> str:
+        if save_filename is None:
+            return best_model_filename
+
+        if best_model_filename != DefaultCheckpointFileName.BEST_GLOBAL_MODEL and best_model_filename != save_filename:
+            raise ValueError("Specify either best_model_filename or save_filename, not conflicting values for both.")
+
+        return save_filename
 
     @staticmethod
     def _validate_per_site_config(per_site_config: Optional[Dict[str, Dict]]) -> None:
@@ -470,9 +489,15 @@ class FedAvgRecipe(Recipe):
                 )
 
         ckpt_path = resolve_initial_ckpt(initial_ckpt, getattr(self, "_prepared_initial_ckpt", None), job)
+        best_model_filename = (
+            self.best_model_filename
+            if self.best_model_filename != DefaultCheckpointFileName.BEST_GLOBAL_MODEL
+            else None
+        )
         persistor = NPModelPersistor(
             model=model_list,
             source_ckpt_file_full_name=ckpt_path,
+            best_model_filename=best_model_filename,
         )
         persistor_id = extract_persistor_id(job.to_server(persistor, id="persistor"))
         if persistor_id and hasattr(job, "comp_ids"):

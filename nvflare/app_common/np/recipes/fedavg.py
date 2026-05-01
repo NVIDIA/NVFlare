@@ -16,6 +16,7 @@ from typing import Any, Dict, Optional, Union
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
+from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -67,7 +68,9 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
-        save_filename: Filename for saving the best model. Defaults to "FL_global_model.pt".
+        best_model_filename: Filename for saving the best model. Defaults to
+            DefaultCheckpointFileName.BEST_GLOBAL_MODEL.
+        save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
 
@@ -122,7 +125,8 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         # New FedAvg features
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
-        save_filename: str = "FL_global_model.pt",
+        best_model_filename: str = DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
+        save_filename: Optional[str] = None,
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
         client_memory_gc_rounds: int = 0,
@@ -155,6 +159,7 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
             key_metric=key_metric,
             stop_cond=stop_cond,
             patience=patience,
+            best_model_filename=best_model_filename,
             save_filename=save_filename,
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,

@@ -48,6 +48,14 @@ class TestNPModelPersistorInit:
         assert persistor.model == [[1, 2], [3, 4]]
         assert persistor.source_ckpt_file_full_name == "/data/pretrained/model.npy"
 
+    def test_init_with_best_model_filename(self):
+        """Init should store best_model_filename."""
+        from nvflare.app_common.np.np_model_persistor import NPModelPersistor
+
+        persistor = NPModelPersistor(best_model_filename="best_numpy.npy")
+
+        assert persistor.best_model_filename == "best_numpy.npy"
+
 
 class TestNPFileModelPersistorInit:
     """Tests for NPFileModelPersistor initialization with source_ckpt_file_full_name."""

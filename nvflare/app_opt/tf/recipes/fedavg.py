@@ -17,6 +17,7 @@ from typing import Any, Optional, Union
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -71,6 +72,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
             Defaults to "accuracy".
+        best_model_filename: Filename for saving the best model when generated TensorFlow persistors support it.
+        save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
 
     Example:
         Basic usage without experiment tracking:
@@ -117,6 +120,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
+        best_model_filename: str = DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
+        save_filename: Optional[str] = None,
         server_memory_gc_rounds: int = 0,
         client_memory_gc_rounds: int = 0,
     ):
@@ -141,6 +146,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
+            best_model_filename=best_model_filename,
+            save_filename=save_filename,
             server_memory_gc_rounds=server_memory_gc_rounds,
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=False,
@@ -159,5 +166,9 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         if self.model is None and not ckpt_path:
             return ""
 
-        tf_model = TFModel(model=self.model, initial_ckpt=ckpt_path)
+        best_model_filename = self.best_model_filename
+        if best_model_filename == DefaultCheckpointFileName.BEST_GLOBAL_MODEL:
+            best_model_filename = None
+
+        tf_model = TFModel(model=self.model, initial_ckpt=ckpt_path, best_model_filename=best_model_filename)
         return extract_persistor_id(job.to_server(tf_model, id="persistor"))

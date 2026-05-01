@@ -86,6 +86,20 @@ class TestTFModelInit:
         except ImportError:
             pytest.skip("TensorFlow not installed")
 
+    def test_init_with_best_model_filename(self):
+        """Init with best_model_filename should pass it to the generated persistor."""
+        try:
+            from nvflare.app_opt.tf.job_config.model import TFModel
+
+            model_dict = {"path": "my_module.models.Net", "args": {"num_classes": 10}}
+            tf_model = TFModel(model=model_dict, best_model_filename="custom_best.weights.h5")
+            persistor = tf_model._create_persistor_for_dict_config()
+
+            assert tf_model.best_model_filename == "custom_best.weights.h5"
+            assert persistor.best_model_filename == "custom_best.weights.h5"
+        except ImportError:
+            pytest.skip("TensorFlow not installed")
+
 
 class TestTFModelPersistorDictConfig:
     """Tests for TFModelPersistor dict config support."""

@@ -147,6 +147,11 @@ def get_model_selector(recipe):
     return server_app.app_config.components.get("model_selector")
 
 
+def get_server_component(recipe, component_id):
+    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    return server_app.app_config.components.get(component_id)
+
+
 class TestFedAvgRecipe:
     """Test cases for FedAvgRecipe class."""
 
@@ -168,6 +173,20 @@ class TestFedAvgRecipe:
         model_selector = get_model_selector(recipe)
         assert isinstance(model_selector, IntimeModelSelector)
         assert model_selector.key_metric == key_metric
+
+    def test_best_model_filename_passthrough_pt(self, mock_file_system, base_recipe_params, simple_model):
+        """best_model_filename should configure the generated PT persistor's best model artifact."""
+        recipe = FedAvgRecipe(
+            name="test_fedavg_best_filename",
+            model=simple_model,
+            best_model_filename="custom_best_model.pt",
+            **base_recipe_params,
+        )
+
+        persistor = get_server_component(recipe, "persistor")
+        assert recipe.best_model_filename == "custom_best_model.pt"
+        assert recipe.save_filename == "custom_best_model.pt"
+        assert persistor.best_global_model_file_name == "custom_best_model.pt"
 
     def test_custom_aggregator_initialization(
         self, mock_file_system, base_recipe_params, custom_aggregator, simple_model
@@ -305,7 +324,10 @@ class TestNumpyFedAvgRecipe:
             save_filename="numpy_model.pt",
         )
 
+        assert recipe.best_model_filename == "numpy_model.pt"
         assert recipe.save_filename == "numpy_model.pt"
+        persistor = get_server_component(recipe, "persistor")
+        assert persistor.best_model_filename == "numpy_model.pt"
 
     def test_numpy_recipe_with_per_site_config(self, mock_file_system):
         """Test NumpyFedAvgRecipe with per-site configuration."""
@@ -363,7 +385,10 @@ class TestNumpyFedAvgRecipe:
         assert recipe.key_metric == "f1_score"
         assert recipe.stop_cond == "f1_score >= 0.9"
         assert recipe.patience == 5
+        assert recipe.best_model_filename == "best_numpy_model.pt"
         assert recipe.save_filename == "best_numpy_model.pt"
+        persistor = get_server_component(recipe, "persistor")
+        assert persistor.best_model_filename == "best_numpy_model.pt"
         assert recipe.exclude_vars == "temp_.*"
         assert recipe.aggregation_weights == {"site-1": 1.0, "site-2": 2.0, "site-3": 1.5}
 
@@ -386,7 +411,7 @@ class TestFedAvgRecipeEarlyStopping:
         assert recipe.patience == 5
 
     def test_save_filename_configuration(self, mock_file_system, base_recipe_params, simple_model):
-        """Test FedAvgRecipe with custom save filename."""
+        """Test FedAvgRecipe accepts save_filename as a backward-compatible alias."""
         recipe = FedAvgRecipe(
             name="test_save_file",
             model=simple_model,
@@ -394,7 +419,21 @@ class TestFedAvgRecipeEarlyStopping:
             **base_recipe_params,
         )
 
+        persistor = get_server_component(recipe, "persistor")
+        assert recipe.best_model_filename == "best_model.pt"
         assert recipe.save_filename == "best_model.pt"
+        assert persistor.best_global_model_file_name == "best_model.pt"
+
+    def test_conflicting_best_model_filename_alias_raises(self, mock_file_system, base_recipe_params, simple_model):
+        """best_model_filename and save_filename must not silently disagree."""
+        with pytest.raises(ValueError, match="conflicting values"):
+            FedAvgRecipe(
+                name="test_conflicting_best_file",
+                model=simple_model,
+                best_model_filename="best_model.pt",
+                save_filename="legacy_model.pt",
+                **base_recipe_params,
+            )
 
     def test_exclude_vars_configuration(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedAvgRecipe with exclude_vars configuration."""

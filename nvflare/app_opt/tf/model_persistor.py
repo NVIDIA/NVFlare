@@ -21,6 +21,8 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.model_desc import ModelDescriptor
 from nvflare.app_opt.tf.utils import flat_layer_weights_dict, unflat_layer_weights_dict
 
@@ -30,6 +32,7 @@ class TFModelPersistor(ModelPersistor):
         self,
         model: Optional[Union[tf.keras.Model, Dict[str, Any]]] = None,
         save_name: str = "tf_model.weights.h5",
+        best_model_filename: Optional[str] = None,
         filter_id: Optional[str] = None,
         source_ckpt_file_full_name: Optional[str] = None,
     ):
@@ -45,6 +48,7 @@ class TFModelPersistor(ModelPersistor):
                 - dict: {"path": "fully.qualified.Class", "args": {...}} for dynamic instantiation
                 - None: If source_ckpt_file_full_name points to a full model file
             save_name: Filename for saving model weights. Defaults to "tf_model.weights.h5".
+            best_model_filename: Optional filename for saving the best model weights.
             filter_id: Optional filter component ID for model serialization.
             source_ckpt_file_full_name: Full path to source checkpoint file.
                 This path may not exist locally (server-side path).
@@ -53,6 +57,7 @@ class TFModelPersistor(ModelPersistor):
             filter_id=filter_id,
         )
         self.save_name = save_name
+        self.best_model_filename = best_model_filename
         self.model = model
         self.source_ckpt_file_full_name = source_ckpt_file_full_name
         # Note: We don't validate existence here because the checkpoint path may be
@@ -62,6 +67,9 @@ class TFModelPersistor(ModelPersistor):
         workspace = fl_ctx.get_engine().get_workspace()
         app_root = workspace.get_app_dir(fl_ctx.get_job_id())
         self._model_save_path = os.path.join(app_root, self.save_name)
+        self._best_model_save_path = (
+            os.path.join(app_root, self.best_model_filename) if self.best_model_filename else None
+        )
         self.log_dir = app_root
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
@@ -179,6 +187,10 @@ class TFModelPersistor(ModelPersistor):
     def handle_event(self, event: str, fl_ctx: FLContext):
         if event == EventType.START_RUN:
             self._initialize(fl_ctx)
+        elif event == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE and getattr(self, "_best_model_save_path", None):
+            model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+            if model:
+                self._save_model_weights(model, self._best_model_save_path)
 
     def save_model(self, model_learnable: ModelLearnable, fl_ctx: FLContext):
         """Saves model.
@@ -187,11 +199,14 @@ class TFModelPersistor(ModelPersistor):
             model_learnable: ModelLearnable object
             fl_ctx: FLContext
         """
+        self._save_model_weights(model_learnable, self._model_save_path)
+
+    def _save_model_weights(self, model_learnable: ModelLearnable, save_path: str):
         result = unflat_layer_weights_dict(model_learnable[ModelLearnableKey.WEIGHTS])
         for k in result:
             layer = self.model.get_layer(name=k)
             layer.set_weights(result[k])
-        self.model.save_weights(self._model_save_path)
+        self.model.save_weights(save_path)
 
     def get_model(self, model_file: str, fl_ctx: FLContext) -> ModelLearnable:
         """Get a specific model by file name for cross-site evaluation.
@@ -279,6 +294,19 @@ class TFModelPersistor(ModelPersistor):
             model_inventory[tail] = ModelDescriptor(
                 name=self.save_name,
                 location=self._model_save_path,
+                model_format="TensorFlow",
+                props={},
+            )
+
+        if (
+            self.best_model_filename
+            and hasattr(self, "_best_model_save_path")
+            and os.path.exists(self._best_model_save_path)
+        ):
+            _, tail = os.path.split(self.best_model_filename)
+            model_inventory[tail] = ModelDescriptor(
+                name=self.best_model_filename,
+                location=self._best_model_save_path,
                 model_format="TensorFlow",
                 props={},
             )

@@ -51,7 +51,9 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
-    def _verify_persistor_config(self, config_path, expected_model_path, expected_ckpt_path):
+    def _verify_persistor_config(
+        self, config_path, expected_model_path, expected_ckpt_path, expected_best_model_filename=None
+    ):
         """Verify persistor component has correct model dict and checkpoint."""
         with open(config_path, "r") as f:
             config = json.load(f)
@@ -84,6 +86,13 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
         self.assertEqual(
             ckpt_path, expected_ckpt_path, f"Checkpoint path mismatch. Expected: {expected_ckpt_path}, Got: {ckpt_path}"
         )
+        if expected_best_model_filename is not None:
+            best_model_filename = persistor["args"].get("best_global_model_file_name")
+            self.assertEqual(
+                best_model_filename,
+                expected_best_model_filename,
+                f"Best model filename mismatch. Expected: {expected_best_model_filename}, Got: {best_model_filename}",
+            )
 
         print("    ✓ Persistor config verified:")
         print(f"      - model: {model}")
@@ -101,13 +110,16 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
             model={"class_path": "model.SimpleNetwork", "args": {}},
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
+            best_model_filename="custom_best_model.pt",
         )
 
         job_dir = os.path.join(self.temp_dir, "export")
         recipe.export(job_dir=job_dir)
 
         server_config = os.path.join(job_dir, "test-pt-fedavg", "app/config/config_fed_server.json")
-        self._verify_persistor_config(server_config, "model.SimpleNetwork", self.checkpoint_path)
+        self._verify_persistor_config(
+            server_config, "model.SimpleNetwork", self.checkpoint_path, "custom_best_model.pt"
+        )
 
     def test_pt_fedopt(self):
         """Test PT FedOpt generates correct config.
@@ -252,7 +264,9 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
-    def _verify_persistor_config(self, config_path, expected_model_path, expected_ckpt_path):
+    def _verify_persistor_config(
+        self, config_path, expected_model_path, expected_ckpt_path, expected_best_model_filename=None
+    ):
         """Verify TF persistor component has correct model dict and checkpoint."""
         with open(config_path, "r") as f:
             config = json.load(f)
@@ -275,6 +289,9 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
         # Verify checkpoint path
         ckpt_path = persistor["args"].get("source_ckpt_file_full_name")
         self.assertEqual(ckpt_path, expected_ckpt_path, "Checkpoint path mismatch")
+        if expected_best_model_filename is not None:
+            best_model_filename = persistor["args"].get("best_model_filename")
+            self.assertEqual(best_model_filename, expected_best_model_filename, "Best model filename mismatch")
 
         print("    ✓ Persistor config verified:")
         print(f"      - model: {model}")
@@ -295,13 +312,16 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
             model={"class_path": "model.SimpleModel", "args": {}},
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
+            best_model_filename="custom_best.weights.h5",
         )
 
         job_dir = os.path.join(self.temp_dir, "export")
         recipe.export(job_dir=job_dir)
 
         server_config = os.path.join(job_dir, "test-tf-fedavg", "app/config/config_fed_server.json")
-        self._verify_persistor_config(server_config, "model.SimpleModel", self.checkpoint_path)
+        self._verify_persistor_config(
+            server_config, "model.SimpleModel", self.checkpoint_path, "custom_best.weights.h5"
+        )
 
     def test_tf_fedopt(self):
         """Test TF FedOpt generates correct config."""
@@ -393,7 +413,7 @@ class TestNumpyRecipeComponentConfig(unittest.TestCase):
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
-    def _verify_persistor_config(self, config_path, expected_ckpt_path):
+    def _verify_persistor_config(self, config_path, expected_ckpt_path, expected_best_model_filename=None):
         """Verify NumPy persistor component has correct checkpoint."""
         with open(config_path, "r") as f:
             config = json.load(f)
@@ -411,6 +431,9 @@ class TestNumpyRecipeComponentConfig(unittest.TestCase):
         # Verify checkpoint path
         ckpt_path = persistor["args"].get("source_ckpt_file_full_name")
         self.assertEqual(ckpt_path, expected_ckpt_path, "Checkpoint path mismatch")
+        if expected_best_model_filename is not None:
+            best_model_filename = persistor["args"].get("best_model_filename")
+            self.assertEqual(best_model_filename, expected_best_model_filename, "Best model filename mismatch")
 
         print("    ✓ Persistor config verified:")
         print(f"      - checkpoint: {ckpt_path}")
@@ -427,13 +450,14 @@ class TestNumpyRecipeComponentConfig(unittest.TestCase):
             model=[[1.0, 2.0], [3.0, 4.0]],
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
+            best_model_filename="custom_best.npy",
         )
 
         job_dir = os.path.join(self.temp_dir, "export")
         recipe.export(job_dir=job_dir)
 
         server_config = os.path.join(job_dir, "test-np-fedavg", "app/config/config_fed_server.json")
-        self._verify_persistor_config(server_config, self.checkpoint_path)
+        self._verify_persistor_config(server_config, self.checkpoint_path, "custom_best.npy")
 
     def test_unified_numpy_fedavg(self):
         """Test unified FedAvg generates correct NumPy persistor config with checkpoint."""
