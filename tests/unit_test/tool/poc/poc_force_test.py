@@ -311,18 +311,21 @@ class TestPocForce:
         subs = root.add_subparsers()
         def_poc_parser(subs)
 
-        user_args = root.parse_args(["poc", "add", "user", "lead", "bob@nvidia.com", "--org", "nvidia"])
-        assert user_args.poc_sub_cmd == "add"
-        assert user_args.poc_add_sub_cmd == "user"
+        user_args = root.parse_args(["poc", "add-user", "lead", "bob@nvidia.com", "--org", "nvidia"])
+        assert user_args.poc_sub_cmd == "add-user"
         assert user_args.cert_role == "lead"
         assert user_args.email == "bob@nvidia.com"
         assert user_args.org == "nvidia"
 
-        site_args = root.parse_args(["poc", "add", "site", "site-3", "--org", "nvidia"])
-        assert site_args.poc_sub_cmd == "add"
-        assert site_args.poc_add_sub_cmd == "site"
+        site_args = root.parse_args(["poc", "add-site", "site-3", "--org", "nvidia"])
+        assert site_args.poc_sub_cmd == "add-site"
         assert site_args.name == "site-3"
         assert site_args.org == "nvidia"
+
+        with pytest.raises(SystemExit):
+            root.parse_args(["poc", "add", "user", "lead", "bob@nvidia.com"])
+        with pytest.raises(SystemExit):
+            root.parse_args(["poc", "add", "site", "site-3"])
 
     def test_poc_add_user_is_not_gated_by_active_startup_kit_role(self, capsys):
         from nvflare.tool.poc.poc_commands import add_poc_user

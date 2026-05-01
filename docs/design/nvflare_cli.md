@@ -183,7 +183,7 @@ The JSON output shape and error codes defined here become the MCP tool schemas i
 | Command | Subcommands | Agent Readiness Status |
 | --- | --- | --- |
 | `nvflare simulator` | — | Deprecated — retain with stderr warning; use Job Recipe SimEnv directly (`python job.py`) |
-| `nvflare poc` | `config`, `prepare`, `start`, `stop`, `clean`, `add user`, `add site` | Add JSON output, exit codes, `--schema`; add `--force` to `prepare` for workspace deletion prompt bypass and to `clean` for stop-before-cleanup; register generated user/admin kits in the shared startup kit registry |
+| `nvflare poc` | `config`, `prepare`, `start`, `stop`, `clean`, `add-user`, `add-site` | Add JSON output, exit codes, `--schema`; add `--force` to `prepare` for workspace deletion prompt bypass and to `clean` for stop-before-cleanup; register generated user/admin kits in the shared startup kit registry |
 | `nvflare config` | `add`, `use`, `inspect`, `list`, `remove` | User-facing startup kit registry commands; keeps 2.7.x root flags `-d/--startup_kit_dir`, deprecated `-pw/--poc_workspace_dir`, and deprecated `-jt/--job_templates_dir`; no server connection |
 | `nvflare poc config` | — | POC-specific local config, including the POC workspace path |
 | `nvflare study` | `register`, `show`, `list`, `remove`, `add-site`, `remove-site`, `add-user`, `remove-user` | Add multi-study lifecycle CLI using the active startup kit |
@@ -908,11 +908,11 @@ startup_kits.entries."org-admin@nvidia.com" -> .../prod_00/org-admin@nvidia.com
 startup_kits.entries."lead@nvidia.com"      -> .../prod_00/lead@nvidia.com
 ```
 
-#### `nvflare poc add user <cert-role> <email> --org <org>`
+#### `nvflare poc add-user <cert-role> <email> --org <org>`
 
 Creates a new local secondary POC user startup kit and registers it in the shared
 registry. Valid `<cert-role>` values are `org_admin`, `lead`, and `member`. These are
-certificate roles, not study-specific roles. `poc add user` must not add another
+certificate roles, not study-specific roles. `poc add-user` must not add another
 `project_admin`; the single POC Project Admin is created by `poc prepare`.
 
 Behavior:
@@ -964,7 +964,7 @@ active: bob@nvidia.com
 ```
 
 After the first `poc prepare`, the initial output is normally `prod_00`. A later
-`poc add user` is dynamic provisioning: it uses a temporary reduced build to generate only
+`poc add-user` is dynamic provisioning: it uses a temporary reduced build to generate only
 the new user kit, then places that kit under the existing `prod_00`. The command must not
 replace existing participant startup kits or repoint their registry entries.
 
@@ -973,7 +973,7 @@ If the user identity already exists, the command fails unless `--force` is provi
 and replace only the config registration for that ID. If that ID is active, the active ID
 remains the same and now points to the new path.
 
-#### `nvflare poc add site <name> --org <org>`
+#### `nvflare poc add-site <name> --org <org>`
 
 Creates a new local POC site startup kit and records it in the POC workspace. Site kits
 are not registered in the startup kit registry because they are service identities, not
@@ -1005,11 +1005,11 @@ Behavior:
    new site exists.
 12. Print the generated startup kit path and start instructions.
 
-`poc add site` does not take a separate workspace argument. It is scoped to the active
+`poc add-site` does not take a separate workspace argument. It is scoped to the active
 local POC workspace. Adding a site does not switch the active startup kit because site
 kits are service identities, not interactive admin identities.
 
-If the POC system is running, `poc add site` should still be allowed. Existing running
+If the POC system is running, `poc add-site` should still be allowed. Existing running
 services are not stopped; the new startup kit is used when the site is started or
 restarted.
 
@@ -1127,15 +1127,15 @@ Error: startup kit id 'lead@nvidia.com' already points outside the POC workspace
 Hint: Run nvflare config remove lead@nvidia.com, or replace it explicitly with nvflare config add lead@nvidia.com <startup-kit-dir> --force.
 ```
 
-`poc add user` fails before creating or registering a new kit when the requested identity
+`poc add-user` fails before creating or registering a new kit when the requested identity
 already exists in the POC project, unless `--force` is provided. With `--force`, update
 the existing participant metadata in place and persist it to disk; do not append a
 duplicate participant.
 
-`poc add site` follows the same duplicate rule for sites. If services are running, the
+`poc add-site` follows the same duplicate rule for sites. If services are running, the
 command may add the new site kit but must not restart existing services automatically.
 
-`poc add user` and `poc add site` do not use the active startup kit as an authorization
+`poc add-user` and `poc add-site` do not use the active startup kit as an authorization
 boundary. POC is a local deployment owned by the local operator, so the meaningful safety
 checks are local integrity checks: valid requested user role, duplicate participant
 handling, existing POC project metadata, and generated startup kit shape.
@@ -1157,14 +1157,14 @@ Manual production registrations remain untouched.
 - `nvflare config` is the user-facing startup kit management interface.
 - POC-specific local settings belong under `nvflare poc config`; the root
   `nvflare config -pw` flag is compatibility-only.
-- `poc add user` registers generated user kits in `startup_kits.entries`.
-- `poc add site` generates site kits and updates POC workspace metadata, but it does not
+- `poc add-user` registers generated user kits in `startup_kits.entries`.
+- `poc add-site` generates site kits and updates POC workspace metadata, but it does not
   register site kits in `startup_kits.entries`.
-- `poc add user` and `poc add site` do not switch away from the active kit in the normal
+- `poc add-user` and `poc add-site` do not switch away from the active kit in the normal
   POC flow.
-- `poc add site` is allowed while POC services are running and does not stop existing
+- `poc add-site` is allowed while POC services are running and does not stop existing
   services.
-- For `nvflare config add` and `nvflare poc add user`, `--force` replaces the config
+- For `nvflare config add` and `nvflare poc add-user`, `--force` replaces the config
   registration for an existing ID without deleting old startup kit directories.
 - For `nvflare poc prepare`, `--force` means recreate the POC workspace; it does not
   override live unrelated startup kit registrations outside the POC workspace. If an
@@ -1276,10 +1276,10 @@ default it waits until shutdown completes and returns `status: stopped`; with
 | `--force` | flag | No | — | Stop a running POC system before cleanup |
 | `--schema` | flag | No | — | Print command schema and exit |
 
-#### `nvflare poc add user`
+#### `nvflare poc add-user`
 
 ```text
-nvflare poc add user <cert-role> <email> --org <org> [--force] [--schema]
+nvflare poc add-user <cert-role> <email> --org <org> [--force] [--schema]
 ```
 
 Creates or refreshes a local POC admin/user participant from the default POC project YAML,
@@ -1288,10 +1288,10 @@ registers that user kit under startup kit ID `<email>`.
 Allowed `<cert-role>` values are `org_admin`, `lead`, and `member`; this command
 does not add another `project_admin`.
 
-#### `nvflare poc add site`
+#### `nvflare poc add-site`
 
 ```text
-nvflare poc add site <name> --org <org> [--force] [--schema]
+nvflare poc add-site <name> --org <org> [--force] [--schema]
 ```
 
 Creates or refreshes a local POC client participant from the default POC project YAML,
@@ -1635,8 +1635,8 @@ Retain with stderr warning. Underscore alias `authz_preview` accepted for backwa
 | Command | JSON default | `--schema` | Exit Codes | Other |
 | --- | --- | --- | --- | --- |
 | `poc prepare` | Add | Add | Add | Add `--force`; auto-invoke `install_skills()` on success |
-| `poc add user` | Add | Add | Add | Add POC user startup kit and register it in `startup_kits.entries` |
-| `poc add site` | Add | Add | Add | Add POC site startup kit and update POC service metadata; site kits are not CLI identities |
+| `poc add-user` | Add | Add | Add | Add POC user startup kit and register it in `startup_kits.entries` |
+| `poc add-site` | Add | Add | Add | Add POC site startup kit and update POC service metadata; site kits are not CLI identities |
 | `poc start` | Add | Add | Add | `server_url` in JSON data field when ready |
 | `poc stop` | Add | Add | Add | — |
 | `poc clean` | Add | Add | Add | Add `--force` to stop a running local POC system before cleanup |
@@ -2002,7 +2002,7 @@ New methods are thin wrappers over `AdminAPI.do_command()`.
 | `nvflare/fuel/flare_api/flare_api.py` | Add missing session methods |
 | `nvflare/cli.py` | Register new top-level commands |
 | `nvflare/tool/cli_session.py` | Resolve `NVFLARE_STARTUP_KIT_DIR` or the active startup kit registry entry |
-| `nvflare/tool/poc/poc_commands.py` | Call `install_skills()` on successful `poc prepare`; register generated POC user kits; support `poc add user/site` |
+| `nvflare/tool/poc/poc_commands.py` | Call `install_skills()` on successful `poc prepare`; register generated POC user kits; support `poc add-user` / `poc add-site` |
 | `nvflare/lighter/provision.py` | Call `install_skills()` on successful `provision` |
 
 

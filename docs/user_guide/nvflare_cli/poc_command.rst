@@ -13,14 +13,14 @@ before a distributed deployment.
 Command Usage
 ***********************
 
-The POC command provides the subcommands ``config``, ``prepare``, ``add``,
-``start``, ``stop``, and ``clean``.
+The POC command provides the subcommands ``config``, ``prepare``,
+``add-user``, ``add-site``, ``start``, ``stop``, and ``clean``.
 
 .. code-block:: none
 
    nvflare poc -h
 
-   usage: nvflare poc [-h] {config,prepare,add,start,stop,clean} ...
+   usage: nvflare poc [-h] {config,prepare,add-user,add-site,start,stop,clean} ...
 
 *****************
 Common Workflow
@@ -29,7 +29,7 @@ Common Workflow
 1. Optionally run ``nvflare poc config --pw <poc_workspace>`` to choose the
    local workspace path.
 2. Run ``nvflare poc prepare`` to create the local workspace and startup kits.
-3. Optionally run ``nvflare poc add user`` or ``nvflare poc add site`` to add a
+3. Optionally run ``nvflare poc add-user`` or ``nvflare poc add-site`` to add a
    local participant startup kit.
 4. Run ``nvflare poc start`` to start the server and clients.
 5. Submit jobs directly with ``nvflare job submit -j <path/to/job>``.
@@ -106,27 +106,27 @@ Example:
 Add Participant
 ***************
 
-Use ``nvflare poc add`` to extend the prepared local POC workspace with another
-user or site:
+Use ``nvflare poc add-user`` or ``nvflare poc add-site`` to extend the prepared
+local POC workspace with another user or site:
 
 .. code-block:: none
 
-   nvflare poc add user [-h] [--org ORG] [--force] [--schema]
+   nvflare poc add-user [-h] [--org ORG] [--force] [--schema]
                         {org_admin,lead,member} email
 
-   nvflare poc add site [-h] [--org ORG] [--force] [--schema] name
+   nvflare poc add-site [-h] [--org ORG] [--force] [--schema] name
 
 Behavior notes:
 
-- ``poc add user`` and ``poc add site`` are local POC workspace operations.
+- ``poc add-user`` and ``poc add-site`` are local POC workspace operations.
   They use the local POC project metadata and local POC CA created by
   ``poc prepare``; they are not gated by the currently active startup kit.
-- ``poc add user`` adds a secondary admin participant to the persisted POC
+- ``poc add-user`` adds a secondary admin participant to the persisted POC
   ``project.yml``, dynamically provisions only that new user with the existing
   POC CA, and registers the generated user startup kit in the shared startup
   kit registry. It cannot add another ``project_admin``; the POC Project Admin
   is created by ``poc prepare``.
-- ``poc add site`` adds a client participant to the persisted POC
+- ``poc add-site`` adds a client participant to the persisted POC
   ``project.yml`` and dynamically provisions only that new site with the
   existing POC CA. The generated site kit is placed in the current POC output
   directory, normally ``prod_00``, and is not registered in
@@ -140,10 +140,10 @@ Examples:
 
 .. code-block:: shell
 
-   nvflare poc add user lead bob@nvidia.com --org nvidia
+   nvflare poc add-user lead bob@nvidia.com --org nvidia
    nvflare config use bob@nvidia.com
 
-   nvflare poc add site site-3 --org nvidia
+   nvflare poc add-site site-3 --org nvidia
    nvflare config list
    nvflare poc start -p site-3
 

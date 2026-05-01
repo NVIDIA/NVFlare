@@ -75,9 +75,8 @@ CMD_START_POC = "start"
 CMD_STOP_POC = "stop"
 CMD_CLEAN_POC = "clean"
 CMD_CONFIG_POC = "config"
-CMD_ADD_POC = "add"
-CMD_ADD_USER = "user"
-CMD_ADD_SITE = "site"
+CMD_ADD_USER = "add-user"
+CMD_ADD_SITE = "add-site"
 
 # POC prepare creates the single Project Admin. Dynamic POC add can only add secondary users.
 POC_USER_CERT_ROLES = ("org_admin", "lead", "member")
@@ -891,14 +890,14 @@ def _ensure_dynamic_poc_ca_available(poc_workspace: str, project_name: str, prod
     state_file = os.path.join(poc_workspace, project_name, "state", "cert.json")
     if not os.path.isfile(state_file):
         raise CLIException(
-            "existing POC CA state was not found; run 'nvflare poc prepare' before using 'nvflare poc add'"
+            "existing POC CA state was not found; run 'nvflare poc prepare' before using POC add commands"
         )
 
     server_name = get_fl_server_name(project_config)
     root_ca_path = os.path.join(prod_dir, server_name, SC.STARTUP, "rootCA.pem")
     if not os.path.isfile(root_ca_path):
         raise CLIException(
-            "existing POC rootCA.pem was not found; run 'nvflare poc prepare' before using 'nvflare poc add'"
+            "existing POC rootCA.pem was not found; run 'nvflare poc prepare' before using POC add commands"
         )
     return root_ca_path
 
@@ -1046,32 +1045,15 @@ def _add_poc_site(poc_workspace: str, name: str, org: str, force: bool = False) 
     }
 
 
-def add_poc(cmd_args):
-    sub_cmd = getattr(cmd_args, "poc_add_sub_cmd", None)
-    if sub_cmd == CMD_ADD_USER:
-        return add_poc_user(cmd_args)
-    if sub_cmd == CMD_ADD_SITE:
-        return add_poc_site(cmd_args)
-    from nvflare.tool.cli_output import output_error
-
-    output_error(
-        "INVALID_ARGS",
-        exit_code=4,
-        detail="poc add subcommand required",
-        hint="Run with -h for usage.",
-    )
-    raise SystemExit(4)
-
-
 def add_poc_user(cmd_args):
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
     json_mode = is_json_mode()
     handle_schema_flag(
-        _poc_add_sub_cmd_parsers.get(CMD_ADD_USER),
-        "nvflare poc add user",
-        ["nvflare poc add user lead bob@nvidia.com --org nvidia"],
+        _poc_sub_cmd_parsers.get(CMD_ADD_USER),
+        "nvflare poc add-user",
+        ["nvflare poc add-user lead bob@nvidia.com --org nvidia"],
         sys.argv[1:],
     )
     poc_workspace = get_poc_workspace()
@@ -1114,9 +1096,9 @@ def add_poc_site(cmd_args):
 
     json_mode = is_json_mode()
     handle_schema_flag(
-        _poc_add_sub_cmd_parsers.get(CMD_ADD_SITE),
-        "nvflare poc add site",
-        ["nvflare poc add site site-3 --org nvidia"],
+        _poc_sub_cmd_parsers.get(CMD_ADD_SITE),
+        "nvflare poc add-site",
+        ["nvflare poc add-site site-3 --org nvidia"],
         sys.argv[1:],
     )
     poc_workspace = get_poc_workspace()
@@ -2174,7 +2156,8 @@ def config_poc(cmd_args):
 
 poc_sub_cmd_handlers = {
     CMD_PREPARE_POC: prepare_poc,
-    CMD_ADD_POC: add_poc,
+    CMD_ADD_USER: add_poc_user,
+    CMD_ADD_SITE: add_poc_site,
     CMD_START_POC: start_poc,
     CMD_STOP_POC: stop_poc,
     CMD_CLEAN_POC: clean_poc,
@@ -2183,7 +2166,6 @@ poc_sub_cmd_handlers = {
 
 # Populated by define_*_parser functions; used by handlers for --schema support
 _poc_sub_cmd_parsers = {}
-_poc_add_sub_cmd_parsers = {}
 _poc_root_parser = None
 
 
@@ -2196,7 +2178,8 @@ def def_poc_parser(sub_cmd):
     poc_parser = parser.add_subparsers(title=cmd, dest="poc_sub_cmd", help="poc subcommand")
     define_config_parser(poc_parser)
     define_prepare_parser(poc_parser)
-    define_add_parser(poc_parser)
+    define_add_user_parser(poc_parser)
+    define_add_site_parser(poc_parser)
     define_start_parser(poc_parser)
     define_stop_parser(poc_parser)
     define_clean_parser(poc_parser)
@@ -2279,26 +2262,19 @@ def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optio
     prepare_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
-def define_add_parser(poc_parser):
-    add_parser = poc_parser.add_parser(CMD_ADD_POC, help="add a participant to the local POC project")
-    _poc_sub_cmd_parsers[CMD_ADD_POC] = add_parser
-
-    add_sub_parser = add_parser.add_subparsers(
-        title=CMD_ADD_POC,
-        dest="poc_add_sub_cmd",
-        help="poc add subcommand",
-    )
-
-    user_parser = add_sub_parser.add_parser(CMD_ADD_USER, help="add a POC user startup kit")
-    _poc_add_sub_cmd_parsers[CMD_ADD_USER] = user_parser
+def define_add_user_parser(poc_parser):
+    user_parser = poc_parser.add_parser(CMD_ADD_USER, help="add a POC user startup kit")
+    _poc_sub_cmd_parsers[CMD_ADD_USER] = user_parser
     user_parser.add_argument("cert_role", choices=POC_USER_CERT_ROLES, help="certificate role for the user")
     user_parser.add_argument("email", help="user identity, usually an email address")
     user_parser.add_argument("--org", default="nvidia", help="organization name, default nvidia")
     user_parser.add_argument("--force", action="store_true", help="replace an existing user participant")
     user_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
-    site_parser = add_sub_parser.add_parser(CMD_ADD_SITE, help="add a POC site startup kit")
-    _poc_add_sub_cmd_parsers[CMD_ADD_SITE] = site_parser
+
+def define_add_site_parser(poc_parser):
+    site_parser = poc_parser.add_parser(CMD_ADD_SITE, help="add a POC site startup kit")
+    _poc_sub_cmd_parsers[CMD_ADD_SITE] = site_parser
     site_parser.add_argument("name", help="site name")
     site_parser.add_argument("--org", default="nvidia", help="organization name, default nvidia")
     site_parser.add_argument("--force", action="store_true", help="replace an existing site participant")
