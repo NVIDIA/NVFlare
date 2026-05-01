@@ -103,6 +103,83 @@ class TestStudyCli:
         assert payload["data"]["study_details"][0]["can_submit_job"] is True
         assert payload["data"]["startup_kit"] == {"source": "active", "id": "lead", "path": "/kits/lead"}
 
+    def test_study_list_human_output_is_readable_for_empty_list(self, capsys, monkeypatch):
+        from nvflare.tool.study.study_cli import cmd_list
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        args = MagicMock()
+        mock_sess = MagicMock()
+        mock_sess.list_studies.return_value = {
+            "identity": {"name": "admin@nvidia.com", "org": "nvidia", "role": "project_admin"},
+            "studies": [],
+            "study_details": [],
+        }
+
+        with (
+            patch("nvflare.tool.study.study_cli._study_session", return_value=nullcontext(mock_sess)),
+            patch(
+                "nvflare.tool.study.study_cli.resolve_startup_kit_info_for_args",
+                return_value={"source": "active", "id": "admin@nvidia.com", "path": "/kits/admin"},
+            ),
+        ):
+            cmd_list(args)
+
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert "Identity: admin@nvidia.com (role: project_admin, org: nvidia)" in captured.out
+        assert "Startup kit: admin@nvidia.com (active)" in captured.out
+        assert "Studies: none" in captured.out
+        assert "identity: {" not in captured.out
+        assert "studies: []" not in captured.out
+        assert "study_details: []" not in captured.out
+        assert "startup_kit: {" not in captured.out
+
+    def test_study_list_human_output_renders_study_table(self, capsys, monkeypatch):
+        from nvflare.tool.study.study_cli import cmd_list
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        args = MagicMock()
+        mock_sess = MagicMock()
+        mock_sess.list_studies.return_value = {
+            "identity": {"name": "lead@nvidia.com", "org": "nvidia", "role": "lead"},
+            "studies": ["cancer-research", "pilot-study"],
+            "study_details": [
+                {
+                    "name": "cancer-research",
+                    "role": "lead",
+                    "can_submit_job": True,
+                },
+                {
+                    "name": "pilot-study",
+                    "role": "member",
+                    "can_submit_job": False,
+                    "reason": "authorization_required",
+                },
+            ],
+        }
+
+        with (
+            patch("nvflare.tool.study.study_cli._study_session", return_value=nullcontext(mock_sess)),
+            patch(
+                "nvflare.tool.study.study_cli.resolve_startup_kit_info_for_args",
+                return_value={"source": "kit_id", "id": "lead@nvidia.com", "path": "/kits/lead"},
+            ),
+        ):
+            cmd_list(args)
+
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert "Studies:" in captured.out
+        assert "NAME" in captured.out
+        assert "ROLE" in captured.out
+        assert "CAN SUBMIT" in captured.out
+        assert "cancer-research" in captured.out
+        assert "lead" in captured.out
+        assert "yes" in captured.out
+        assert "pilot-study" in captured.out
+        assert "authorization_required" in captured.out
+        assert "study_details:" not in captured.out
+
     def test_study_show_maps_command_error(self, capsys):
         from nvflare.tool.study.study_cli import cmd_show
 

@@ -38,7 +38,7 @@ from nvflare.tool.kit.kit_config import (
 
 CMD_KIT_ADD = "add"
 CMD_KIT_USE = "use"
-CMD_KIT_SHOW = "show"
+CMD_KIT_INSPECT = "inspect"
 CMD_KIT_LIST = "list"
 CMD_KIT_REMOVE = "remove"
 # The startup kit commands are registered directly under nvflare config.
@@ -154,16 +154,40 @@ def cmd_kit_use(args):
 
 def _print_env_warning():
     env_path = os.getenv(NVFLARE_STARTUP_KIT_DIR)
-    if env_path:
+    if env_path and not is_json_mode():
         print_human(f"warning: {NVFLARE_STARTUP_KIT_DIR} is set ({env_path})")
         print_human("         normal commands will use this path instead of the active kit above")
 
 
-def cmd_kit_show(args):
+def _render_kit_inspect_human(data: dict):
+    rows = [
+        {
+            "active": "*",
+            "id": data.get("active") or "-",
+            "status": data.get("status") or "-",
+            "identity": data.get("identity") or "-",
+            "cert_role": data.get("cert_role") or "-",
+            "path": data.get("path") or "-",
+        }
+    ]
+    keys = ["active", "id", "status", "identity", "cert_role", "path"]
+    widths = [max(len(key), max(len(str(row.get(key, ""))) for row in rows)) for key in keys]
+    header = "  ".join(key.ljust(width) for key, width in zip(keys, widths))
+    print_human(header)
+    print_human("-" * len(header))
+    for row in rows:
+        print_human("  ".join(str(row.get(key, "")).ljust(width) for key, width in zip(keys, widths)))
+    print_human("")
+    print_human(f"config_file: {data.get('config_file') or '-'}")
+    if data.get("hint"):
+        print_human(f"hint: {data['hint']}")
+
+
+def cmd_kit_inspect(args):
     handle_schema_flag(
-        _kit_sub_cmd_parsers[CMD_KIT_SHOW],
-        f"{KIT_COMMAND} show",
-        [f"{KIT_COMMAND} show"],
+        _kit_sub_cmd_parsers[CMD_KIT_INSPECT],
+        f"{KIT_COMMAND} inspect",
+        [f"{KIT_COMMAND} inspect"],
         sys.argv[1:],
         output_modes=_JSON_OUTPUT_MODES,
         streaming=False,
@@ -233,7 +257,10 @@ def cmd_kit_show(args):
                 data["findings"] = metadata.get("findings") or []
 
     _print_env_warning()
-    output_ok(data)
+    if is_json_mode():
+        output_ok(data)
+    else:
+        _render_kit_inspect_human(data)
 
 
 def cmd_kit_list(args):
@@ -313,7 +340,7 @@ def cmd_kit_remove(args):
 _KIT_HANDLERS: Dict[str, Callable] = {
     CMD_KIT_ADD: cmd_kit_add,
     CMD_KIT_USE: cmd_kit_use,
-    CMD_KIT_SHOW: cmd_kit_show,
+    CMD_KIT_INSPECT: cmd_kit_inspect,
     CMD_KIT_LIST: cmd_kit_list,
     CMD_KIT_REMOVE: cmd_kit_remove,
 }
@@ -332,9 +359,9 @@ def def_kit_cli_parser(sub_cmd):
     use_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _kit_sub_cmd_parsers[CMD_KIT_USE] = use_parser
 
-    show_parser = sub_cmd.add_parser(CMD_KIT_SHOW, help="show the configured active startup kit")
-    show_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
-    _kit_sub_cmd_parsers[CMD_KIT_SHOW] = show_parser
+    inspect_parser = sub_cmd.add_parser(CMD_KIT_INSPECT, help="inspect the configured active startup kit")
+    inspect_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    _kit_sub_cmd_parsers[CMD_KIT_INSPECT] = inspect_parser
 
     list_parser = sub_cmd.add_parser(CMD_KIT_LIST, help="list registered startup kits")
     list_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")

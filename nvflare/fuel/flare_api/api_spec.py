@@ -135,7 +135,7 @@ class ClientInfo:
         last_connect_time = (
             "unknown" if self.last_connect_time is None else time.asctime(time.localtime(self.last_connect_time))
         )
-        return f"{self.name}(last_connect_time: {last_connect_time})"
+        return f"{self.name} (last_connect_time: {last_connect_time})"
 
 
 class JobInfo:

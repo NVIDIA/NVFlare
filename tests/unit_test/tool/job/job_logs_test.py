@@ -22,13 +22,14 @@ from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, No
 from nvflare.tool import cli_output
 
 
-def _make_args(job_id="abc123", site="server", tail=None, since=None, max_bytes=None):
+def _make_args(job_id="abc123", site="server", tail=None, since=None, max_bytes=None, study="default"):
     args = MagicMock()
     args.job_id = job_id
     args.site = site
     args.tail = tail
     args.since = since
     args.max_bytes = max_bytes
+    args.study = study
     return args
 
 
@@ -159,6 +160,8 @@ class TestJobLogs:
 
         envelope = json.loads(capsys.readouterr().out)
         assert envelope["error_code"] == "JOB_NOT_FOUND"
+        assert "searched study 'default'" in envelope["message"]
+        assert "--study <study_name>" in envelope["hint"]
 
     def test_logs_connection_failed_exits_2(self, capsys):
         """NoConnection maps to CONNECTION_FAILED, exit 2."""
@@ -196,6 +199,21 @@ class TestJobLogs:
             cmd_job_logs(_make_args(tail=10, since="2026-04-28T10:00:00", max_bytes=100))
 
         mock_sess.get_job_logs.assert_called_once_with("abc123", target="server")
+
+    def test_logs_uses_named_study_session(self, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.return_value = {"logs": {"server": "log\n"}}
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)) as session:
+            cmd_job_logs(_make_args(study="cancer"))
+
+        session.assert_called_once()
+        assert session.call_args.kwargs["study"] == "cancer"
+        mock_sess.get_job_logs.assert_called_once_with("abc123", target="server")
+        data = json.loads(capsys.readouterr().out)["data"]
+        assert data["logs"] == {"server": "log\n"}
 
     def test_logs_default_caps_each_site_to_500_lines(self, capsys):
         from nvflare.tool.job.job_cli import cmd_job_logs
@@ -357,6 +375,8 @@ class TestJobLogs:
         assert args.tail == 100
         assert args.since == "2026-04-28T10:00:00"
         assert args.max_bytes == 1024
+        args = parser.parse_args(["abc123", "--study", "cancer"])
+        assert args.study == "cancer"
         with pytest.raises(SystemExit):
             parser.parse_args(["abc123", "--grep", "OOM"])
         with pytest.raises(SystemExit):

@@ -16,7 +16,7 @@ Command Usage
 
    usage: nvflare config [-h] [--schema] [-d [STARTUP_KIT_DIR]]
                          [-pw [POC_WORKSPACE_DIR]] [-jt [JOB_TEMPLATES_DIR]]
-                         {add,use,show,list,remove} ...
+                         {add,use,inspect,list,remove} ...
 
 *****************
 Common Examples
@@ -33,7 +33,7 @@ Configuration notes:
 
 - The saved config format is normalized to v2 with ``version = 2`` as the first line.
 - ``startup_kits.active`` and ``startup_kits.entries`` are managed by ``nvflare config``.
-- ``nvflare config show --format json`` and ``nvflare config list --format json``
+- ``nvflare config inspect --format json`` and ``nvflare config list --format json``
   include best-effort startup-kit identity, certificate expiration, and local
   stale-path findings for automation.
 - ``nvflare config use`` changes global CLI state. Automation should prefer

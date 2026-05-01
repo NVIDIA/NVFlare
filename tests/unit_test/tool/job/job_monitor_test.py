@@ -150,6 +150,7 @@ class TestJobMonitorOutput:
 
         captured = capsys.readouterr()
         data = json.loads(captured.out)
+        assert captured.err == ""
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
         assert data["data"]["job_id"] == "abc123"
@@ -715,7 +716,9 @@ class TestJobMonitorOutput:
 
             cmd_job_monitor(_make_args())
 
-        data = json.loads(capsys.readouterr().out)
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert captured.err == ""
         assert data["status"] == "ok"
         assert data["data"]["status"] == "FINISHED_OK"
 

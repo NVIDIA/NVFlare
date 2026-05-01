@@ -228,11 +228,11 @@ def _resolve_lifecycle_inputs(args, command_label: str):
     _output_invalid_lifecycle_args("provide --sites for org_admin or --site-org for project_admin")
 
 
-def _run_with_payload(args, func, *func_args, parser=None):
+def _run_with_payload(args, func, *func_args, parser=None, output_func=output_ok):
     try:
         with _study_session(args) as sess:
             data = func(sess, *func_args)
-        output_ok(data)
+        output_func(data)
     except (ValueError, InvalidArgumentError) as e:
         output_usage_error(parser, detail=str(e), exit_code=4)
     except Exception as e:
@@ -243,6 +243,83 @@ def _with_startup_kit_info(args, data: dict) -> dict:
     data = dict(data or {})
     data["startup_kit"] = resolve_startup_kit_info_for_args(args)
     return data
+
+
+def _render_study_list_human(data: dict):
+    from nvflare.tool.cli_output import print_human
+
+    data = data or {}
+    identity = data.get("identity") or {}
+    startup_kit = data.get("startup_kit") or {}
+    study_details = data.get("study_details") or []
+    studies = data.get("studies") or []
+
+    identity_name = identity.get("name") or "unknown"
+    identity_parts = []
+    if identity.get("role"):
+        identity_parts.append(f"role: {identity['role']}")
+    if identity.get("org"):
+        identity_parts.append(f"org: {identity['org']}")
+    identity_suffix = f" ({', '.join(identity_parts)})" if identity_parts else ""
+    print_human(f"Identity: {identity_name}{identity_suffix}")
+
+    startup_label = startup_kit.get("id") or startup_kit.get("path") or "unknown"
+    startup_source = startup_kit.get("source")
+    if startup_source:
+        print_human(f"Startup kit: {startup_label} ({startup_source})")
+    else:
+        print_human(f"Startup kit: {startup_label}")
+
+    rows = []
+    if isinstance(study_details, list):
+        rows.extend(detail for detail in study_details if isinstance(detail, dict))
+    known_names = {row.get("name") for row in rows}
+    for name in studies:
+        if name not in known_names:
+            rows.append({"name": name})
+
+    if not rows:
+        print_human("Studies: none")
+        return
+
+    print_human("")
+    print_human("Studies:")
+    headers = ("NAME", "ROLE", "CAN SUBMIT", "REASON")
+    table_rows = []
+    for row in rows:
+        can_submit = row.get("can_submit_job")
+        if can_submit is True:
+            can_submit_text = "yes"
+        elif can_submit is False:
+            can_submit_text = "no"
+        else:
+            can_submit_text = "-"
+        table_rows.append(
+            (
+                str(row.get("name") or "-"),
+                str(row.get("role") or "-"),
+                can_submit_text,
+                str(row.get("reason") or "-"),
+            )
+        )
+
+    widths = [len(header) for header in headers]
+    for row in table_rows:
+        widths = [max(width, len(cell)) for width, cell in zip(widths, row)]
+
+    print_human("  " + "  ".join(header.ljust(width) for header, width in zip(headers, widths)))
+    print_human("  " + "  ".join("-" * width for width in widths))
+    for row in table_rows:
+        print_human("  " + "  ".join(cell.ljust(width) for cell, width in zip(row, widths)))
+
+
+def _output_study_list(data: dict):
+    from nvflare.tool.cli_output import is_json_mode
+
+    if is_json_mode():
+        output_ok(data)
+    else:
+        _render_study_list_human(data)
 
 
 def cmd_register(args):
@@ -348,6 +425,7 @@ def cmd_list(args):
         args,
         lambda s: _with_startup_kit_info(args, s.list_studies()),
         parser=_study_sub_cmd_parsers[CMD_STUDY_LIST],
+        output_func=_output_study_list,
     )
 
 

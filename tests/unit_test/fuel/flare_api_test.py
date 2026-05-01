@@ -330,7 +330,7 @@ def test_server_info_str_handles_none_start_time():
 
 
 def test_client_info_str_handles_none_last_connect_time():
-    assert str(ClientInfo("site-1", None)) == "site-1(last_connect_time: unknown)"
+    assert str(ClientInfo("site-1", None)) == "site-1 (last_connect_time: unknown)"
 
 
 def _make_session_with_meta(meta: dict):

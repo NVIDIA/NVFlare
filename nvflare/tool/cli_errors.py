@@ -54,6 +54,10 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "Server stopped or job ended before command was delivered.",
         "hint": "Check server status with 'nvflare system status'.",
     },
+    "SYSTEM_NOT_READY": {
+        "message": "FLARE system is not ready yet.",
+        "hint": "Wait for clients to connect, then retry 'nvflare system status'. If this persists, check POC service logs or client logs.",
+    },
     "INTERNAL_ERROR": {
         "message": "An unexpected error occurred.",
         "hint": "This is likely a bug. Re-run in a development environment for a traceback, or report the issue.",

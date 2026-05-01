@@ -20,12 +20,12 @@ Command Usage
 
    usage: nvflare config [-h] [--schema] [-d [STARTUP_KIT_DIR]]
                          [-pw [POC_WORKSPACE_DIR]] [-jt [JOB_TEMPLATES_DIR]]
-                         {add,use,show,list,remove} ...
+                         {add,use,inspect,list,remove} ...
 
    config subcommands:
      add       register a startup kit path
      use       activate a registered startup kit
-     show      show the configured active startup kit
+     inspect   inspect the configured active startup kit
      list      list registered startup kits
      remove    remove a local startup kit registration
 
@@ -154,26 +154,25 @@ Example output:
 In JSON mode, ``nvflare config use`` includes a warning finding that the command
 changes global CLI state.
 
-**********************
-Show Active Startup Kit
-**********************
+**************************
+Inspect Active Startup Kit
+**************************
 
 .. code-block:: shell
 
-   nvflare config show
+   nvflare config inspect
 
 Example output:
 
 .. code-block:: none
 
-   active: cancer_lead
-   path: /secure/startup_kits/cancer/lead@nvidia.com
-   config_file: /home/user/.nvflare/config.conf
-   status: ok
-   identity: lead@nvidia.com
-   cert_role: lead
+   active  id           status  identity         cert_role  path
+   ------------------------------------------------------------------------
+   *       cancer_lead  ok      lead@nvidia.com  lead       /secure/startup_kits/cancer/lead@nvidia.com
 
-In JSON mode, ``nvflare config show`` also includes best-effort identity and
+   config_file: /home/user/.nvflare/config.conf
+
+In JSON mode, ``nvflare config inspect`` also includes best-effort identity and
 certificate metadata for the active startup kit:
 
 - ``role``: same certificate role as ``cert_role``.
@@ -184,9 +183,9 @@ certificate metadata for the active startup kit:
 - ``findings``: non-fatal local findings such as expired, expiring, unreadable,
   missing, or invalid startup-kit material.
 
-If ``NVFLARE_STARTUP_KIT_DIR`` is set, ``nvflare config show`` still shows the configured
-active kit and prints a warning that normal commands will use the environment
-path instead.
+If ``NVFLARE_STARTUP_KIT_DIR`` is set, ``nvflare config inspect`` still shows the
+configured active kit and prints a warning that normal commands will use the
+environment path instead.
 
 **********************
 List Registered Kits

@@ -433,9 +433,13 @@ Retrieve job logs from the server-side log store:
    nvflare job logs <job_id> --site all --tail 200
    nvflare job logs <job_id> --site site-1 --since 2026-04-28T10:00:00
    nvflare job logs <job_id> --site all --max-bytes 200000
+   nvflare job logs <job_id> --study cancer_research
 
 ``job logs`` accepts:
 
+- ``--study``: retrieve logs for a job in a named study. If omitted, ``job
+  logs`` searches the default study. Use the same study name used for
+  ``job submit`` or ``job list``.
 - ``--site server``: return the server job log. This is the default.
 - ``--site <client_name>``: return that client's job log after it has been
   streamed to and stored by the server.

@@ -45,7 +45,9 @@ class TestJobDownload:
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             cmd_job_download(args)
 
-        return mock_sess, json.loads(capsys.readouterr().out)
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        return mock_sess, json.loads(captured.out)
 
     def test_download_success_json_includes_artifact_contract_fields(self, tmp_path, capsys):
         """job download success: JSON envelope includes the artifact contract."""

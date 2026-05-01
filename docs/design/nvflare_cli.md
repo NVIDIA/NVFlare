@@ -90,7 +90,7 @@ argparse:
 These fields are explicit per-command metadata, not inferred from argparse. The
 initial scope is limited to the agent-facing command set: `job submit`, `job
 list`, `job meta`, `job wait`, `job monitor`, `job download`, `job logs`,
-`config list`, `config show`, `config use`, `recipe list`, `recipe show`, and
+`config list`, `config inspect`, `config use`, `recipe list`, `recipe show`, and
 `study list`.
 
 ```text
@@ -164,7 +164,7 @@ The JSON output shape and error codes defined here become the MCP tool schemas i
 | --- | --- | --- |
 | `nvflare simulator` | — | Deprecated — retain with stderr warning; use Job Recipe SimEnv directly (`python job.py`) |
 | `nvflare poc` | `config`, `prepare`, `start`, `stop`, `clean`, `add user`, `add site` | Add JSON output, exit codes, `--schema`; add `--force` to `prepare` for workspace deletion prompt bypass and to `clean` for stop-before-cleanup; register generated user/admin kits in the shared startup kit registry |
-| `nvflare config` | `add`, `use`, `show`, `list`, `remove` | User-facing startup kit registry commands; keeps 2.7.x root flags `-d/--startup_kit_dir`, deprecated `-pw/--poc_workspace_dir`, and deprecated `-jt/--job_templates_dir`; no server connection |
+| `nvflare config` | `add`, `use`, `inspect`, `list`, `remove` | User-facing startup kit registry commands; keeps 2.7.x root flags `-d/--startup_kit_dir`, deprecated `-pw/--poc_workspace_dir`, and deprecated `-jt/--job_templates_dir`; no server connection |
 | `nvflare poc config` | — | POC-specific local config, including the POC workspace path |
 | `nvflare study` | `register`, `show`, `list`, `remove`, `add-site`, `remove-site`, `add-user`, `remove-user` | Add multi-study lifecycle CLI using the active startup kit |
 | `nvflare provision` | — | Add JSON output, `--schema`, `--force` for Y/N prompts; restore pre-2.7.0 default: no args = generate `project.yml` |
@@ -246,8 +246,14 @@ recipe.job.to_server(JobLogReceiver())
 ### `nvflare job logs`
 
 ```text
-nvflare job logs <job_id> [--site server|<client_name>|all] [--tail N] [--since timestamp] [--max-bytes N]
+nvflare job logs <job_id> [--study name] [--site server|<client_name>|all] [--tail N] [--since timestamp] [--max-bytes N]
 ```
+
+`--study` selects the study that contains the job. If omitted, `job logs`
+searches the `default` study. For named-study jobs, callers must pass the same
+`--study` used for `job submit` or `job list`; otherwise a valid job ID from a
+different study will report `JOB_NOT_FOUND` with the searched study in the
+error message.
 
 `--site` defaults to `server` for bounded output and backward-compatible behavior.
 If no explicit bound is provided, the CLI returns at most the last 500 lines per
@@ -563,7 +569,7 @@ Multiple local identities are handled by activating a different registered ID:
 nvflare config add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com
 nvflare config add fraud_org_admin /secure/startup_kits/fraud/org_admin@nvidia.com
 nvflare config use cancer_lead
-nvflare config show
+nvflare config inspect
 ```
 
 Activation is local config mutation only. It does not contact the server.
@@ -597,7 +603,7 @@ identities and are not registered in this CLI identity registry. For production 
 choose meaningful local IDs such as `cancer_lead`.
 
 The entry value is only the startup kit path. Metadata such as identity and certificate
-role is inspected from the startup kit when needed by commands such as `nvflare config show`;
+role is inspected from the startup kit when needed by commands such as `nvflare config inspect`;
 it is not duplicated in `config.conf`. Fields that are not reliably derivable from the
 startup kit are omitted from normal output.
 
@@ -672,7 +678,7 @@ state. Agent and notebook workflows should prefer `--kit-id <id>` or
 `--startup-kit <path>` on each server-connected command. In JSON mode, `config
 use` returns a warning finding with code `CONFIG_USE_MUTATES_GLOBAL_STATE`.
 
-#### `nvflare config show`
+#### `nvflare config inspect`
 
 Shows the configured active startup kit:
 
@@ -694,7 +700,7 @@ identity metadata:
 - `findings`: non-fatal local findings for stale paths, invalid kits, unreadable
   certs, expired certs, or certs expiring soon.
 
-`nvflare config show` reports `startup_kits.active`. It does not replace that value with
+`nvflare config inspect` reports `startup_kits.active`. It does not replace that value with
 `NVFLARE_STARTUP_KIT_DIR`, but it should warn when the environment variable is set:
 
 ```text
@@ -719,7 +725,7 @@ stale entries without contacting the server:
 The active startup kit is marked with `*`. Missing or invalid paths are shown as
 `missing` or `invalid`. Valid site kits are not shown because they are not CLI identities.
 In JSON mode, each list row includes the same enriched `role`, `org`, `project`,
-`certificate`, and `findings` fields as `config show`.
+`certificate`, and `findings` fields as `config inspect`.
 
 #### `nvflare config remove <id>`
 
@@ -934,7 +940,7 @@ General rules:
 If `~/.nvflare/config.conf` does not exist:
 
 - `nvflare config list` prints an empty list.
-- `nvflare config show` reports that no active startup kit is configured.
+- `nvflare config inspect` reports that no active startup kit is configured.
 - Normal server-connected commands fail before connecting:
 
 ```text
@@ -1527,7 +1533,7 @@ Retain with stderr warning. Underscore alias `authz_preview` accepted for backwa
 | `poc start` | Add | Add | Add | `server_url` in JSON data field when ready |
 | `poc stop` | Add | Add | Add | — |
 | `poc clean` | Add | Add | Add | Add `--force` to stop a running local POC system before cleanup |
-| `config add/use/show/list/remove` | Add | Add | Add | Manage local startup kit registry; no server connection |
+| `config add/use/inspect/list/remove` | Add | Add | Add | Manage local startup kit registry; no server connection |
 | `job create` | — | — | — | Deprecated |
 | `job submit` | Add | Add | Add | Returns `job_id` immediately |
 | `job wait` | Add | Add | Add | Single-envelope automation wait/poll |
@@ -1566,7 +1572,7 @@ nvflare job delete    <job_id> [--force]
 
 # Observability (server must be running)
 nvflare job stats     <job_id> [--site server|<name>|all]
-nvflare job logs      <job_id> [--site server|<name>|all] [--tail N] [--since timestamp] [--max-bytes N]
+nvflare job logs      <job_id> [--study name] [--site server|<name>|all] [--tail N] [--since timestamp] [--max-bytes N]
 nvflare job log-config <job_id> [--site server|<name>|all] <level>
 ```
 

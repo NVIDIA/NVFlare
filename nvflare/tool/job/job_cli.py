@@ -1374,8 +1374,10 @@ def cmd_job_download(cmd_args):
         retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
 
+    json_mode = is_json_mode()
     destination = _job_download_destination(cmd_args.job_id, getattr(cmd_args, "output_dir", None))
-    print_human(f"Downloading job {cmd_args.job_id} ...")
+    if not json_mode:
+        print_human(f"Downloading job {cmd_args.job_id} ...")
     try:
         with _job_session_for_args(cmd_args) as sess:
             path = sess.download_job_result(cmd_args.job_id, destination)
@@ -1390,7 +1392,8 @@ def cmd_job_download(cmd_args):
 
     path = str(path or destination)
     download_path = _local_download_path(path)
-    print_human(f"Job result downloaded to: {download_path or path}")
+    if not json_mode:
+        print_human(f"Job result downloaded to: {download_path or path}")
     payload = {
         "job_id": cmd_args.job_id,
         "download_path": download_path,
@@ -1405,7 +1408,7 @@ def cmd_job_download(cmd_args):
         payload["artifact_discovery"] = "skipped"
         payload["artifacts"] = None
         payload["missing_artifacts"] = None
-    if is_json_mode():
+    if json_mode:
         output_ok(payload)
 
 
@@ -1718,6 +1721,7 @@ def cmd_job_logs(cmd_args):
             "nvflare job logs abc123 --site site-1",
             "nvflare job logs abc123 --site all",
             "nvflare job logs abc123 --site all --tail 200",
+            "nvflare job logs abc123 --study cancer",
         ],
         sys.argv[1:],
         output_modes=_JSON_OUTPUT_MODES,
@@ -1728,6 +1732,7 @@ def cmd_job_logs(cmd_args):
     )
 
     site = getattr(cmd_args, "site", "server")
+    study = getattr(cmd_args, "study", "default")
     tail_lines = getattr(cmd_args, "tail", None)
     since_value = getattr(cmd_args, "since", None)
     max_bytes = getattr(cmd_args, "max_bytes", None)
@@ -1741,10 +1746,18 @@ def cmd_job_logs(cmd_args):
         return
 
     try:
-        with _job_session_for_args(cmd_args) as sess:
+        with _job_session_for_args(cmd_args, study=study) as sess:
             result = sess.get_job_logs(cmd_args.job_id, target=site)
     except JobNotFound:
-        output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
+        output_error(
+            "JOB_NOT_FOUND",
+            job_id=cmd_args.job_id,
+            detail=f"searched study '{study}'",
+            hint=(
+                "Use 'nvflare job list --study <study_name>' to verify the job ID, "
+                "or rerun this command with --study <study_name>."
+            ),
+        )
         return
     except AuthenticationError:
         raise
@@ -1856,6 +1869,7 @@ def define_job_logs_parser(job_subparser):
         default=None,
         help="return at most N bytes per site; applied after --since and --tail",
     )
+    p.add_argument("--study", type=str, default="default", help="study to retrieve job logs from")
     add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_LOGS] = p
@@ -2117,6 +2131,7 @@ def _build_monitor_status_callback(
     stats_target: str,
     key_aliases: dict,
     jsonl_mode: bool = False,
+    quiet_mode: bool = False,
 ):
     def _status_cb(sess, job_id, job_meta, state):
         from nvflare.apis.job_def import JobMetaKey
@@ -2134,6 +2149,9 @@ def _build_monitor_status_callback(
         if status != state["last_status"] or now - state["last_emit_ts"] >= emit_interval:
             if jsonl_mode:
                 _emit_monitor_jsonl_progress(job_id, job_meta, state, now, start, start_ts_holder["value"])
+            elif quiet_mode:
+                state["last_status"] = status
+                state["last_emit_ts"] = now
             else:
                 _emit_monitor_progress(job_id, job_meta, state, now, start, start_ts_holder["value"])
         return not _is_terminal_job_status(status)
@@ -2251,6 +2269,7 @@ def cmd_job_monitor(cmd_args):
     )
 
     jsonl_mode = is_jsonl_mode()
+    json_mode = is_json_mode()
     study = get_arg_value(cmd_args, "study", "default")
     start = time.time()
     start_ts_holder = {"value": None}
@@ -2277,6 +2296,7 @@ def cmd_job_monitor(cmd_args):
         stats_target=stats_target,
         key_aliases=key_aliases,
         jsonl_mode=jsonl_mode,
+        quiet_mode=json_mode,
     )
 
     try:
@@ -2341,7 +2361,7 @@ def cmd_job_monitor(cmd_args):
         start=start,
         start_ts=start_ts_holder["value"],
         cb_state=cb_state,
-        json_mode=is_json_mode() or jsonl_mode,
+        json_mode=json_mode or jsonl_mode,
     )
 
     failure = _job_terminal_failure_error(status)
@@ -2350,14 +2370,14 @@ def cmd_job_monitor(cmd_args):
         if jsonl_mode:
             output_jsonl_event(_build_monitor_terminal_event(data, error_code=error_code))
             sys.exit(1)
-        if not is_json_mode():
+        if not json_mode:
             _print_monitor_result_human(data, print_human)
-        output_error(error_code, exit_code=1, hint=hint, data=data if is_json_mode() else None, job_id=cmd_args.job_id)
+        output_error(error_code, exit_code=1, hint=hint, data=data if json_mode else None, job_id=cmd_args.job_id)
     else:
         if jsonl_mode:
             output_jsonl_event(_build_monitor_terminal_event(data))
             return
-        if is_json_mode():
+        if json_mode:
             output_ok(data)
         else:
             _print_monitor_result_human(data, print_human)

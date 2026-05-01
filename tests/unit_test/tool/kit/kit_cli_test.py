@@ -140,15 +140,17 @@ class TestKitCli:
 
         assert root.parse_args(["config", "add", "admin", "/tmp/startup", "--force"]).force is True
         assert root.parse_args(["config", "use", "admin"]).config_sub_cmd == "use"
-        assert root.parse_args(["config", "show"]).config_sub_cmd == "show"
+        assert root.parse_args(["config", "inspect"]).config_sub_cmd == "inspect"
         assert root.parse_args(["config", "list"]).config_sub_cmd == "list"
         assert root.parse_args(["config", "remove", "admin"]).config_sub_cmd == "remove"
-        assert root.parse_args(["config", "show", "--schema"]).schema is True
+        assert root.parse_args(["config", "inspect", "--schema"]).schema is True
+        with pytest.raises(SystemExit):
+            root.parse_args(["config", "show"])
 
     @pytest.mark.parametrize(
         ("cmd_name", "mutating", "idempotent"),
         [
-            ("show", False, True),
+            ("inspect", False, True),
             ("list", False, True),
             ("use", True, True),
         ],
@@ -187,6 +189,7 @@ class TestKitCli:
     def test_add_use_show_list_remove_flow_and_add_never_activates(self, tmp_path, monkeypatch, capsys):
         home = Path.home()
         kit_dir = _make_admin_startup_kit(tmp_path, "admin@nvidia.com")
+        _write_client_cert(kit_dir, common_name="admin@nvidia.com", role="project_admin")
 
         _run_kit_command(["add", "admin@nvidia.com", kit_dir], monkeypatch)
         out = capsys.readouterr().out
@@ -197,7 +200,7 @@ class TestKitCli:
         assert _entry(config, "admin@nvidia.com") == kit_dir.resolve()
         assert config.get("startup_kits.active", None) is None
 
-        _run_kit_command(["show"], monkeypatch)
+        _run_kit_command(["inspect"], monkeypatch)
         out = capsys.readouterr().out
         assert "No active startup kit" in out
         assert "nvflare config use <id>" in out
@@ -207,6 +210,22 @@ class TestKitCli:
         assert "active startup kit: admin@nvidia.com" in out or "active_startup_kit: admin@nvidia.com" in out
         assert str(kit_dir) in out
         assert _read_config(home).get("startup_kits.active") == "admin@nvidia.com"
+
+        _run_kit_command(["inspect"], monkeypatch)
+        out = capsys.readouterr().out
+        assert "active  id" in out
+        assert "status" in out
+        assert "identity" in out
+        assert "cert_role" in out
+        assert "path" in out
+        assert "*       admin@nvidia.com" in out
+        assert "ok" in out
+        assert "admin@nvidia.com" in out
+        assert "project_admin" in out
+        assert str(kit_dir) in out
+        assert "config_file:" in out
+        assert "active:" not in out
+        assert "cert_role:" not in out
 
         _run_kit_command(["list"], monkeypatch)
         out = capsys.readouterr().out
@@ -300,7 +319,7 @@ class TestKitCli:
         assert "invalid" in out
         assert any(line.startswith("*") and "missing_admin" in line for line in out.splitlines())
 
-    def test_show_and_list_json_include_identity_certificate_and_findings(
+    def test_inspect_and_list_json_include_identity_certificate_and_findings(
         self, tmp_path, monkeypatch, capsys, _isolated_cli
     ):
         from nvflare.tool import cli_output
@@ -331,17 +350,17 @@ class TestKitCli:
         )
         monkeypatch.setattr(cli_output, "_output_format", "json")
 
-        _run_kit_command(["show"], monkeypatch)
-        show_payload = json.loads(capsys.readouterr().out)
-        show_data = show_payload["data"]
-        assert show_data["status"] == "ok"
-        assert show_data["identity"] == "lead@nvidia.com"
-        assert show_data["cert_role"] == "lead"
-        assert show_data["role"] == "lead"
-        assert show_data["org"] == "NVIDIA"
-        assert show_data["project"] == "CancerProject"
-        assert show_data["certificate"]["status"] == "ok"
-        assert show_data["findings"] == []
+        _run_kit_command(["inspect"], monkeypatch)
+        inspect_payload = json.loads(capsys.readouterr().out)
+        inspect_data = inspect_payload["data"]
+        assert inspect_data["status"] == "ok"
+        assert inspect_data["identity"] == "lead@nvidia.com"
+        assert inspect_data["cert_role"] == "lead"
+        assert inspect_data["role"] == "lead"
+        assert inspect_data["org"] == "NVIDIA"
+        assert inspect_data["project"] == "CancerProject"
+        assert inspect_data["certificate"]["status"] == "ok"
+        assert inspect_data["findings"] == []
 
         _run_kit_command(["list"], monkeypatch)
         list_payload = json.loads(capsys.readouterr().out)
@@ -366,6 +385,32 @@ class TestKitCli:
         payload = json.loads(capsys.readouterr().out)
         assert payload["status"] == "ok"
         assert any(f["code"] == "CONFIG_USE_MUTATES_GLOBAL_STATE" for f in payload["data"]["findings"])
+
+    def test_inspect_json_does_not_print_env_warning(self, tmp_path, monkeypatch, capsys):
+        from nvflare.tool import cli_output
+
+        kit_dir = _make_admin_startup_kit(tmp_path, "admin@nvidia.com")
+        _write_config(
+            Path.home(),
+            f"""
+            version = 2
+            startup_kits {{
+              active = "project_admin"
+              entries {{
+                project_admin = "{kit_dir}"
+              }}
+            }}
+            """,
+        )
+        monkeypatch.setenv("NVFLARE_STARTUP_KIT_DIR", str(kit_dir))
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+
+        _run_kit_command(["inspect"], monkeypatch)
+
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out)
+        assert payload["status"] == "ok"
+        assert captured.err == ""
 
     def test_use_unknown_or_stale_registration_does_not_change_active(self, tmp_path, monkeypatch):
         home = Path.home()
