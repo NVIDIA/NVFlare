@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotDone, JobNotFound, NoConnection
 from nvflare.tool import cli_output
 
 
@@ -30,8 +30,8 @@ class TestJobDownload:
     def agent_mode(self, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
 
-    def _make_args(self, job_id="abc123", output="json", output_dir=None):
-        args = {"job_id": job_id, "output": output}
+    def _make_args(self, job_id="abc123", output="json", output_dir=None, study="default", force=False):
+        args = {"job_id": job_id, "output": output, "study": study, "force": force}
         if output_dir is not None:
             args["output_dir"] = output_dir
         return Namespace(**args)
@@ -40,6 +40,7 @@ class TestJobDownload:
         from nvflare.tool.job.job_cli import cmd_job_download
 
         mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
         mock_sess.download_job_result.return_value = str(download_path)
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
@@ -75,13 +76,14 @@ class TestJobDownload:
         download_path.mkdir()
         args = self._make_args(output_dir=tmp_path / "dest")
         mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
         mock_sess.download_job_result.return_value = str(download_path)
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             cmd_job_download(args)
 
         captured = capsys.readouterr()
-        assert "Downloading job abc123 ..." in captured.out
+        assert "Downloading job abc123 from study default ..." in captured.out
         assert f"Job result downloaded to: {download_path}" in captured.out
         assert "download_path:" not in captured.out
         assert "artifact_discovery:" not in captured.out
@@ -238,24 +240,29 @@ class TestJobDownload:
         assert envelope["data"]["artifacts"] is None
         assert envelope["data"]["missing_artifacts"] is None
 
-    def test_download_not_found_exits_1(self):
+    def test_download_not_found_exits_1(self, capsys):
         """JOB_NOT_FOUND exits with code 1."""
         from nvflare.tool.job.job_cli import cmd_job_download
 
         args = self._make_args(job_id="notfound")
         mock_sess = MagicMock()
-        mock_sess.download_job_result.side_effect = JobNotFound("job not found")
+        mock_sess.get_job_meta.side_effect = JobNotFound("job not found")
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             with pytest.raises(SystemExit) as exc_info:
                 cmd_job_download(args)
         assert exc_info.value.code == 1
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "JOB_NOT_FOUND"
+        assert "searched study 'default'" in envelope["message"]
+        assert "nvflare job list --study <study_name>" in envelope["hint"]
 
     def test_download_authentication_error_propagates(self):
         from nvflare.tool.job.job_cli import cmd_job_download
 
         args = self._make_args()
         mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
         mock_sess.download_job_result.side_effect = AuthenticationError("bad cert")
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
@@ -268,6 +275,7 @@ class TestJobDownload:
 
         args = self._make_args()
         mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
         mock_sess.download_job_result.side_effect = NoConnection("connection refused")
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
@@ -279,6 +287,82 @@ class TestJobDownload:
         assert envelope["status"] == "error"
         assert envelope["error_code"] == "CONNECTION_FAILED"
         assert envelope["exit_code"] == 2
+
+    def test_download_running_job_exits_job_not_done(self, capsys, tmp_path):
+        """running jobs are not downloaded as partial results."""
+        from nvflare.tool.job.job_cli import cmd_job_download
+
+        args = self._make_args(job_id="running", output_dir=tmp_path / "dest", study="cancer")
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"status": "RUNNING"}
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_download(args)
+
+        assert exc_info.value.code == 4
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "JOB_NOT_DONE"
+        assert "current status: RUNNING" in envelope["message"]
+        assert "--study cancer" in envelope["hint"]
+        mock_sess.download_job_result.assert_not_called()
+
+    def test_download_existing_destination_requires_force(self, capsys, tmp_path):
+        """an existing local download directory is a normal CLI error unless --force is used."""
+        from nvflare.tool.job.job_cli import cmd_job_download
+
+        output_dir = tmp_path / "dest"
+        existing = output_dir / "abc123"
+        existing.mkdir(parents=True)
+        args = self._make_args(output_dir=output_dir)
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_download(args)
+
+        assert exc_info.value.code == 4
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "INVALID_ARGS"
+        assert str(existing) in envelope["message"]
+        assert "--force" in envelope["hint"]
+        mock_sess.download_job_result.assert_not_called()
+
+    def test_download_force_replaces_existing_destination(self, capsys, tmp_path):
+        """--force removes the existing local download directory before downloading."""
+        output_dir = tmp_path / "dest"
+        existing = output_dir / "abc123"
+        existing.mkdir(parents=True)
+        marker = existing / "old.txt"
+        marker.write_text("old")
+        args = self._make_args(output_dir=output_dir, force=True)
+        download_path = output_dir / "abc123"
+
+        mock_sess, envelope = self._download_json(args, download_path, capsys)
+
+        assert envelope["status"] == "ok"
+        assert not marker.exists()
+        mock_sess.download_job_result.assert_called_once_with("abc123", os.path.abspath(output_dir))
+
+    def test_download_api_job_not_done_maps_to_job_not_done(self, capsys, tmp_path):
+        """JobNotDone from the server download API remains user-facing."""
+        from nvflare.tool.job.job_cli import cmd_job_download
+
+        args = self._make_args(output_dir=tmp_path / "dest", study="cancer")
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = {"status": "FINISHED:COMPLETED"}
+        mock_sess.download_job_result.side_effect = JobNotDone("job is still running")
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_download(args)
+
+        assert exc_info.value.code == 4
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "JOB_NOT_DONE"
+        assert "searched study 'cancer'" in envelope["message"]
+        assert "nvflare job wait abc123 --study cancer" in envelope["hint"]
 
     def test_download_parser(self):
         """download parser should accept job_id and -o flag."""
@@ -292,6 +376,7 @@ class TestJobDownload:
 
         parser = job_sub_cmd_parser["download"]
         assert parser is not None
-        args = parser.parse_args(["abc123", "-o", "/tmp/results"])
+        args = parser.parse_args(["abc123", "-o", "/tmp/results", "--force"])
         assert args.job_id == "abc123"
         assert args.output_dir == "/tmp/results"
+        assert args.force is True

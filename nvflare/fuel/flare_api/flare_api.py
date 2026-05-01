@@ -17,7 +17,12 @@ import os
 import time
 from typing import List, Optional
 
-from nvflare.apis.fl_constant import SUBMIT_TOKEN_CONFLICT_STATUS, SUBMIT_TOKEN_JOB_DELETED_STATUS, AdminCommandNames
+from nvflare.apis.fl_constant import (
+    SUBMIT_TOKEN_CONFLICT_STATUS,
+    SUBMIT_TOKEN_JOB_DELETED_STATUS,
+    AdminCommandNames,
+    WorkspaceConstants,
+)
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey
 from nvflare.apis.utils.format_check import name_check
@@ -1403,6 +1408,7 @@ class Session(SessionSpec):
         target: str = "server",
         tail_lines: Optional[int] = None,
         grep_pattern: Optional[str] = None,
+        log_file_name: str = WorkspaceConstants.LOG_FILE_NAME,
     ) -> dict:
         """Retrieve job logs from the server-side log store.
 
@@ -1411,6 +1417,7 @@ class Session(SessionSpec):
             target (str): "server", "all", or a client site name
             tail_lines (int, optional): deprecated compatibility filter that returns only the last N lines
             grep_pattern (str, optional): deprecated compatibility filter that returns matching lines
+            log_file_name (str): internal log file selector. Defaults to log.txt.
 
         Returns: dict with "logs" mapping site name to log text, and optional
             "unavailable" mapping site names to reasons.
@@ -1421,8 +1428,15 @@ class Session(SessionSpec):
             raise ValueError("target must be a non-empty str")
 
         parts = [AdminCommandNames.GET_JOB_LOG, job_id, target]
+        if log_file_name != WorkspaceConstants.LOG_FILE_NAME:
+            parts.append(log_file_name)
         command = join_args(parts)
-        reply = self._do_command(command, enforce_meta=False)
+        try:
+            reply = self._do_command(command, enforce_meta=False)
+        except InternalError as e:
+            if log_file_name != WorkspaceConstants.LOG_FILE_NAME and "unrecognized arguments" in str(e):
+                return {"logs": {}}
+            raise
         payload = self._get_dict_data(reply)
         if isinstance(payload, dict) and "logs" in payload:
             result = {"logs": payload.get("logs", {})}

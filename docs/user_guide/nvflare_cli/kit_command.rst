@@ -146,10 +146,9 @@ Example output:
 
 .. code-block:: none
 
-   active_startup_kit: cancer_lead
-   identity: lead@nvidia.com
-   cert_role: lead
-   path: /secure/startup_kits/cancer/lead@nvidia.com
+   active  id           status  identity         cert_role  path
+   ------------------------------------------------------------------------
+   *       cancer_lead  ok      lead@nvidia.com  lead       /secure/startup_kits/cancer/lead@nvidia.com
 
 In JSON mode, ``nvflare config use`` includes a warning finding that the command
 changes global CLI state.

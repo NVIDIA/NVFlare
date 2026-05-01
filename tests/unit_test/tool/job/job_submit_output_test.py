@@ -331,6 +331,11 @@ class TestJobSubmitOutput:
             "supported": True,
             "flag": "--submit-token",
             "scope": "study + submitter + token",
+            "retry_safe_when_present": True,
+            "effect": (
+                "Deduplicates retries for identical submitted job content in the same study by the same submitter; "
+                "different content with the same token is rejected."
+            ),
         }
 
     def test_submit_parser_rejects_legacy_target_alias(self):

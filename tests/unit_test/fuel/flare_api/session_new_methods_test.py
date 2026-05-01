@@ -575,6 +575,16 @@ class TestGetJobLogs:
         cmd = mock_cmd.call_args[0][0]
         assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "all"]
 
+    def test_can_request_json_log_file_without_public_cli_flag(self):
+        session = _make_session()
+        from nvflare.fuel.hci.client.api import APIStatus
+
+        reply = {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.META: None, "data": []}
+        with patch.object(session, "_do_command", return_value=reply) as mock_cmd:
+            session.get_job_logs("job1", target="site-1", log_file_name="log.json")
+        cmd = mock_cmd.call_args[0][0]
+        assert split_to_args(cmd) == [AdminCommandNames.GET_JOB_LOG, "job1", "site-1", "log.json"]
+
     def test_accepts_legacy_tail_and_grep_keywords_without_changing_command(self):
         session = _make_session()
         from nvflare.fuel.hci.client.api import APIStatus

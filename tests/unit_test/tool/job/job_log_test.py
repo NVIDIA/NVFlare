@@ -198,6 +198,8 @@ class TestJobLogHuman:
         captured = capsys.readouterr()
         envelope = json.loads(captured.out)
         assert envelope["error_code"] == "JOB_NOT_FOUND"
+        assert "searched study 'default'" in envelope["message"]
+        assert "nvflare job list --study <study_name>" in envelope["hint"]
 
     def test_log_connection_error_propagates_to_top_level_handler(self):
         from nvflare.tool.job.job_cli import cmd_job_log

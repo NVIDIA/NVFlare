@@ -207,7 +207,13 @@ class TestKitCli:
 
         _run_kit_command(["use", "admin@nvidia.com"], monkeypatch)
         out = capsys.readouterr().out
-        assert "active startup kit: admin@nvidia.com" in out or "active_startup_kit: admin@nvidia.com" in out
+        assert "active  id" in out
+        assert "status" in out
+        assert "identity" in out
+        assert "cert_role" in out
+        assert "path" in out
+        assert "*       admin@nvidia.com" in out
+        assert "active_startup_kit:" not in out
         assert str(kit_dir) in out
         assert _read_config(home).get("startup_kits.active") == "admin@nvidia.com"
 

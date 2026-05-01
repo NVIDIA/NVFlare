@@ -369,6 +369,49 @@ class TestJobMonitorOutput:
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["error_code"] == "JOB_NOT_FOUND"
+        assert "searched study 'default'" in data["message"]
+        assert "nvflare job list --study <study_name>" in data["hint"]
+
+    def test_job_not_found_human_hint_includes_default_study(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+
+        @contextmanager
+        def _fake_session(*args, **kwargs):
+            sess = MagicMock()
+            sess.monitor_job_and_return_job_meta.side_effect = JobNotFound("job does not exist")
+            yield sess
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_monitor(_make_args())
+        assert exc_info.value.code == 1
+
+        captured = capsys.readouterr()
+        assert "Job 'abc123' does not exist. \u2014 searched study 'default'" in captured.err
+        assert "This command searched study 'default'." in captured.err
+        assert "nvflare job list --study <study_name>" in captured.err
+
+    def test_job_not_found_human_hint_includes_named_study(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+
+        @contextmanager
+        def _fake_session(*args, **kwargs):
+            sess = MagicMock()
+            sess.monitor_job_and_return_job_meta.side_effect = JobNotFound("job does not exist")
+            yield sess
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=_fake_session):
+            from nvflare.tool.job.job_cli import cmd_job_monitor
+
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_monitor(_make_args(study="cancer"))
+        assert exc_info.value.code == 1
+
+        captured = capsys.readouterr()
+        assert "Job 'abc123' does not exist. \u2014 searched study 'cancer'" in captured.err
+        assert "nvflare job list --study cancer" in captured.err
 
     def test_connection_error_emits_structured_envelope(self, capsys):
         @contextmanager

@@ -78,12 +78,17 @@ class TestGetJobLogCmdParser:
     def test_parse_args_defaults_to_server(self):
         parser = _create_get_job_log_cmd_parser()
         parsed_args = parser.parse_args(["job-123"])
-        assert parsed_args == Namespace(job_id="job-123", target="server")
+        assert parsed_args == Namespace(job_id="job-123", target="server", log_file_name="log.txt")
 
     def test_parse_args_accepts_target(self):
         parser = _create_get_job_log_cmd_parser()
         parsed_args = parser.parse_args(["job-123", "site-1"])
-        assert parsed_args == Namespace(job_id="job-123", target="site-1")
+        assert parsed_args == Namespace(job_id="job-123", target="site-1", log_file_name="log.txt")
+
+    def test_parse_args_accepts_internal_log_file_name(self):
+        parser = _create_get_job_log_cmd_parser()
+        parsed_args = parser.parse_args(["job-123", "site-1", "log.json"])
+        assert parsed_args == Namespace(job_id="job-123", target="site-1", log_file_name="log.json")
 
 
 class _MockConnection:
@@ -1200,6 +1205,41 @@ def test_get_job_log_client_target_reads_live_workspace_log(tmp_path, monkeypatc
     engine.job_def_manager.get_client_data.assert_not_called()
 
 
+def test_get_job_log_returns_selected_live_json_log_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    log_root = Path(workspace.get_log_root("job-1"))
+    (log_root / WorkspaceConstants.LOG_FILE_NAME).write_text("text server log\n", encoding="utf-8")
+    (log_root / "log.json").write_text('{"asctime": "2026-04-30 10:00:00", "message": "json server log"}\n')
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "server", "log.json"])
+
+    payload, _meta = conn.dicts[0]
+    assert payload == {"logs": {"server": '{"asctime": "2026-04-30 10:00:00", "message": "json server log"}\n'}}
+
+
+def test_get_job_log_client_target_reads_selected_json_log(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager.get_client_data.return_value = None
+    client_json = Path(workspace.get_log_root("job-1")) / "site-1" / "log.json"
+    client_json.parent.mkdir(parents=True, exist_ok=True)
+    client_json.write_text('{"asctime": "2026-04-30 10:00:00", "message": "client json"}\n', encoding="utf-8")
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "site-1", "log.json"])
+
+    payload, _meta = conn.dicts[0]
+    assert payload["logs"] == {"site-1": '{"asctime": "2026-04-30 10:00:00", "message": "client json"}\n'}
+    assert "unavailable" not in payload
+    engine.job_def_manager.get_storage_component.assert_not_called()
+    engine.job_def_manager.get_client_data.assert_not_called()
+
+
 def test_get_job_log_client_target_reads_stored_workspace_log(tmp_path, monkeypatch):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
@@ -1212,6 +1252,24 @@ def test_get_job_log_client_target_reads_stored_workspace_log(tmp_path, monkeypa
 
     payload, _meta = conn.dicts[0]
     assert payload == {"logs": {"site-1": "stored client log\n"}}
+    engine.job_def_manager.get_client_data.assert_not_called()
+
+
+def test_get_job_log_client_target_reads_stored_workspace_json_log(tmp_path, monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    workspace = _FakeWorkspace(tmp_path)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager.get_client_data.return_value = None
+    engine.job_def_manager.get_storage_component.return_value = _zip_bytes(
+        {"site-1/log.json": '{"asctime": "2026-04-30 10:00:00", "message": "stored client json"}\n'}
+    )
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+
+    JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", "site-1", "log.json"])
+
+    payload, _meta = conn.dicts[0]
+    assert payload["logs"] == {"site-1": '{"asctime": "2026-04-30 10:00:00", "message": "stored client json"}\n'}
     engine.job_def_manager.get_client_data.assert_not_called()
 
 
@@ -1788,7 +1846,7 @@ def test_get_job_log_specific_missing_client_returns_unavailable(monkeypatch, tm
     }
 
 
-def test_get_job_log_missing_file_returns_empty(monkeypatch, tmp_path):
+def test_get_job_log_missing_server_file_returns_empty_logs(monkeypatch, tmp_path):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
 
     workspace = _FakeWorkspace(tmp_path)
@@ -1800,7 +1858,7 @@ def test_get_job_log_missing_file_returns_empty(monkeypatch, tmp_path):
     JobCommandModule().get_job_log(conn, ["get_job_log", "job-123"])
 
     assert conn.errors == []
-    assert conn.dicts[0][0] == {"logs": {"server": ""}}
+    assert conn.dicts[0][0] == {"logs": {}}
     assert conn.successes == []
 
 

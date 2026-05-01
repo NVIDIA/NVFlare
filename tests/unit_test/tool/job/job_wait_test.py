@@ -210,6 +210,8 @@ class TestJobWait:
         assert exc_info.value.code == 1
         data = json.loads(capsys.readouterr().out)
         assert data["error_code"] == "JOB_NOT_FOUND"
+        assert "searched study 'default'" in data["message"]
+        assert "nvflare job list --study <study_name>" in data["hint"]
 
     def test_authorization_error_exits_2(self, capsys):
         from nvflare.tool.job.job_cli import cmd_job_wait

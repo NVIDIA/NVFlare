@@ -2,8 +2,9 @@
 
 ## Scope
 
-Validate the `nvflare job download` JSON contract for local artifact discovery after
-the existing download operation completes.
+Validate the `nvflare job download --format json` contract for local artifact
+discovery after the existing download operation completes. Human output stays
+concise and reports only the final download location.
 
 The command must return local CLI-machine paths only. It must not expose server
 workspace, job-store, or transfer temporary paths.

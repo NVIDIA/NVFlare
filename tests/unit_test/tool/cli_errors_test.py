@@ -21,6 +21,7 @@ from nvflare.tool.cli_errors import ERROR_REGISTRY, get_error
 EXPECTED_CODES = [
     "JOB_NOT_FOUND",
     "JOB_NOT_RUNNING",
+    "JOB_NOT_DONE",
     "JOB_INVALID",
     "SUBMIT_TOKEN_CONFLICT",
     "SUBMIT_TOKEN_JOB_DELETED",

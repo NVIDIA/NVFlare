@@ -83,9 +83,29 @@ argparse:
 - `mutating`: whether the command can change local files, local CLI state, or
   server state.
 - `idempotent`: whether repeating the same command with the same arguments is
-  expected to leave the same final state.
+  expected to leave the same final state without requiring an optional retry
+  token.
 - `retry_token`: optional retry/deduplication token contract. For job submit,
-  this is `{"supported": true, "flag": "--submit-token", "scope": "study + submitter + token"}`.
+  this is:
+
+  ```json
+  {
+    "supported": true,
+    "flag": "--submit-token",
+    "scope": "study + submitter + token",
+    "retry_safe_when_present": true,
+    "effect": "Deduplicates retries for identical submitted job content in the same study by the same submitter; different content with the same token is rejected."
+  }
+  ```
+
+`--schema` describes the command contract, not the effective behavior of one
+specific invocation. For example, `nvflare job submit --schema` and
+`nvflare job submit -j ./job --submit-token abc --schema` both report
+`idempotent: false` because plain job submission is not generally idempotent.
+The retry-safe behavior is described by `retry_token.retry_safe_when_present`.
+Read-only lookup commands such as `nvflare job list --submit-token abc --schema`
+still report `retry_token.supported: false` because their `--submit-token` flag
+is a filter, not a retry/deduplication mechanism.
 
 These fields are explicit per-command metadata, not inferred from argparse. The
 initial scope is limited to the agent-facing command set: `job submit`, `job
@@ -241,7 +261,15 @@ recipe.job.to_clients(JobLogStreamer())
 recipe.job.to_server(JobLogReceiver())
 ```
 
-`JobLogStreamer` runs in each client job process, tails the job `log.txt`, and streams bytes to the server. `JobLogReceiver` runs on the server side for that job, writes incoming chunks into the server job workspace as `<client_name>/log.txt`, and hands the file to the job manager so it is included in the archived job `workspace` artifact. Server-side resource configuration may also provide a global `JobLogReceiver`, but jobs that include both components are self-contained across POC and production deployments.
+`JobLogStreamer` runs in each client job process, tails the configured job log
+file, and streams bytes to the server. The default stream is `log.txt`. A job
+can stream structured logs by configuring `JobLogStreamer(log_file_name="log.json")`.
+`JobLogReceiver` runs on the server side for that job, writes incoming chunks
+into the server job workspace as `<client_name>/<log_file_name>`, and hands the
+file to the job manager so it is included in the archived job `workspace`
+artifact. Server-side resource configuration may also provide a global
+`JobLogReceiver`, but jobs that include both components are self-contained
+across POC and production deployments.
 
 ### `nvflare job logs`
 
@@ -285,8 +313,10 @@ returned content when text matching is needed.
 
 Human output prints log text directly. For a single `--site server` or
 `--site <client_name>` target, no JSON envelope or dict wrapper is printed. For
-`--site all`, each site is separated by a short header. `--format json` keeps the
-structured response shown below.
+`--site all`, each site is separated by a short header. If only `log.json` is
+available for a site, human output converts JSON log records to readable text.
+`--format json` prefers native `log.json` content when available and falls back
+to `log.txt` content otherwise.
 
 Example:
 
@@ -318,6 +348,11 @@ Example:
   }
 }
 ```
+
+In JSON mode, each `logs[site]` value is the native `log.json` JSONL content
+when that file is available for the site; otherwise it is the text content from
+`log.txt`. The envelope remains a single JSON response. The per-site log content
+itself may be newline-delimited JSON text.
 
 If `--site all` is requested and some known job sites do not have stored log content, the command should still return the logs that are available and report missing sites separately. A zero-byte log file is still returned as an available empty string; a missing log file is reported under `unavailable`.
 
@@ -353,14 +388,38 @@ Hint: Verify that client log streaming is enabled and that the site has run this
 Code: LOG_NOT_FOUND (exit 1)
 ```
 
-Server-side behavior: `get_job_log <job_id> [server|all|client_name]` returns structured data from server-side stored artifacts. Server logs are read from the live server workspace when available, then from the saved job-store `workspace` component after the run workspace has been archived. Client logs are read from the server's live job workspace at `<job_id>/<client_name>/log.txt` when available, then from the saved job-store `workspace` component member `<client_name>/log.txt`. For compatibility with existing stored receiver outputs, the command can also fall back to client-data components such as `LOG_log.txt_<client_name>`. `tail_target_log` / `grep_target` are insufficient and are not used for this command.
+Server-side behavior: `get_job_log <job_id> [server|all|client_name]` returns
+structured data from server-side stored artifacts. `get_job_log <job_id>
+[server|all|client_name]` remains backward compatible and defaults to `log.txt`.
+The CLI may pass an internal optional log file name so it can request only the
+file it needs. Human mode requests `log.txt` first and falls back to `log.json`
+only when no selected-site logs are returned. `--format json` requests `log.json`
+first and falls back to `log.txt` only when no selected-site logs are returned.
+The server response remains a single `logs` mapping plus optional `unavailable`;
+it must not return duplicate `log.txt` and `log.json` content for the same site.
+Server logs are read from the live server workspace when available, then from the
+saved job-store `workspace` component after the run workspace has been archived.
+Client logs are read from the server's live job workspace at
+`<job_id>/<client_name>/<log_file_name>` when available, then from the saved
+job-store `workspace` component member with the same name. For compatibility
+with existing stored receiver outputs, the command can also fall back to
+client-data components such as `LOG_log.json_<client_name>` and
+`LOG_log.txt_<client_name>`. `tail_target_log` / `grep_target` are insufficient
+and are not used for this command.
 
-Session API: `Session.get_job_logs(job_id, target, tail_lines=None, grep_pattern=None)` sends the structured server command and returns `logs` plus optional `unavailable`. `tail_lines` and `grep_pattern` are retained as deprecated compatibility arguments for existing Python callers. The CLI applies `--tail`, `--since`, and `--max-bytes` locally after retrieving server-side stored logs so the JSON response can include truncation metadata. These CLI filters should not be described as reducing server-side read cost or admin API transfer size.
+Session API: `Session.get_job_logs(job_id, target, tail_lines=None,
+grep_pattern=None, log_file_name="log.txt")` sends the structured server command
+and returns `logs` plus optional `unavailable`. `tail_lines` and `grep_pattern`
+are retained as deprecated compatibility arguments for existing Python callers.
+The CLI applies `--tail`, `--since`, and `--max-bytes` locally after retrieving
+server-side stored logs so the JSON response can include truncation metadata.
+These CLI filters should not be described as reducing server-side read cost or
+admin API transfer size.
 
 ### `nvflare job log-config`
 
 ```text
-nvflare job log-config <job_id> [--site server|<client_name>|all] <level_or_mode>
+nvflare job log-config <job_id> [--study name] [--site server|<client_name>|all] <level_or_mode>
 ```
 
 Examples:
@@ -368,6 +427,7 @@ Examples:
 ```bash
 nvflare job log-config abc123 DEBUG --site site-1
 nvflare job log-config abc123 msg_only --site all
+nvflare job log-config abc123 DEBUG --study cancer
 ```
 
 Response always uses `sites`:
@@ -492,6 +552,17 @@ timeout, `--interval` controls the polling interval in seconds, and omitted `--s
 means the literal default study. Exit code 0 on successful terminal status such as
 `FINISHED:COMPLETED` or `FINISHED_OK`, exit code 1 on terminal job failure such as
 `FAILED` / `ABORTED`, and exit code 3 on timeout.
+
+All job commands that resolve an existing `job_id` accept `--study`, including `meta`,
+`wait`, `monitor`, `download`, `logs`, `stats`, `log-config`, `abort`, `clone`, and
+`delete`. If `--study` is omitted, the command searches the literal `default` study. If
+the job is not found, the error message must include the searched study and point callers
+to `nvflare job list --study <study_name>` before retrying the command with the correct
+study.
+
+For `nvflare job meta`, human output should be a grouped summary of the most useful
+identity, status, execution, deployment, and schedule fields. The full raw metadata
+contract remains available through `--format json`.
 
 
 ## Study Selector Semantics
@@ -667,8 +738,11 @@ Behavior:
 3. Validate that the path still passes the admin/user startup kit check.
 4. Set `startup_kits.active = "<id>"`.
 5. Write config atomically.
-6. Print the active ID and path. Identity and role can be displayed when they can be
-   inspected from the startup kit.
+6. In human mode, print the selected startup kit in the same table shape as
+   `config list` / `config inspect`. Identity and role can be displayed when
+   they can be inspected from the startup kit. In JSON mode, preserve the
+   structured payload with `active_startup_kit`, `identity`, `cert_role`, and
+   `path`.
 
 No server call is made. The next server-connected command creates a session using the
 selected startup kit.
@@ -683,10 +757,11 @@ use` returns a warning finding with code `CONFIG_USE_MUTATES_GLOBAL_STATE`.
 Shows the configured active startup kit:
 
 ```text
-active: cancer_lead
-identity: lead@nvidia.com
-cert_role: lead
-path: /secure/startup_kits/cancer/lead@nvidia.com
+active  id           status  identity         cert_role  path
+------------------------------------------------------------------------
+*       cancer_lead  ok      lead@nvidia.com  lead       /secure/startup_kits/cancer/lead@nvidia.com
+
+config_file: /home/user/.nvflare/config.conf
 ```
 
 The JSON payload preserves the existing fields and adds best-effort local
@@ -1354,7 +1429,7 @@ Recovery after client-side timeout or session loss:
 TOKEN=$(uuidgen)
 nvflare job submit -j ./job --study cancer --submit-token "$TOKEN" --format json
 nvflare job list --study cancer --submit-token "$TOKEN" --format json
-nvflare job meta <job_id> --format json
+nvflare job meta <job_id> --study cancer --format json
 ```
 
 `nvflare job list --submit-token <token>` filters jobs in the selected study. Without
@@ -1564,26 +1639,36 @@ nvflare job submit    -j <job_folder> [--study name] [--submit-token token]
 nvflare job wait      <job_id> [--study name] [--timeout N] [--interval N]
 nvflare job monitor   <job_id> [--study name] [--timeout N] [--interval N]
 nvflare job list      [-n prefix] [-i id_prefix] [-r] [-m num] [--study name] [--submit-token token]
-nvflare job meta      <job_id>
-nvflare job abort     <job_id> [--force]
-nvflare job clone     <job_id>
-nvflare job download  <job_id> [-o destination]
-nvflare job delete    <job_id> [--force]
+nvflare job meta      <job_id> [--study name]
+nvflare job abort     <job_id> [--study name] [--force]
+nvflare job clone     <job_id> [--study name]
+nvflare job download  <job_id> [--study name] [-o destination] [--force]
+nvflare job delete    <job_id> [--study name] [--force]
 
 # Observability (server must be running)
-nvflare job stats     <job_id> [--site server|<name>|all]
+nvflare job stats     <job_id> [--study name] [--site server|<name>|all]
 nvflare job logs      <job_id> [--study name] [--site server|<name>|all] [--tail N] [--since timestamp] [--max-bytes N]
-nvflare job log-config <job_id> [--site server|<name>|all] <level>
+nvflare job log-config <job_id> [--study name] [--site server|<name>|all] <level>
 ```
 
 #### `nvflare job download` JSON contract
 
-`nvflare job download <job_id> --format json` keeps the existing server download
-protocol unchanged. The CLI downloads the job result through the current transfer API,
-then discovers common artifacts under the final local destination on the CLI machine.
-It must not expose server workspace, job-store, or transfer temporary paths.
+`nvflare job download <job_id> [--study name] [--force] --format json` keeps the
+existing server download protocol unchanged. The CLI preflights the job metadata,
+refuses to download non-terminal jobs, downloads the result through the current
+transfer API, then discovers common artifacts under the final local destination
+on the CLI machine. It must not expose server workspace, job-store, or transfer
+temporary paths.
 
-The success envelope's `data` object includes:
+The local destination defaults to `./<job_id>`. If that directory already
+exists, the command fails with `INVALID_ARGS` unless `--force` is specified.
+With `--force`, the existing local destination is removed before downloading.
+This prevents a failed transfer from surfacing as `INTERNAL_ERROR` and avoids
+mixing stale local artifacts with the new download.
+
+Artifact discovery is reported only in `--format json`. Human output remains
+concise and prints the final local download location without dumping the
+artifact contract. The JSON success envelope's `data` object includes:
 
 - `job_id`: requested job ID.
 - `download_path`: final local directory returned by the download API on the CLI

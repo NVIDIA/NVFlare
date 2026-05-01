@@ -112,6 +112,67 @@ class TestJobLogs:
         data = json.loads(capsys.readouterr().out)["data"]
         assert "server" in data["logs"]
 
+    def test_logs_json_mode_prefers_native_json_log_content(self, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        json_line = '{"asctime": "2026-04-30 10:00:00", "levelname": "INFO", "message": "structured"}\n'
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.return_value = {"logs": {"server": json_line}}
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            cmd_job_logs(_make_args())
+
+        data = json.loads(capsys.readouterr().out)["data"]
+        assert data["logs"] == {"server": json_line}
+        assert len(mock_sess.get_job_logs.call_args_list) == 1
+        assert mock_sess.get_job_logs.call_args_list[0].args == ("abc123",)
+        assert mock_sess.get_job_logs.call_args_list[0].kwargs == {"target": "server", "log_file_name": "log.json"}
+
+    def test_logs_json_mode_falls_back_to_text_log_for_older_server(self, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.side_effect = [
+            {"logs": {}},
+            {"logs": {"server": "text fallback\n"}},
+        ]
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            cmd_job_logs(_make_args())
+
+        data = json.loads(capsys.readouterr().out)["data"]
+        assert data["logs"] == {"server": "text fallback\n"}
+        assert mock_sess.get_job_logs.call_args_list[0].kwargs == {"target": "server", "log_file_name": "log.json"}
+        assert mock_sess.get_job_logs.call_args_list[1].kwargs == {"target": "server", "log_file_name": "log.txt"}
+
+    def test_logs_human_mode_converts_json_log_when_text_log_absent(self, capsys, monkeypatch):
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.side_effect = [
+            {"logs": {}},
+            {
+                "logs": {
+                    "site-1": (
+                        '{"asctime": "2026-04-30 10:00:00", "name": "nvflare", '
+                        '"levelname": "INFO", "fl_ctx": "job=abc123", "message": "structured"}\n'
+                    )
+                }
+            },
+        ]
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            cmd_job_logs(_make_args(site="site-1"))
+
+        captured = capsys.readouterr()
+        assert captured.out == "2026-04-30 10:00:00 - nvflare - INFO - job=abc123 - structured\n"
+        assert captured.err == ""
+        assert mock_sess.get_job_logs.call_args_list[0].args == ("abc123",)
+        assert mock_sess.get_job_logs.call_args_list[0].kwargs == {"target": "site-1", "log_file_name": "log.txt"}
+        assert mock_sess.get_job_logs.call_args_list[1].args == ("abc123",)
+        assert mock_sess.get_job_logs.call_args_list[1].kwargs == {"target": "site-1", "log_file_name": "log.json"}
+
     def test_logs_human_single_site_prints_raw_log_text(self, capsys, monkeypatch):
         """Human mode prints readable log text instead of a dict/table."""
         from nvflare.tool.job.job_cli import cmd_job_logs
@@ -198,22 +259,25 @@ class TestJobLogs:
         with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
             cmd_job_logs(_make_args(tail=10, since="2026-04-28T10:00:00", max_bytes=100))
 
-        mock_sess.get_job_logs.assert_called_once_with("abc123", target="server")
+        assert mock_sess.get_job_logs.call_args_list[0].args == ("abc123",)
+        assert mock_sess.get_job_logs.call_args_list[0].kwargs == {"target": "server", "log_file_name": "log.json"}
+        assert mock_sess.get_job_logs.call_args_list[1].args == ("abc123",)
+        assert mock_sess.get_job_logs.call_args_list[1].kwargs == {"target": "server", "log_file_name": "log.txt"}
 
     def test_logs_uses_named_study_session(self, capsys):
         from nvflare.tool.job.job_cli import cmd_job_logs
 
         mock_sess = MagicMock()
-        mock_sess.get_job_logs.return_value = {"logs": {"server": "log\n"}}
+        mock_sess.get_job_logs.return_value = {"logs": {"server": '{"message": "log"}\n'}}
 
         with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)) as session:
             cmd_job_logs(_make_args(study="cancer"))
 
         session.assert_called_once()
         assert session.call_args.kwargs["study"] == "cancer"
-        mock_sess.get_job_logs.assert_called_once_with("abc123", target="server")
+        mock_sess.get_job_logs.assert_called_once_with("abc123", target="server", log_file_name="log.json")
         data = json.loads(capsys.readouterr().out)["data"]
-        assert data["logs"] == {"server": "log\n"}
+        assert data["logs"] == {"server": '{"message": "log"}\n'}
 
     def test_logs_default_caps_each_site_to_500_lines(self, capsys):
         from nvflare.tool.job.job_cli import cmd_job_logs
@@ -267,6 +331,30 @@ class TestJobLogs:
         assert data["logs_truncated"] is False
         assert data["filters"]["since_applied"] is True
 
+    def test_logs_since_filters_json_log_asctime_records(self, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.return_value = {
+            "logs": {
+                "server": (
+                    '{"asctime": "2026-04-28 09:59:59", "message": "old"}\n'
+                    '{"asctime": "2026-04-28 10:00:00", "message": "keep"}\n'
+                    '{"asctime": "2026-04-28 10:00:01", "message": "keep2"}\n'
+                )
+            },
+        }
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            cmd_job_logs(_make_args(since="2026-04-28T10:00:00"))
+
+        data = json.loads(capsys.readouterr().out)["data"]
+        assert data["logs"]["server"] == (
+            '{"asctime": "2026-04-28 10:00:00", "message": "keep"}\n'
+            '{"asctime": "2026-04-28 10:00:01", "message": "keep2"}\n'
+        )
+        assert data["filters"]["since_applied"] is True
+
     def test_logs_max_bytes_caps_each_site(self, capsys):
         from nvflare.tool.job.job_cli import cmd_job_logs
 
@@ -305,7 +393,7 @@ class TestJobLogs:
         with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
             cmd_job_logs(_make_args(site="site-1"))
 
-        mock_sess.get_job_logs.assert_called_once_with("abc123", target="site-1")
+        mock_sess.get_job_logs.assert_called_once_with("abc123", target="site-1", log_file_name="log.json")
         data = json.loads(capsys.readouterr().out)["data"]
         assert data["target"] == "site-1"
         assert data["logs"] == {"site-1": "client log\n"}

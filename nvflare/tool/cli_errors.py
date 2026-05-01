@@ -115,6 +115,10 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "Job '{job_id}' is not currently running.",
         "hint": "Use 'nvflare job list' to check job status.",
     },
+    "JOB_NOT_DONE": {
+        "message": "Job '{job_id}' has not finished.",
+        "hint": "Use 'nvflare job wait <job_id>' or 'nvflare job monitor <job_id>' before downloading results.",
+    },
     "JOB_INVALID": {
         "message": "Job folder is not a valid NVFlare job.",
         "hint": "Check meta.json and config_fed_server.json.",

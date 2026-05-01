@@ -319,9 +319,16 @@ Retrieve metadata for a single job:
 .. code-block:: shell
 
    nvflare job meta <job_id>
+   nvflare job meta <job_id> --study cancer_research
 
 Use metadata to inspect job identity, lifecycle fields, and server-reported
-status information after submission.
+status information after submission. Human output is grouped into a concise
+summary; use ``--format json`` to retrieve the full raw metadata envelope.
+
+All job-ID lookup and control commands accept ``--study``. Use the same study
+name used at submission time. If omitted, the command searches the literal
+``default`` study. If the job is not found, the error reports which study was
+searched and suggests retrying with ``--study``.
 
 ``nvflare job meta`` also supports ``--schema``.
 
@@ -334,6 +341,8 @@ Download job results:
 .. code-block:: shell
 
    nvflare job download <job_id> -o ./downloads
+   nvflare job download <job_id> --study cancer_research -o ./downloads
+   nvflare job download <job_id> --study cancer_research --force
 
 For automation, use JSON output:
 
@@ -341,7 +350,21 @@ For automation, use JSON output:
 
    nvflare job download <job_id> -o ./downloads --format json
 
-The JSON success response reports local paths on the machine running the CLI:
+The job must be in a terminal state before download. For a running job, wait
+first:
+
+.. code-block:: shell
+
+   nvflare job wait <job_id> --study cancer_research
+   nvflare job download <job_id> --study cancer_research
+
+The local destination defaults to ``./<job_id>``. If that directory already
+exists, the command fails unless ``--force`` is specified. Use ``--force`` only
+when replacing the existing local download is intended.
+
+Human output remains concise and prints only the final download location. Use
+``--format json`` when agents or scripts need artifact discovery fields. The
+JSON success response reports local paths on the machine running the CLI:
 
 .. code-block:: json
 
@@ -366,9 +389,7 @@ The JSON success response reports local paths on the machine running the CLI:
    }
 
 ``download_path`` is the final local directory returned by the download API.
-It may differ from the requested ``--output-dir`` if the transfer layer chooses
-a collision-safe destination. ``path`` is a backward-compatible alias for
-``download_path`` when present.
+``path`` is a backward-compatible alias for ``download_path`` when present.
 
 ``artifacts`` contains local paths discovered under ``download_path``. Agents
 and scripts should use ``data.artifacts.*`` as the source of truth for
@@ -388,17 +409,19 @@ Clone an existing job:
 .. code-block:: shell
 
    nvflare job clone <job_id>
+   nvflare job clone <job_id> --study cancer_research
 
 ``nvflare job clone`` clones the full server-side job for reuse. The current
-CLI surface takes only the source ``job_id`` and ``--schema``.
-It returns ``source_job_id`` and ``new_job_id``. Use the returned
-``new_job_id`` to monitor or manage the cloned job.
+CLI surface takes the source ``job_id``, optional ``--study``, and ``--schema``.
+It returns ``source_job_id`` and ``new_job_id``. Use the returned ``new_job_id``
+to monitor or manage the cloned job.
 
 Abort a running job:
 
 .. code-block:: shell
 
    nvflare job abort <job_id>
+   nvflare job abort <job_id> --study cancer_research
    nvflare job abort <job_id> --force
 
 Delete a job:
@@ -406,11 +429,14 @@ Delete a job:
 .. code-block:: shell
 
    nvflare job delete <job_id>
+   nvflare job delete <job_id> --study cancer_research
    nvflare job delete <job_id> --force
 
 Notes:
 
 - ``abort`` and ``delete`` support ``--force`` to skip the confirmation prompt.
+- ``abort`` and ``delete`` search the selected study. If omitted, ``default``
+  is used.
 - ``delete --format json`` returns ``job_id`` and
   ``submit_records_marked_deleted``. When this count is nonzero, future use of
   the same submit token returns ``SUBMIT_TOKEN_JOB_DELETED``.
@@ -478,10 +504,10 @@ the returned content when text matching is needed.
 
 Client logs are not fetched from client machines at command time. The command
 asks the server for logs that were already streamed to the server during the
-job. The current implementation reads client logs from the server job
-workspace, where streamed client logs are stored as ``<client_name>/log.txt``;
-after the job workspace is archived, the same files are read from the stored
-job ``workspace`` artifact.
+job. Streamed client logs are read from the server job workspace, where they are
+stored as ``<client_name>/log.txt`` or ``<client_name>/log.json`` depending on
+the configured log streamer; after the job workspace is archived, the same files
+are read from the stored job ``workspace`` artifact.
 
 To enable client job log streaming in a portable job, add the job-level log
 streamer and receiver components to the job definition:
@@ -502,6 +528,12 @@ from this job-level opt-in. Some deployments may configure a server-side
 ``JobLogReceiver`` globally, but including both components in the job makes the
 job self-contained across POC and production deployments.
 
+To stream structured JSON logs instead, configure the streamer with
+``JobLogStreamer(log_file_name="log.json")``. ``nvflare job logs --format json``
+uses ``log.json`` when available and falls back to ``log.txt`` otherwise. Human
+output prints readable text; if only ``log.json`` is available, the CLI renders
+the JSON log records as text for display.
+
 The ``examples/hello-world/hello-log-streaming`` example shows this pattern.
 
 Change logging configuration for a running job:
@@ -511,6 +543,7 @@ Change logging configuration for a running job:
    nvflare job log-config <job_id> DEBUG
    nvflare job log-config <job_id> concise
    nvflare job log-config <job_id> msg_only
+   nvflare job log-config <job_id> DEBUG --study cancer_research
 
 ``job log-config`` accepts:
 
@@ -518,6 +551,7 @@ Change logging configuration for a running job:
 - log modes: ``concise``, ``msg_only``, ``full``, ``verbose``, ``reload``
 - ``--site``: target site name or ``all``. Default: ``all``; specifying
   ``--site all`` explicitly is equivalent to omitting it.
+- ``--study``: study containing the job. If omitted, ``default`` is used.
 - ``--schema``: print the command schema as JSON and exit
 
 Show running job statistics:
@@ -525,10 +559,11 @@ Show running job statistics:
 .. code-block:: shell
 
    nvflare job stats <job_id>
+   nvflare job stats <job_id> --study cancer_research
 
-``job stats`` supports ``--site`` to target a specific site or ``all``.
-The default is ``all``, so specifying ``--site all`` explicitly is equivalent
-to omitting it.
+``job stats`` supports ``--study`` to select the study containing the job, and
+``--site`` to target a specific site or ``all``. The default site is ``all``,
+so specifying ``--site all`` explicitly is equivalent to omitting it.
 It also supports ``--schema``.
 
 ***************************
@@ -585,6 +620,15 @@ returns JSON regardless of ``--format``, so the flag is not needed with it:
    nvflare job submit --schema
    nvflare job wait --schema
    nvflare job monitor --schema
+
+Schema fields such as ``mutating`` and ``idempotent`` describe the command as a
+whole, not the effective behavior of one invocation. For example, ``job submit``
+reports ``idempotent: false`` because plain submission can create duplicate jobs
+when retried after a timeout. It also reports ``retry_token.supported: true`` to
+show that ``--submit-token`` makes retries safe for identical job content in the
+same study by the same submitter. ``job list --submit-token`` is different:
+there ``--submit-token`` is only a lookup filter, so ``retry_token.supported``
+remains ``false``.
 
 Human-readable argument errors print command help first, followed by the
 specific error and hint. JSON mode prints only the JSON error envelope.

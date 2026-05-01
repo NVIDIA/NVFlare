@@ -309,6 +309,7 @@ class SessionSpec(ABC):
         target: str = "server",
         tail_lines: Optional[int] = None,
         grep_pattern: Optional[str] = None,
+        log_file_name: str = "log.txt",
     ) -> dict:
         """Retrieve logs for the specified job.
 
@@ -317,6 +318,7 @@ class SessionSpec(ABC):
             target: ``server``, ``all``, or a client site name
             tail_lines: deprecated compatibility option to return the last N lines
             grep_pattern: deprecated compatibility option to return matching lines
+            log_file_name: internal log file selector. Defaults to ``log.txt``.
 
         Returns: dict with ``logs`` mapping site names to log content, and
             optional ``unavailable`` mapping site names to reasons.

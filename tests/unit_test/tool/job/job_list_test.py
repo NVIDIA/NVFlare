@@ -213,7 +213,7 @@ class TestJobList:
         assert schema["streaming"] is False
         assert schema["mutating"] is False
         assert schema["idempotent"] is True
-        assert schema["retry_token"]["flag"] == "--submit-token"
+        assert schema["retry_token"] == {"supported": False}
 
     def test_list_forwards_named_study_to_session(self):
         from nvflare.tool.job.job_cli import cmd_job_list

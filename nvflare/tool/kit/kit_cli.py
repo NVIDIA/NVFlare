@@ -149,7 +149,20 @@ def cmd_kit_use(args):
                 ],
             }
         )
-    output_ok(data)
+        output_ok(data)
+    else:
+        _render_startup_kit_table(
+            [
+                {
+                    "active": "*",
+                    "id": kit_id,
+                    "status": "ok",
+                    "identity": metadata["identity"],
+                    "cert_role": metadata["cert_role"],
+                    "path": path,
+                }
+            ]
+        )
 
 
 def _print_env_warning():
@@ -159,17 +172,7 @@ def _print_env_warning():
         print_human("         normal commands will use this path instead of the active kit above")
 
 
-def _render_kit_inspect_human(data: dict):
-    rows = [
-        {
-            "active": "*",
-            "id": data.get("active") or "-",
-            "status": data.get("status") or "-",
-            "identity": data.get("identity") or "-",
-            "cert_role": data.get("cert_role") or "-",
-            "path": data.get("path") or "-",
-        }
-    ]
+def _render_startup_kit_table(rows):
     keys = ["active", "id", "status", "identity", "cert_role", "path"]
     widths = [max(len(key), max(len(str(row.get(key, ""))) for row in rows)) for key in keys]
     header = "  ".join(key.ljust(width) for key, width in zip(keys, widths))
@@ -177,6 +180,21 @@ def _render_kit_inspect_human(data: dict):
     print_human("-" * len(header))
     for row in rows:
         print_human("  ".join(str(row.get(key, "")).ljust(width) for key, width in zip(keys, widths)))
+
+
+def _render_kit_inspect_human(data: dict):
+    _render_startup_kit_table(
+        [
+            {
+                "active": "*",
+                "id": data.get("active") or "-",
+                "status": data.get("status") or "-",
+                "identity": data.get("identity") or "-",
+                "cert_role": data.get("cert_role") or "-",
+                "path": data.get("path") or "-",
+            }
+        ]
+    )
     print_human("")
     print_human(f"config_file: {data.get('config_file') or '-'}")
     if data.get("hint"):
