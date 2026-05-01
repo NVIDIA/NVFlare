@@ -123,6 +123,12 @@ class FederatedClientBase:
         set_scope_property(scope_name=self.client_name, value=host_name, key=FLContextKey.SERVER_HOST_NAME)
 
         self.servers[project_name]["target"] = target
+        # Mark established BEFORE _create_cell so client_train.py can proceed
+        # to create the ClientEngine; _create_cell then blocks until that
+        # engine is set on this client. Failures in _create_cell are surfaced
+        # via the connect_error / connect_thread.is_alive() guards in
+        # client_train.py's wait loop and via the engine setup path.
+        self.sp_established = True
 
         scheme_location = scheme + "://" + target
         if self.cell:
@@ -130,9 +136,6 @@ class FederatedClientBase:
         else:
             self._create_cell(target, scheme)
 
-        # Mark established only after the cell is ready, so client_train.py's
-        # busy-wait loop does not exit before _create_cell raises.
-        self.sp_established = True
         self.logger.info(f"Connected to server: {scheme_location}")
 
     def _create_cell(self, location, scheme):
