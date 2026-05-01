@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import json
+import subprocess
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -130,7 +132,7 @@ class TestPocOutput:
         assert saved_config.get("poc.workspace") == "/path/to/poc"
         assert save_config.call_args.args[1] == "/fake/config.conf"
         captured = capsys.readouterr()
-        assert "POC workspace configured: /path/to/poc" in captured.err
+        assert captured.err == ""
         data = json.loads(captured.out)
         assert data["status"] == "ok"
         assert data["data"]["config_file"] == "/fake/config.conf"
@@ -219,6 +221,32 @@ class TestPocOutput:
         assert data["data"]["clients"] == ["site-1", "site-2"]
         assert data["data"]["startup_kit"]["changed"] is False
         assert data["data"]["port_preflight"]["checked"] is False
+        assert captured.err == ""
+
+    def test_prepare_poc_json_suppresses_internal_progress(self, capsys, tmp_path):
+        from nvflare.tool.poc.poc_commands import prepare_poc
+
+        args = self._make_prepare_args(force=True)
+        poc_ws = str(tmp_path / "poc")
+
+        def noisy_prepare(*_args, **_kwargs):
+            print("raw stdout progress")
+            print("raw stderr progress", file=sys.stderr)
+            return True
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=poc_ws),
+            patch("nvflare.tool.poc.poc_commands._prepare_poc", side_effect=noisy_prepare),
+            patch("nvflare.tool.install_skills.install_skills", return_value=None),
+            patch("nvflare.tool.poc.poc_commands.os.path.exists", return_value=False),
+        ):
+            prepare_poc(args)
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert captured.err == ""
+        assert data["status"] == "ok"
+        assert "raw stdout progress" not in captured.out
 
     def test_prepare_poc_human_output_omits_agent_diagnostics(self, capsys, monkeypatch, tmp_path):
         from nvflare.tool.poc.poc_commands import prepare_poc
@@ -260,7 +288,9 @@ class TestPocOutput:
         ):
             prepare_poc(args)
 
-        data = json.loads(capsys.readouterr().out)
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert captured.err == ""
         assert data["status"] == "ok"
         assert data["data"]["clients"] == ["site-a", "site-b"]
         assert data["data"]["port_preflight"]["checked"] is False
@@ -294,7 +324,9 @@ class TestPocOutput:
         ):
             prepare_poc(args)
 
-        data = json.loads(capsys.readouterr().out)
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert captured.err == ""
         assert data["status"] == "ok"
         assert data["data"]["clients"] == ["site-1", "site-2"]
         assert data["data"]["startup_kit"] == {
@@ -400,6 +432,9 @@ class TestPocOutput:
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
         assert data["data"]["status"] == "stopped"
+        assert data["data"]["wait"] is True
+        assert data["data"]["no_wait"] is False
+        assert captured.err == ""
 
     def test_stop_poc_no_human_text_on_stdout(self, capsys, tmp_path):
         """stop_poc: no human-readable text leaks to stdout."""
@@ -420,6 +455,7 @@ class TestPocOutput:
         data = json.loads(captured.out.strip())
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
+        assert captured.err == ""
 
     def test_stop_poc_no_wait_reports_shutdown_initiated(self, capsys, tmp_path):
         from nvflare.tool.poc.poc_commands import stop_poc
@@ -436,8 +472,12 @@ class TestPocOutput:
             stop_poc(args)
 
         stop.assert_called_once_with(str(tmp_path), [], [], wait=False)
-        data = json.loads(capsys.readouterr().out)
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert captured.err == ""
         assert data["data"]["status"] == "shutdown_initiated"
+        assert data["data"]["wait"] is False
+        assert data["data"]["no_wait"] is True
 
     def test_stop_poc_timeout_exits_connection_failed(self, capsys, tmp_path):
         from nvflare.tool.poc.poc_commands import stop_poc
@@ -457,6 +497,75 @@ class TestPocOutput:
         data = json.loads(capsys.readouterr().out)
         assert data["error_code"] == "CONNECTION_FAILED"
         assert "--no-wait" in data["hint"]
+
+    def test_stop_poc_human_output_suppresses_api_shutdown_chatter(self, capsys, monkeypatch, tmp_path):
+        from nvflare.tool.cli_output import print_human
+        from nvflare.tool.poc.poc_commands import stop_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        args = MagicMock()
+        args.service = "all"
+        args.exclude = ""
+        args.no_wait = False
+        project_config = {
+            "name": "example_project",
+            "participants": [
+                {"name": "server", "type": "server"},
+                {"name": "admin@nvidia.com", "type": "admin", "role": "project_admin"},
+                {"name": "site-1", "type": "client"},
+            ],
+        }
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_OTHER_ADMINS: [],
+            SC.FLARE_CLIENTS: ["site-1"],
+        }
+
+        def noisy_shutdown(*_args, **_kwargs):
+            print_human("connect to nvflare server")
+            print_human("checking running jobs")
+            print_human("shutdown NVFLARE and wait for completion")
+            return {"active_job_ids": []}
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(project_config, service_config)),
+            patch("nvflare.tool.poc.poc_commands.validate_poc_workspace"),
+            patch("nvflare.tool.poc.poc_commands.get_prod_dir", return_value=str(tmp_path / "prod")),
+            patch("nvflare.tool.poc.poc_commands.shutdown_system", side_effect=noisy_shutdown),
+        ):
+            stop_poc(args)
+
+        captured = capsys.readouterr()
+        assert captured.out == "Stopping POC system; waiting for shutdown to complete...\nPOC system stopped.\n"
+        assert captured.err == ""
+
+    def test_stop_poc_human_output_reports_aborted_jobs(self, capsys, monkeypatch, tmp_path):
+        from nvflare.tool.poc.poc_commands import stop_poc
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        args = MagicMock()
+        args.service = "all"
+        args.exclude = ""
+        args.no_wait = False
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands._stop_poc", return_value={"active_job_ids": ["job-1", "job-2"]}),
+        ):
+            stop_poc(args)
+
+        captured = capsys.readouterr()
+        assert captured.out == (
+            "Stopping POC system; waiting for shutdown to complete...\n"
+            "Active jobs aborted before shutdown: job-1, job-2\n"
+            "POC system stopped.\n"
+        )
+        assert captured.err == ""
 
     def test_start_poc_malformed_participants_omits_missing_names(self, capsys, tmp_path):
         from nvflare.tool.poc.poc_commands import start_poc
@@ -480,7 +589,9 @@ class TestPocOutput:
         ):
             start_poc(args)
 
-        data = json.loads(capsys.readouterr().out)
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert captured.err == ""
         assert data["status"] == "ok"
         assert data["data"]["status"] == "running"
         assert data["data"]["ready"] is False
@@ -527,6 +638,7 @@ class TestPocOutput:
 
     def test_start_poc_human_output_omits_agent_diagnostics(self, capsys, monkeypatch, tmp_path):
         from nvflare.tool.poc.poc_commands import start_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         args = MagicMock()
@@ -535,8 +647,12 @@ class TestPocOutput:
         args.gpu = None
         args.study = None
         args.no_wait = False
-        project_config = {"participants": [{"type": "client", "name": "site-1"}]}
-        service_config = {}
+        project_config = {"participants": [{"type": "server", "name": "server"}, {"type": "client", "name": "site-1"}]}
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_CLIENTS: ["site-1"],
+        }
         endpoint_info = {
             "server_url": "grpc://localhost:8002",
             "server_address": "localhost:8002",
@@ -562,13 +678,17 @@ class TestPocOutput:
         captured = capsys.readouterr()
         assert "POC system started. Server: grpc://localhost:8002" in captured.out
         assert "Server address: localhost:8002" in captured.out
+        assert "Admin console is optional. You can submit and manage jobs with nvflare commands." in captured.out
+        assert "To open the console, run in another terminal: nvflare poc start -p admin@nvidia.com" in captured.out
+        assert "Service console logs:" in captured.out
+        assert "<participant>/poc_console.log" in captured.out
         assert "port_preflight:" not in captured.out
         assert "default_server_port:" not in captured.out
         assert "ready_timeout:" not in captured.out
         assert captured.err == ""
 
-    def test_clean_poc_running_system_raises(self, tmp_path):
-        """clean_poc should propagate CLIException when the system is still running."""
+    def test_clean_poc_running_system_outputs_json_error(self, capsys, tmp_path):
+        """clean_poc should return a structured error when the system is still running."""
         from nvflare.tool.poc.poc_commands import clean_poc
 
         args = MagicMock()
@@ -580,12 +700,15 @@ class TestPocOutput:
                 side_effect=CLIException("system is still running, please stop the system first."),
             ),
         ):
-            with pytest.raises(CLIException):
+            with pytest.raises(SystemExit) as exc_info:
                 clean_poc(args)
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INVALID_ARGS"
 
-    def test_clean_poc_invalid_loaded_project_raises(self, tmp_path):
-        """clean_poc should raise CLIException when setup_service_config yields no project config."""
-        from nvflare.cli_exception import CLIException
+    def test_clean_poc_invalid_loaded_project_outputs_json_error(self, capsys, tmp_path):
+        """clean_poc should return a structured error when setup_service_config yields no project config."""
         from nvflare.tool.poc.poc_commands import clean_poc
 
         args = MagicMock()
@@ -595,8 +718,12 @@ class TestPocOutput:
             patch("nvflare.tool.poc.poc_commands.os.path.isdir", return_value=True),
             patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(None, None)),
         ):
-            with pytest.raises(CLIException):
+            with pytest.raises(SystemExit) as exc_info:
                 clean_poc(args)
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "INVALID_ARGS"
 
     def test_start_poc_reports_configured_server_port(self, capsys, tmp_path):
         """start_poc should use the configured fed-learn port, not a hard-coded default."""
@@ -645,6 +772,25 @@ class TestPocOutput:
         assert data["data"]["port_preflight"]["checked"] is True
         assert data["data"]["clients"] == ["site-1", "site-2"]
         assert data["data"]["ready"] is True
+        assert data["data"]["console_logs"]["server"].endswith("/server/poc_console.log")
+
+    def test_async_process_redirects_service_console_output(self, tmp_path):
+        from nvflare.tool.poc.poc_commands import POC_SERVICE_CONSOLE_LOG, async_process
+
+        startup_dir = tmp_path / "server" / "startup"
+        startup_dir.mkdir(parents=True)
+        start_sh = startup_dir / "start.sh"
+        start_sh.write_text("#!/usr/bin/env bash\n")
+
+        with patch("nvflare.tool.poc.poc_commands.subprocess.Popen") as popen:
+            async_process("server", str(start_sh), None, {})
+
+        console_log = tmp_path / "server" / POC_SERVICE_CONSOLE_LOG
+        assert console_log.exists()
+        assert "nvflare poc start" in console_log.read_text()
+        assert popen.call_args.args[0] == [str(start_sh)]
+        assert popen.call_args.kwargs["stdout"].name == str(console_log)
+        assert popen.call_args.kwargs["stderr"] == subprocess.STDOUT
 
     def test_start_poc_reports_bound_addresses_and_port_conflicts(self, capsys, tmp_path):
         from nvflare.lighter.constants import PropKey
@@ -748,7 +894,9 @@ class TestPocOutput:
             start_poc(args)
 
         assert wait_ready.call_args.kwargs["timeout_in_sec"] == 12
-        data = json.loads(capsys.readouterr().out)
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert captured.err == ""
         assert data["data"]["ready"] is True
         assert data["data"]["ready_timeout"] == 12
 
@@ -861,13 +1009,56 @@ class TestPocOutput:
             start_poc(args)
 
         wait_ready.assert_not_called()
-        data = json.loads(capsys.readouterr().out)
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert captured.err == ""
         assert data["data"]["status"] == "starting"
+        assert data["data"]["wait"] is False
+        assert data["data"]["no_wait"] is True
         assert data["data"]["ready"] is False
         assert data["data"]["server_address"] == "localhost:8002"
         assert data["data"]["admin_address"] == "localhost:8003"
         assert data["data"]["default_admin_port"] == 8003
         assert data["data"]["port_conflict"] is False
+
+    def test_start_poc_no_wait_human_output_warns_readiness_not_checked(self, capsys, monkeypatch, tmp_path):
+        from nvflare.tool.poc.poc_commands import start_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        args = MagicMock()
+        args.service = "all"
+        args.exclude = ""
+        args.gpu = None
+        args.study = None
+        args.no_wait = True
+
+        project_config = {"participants": [{"name": "server", "type": "server"}, {"name": "site-1", "type": "client"}]}
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_CLIENTS: ["site-1"],
+        }
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands._start_poc", return_value=None),
+            patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(project_config, service_config)),
+            patch("nvflare.tool.poc.poc_commands._is_local_port_available", return_value=(True, None)),
+            patch("nvflare.tool.poc.poc_commands._wait_for_poc_system_ready") as wait_ready,
+        ):
+            start_poc(args)
+
+        wait_ready.assert_not_called()
+        captured = capsys.readouterr()
+        assert "POC system start requested. Server: grpc://localhost:8002" in captured.out
+        assert "Readiness was not checked." in captured.out
+        assert "check status with: nvflare system status" in captured.out
+        assert "After ready, submit jobs with: nvflare job submit -j <job_folder>" in captured.out
+        assert captured.err == ""
 
     def test_start_poc_readiness_timeout_exits_connection_failed(self, capsys, tmp_path):
         from nvflare.tool.api_utils import SystemStartTimeout

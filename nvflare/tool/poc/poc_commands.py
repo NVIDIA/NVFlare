@@ -11,8 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import contextlib
 import copy
 import errno
+import io
 import json
 import os
 import random
@@ -89,6 +91,17 @@ POC_LOCAL_HOST = "localhost"
 POC_PORT_PREFLIGHT_HOST = "127.0.0.1"
 POC_PORT_PREFLIGHT_SCOPE = "loopback"
 POC_PORT_PREFLIGHT_NOTE = "Preflight checks loopback port availability only; poc start may still fail if another local bind address conflicts."
+POC_SERVICE_CONSOLE_LOG = "poc_console.log"
+
+
+def _quiet_cli_streams(enabled: bool):
+    if not enabled:
+        return contextlib.nullcontext()
+
+    stack = contextlib.ExitStack()
+    stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+    stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+    return stack
 
 
 def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, List[int]]:
@@ -1054,6 +1067,7 @@ def add_poc_user(cmd_args):
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
+    json_mode = is_json_mode()
     handle_schema_flag(
         _poc_add_sub_cmd_parsers.get(CMD_ADD_USER),
         "nvflare poc add user",
@@ -1062,13 +1076,14 @@ def add_poc_user(cmd_args):
     )
     poc_workspace = get_poc_workspace()
     try:
-        result = _add_poc_user(
-            poc_workspace,
-            cmd_args.cert_role,
-            cmd_args.email,
-            cmd_args.org,
-            force=getattr(cmd_args, "force", False),
-        )
+        with _quiet_cli_streams(json_mode):
+            result = _add_poc_user(
+                poc_workspace,
+                cmd_args.cert_role,
+                cmd_args.email,
+                cmd_args.org,
+                force=getattr(cmd_args, "force", False),
+            )
     except StartupKitConfigError as e:
         output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e), hint=getattr(e, "hint", ""))
         raise SystemExit(4)
@@ -1082,8 +1097,9 @@ def add_poc_user(cmd_args):
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         raise SystemExit(5)
 
-    if is_json_mode():
+    if json_mode:
         output_ok(result)
+        return
     print_human(f"\nPOC user {result['status']}: {result['identity']}")
     print_human(f"  Startup kit: {result['startup_kit']}")
     if result.get("active"):
@@ -1096,6 +1112,7 @@ def add_poc_site(cmd_args):
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
+    json_mode = is_json_mode()
     handle_schema_flag(
         _poc_add_sub_cmd_parsers.get(CMD_ADD_SITE),
         "nvflare poc add site",
@@ -1104,12 +1121,13 @@ def add_poc_site(cmd_args):
     )
     poc_workspace = get_poc_workspace()
     try:
-        result = _add_poc_site(
-            poc_workspace,
-            cmd_args.name,
-            cmd_args.org,
-            force=getattr(cmd_args, "force", False),
-        )
+        with _quiet_cli_streams(json_mode):
+            result = _add_poc_site(
+                poc_workspace,
+                cmd_args.name,
+                cmd_args.org,
+                force=getattr(cmd_args, "force", False),
+            )
     except StartupKitConfigError as e:
         output_error("STARTUP_KIT_MISSING", exit_code=4, detail=str(e), hint=getattr(e, "hint", ""))
         raise SystemExit(4)
@@ -1123,8 +1141,9 @@ def add_poc_site(cmd_args):
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         raise SystemExit(5)
 
-    if is_json_mode():
+    if json_mode:
         output_ok(result)
+        return
     print_human(f"\nPOC site {result['status']}: {result['name']}")
     print_human(f"  Startup kit: {result['startup_kit']}")
     print_human(f"  Start with: nvflare poc start -p {result['name']}")
@@ -1135,6 +1154,7 @@ def prepare_poc(cmd_args):
     from nvflare.tool.cli_schema import handle_schema_flag
     from nvflare.tool.install_skills import install_skills
 
+    json_mode = is_json_mode()
     handle_schema_flag(
         _poc_sub_cmd_parsers.get(CMD_PREPARE_POC),
         "nvflare poc prepare",
@@ -1159,15 +1179,16 @@ def prepare_poc(cmd_args):
         # Interactive: let _prepare_poc handle the prompt
     prior_active_startup_kit = _get_active_startup_kit_id_safely()
     try:
-        result = _prepare_poc(
-            cmd_args.clients,
-            cmd_args.number_of_clients,
-            poc_workspace,
-            cmd_args.docker_image,
-            cmd_args.he,
-            project_conf_path,
-            force=force,
-        )
+        with _quiet_cli_streams(json_mode):
+            result = _prepare_poc(
+                cmd_args.clients,
+                cmd_args.number_of_clients,
+                poc_workspace,
+                cmd_args.docker_image,
+                cmd_args.he,
+                project_conf_path,
+                force=force,
+            )
     except CLIException as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
@@ -1219,8 +1240,14 @@ def prepare_poc(cmd_args):
         },
         "port_preflight": _build_poc_port_preflight(project_config),
     }
-    if is_json_mode():
+    if json_mode:
+        try:
+            with _quiet_cli_streams(True):
+                install_skills()
+        except Exception:
+            pass
         output_ok(result)
+        return
     from nvflare.tool.cli_output import print_human
 
     print_human(f"\nPOC workspace ready at: {poc_workspace}")
@@ -1441,6 +1468,7 @@ def start_poc(cmd_args):
     from nvflare.tool.cli_output import is_json_mode, output_error, output_error_message, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
+    json_mode = is_json_mode()
     handle_schema_flag(
         _poc_sub_cmd_parsers.get(CMD_START_POC),
         "nvflare poc start",
@@ -1482,13 +1510,14 @@ def start_poc(cmd_args):
         pass
 
     try:
-        _start_poc(poc_workspace, gpu_ids, excluded, services_list, study=study)
+        with _quiet_cli_streams(json_mode):
+            _start_poc(poc_workspace, gpu_ids, excluded, services_list, study=study)
     except CLIException as e:
-        error_data = _build_poc_port_diagnostics(port_preflight) if is_json_mode() else None
+        error_data = _build_poc_port_diagnostics(port_preflight) if json_mode else None
         output_error("INVALID_ARGS", exit_code=4, detail=str(e), data=error_data)
         raise SystemExit(4)
     except Exception as e:
-        error_data = _build_poc_port_diagnostics(port_preflight) if is_json_mode() else None
+        error_data = _build_poc_port_diagnostics(port_preflight) if json_mode else None
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e), data=error_data)
         raise SystemExit(5)
 
@@ -1524,14 +1553,15 @@ def start_poc(cmd_args):
     wait_performed = False
     if not no_wait and service_config:
         try:
-            wait_performed = _wait_for_poc_system_ready(
-                poc_workspace,
-                project_config,
-                service_config,
-                services_list,
-                excluded,
-                timeout_in_sec=ready_timeout,
-            )
+            with _quiet_cli_streams(json_mode):
+                wait_performed = _wait_for_poc_system_ready(
+                    poc_workspace,
+                    project_config,
+                    service_config,
+                    services_list,
+                    excluded,
+                    timeout_in_sec=ready_timeout,
+                )
             ready = wait_performed
         except SystemStartTimeout as e:
             output_error_message(
@@ -1556,13 +1586,17 @@ def start_poc(cmd_args):
         "default_port": endpoint_info["default_port"],
         "default_server_port": endpoint_info["default_server_port"],
         "default_admin_port": endpoint_info["default_admin_port"],
+        "wait": not no_wait,
+        "no_wait": no_wait,
         "ready_timeout": ready_timeout,
         "ready": ready,
         "clients": clients,
+        "console_logs": _build_poc_console_logs(poc_workspace, project_config, service_config, services_list, excluded),
     }
     result.update(port_diagnostics)
-    if is_json_mode():
+    if json_mode:
         output_ok(result)
+        return
     from nvflare.tool.cli_output import print_human
 
     if no_wait:
@@ -1573,12 +1607,23 @@ def start_poc(cmd_args):
     print_human(f"  Admin address: {endpoint_info['admin_address']}")
     if clients:
         print_human(f"  Clients: {', '.join(clients)}")
+    console_logs = result.get("console_logs") or {}
+    if console_logs:
+        project_name = project_config.get("name") if project_config else DEFAULT_PROJECT_NAME
+        print_human(
+            f"  Service console logs: {get_prod_dir(poc_workspace, project_name)}/<participant>/{POC_SERVICE_CONSOLE_LOG}"
+        )
     for warning in port_diagnostics["warnings"]:
         print_human(f"  Warning: {warning}")
     if service_config:
         proj_admin = service_config.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
-        print_human(f"  Admin console not started by default. Start with: nvflare poc start -p {proj_admin}")
-    print_human("  Submit jobs with: nvflare job submit -j <job_folder>")
+        print_human("  Admin console is optional. You can submit and manage jobs with nvflare commands.")
+        print_human(f"  To open the console, run in another terminal: nvflare poc start -p {proj_admin}")
+    if no_wait:
+        print_human("  Readiness was not checked. Before submitting jobs, check status with: nvflare system status")
+        print_human("  After ready, submit jobs with: nvflare job submit -j <job_folder>")
+    else:
+        print_human("  Submit jobs with: nvflare job submit -j <job_folder>")
 
 
 def _get_started_readiness_participants(service_config: Dict, services_list: List[str], excluded: List[str]):
@@ -1709,9 +1754,10 @@ def setup_service_config(poc_workspace) -> Tuple:
 
 
 def stop_poc(cmd_args):
-    from nvflare.tool.cli_output import output_error, output_error_message, output_ok
+    from nvflare.tool.cli_output import is_json_mode, output_error, output_error_message, output_ok, print_human
     from nvflare.tool.cli_schema import handle_schema_flag
 
+    json_mode = is_json_mode()
     handle_schema_flag(
         _poc_sub_cmd_parsers.get(CMD_STOP_POC),
         "nvflare poc stop",
@@ -1725,7 +1771,13 @@ def stop_poc(cmd_args):
     no_wait = no_wait if isinstance(no_wait, bool) else False
 
     try:
-        _stop_poc(poc_workspace, excluded, services_list, wait=not no_wait)
+        if not json_mode:
+            if no_wait:
+                print_human("Requesting POC shutdown without waiting...")
+            else:
+                print_human("Stopping POC system; waiting for shutdown to complete...")
+        with _quiet_cli_streams(json_mode):
+            stop_result = _stop_poc(poc_workspace, excluded, services_list, wait=not no_wait)
     except CLIException as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
         raise SystemExit(4)
@@ -1742,7 +1794,23 @@ def stop_poc(cmd_args):
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         raise SystemExit(5)
 
-    output_ok({"status": "shutdown_initiated" if no_wait else "stopped"})
+    result = {"status": "shutdown_initiated" if no_wait else "stopped", "wait": not no_wait, "no_wait": no_wait}
+    if stop_result:
+        result.update(stop_result)
+    if json_mode:
+        output_ok(result)
+        return
+
+    active_job_ids = (stop_result or {}).get("active_job_ids") or []
+    if active_job_ids:
+        print_human(f"Active jobs aborted before shutdown: {', '.join(active_job_ids)}")
+    if (stop_result or {}).get("already_stopped"):
+        print_human("POC system was already stopped.")
+        return
+    if no_wait:
+        print_human("POC system shutdown requested.")
+    else:
+        print_human("POC system stopped.")
 
 
 def _stop_poc(
@@ -1774,8 +1842,12 @@ def _stop_poc(
     if p_size == 0 or service_config[SC.FLARE_SERVER] in services_list:
         from nvflare.tool.cli_output import print_human
 
-        print_human("Starting shutdown of NVFLARE")
-        shutdown_system(prod_dir, username=service_config[SC.FLARE_PROJ_ADMIN], wait=wait)
+        with _quiet_cli_streams(True):
+            print_human("Starting shutdown of NVFLARE")
+            shutdown_result = (
+                shutdown_system(prod_dir, username=service_config[SC.FLARE_PROJ_ADMIN], wait=wait, verbose=False) or {}
+            )
+        return {"shutdown": shutdown_result, **shutdown_result}
     else:
         from nvflare.tool.cli_output import print_human
 
@@ -1790,6 +1862,7 @@ def _stop_poc(
             excluded=excluded,
             services_list=services_list,
         )
+        return {"services": services_list}
 
 
 def _get_clients(service_commands: list, service_config) -> List[str]:
@@ -1869,12 +1942,42 @@ def prepare_env(service_name, gpu_ids: Optional[List[int]], service_config: Dict
     return my_env
 
 
+def _poc_service_console_log(cmd_path: str) -> str:
+    cmd = cmd_path.split(" ")[0]
+    startup_dir = os.path.dirname(os.path.abspath(cmd))
+    service_dir = os.path.dirname(startup_dir)
+    return os.path.join(service_dir, POC_SERVICE_CONSOLE_LOG)
+
+
+def _build_poc_console_logs(
+    poc_workspace: str, project_config: Dict, service_config: Dict, services_list, excluded
+) -> Dict:
+    if not project_config or not service_config:
+        return {}
+
+    logs = {}
+    project_name = project_config.get("name")
+    prod_dir = get_prod_dir(poc_workspace, project_name)
+    started_server, started_clients = _get_started_readiness_participants(service_config, services_list, excluded)
+    if started_server:
+        server_name = service_config.get(SC.FLARE_SERVER)
+        if server_name:
+            logs[server_name] = os.path.join(prod_dir, server_name, POC_SERVICE_CONSOLE_LOG)
+    for client_name in started_clients:
+        logs[client_name] = os.path.join(prod_dir, client_name, POC_SERVICE_CONSOLE_LOG)
+    return logs
+
+
 def async_process(service_name, cmd_path, gpu_ids: Optional[List[int]], service_config: Dict):
     my_env = prepare_env(service_name, gpu_ids, service_config)
-    if my_env:
-        subprocess.Popen(cmd_path.split(" "), env=my_env)
-    else:
-        subprocess.Popen(cmd_path.split(" "))
+    console_log = _poc_service_console_log(cmd_path)
+    os.makedirs(os.path.dirname(console_log), exist_ok=True)
+    with open(console_log, "a", buffering=1) as output:
+        output.write(f"\n--- nvflare poc start {time.asctime()} ---\n")
+        if my_env:
+            subprocess.Popen(cmd_path.split(" "), env=my_env, stdout=output, stderr=subprocess.STDOUT)
+        else:
+            subprocess.Popen(cmd_path.split(" "), stdout=output, stderr=subprocess.STDOUT)
 
 
 def sync_process(service_name, cmd_path):
@@ -1914,8 +2017,10 @@ def _run_poc(
 
 
 def clean_poc(cmd_args):
+    from nvflare.tool.cli_output import is_json_mode, output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
+    json_mode = is_json_mode()
     handle_schema_flag(
         _poc_sub_cmd_parsers.get(CMD_CLEAN_POC),
         "nvflare poc clean",
@@ -1923,7 +2028,17 @@ def clean_poc(cmd_args):
         sys.argv[1:],
     )
     poc_workspace = get_poc_workspace()
-    _clean_poc(poc_workspace, force=getattr(cmd_args, "force", False))
+    try:
+        with _quiet_cli_streams(json_mode):
+            _clean_poc(poc_workspace, force=getattr(cmd_args, "force", False))
+    except CLIException as e:
+        output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+        raise SystemExit(4)
+    except Exception as e:
+        output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
+        raise SystemExit(5)
+    if json_mode:
+        output_ok({"workspace": poc_workspace, "status": "removed"})
 
 
 def _clean_poc_config(poc_workspace: str):
@@ -2053,6 +2168,7 @@ def config_poc(cmd_args):
     }
     if is_json_mode():
         output_ok(data)
+        return
     print_human(f"POC workspace configured: {poc_workspace_dir}")
 
 

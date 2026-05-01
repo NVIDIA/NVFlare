@@ -316,6 +316,10 @@ def _output_system_version(result):
         _render_version_human(result)
 
 
+def _is_no_client_response_error(e: Exception) -> bool:
+    return "no responses from clients" in str(e).lower()
+
+
 def cmd_system_status(args):
     from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
     from nvflare.tool.cli_schema import handle_schema_flag
@@ -345,6 +349,18 @@ def cmd_system_status(args):
         )
         raise SystemExit(2)
     except Exception as e:
+        if _is_no_client_response_error(e):
+            output_error_message(
+                "SYSTEM_NOT_READY",
+                message="FLARE system is not ready yet.",
+                hint=(
+                    "Wait for clients to connect, then retry 'nvflare system status'. "
+                    "If this persists, check POC service logs or client logs."
+                ),
+                exit_code=2,
+                detail="no responses from clients",
+            )
+            raise SystemExit(2)
         output_error("INTERNAL_ERROR", exit_code=5, detail=str(e))
         raise SystemExit(5)
 

@@ -13,10 +13,13 @@
 # limitations under the License.
 """CLI-scoped session helpers."""
 
+import contextlib
+import io
 import os
 
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 from nvflare.tool.cli_arg_utils import get_arg_value
+from nvflare.tool.cli_output import is_json_mode, is_jsonl_mode
 from nvflare.tool.kit.kit_config import (
     NVFLARE_STARTUP_KIT_DIR,
     StartupKitConfigError,
@@ -119,14 +122,21 @@ def new_cli_session(
     debug: bool = False,
 ) -> Session:
     """Compatibility wrapper for CLI callers around the shared secure session factory."""
-    return new_secure_session(
-        username=username,
-        startup_kit_location=startup_kit_location,
-        debug=debug,
-        study=study,
-        timeout=timeout,
-        auto_login_max_tries=1,
+    stream_context = (
+        contextlib.redirect_stdout(io.StringIO()) if is_json_mode() or is_jsonl_mode() else contextlib.nullcontext()
     )
+    error_context = (
+        contextlib.redirect_stderr(io.StringIO()) if is_json_mode() or is_jsonl_mode() else contextlib.nullcontext()
+    )
+    with stream_context, error_context:
+        return new_secure_session(
+            username=username,
+            startup_kit_location=startup_kit_location,
+            debug=debug,
+            study=study,
+            timeout=timeout,
+            auto_login_max_tries=1,
+        )
 
 
 def new_active_cli_session(timeout: float, study: str = "default", debug: bool = False) -> Session:

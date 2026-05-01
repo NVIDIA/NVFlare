@@ -200,6 +200,24 @@ class TestSystemStatus:
         data = json.loads(capsys.readouterr().out)
         assert data["error_code"] == "INTERNAL_ERROR"
 
+    def test_status_no_client_responses_maps_to_system_not_ready(self, capsys):
+        from nvflare.tool.system.system_cli import cmd_system_status
+
+        args = self._make_args()
+        mock_sess = MagicMock()
+        mock_sess.check_status.side_effect = RuntimeError("error: no responses from clients")
+
+        with patch("nvflare.tool.system.system_cli._get_system_session", return_value=mock_sess):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_system_status(args)
+
+        assert exc_info.value.code == 2
+        data = json.loads(capsys.readouterr().out)
+        assert data["error_code"] == "SYSTEM_NOT_READY"
+        assert data["message"] == "FLARE system is not ready yet. \u2014 no responses from clients"
+        assert "retry 'nvflare system status'" in data["hint"]
+        assert "bug" not in data["hint"]
+
     def test_status_default_target_is_all(self, capsys):
         """When target is None, defaults to 'all'."""
         from nvflare.tool.system.system_cli import cmd_system_status
@@ -444,6 +462,32 @@ class TestSystemActiveStartupKit:
         )
 
         sess.check_status.assert_called_once_with("all", None)
+
+    def test_status_json_suppresses_connection_banner(self, tmp_path, monkeypatch, capsys):
+        from nvflare.tool.cli_output import print_human
+        from nvflare.tool.system.system_cli import cmd_system_status
+
+        active_admin_dir = _configure_active_startup_kit(tmp_path, monkeypatch)
+        args = argparse.Namespace(target="client", client_names=[], output="json")
+        sess = MagicMock()
+        sess.check_status.return_value = {"client_status": []}
+
+        def new_secure_session_with_banner(*_args, **_kwargs):
+            print_human("Connecting to FLARE ...")
+            return sess
+
+        with patch(
+            "nvflare.tool.cli_session.new_secure_session", side_effect=new_secure_session_with_banner
+        ) as new_secure:
+            cmd_system_status(args)
+
+        assert new_secure.call_args.kwargs["startup_kit_location"] == str(active_admin_dir)
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["status"] == "ok"
+        assert data["data"] == {"client_status": []}
+        assert "Connecting to FLARE" not in captured.out
+        assert "Connecting to FLARE" not in captured.err
 
     def test_resources_uses_active_startup_kit(self, tmp_path, monkeypatch):
         from nvflare.tool.system.system_cli import cmd_system_resources
