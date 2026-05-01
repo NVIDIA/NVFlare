@@ -233,7 +233,6 @@ class TestFederatedServer:
                 args=args,
                 secure_train=False,
                 snapshot_persistor=MagicMock(),
-                overseer_agent=MagicMock(),
             )
             server.server_state = HotState()
             server.client_manager.disable_client("client_name")
