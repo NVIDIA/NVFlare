@@ -599,9 +599,7 @@ Shared helpers can handle:
 - reporting next steps
 
 Runtime preparation should not depend on provisioning `Builder` classes or
-`lighter` templates. Legacy runtime builders such as `DockerLauncherBuilder`
-and `HelmChartBuilder` may remain untouched for backward compatibility in this
-PR, but site-local Docker/K8s deployment preparation should use the new deploy
+`lighter` templates. Docker/K8s deployment preparation should use the deploy
 command rather than requiring a site-local `project.yml` builder entry.
 
 ## Workflow Summary
