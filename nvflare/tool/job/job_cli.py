@@ -2422,8 +2422,11 @@ def cmd_job_wait(cmd_args):
         output_error("INVALID_ARGS", exit_code=4, detail="--interval must be > 0")
         return
 
+    json_mode = is_json_mode()
     try:
         with _job_session_for_args(cmd_args, study=study) as sess:
+            if not json_mode:
+                print_human(f"Waiting for job {cmd_args.job_id} in study {study} ...")
             meta = sess.wait_for_job(cmd_args.job_id, timeout=timeout, poll_interval=interval)
     except JobTimeout as e:
         output_error(
@@ -2449,6 +2452,8 @@ def cmd_job_wait(cmd_args):
         output_error("INTERNAL_ERROR", exit_code=5, detail="wait returned no job metadata")
         return
 
+    meta = dict(meta)
+    meta.setdefault(JobMetaKey.STUDY.value, study)
     start_ts = _parse_monitor_start_ts(
         meta,
         JobMetaKey.START_TIME.value,
@@ -2460,16 +2465,16 @@ def cmd_job_wait(cmd_args):
         start=start,
         start_ts=start_ts,
         cb_state=_make_monitor_state(),
-        json_mode=is_json_mode(),
+        json_mode=json_mode,
     )
     failure = _job_terminal_failure_error(data["status"])
     if failure:
         error_code, hint = failure
-        if not is_json_mode():
+        if not json_mode:
             _print_monitor_result_human(data, print_human)
-        output_error(error_code, exit_code=1, hint=hint, data=data if is_json_mode() else None, job_id=cmd_args.job_id)
+        output_error(error_code, exit_code=1, hint=hint, data=data if json_mode else None, job_id=cmd_args.job_id)
     else:
-        if is_json_mode():
+        if json_mode:
             output_ok(data)
         else:
             _print_monitor_result_human(data, print_human)
