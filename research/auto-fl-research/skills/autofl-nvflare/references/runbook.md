@@ -2,8 +2,8 @@
 
 ## Recommended loop
 1. Read `program.md` first when present.
-2. Use the human-provided `PYTHON` interpreter when one is specified. Treat it as authoritative, verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; print(sys.executable)"`, and do not search for alternate interpreters with glob or discovery commands such as `ls /usr/bin/python*`, `ls /workspace/.venv*/bin/python*`, or `which python`.
-3. Do not create virtual environments or install dependencies unless the user explicitly asks. If `PYTHON` is missing or invalid, ask the user for the prepared interpreter path instead of guessing.
+2. Set and use `PYTHON=.venv/bin/python` by default, unless the human explicitly provides a different `PYTHON` value. Treat the selected value as authoritative, verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; print(sys.executable)"`, and do not search for alternate interpreters with glob or discovery commands such as `ls /usr/bin/python*`, `ls /workspace/.venv*/bin/python*`, or `which python`.
+3. Do not create virtual environments or install dependencies unless the user explicitly asks. If `.venv/bin/python` is missing or invalid and no override was provided, tell the user to rerun the README preflight in this directory instead of guessing.
 4. When initializing a campaign, use a descriptive branch tag with the pattern `<node>-<campaign-topic>-YYYYMMDD`, such as `h100-fedavgm-20260430` or `h100-archsearch-20260430`; never use date-only branch names.
 5. Propose one small mutation or a small same-budget candidate batch.
 6. Edit the smallest possible set of files.
@@ -23,7 +23,7 @@
 20. Summarize the result when interrupted or when reporting a checkpoint.
 
 ## Single-H100 mode
-Run same-budget candidate batches on the one local H100 via `PYTHON=<path> bash scripts/run_iteration.sh`, with unique `RUN_LOG` and `--name` values for each concurrent candidate. Default to `PARALLEL_CANDIDATES=4`, and reduce the width if CUDA memory or host contention appears.
+Run same-budget candidate batches on the one local H100 via `PYTHON=.venv/bin/python bash scripts/run_iteration.sh`, with unique `RUN_LOG` and `--name` values for each concurrent candidate. Default to `PARALLEL_CANDIDATES=4`, and reduce the width if CUDA memory or host contention appears.
 
 ## Report format
 - Hypothesis

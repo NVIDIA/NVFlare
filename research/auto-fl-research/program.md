@@ -9,12 +9,9 @@ The coding agent should mostly iterate on a **small bounded code surface**.
 
 To set up a new experiment campaign, work with the user to:
 
-1. Ask the human to prepare the Python environment before the agent starts the campaign:
-   - create or activate the desired environment;
-   - run `python -m pip install -r requirements.txt`;
-   - provide the absolute interpreter path as `PYTHON=<path>`, preferably captured from the activated environment with `python -c 'import sys; print(sys.executable)'`.
-2. Treat the human-provided `PYTHON` value as authoritative. Do not search for Python interpreters with filesystem globs such as `ls /usr/bin/python*`, `ls /workspace/.venv*/bin/python*`, or similar discovery commands. If `PYTHON` is missing, empty, or not executable, ask the human for the prepared interpreter path instead of guessing.
-3. Do not create virtual environments or install dependencies unless the human explicitly asks you to. Use the exact human-provided `PYTHON` value for validation, smoke tests, candidate runs, plotting, summaries, and reports. Do not silently substitute `python`, `python3`, or another discovered interpreter.
+1. Assume the README preflight created the local environment in this directory and set `PYTHON=.venv/bin/python` by default. If the human explicitly provides a different `PYTHON` value, treat that override as authoritative.
+2. Do not create virtual environments or install dependencies unless the human explicitly asks you to. Do not search for Python interpreters with filesystem globs such as `ls /usr/bin/python*`, `ls /workspace/.venv*/bin/python*`, `which python`, or similar discovery commands.
+3. If `PYTHON` is missing, empty, or not executable, tell the human to rerun the README preflight in this directory or provide an explicit `PYTHON` override. Do not guess.
 4. Verify the prepared interpreter before running repo commands:
    - `test -x "$PYTHON"`
    - `"$PYTHON" -c "import sys; print(sys.executable)"`
@@ -25,8 +22,8 @@ To set up a new experiment campaign, work with the user to:
    - `client.py`, `custom_aggregators.py`, and `job.py` for the active code surface
    - `README.md` or `ACKNOWLEDGEMENTS.md` only when user-facing setup or provenance context is needed
 8. Verify the prepared environment is ready:
-   - `PYTHON=<path> make validate`
-   - `PYTHON=<path> make smoke`
+   - `PYTHON=.venv/bin/python make validate`
+   - `PYTHON=.venv/bin/python make smoke`
 9. Initialize the run ledger:
    - `bash scripts/init_run.sh <tag>`
 10. Confirm the setup and start with the baseline.
@@ -123,7 +120,7 @@ Example single-H100 calibration skeleton:
 
 ```bash
 mkdir -p run_logs
-PYTHON=${PYTHON:?set PYTHON to the prepared Python interpreter}
+PYTHON=${PYTHON:-.venv/bin/python}
 PARALLEL_CANDIDATES=${PARALLEL_CANDIDATES:-4}
 COMMON_ARGS="--n_clients 8 --num_rounds 10 --aggregation_epochs 4 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --final_eval_clients site-1"
 
@@ -284,7 +281,7 @@ Default single-candidate loop:
 5. Run:
 
    ```bash
-   PYTHON=<path> bash scripts/run_iteration.sh --description "..." --target <file> -- <fixed budget args>
+   PYTHON=.venv/bin/python bash scripts/run_iteration.sh --description "..." --target <file> -- <fixed budget args>
    ```
 
    This redirects the full job output to `run.log`.

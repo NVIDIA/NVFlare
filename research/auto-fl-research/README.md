@@ -93,19 +93,19 @@ Human preflight:
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
-export PYTHON="$(python -c 'import sys; print(sys.executable)')"
+export PYTHON=.venv/bin/python
 "$PYTHON" --version
 ```
 
 Pass the prepared interpreter to validation and runs:
 
 ```bash
-PYTHON="$PYTHON" make validate
+make validate
 TAG="h100-baseline-$(date +%Y%m%d)" make init-run
-PYTHON="$PYTHON" make smoke
+make smoke
 ```
 
-Then give the folder to a coding agent and tell it to start with `program.md`. Include the exact prepared `PYTHON` path in the initial prompt so the agent can reuse the environment without spending tokens on dependency setup or brittle interpreter discovery.
+Then give the folder to a coding agent and tell it to start with `program.md`. The entrypoint prompt below assumes the agent starts from this directory and uses the `.venv/bin/python` interpreter created by preflight.
 
 ## Recommended agent runtime
 
@@ -143,9 +143,9 @@ Inside the container, install this harness' Python requirements once, export the
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
-export PYTHON="$(python -c 'import sys; print(sys.executable)')"
-PYTHON="$PYTHON" make validate
-PYTHON="$PYTHON" make smoke
+export PYTHON=.venv/bin/python
+make validate
+make smoke
 ```
 
 On the H100 node, verify that the container can see the GPU before starting an overnight campaign:
@@ -166,20 +166,9 @@ Keep the devcontainer boundary meaningful: mount only the repository and deliber
 
 ## Recommended agent entrypoint
 
-For Codex or Claude Code, generate the first instruction from the same shell where preflight set `PYTHON`. This expands the interpreter path before the prompt reaches the agent, avoiding a literal placeholder such as `PYTHON=<absolute path to the environment's python>`:
+For Codex or Claude Code, the first instruction can be copied directly after running the preflight steps:
 
-```bash
-test -x "$PYTHON" || { echo "Set PYTHON with the preflight export first." >&2; exit 1; }
-"$PYTHON" - <<'PY'
-import os
-import shlex
-
-python_path = os.environ.get("PYTHON")
-if not python_path:
-    raise SystemExit("PYTHON is not set. Run the preflight export first.")
-
-print(
-    f"""\
+```text
 Make the bundled local `autofl-nvflare` skill available first if your runtime has not already loaded it. Use `skills/autofl-nvflare/SKILL.md` and its `references/` files as the skill source; do not recreate the skill from memory.
 
 Then use the autofl-nvflare skill.
@@ -188,20 +177,15 @@ Start in this directory and read `program.md` first. Treat it as the complete re
 
 Start a fresh autoresearch campaign for the local single-H100 node. If no campaign is initialized yet, derive a descriptive run tag at runtime using `<node>-<campaign-topic>-$(date +%Y%m%d)`, initialize the ledger, and establish the baseline first. Do not use date-only names or copy stale example dates.
 
-Use this prepared Python environment for all validation and runs:
-PYTHON={shlex.quote(python_path)}
+Use the local Python environment created by preflight. Set:
+export PYTHON=.venv/bin/python
 Treat that PYTHON value as authoritative. First verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; print(sys.executable)"`, then use that exact interpreter for validation, smoke tests, candidate runs, plotting, summaries, and reports.
-Do not create a virtual environment, install dependencies, or search for alternate Python interpreters unless I explicitly ask you to. If PYTHON is missing or invalid, stop and ask me for the prepared interpreter path.
+Do not create a virtual environment, install dependencies, or search for alternate Python interpreters unless I explicitly ask you to. If `.venv/bin/python` is missing or invalid, stop and tell me to rerun the README preflight in this directory.
 
 Set PARALLEL_CANDIDATES=4 unless I override it. Use one local 80 GB H100; if multiple GPUs are visible, pin candidate runs to CUDA_VISIBLE_DEVICES=0 rather than spreading candidates across devices. Lower the candidate width only if CUDA memory, host memory, or I/O contention appears.
 
 Once setup and baseline are complete, do not ask whether to keep going or whether this is a good stopping point. Continue the experiment loop until manually interrupted.
-"""
-)
-PY
 ```
-
-Paste the generated output into Codex or Claude Code as the initial instruction.
 
 ## Scoring recommendation
 
