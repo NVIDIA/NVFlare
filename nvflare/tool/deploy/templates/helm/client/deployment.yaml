@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nvflare-client.name" . }}
+  labels:
+    {{- include "nvflare-client.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "nvflare-client.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nvflare-client.labels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ include "nvflare-client.name" . }}
+      {{- end }}
+      {{- with .Values.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: {{ .Values.persistence.workspace.volumeName }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.workspace.claimName }}
+      containers:
+        - name: {{ include "nvflare-client.name" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: {{ include "nvflare-client.image" . }}
+          ports:
+            - containerPort: {{ .Values.port }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          command:
+            {{- toYaml .Values.command | nindent 12 }}
+          args:
+            {{- toYaml .Values.args | nindent 12 }}
+            - uid={{ default .Values.name .Values.siteName }}
+          volumeMounts:
+            - name: {{ .Values.persistence.workspace.volumeName }}
+              mountPath: {{ .Values.persistence.workspace.mountPath }}

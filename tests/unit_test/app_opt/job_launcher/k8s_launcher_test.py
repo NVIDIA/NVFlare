@@ -994,7 +994,7 @@ class TestK8sJobLauncherLaunchJob:
     enter_states returns True on the first iteration without sleeping.
     """
 
-    def _setup(self, patches, namespace="test-ns", study_data_pvc_dict=None):
+    def _setup(self, patches, namespace="test-ns", study_data_pvc_dict=None, default_python_path=None):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         mock_open, mock_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
@@ -1015,6 +1015,7 @@ class TestK8sJobLauncherLaunchJob:
             config_file_path="/fake/kube/config",
             study_data_pvc_file_path="/fake/study_data.yaml",
             namespace=namespace,
+            default_python_path=default_python_path,
         )
         return launcher, mock_api
 
@@ -1321,6 +1322,19 @@ class TestK8sJobLauncherLaunchJob:
             launcher.launch_job(meta, _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_python_path_from_launcher_spec_overrides_default(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, default_python_path="/usr/bin/python")
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"]["python_path"] = "/opt/conda/bin/python"
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["spec"]["containers"][0]["command"] == ["/opt/conda/bin/python"]
         finally:
             _exit_patches(patches)
 

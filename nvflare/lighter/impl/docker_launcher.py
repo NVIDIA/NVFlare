@@ -76,7 +76,7 @@ class DockerLauncherBuilder(Builder):
             path=ServerDockerJobLauncher.__module__ + ".ServerDockerJobLauncher",
             args={
                 "network": "nvflare-network",
-                "python_path": "/usr/local/bin/python",
+                "default_python_path": "/usr/local/bin/python",
             },
         )
 
@@ -106,7 +106,7 @@ class DockerLauncherBuilder(Builder):
             path=ClientDockerJobLauncher.__module__ + ".ClientDockerJobLauncher",
             args={
                 "network": "nvflare-network",
-                "python_path": "/usr/local/bin/python",
+                "default_python_path": "/usr/local/bin/python",
             },
         )
 
