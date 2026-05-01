@@ -37,6 +37,7 @@ from nvflare.private.defs import (
     CellChannel,
     CellChannelTopic,
     CellMessageHeaderKeys,
+    ClientRegMsgKey,
     ClientType,
     SpecialTaskName,
     new_cell_message,
@@ -229,6 +230,19 @@ class Communicator:
 
         return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, Shareable())
 
+    def _get_site_config_for_registration(self, fl_ctx: FLContext):
+        client_config = fl_ctx.get_prop(FLContextKey.CLIENT_CONFIG, self.client_config)
+        if not isinstance(client_config, dict):
+            return None
+
+        site_config = client_config.get(ClientRegMsgKey.SITE_CONFIG)
+        if site_config is not None and not isinstance(site_config, dict):
+            self.logger.warning(
+                f"site config will not be sent to server: expected dict but got {type(site_config).__name__}"
+            )
+            return None
+        return site_config
+
     def client_registration(self, client_name, project_name, fl_ctx: FLContext):
         """Register the client with the FLARE Server.
 
@@ -309,6 +323,8 @@ class Communicator:
             cert_file = client_config.get(SecureTrainConst.SSL_CERT)
             root_cert_file = client_config.get(SecureTrainConst.SSL_ROOT_CERT)
 
+        site_config = self._get_site_config_for_registration(fl_ctx)
+
         authenticator = Authenticator(
             cell=self.cell,
             project_name=project_name,
@@ -321,6 +337,7 @@ class Communicator:
             cert_file=cert_file,
             msg_timeout=self.maint_msg_timeout,
             retry_interval=self.client_register_interval,
+            site_config=site_config,
         )
 
         token, signature, ssid, token_verifier = authenticator.authenticate(shared_fl_ctx, self.abort_signal)
