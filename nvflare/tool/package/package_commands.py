@@ -672,15 +672,15 @@ def _build_package_builders(custom_builders, cert_builder, scheme, workspace_bui
         if existing_workspace_builder is not None:
             workspace_builder.template_files = existing_workspace_builder.template_files
         all_builders = [b for b in all_builders if not isinstance(b, WorkspaceBuilder)]
-
-    if not has_cert:
-        ws_pos = next((i for i, b in enumerate(all_builders) if isinstance(b, WorkspaceBuilder)), -1)
-        all_builders.insert(ws_pos + 1, cert_builder)
-
-    if workspace_builder is not None:
         all_builders.insert(0, workspace_builder)
-    elif not any(isinstance(b, WorkspaceBuilder) for b in all_builders):
-        all_builders.insert(0, WorkspaceBuilder())
+        if not has_cert:
+            all_builders.insert(1, cert_builder)
+    else:
+        if not has_cert:
+            ws_pos = next((i for i, b in enumerate(all_builders) if isinstance(b, WorkspaceBuilder)), -1)
+            all_builders.insert(ws_pos + 1, cert_builder)
+        if not any(isinstance(b, WorkspaceBuilder) for b in all_builders):
+            all_builders.insert(0, WorkspaceBuilder())
 
     if not any(isinstance(b, StaticFileBuilder) for b in all_builders):
         cert_pos = next((i for i, b in enumerate(all_builders) if isinstance(b, PrebuiltCertBuilder)), None)
@@ -1037,9 +1037,7 @@ def _verify_rootca_fingerprint_options(args, actual_fingerprint: str) -> bool:
             return False
 
     if not expected:
-        print_human(
-            "Warning: Root CA SHA256 fingerprint was not verified. " "Use --fingerprint to verify it out-of-band."
-        )
+        print_human("Warning: Root CA SHA256 fingerprint was not verified. Use --fingerprint to verify it out-of-band.")
 
     return True
 

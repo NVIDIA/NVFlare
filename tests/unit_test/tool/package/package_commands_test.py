@@ -59,6 +59,7 @@ from nvflare.tool.package.package_commands import (
     _DUMMY_SERVER_NAME,
     FixedProdWorkspaceBuilder,
     PrebuiltCertBuilder,
+    _build_package_builders,
     _discover_name_from_dir,
     _flat_site_to_project_dict,
     _load_signed_zip,
@@ -3896,13 +3897,25 @@ class TestSignedZipPackageMode:
         assert "participant output already exists" in err
         assert sentinel_path.exists()
 
-    def test_fixed_prod_workspace_builder_uses_workspace_builder_default_templates(self, tmp_path):
-        builder = FixedProdWorkspaceBuilder(
+    def test_build_package_builders_replaces_workspace_builder_and_preserves_template_files(self, tmp_path):
+        original_workspace_builder = WorkspaceBuilder(template_file="custom_template.yml")
+        fixed_workspace_builder = FixedProdWorkspaceBuilder(
             target_prod_dir=str(tmp_path / "workspace" / "project" / "prod_00"),
             participant_name="site-1",
         )
+        cert_builder = PrebuiltCertBuilder(
+            cert_path=str(tmp_path / "site-1.crt"),
+            key_path=str(tmp_path / "site-1.key"),
+            rootca_path=str(tmp_path / "rootCA.pem"),
+            target_name="site-1",
+        )
 
-        assert builder.template_files == WorkspaceBuilder().template_files
+        builders = _build_package_builders([original_workspace_builder], cert_builder, "grpc", fixed_workspace_builder)
+
+        assert builders[0] is fixed_workspace_builder
+        assert builders[1] is cert_builder
+        assert fixed_workspace_builder.template_files == "custom_template.yml"
+        assert original_workspace_builder not in builders
 
     def test_signed_zip_returns_build_error_without_success_output(self, tmp_path, monkeypatch):
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
