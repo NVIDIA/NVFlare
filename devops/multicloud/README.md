@@ -20,7 +20,7 @@ The deploy tool reads kubeconfigs from `.tmp/kubeconfigs/<cloud>.yaml`.
 `fetch_kubeconfigs.py` discovers clusters from the active cloud CLI contexts
 and supports environment variable overrides when discovery is ambiguous.
 
-The deploy tool still supports GCP, AWS, or Azure as the server cloud.
+The deploy tool supports GCP, AWS, or Azure as the server cloud.
 Cloud-specific behavior lives in provider modules under
 `devops/multicloud/clouds/`; `deploy.py` owns the common flow.
 
@@ -59,19 +59,21 @@ clouds referenced by `participants:`.
 
 ## Roles And Permissions
 
-Cluster creation and FLARE deployment can be separate roles:
+Cluster creation and FLARE site deployment can be separate roles:
 
 - Cluster creator: permission to create and manage the target GKE, EKS, or AKS
   clusters, node pools/autoscaling settings, storage classes, and container
   registries.
-- FLARE deployer: cloud CLI login, kubeconfig access, registry pull access, and
-  Kubernetes permissions to create/delete namespaces, PVCs, pods, services,
-  deployments, and Helm release resources.
-- Server cloud deployer: permission to reserve and release the public/static IP
-  used by the server service. For GCP this is regional compute addresses; for
-  AWS this is Elastic IPs; for Azure this is Public IPs in the configured
-  resource group.
+- FLARE site deployer: permission to use the kubeconfig for each target site
+  cluster and create/delete namespaces, PVCs, pods, services, deployments, and
+  Helm release resources for that site.
+- FLARE server site deployer: the FLARE site deployer permissions plus
+  permission to reserve and release the public/static IP used by the server
+  service.
 
+The server cloud means the cloud where the FLARE server participant is
+deployed. For GCP, the server IP is a regional compute address; for AWS, it is
+an Elastic IP; for Azure, it is a Public IP in the configured resource group.
 When AWS is the server cloud, the deployer also needs permission to describe
 the EKS cluster and public subnets. When Azure is the server cloud,
 `clouds.azure.resource_group` and `clouds.azure.location` must identify where
@@ -173,7 +175,7 @@ creating a temporary config, choosing unique names/namespaces, setting image
 tags, building/pushing images, fetching kubeconfigs, deploying, validating,
 and tearing down.
 
-For Codex-driven setup, prompt Codex with:
+For AI-agent-assisted setup, prompt the agent with:
 
 ```text
 Use devops/multicloud/setting-up-dev-cluster.md to create a multicloud dev cluster.
