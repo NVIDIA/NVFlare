@@ -17,7 +17,7 @@ import os
 import time
 from typing import List, Optional
 
-from nvflare.apis.fl_constant import SUBMIT_TOKEN_CONFLICT_STATUS, AdminCommandNames
+from nvflare.apis.fl_constant import SUBMIT_TOKEN_CONFLICT_STATUS, SUBMIT_TOKEN_JOB_DELETED_STATUS, AdminCommandNames
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey
 from nvflare.apis.utils.format_check import name_check
@@ -61,6 +61,7 @@ from .api_spec import (
     SessionClosed,
     SessionSpec,
     SubmitTokenConflict,
+    SubmitTokenJobDeleted,
     SystemInfo,
     TargetType,
 )
@@ -222,6 +223,13 @@ class Session(SessionSpec):
                 raise SubmitTokenConflict(
                     info or "submit token was already used for different job content",
                     meta.get(MetaKey.JOB_ID),
+                )
+            elif cmd_status == SUBMIT_TOKEN_JOB_DELETED_STATUS:
+                raise SubmitTokenJobDeleted(
+                    info or "submit token refers to a deleted job",
+                    meta.get(MetaKey.JOB_ID),
+                    meta.get("submit_record_state"),
+                    meta.get("deleted_time"),
                 )
             elif cmd_status == MetaStatusValue.NOT_AUTHORIZED:
                 raise AuthorizationError(f"user not authorized for the action '{command}: {info}'")
@@ -537,13 +545,18 @@ class Session(SessionSpec):
             job_id (str): job to be deleted
 
         Returns:
-            None
+            A dict with the deleted job id and submit-token records marked deleted.
 
         The job will be deleted from the job store if the job is not currently running.
 
         """
         self._validate_job_id(job_id)
-        self._do_command(AdminCommandNames.DELETE_JOB + " " + job_id)
+        result = self._do_command(AdminCommandNames.DELETE_JOB + " " + job_id)
+        meta = result[ResultKey.META]
+        return {
+            "job_id": meta.get(MetaKey.JOB_ID, job_id),
+            "submit_records_marked_deleted": meta.get("submit_records_marked_deleted", 0),
+        }
 
     def get_system_info(self):
         """Get general system information.

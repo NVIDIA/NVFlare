@@ -87,6 +87,7 @@ class JobMetaKey(str, Enum):
 class SubmitRecordState(str, Enum):
     CREATING = "creating"
     CREATED = "created"
+    JOB_DELETED = "job_deleted"
 
 
 class SubmitRecordKey(str, Enum):
@@ -102,6 +103,8 @@ class SubmitRecordKey(str, Enum):
     JOB_FOLDER_NAME = "job_folder_name"
     JOB_CONTENT_HASH = "job_content_hash"
     SUBMIT_TIME = "submit_time"
+    DELETED_TIME = "deleted_time"
+    DELETED_BY = "deleted_by"
 
     def __repr__(self):
         return self.value

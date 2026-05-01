@@ -575,6 +575,7 @@ def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
         InvalidJobDefinition,
         NoConnection,
         SubmitTokenConflict,
+        SubmitTokenJobDeleted,
     )
     from nvflare.tool.cli_output import is_json_mode, output_error, output_ok, print_human
 
@@ -597,6 +598,15 @@ def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
                 detail=str(e),
                 hint="Use a new submit token when submitting different job content.",
                 data={"existing_job_id": e.existing_job_id} if e.existing_job_id else None,
+            )
+            raise SystemExit(4)
+        except SubmitTokenJobDeleted as e:
+            data = {"job_id": e.job_id, "state": e.state, "deleted_time": e.deleted_time}
+            output_error(
+                "SUBMIT_TOKEN_JOB_DELETED",
+                exit_code=4,
+                detail=str(e),
+                data={key: value for key, value in data.items() if value is not None},
             )
             raise SystemExit(4)
         except AuthorizationError as e:
@@ -1183,7 +1193,7 @@ def _discover_job_download_artifacts(download_path: str) -> Tuple[dict, List[str
 
 
 def cmd_job_list(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection, SubmitTokenJobDeleted
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1217,6 +1227,15 @@ def cmd_job_list(cmd_args):
             )
     except AuthenticationError:
         raise
+    except SubmitTokenJobDeleted as e:
+        data = {"job_id": e.job_id, "state": e.state, "deleted_time": e.deleted_time}
+        output_error(
+            "SUBMIT_TOKEN_JOB_DELETED",
+            exit_code=4,
+            detail=str(e),
+            data={key: value for key, value in data.items() if value is not None},
+        )
+        return
     except NoConnection as e:
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
@@ -1418,7 +1437,7 @@ def cmd_job_delete(cmd_args):
 
     try:
         with _job_session_for_args(cmd_args) as sess:
-            sess.delete_job(cmd_args.job_id)
+            result = sess.delete_job(cmd_args.job_id)
     except JobNotFound:
         output_error("JOB_NOT_FOUND", job_id=cmd_args.job_id)
         return
@@ -1428,7 +1447,10 @@ def cmd_job_delete(cmd_args):
         output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
 
-    output_ok({"job_id": cmd_args.job_id})
+    if not isinstance(result, dict):
+        result = {"job_id": cmd_args.job_id}
+    result.setdefault("job_id", cmd_args.job_id)
+    output_ok(result)
 
 
 # ---------------------------------------------------------------------------

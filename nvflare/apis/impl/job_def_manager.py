@@ -37,6 +37,7 @@ from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.storage import WORKSPACE, StorageException, StorageSpec
 from nvflare.apis.utils.job_submit_token import (
     canonical_job_content_hash,
+    canonical_json_hash,
     submit_record_scope_hashes,
     submitter_to_dict,
 )
@@ -45,6 +46,8 @@ from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes, zip_directory_to_
 
 _OBJ_TAG_SCHEDULED = "scheduled"
 _SUBMIT_RECORD_URI_ROOT = "job_submit_records"
+_SUBMIT_RECORD_JOB_INDEX_URI_ROOT = "job_submit_record_index"
+_SUBMIT_RECORD_URIS_KEY = "submit_record_uris"
 
 
 class JobInfo:
@@ -132,6 +135,9 @@ class SimpleJobDefManager(JobDefManagerSpec):
         # enumerated as jobs by stores that scan uri_root directly.
         uri_root = self.uri_root.rstrip(os.sep) or self.uri_root
         self.submit_record_uri_root = os.path.join(os.path.dirname(uri_root), _SUBMIT_RECORD_URI_ROOT)
+        self.submit_record_job_index_uri_root = os.path.join(
+            os.path.dirname(uri_root), _SUBMIT_RECORD_JOB_INDEX_URI_ROOT
+        )
         self._submit_record_lock = threading.Lock()
 
     def _get_job_store(self, fl_ctx):
@@ -163,6 +169,41 @@ class SimpleJobDefManager(JobDefManagerSpec):
             record.get(SubmitRecordKey.SUBMIT_TOKEN.value),
         )
 
+    def _submit_record_job_index_uri(self, job_id: str) -> str:
+        return os.path.join(self.submit_record_job_index_uri_root, canonical_json_hash(job_id or ""))
+
+    def _upsert_submit_record_job_index(self, store: StorageSpec, record: dict):
+        job_id = record.get(SubmitRecordKey.JOB_ID.value)
+        if not job_id:
+            return
+
+        index_uri = self._submit_record_job_index_uri(job_id)
+        record_uri = self._submit_record_uri_from_record(record)
+        try:
+            index_meta = store.get_meta(index_uri) or {}
+        except StorageException:
+            index_meta = {}
+        submit_record_uris = list(index_meta.get(_SUBMIT_RECORD_URIS_KEY, []))
+        if record_uri not in submit_record_uris:
+            submit_record_uris.append(record_uri)
+        updated_meta = {SubmitRecordKey.JOB_ID.value: job_id, _SUBMIT_RECORD_URIS_KEY: submit_record_uris}
+        if index_meta:
+            store.update_meta(index_uri, updated_meta, replace=True)
+            return
+
+        try:
+            store.create_object(index_uri, b"", updated_meta, overwrite_existing=False)
+        except StorageException:
+            existing_meta = store.get_meta(index_uri) or {}
+            existing_uris = list(existing_meta.get(_SUBMIT_RECORD_URIS_KEY, []))
+            if record_uri not in existing_uris:
+                existing_uris.append(record_uri)
+            store.update_meta(
+                index_uri,
+                {SubmitRecordKey.JOB_ID.value: job_id, _SUBMIT_RECORD_URIS_KEY: existing_uris},
+                replace=True,
+            )
+
     def get_job_content_hash(self, uploaded_content: Union[str, bytes]) -> str:
         return canonical_job_content_hash(uploaded_content)
 
@@ -179,7 +220,6 @@ class SimpleJobDefManager(JobDefManagerSpec):
         with self._submit_record_lock:
             try:
                 store.create_object(uri, b"", record, overwrite_existing=False)
-                return True
             except StorageException:
                 try:
                     if store.get_meta(uri):
@@ -187,13 +227,45 @@ class SimpleJobDefManager(JobDefManagerSpec):
                 except StorageException:
                     pass
                 raise
+            self._upsert_submit_record_job_index(store, record)
+            return True
 
     def update_submit_record(self, record: dict, fl_ctx: FLContext) -> dict:
         store = self._get_job_store(fl_ctx)
         uri = self._submit_record_uri_from_record(record)
         with self._submit_record_lock:
             store.update_meta(uri, record, replace=True)
+            self._upsert_submit_record_job_index(store, record)
         return record
+
+    def mark_submit_records_job_deleted(self, job_id: str, deleted_by, fl_ctx: FLContext) -> List[dict]:
+        store = self._get_job_store(fl_ctx)
+        index_uri = self._submit_record_job_index_uri(job_id)
+        deleted_by_info = submitter_to_dict(deleted_by)
+        deleted_time = datetime.datetime.now().astimezone().isoformat()
+        updated_records = []
+
+        with self._submit_record_lock:
+            try:
+                index_meta = store.get_meta(index_uri) or {}
+            except StorageException:
+                return []
+
+            for record_uri in index_meta.get(_SUBMIT_RECORD_URIS_KEY, []):
+                try:
+                    record = store.get_meta(record_uri)
+                except StorageException:
+                    continue
+                if not record or record.get(SubmitRecordKey.JOB_ID.value) != job_id:
+                    continue
+                if record.get(SubmitRecordKey.STATE.value) == SubmitRecordState.JOB_DELETED.value:
+                    continue
+                record[SubmitRecordKey.STATE.value] = SubmitRecordState.JOB_DELETED.value
+                record[SubmitRecordKey.DELETED_TIME.value] = deleted_time
+                record[SubmitRecordKey.DELETED_BY.value] = deleted_by_info
+                store.update_meta(record_uri, record, replace=True)
+                updated_records.append(record)
+        return updated_records
 
     def get_job_by_submit_token(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> Optional[Job]:
         record = self.get_submit_record(study, submitter, submit_token, fl_ctx)

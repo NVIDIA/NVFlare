@@ -85,6 +85,14 @@ class JobDefManagerSpec(FLComponent, ABC):
         """Replace the persistent submit-token record with updated metadata."""
         pass
 
+    def mark_submit_records_job_deleted(self, job_id: str, deleted_by, fl_ctx: FLContext) -> List[dict]:
+        """Mark submit-token records that reference a deleted job.
+
+        Custom job managers that do not maintain submit-token records can keep the
+        default no-op behavior for compatibility.
+        """
+        return []
+
     @abstractmethod
     def get_job_by_submit_token(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> Optional[Job]:
         """Resolve a submit-token record to its referenced Job, if both exist."""

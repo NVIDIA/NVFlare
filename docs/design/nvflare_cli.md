@@ -1282,6 +1282,7 @@ Recommended persistent namespace:
 
 ```text
 job_submit_records/<study_hash>/<submitter_hash>/<submit_token_hash>
+job_submit_record_index/<job_id_hash>
 ```
 
 Recommended submit record payload:
@@ -1291,7 +1292,7 @@ Recommended submit record payload:
   "schema_version": 1,
   "submit_token": "run-20260429-001",
   "job_id": "eef2c05b-8b8e-44cf-a6e6-787985ad6a42",
-  "state": "creating|created",
+  "state": "creating|created|job_deleted",
   "job_name": "hello-numpy",
   "job_folder_name": "hello-numpy",
   "study": "cancer",
@@ -1299,9 +1300,15 @@ Recommended submit record payload:
   "submitter_org": "nvidia",
   "submitter_role": "project_admin",
   "submit_time": "2026-04-29T10:00:00-07:00",
-  "job_content_hash": "sha256:..."
+  "job_content_hash": "sha256:...",
+  "deleted_time": "2026-04-30T10:00:00-07:00",
+  "deleted_by": {"name": "admin@nvidia.com", "org": "nvidia", "role": "project_admin"}
 }
 ```
+
+`deleted_time` and `deleted_by` are present only after the referenced job is deleted.
+The reverse index lets `job delete` find submit records by `job_id` without storing the
+submit token in job `meta.json`.
 
 Submit handling:
 
@@ -1310,6 +1317,8 @@ Submit handling:
    not create a retry-safe submit-token record.
 2. If `--submit-token` is present, compute the study-scoped submit-record key.
 3. If a submit record exists:
+   - `state: "job_deleted"`: return `SUBMIT_TOKEN_JOB_DELETED` and do not recreate the
+     deleted job;
    - same content hash: return the existing `job_id`;
    - different content hash: return `SUBMIT_TOKEN_CONFLICT` and do not create a job.
 4. If no submit record exists:
@@ -1326,6 +1335,12 @@ exists. If the job exists, update the submit record to `created` and return the 
 `job_id`; if the job does not exist, retry creation with the same pre-generated `job_id`.
 Concurrent submissions with the same scope and token must be serialized by the
 no-overwrite submit-record create or an equivalent lock.
+
+When `nvflare job delete <job_id>` deletes a job referenced by a submit-token record, it
+marks the submit record as `state: "job_deleted"` instead of deleting the record. This
+preserves the audit trail and prevents a later retry with the same token from recreating
+a job that an operator deliberately deleted. Delete JSON output includes
+`submit_records_marked_deleted`.
 
 Recovery after client-side timeout or session loss:
 

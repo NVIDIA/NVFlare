@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.fl_constant import SUBMIT_TOKEN_JOB_DELETED_STATUS
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.flare_api.api_spec import (
@@ -28,6 +29,7 @@ from nvflare.fuel.flare_api.api_spec import (
     MonitorReturnCode,
     NoConnection,
     ServerInfo,
+    SubmitTokenJobDeleted,
 )
 from nvflare.fuel.flare_api.flare_api import Session, new_session
 from nvflare.fuel.hci.client.api import APIStatus, ResultKey
@@ -125,6 +127,23 @@ def test_list_jobs_rejects_invalid_submit_token(token):
         session.list_jobs(submit_token=token)
 
     session._do_command.assert_not_called()
+
+
+def test_delete_job_returns_submit_record_tombstone_count():
+    session = Session.__new__(Session)
+    session._do_command = MagicMock(
+        return_value={
+            ResultKey.STATUS: "SUCCESS",
+            ResultKey.META: {
+                MetaKey.STATUS: MetaStatusValue.OK,
+                MetaKey.JOB_ID: "job-1",
+                "submit_records_marked_deleted": 1,
+            },
+        }
+    )
+
+    assert session.delete_job("job-1") == {"job_id": "job-1", "submit_records_marked_deleted": 1}
+    session._do_command.assert_called_once_with("delete_job job-1")
 
 
 @pytest.mark.parametrize("status", ["FINISHED:COMPLETED", "FAILED", "ABORTED", "ABANDONED", "FINISHED_EXCEPTION"])
@@ -228,6 +247,29 @@ def test_do_command_raises_authentication_error_for_error_cert():
 
     with pytest.raises(AuthenticationError, match="certificate validation failed"):
         session._do_command("list_jobs", enforce_meta=False)
+
+
+def test_do_command_maps_deleted_submit_token_status():
+    session = Session.__new__(Session)
+    session.api = MagicMock()
+    session.api.closed = False
+    session.api.do_command.return_value = {
+        ResultKey.STATUS: APIStatus.SUCCESS,
+        ResultKey.META: {
+            MetaKey.STATUS: SUBMIT_TOKEN_JOB_DELETED_STATUS,
+            MetaKey.INFO: "submit token refers to a deleted job",
+            MetaKey.JOB_ID: "job-1",
+            "submit_record_state": "job_deleted",
+            "deleted_time": "2026-04-30T10:00:00-07:00",
+        },
+    }
+
+    with pytest.raises(SubmitTokenJobDeleted) as exc_info:
+        session._do_command("list_jobs --submit-token retry-1")
+
+    assert exc_info.value.job_id == "job-1"
+    assert exc_info.value.state == "job_deleted"
+    assert exc_info.value.deleted_time == "2026-04-30T10:00:00-07:00"
 
 
 def test_new_session_closes_session_on_connect_failure():

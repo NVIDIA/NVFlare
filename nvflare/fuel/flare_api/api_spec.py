@@ -47,6 +47,14 @@ class SubmitTokenConflict(Exception):
         self.existing_job_id = existing_job_id
 
 
+class SubmitTokenJobDeleted(Exception):
+    def __init__(self, message: str, job_id: str = None, state: str = None, deleted_time: str = None):
+        super().__init__(message)
+        self.job_id = job_id
+        self.state = state
+        self.deleted_time = deleted_time
+
+
 class JobNotFound(Exception):
     pass
 
@@ -285,7 +293,7 @@ class SessionSpec(ABC):
         Args:
             job_id: job to be deleted
 
-        Returns: None
+        Returns: delete result metadata, including the number of submit-token records marked deleted.
 
         If the job is being executed, the job will be stopped first.
         Everything of the job will be deleted from the job store, as well as workspaces on

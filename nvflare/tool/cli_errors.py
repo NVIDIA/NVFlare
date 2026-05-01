@@ -122,6 +122,10 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
             "or resubmit identical job content to reuse the existing job."
         ),
     },
+    "SUBMIT_TOKEN_JOB_DELETED": {
+        "message": "This submit token refers to a deleted job.",
+        "hint": "Use a new submit token to submit the job again.",
+    },
     "LOG_NOT_FOUND": {
         "message": "Job logs are not available for site '{site}'.",
         "hint": "Verify that client log streaming is enabled and that the site has run this job.",

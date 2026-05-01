@@ -73,7 +73,34 @@ def test_creating_record_survives_restart_for_retry_recovery(tmp_path):
     assert record["job_id"] == "pre-generated-job"
 
 
+def test_mark_submit_record_job_deleted_preserves_record_for_audit(tmp_path):
+    storage = FilesystemStorage(root_dir=str(tmp_path / "store"), uri_root="/")
+    fl_ctx = FLContext()
+
+    with mock.patch.object(SimpleJobDefManager, "_get_job_store", return_value=storage):
+        manager = SimpleJobDefManager(uri_root=str(tmp_path / "jobs"))
+        manager.create_submit_record(_record(), fl_ctx)
+
+        marked = manager.mark_submit_records_job_deleted(
+            "job-1", {"name": "admin@nvidia.com", "org": "nvidia", "role": "project_admin"}, fl_ctx
+        )
+        record = manager.get_submit_record("study-a", _submitter(), "retry-1", fl_ctx)
+
+    assert len(marked) == 1
+    assert record["state"] == "job_deleted"
+    assert record["job_id"] == "job-1"
+    assert record["deleted_time"]
+    assert record["deleted_by"] == {
+        "name": "admin@nvidia.com",
+        "org": "nvidia",
+        "role": "project_admin",
+    }
+
+
 def test_submit_record_uri_root_is_beside_trailing_slash_job_root(tmp_path):
     manager = SimpleJobDefManager(uri_root=str(tmp_path / "jobs") + os.sep)
 
     assert manager.submit_record_uri_root == str(tmp_path / job_def_manager_module._SUBMIT_RECORD_URI_ROOT)
+    assert manager.submit_record_job_index_uri_root == str(
+        tmp_path / job_def_manager_module._SUBMIT_RECORD_JOB_INDEX_URI_ROOT
+    )

@@ -153,6 +153,11 @@ the same scope returns the existing ``job_id``. Reusing it with different job
 content fails with ``SUBMIT_TOKEN_CONFLICT``. The same token may be used in a
 different study because studies are separate job namespaces.
 
+If a job created with ``--submit-token`` is later deleted, the server keeps the
+submit record as ``job_deleted``. A later submit or list lookup with the same
+token returns ``SUBMIT_TOKEN_JOB_DELETED`` instead of silently recreating the
+deleted job. Use a new submit token to submit the job again.
+
 The submitted job path should point to the job content root. When the submitted
 artifact is a zip file with one wrapper directory around the job content, the
 wrapper is ignored for submit-token content hashing so a normal
@@ -175,6 +180,22 @@ After a client-side timeout or session loss, recover the accepted job with
 .. code-block:: shell
 
    nvflare job list --study cancer_research --submit-token "$TOKEN" --format json
+
+If the recovered job was deleted, JSON output uses the normal error envelope:
+
+.. code-block:: json
+
+   {
+     "schema_version": "1",
+     "status": "error",
+     "exit_code": 4,
+     "error_code": "SUBMIT_TOKEN_JOB_DELETED",
+     "data": {
+       "job_id": "abc123",
+       "state": "job_deleted",
+       "deleted_time": "2026-04-30T10:00:00-07:00"
+     }
+   }
 
 ``--submit-token`` is only for ``job submit`` and ``job list``. To monitor,
 download, abort, delete, or clone the recovered job, first resolve the
@@ -390,6 +411,9 @@ Delete a job:
 Notes:
 
 - ``abort`` and ``delete`` support ``--force`` to skip the confirmation prompt.
+- ``delete --format json`` returns ``job_id`` and
+  ``submit_records_marked_deleted``. When this count is nonzero, future use of
+  the same submit token returns ``SUBMIT_TOKEN_JOB_DELETED``.
 - ``download`` supports ``-o, --output-dir`` to choose the destination
   directory. Default: job-specific directory under the current working
   directory (``./<job_id>``).

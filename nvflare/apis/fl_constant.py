@@ -18,6 +18,10 @@ from enum import Enum
 # submit token conflicts with an existing submission.
 SUBMIT_TOKEN_CONFLICT_STATUS = "submit_token_conflict"
 
+# Server-to-CLI protocol value used when a retry-safe submit token points to a job
+# that was deliberately deleted.
+SUBMIT_TOKEN_JOB_DELETED_STATUS = "submit_token_job_deleted"
+
 
 class ReturnCode(object):
 

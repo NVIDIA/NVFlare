@@ -27,6 +27,7 @@ import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import (
     SUBMIT_TOKEN_CONFLICT_STATUS,
+    SUBMIT_TOKEN_JOB_DELETED_STATUS,
     AdminCommandNames,
     FLContextKey,
     ReturnCode,
@@ -76,6 +77,13 @@ from nvflare.security.logging import secure_format_exception, secure_log_traceba
 from nvflare.security.study_registry import StudyRegistryService
 
 from .cmd_utils import CommandUtil
+
+
+class _SubmitTokenJobDeleted(Exception):
+    def __init__(self, record: dict):
+        super().__init__("submit token refers to a deleted job")
+        self.record = record
+
 
 CLONED_META_KEYS = {
     JobMetaKey.JOB_NAME.value,
@@ -451,6 +459,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         except ValueError as e:
             conn.append_error(str(e), meta=make_meta(MetaStatusValue.SYNTAX_ERROR, str(e)))
             return
+        except _SubmitTokenJobDeleted as e:
+            self._append_submit_token_job_deleted(conn, e.record)
+            return
         except Exception as e:
             conn.append_error(
                 secure_format_exception(e),
@@ -482,14 +493,26 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
             with engine.new_context() as fl_ctx:
                 job_def_manager.delete(job_id, fl_ctx)
-                conn.append_string(f"Job {job_id} deleted.")
+                mark_deleted = getattr(job_def_manager, "mark_submit_records_job_deleted", None)
+                if callable(mark_deleted):
+                    marked_records = mark_deleted(job_id, self._submitter_from_conn(conn), fl_ctx)
+                else:
+                    marked_records = []
+                marked_count = len(marked_records)
+                conn.append_string(f"Job {job_id} deleted. Submit records marked deleted: {marked_count}.")
         except Exception as e:
             conn.append_error(
                 f"exception occurred: {secure_format_exception(e)}",
                 meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),
             )
             return
-        conn.append_success("", meta=make_meta(MetaStatusValue.OK))
+        conn.append_success(
+            "",
+            meta=make_meta(
+                MetaStatusValue.OK,
+                extra={MetaKey.JOB_ID: job_id, "submit_records_marked_deleted": marked_count},
+            ),
+        )
 
     def get_job_meta(self, conn: Connection, args: List[str]):
         job_id = conn.get_prop(self.JOB_ID)
@@ -1142,6 +1165,34 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             ),
         )
 
+    @staticmethod
+    def _submit_record_job_deleted(record: dict) -> bool:
+        return (
+            isinstance(record, dict) and record.get(SubmitRecordKey.STATE.value) == SubmitRecordState.JOB_DELETED.value
+        )
+
+    @staticmethod
+    def _append_submit_token_job_deleted(conn: Connection, record: dict):
+        job_id = record.get(SubmitRecordKey.JOB_ID.value) if isinstance(record, dict) else None
+        deleted_time = record.get(SubmitRecordKey.DELETED_TIME.value) if isinstance(record, dict) else None
+        extra = {
+            "code": "SUBMIT_TOKEN_JOB_DELETED",
+            "submit_record_state": SubmitRecordState.JOB_DELETED.value,
+        }
+        if job_id:
+            extra[MetaKey.JOB_ID] = job_id
+        if deleted_time:
+            extra[SubmitRecordKey.DELETED_TIME.value] = deleted_time
+        conn.append_error(
+            "SUBMIT_TOKEN_JOB_DELETED: submit token refers to a deleted job. "
+            "Use a new submit token to submit again.",
+            meta=make_meta(
+                SUBMIT_TOKEN_JOB_DELETED_STATUS,
+                "submit token refers to a deleted job",
+                extra=extra,
+            ),
+        )
+
     def _job_for_submit_record(self, job_def_manager: JobDefManagerSpec, record: dict, fl_ctx):
         if not isinstance(record, dict):
             return None
@@ -1223,6 +1274,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         meta = dict(meta)
         record = self._get_submit_record(job_def_manager, study, submitter, submit_token, fl_ctx)
         if record:
+            if self._submit_record_job_deleted(record):
+                self._append_submit_token_job_deleted(conn, record)
+                return None
             if record.get(SubmitRecordKey.JOB_CONTENT_HASH.value) != job_content_hash:
                 self._append_submit_token_conflict(conn, record)
                 return None
@@ -1270,6 +1324,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             existing = self._get_submit_record(job_def_manager, study, submitter, submit_token, fl_ctx)
             if not existing:
                 raise
+            if self._submit_record_job_deleted(existing):
+                self._append_submit_token_job_deleted(conn, existing)
+                return None
             if existing.get(SubmitRecordKey.JOB_CONTENT_HASH.value) != job_content_hash:
                 self._append_submit_token_conflict(conn, existing)
                 return None
@@ -1300,6 +1357,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             existing = self._get_submit_record(job_def_manager, study, submitter, submit_token, fl_ctx)
             if not existing:
                 raise RuntimeError("submit record creation failed and no existing record was found")
+            if self._submit_record_job_deleted(existing):
+                self._append_submit_token_job_deleted(conn, existing)
+                return None
             if existing.get(SubmitRecordKey.JOB_CONTENT_HASH.value) != job_content_hash:
                 self._append_submit_token_conflict(conn, existing)
                 return None
@@ -1340,6 +1400,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         submit_token: str,
         fl_ctx,
     ) -> List[Job]:
+        record = self._get_submit_record(job_def_manager, study, submitter, submit_token, fl_ctx)
+        if self._submit_record_job_deleted(record):
+            raise _SubmitTokenJobDeleted(record)
+
         get_job_by_submit_token = getattr(job_def_manager, "get_job_by_submit_token", None)
         if callable(get_job_by_submit_token):
             job = get_job_by_submit_token(study, submitter, submit_token, fl_ctx)
@@ -1347,7 +1411,6 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 return []
             return job if isinstance(job, list) else [job]
 
-        record = self._get_submit_record(job_def_manager, study, submitter, submit_token, fl_ctx)
         job = self._job_for_submit_record(job_def_manager, record, fl_ctx)
         return [job] if job else []
 

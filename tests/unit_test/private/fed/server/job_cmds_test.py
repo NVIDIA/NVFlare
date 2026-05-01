@@ -22,7 +22,13 @@ from zipfile import ZipFile
 import pytest
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode, ServerCommandKey, WorkspaceConstants
+from nvflare.apis.fl_constant import (
+    SUBMIT_TOKEN_JOB_DELETED_STATUS,
+    FLContextKey,
+    ReturnCode,
+    ServerCommandKey,
+    WorkspaceConstants,
+)
 from nvflare.apis.job_def import JobMetaKey, RunStatus, SubmitRecordKey, SubmitRecordState
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
@@ -177,6 +183,34 @@ class _FakeSubmitTokenJobDefManager:
 
     def get_all_jobs(self, fl_ctx):
         return list(self.jobs.values())
+
+    def delete(self, jid, fl_ctx):
+        self.jobs.pop(jid, None)
+
+    def mark_submit_records_job_deleted(self, job_id, deleted_by, fl_ctx):
+        if isinstance(deleted_by, dict):
+            deleted_by_info = {
+                "name": deleted_by.get("name", ""),
+                "org": deleted_by.get("org", ""),
+                "role": deleted_by.get("role", ""),
+            }
+        else:
+            deleted_by_info = {
+                "name": getattr(deleted_by, "name", ""),
+                "org": getattr(deleted_by, "org", ""),
+                "role": getattr(deleted_by, "role", ""),
+            }
+        updated = []
+        for record in self.records.values():
+            if record.get(SubmitRecordKey.JOB_ID.value) != job_id:
+                continue
+            if record.get(SubmitRecordKey.STATE.value) == SubmitRecordState.JOB_DELETED.value:
+                continue
+            record[SubmitRecordKey.STATE.value] = SubmitRecordState.JOB_DELETED.value
+            record[SubmitRecordKey.DELETED_TIME.value] = "2026-04-30T10:00:00-07:00"
+            record[SubmitRecordKey.DELETED_BY.value] = deleted_by_info
+            updated.append(dict(record))
+        return updated
 
     def _record_key(self, study, submitter, submit_token):
         if isinstance(submitter, dict):
@@ -546,6 +580,43 @@ def test_same_submit_token_same_content_returns_same_job(monkeypatch):
     assert engine.job_def_manager.new_record_count == 1
 
 
+def test_same_submit_token_after_job_deleted_returns_deleted_status():
+    manager = _FakeSubmitTokenJobDefManager()
+    submitter = {"name": "admin@nvidia.com", "org": "nvidia", "role": "project_admin"}
+    record = manager.new_submit_record(
+        study="default",
+        submitter=submitter,
+        submit_token="retry-1",
+        job_content_hash="hash-1",
+        job_name="job-name",
+        job_folder_name="job_folder",
+    )
+    record[SubmitRecordKey.STATE.value] = SubmitRecordState.JOB_DELETED.value
+    record[SubmitRecordKey.DELETED_TIME.value] = "2026-04-30T10:00:00-07:00"
+    manager.records[manager._record_key("default", submitter, "retry-1")] = record
+    conn = _MockConnection()
+
+    job_id = JobCommandModule()._handle_submit_token_record_locked(
+        conn=conn,
+        job_def_manager=manager,
+        study="default",
+        submitter=submitter,
+        submit_token="retry-1",
+        job_content_hash="hash-1",
+        meta={JobMetaKey.JOB_NAME.value: "job-name"},
+        folder_name="job_folder",
+        zip_file_name="missing-job.zip",
+        fl_ctx=None,
+    )
+
+    assert job_id is None
+    assert len(conn.errors) == 1
+    assert "SUBMIT_TOKEN_JOB_DELETED" in conn.errors[0][0]
+    assert conn.errors[0][1][MetaKey.STATUS] == SUBMIT_TOKEN_JOB_DELETED_STATUS
+    assert conn.errors[0][1][MetaKey.JOB_ID] == record[SubmitRecordKey.JOB_ID.value]
+    assert manager.create_count == 0
+
+
 def test_same_submit_token_different_content_conflicts(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidatorFolderOnly)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
@@ -565,6 +636,46 @@ def test_same_submit_token_different_content_conflicts(monkeypatch):
     assert len(conn2.errors) == 1
     assert "SUBMIT_TOKEN_CONFLICT" in conn2.errors[0][0]
     assert engine.job_def_manager.create_count == 1
+
+
+def test_delete_job_marks_submit_record_job_deleted():
+    manager = _FakeSubmitTokenJobDefManager()
+    submitter = {"name": "submitter", "org": "org", "role": "role"}
+    record = manager.new_submit_record(
+        study="study-a",
+        submitter=submitter,
+        submit_token="retry-1",
+        job_content_hash="hash-1",
+    )
+    job_id = record[SubmitRecordKey.JOB_ID.value]
+    manager.records[manager._record_key("study-a", submitter, "retry-1")] = record
+    manager.jobs[job_id] = _FakeListedJob(
+        {JobMetaKey.JOB_ID.value: job_id, JobMetaKey.STATUS: RunStatus.SUBMITTED.value}
+    )
+    engine = _FakeEngine()
+    engine.job_def_manager = manager
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            JobCommandModule.JOB: manager.jobs[job_id],
+            JobCommandModule.JOB_ID: job_id,
+            ConnProps.USER_NAME: "admin@nvidia.com",
+            ConnProps.USER_ORG: "nvidia",
+            ConnProps.USER_ROLE: "project_admin",
+        },
+    )
+
+    JobCommandModule().delete_job(conn, ["delete_job", job_id])
+
+    updated = manager.get_submit_record("study-a", submitter, "retry-1", None)
+    assert conn.errors == []
+    assert updated[SubmitRecordKey.STATE.value] == SubmitRecordState.JOB_DELETED.value
+    assert updated[SubmitRecordKey.DELETED_BY.value] == {
+        "name": "admin@nvidia.com",
+        "org": "nvidia",
+        "role": "project_admin",
+    }
+    assert conn.successes[0][1]["submit_records_marked_deleted"] == 1
 
 
 def test_same_submit_token_different_study_is_independent(monkeypatch):
@@ -897,6 +1008,47 @@ def test_list_jobs_by_submit_token_returns_expected_job(monkeypatch):
     assert conn.errors == []
     assert len(conn.tables) == 1
     assert conn.tables[0].rows[0][1][MetaKey.JOB_ID] == "job-1"
+
+
+def test_list_jobs_by_submit_token_returns_deleted_status(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([])
+    manager = _FakeSubmitTokenJobDefManager()
+    manager.records[
+        (
+            "study-a",
+            ("submitter", "org", "role"),
+            "retry-1",
+        )
+    ] = {
+        "study": "study-a",
+        "submitter_name": "submitter",
+        "submitter_org": "org",
+        "submitter_role": "role",
+        "submit_token": "retry-1",
+        "job_id": "job-1",
+        "job_content_hash": "sha256:abc",
+        "state": "job_deleted",
+        "deleted_time": "2026-04-30T10:00:00-07:00",
+    }
+    engine.job_def_manager = manager
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            ConnProps.ACTIVE_STUDY: "study-a",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "role",
+        },
+    )
+
+    JobCommandModule().list_jobs(conn, ["list_jobs", "--submit-token", "retry-1"])
+
+    assert len(conn.errors) == 1
+    assert "SUBMIT_TOKEN_JOB_DELETED" in conn.errors[0][0]
+    assert conn.errors[0][1][MetaKey.STATUS] == SUBMIT_TOKEN_JOB_DELETED_STATUS
+    assert conn.errors[0][1][MetaKey.JOB_ID] == "job-1"
+    assert conn.tables == []
 
 
 def test_clone_job_preserves_source_study(monkeypatch):

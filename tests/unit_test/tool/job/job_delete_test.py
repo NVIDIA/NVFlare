@@ -41,7 +41,7 @@ class TestJobDelete:
 
         args = self._make_args(force=True)
         mock_sess = MagicMock()
-        mock_sess.delete_job.return_value = None
+        mock_sess.delete_job.return_value = {"job_id": "abc123", "submit_records_marked_deleted": 1}
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             with patch("sys.stdin") as mock_stdin:
@@ -57,6 +57,7 @@ class TestJobDelete:
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
         assert data["data"]["job_id"] == "abc123"
+        assert data["data"]["submit_records_marked_deleted"] == 1
         # no JSON on stderr
         assert not captured.err.strip().startswith("{")
 

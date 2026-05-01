@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import AuthenticationError
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, SubmitTokenJobDeleted
 from nvflare.tool import cli_output
 
 
@@ -329,6 +329,33 @@ class TestJobList:
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             with pytest.raises(AuthenticationError):
                 cmd_job_list(args)
+
+    def test_submit_token_deleted_outputs_registered_error(self, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_list
+
+        args = self._make_args(submit_token="retry-1")
+        mock_sess = MagicMock()
+        mock_sess.list_jobs.side_effect = SubmitTokenJobDeleted(
+            "submit token refers to a deleted job",
+            job_id="job-1",
+            state="job_deleted",
+            deleted_time="2026-04-30T10:00:00-07:00",
+        )
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_list(args)
+
+        assert exc_info.value.code == 4
+        data = json.loads(capsys.readouterr().out)
+        assert data["status"] == "error"
+        assert data["error_code"] == "SUBMIT_TOKEN_JOB_DELETED"
+        assert data["exit_code"] == 4
+        assert data["data"] == {
+            "job_id": "job-1",
+            "state": "job_deleted",
+            "deleted_time": "2026-04-30T10:00:00-07:00",
+        }
 
     def test_schema_flag_prints_json_and_exits_0(self, capsys):
         """--schema prints JSON schema to stdout and exits 0."""
