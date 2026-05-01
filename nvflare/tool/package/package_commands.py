@@ -77,6 +77,10 @@ _KIT_TYPE_TO_ROLE = KIT_TYPE_TO_ROLE
 _DUMMY_SERVER_NAME = "__nvflare_dummy_server__"
 _DUMMY_ORG = "myorg"
 _MAX_ZIP_MEMBER_SIZE = 10 * 1024 * 1024
+_PACKAGE_ERROR_CODE = "_package_error_code"
+_PACKAGE_ERROR_MESSAGE = "_package_error_message"
+_PACKAGE_ERROR_HINT = "_package_error_hint"
+_PACKAGE_ERROR_EXIT_CODE = "_package_error_exit_code"
 _REQUEST_ID_PATTERN = re.compile(
     r"(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
 )
@@ -381,7 +385,15 @@ class FixedProdWorkspaceBuilder(WorkspaceBuilder):
             dst = os.path.join(self.target_prod_dir, name)
             if name == self.participant_name and os.path.exists(dst):
                 if not self.force:
-                    raise ValueError(f"participant output already exists: {dst}")
+                    ctx[CtxKey.BUILD_ERROR] = True
+                    ctx[_PACKAGE_ERROR_CODE] = "OUTPUT_DIR_EXISTS"
+                    ctx[_PACKAGE_ERROR_MESSAGE] = f"Participant output already exists: {dst}."
+                    ctx[_PACKAGE_ERROR_HINT] = (
+                        "Use --force to replace this participant output. "
+                        "--force does not bypass root CA mismatch checks."
+                    )
+                    ctx[_PACKAGE_ERROR_EXIT_CODE] = 1
+                    return
                 _remove_existing_path(dst)
             if os.path.exists(dst):
                 # Preserve existing root-level files when adding another participant to the same provision directory.
@@ -837,6 +849,15 @@ def _build_selected_participant_package(
     ctx = provisioner.provision(project)
 
     if ctx.get(CtxKey.BUILD_ERROR):
+        if ctx.get(_PACKAGE_ERROR_CODE):
+            output_error_message(
+                ctx[_PACKAGE_ERROR_CODE],
+                ctx.get(_PACKAGE_ERROR_MESSAGE, "Kit assembly failed during provisioning."),
+                ctx.get(_PACKAGE_ERROR_HINT, "See error output above for details."),
+                None,
+                exit_code=ctx.get(_PACKAGE_ERROR_EXIT_CODE, 1),
+            )
+            return 1
         output_error_message(
             "BUILD_FAILED",
             "Kit assembly failed during provisioning.",

@@ -3893,8 +3893,8 @@ class TestSignedZipPackageMode:
 
         assert exc_info.value.code == 1
         err = capsys.readouterr().err
-        assert "BUILD_FAILED" in err
-        assert "participant output already exists" in err
+        assert "OUTPUT_DIR_EXISTS" in err
+        assert "Participant output already exists" in err
         assert sentinel_path.exists()
 
     def test_build_package_builders_replaces_workspace_builder_and_preserves_template_files(self, tmp_path):
