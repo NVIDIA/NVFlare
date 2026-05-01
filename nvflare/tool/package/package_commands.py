@@ -53,6 +53,7 @@ from nvflare.tool.cert.cert_constants import (
     PROVISION_VERSION_FIELD,
     ROOTCA_FINGERPRINT_FIELD,
     VALID_CERT_TYPES,
+    is_valid_provision_version,
 )
 from nvflare.tool.cert.file_utils import read_file_nofollow as _shared_read_file_nofollow
 from nvflare.tool.cert.file_utils import safe_project_name_error
@@ -116,7 +117,7 @@ def _validate_safe_project_name(
 
 
 def _validate_provision_version(value: str, *, code: str = "INVALID_SIGNED_ZIP") -> bool:
-    if isinstance(value, str) and len(value) == 2 and value.isdigit():
+    if is_valid_provision_version(value):
         return True
     output_error_message(
         code,
@@ -364,6 +365,7 @@ class FixedProdWorkspaceBuilder(WorkspaceBuilder):
         if target_exists and not os.path.isdir(self.target_prod_dir):
             raise ValueError(f"target production path exists but is not a directory: {self.target_prod_dir}")
         os.makedirs(self.target_prod_dir, exist_ok=True)
+        ctx[CtxKey.CURRENT_PROD_DIR] = self.target_prod_dir
 
         wip_dir = ctx.get_wip_dir()
         for name in os.listdir(wip_dir):
@@ -381,7 +383,6 @@ class FixedProdWorkspaceBuilder(WorkspaceBuilder):
             shutil.move(src, dst)
 
         ctx.info(f"Generated results can be found under {self.target_prod_dir}. ")
-        ctx[CtxKey.CURRENT_PROD_DIR] = self.target_prod_dir
 
 
 def _parse_endpoint(endpoint: str) -> tuple:
@@ -448,7 +449,7 @@ def _prod_dir_rootca_fingerprints(prod_dir: str):
             fingerprints.add(cert_fingerprint_sha256(_load_crt_nofollow(rootca_path)))
         except Exception as e:
             output_error_message(
-                "ROOTCA_FINGERPRINT_MISMATCH",
+                "ROOTCA_LOAD_FAILED",
                 f"Existing production directory contains unreadable rootCA.pem: {rootca_path}.",
                 "Inspect the existing provision directory before packaging into it.",
                 None,

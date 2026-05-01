@@ -28,3 +28,7 @@ KIT_TYPE_TO_ROLE = {
     "lead": AdminRole.LEAD,
     "member": AdminRole.MEMBER,
 }
+
+
+def is_valid_provision_version(value: str) -> bool:
+    return isinstance(value, str) and len(value) == 2 and value.isdigit()

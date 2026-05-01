@@ -91,10 +91,10 @@ packaging.
 Each requester runs:
 
 ```bash
-nvflare package server.example.com/server.example.com.signed.zip --fingerprint <expected_fingerprint>
-nvflare package site-1/site-1.signed.zip --fingerprint <expected_fingerprint>
-nvflare package site-2/site-2.signed.zip --fingerprint <expected_fingerprint>
-nvflare package alice@nvidia.com/alice@nvidia.com.signed.zip --fingerprint <expected_fingerprint>
+nvflare package server.example.com/server.example.com.signed.zip
+nvflare package site-1/site-1.signed.zip
+nvflare package site-2/site-2.signed.zip
+nvflare package alice@nvidia.com/alice@nvidia.com.signed.zip
 ```
 
 `nvflare package` uses the signed zip endpoint information and the local request
@@ -103,6 +103,16 @@ argument is needed. The startup kits are written under
 `workspace/<project>/prod_00/<name>/` because this demo initializes the CA with
 provision version `00`. All four packages land under the same `prod_00`
 directory.
+
+If the Project Admin shared the `rootca_fingerprint_sha256` value out of band
+and you want `nvflare package` to verify it, add `--fingerprint`:
+
+```bash
+nvflare package server.example.com/server.example.com.signed.zip --fingerprint <expected_fingerprint>
+nvflare package site-1/site-1.signed.zip --fingerprint <expected_fingerprint>
+nvflare package site-2/site-2.signed.zip --fingerprint <expected_fingerprint>
+nvflare package alice@nvidia.com/alice@nvidia.com.signed.zip --fingerprint <expected_fingerprint>
+```
 
 ## Dynamic Provisioning - Add Participants Later
 
@@ -117,7 +127,7 @@ Example: add a new client site:
 ```bash
 nvflare cert request --participant site-3.yaml
 nvflare cert approve site-3/site-3.request.zip --ca-dir ca --profile project_profile.yaml
-nvflare package site-3/site-3.signed.zip --fingerprint <expected_fingerprint>
+nvflare package site-3/site-3.signed.zip
 ```
 
 Example: add a new admin user:
@@ -125,7 +135,7 @@ Example: add a new admin user:
 ```bash
 nvflare cert request --participant bob.yaml
 nvflare cert approve bob@nvidia.com/bob@nvidia.com.request.zip --ca-dir ca --profile project_profile.yaml
-nvflare package bob@nvidia.com/bob@nvidia.com.signed.zip --fingerprint <expected_fingerprint>
+nvflare package bob@nvidia.com/bob@nvidia.com.signed.zip
 ```
 
 The new participant receives a new startup kit under

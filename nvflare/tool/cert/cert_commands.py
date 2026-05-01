@@ -56,6 +56,7 @@ from nvflare.tool.cert.cert_constants import (
     PROVISION_VERSION_FIELD,
     ROOTCA_FINGERPRINT_FIELD,
     VALID_CERT_TYPES,
+    is_valid_provision_version,
 )
 from nvflare.tool.cert.file_utils import read_file_nofollow as _shared_read_file_nofollow
 from nvflare.tool.cert.file_utils import safe_project_name_error
@@ -180,7 +181,7 @@ def _validate_org_name(org: str) -> bool:
 
 
 def _validate_provision_version(value: str, *, field_label: str = "provision version") -> bool:
-    if isinstance(value, str) and len(value) == 2 and value.isdigit():
+    if is_valid_provision_version(value):
         return True
     output_error_message(
         "INVALID_ARGS",

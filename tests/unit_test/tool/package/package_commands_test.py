@@ -3705,6 +3705,55 @@ class TestSignedZipPackageMode:
         assert os.path.isdir(os.path.join(workspace, "example_project", "prod_00", "site-b"))
         assert not os.path.exists(os.path.join(workspace, "example_project", "prod_01"))
 
+    def test_signed_zip_rejects_malformed_ca_info_provision_version(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path, provision_version="00")
+        _rewrite_signed_zip_metadata(
+            signed_zip,
+            lambda meta: meta[CA_INFO_FIELD].update({PROVISION_VERSION_FIELD: "abc"}),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(_signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir)))
+
+        assert exc_info.value.code == 4
+        err = capsys.readouterr().err
+        assert "INVALID_SIGNED_ZIP" in err
+        assert "Invalid provision version" in err
+
+    def test_signed_zip_rejects_malformed_ca_info_rootca_fingerprint(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path, provision_version="00")
+        _rewrite_signed_zip_metadata(
+            signed_zip,
+            lambda meta: meta[CA_INFO_FIELD].update({ROOTCA_FINGERPRINT_FIELD: "not-a-fingerprint"}),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(_signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir)))
+
+        assert exc_info.value.code == 4
+        err = capsys.readouterr().err
+        assert "INVALID_ROOTCA_FINGERPRINT" in err
+        assert "Invalid signed ca_info root CA fingerprint" in err
+
+    def test_signed_zip_rejects_ca_info_rootca_fingerprint_mismatch(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path, provision_version="00")
+        mismatched_fingerprint = "SHA256:" + ":".join(["00"] * 32)
+        _rewrite_signed_zip_metadata(
+            signed_zip,
+            lambda meta: meta[CA_INFO_FIELD].update({ROOTCA_FINGERPRINT_FIELD: mismatched_fingerprint}),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(_signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir)))
+
+        assert exc_info.value.code == 4
+        err = capsys.readouterr().err
+        assert "ROOTCA_FINGERPRINT_MISMATCH" in err
+        assert "does not match included rootCA.pem" in err
+
     def test_signed_zip_same_prod_dir_rejects_different_rootca(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         signed_a, request_a, _ = _make_signed_zip(
@@ -3733,6 +3782,41 @@ class TestSignedZipPackageMode:
         assert os.path.isdir(os.path.join(workspace, "example_project", "prod_00", "site-a"))
         assert not os.path.exists(os.path.join(workspace, "example_project", "prod_00", "site-b"))
         assert not os.path.exists(os.path.join(workspace, "example_project", "prod_01", "site-b"))
+
+    def test_signed_zip_same_prod_dir_reports_unreadable_rootca_load_failure(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_key, ca_cert, rootca_path = _make_shared_package_ca(tmp_path)
+        signed_a, request_a, _ = _make_signed_zip(
+            tmp_path,
+            name="site-a",
+            request_id="a" * 32,
+            ca_key=ca_key,
+            ca_cert=ca_cert,
+            rootca_path=rootca_path,
+            provision_version="00",
+        )
+        signed_b, request_b, _ = _make_signed_zip(
+            tmp_path,
+            name="site-b",
+            request_id="b" * 32,
+            ca_key=ca_key,
+            ca_cert=ca_cert,
+            rootca_path=rootca_path,
+            provision_version="00",
+        )
+
+        handle_package(_signed_zip_args(signed_a, tmp_path, request_dir=str(request_a)))
+        capsys.readouterr()
+        rootca_path = tmp_path / "ws" / "example_project" / "prod_00" / "site-a" / "startup" / "rootCA.pem"
+        rootca_path.write_text("not a certificate")
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(_signed_zip_args(signed_b, tmp_path, request_dir=str(request_b)))
+
+        assert exc_info.value.code == 4
+        err = capsys.readouterr().err
+        assert "ROOTCA_LOAD_FAILED" in err
+        assert "unreadable rootCA.pem" in err
 
     def test_signed_zip_existing_participant_requires_force_in_ca_info_prod_dir(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")

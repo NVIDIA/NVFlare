@@ -83,6 +83,7 @@ def _init_args(**kwargs):
         output_dir=None,
         org=None,
         valid_days=3650,
+        version="00",
         force=False,
         schema=False,
     )
@@ -882,6 +883,17 @@ class TestCertInit:
         )
 
         assert args.version == "01"
+
+    def test_parser_force_help_mentions_new_version_requirement(self, capsys):
+        parser, _ = _cert_root_parser()
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["cert", "init", "-h"])
+
+        assert exc_info.value.code == 0
+        help_text = capsys.readouterr().out
+        assert "--version differs" in help_text
+        assert "existing CA's provision version" in help_text
 
     def test_missing_required_args_show_help_and_missing_flags(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")

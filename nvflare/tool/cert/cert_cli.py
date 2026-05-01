@@ -17,6 +17,8 @@
 import argparse
 from typing import Optional
 
+from nvflare.tool.cert.cert_constants import is_valid_provision_version
+
 # Module-level parser references used by --schema in handlers and for help fallback.
 _cert_init_parser: Optional[argparse.ArgumentParser] = None
 _cert_request_parser: Optional[argparse.ArgumentParser] = None
@@ -42,7 +44,7 @@ def _positive_int(value: str) -> int:
 
 
 def _provision_version_type(value: str) -> str:
-    if not isinstance(value, str) or len(value) != 2 or not value.isdigit():
+    if not is_valid_provision_version(value):
         raise argparse.ArgumentTypeError("version must be exactly two digits, for example 00")
     return value
 
@@ -113,7 +115,10 @@ def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         "--force",
         action="store_true",
         default=False,
-        help="Replace existing CA files only when using a new provision version. Backs up existing files first.",
+        help=(
+            "Replace existing CA files only when --version differs from the existing CA's provision version. "
+            "Backs up existing files first."
+        ),
     )
     p.add_argument(
         "--schema",
