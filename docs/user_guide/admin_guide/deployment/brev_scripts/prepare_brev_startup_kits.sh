@@ -199,6 +199,48 @@ latest_prod_dir() {
   printf '%s\n' "${dirs[@]}" | sort | tail -n 1
 }
 
+dir_is_empty() {
+  local dir=$1
+  local entries=()
+  shopt -s nullglob dotglob
+  entries=("${dir}"/*)
+  shopt -u nullglob dotglob
+  ((${#entries[@]} == 0))
+}
+
+prepare_output_dir() {
+  local prepared_dir=$1
+  local kit_dir=$2
+  local prepared_real
+  local kit_real
+
+  if [[ -e "${prepared_dir}" && ! -d "${prepared_dir}" ]]; then
+    fail "PREPARED_DIR exists but is not a directory: ${prepared_dir}"
+  fi
+
+  if [[ ! -e "${prepared_dir}" ]]; then
+    mkdir -p "${prepared_dir}"
+    return
+  fi
+
+  if dir_is_empty "${prepared_dir}"; then
+    mkdir -p "${prepared_dir}"
+    return
+  fi
+
+  prepared_real="$(cd "${prepared_dir}" && pwd -P)"
+  kit_real="$(cd "${kit_dir}" && pwd -P)"
+  case "${prepared_real}" in
+    "${kit_real}"/*)
+      rm -rf "${prepared_dir}"
+      mkdir -p "${prepared_dir}"
+      ;;
+    *)
+      fail "Refusing to remove non-empty PREPARED_DIR outside KIT_DIR: ${prepared_dir} (KIT_DIR=${kit_dir})"
+      ;;
+  esac
+}
+
 copy_participant() {
   local participant=$1
   local brev_env=$2
@@ -296,8 +338,7 @@ PROD_PARENT="${PROVISION_WORKSPACE}/${PROJECT_NAME_IN_FILE}"
 PROD_DIR="$(latest_prod_dir "${PROD_PARENT}")" || fail "No prod_* folder found under ${PROD_PARENT}"
 echo "Using provisioned production folder: ${PROD_DIR}"
 
-rm -rf "${PREPARED_DIR}"
-mkdir -p "${PREPARED_DIR}"
+prepare_output_dir "${PREPARED_DIR}" "${KIT_DIR}"
 write_prepare_config
 prepare_participant "${SERVER_PARTICIPANT}"
 prepare_participant "${SITE_1_PARTICIPANT}"
