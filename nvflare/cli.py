@@ -29,6 +29,7 @@ from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
 from nvflare.private.fed.app.utils import version_check
 from nvflare.tool.cert.cert_cli import def_cert_cli_parser, handle_cert_cmd
+from nvflare.tool.deploy.deploy_cli import def_deploy_cli_parser, handle_deploy_cmd
 from nvflare.tool.job.job_cli import def_job_cli_parser, handle_job_cli_cmd
 from nvflare.tool.kit.kit_cli import def_kit_cli_parser, handle_kit_cmd
 from nvflare.tool.package.package_cli import def_package_cli_parser, handle_package_cmd
@@ -59,6 +60,7 @@ CMD_RECIPE = "recipe"
 CMD_CONFIG = "config"
 CMD_CERT = "cert"
 CMD_PACKAGE = "package"
+CMD_DEPLOY = "deploy"
 CMD_SYSTEM = "system"
 CMD_STUDY = "study"
 
@@ -395,6 +397,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_config_parser(sub_cmd))
     sub_cmd_parsers.update(def_cert_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_package_cli_parser(sub_cmd))
+    sub_cmd_parsers.update(def_deploy_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_study_cli_parser(sub_cmd))
     system_parser = sub_cmd.add_parser(CMD_SYSTEM, help="FL system operations (status, shutdown, version, ...)")
     sub_cmd_parsers.update({CMD_SYSTEM: system_parser})
@@ -431,6 +434,7 @@ def parse_args(prog_name: str):
             ns.kit_sub_cmd = sub_sub
         ns.cert_sub_command = sub_sub
         ns.recipe_sub_cmd = sub_sub or "list"
+        ns.deploy_sub_cmd = sub_sub
         ns.format = global_args.format
         ns.connect_timeout = global_args.connect_timeout
         ns.version = global_args.version
@@ -467,6 +471,7 @@ handlers = {
     CMD_CONFIG: handle_config_cmd,
     CMD_CERT: handle_cert_cmd,
     CMD_PACKAGE: handle_package_cmd,
+    CMD_DEPLOY: handle_deploy_cmd,
     CMD_STUDY: handle_study_cmd,
     CMD_SYSTEM: handle_system_cmd,
 }
