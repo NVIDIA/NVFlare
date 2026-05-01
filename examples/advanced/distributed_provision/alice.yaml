@@ -1,0 +1,8 @@
+name: fed_project
+description: Lead user for the example federation
+
+participants:
+  - name: alice@nvidia.com
+    type: admin
+    org: nvidia
+    role: lead

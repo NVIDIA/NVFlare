@@ -567,6 +567,56 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             self._remove_dead_client(client)
         return ""
 
+    @staticmethod
+    def _client_operation_error(client_name: str, e: Exception) -> dict:
+        return {"client_name": client_name, "state": "error", "error": str(e)}
+
+    def disable_clients(self, client_names: List[str]) -> dict:
+        results = []
+        for client_name in client_names:
+            try:
+                already_disabled = self.server.client_manager.is_client_disabled(client_name)
+                removed_tokens = self.server.client_manager.disable_client(client_name)
+                for token in removed_tokens:
+                    self.server.remove_client_data(token)
+                    if self.server.admin_server:
+                        self.server.admin_server.client_dead(token)
+                results.append(
+                    {
+                        "client_name": client_name,
+                        "state": "disabled",
+                        "already_disabled": already_disabled,
+                        "active_session_removed": bool(removed_tokens),
+                        "credential_revoked": False,
+                        "rejoin_allowed": False,
+                    }
+                )
+            except Exception as e:
+                if len(client_names) == 1:
+                    raise
+                results.append(self._client_operation_error(client_name, e))
+        return {"clients": results}
+
+    def enable_clients(self, client_names: List[str]) -> dict:
+        results = []
+        for client_name in client_names:
+            try:
+                was_disabled = self.server.client_manager.enable_client(client_name)
+                results.append(
+                    {
+                        "client_name": client_name,
+                        "state": "enabled",
+                        "was_disabled": was_disabled,
+                        "credential_revoked": False,
+                        "rejoin_allowed": True,
+                    }
+                )
+            except Exception as e:
+                if len(client_names) == 1:
+                    raise
+                results.append(self._client_operation_error(client_name, e))
+        return {"clients": results}
+
     def _remove_dead_client(self, token):
         _ = self.server.client_manager.remove_client(token)
         self.server.remove_client_data(token)

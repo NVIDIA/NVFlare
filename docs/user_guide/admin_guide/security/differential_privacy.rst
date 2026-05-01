@@ -51,8 +51,8 @@ before they leave the client. These filters are configured in the job definition
 
 ``SVTPrivacy``
     Implements the Sparse Vector Technique (SVT) for differential privacy.
-    Uses Laplace noise and a threshold mechanism to selectively share weight updates
-    while providing formal epsilon-differential privacy guarantees.
+    Uses Laplace noise and a threshold mechanism to selectively share weight updates, with
+    filter-level privacy accounting for the SVT selection and release steps.
 
     Parameters: ``fraction`` (default 0.1), ``epsilon`` (default 0.1), ``noise_var`` (default 0.1)
 
@@ -60,6 +60,9 @@ before they leave the client. These filters are configured in the job definition
 
         ``SVTPrivacy`` uses a practical **filter-level** privacy accountant, which is different from the
         sample-level accountant used by DP-SGD libraries such as Opacus.
+
+        For stronger sample-level privacy accounting, use DP-SGD during local training. See
+        :doc:`Hello Differential Privacy </hello-world/hello-dp/index>` for the Opacus-based example.
 
         The current implementation models one filter invocation as the composition of three pure-DP phases:
 

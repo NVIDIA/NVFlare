@@ -80,7 +80,66 @@ class TestJobMeta:
         assert data["exit_code"] == 0
         assert data["data"]["job_id"] == "abc123"
 
-    def test_meta_not_found_exits_1(self):
+    def test_meta_success_human_formats_summary(self, capsys, monkeypatch):
+        """Plain text mode formats job metadata for humans instead of dumping raw key/value pairs."""
+        from nvflare.tool.job.job_cli import cmd_job_meta
+
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        args = self._make_args()
+        meta = {
+            "job_id": "abc123",
+            "name": "hello-pt",
+            "status": "FINISHED:COMPLETED",
+            "study": "cancer",
+            "submitter_name": "lead@nvidia.com",
+            "submitter_role": "lead",
+            "submitter_org": "nvidia",
+            "submit_time_iso": "2026-04-30T20:10:40.811284-07:00",
+            "start_time": "2026-04-30 20:10:41.514416",
+            "duration": "0:03:27.547293",
+            "min_clients": 2,
+            "byoc": True,
+            "deploy_map": {"app": ["@ALL"]},
+            "job_deploy_detail": ["server: OK", "site-1: OK"],
+            "schedule_count": 1,
+            "schedule_history": ["2026-04-30 20:10:41: scheduled"],
+            "job_folder_name": "tmpabcd",
+            "data_storage_format": 2,
+        }
+        mock_sess = MagicMock()
+        mock_sess.get_job_meta.return_value = meta
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            cmd_job_meta(args)
+
+        captured = capsys.readouterr()
+        assert "Section" in captured.out
+        assert "Field" in captured.out
+        assert "Value" in captured.out
+        assert "Identity" in captured.out
+        assert "Job ID" in captured.out
+        assert "abc123" in captured.out
+        assert "Study" in captured.out
+        assert "cancer" in captured.out
+        assert "Submitter" in captured.out
+        assert "lead@nvidia.com (lead @ nvidia)" in captured.out
+        assert "Status" in captured.out
+        assert "Duration" in captured.out
+        assert "3m 27s" in captured.out
+        assert "Execution" in captured.out
+        assert "BYOC" in captured.out
+        assert "yes" in captured.out
+        assert "Deploy map" in captured.out
+        assert "app -> @ALL" in captured.out
+        assert "Deployment" in captured.out
+        assert "server" in captured.out
+        assert "OK" in captured.out
+        assert "Schedule" in captured.out
+        assert "Details" in captured.out
+        assert "name: hello-pt" not in captured.out
+        assert captured.err == ""
+
+    def test_meta_not_found_exits_1(self, capsys):
         """job meta JOB_NOT_FOUND exits with code 1."""
         from nvflare.tool.job.job_cli import cmd_job_meta
 
@@ -92,8 +151,12 @@ class TestJobMeta:
             with pytest.raises(SystemExit) as exc_info:
                 cmd_job_meta(args)
         assert exc_info.value.code == 1
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "JOB_NOT_FOUND"
+        assert "searched study 'default'" in envelope["message"]
+        assert "nvflare job list --study <study_name>" in envelope["hint"]
 
-    def test_meta_returns_none_exits_1(self):
+    def test_meta_returns_none_exits_1(self, capsys):
         """When get_job_meta returns None, exits with code 1."""
         from nvflare.tool.job.job_cli import cmd_job_meta
 
@@ -105,6 +168,9 @@ class TestJobMeta:
             with pytest.raises(SystemExit) as exc_info:
                 cmd_job_meta(args)
         assert exc_info.value.code == 1
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "JOB_NOT_FOUND"
+        assert "searched study 'default'" in envelope["message"]
 
     def test_meta_authentication_error_propagates(self):
         from nvflare.tool.job.job_cli import cmd_job_meta
@@ -151,7 +217,6 @@ class TestJobMeta:
         [
             ("--startup-target", "prod"),
             ("--startup_target", "prod"),
-            ("--startup-kit", "/tmp/startup"),
             ("--startup_kit", "/tmp/startup"),
         ],
     )
@@ -168,7 +233,28 @@ class TestJobMeta:
         with pytest.raises(SystemExit):
             parser.parse_args(["abc123", selector, value])
 
-    def test_meta_help_and_schema_omit_old_startup_selectors(self, capsys):
+    @pytest.mark.parametrize(
+        ("selector", "value", "dest"),
+        [
+            ("--startup-kit", "/tmp/startup", "startup_kit"),
+            ("--kit-id", "prod_admin", "kit_id"),
+        ],
+    )
+    def test_meta_parser_accepts_scoped_startup_selectors(self, selector, value, dest):
+        import argparse
+
+        from nvflare.tool.job.job_cli import def_job_cli_parser, job_sub_cmd_parser
+
+        root = argparse.ArgumentParser()
+        subs = root.add_subparsers()
+        def_job_cli_parser(subs)
+
+        parser = job_sub_cmd_parser["meta"]
+        args = parser.parse_args(["abc123", selector, value])
+
+        assert getattr(args, dest) == value
+
+    def test_meta_help_and_schema_include_scoped_startup_selectors(self, capsys):
         import argparse
 
         from nvflare.tool.job.job_cli import cmd_job_meta, def_job_cli_parser, job_sub_cmd_parser
@@ -177,8 +263,10 @@ class TestJobMeta:
         def_job_cli_parser(root.add_subparsers())
 
         help_text = job_sub_cmd_parser["meta"].format_help()
-        for token in ("--startup-target", "--startup_target", "--startup-kit", "--startup_kit"):
+        for token in ("--startup-target", "--startup_target", "--startup_kit"):
             assert token not in help_text
+        assert "--startup-kit" in help_text
+        assert "--kit-id" in help_text
 
         with patch("sys.argv", ["nvflare", "job", "meta", "--schema"]):
             with pytest.raises(SystemExit) as exc_info:
@@ -186,5 +274,13 @@ class TestJobMeta:
 
         assert exc_info.value.code == 0
         schema_text = capsys.readouterr().out
-        for token in ("--startup-target", "--startup_target", "--startup-kit", "--startup_kit"):
+        for token in ("--startup-target", "--startup_target", "--startup_kit"):
             assert token not in schema_text
+        assert "--startup-kit" in schema_text
+        assert "--kit-id" in schema_text
+        schema = json.loads(schema_text)
+        assert schema["output_modes"] == ["json"]
+        assert schema["streaming"] is False
+        assert schema["mutating"] is False
+        assert schema["idempotent"] is True
+        assert schema["retry_token"] == {"supported": False}

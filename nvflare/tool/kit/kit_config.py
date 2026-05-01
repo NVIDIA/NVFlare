@@ -18,6 +18,7 @@ import json
 import os
 import re
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, Set, Tuple
 
@@ -52,6 +53,7 @@ SERVER_STARTUP_KIT_REQUIRED_FILES = (os.path.join("startup", "fed_server.json"),
 STARTUP_KIT_KIND_ADMIN = "admin"
 STARTUP_KIT_KIND_SITE = "site"
 STARTUP_KIT_KIND_SERVER = "server"
+STARTUP_KIT_CERT_EXPIRING_SOON_DAYS = 30
 _HOCON_SIMPLE_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
@@ -82,7 +84,12 @@ def _ensure_v2_config(config: ConfigTree) -> ConfigTree:
 
 
 def _remove_legacy_startup_kit_keys(config: ConfigTree) -> ConfigTree:
-    for key in ("startup_kit.path", "startup_kit", "poc.startup_kit", "prod.startup_kit"):
+    for key in (
+        "startup_kit.path",
+        "startup_kit",
+        "poc.startup_kit",
+        "prod.startup_kit",
+    ):
         try:
             config.pop(key, None)
         except Exception:
@@ -186,6 +193,19 @@ def get_active_startup_kit_id(config: ConfigTree) -> Optional[str]:
     return active.strip() if active and active.strip() else None
 
 
+def resolve_startup_kit_dir_by_id(kit_id: str) -> str:
+    """Resolve a registered startup-kit ID to a validated admin user dir without changing active config."""
+    kit_id = _normalize_kit_id(kit_id)
+    config = load_cli_config()
+    entries = get_startup_kit_entries(config)
+    if kit_id not in entries:
+        raise StartupKitConfigError(
+            f"startup kit id '{kit_id}' is not registered",
+            hint="Run nvflare config list.",
+        )
+    return _validate_registered_path(kit_id, entries[kit_id])
+
+
 def _as_existing_dir(path: str) -> Path:
     if not path or not str(path).strip():
         raise StartupKitConfigError("startup kit directory is not specified")
@@ -245,7 +265,7 @@ def _validate_registered_path(kit_id: str, path: str) -> str:
     if not path:
         raise StartupKitConfigError(
             f"startup kit id '{kit_id}' is not registered",
-            hint="Run nvflare config kit list.",
+            hint="Run nvflare config list.",
         )
 
     try:
@@ -259,7 +279,7 @@ def _validate_registered_path(kit_id: str, path: str) -> str:
             ) from e
         raise StartupKitConfigError(
             f"registered path for '{kit_id}' is not a valid startup kit for admin use",
-            hint=f"Run nvflare config kit use <admin-id>, or replace it with nvflare config kit add {kit_id} <startup-kit-dir> --force.",
+            hint=f"Run nvflare config use <admin-id>, or replace it with nvflare config add {kit_id} <startup-kit-dir> --force.",
         ) from e
 
 
@@ -287,7 +307,10 @@ def set_active_startup_kit(config: ConfigTree, kit_id: str) -> ConfigTree:
     kit_id = _normalize_kit_id(kit_id)
     entries = get_startup_kit_entries(config)
     if kit_id not in entries:
-        raise StartupKitConfigError(f"startup kit id '{kit_id}' is not registered", hint="Run nvflare config kit list.")
+        raise StartupKitConfigError(
+            f"startup kit id '{kit_id}' is not registered",
+            hint="Run nvflare config list.",
+        )
 
     _validate_registered_path(kit_id, entries[kit_id])
     config.put(STARTUP_KITS_ACTIVE_KEY, kit_id)
@@ -359,9 +382,142 @@ def remove_entries_under_workspace(config: ConfigTree, workspace: str) -> Tuple[
     return config, removed
 
 
-def inspect_startup_kit_metadata(path: str) -> Dict[str, Optional[str]]:
+def _finding(code: str, severity: str, message: str, hint: str = None) -> Dict[str, str]:
+    result = {"code": code, "severity": severity, "message": message}
+    if hint:
+        result["hint"] = hint
+    return result
+
+
+def _empty_startup_kit_metadata(kind: str = None) -> Dict:
+    return {
+        "identity": None,
+        "cert_role": None,
+        "role": None,
+        "org": None,
+        "project": None,
+        "kind": kind,
+        "certificate": None,
+        "findings": [],
+    }
+
+
+def _first_cert_subject_value(cert, oid) -> Optional[str]:
+    attrs = cert.subject.get_attributes_for_oid(oid)
+    return attrs[0].value if attrs else None
+
+
+def _first_cert_issuer_value(cert, oid) -> Optional[str]:
+    attrs = cert.issuer.get_attributes_for_oid(oid)
+    return attrs[0].value if attrs else None
+
+
+def _cert_not_valid_after(cert):
+    expires_at = getattr(cert, "not_valid_after_utc", None)
+    if expires_at is None:
+        expires_at = cert.not_valid_after.replace(tzinfo=timezone.utc)
+    elif expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at.astimezone(timezone.utc)
+
+
+def _format_utc_timestamp(value: datetime) -> str:
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _certificate_expiration_metadata(cert, cert_path: str) -> Tuple[Dict, list]:
+    findings = []
+    expires_at = _cert_not_valid_after(cert)
+    now = datetime.now(timezone.utc)
+    seconds_remaining = (expires_at - now).total_seconds()
+    days_remaining = int(seconds_remaining // 86400)
+    if seconds_remaining < 0:
+        status = "expired"
+        findings.append(
+            _finding(
+                "STARTUP_KIT_CERT_EXPIRED",
+                "error",
+                f"Startup kit certificate expired at {_format_utc_timestamp(expires_at)}.",
+                "Request or select a renewed startup kit.",
+            )
+        )
+    elif days_remaining <= STARTUP_KIT_CERT_EXPIRING_SOON_DAYS:
+        status = "expiring_soon"
+        findings.append(
+            _finding(
+                "STARTUP_KIT_CERT_EXPIRING_SOON",
+                "warning",
+                f"Startup kit certificate expires at {_format_utc_timestamp(expires_at)}.",
+                "Plan to renew or replace this startup kit before it expires.",
+            )
+        )
+    else:
+        status = "ok"
+
+    return (
+        {
+            "path": cert_path,
+            "expires_at": _format_utc_timestamp(expires_at),
+            "days_remaining": days_remaining,
+            "status": status,
+        },
+        findings,
+    )
+
+
+def _inspect_admin_cert_metadata(startup_dir: str, metadata: Dict) -> None:
+    cert_path = os.path.join(startup_dir, "client.crt")
+    if not os.path.isfile(cert_path):
+        metadata["findings"].append(
+            _finding(
+                "STARTUP_KIT_CERT_MISSING",
+                "warning",
+                "Startup kit certificate file is missing.",
+                "Replace this startup kit or re-run provisioning.",
+            )
+        )
+        return
+
+    if not (x509 and default_backend and NameOID):
+        metadata["certificate"] = {"path": cert_path, "status": "unknown"}
+        metadata["findings"].append(
+            _finding(
+                "STARTUP_KIT_CERT_UNREADABLE",
+                "warning",
+                "Startup kit certificate could not be inspected because cryptography is unavailable.",
+            )
+        )
+        return
+
+    try:
+        with open(cert_path, "rb") as f:
+            cert = x509.load_pem_x509_certificate(f.read(), default_backend())
+    except Exception:
+        metadata["certificate"] = {"path": cert_path, "status": "unreadable"}
+        metadata["findings"].append(
+            _finding(
+                "STARTUP_KIT_CERT_UNREADABLE",
+                "warning",
+                "Startup kit certificate could not be read.",
+                "Replace this startup kit if the certificate file is corrupted.",
+            )
+        )
+        return
+
+    metadata["cert_role"] = _first_cert_subject_value(cert, NameOID.UNSTRUCTURED_NAME)
+    metadata["role"] = metadata["cert_role"]
+    metadata["org"] = _first_cert_subject_value(cert, NameOID.ORGANIZATION_NAME)
+    metadata["project"] = _first_cert_issuer_value(cert, NameOID.COMMON_NAME)
+    cn = _first_cert_subject_value(cert, NameOID.COMMON_NAME)
+    if cn and not metadata["identity"]:
+        metadata["identity"] = cn
+    metadata["certificate"], cert_findings = _certificate_expiration_metadata(cert, cert_path)
+    metadata["findings"].extend(cert_findings)
+
+
+def inspect_startup_kit_metadata(path: str) -> Dict:
     """Best-effort metadata inspection for display."""
-    metadata = {"identity": None, "cert_role": None, "kind": None}
+    metadata = _empty_startup_kit_metadata()
     try:
         kind, startup_kit_dir = classify_startup_kit(path)
         metadata["kind"] = kind
@@ -378,19 +534,7 @@ def inspect_startup_kit_metadata(path: str) -> Dict[str, Optional[str]]:
         except Exception:
             pass
 
-        if x509 and default_backend and NameOID:
-            try:
-                cert_path = os.path.join(startup_dir, "client.crt")
-                with open(cert_path, "rb") as f:
-                    cert = x509.load_pem_x509_certificate(f.read(), default_backend())
-                role_attrs = cert.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
-                if role_attrs:
-                    metadata["cert_role"] = role_attrs[0].value
-                cn_attrs = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
-                if cn_attrs and not metadata["identity"]:
-                    metadata["identity"] = cn_attrs[0].value
-            except Exception:
-                pass
+        _inspect_admin_cert_metadata(startup_dir, metadata)
 
     if not metadata["identity"]:
         metadata["identity"] = os.path.basename(startup_kit_dir)
@@ -398,16 +542,36 @@ def inspect_startup_kit_metadata(path: str) -> Dict[str, Optional[str]]:
     return metadata
 
 
-def get_startup_kit_status(path: str) -> Tuple[str, Optional[str], Dict[str, Optional[str]]]:
+def get_startup_kit_status(
+    path: str,
+) -> Tuple[str, Optional[str], Dict]:
     """Return (status, normalized_path, metadata) without raising for stale entries."""
     path_obj = Path(path).expanduser() if path else Path("")
     if not path or not path_obj.exists():
-        return "missing", None, {"identity": None, "cert_role": None}
+        metadata = _empty_startup_kit_metadata()
+        metadata["findings"].append(
+            _finding(
+                "STARTUP_KIT_PATH_MISSING",
+                "warning",
+                f"Registered startup kit path does not exist: {path}",
+                "Remove the stale registration or replace it with a valid startup kit.",
+            )
+        )
+        return "missing", None, metadata
 
     try:
         _, normalized_path = classify_startup_kit(path)
     except StartupKitConfigError:
-        return "invalid", None, {"identity": None, "cert_role": None}
+        metadata = _empty_startup_kit_metadata()
+        metadata["findings"].append(
+            _finding(
+                "STARTUP_KIT_INVALID",
+                "warning",
+                f"Registered path is not a valid startup kit: {path}",
+                "Remove the stale registration or replace it with a valid startup kit.",
+            )
+        )
+        return "invalid", None, metadata
 
     return "ok", normalized_path, inspect_startup_kit_metadata(normalized_path)
 
@@ -435,14 +599,18 @@ def resolve_startup_kit_dir() -> str:
     if not active:
         raise StartupKitConfigError(
             "no active startup kit is configured",
-            hint="Run nvflare poc prepare, or run nvflare config kit add <id> <startup-kit-dir> then nvflare config kit use <id>.",
+            hint=(
+                "Run nvflare poc prepare, run nvflare config add <id> <startup-kit-dir> then "
+                "nvflare config use <id>, pass --kit-id <id> or --startup-kit <path>, or set "
+                f"{NVFLARE_STARTUP_KIT_DIR}."
+            ),
         )
 
     entries = get_startup_kit_entries(config)
     if active not in entries:
         raise StartupKitConfigError(
             f"active startup kit '{active}' is not registered",
-            hint="Run nvflare config kit list, then nvflare config kit use <id>.",
+            hint="Run nvflare config list, then nvflare config use <id>.",
         )
 
     path = entries[active]
@@ -453,15 +621,17 @@ def resolve_startup_kit_dir() -> str:
         if not path_obj.exists():
             raise StartupKitConfigError(
                 f"active startup kit '{active}' points to a missing path\nPath: {path}",
-                hint=f"Run nvflare config kit use <id> or nvflare config kit remove {active}.",
+                hint=f"Run nvflare config use <id> or nvflare config remove {active}.",
             ) from e
         raise StartupKitConfigError(
             f"active startup kit '{active}' is not a valid startup kit for admin use\nPath: {path}",
-            hint=f"Run nvflare config kit use <id> or nvflare config kit remove {active}.",
+            hint=f"Run nvflare config use <id> or nvflare config remove {active}.",
         ) from e
 
 
-def resolve_admin_user_and_dir_from_startup_kit(startup_kit_dir: str) -> Tuple[str, str]:
+def resolve_admin_user_and_dir_from_startup_kit(
+    startup_kit_dir: str,
+) -> Tuple[str, str]:
     """Resolve admin username and normalized admin user dir from a startup kit path."""
     admin_user_dir = validate_admin_startup_kit(startup_kit_dir)
     startup_dir = os.path.join(admin_user_dir, "startup")
