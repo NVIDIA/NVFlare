@@ -44,7 +44,7 @@ def test_jsonl_global_format_allowed_for_job_monitor(monkeypatch):
     assert args.format == "jsonl"
 
 
-def test_cert_init_version_is_command_option_not_global_version(monkeypatch, tmp_path):
+def test_cert_init_deploy_version_is_command_option(monkeypatch, tmp_path):
     from nvflare import cli as cli_mod
 
     profile_path = tmp_path / "project_profile.yaml"
@@ -53,10 +53,20 @@ def test_cert_init_version_is_command_option_not_global_version(monkeypatch, tmp
     monkeypatch.setattr(
         cli_mod.sys,
         "argv",
-        ["nvflare", "cert", "init", "--profile", str(profile_path), "-o", str(tmp_path / "ca"), "--version", "01"],
+        [
+            "nvflare",
+            "cert",
+            "init",
+            "--profile",
+            str(profile_path),
+            "-o",
+            str(tmp_path / "ca"),
+            "--deploy-version",
+            "01",
+        ],
     )
 
     _, args, _ = cli_mod.parse_args("nvflare")
     assert args.sub_command == "cert"
     assert args.cert_sub_command == "init"
-    assert args.version == "01"
+    assert args.deploy_version == "01"

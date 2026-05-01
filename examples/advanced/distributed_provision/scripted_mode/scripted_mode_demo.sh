@@ -4,7 +4,7 @@ set -euo pipefail
 # Simple scripted-mode demo for the same federation used by interactive_mode.
 #
 # Initial setup:
-#   1. Project Admin initializes the CA with provision version 00.
+#   1. Project Admin initializes the CA with deploy version 00.
 #
 # What the default mode automates:
 #   1. Requesters create request zips from the checked-in participant YAML files.
@@ -213,7 +213,7 @@ fi
 # Setup step: Project Admin creates the CA material needed to approve requests.
 show "Project Admin initializes CA"
 run_logged_to_file 01_cert_init.json \
-  nvflare cert init --profile "${BASE_DIR}/project_profile.yaml" -o ca --version "${PROVISION_VERSION}" --force --format json
+  nvflare cert init --profile "${BASE_DIR}/project_profile.yaml" -o ca --deploy-version "${PROVISION_VERSION}" --force --format json
 
 # Start of the automated distributed provisioning process.
 #

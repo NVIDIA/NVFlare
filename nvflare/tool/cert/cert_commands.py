@@ -180,7 +180,7 @@ def _validate_org_name(org: str) -> bool:
     return True
 
 
-def _validate_provision_version(value: str, *, field_label: str = "provision version") -> bool:
+def _validate_provision_version(value: str, *, field_label: str = "deploy version") -> bool:
     if is_valid_provision_version(value):
         return True
     output_error_message(
@@ -348,7 +348,9 @@ def handle_cert_init(args):
     if project_profile_name is None:
         return 1
     project = project_profile_name
-    provision_version = getattr(args, "version", DEFAULT_PROVISION_VERSION) or DEFAULT_PROVISION_VERSION
+    provision_version = (
+        getattr(args, "deploy_version", None) or getattr(args, "version", None) or DEFAULT_PROVISION_VERSION
+    )
     if not _validate_provision_version(provision_version):
         return 1
 
@@ -383,8 +385,12 @@ def handle_cert_init(args):
             if existing_version == provision_version:
                 output_error_message(
                     "CA_VERSION_ALREADY_EXISTS",
-                    f"Provision version {provision_version!r} already exists in CA directory {output_dir}.",
-                    "Use a new --version value when intentionally creating a new root CA, or use a fresh CA directory.",
+                    f"Deploy version {provision_version!r} already exists in CA directory {output_dir}.",
+                    (
+                        f"Deploy version {provision_version} maps to prod_{provision_version}. "
+                        "Use a new --deploy-version value when intentionally creating a new deployment CA, "
+                        "or use a fresh CA directory."
+                    ),
                     None,
                     exit_code=4,
                 )

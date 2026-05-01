@@ -39,7 +39,7 @@ The shared demo input files are checked in the parent directory:
 ## Step 1 - Project Admin: Initialize Root CA
 
 ```bash
-nvflare cert init --profile project_profile.yaml -o ca --version 00
+nvflare cert init --profile project_profile.yaml -o ca --deploy-version 00
 ```
 
 This creates `ca/rootCA.pem`, `ca/rootCA.key`, and `ca/ca.json`. The
@@ -88,30 +88,31 @@ packaging.
 
 ## Step 4 - Requesters: Package Startup Kits
 
-Each requester runs:
+Recommended trust-checked packaging uses the `rootca_fingerprint_sha256` value
+shared by the Project Admin:
 
 ```bash
-nvflare package server.example.com/server.example.com.signed.zip
-nvflare package site-1/site-1.signed.zip
-nvflare package site-2/site-2.signed.zip
-nvflare package alice@nvidia.com/alice@nvidia.com.signed.zip
+nvflare package server.example.com/server.example.com.signed.zip --fingerprint <rootca_fingerprint_sha256>
+nvflare package site-1/site-1.signed.zip --fingerprint <rootca_fingerprint_sha256>
+nvflare package site-2/site-2.signed.zip --fingerprint <rootca_fingerprint_sha256>
+nvflare package alice@nvidia.com/alice@nvidia.com.signed.zip --fingerprint <rootca_fingerprint_sha256>
 ```
 
 `nvflare package` uses the signed zip endpoint information and the local request
 folder containing the private key. No endpoint, project-file, or template
 argument is needed. The startup kits are written under
 `workspace/<project>/prod_00/<name>/` because this demo initializes the CA with
-provision version `00`. All four packages land under the same `prod_00`
+deploy version `00`. All four packages land under the same `prod_00`
 directory.
 
-If the Project Admin shared the `rootca_fingerprint_sha256` value out of band
-and you want `nvflare package` to verify it, add `--fingerprint`:
+For a quick local demo where you intentionally skip the out-of-band fingerprint
+check, omit `--fingerprint`:
 
 ```bash
-nvflare package server.example.com/server.example.com.signed.zip --fingerprint <expected_fingerprint>
-nvflare package site-1/site-1.signed.zip --fingerprint <expected_fingerprint>
-nvflare package site-2/site-2.signed.zip --fingerprint <expected_fingerprint>
-nvflare package alice@nvidia.com/alice@nvidia.com.signed.zip --fingerprint <expected_fingerprint>
+nvflare package server.example.com/server.example.com.signed.zip
+nvflare package site-1/site-1.signed.zip
+nvflare package site-2/site-2.signed.zip
+nvflare package alice@nvidia.com/alice@nvidia.com.signed.zip
 ```
 
 ## Dynamic Provisioning - Add Participants Later
@@ -139,7 +140,8 @@ nvflare package bob@nvidia.com/bob@nvidia.com.signed.zip
 ```
 
 The new participant receives a new startup kit under
-`workspace/fed_project/prod_00/<name>/` when using the existing version `00`
+`workspace/fed_project/prod_00/<name>/` when using the existing deploy version
+`00`
 CA. Existing startup kits are left as-is.
 Provisioning creates the identity and startup kit; study membership and other
 runtime policy changes are managed separately.
@@ -164,7 +166,8 @@ find centralized_workspace/fed_project -path '*/startup' -type d | sort
 Expected layout:
 
 - Distributed interactive provisioning packages one signed zip at a time, but
-  the provision version comes from the CA. Because this demo uses version `00`,
+  the deploy version comes from the CA. Because this demo uses deploy version
+  `00`,
   all distributed kits are generated under
   `workspace/fed_project/prod_00/<name>/startup`.
 - Centralized provisioning generates all participant kits in one run, so the

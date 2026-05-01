@@ -28,8 +28,8 @@ stays with the requester.
 The public CLI flow is:
 
 ```bash
-# Project Admin: initialize the CA and provision version.
-nvflare cert init --profile project_profile.yaml -o ca --version 00
+# Project Admin: initialize the CA. Deploy version defaults to 00.
+nvflare cert init --profile project_profile.yaml -o ca --deploy-version 00
 
 # Requester: create local private key, CSR, request metadata, and request zip.
 nvflare cert request --participant site-1.yaml
@@ -38,25 +38,23 @@ nvflare cert request --participant site-1.yaml
 nvflare cert approve site-1/site-1.request.zip --ca-dir ca --profile project_profile.yaml
 
 # Requester: package the signed zip with the local private key.
+nvflare package site-1/site-1.signed.zip --fingerprint <rootca_fingerprint_sha256>
+```
+
+`<rootca_fingerprint_sha256>` is the `rootca_fingerprint_sha256` value printed by
+`nvflare cert approve`. Share it separately from the signed zip so the requester
+can verify the root CA inside the signed zip before packaging.
+
+For a quick local demo where you intentionally skip that out-of-band trust
+check, omit `--fingerprint`:
+
+```bash
 nvflare package site-1/site-1.signed.zip
 ```
 
-`<expected_fingerprint>` is the `rootca_fingerprint_sha256` value printed by
-`nvflare cert approve`. Share it separately from the signed zip so the requester
-can verify the root CA inside the signed zip before packaging. If you
-intentionally skip that out-of-band trust check, omit the `--fingerprint`
-option.
-
-To make `nvflare package` verify the out-of-band fingerprint, add
-`--fingerprint`:
-
-```bash
-nvflare package site-1/site-1.signed.zip --fingerprint <expected_fingerprint>
-```
-
-`--version 00` records `provision_version: "00"` in the CA metadata. All
-participants approved with that CA/version package into the same
-`workspace/<project>/prod_00/` directory. Use a new version only when the
+Normally ignore `--deploy-version`; the default is `00`. All participants
+approved with that CA/deploy version package into the same
+`workspace/<project>/prod_00/` directory. Use `01`, `02`, etc. only when the
 Project Admin intentionally creates a new deployment CA.
 
 ## Shared Inputs
@@ -105,10 +103,10 @@ Then follow [`interactive_mode/README.md`](interactive_mode/README.md).
 
 The interactive walkthrough shows:
 
-- initial CA setup with `--version 00`;
+- initial CA setup with `--deploy-version 00`;
 - request zip creation for server, two client sites, and one admin user;
 - Project Admin approval with `project_profile.yaml`;
-- requester packaging, with optional `--fingerprint <expected_fingerprint>`;
+- requester packaging, with optional `--fingerprint <rootca_fingerprint_sha256>`;
 - dynamic add for a new client and a new admin user;
 - comparison with centralized `nvflare provision -p project.yaml`.
 
@@ -152,4 +150,4 @@ workspace/fed_project/prod_00/alice@nvidia.com/startup/
 ```
 
 Dynamic-add participants are added under the same `prod_00` directory when they
-use the existing CA and provision version.
+use the existing CA and deploy version.

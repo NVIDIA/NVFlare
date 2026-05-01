@@ -35,7 +35,7 @@ and `server.admin_port`.
 
 Setup:
 
-1. Project Admin initializes the CA with `nvflare cert init --version 00`.
+1. Project Admin initializes the CA with `nvflare cert init --deploy-version 00`.
 
 Automated distributed provisioning flow:
 
@@ -46,13 +46,13 @@ Automated distributed provisioning flow:
 4. Each requester packages its startup kit with `nvflare package` using only the
    signed zip and local request material.
 
-For automation, the package step uses `--fingerprint <expected_fingerprint>`
+For automation, the package step uses `--fingerprint <rootca_fingerprint_sha256>`
 from the approval JSON output. The package command does not pass an endpoint,
 project file, or template argument; those values come from the signed zip.
 
-The signed zip also carries `ca_info.provision_version`, so all packages in
-this script land under `prod_00` unless the script is changed to initialize a
-different provision version.
+The signed zip also carries deploy-version metadata, so all packages in this
+script land under `prod_00` unless the script is changed to initialize a
+different deploy version.
 
 ## Dynamic Provisioning
 

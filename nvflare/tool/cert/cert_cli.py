@@ -103,22 +103,25 @@ def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         help="Validity period for the root CA certificate in days. Default: 3650.",
     )
     p.add_argument(
-        "--version",
+        "--deploy-version",
         required=False,
         type=_provision_version_type,
         default="00",
-        dest="version",
+        dest="deploy_version",
         metavar="NN",
-        help="Distributed provisioning version used for package output directory prod_<NN>. Default: 00.",
+        help=(
+            "Deployment generation used for package output directory prod_<NN>. "
+            "Default: 00. Normally ignore this; use 01, 02, etc. only when creating a new deployment CA."
+        ),
     )
     p.add_argument(
         "--force",
         action="store_true",
         default=False,
         help=(
-            "Replace existing CA files only when --version differs from the existing CA's provision version. "
-            "Fails with an error if --version matches the existing CA's provision version. "
-            "If ca.json is absent, --version is not checked. Backs up existing files first."
+            "Replace existing CA files only when --deploy-version differs from the existing CA deploy version. "
+            "Fails with an error if --deploy-version matches the existing CA deploy version. "
+            "If ca.json is absent, --deploy-version is not checked. Backs up existing files first."
         ),
     )
     p.add_argument(

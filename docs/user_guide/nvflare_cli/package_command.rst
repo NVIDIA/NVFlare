@@ -38,14 +38,14 @@ Admin through a trusted out-of-band channel, pass the expected fingerprint:
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip --fingerprint <expected_fingerprint>
+   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 The longer spelling ``--expected-fingerprint`` is also accepted:
 
 .. code-block:: shell
 
    nvflare package hospital-a.signed.zip \
-       --expected-fingerprint <expected_fingerprint>
+       --expected-fingerprint <rootca_fingerprint_sha256>
 
 If the signed zip is not next to the request folder and package cannot find the
 folder from local request state, specify it:
@@ -54,7 +54,7 @@ folder from local request state, specify it:
 
    nvflare package hospital-a.signed.zip \
        --request-dir ./hospital-a \
-       --fingerprint <expected_fingerprint>
+       --fingerprint <rootca_fingerprint_sha256>
 
 The command validates that:
 
@@ -65,20 +65,19 @@ The command validates that:
 - the signed zip does not contain private keys;
 - the local private key matches the signed certificate;
 - the certificate chains to ``rootCA.pem``;
-- signed ``ca_info.rootCA_fingerprint`` matches the ``rootCA.pem`` in the
-  signed zip;
+- signed CA fingerprint metadata matches the ``rootCA.pem`` in the signed zip;
 - local ``request.json`` metadata and signed metadata match;
 - identity fields in the local request-folder ``site.yaml`` match the signed
   zip.
 
 The command always prints ``rootca_fingerprint_sha256`` in its result. Without
-``--fingerprint <expected_fingerprint>``, packaging does not perform an
+``--fingerprint <rootca_fingerprint_sha256>``, packaging does not perform an
 out-of-band trust comparison.
 
 The signed ``ca_info`` check prevents accidental CA mixing inside the package
 workspace, but it does not replace out-of-band fingerprint verification because
 the signed zip carries its own ``rootCA.pem``.
-Older signed zips that do not contain ``ca_info`` are treated as provision
+Older signed zips that do not contain signed CA metadata are treated as deploy
 version ``00`` and use the fingerprint computed from the included
 ``rootCA.pem`` for workspace consistency checks.
 
@@ -86,7 +85,7 @@ The output goes under:
 
 .. code-block:: text
 
-   <workspace>/<project-name>/prod_<provision_version>/<identity>/
+   <workspace>/<project-name>/prod_<NN>/<identity>/
 
 For example:
 
@@ -94,16 +93,17 @@ For example:
 
    workspace/hospital_federation/prod_00/hospital-a/
 
-The ``provision_version`` comes from signed ``ca_info`` in ``signed.json``.
-It is set by ``nvflare cert init --version`` and defaults to ``00``. Multiple
-participants approved by the same CA and version are packaged side by side in
-the same ``prod_00`` directory. Packaging does not increment a directory counter
-for each participant.
+The deploy version comes from signed CA metadata in ``signed.json``. It is set
+by ``nvflare cert init --deploy-version`` and defaults to ``00``. Normally
+ignore it. Multiple participants approved by the same CA and deploy version are
+packaged side by side in the same ``prod_00`` directory. Packaging does not
+increment a directory counter for each participant.
 
-If ``prod_<provision_version>`` already exists, ``nvflare package`` verifies
-that the existing package root uses the same ``rootCA.pem`` fingerprint. A root
-CA mismatch is a hard error. Use ``--force`` only to replace an existing
-participant under the same provision version and CA.
+If ``prod_<NN>`` already exists, ``nvflare package`` verifies that the existing
+package root uses the same ``rootCA.pem`` fingerprint. A root CA mismatch is a
+hard error. Deploy version ``00`` maps to ``prod_00``; deploy version ``01``
+maps to ``prod_01``. Use ``--force`` only to replace an existing participant
+under the same deploy version and CA.
 
 ****************************
 Connection Configuration
@@ -175,7 +175,7 @@ For a lead user:
 
    nvflare cert request --participant alice.yaml
    nvflare cert approve alice@hospital-alpha.org.request.zip --ca-dir ./ca --profile project_profile.yaml
-   nvflare package alice@hospital-alpha.org.signed.zip --fingerprint <expected_fingerprint>
+   nvflare package alice@hospital-alpha.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 The generated startup kit contains:
 
@@ -204,8 +204,8 @@ Main Arguments
   ``rootCA.pem`` in the signed zip. The command fails if it does not match.
 - ``--expected-fingerprint``: longer spelling for ``--fingerprint``.
 - ``--force``: allow replacing an existing participant package under the same
-  ``prod_<provision_version>`` directory when the signed CA information still
-  matches. It does not bypass root CA mismatch checks.
+  ``prod_<NN>`` directory when the signed CA information still matches. It
+  does not bypass root CA mismatch checks.
 - ``--schema``: print JSON schema for this command.
 
 *********************
@@ -223,7 +223,7 @@ The top-level CLI also supports JSON output mode:
 .. code-block:: shell
 
    nvflare package hospital-a.signed.zip \
-       --fingerprint <expected_fingerprint> \
+       --fingerprint <rootca_fingerprint_sha256> \
        --format json
 
 For the end-to-end distributed provisioning workflow, see

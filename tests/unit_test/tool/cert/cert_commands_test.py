@@ -88,7 +88,7 @@ def _init_args(**kwargs):
         output_dir=None,
         org=None,
         valid_days=3650,
-        version="00",
+        deploy_version="00",
         force=False,
         schema=False,
     )
@@ -781,7 +781,7 @@ class TestCertInit:
         assert meta[ROOTCA_FINGERPRINT_FIELD] == cert_fingerprint_sha256(load_crt(str(tmp_path / "rootCA.pem")))
 
     def test_ca_json_records_explicit_provision_version(self, tmp_path):
-        rc = _run_init(tmp_path, project="MyProject", version="01")
+        rc = _run_init(tmp_path, project="MyProject", deploy_version="01")
 
         assert rc == 0
         with open(str(tmp_path / "ca.json")) as f:
@@ -812,8 +812,8 @@ class TestCertInit:
         # First init
         _run_init(tmp_path)
         original_key = (tmp_path / "rootCA.key").read_bytes()
-        # Force re-init with a new provision version
-        rc = _run_init(tmp_path, force=True, version="01")
+        # Force re-init with a new deploy version
+        rc = _run_init(tmp_path, force=True, deploy_version="01")
         assert rc == 0
         new_key = (tmp_path / "rootCA.key").read_bytes()
         # A new key pair is generated on force re-init
@@ -869,7 +869,7 @@ class TestCertInit:
         assert args_by_name["--profile"]["required"] is True
         assert args_by_name["--output-dir"]["required"] is True
 
-    def test_parser_accepts_provision_version(self, tmp_path):
+    def test_parser_accepts_deploy_version(self, tmp_path):
         profile_path = tmp_path / "project_profile.yaml"
         _write_participant_definition(profile_path, {"name": "TestProject"})
         parser, _ = _cert_root_parser()
@@ -882,12 +882,12 @@ class TestCertInit:
                 str(profile_path),
                 "-o",
                 str(tmp_path / "ca"),
-                "--version",
+                "--deploy-version",
                 "01",
             ]
         )
 
-        assert args.version == "01"
+        assert args.deploy_version == "01"
 
     def test_provision_version_rejects_unicode_digits(self):
         assert not is_valid_provision_version("０１")
@@ -900,10 +900,11 @@ class TestCertInit:
 
         assert exc_info.value.code == 0
         help_text = capsys.readouterr().out
-        assert "--version differs" in help_text
-        assert "--version matches" in help_text
+        assert "--deploy-version" in help_text
+        assert "differs from the existing CA deploy version" in help_text
+        assert "matches the existing" in help_text
         assert "ca.json is absent" in help_text
-        assert "existing CA's provision version" in help_text
+        assert "existing CA deploy version" in help_text
 
     def test_missing_required_args_show_help_and_missing_flags(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
@@ -3456,7 +3457,7 @@ class TestDistributedCertRequestApprove:
                 profile=_make_profile(tmp_path, "example_project"),
                 org="nvidia",
                 output_dir=str(ca_dir),
-                version="01",
+                deploy_version="01",
             )
         )
         _write_project_profile(profile_path)

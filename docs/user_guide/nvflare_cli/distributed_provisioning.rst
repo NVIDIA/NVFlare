@@ -15,13 +15,13 @@ independently. The public workflow uses three commands:
 
    nvflare cert request --participant <participant.yaml>
    nvflare cert approve <request.zip> --ca-dir <ca-dir> --profile <project_profile.yaml>
-   nvflare package <signed.zip> --fingerprint <expected_fingerprint>
+   nvflare package <signed.zip> --fingerprint <rootca_fingerprint_sha256>
 
 At a high level:
 
 1. The Project Admin creates ``project_profile.yaml`` and initializes the
-   project CA from that explicit profile file. The CA records a
-   ``provision_version``; the default is ``00``.
+   project CA from that explicit profile file. The default deploy version is
+   ``00``.
 2. The server admin decides the server host name and ports and shares them with
    the Project Admin.
 3. The Project Admin records the approved server endpoint in
@@ -44,8 +44,7 @@ startup kit.
    The Project Admin's approval covers only what is inside the signed zip:
    participant identity, the signed certificate, ``rootCA.pem``, and the
    federation connection parameters (server endpoint, ``scheme``,
-   ``connection_security``), plus signed CA information
-   (``provision_version`` and ``rootCA_fingerprint``). ``builders:`` blocks in
+   ``connection_security``), plus signed CA information. ``builders:`` blocks in
    participant definition files are **not** included in the request zip or
    signed zip, are not approved by the Project Admin, and remain local,
    package-time behavior applied on the requester's machine. Features that
@@ -57,7 +56,9 @@ startup kit.
 Before You Start: Record Connection Details
 *******************************************
 
-Before approvals begin, three pieces of information must be in place:
+Before approvals begin, the project name and server endpoint must be in place.
+There is also an optional deploy version for new deployment CA generations;
+normally ignore it and use the default ``00``.
 
 **1. Project name**
 
@@ -74,20 +75,19 @@ in ``project_profile.yaml``. ``nvflare cert approve`` signs this endpoint into
 the signed zip. Client and user participant definition files do not contain
 local ``server:`` blocks.
 
-**3. Provision version**
+**Optional: deploy version**
 
-The Project Admin chooses the provision version when initializing the CA. The
-default is ``00``:
+The Project Admin normally ignores this option. The default is ``00``:
 
 .. code-block:: shell
 
-   nvflare cert init --profile project_profile.yaml -o ./ca --version 00
+   nvflare cert init --profile project_profile.yaml -o ./ca --deploy-version 00
 
-The version is internal metadata stored in ``ca.json`` and signed into each
-approval zip as ``ca_info.provision_version``. ``nvflare package`` writes
-startup kits to ``prod_<provision_version>``. With version ``00``, multiple
-participants approved by the same CA are packaged into the same ``prod_00``
-directory.
+The deploy version is internal metadata stored in ``ca.json`` and signed into
+each approval zip. ``nvflare package`` writes startup kits to ``prod_<NN>``.
+With the default ``00``, multiple participants approved by the same CA are
+packaged into the same ``prod_00`` directory. Use ``01``, ``02``, etc. only
+when intentionally creating a new deployment CA/generation.
 
 The only value shared out-of-band for requester verification is
 ``rootca_fingerprint_sha256`` after approval.
@@ -209,7 +209,7 @@ Project Admin initializes the project CA once:
 
 .. code-block:: shell
 
-   nvflare cert init --profile project_profile.yaml -o ./ca --version 00
+   nvflare cert init --profile project_profile.yaml -o ./ca --deploy-version 00
 
 .. note::
 
@@ -265,7 +265,7 @@ Site Admin packages the startup kit:
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip --fingerprint <expected_fingerprint>
+   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 The output goes under:
 
@@ -319,7 +319,7 @@ Requester packages the returned signed zip:
 
 .. code-block:: shell
 
-   nvflare package alice@hospital-alpha.org.signed.zip --fingerprint <expected_fingerprint>
+   nvflare package alice@hospital-alpha.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 The generated user startup kit contains ``startup/fl_admin.sh``.
 
@@ -369,7 +369,7 @@ Then use the same request, approval, and package workflow:
 
    nvflare cert request --participant server.yaml
    nvflare cert approve server1.hospital-central.org.request.zip --ca-dir ./ca --profile project_profile.yaml
-   nvflare package server1.hospital-central.org.signed.zip --fingerprint <expected_fingerprint>
+   nvflare package server1.hospital-central.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 The server participant name follows the same validation convention as
 centralized ``project.yaml`` server participants. A DNS name is recommended for
@@ -411,14 +411,14 @@ Requester machine:
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip --fingerprint <expected_fingerprint>
+   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 If the signed zip is not next to the local request folder and package cannot
 find the folder from local request state, specify it:
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip --request-dir ./hospital-a --fingerprint <expected_fingerprint>
+   nvflare package hospital-a.signed.zip --request-dir ./hospital-a --fingerprint <rootca_fingerprint_sha256>
 
 *****************************
 Root CA Fingerprint Check
@@ -439,11 +439,11 @@ fingerprint:
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip --fingerprint <expected_fingerprint>
+   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
    nvflare package hospital-a.signed.zip \
-       --fingerprint <expected_fingerprint>
+       --fingerprint <rootca_fingerprint_sha256>
 
-Use ``--fingerprint <expected_fingerprint>`` when you have the expected
+Use ``--fingerprint <rootca_fingerprint_sha256>`` when you have the expected
 out-of-band fingerprint. If you intentionally skip out-of-band fingerprint
 verification, omit the fingerprint option:
 
@@ -455,16 +455,14 @@ Without either option, packaging still validates the signed zip, metadata,
 certificate chain, and local private-key match, but it does not prompt and does
 not perform an out-of-band fingerprint comparison.
 
-``signed.json`` also contains signed ``ca_info`` with ``provision_version`` and
-``rootCA_fingerprint``. ``nvflare package`` checks that this fingerprint matches
-the ``rootCA.pem`` in the signed zip and any existing
-``prod_<provision_version>`` package root. A root CA mismatch is a hard error.
-This internal check prevents accidental CA mixing, but the out-of-band
+``signed.json`` also contains signed CA metadata. ``nvflare package`` checks
+that the signed fingerprint metadata matches the ``rootCA.pem`` in the signed
+zip and any existing ``prod_<NN>`` package root. A root CA mismatch is a hard
+error. This internal check prevents accidental CA mixing, but the out-of-band
 fingerprint is still required to establish trust in the root CA delivered in
-the signed zip.
-Older signed zips without ``ca_info`` default to provision version ``00`` and
-use the fingerprint computed from the included ``rootCA.pem`` for this
-workspace consistency check.
+the signed zip. Older signed zips without signed CA metadata default to deploy
+version ``00`` and use the fingerprint computed from the included
+``rootCA.pem`` for this workspace consistency check.
 
 *********************
 Local Automation Flow
@@ -476,10 +474,10 @@ different command shape:
 .. code-block:: shell
 
    # create project_profile.yaml and participant definition files
-   nvflare cert init --profile project_profile.yaml -o ./ca --version 00
+   nvflare cert init --profile project_profile.yaml -o ./ca --deploy-version 00
    nvflare cert request --participant hospital-a.yaml
    nvflare cert approve hospital-a/hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
-   nvflare package hospital-a/hospital-a.signed.zip --fingerprint <expected_fingerprint>
+   nvflare package hospital-a/hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 This is the same workflow as remote approval. The only difference is that the
 zip files are not copied between machines.
@@ -519,8 +517,8 @@ Signed zip:
 
 ``signed.json.sig`` is a Project Admin CA signature over ``signed.json``.
 Packaging verifies it before trusting the approved endpoint, scheme, or
-connection security values. ``signed.json`` also contains signed ``ca_info``
-with the CA ``provision_version`` and ``rootCA_fingerprint``.
+connection security values. ``signed.json`` also contains signed CA metadata
+used by ``nvflare package``.
 
 The ``site.yaml`` in the local request folder is the full participant
 definition used later by ``nvflare package``. It can contain local
@@ -547,7 +545,7 @@ inside the signed zip:
 
 - Participant identity: name, org, type, and role.
 - Signed participant certificate (``*.crt``) and root CA (``rootCA.pem``).
-- Signed CA information: ``provision_version`` and ``rootCA_fingerprint``.
+- Signed CA information used by ``nvflare package``.
 - Federation connection parameters: ``scheme``, ``connection_security``, and
   the server endpoint from ``project_profile.yaml``.
 
@@ -583,7 +581,7 @@ Project Admin:
 .. code-block:: shell
 
    # create project_profile.yaml
-   nvflare cert init --profile project_profile.yaml -o ./ca --version 00
+   nvflare cert init --profile project_profile.yaml -o ./ca --deploy-version 00
    nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 Requester:
@@ -591,7 +589,7 @@ Requester:
 .. code-block:: shell
 
    nvflare cert request --participant hospital-a.yaml
-   nvflare package hospital-a.signed.zip --fingerprint <expected_fingerprint>
+   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 With explicit locations:
 
@@ -605,7 +603,7 @@ With explicit locations:
    nvflare package ./signed/hospital-a.signed.zip \
        --request-dir ./requests/hospital-a \
        -w ./workspace \
-       --fingerprint <expected_fingerprint>
+       --fingerprint <rootca_fingerprint_sha256>
 
 ****************
 Notes
@@ -618,11 +616,13 @@ Notes
   signed zip.
 - Project-wide ``scheme`` and default ``connection_security`` come from the
   Project Admin's profile through the signed zip.
-- ``provision_version`` comes from ``cert init`` CA metadata and controls the
-  ``prod_<provision_version>`` output directory. The default is ``00``.
+- Deploy version comes from ``cert init`` CA metadata and controls the
+  ``prod_<NN>`` output directory. The default is ``00``, which maps to
+  ``prod_00``. Normally ignore it unless intentionally creating a new
+  deployment CA/generation.
 - Server ``connection_security`` overrides are resolved locally at package time
   from the original server participant definition.
-- Use ``--fingerprint <expected_fingerprint>`` to verify the out-of-band root
+- Use ``--fingerprint <rootca_fingerprint_sha256>`` to verify the out-of-band root
   CA fingerprint. Omit it only when you intentionally skip out-of-band
   fingerprint verification.
 - Startup kits generated from signed zips are compatible with the normal
