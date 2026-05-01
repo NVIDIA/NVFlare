@@ -85,28 +85,6 @@ NVFlare/
             <this bundle>
 ```
 
-## Quick start
-
-Human preflight:
-
-```bash
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -r requirements.txt
-export PYTHON=.venv/bin/python
-"$PYTHON" --version
-```
-
-Pass the prepared interpreter to validation and runs:
-
-```bash
-make validate
-TAG="h100-baseline-$(date +%Y%m%d)" make init-run
-make smoke
-```
-
-Then give the folder to a coding agent and tell it to start with `program.md`. The entrypoint prompt below assumes the agent starts from this directory and uses the `.venv/bin/python` interpreter created by preflight.
-
 ## Recommended agent runtime
 
 For long autonomous runs, prefer launching the coding agent inside a devcontainer rather than directly on the host. The recommended starting point is Trail of Bits' [`claude-code-devcontainer`](https://github.com/trailofbits/claude-code-devcontainer), which is designed to run Claude Code with broad command permissions inside a filesystem-isolated container.
@@ -182,7 +160,7 @@ export PYTHON=.venv/bin/python
 Treat that PYTHON value as authoritative. First verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; print(sys.executable)"`, then use that exact interpreter for validation, smoke tests, candidate runs, plotting, summaries, and reports.
 Do not create a virtual environment, install dependencies, or search for alternate Python interpreters unless I explicitly ask you to. If `.venv/bin/python` is missing or invalid, stop and tell me to rerun the README preflight in this directory.
 
-Set PARALLEL_CANDIDATES=4 unless I override it. Use one local 80 GB H100; if multiple GPUs are visible, pin candidate runs to CUDA_VISIBLE_DEVICES=0 rather than spreading candidates across devices. Lower the candidate width only if CUDA memory, host memory, or I/O contention appears.
+Set PARALLEL_CANDIDATES=4 unless I override it. Use one local 80 GB H100; if multiple GPUs are visible, pin candidate runs to CUDA_VISIBLE_DEVICES=0 rather than spreading candidates across devices. Lower the candidate width if CUDA memory, host memory, or I/O contention appears.
 
 Once setup and baseline are complete, do not ask whether to keep going or whether this is a good stopping point. Continue the experiment loop until manually interrupted.
 ```
