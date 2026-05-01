@@ -1,6 +1,6 @@
 # Docker Job Launcher Example
 
-End-to-end example of running NVFlare in Docker mode using `DockerLauncherBuilder`.
+End-to-end example of running NVFlare in Docker mode using `nvflare deploy prepare`.
 SP/CP containers are started manually; SJ/CJ containers are launched automatically per job.
 
 ## Prerequisites
@@ -19,19 +19,42 @@ This builds two images:
 - `nvflare-site:latest` — used by SP/CP containers (started by `start_docker.sh`)
 - `nvflare-job:latest` — used by SJ/CJ containers (launched automatically per job)
 
-## Step 1: Create Docker network
-
-```bash
-docker network create nvflare-network
-```
-
-## Step 2: Provision
+## Step 1: Provision
 
 ```bash
 nvflare provision -p examples/docker/project.yml
 ```
 
 This generates a workspace under `workspace/docker_test_project/` relative to the current directory.
+
+## Step 2: Prepare Docker runtime kits
+
+Create a Docker runtime config:
+
+```bash
+cat > /tmp/nvflare-docker.yaml <<'EOF'
+runtime: docker
+parent:
+  docker_image: nvflare-site:latest
+  network: nvflare-network
+job_launcher:
+  default_python_path: /usr/local/bin/python
+EOF
+```
+
+Prepare the server and one Docker-mode client:
+
+```bash
+nvflare deploy prepare workspace/docker_test_project/prod_00/server \
+  --output workspace/docker_test_project/docker/server \
+  --config /tmp/nvflare-docker.yaml
+
+nvflare deploy prepare workspace/docker_test_project/prod_00/site-1 \
+  --output workspace/docker_test_project/docker/site-1 \
+  --config /tmp/nvflare-docker.yaml
+```
+
+`start_docker.sh` creates the Docker network if needed.
 
 ## Step 3: Add /etc/hosts entries (if needed)
 
@@ -42,29 +65,9 @@ to `/etc/hosts` so the admin CLI can reach the server container by name:
 127.0.0.1  server
 ```
 
-## Step 4: Configure PassthroughResourceManager (required for all Docker-mode sites)
+## Step 4: Start server and clients
 
-In Docker mode, the SP/CP process does not hold GPU resources — job containers handle
-GPUs directly. The default `GPUResourceManager` will reject all jobs. Replace it with
-`PassthroughResourceManager` in `local/resources.json` for every site running in Docker mode,
-**before starting the SP/CP container**. In this example that is site-1:
-
-```json
-{
-  "format_version": 2,
-  "components": [
-    {
-      "id": "resource_manager",
-      "path": "nvflare.app_common.resource_managers.passthrough_resource_manager.PassthroughResourceManager",
-      "args": {}
-    }
-  ]
-}
-```
-
-## Step 5: Start server and clients
-
-This example runs in **hybrid mode**: site-1 uses Docker job launcher (`start_docker.sh`),
+This example runs in **hybrid mode**: site-1 uses the prepared Docker runtime kit,
 site-2 runs in process mode (`start.sh`). This tests that both modes work together in the
 same federation.
 
@@ -72,11 +75,11 @@ Run each in a separate terminal:
 
 ```bash
 # Server (Docker mode)
-cd workspace/docker_test_project/prod_00/server
+cd workspace/docker_test_project/docker/server
 bash startup/start_docker.sh
 
 # site-1 (Docker mode — job containers launched per job)
-cd workspace/docker_test_project/prod_00/site-1
+cd workspace/docker_test_project/docker/site-1
 bash startup/start_docker.sh
 
 # site-2 (process mode — jobs run as subprocesses of CP)
@@ -84,7 +87,7 @@ cd workspace/docker_test_project/prod_00/site-2
 bash startup/start.sh
 ```
 
-## Step 6: Submit a job
+## Step 5: Submit a job
 
 ```bash
 nvflare job submit \
