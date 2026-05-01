@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@
 This adapts the plotting idea from karpathy/autoresearch's analysis notebook,
 but uses this repo's ledger schema and higher-is-better `score` metric.
 """
+
+from __future__ import annotations
 
 import argparse
 import csv
@@ -309,8 +311,7 @@ def plot_progress(rows: list[ResultRow], output: Path, max_labels: int):
     score_max = max(scores)
     span = score_max - score_min
     margin = max(0.01, abs(score_max) * 0.03, span * 0.025)
-    # ax.set_ylim(score_min - margin, score_max + margin)
-    ax.set_ylim(0.74, score_max + margin)
+    ax.set_ylim(score_min - margin, score_max + margin)
 
     summary_lines = [
         f"Baseline: {baseline:.6f}",

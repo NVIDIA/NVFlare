@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,23 +31,23 @@ import re
 
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
-import numpy as np
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from data.cifar10_data_utils import create_datasets
-from model import (
+import numpy as np  # noqa: E402
+import torch  # noqa: E402
+import torch.nn as nn  # noqa: E402
+import torch.optim as optim  # noqa: E402
+from data.cifar10_data_utils import create_datasets  # noqa: E402
+from model import (  # noqa: E402
     DEFAULT_MAX_MODEL_PARAMS,
     DEFAULT_MODEL_ARCH,
     available_model_architectures,
     build_model,
     count_parameters,
 )
-from train_utils import compute_model_diff, evaluate, get_lr_values
+from train_utils import compute_model_diff, evaluate, get_lr_values  # noqa: E402
 
-import nvflare.client as flare
-from nvflare.app_common.abstract.fl_model import ParamsType
-from nvflare.client.tracking import SummaryWriter
+import nvflare.client as flare  # noqa: E402
+from nvflare.app_common.abstract.fl_model import ParamsType  # noqa: E402
+from nvflare.client.tracking import SummaryWriter  # noqa: E402
 
 try:
     from nvflare.app_common.app_constant import AlgorithmConstants
