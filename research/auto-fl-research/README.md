@@ -160,11 +160,7 @@ For Claude Code, start the agent from the devcontainer shell with:
 claude --permission-mode auto
 ```
 
-For Codex CLI, install it inside the same devcontainer if needed, start Codex from the repository root, then set permissions inside the Codex session:
-
-```text
-/permissions auto-review
-```
+For Codex CLI, install it inside the same devcontainer if needed, start Codex from the repository root, then use `/permissions` to set permissions inside the Codex session to `Auto-review`
 
 Keep the devcontainer boundary meaningful: mount only the repository and deliberate scratch/drop paths, avoid mounting broad host directories or secrets, and remember that the container may still have outbound network access, git identity, and forwarded SSH-agent access depending on how it is configured. For overnight runs, use `tmux` or the devcontainer's persistent shell workflow so the agent can keep running after you disconnect.
 
@@ -175,36 +171,16 @@ For Codex or Claude Code, the first instruction should be close to:
 ```text
 Use the autofl-nvflare skill.
 
-Read `program.md` first and treat it as the single research control plane. Inspect supporting files only when `program.md` directs you to them or when needed for the next action.
+Start in this directory and read `program.md` first. Treat it as the complete research control plane and follow its setup, mutation, budget, ledger, literature-loop, and continuation instructions.
 
-Start a fresh autoresearch campaign for the local single-H100 node. If no campaign is initialized yet, derive a descriptive run tag from the current date at runtime using `<node>-<campaign-topic>-$(date +%Y%m%d)`, for example `h100-fedavgm-$(date +%Y%m%d)`, `h100-archsearch-$(date +%Y%m%d)`, or `h100-baseline-$(date +%Y%m%d)`. Do not use date-only names like `h100-$(date +%Y%m%d)`, initialize the ledger, and establish the baseline first. Do not copy stale example dates from this prompt.
+Start a fresh autoresearch campaign for the local single-H100 node. If no campaign is initialized yet, derive a descriptive run tag at runtime using `<node>-<campaign-topic>-$(date +%Y%m%d)`, initialize the ledger, and establish the baseline first. Do not use date-only names or copy stale example dates.
 
 Use this prepared Python environment for all validation and runs:
 PYTHON=<absolute path to the environment's python>
 Treat that PYTHON value as authoritative. First verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; print(sys.executable)"`, then use that exact interpreter for validation, smoke tests, candidate runs, plotting, summaries, and reports.
-Do not create a virtual environment or install dependencies unless I explicitly ask you to. Do not search for alternate Python interpreters with commands like `ls /usr/bin/python*`, `ls /workspace/.venv*/bin/python*`, `which python`, or similar discovery commands. If PYTHON is missing or invalid, stop and ask me for the prepared interpreter path.
+Do not create a virtual environment, install dependencies, or search for alternate Python interpreters unless I explicitly ask you to. If PYTHON is missing or invalid, stop and ask me for the prepared interpreter path.
 
-Set PARALLEL_CANDIDATES=4 for this campaign. The local H100 has 80 GB of memory and can usually support several same-budget candidates concurrently; reduce this to 1 or 2 if candidates hit CUDA OOM, host memory pressure, or heavy I/O contention.
-
-Use the default single-H100 candidate budget unless program.md says otherwise:
---n_clients 8 --num_rounds 10 --aggregation_epochs 4 --batch_size 64 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted
-
-Use cross-site evaluation and keep RUN_TIMEOUT_SECONDS=600.
-
-Preserve the hard invariants: keep the NVFlare Client API loop, ParamsType.DIFF uploads, NUM_STEPS_CURRENT_ROUND, flare.is_evaluate(), the selected registered model architecture on both server and clients, and no dependencies or protocol changes outside explicitly selected modes like `--aggregator scaffold`. Treat `model_arch` and `max_model_params` as fixed budget fields unless you explicitly label a new architecture subcampaign.
-
-After the first weighted baseline run, run the baseline algorithm calibration sequence before any open-ended tuning. Compare the same fixed budget across FedAvg, FedProx, FedOpt, and SCAFFOLD options from program.md in batches of up to PARALLEL_CANDIDATES concurrent runs on the same H100, using unique RUN_LOG and --name values. Rank the completed calibration runs, pick the best algorithm family, and only then start narrower hyperparameter sweeps.
-
-Architecture search is allowed through registered model variants only. Keep --max_model_params fixed at 5000000 unless I explicitly start a new architecture budget. After algorithm calibration, you may compare --model_arch moderate_cnn, moderate_cnn_norm, and moderate_cnn_small_head under the same fixed budget. Rank primarily by score; use runtime_seconds only as a coarse cost signal and tie-breaker for near-equal results.
-
-After baseline, run autonomous same-budget batches with up to PARALLEL_CANDIDATES concurrent candidates, using unique RUN_LOG and --name values for every run. Assume one local H100, and share that same GPU across the batch when memory permits. If the environment exposes multiple GPUs but this campaign should use the local H100 only, pin each run with CUDA_VISIBLE_DEVICES=0 instead of spreading candidates across devices. Wait for the batch to finish or time out, rank results with scripts/summarize_results.py, and decide keep / narrow / discard before starting the next batch.
-
-After every completed batch, update results.tsv statuses before starting the next batch. Successful runs are appended as `candidate`; that only means "unreviewed." Promote the selected survivor to `keep` and mark reviewed non-survivors as `discard`, for example:
-`${PYTHON} scripts/finalize_batch_status.py results.tsv --last "${PARALLEL_CANDIDATES:-4}" --keep-best --discard-others`.
-
-If progress stalls, think harder with the Camyla-inspired literature loop in program.md: generate diverse FL paper queries, triage primary papers, extract three challenge cards, score only contract-safe proposal cards in templates/literature_loop.md, and launch the top compatible candidate batch next.
-
-When a new method is based on a research paper, include a compact paper source in the `results.tsv` description field, for example `[src: Li20 FedProx arXiv:1812.06127]`, and put the full citation or URL in `templates/mutation_report.md`.
+Set PARALLEL_CANDIDATES=4 unless I override it. Use one local 80 GB H100; if multiple GPUs are visible, pin candidate runs to CUDA_VISIBLE_DEVICES=0 rather than spreading candidates across devices. Lower the candidate width only if CUDA memory, host memory, or I/O contention appears.
 
 Once setup and baseline are complete, do not ask whether to keep going or whether this is a good stopping point. Continue the experiment loop until manually interrupted.
 ```
