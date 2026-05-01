@@ -357,7 +357,14 @@ def main(args):
                 global_step=current_round,
             )
 
-        steps = args.aggregation_epochs * len(train_loader)
+        train_batches = len(train_loader)
+        if train_batches == 0:
+            raise ValueError(
+                f"{site_name}: training data_loader is empty for round {current_round}; "
+                "check site_idx and data split configuration."
+            )
+
+        steps = args.aggregation_epochs * train_batches
         curr_lr = get_lr_values(optimizer)[0]
 
         for epoch in range(args.aggregation_epochs):
@@ -388,7 +395,7 @@ def main(args):
                     scaffold_steps += 1
                 running_loss += loss.item()
 
-            avg_loss = running_loss / len(train_loader)
+            avg_loss = running_loss / train_batches
             global_epoch = current_round * args.aggregation_epochs + epoch
 
             summary_writer.add_scalar("global_round", current_round, global_epoch)
