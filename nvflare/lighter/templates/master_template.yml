@@ -66,6 +66,7 @@ readme_fs: |
 local_client_resources: |
   {
     "format_version": 2,
+    "allow_log_streaming": {~~allow_log_streaming~~},
     "client": {
       "retry_timeout": 30,
       "compression": "Gzip"

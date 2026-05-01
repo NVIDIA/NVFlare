@@ -28,7 +28,8 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.url_utils import make_url
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
-from nvflare.private.defs import SSLConstants
+from nvflare.private.defs import ClientRegMsgKey, SSLConstants
+from nvflare.private.fed.utils.site_config import project_site_config
 from nvflare.private.json_configer import JsonConfigurator
 from nvflare.private.privacy_manager import PrivacyManager, Scope
 
@@ -391,11 +392,21 @@ class FLClientStarterConfiger(JsonConfigurator):
         if self.cmd_vars.get("secure_train"):
             secure_train = self.cmd_vars["secure_train"]
 
+        client_config = self.config_data["client"]
+        # If the user didn't set site_config explicitly under "client", project
+        # it from the merged config (resources.json + fed_client.json) minus
+        # local-only keys, so site operators can advertise custom top-level
+        # vars to the server just by adding them to resources.json.
+        if ClientRegMsgKey.SITE_CONFIG not in client_config:
+            projected_site_config = project_site_config(self.config_data)
+            if projected_site_config:
+                client_config[ClientRegMsgKey.SITE_CONFIG] = projected_site_config
+
         build_ctx = {
             "client_name": self.cmd_vars.get("uid", ""),
             "site_org": self.cmd_vars.get("org", ""),
             "server_config": self.config_data.get("servers", []),
-            "client_config": self.config_data["client"],
+            "client_config": client_config,
             "secure_train": secure_train,
             "server_host": self.cmd_vars.get("host", None),
             "overseer_agent": self.overseer_agent,

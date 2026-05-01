@@ -21,9 +21,11 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.dict_utils import augment
 from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.private.defs import ClientRegMsgKey
 from nvflare.private.fed.app.utils import create_admin_server
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorParentClientEngine
 from nvflare.private.fed.simulator.simulator_server import SimulatorServer
+from nvflare.private.fed.utils.site_config import project_site_config
 from nvflare.security.logging import secure_format_exception
 
 from .base_client_deployer import BaseClientDeployer
@@ -146,10 +148,19 @@ class SimulatorDeployer(ServerDeployer):
                 except Exception as e:
                     raise RuntimeError(f"Error processing config file {resources}: {secure_format_exception(e)}")
 
+        client_block = client_config["client"]
+        # Mirror FLClientStarterConfiger: project a site_config from merged
+        # client_config (fed_client.json + resources.json) minus local-only
+        # keys, so simulator behaves the same as POC/production.
+        if ClientRegMsgKey.SITE_CONFIG not in client_block:
+            projected = project_site_config(client_config)
+            if projected:
+                client_block[ClientRegMsgKey.SITE_CONFIG] = projected
+
         build_ctx = {
             "client_name": client_name,
             "server_config": client_config.get("servers", []),
-            "client_config": client_config["client"],
+            "client_config": client_block,
             "server_host": None,
             "secure_train": False,
             "enable_byoc": True,

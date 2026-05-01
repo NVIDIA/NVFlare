@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import threading
 import time
@@ -58,6 +59,7 @@ from nvflare.private.defs import (
     CellChannel,
     CellChannelTopic,
     CellMessageHeaderKeys,
+    ClientRegMsgKey,
     ClientRegSession,
     ClientType,
     InternalFLContextKey,
@@ -643,6 +645,38 @@ class FederatedServer(BaseServer):
             self.logger.debug(f"challenge ok: {reply=}")
             return make_cellnet_reply(rc=F3ReturnCode.OK, body=reply)
 
+    # Cap on serialized site_config so a misbehaving client cannot push large blobs
+    # into Client objects and downstream job metadata.
+    _SITE_CONFIG_MAX_SERIALIZED_BYTES = 64 * 1024
+
+    def _get_validated_site_config(self, shareable: Shareable, client_name: str):
+        site_config = shareable.get(ClientRegMsgKey.SITE_CONFIG)
+        if site_config is None:
+            return None
+
+        if not isinstance(site_config, dict):
+            self.logger.warning(
+                f"dropping site config from client {client_name}: "
+                f"expected dict but got {type(site_config).__name__}"
+            )
+            return None
+
+        try:
+            serialized_size = len(json.dumps(site_config))
+        except (TypeError, ValueError) as e:
+            self.logger.warning(f"dropping site config from client {client_name}: not JSON-serializable ({e})")
+            return None
+
+        if serialized_size > self._SITE_CONFIG_MAX_SERIALIZED_BYTES:
+            self.logger.warning(
+                f"dropping site config from client {client_name}: "
+                f"serialized size {serialized_size} exceeds limit "
+                f"{self._SITE_CONFIG_MAX_SERIALIZED_BYTES}"
+            )
+            return None
+
+        return site_config
+
     def register_client(self, request: Message) -> Message:
         """Register a new client.
         Each client must be registered before being able to run jobs.
@@ -676,6 +710,12 @@ class FederatedServer(BaseServer):
                 if client_type:
                     fl_ctx.set_prop(key=FLContextKey.CLIENT_TYPE, value=client_type, private=False, sticky=False)
 
+                client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+                site_config = self._get_validated_site_config(data, client_name)
+                if site_config is not None and client_type != ClientType.REGULAR:
+                    self.logger.warning(f"dropping site config from non-regular client {client_name}: {client_type}")
+                    site_config = None
+
                 self.engine.fire_event(EventType.CLIENT_REGISTER_RECEIVED, fl_ctx=fl_ctx)
 
                 exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
@@ -684,9 +724,17 @@ class FederatedServer(BaseServer):
                         if isinstance(exception, NotAuthenticated):
                             raise exception
 
+                if site_config is not None:
+                    fl_ctx.set_prop(key=FLContextKey.CLIENT_SITE_CONFIG, value=site_config, private=True, sticky=False)
+
                 client = self.client_manager.authenticate(request, fl_ctx)
                 if client and client.token:
-                    client_type = request.get_header(CellMessageHeaderKeys.CLIENT_TYPE)
+                    accepted_site_config = client.get_site_config()
+                    if accepted_site_config:
+                        self.logger.info(
+                            f"client {client.name} registered with site_config keys: "
+                            f"{sorted(accepted_site_config.keys())}"
+                        )
                     if client_type == ClientType.REGULAR:
                         self.tokens[client.token] = self.task_meta_info(client.name)
                         if self.admin_server:
