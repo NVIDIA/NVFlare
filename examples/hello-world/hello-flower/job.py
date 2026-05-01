@@ -26,14 +26,26 @@ def main():
     parser.add_argument("--export_job", action="store_true")
     parser.add_argument("--export_dir", type=str, default="jobs")
     parser.add_argument("--workdir", type=str, default="/tmp/nvflare/hello-flower")
+    parser.add_argument("--learning_rate", type=float)
+    parser.add_argument("--momentum", type=float)
     args = parser.parse_args()
 
     num_of_clients = 2
+
+    # You can pass hyperparameters to Flower through run_config to override the
+    # default values in pyproject.toml. This will be appended to the `flwr run`
+    # command via `--run-config`.
+    run_config = {}
+    if args.learning_rate is not None:
+        run_config["learning-rate"] = args.learning_rate
+    if args.momentum is not None:
+        run_config["momentum"] = args.momentum
 
     recipe = FlowerRecipe(
         name=args.job_name,
         flower_content=args.content_dir,
         min_clients=num_of_clients,
+        run_config=run_config if run_config else None,
     )
 
     if args.stream_metrics:

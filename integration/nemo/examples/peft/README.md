@@ -7,7 +7,7 @@ a downstream task, such as financial sentiment predictions.
 With one line configuration change, you can try different PEFT techniques such as [p-tuning](https://arxiv.org/abs/2103.10385), [adapters](https://proceedings.mlr.press/v97/houlsby19a.html), or [LoRA](https://arxiv.org/abs/2106.09685), which add a small number of trainable parameters to the LLM
 that condition the model to produce the desired output for the downstream task.
 
-For more details, see the [PEFT script](https://github.com/NVIDIA/NeMo/blob/v1.22.0/examples/nlp/language_modeling/tuning/megatron_gpt_peft_tuning.py) in NeMo, which we adapt using NVFlare's Lightning client API to run in a federated scenario.
+For more details, see the [PEFT script](https://github.com/NVIDIA/NeMo/blob/v1.22.0/examples/nlp/language_modeling/tuning/megatron_gpt_peft_tuning.py) in NeMo, which we adapt using NVFlare's Lightning Client API to run in a federated scenario.
 
 ## Dependencies
 The example was tested with the [NeMo 23.10 container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo).
@@ -16,7 +16,7 @@ In the following, we assume this example folder of the container is mounted to `
 > Note in the following, mount both the [current directory](./) and the [job_templates](../../../../job_templates) 
 > directory to locations inside the docker container. Please make sure you have cloned the full NVFlare repo. 
 
-Start the docker container from **this directory** using
+Start the Docker container from **this directory** using
 ```
 # cd NVFlare/integration/nemo/examples/peft
 DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.10"

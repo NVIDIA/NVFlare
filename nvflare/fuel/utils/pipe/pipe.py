@@ -21,6 +21,8 @@ from nvflare.fuel.utils.attributes_exportable import AttributesExportable, Expor
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.validation_utils import check_str
 
+HEARTBEAT_SEND_TIMEOUT = 600.0
+
 
 class Topic(object):
 
@@ -174,6 +176,20 @@ class Pipe(AttributesExportable, ABC):
     @abstractmethod
     def can_resend(self) -> bool:
         """Whether the pipe is able to resend a message."""
+        pass
+
+    def release_send_cache(self, msg: Message):
+        """Release any per-message state cached by send().
+
+        Called by PipeHandler after the retry loop exits (success, max retries,
+        or stop) to allow pipe implementations to free resources that were
+        attached to the message during send().  The default is a no-op; pipes
+        that cache state (e.g. CellPipe caches the serialized CellMessage) must
+        override this method.
+
+        Args:
+            msg: the message that was being sent.
+        """
         pass
 
     def get_last_peer_active_time(self):

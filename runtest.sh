@@ -27,11 +27,25 @@ if [[ "${target}" == -* ]] ;then
 fi
 
 function install_deps {
+    local extras
     if [[ $(uname) == "Darwin" ]]; then
-      python3 -m pip install -e .[dev_mac]
+      extras=".[dev_mac]"
     else
-      python3 -m pip install -e .[dev]
-    fi;
+      extras=".[dev]"
+    fi
+
+    if command -v uv >/dev/null 2>&1; then
+      echo "Installing dependencies with uv..."
+      if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+        uv pip install -e "${extras}"
+      else
+        uv pip install --system -e "${extras}"
+      fi
+    else
+      echo "Installing dependencies with pip..."
+      python3 -m pip install -e "${extras}"
+    fi
+
     echo "dependencies installed"
 }
 
@@ -40,7 +54,7 @@ function clean {
     python3 -m coverage erase
 
     echo "uninstalling nvflare development files..."
-    python3 setup.py develop --user --uninstall
+    python3 -m pip uninstall -y nvflare 2>/dev/null || true
 
     echo "removing temporary files in ${WORK_DIR}"
 
@@ -65,13 +79,17 @@ function print_error_msg() {
 
 function print_style_fail_msg() {
     echo "${red}Check failed!${noColor}"
-    echo "Please run auto style fixes: ${green}./runtests.sh -f {noColor}"
+    echo "Please run auto style fixes: ${green}./runtest.sh -f${noColor}"
 }
 function report_status() {
-    status="$1"
-    if [ "${status}" -ne 0 ]
-    then
-        print_style_fail_msg
+    local status="$1"
+    local fail_msg="${2:-}"
+    if [ "${status}" -ne 0 ]; then
+        if [[ -n "$fail_msg" ]]; then
+            echo "${red}${fail_msg}${noColor}"
+        else
+            print_style_fail_msg
+        fi
         exit "${status}"
     else
         echo "${green}passed!${noColor}"
@@ -175,17 +193,84 @@ function fix_style_import() {
     isort_fix "$@"
 }
 
+function get_current_kernel() {
+    # Prefer a stable kernelspec name if it exists.
+    if command -v jupyter >/dev/null 2>&1; then
+        if jupyter kernelspec list 2>/dev/null | awk '{print $1}' | grep -qx "python3"; then
+            echo "python3"
+            return
+        fi
+    fi
+
+    # Otherwise, don't guess. Let nbmake use the notebook's kernelspec metadata.
+    echo ""
+}
+
+function validate_kernel() {
+    local kernel_name="$1"
+    if ! command -v jupyter >/dev/null 2>&1; then
+        echo "${red}Error: jupyter not found. Install with: pip install jupyter${noColor}"
+        return 1
+    fi
+    if ! jupyter kernelspec list 2>/dev/null | awk '{print $1}' | grep -qx "$kernel_name"; then
+        echo "${red}Error: kernel '$kernel_name' not found${noColor}"
+        echo "Available kernels:"
+        jupyter kernelspec list 2>/dev/null | tail -n +2
+        return 1
+    fi
+    return 0
+}
+
+function notebook_test() {
+    echo "${separator}${blue}notebook-test${noColor}"
+
+    # Auto-detect kernel at runtime if not specified (allows jupyter to be installed after script load)
+    local kernel
+    if [[ -n "$nb_kernel" ]]; then
+        kernel="$nb_kernel"
+        if ! validate_kernel "$kernel"; then
+            exit 1
+        fi
+        echo "Using kernel: $kernel"
+    else
+        kernel="$(get_current_kernel)"
+        if [[ -n "$kernel" ]]; then
+            echo "Using kernel: $kernel"
+        else
+            echo "No kernel specified, using notebook's default kernel"
+        fi
+    fi
+
+    echo "Timeout: ${nb_timeout}s, Clean mode: ${nb_clean}"
+
+    # Build and print the exact command for debugging
+    local cmd
+    cmd=(python3 -m pytest --nbmake --nbmake-timeout="$nb_timeout" --nbmake-clean="$nb_clean")
+    if [[ -n "$kernel" ]]; then
+        cmd+=("--kernel=$kernel")
+    fi
+    cmd+=("$@")
+    if [[ "$verbose_flag" == "true" ]]; then
+        cmd+=(-v)
+    fi
+
+    echo "Executing: ${cmd[*]}"
+    "${cmd[@]}"
+    report_status "$?" "Notebook test failed! Check the output above for details."
+}
+
 ################################################################################
 export PYTHONPATH=${WORK_DIR}:${PYTHONPATH} && echo "PYTHONPATH is ${PYTHONPATH}"
 
 function help() {
     echo "Add description of the script functions here."
     echo
-    echo "Syntax: runtests.sh  [-h|--help]
+    echo "Syntax: runtest.sh  [-h|--help]
                                [-l|--check-license]
                                [-s|--check-format]
                                [-f|--fix-format]
                                [-u|--unit-tests]
+                               [-n|--notebook]
                                [-r|--test-report]
                                [-c|--coverage]
                                <target> "
@@ -198,19 +283,38 @@ function help() {
     echo "    -s | --check-format           : check code styles, formatting, typing, import"
     echo "    -f | --fix-format             : auto fix style formats, import"
     echo "    -u | --unit-tests             : unit tests"
+    echo "    -n | --notebook               : notebook tests using nbmake"
     echo "    -r | --test-report            : used with -u command, turn on unit test report flag. It has no effect without -u "
     echo "    -p | --dependencies           : only install dependencies"
     echo "    -c | --coverage               : used with -u command, turn on coverage flag,  It has no effect without -u "
+    echo "         --numprocesses=<N|auto>  : number of parallel pytest workers (default: 8)"
+    echo "    -v | --verbose                : verbose output (adds -v to pytest)"
     echo "    -d | --dry-run                : set dry run flag, print out command"
-    echo "         --clean                  : clean py and other artifacts generated, clean flag to allow re-install dependencies"
+    echo "         --clean                  : clean py and other artifacts generated"
 #   echo "    -i | --integration-tests      : integration tests"
+    echo ""
+    echo "Notebook test options (used with -n):"
+    echo "         --timeout=SECONDS        : timeout per notebook (default: 1200)"
+    echo "         --kernel=NAME            : Jupyter kernel name (must be valid, see: jupyter kernelspec list)"
+    echo "         --nb-clean=MODE          : clean outputs: always, on-success, never (default: on-success)"
+    echo ""
+    echo "Examples:"
+    echo "    ./runtest.sh -n                                              # test default (flare_simulator.ipynb)"
+    echo "    ./runtest.sh -n -v examples/tutorials/flare_api.ipynb        # test single notebook with verbose"
+    echo "    ./runtest.sh -n --timeout=1800 --kernel=python3 examples/tutorials/"
     exit 1
 }
 
 coverage_report=false
 unit_test_report=false
 dry_run_flag=false
+pytest_numprocesses=8
+verbose_flag=false
 
+# notebook test defaults
+nb_timeout=1200
+nb_clean="on-success"
+nb_kernel=""  # Auto-detected at runtime if not specified via --kernel=
 
 # parse arguments
 cmd=""
@@ -230,16 +334,10 @@ do
 
         -s |--check-format) # check format and styles
             cmd="check_style_type_import"
-            if [[ -z $target ]]; then
-                target="${DIR_TO_CHECK[@]}"
-            fi
         ;;
 
         -f |--fix-format)
             cmd="fix_style_import"
-            if [[ -z $target ]]; then
-                target="${DIR_TO_CHECK[@]}"
-            fi
         ;;
         -c|--coverage)
             coverage_report=true
@@ -247,7 +345,7 @@ do
 
         -p|--dependencies)
             dependencies=true
-	    cmd=" "
+            cmd=" "
         ;;
 
         -r|--test-report)
@@ -256,20 +354,33 @@ do
         ;;
 
         -u |--unit*)
-            cmd_prefix="python3 -m pytest --numprocesses=8 -v "
+            cmd="unit_tests"
+        ;;
 
-            echo "coverage_report=" ${coverage_report}
-            if [ "${coverage_report}" == true ]; then
-                cmd_prefix="${cmd_prefix} --cov=${target} --cov-report html:cov_html --cov-report xml:cov.xml"
-            fi
-
-            if [ "${unit_test_report}" == true ]; then
-                cmd_prefix="${cmd_prefix} --junitxml=unit_test.xml "
-            fi
-            cmd="$cmd_prefix"
-
+        -n|--notebook)
+            cmd="notebook_test"
             if [[ -z $target ]]; then
-                target="tests/unit_test"
+                target="examples/tutorials/flare_simulator.ipynb"
+            fi
+        ;;
+
+        --timeout=*)
+            nb_timeout="${key#*=}"
+            if ! [[ "$nb_timeout" =~ ^[1-9][0-9]*$ ]]; then
+                echo "${red}Error: --timeout must be a positive integer (seconds), got: '$nb_timeout'${noColor}"
+                exit 1
+            fi
+        ;;
+
+        --kernel=*)
+            nb_kernel="${key#*=}"
+        ;;
+
+        --nb-clean=*)
+            nb_clean="${key#*=}"
+            if ! [[ "$nb_clean" =~ ^(always|on-success|never)$ ]]; then
+                echo "${red}Error: --nb-clean must be one of: always, on-success, never. Got: '$nb_clean'${noColor}"
+                exit 1
             fi
         ;;
 
@@ -281,6 +392,14 @@ do
             dry_run_flag=true
         ;;
 
+        --numprocesses=*)
+            pytest_numprocesses="${key#*=}"
+        ;;
+
+        -v|--verbose)
+            verbose_flag=true
+        ;;
+
         -*)
             help
         ;;
@@ -289,18 +408,41 @@ do
     shift
 done
 
-if [[ -z $cmd ]]; then
+if [[ -z "${cmd}" ]]; then
     cmd="check_license;
         check_style_type_import "${DIR_TO_CHECK[@]}";
         fix_style_import "${DIR_TO_CHECK[@]}";
-        python3 -m pytest --numprocesses=8 -v --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml --dist loadgroup tests/unit_test;
+        python3 -m pytest --numprocesses=${pytest_numprocesses} -v --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml --dist loadgroup tests/unit_test;
         "
+elif [[ "${cmd}" == "unit_tests" ]]; then
+    if [[ -z $target ]]; then
+        target="tests/unit_test"
+    fi
+
+    cmd="python3 -m pytest --numprocesses=${pytest_numprocesses} -v "
+
+    if [ "${coverage_report}" == true ]; then
+        cmd="${cmd} --cov=${target} --cov-report html:cov_html --cov-report xml:cov.xml"
+    fi
+
+    if [ "${unit_test_report}" == true ]; then
+        cmd="${cmd} --junitxml=unit_test.xml "
+    fi
+
+    cmd="${cmd} ${target}"
 else
-    cmd="$cmd $target"
+    if [[ "${cmd}" == "check_style_type_import" || "${cmd}" == "fix_style_import" ]]; then
+        if [[ -z $target ]]; then
+            target="${DIR_TO_CHECK[@]}"
+        fi
+    fi
+
+    if [[ "${cmd}" != " " && -n "$target" ]]; then
+        cmd="$cmd $target"
+    fi
 fi
 
 echo "running command: "
-echo "        install_deps;"
 echo "        $cmd"
 echo "                 "
 if [[ $dry_run_flag = "true" ]]; then

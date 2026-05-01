@@ -16,6 +16,7 @@ import os
 import signal
 from unittest import mock
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobReturnCode
@@ -170,3 +171,20 @@ def test_process_handle_terminate_uses_process_group(monkeypatch):
 
     assert recorded["pgid"] == 4322
     assert recorded["sig"] == signal.SIGKILL
+
+
+def test_process_launcher_handle_event_always_adds_launcher(monkeypatch):
+    launcher = DummyLauncher()
+    fl_ctx = FLContext()
+    recorded = {}
+
+    def fake_add_launcher(selected_launcher, ctx):
+        recorded["launcher"] = selected_launcher
+        recorded["ctx"] = ctx
+
+    monkeypatch.setattr("nvflare.app_common.job_launcher.process_launcher.add_launcher", fake_add_launcher)
+
+    launcher.handle_event(EventType.BEFORE_JOB_LAUNCH, fl_ctx)
+
+    assert recorded["launcher"] is launcher
+    assert recorded["ctx"] is fl_ctx

@@ -1,0 +1,38 @@
+api_version: 3
+name: nvflare_multicloud
+description: NVFlare multicloud end-to-end test project
+
+participants:
+  - name: gcp-server
+    type: server
+    org: nvidia
+    default_host: __SERVER_IP__
+    fed_learn_port: 8002
+    admin_port: 8003
+  - name: gcp-client-1
+    type: client
+    org: nvidia
+  - name: aws-client-2
+    type: client
+    org: nvidia
+  - name: admin@nvidia.com
+    type: admin
+    org: nvidia
+    role: project_admin
+
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+    args:
+      template_file:
+        - master_template.yml
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      config_folder: config
+      scheme: tcp
+  - path: nvflare.lighter.impl.helm_chart.HelmChartBuilder
+    args:
+      docker_image: __DOCKER_IMAGE__
+      parent_port: 8102
+      workspace_pvc: nvflws
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder

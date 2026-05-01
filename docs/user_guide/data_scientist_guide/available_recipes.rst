@@ -24,14 +24,29 @@ Most training recipes accept the following model-related parameters:
 
     .. note::
        Class instances are converted to configuration files before job submission. For large models,
-       use dict config to avoid unnecessary instantiation overhead.
+       use dict config to avoid unnecessary instantiation overhead. For TensorFlow/Keras, class instances
+       should be user-defined subclassed models (for example, ``tf.keras.Model`` or ``tf.keras.Sequential`` subclasses).
 
 ``initial_ckpt``
     Absolute path to a pre-trained checkpoint file. The file may not exist locally but must exist
     on the server when the model is loaded during job execution.
 
     * PyTorch: Requires ``model`` for architecture (checkpoint has weights only)
-    * TensorFlow/Keras: Can use ``initial_ckpt`` alone (Keras saves full model)
+    * TensorFlow/Keras: Can use ``initial_ckpt`` alone (Keras saves full model). If ``model`` is provided, use a
+      subclassed Keras class instance or dict config.
+
+``enable_tensor_disk_offload`` (PyTorch FedAvg recipes)
+    Controls where streamed PyTorch tensors are materialized during server-side aggregation.
+
+    * ``False`` (default): materialize in memory
+    * ``True``: materialize to temporary safetensors files and consume through lazy refs to reduce peak memory
+
+    .. warning::
+
+       Temporary files use the server process temp directory (``TMPDIR`` / OS default such as ``/tmp``).
+       The server IT setup must point this to a writable, disk-backed mount. In containers or Kubernetes,
+       ``/tmp`` may be RAM-backed, which prevents memory offload benefits. See
+       :ref:`Starting Federated Learning Servers <starting_fl_servers>`.
 
 See :ref:`job_recipe` for detailed explanations of these options.
 
@@ -141,7 +156,7 @@ FedAvg with secure aggregation using homomorphic encryption.
 .. code-block:: python
 
     from nvflare.app_opt.pt.recipes import FedAvgRecipeWithHE
-    from nvflare.recipe import SimEnv
+    from nvflare.recipe import ProdEnv
 
     recipe = FedAvgRecipeWithHE(
         name="fedavg-he",
@@ -150,12 +165,19 @@ FedAvg with secure aggregation using homomorphic encryption.
         model=MyModel(),
         train_script="client.py",
     )
-    env = SimEnv(num_clients=2)
+    env = ProdEnv(
+        startup_kit_location="/path/to/startup_kit/admin@nvidia.com",
+        username="admin@nvidia.com",
+    )
     run = recipe.execute(env)
+
+.. note::
+   ``FedAvgRecipeWithHE`` requires provisioned startup kits with homomorphic encryption context files.
+   Use ``ProdEnv`` or ``PocEnv`` with HE provisioning; ``SimEnv`` is not supported.
 
 **Examples:**
 
-- `examples/advanced/kaplan-meier-he <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/kaplan-meier-he>`_
+- `examples/advanced/cifar10/pt/cifar10-real-world#secure-aggregation-using-homomorphic-encryption <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/pt/cifar10-real-world#42-secure-aggregation-using-homomorphic-encryption>`_
 
 
 FedProx
@@ -562,6 +584,39 @@ Compute federated statistics across distributed data.
 - `examples/advanced/federated-statistics/df_stats <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/federated-statistics/df_stats>`_
 - `examples/advanced/federated-statistics/image_stats <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/federated-statistics/image_stats>`_
 
+Kaplan-Meier Survival Analysis
+------------------------------
+
+Federated Kaplan-Meier survival analysis with optional homomorphic encryption over binned event histograms.
+The ``KMRecipe`` is defined in the Kaplan-Meier example's ``job.py`` rather than exported as a package-level
+recipe.
+
+Run the snippet from the Kaplan-Meier example directory so ``from job import KMRecipe`` resolves correctly:
+
+.. code-block:: bash
+
+    cd examples/advanced/kaplan-meier-he
+
+.. code-block:: python
+
+    from job import KMRecipe
+    from nvflare.recipe import SimEnv
+
+    # KMRecipe is defined in examples/advanced/kaplan-meier-he/job.py
+    recipe = KMRecipe(
+        num_clients=5,
+        encryption=True,
+        data_root="/tmp/nvflare/dataset/km_data",
+        he_context_path_client="/tmp/nvflare/he_context/he_context_client.txt",
+        he_context_path_server="/tmp/nvflare/he_context/he_context_server.txt",
+    )
+    env = SimEnv(num_clients=5)
+    run = recipe.execute(env)
+
+**Examples:**
+
+- `examples/advanced/kaplan-meier-he <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/kaplan-meier-he>`_
+
 
 Federated Evaluation
 ====================
@@ -670,7 +725,8 @@ Run Flower-based federated learning jobs.
     recipe = FlowerRecipe(
         name="flower-job",
         min_clients=2,
-        flower_app="path/to/flower/app",
+        flower_content="path/to/flower/app",
+        run_config={"num-server-rounds": 5}, # Optional: used to override default values in pyproject.toml
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
@@ -687,22 +743,30 @@ Decentralized federated learning without a central server.
 
 .. code-block:: python
 
-    from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+    from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
     from nvflare.recipe import SimEnv
 
-    recipe = SimpleSwarmLearningRecipe(
+    recipe = SwarmLearningRecipe(
         name="swarm",
         model=MyModel(),
+        min_clients=3,
         num_rounds=5,
         train_script="client.py",
         initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
+        round_timeout=3600,  # P2P model-transfer ACK budget (seconds); increase for large models
     )
     env = SimEnv(num_clients=3)
     run = recipe.execute(env)
 
 .. note::
-   ``SimpleSwarmLearningRecipe`` is also available from the original location for backward compatibility:
-   ``from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe``
+   For large models (>2 GB), tune the following parameters:
+
+   - ``round_timeout`` (default 3600 s): P2P model-transfer ACK budget between peers.
+     Increase for 7B+ models where P2P tensor streaming can take several minutes.
+   - ``pipe_type`` (default ``"cell_pipe"``): set to ``"file_pipe"`` when cell networking
+     is unavailable or for third-party subprocess integrations.
+   - ``submit_result_timeout`` and ``tensor_min_download_timeout``: set via
+     ``recipe.add_client_config({...})`` — see :ref:`timeout_troubleshooting`.
 
 
 Edge Recipes
@@ -762,6 +826,8 @@ Add cross-site evaluation to any training recipe.
     from nvflare.recipe.utils import add_cross_site_evaluation
 
     add_cross_site_evaluation(recipe)
+    # or limit evaluation to selected clients
+    add_cross_site_evaluation(recipe, participating_clients=["site-1", "site-3"])
 
 
 Execution Environments
@@ -804,4 +870,3 @@ Deploy to production NVFlare infrastructure.
 
     env = ProdEnv(startup_kit_location="/path/to/startup_kit")
     run = recipe.execute(env)
-

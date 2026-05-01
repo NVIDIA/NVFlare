@@ -365,7 +365,7 @@ class ClientRunner(TBI):
 
             try:
                 reply = executor.execute(task.name, task.data, fl_ctx, abort_signal)
-            finally:
+            except BaseException:
                 if abort_signal.triggered:
                     return self._reply_and_audit(
                         reply=make_reply(ReturnCode.TASK_ABORTED),
@@ -373,6 +373,15 @@ class ClientRunner(TBI):
                         fl_ctx=fl_ctx,
                         msg=f"submit result: {ReturnCode.TASK_ABORTED}",
                     )
+                raise
+
+            if abort_signal.triggered:
+                return self._reply_and_audit(
+                    reply=make_reply(ReturnCode.TASK_ABORTED),
+                    ref=server_audit_event_id,
+                    fl_ctx=fl_ctx,
+                    msg=f"submit result: {ReturnCode.TASK_ABORTED}",
+                )
 
             if not isinstance(reply, Shareable):
                 self.log_error(

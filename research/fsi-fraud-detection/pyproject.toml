@@ -1,0 +1,44 @@
+[project]
+name = "fsi-examples"
+version = "0.1.0"
+description = "Synthetic payments data generation library for federated learning experiments"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    { name = "Sarthak Tickoo (JPMorgan Chase)" },
+    { name = "Holger Roth (NVIDIA)" },
+]
+dependencies = [
+    "captum>=0.8.0",
+    "currencyconverter>=0.18.15",
+    "faker>=40.8.0",
+    "fastdigest==0.4.0",
+    "filelock>=3.25.2",
+    "ipywidgets>=8.1.8",
+    "jupyterlab>=4.5.6",
+    "matplotlib>=3.10.8",
+    "mlflow>=3.10.1",
+    "numpy>=1.26.4",
+    "nvflare>=2.7.2",
+    "opacus>=1.5.4",
+    "pandas>=2.3.3",
+    "pyyaml>=6.0.3",
+    "safetensors>=0.7.0",
+    "scikit-learn>=1.8.0",
+    "seaborn>=0.13.2",
+    "tensorboard>=2.20.0",
+    "torch>=2.10.0",
+    "torchvision>=0.25.0",
+]
+
+# purely for development and testing purposes, not required for end-users
+[tool.setuptools.packages.find]
+include = ["data_generation*"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "pytest>=9.0.3",
+    "ruff>=0.15.6",
+    "types-pyyaml>=6.0.12.20250915",
+]

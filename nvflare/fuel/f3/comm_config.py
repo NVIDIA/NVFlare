@@ -39,6 +39,12 @@ class VarName:
     STREAMING_ACK_INTERVAL = "streaming_ack_interval"
     STREAMING_MAX_OUT_SEQ_CHUNKS = "streaming_max_out_seq_chunks"
     STREAMING_READ_TIMEOUT = "streaming_read_timeout"
+    STREAMING_SEND_TIMEOUT = "streaming_send_timeout"
+    STREAMING_ACK_PROGRESS_TIMEOUT = "streaming_ack_progress_timeout"
+    STREAMING_ACK_PROGRESS_CHECK_INTERVAL = "streaming_ack_progress_check_interval"
+    SFM_SEND_STALL_TIMEOUT = "sfm_send_stall_timeout"
+    SFM_CLOSE_STALLED_CONNECTION = "sfm_close_stalled_connection"
+    SFM_SEND_STALL_CONSECUTIVE_CHECKS = "sfm_send_stall_consecutive_checks"
 
 
 class CommConfigurator:
@@ -113,6 +119,24 @@ class CommConfigurator:
 
     def get_streaming_read_timeout(self, default):
         return ConfigService.get_int_var(VarName.STREAMING_READ_TIMEOUT, self.config, default)
+
+    def get_streaming_send_timeout(self, default):
+        return ConfigService.get_float_var(VarName.STREAMING_SEND_TIMEOUT, self.config, default=default)
+
+    def get_streaming_ack_progress_timeout(self, default):
+        return ConfigService.get_float_var(VarName.STREAMING_ACK_PROGRESS_TIMEOUT, self.config, default=default)
+
+    def get_streaming_ack_progress_check_interval(self, default):
+        return ConfigService.get_float_var(VarName.STREAMING_ACK_PROGRESS_CHECK_INTERVAL, self.config, default=default)
+
+    def get_sfm_send_stall_timeout(self, default):
+        return ConfigService.get_float_var(VarName.SFM_SEND_STALL_TIMEOUT, self.config, default=default)
+
+    def get_sfm_close_stalled_connection(self, default=False):
+        return ConfigService.get_bool_var(VarName.SFM_CLOSE_STALLED_CONNECTION, self.config, default=default)
+
+    def get_sfm_send_stall_consecutive_checks(self, default=3):
+        return ConfigService.get_int_var(VarName.SFM_SEND_STALL_CONSECUTIVE_CHECKS, self.config, default=default)
 
     def get_int_var(self, name: str, default=None):
         return ConfigService.get_int_var(name, self.config, default=default)

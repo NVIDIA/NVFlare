@@ -4,495 +4,354 @@
 Proof Of Concept (POC) Command
 *****************************************
 
+The ``nvflare poc`` command manages a local proof-of-concept deployment on a
+single machine. Separate processes represent the server, clients, and admin
+startup kits, which makes POC mode a convenient way to validate job workflows
+before a distributed deployment.
 
-The POC command allows users to try out the features of NVFlare in a proof of concept deployment on a single machine.
+***********************
+Command Usage
+***********************
 
-Different processes represent the server, clients, and the admin console, making it a useful tool in preparation for a distributed deployment.
-
-Syntax and Usage
-=================
-
-The POC command has been reorganized in version 2.4 to have the subcommands ``prepare``, ``prepare-jobs-dir``, ``start``, ``stop``, and ``clean``.
-
-.. code-block:: none
-
-  nvflare poc -h
-
-  usage: nvflare poc [-h]  {prepare,prepare-jobs-dir,start,stop,clean} ...
-
-  options:
-    -h, --help            show this help message and exit
-
-  poc:
-   {prepare,prepare-jobs-dir,start,stop,clean}
-                        poc subcommand
-    prepare             prepare poc environment by provisioning local project
-    prepare-jobs-dir    prepare jobs directory
-    start               start services in poc mode
-    stop                stop services in poc mode
-    clean               clean up poc workspace
-
-nvflare poc prepare
-~~~~~~~~~~~~~~~~~~~
-The detailed options for ``nvflare poc prepare``:
+The POC command provides the subcommands ``config``, ``prepare``,
+``add-user``, ``add-site``, ``start``, ``stop``, and ``clean``.
 
 .. code-block:: none
 
-  nvflare poc prepare -h
+   nvflare poc -h
 
-  usage: nvflare poc prepare [-h] [-n [NUMBER_OF_CLIENTS]] [-c [CLIENTS ...]] [-he] [-i [PROJECT_INPUT]] [-d [DOCKER_IMAGE]] [-debug]
+   usage: nvflare poc [-h] {config,prepare,add-user,add-site,start,stop,clean} ...
 
-  options:
-    -h, --help            show this help message and exit
-    -n [NUMBER_OF_CLIENTS], --number_of_clients [NUMBER_OF_CLIENTS]
-                          number of sites or clients, default to 2
-    -c [CLIENTS ...], --clients [CLIENTS ...]
-                          Space separated client names. If specified, number_of_clients argument will be ignored.
-    -he, --he             enable homomorphic encryption.
-    -i [PROJECT_INPUT], --project_input [PROJECT_INPUT]
-                          project.yaml file path, If specified, 'number_of_clients','clients' and 'docker' specific options will be ignored.
-    -d [DOCKER_IMAGE], --docker_image [DOCKER_IMAGE]
-                          generate docker.sh based on the docker_image, used in '--prepare' command. and generate docker.sh 'start/stop' commands will start with docker.sh
-    -debug, --debug       debug is on
+*****************
+Common Workflow
+*****************
 
-nvflare poc prepare-jobs-dir
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The detailed options for ``nvflare poc prepare-jobs-dir``:
+1. Optionally run ``nvflare poc config --pw <poc_workspace>`` to choose the
+   local workspace path.
+2. Run ``nvflare poc prepare`` to create the local workspace and startup kits.
+3. Optionally run ``nvflare poc add-user`` or ``nvflare poc add-site`` to add a
+   local participant startup kit.
+4. Run ``nvflare poc start`` to start the server and clients.
+5. Submit jobs directly with ``nvflare job submit -j <path/to/job>``.
+6. Start an admin console explicitly only when you need one.
+7. Run ``nvflare poc stop`` to stop the system.
+8. Run ``nvflare poc clean`` after the system is stopped.
 
-.. code-block:: none
+*******************
+Configure Workspace
+*******************
 
-  nvflare poc prepare-jobs-dir -h
-
-  usage: nvflare poc prepare-jobs-dir [-h] [-j [JOBS_DIR]] [-debug]
-
-  optional arguments:
-    -h, --help            show this help message and exit
-    -j [JOBS_DIR], --jobs_dir [JOBS_DIR]
-                        jobs directory
-    -debug, --debug       debug is on
-
-.. note::
-
-    The "-j" option is new in version 2.4 for linking to the job directory in the code base. Previously, you could
-    optionally define an ``NVFLARE_HOME`` environment variable to point to a local NVFlare directory to create a symbolic
-    link to point the transfer directory to the examples in the code base. For example, if the the NVFlare GitHub
-    repository is cloned under ~/projects, then you could set ``NVFLARE_HOME=~/projects/NVFlare``. If the NVFLARE_HOME
-    environment variable was not set, you could manually copy the examples to the transfer directory.
-
-    Now, the "-j" option takes precedence over the ``NVFLARE_HOME`` environment variable, but the ``NVFLARE_HOME`` environment
-    variable can still be used.
-
-
-nvflare poc start
-~~~~~~~~~~~~~~~~~
-The detailed options for ``nvflare poc start``:
+Use ``nvflare poc config`` to show or set the local POC workspace path:
 
 .. code-block:: none
 
-  nvflare poc start -h
+   nvflare poc config [-h] [-pw [POC_WORKSPACE_DIR]] [--schema]
 
-  usage: nvflare poc start [-h] [-p [SERVICE]] [-ex [EXCLUDE]] [-gpu [GPU ...]] [-debug]
+Options:
 
-  options:
-    -h, --help            show this help message and exit
-    -p [SERVICE], --service [SERVICE]
-                          participant, Default to all participants
-    -ex [EXCLUDE], --exclude [EXCLUDE]
-                          exclude service directory during 'start', default to , i.e. nothing to exclude
-    -gpu [GPU ...], --gpu [GPU ...]
-                          gpu device ids will be used as CUDA_VISIBLE_DEVICES. used for poc start command
-    -debug, --debug       debug is on
+- ``-pw, --pw, --poc_workspace_dir, --poc-workspace-dir``: POC workspace location.
+- ``--schema``: print the command schema as JSON and exit.
 
-
-nvflare poc stop
-~~~~~~~~~~~~~~~~
-The detailed options for ``nvflare poc stop``:
-
-.. code-block:: none
-
-  usage: nvflare poc stop [-h] [-p [SERVICE]] [-ex [EXCLUDE]] [-debug]
-
-  options:
-    -h, --help            show this help message and exit
-    -p [SERVICE], --service [SERVICE]
-                          participant, Default to all participants
-    -ex [EXCLUDE], --exclude [EXCLUDE]
-                          exclude service directory during 'stop', default to , i.e. nothing to exclude
-    -debug, --debug       debug is on
-
-
-nvflare poc clean
-~~~~~~~~~~~~~~~~~
-The detailed options for ``nvflare poc clean``:
-
-.. code-block:: none
-
-  usage: nvflare poc clean [-h] [-debug]
-
-  options:
-    -h, --help       show this help message and exit
-    -debug, --debug  debug is on
-
-.. _poc_workspace:
-
-Set Up POC Workspace
---------------------
-
-Running the following command will generate the POC startup startup kits in the default workspace of "/tmp/nvflare/poc":
-
-.. code-block:: none
-
-    nvflare poc prepare
-
-Starting in version 2.4, a ``config.conf`` file located at the hidden directory of ``.nvflare/config.conf`` in
-the home directory obtained from ``Path.home()`` is used to store the location of the POC workspace:
-
-.. code-block:: none
-
-    startup_kit {
-        path = /tmp/nvflare/poc/example_project/prod_00
-    }
-
-    poc_workspace {
-        path = /tmp/nvflare/poc
-    }
-
-This ``config.conf`` file will be created automatically when ``nvflare poc prepare`` is first run.
-
-Replace the Default POC Workspace
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-You can change the default POC workspace to any location. You can set the environment variable NVFLARE_POC_WORKSPACE::
-
-    NVFLARE_POC_WORKSPACE="/tmp/nvflare/poc2"
-
-In this example, the default workspace is set to the location "/tmp/nvflare/poc2".
-
-You can also create the ``config.conf`` file at ``.nvflare/config.conf`` in the home directory and set the value of poc_workspace
-before running ``nvflare poc prepare`` to set the POC workspace, but the NVFLARE_POC_WORKSPACE environment variable will take precedence if set.
-
-The following command can be used to set the POC workspace:
-
-.. code-block:: none
-
-    nvflare config -pw <poc_workspace>
-
-The startup kit directory can be set with the following command:
-
-.. code-block:: none
-
-    nvflare config -d <startup_dir>
-
-or
-
-.. code-block:: none
-
-    nvflare config --startup_kit_dir <startup_dir>
-
-Note that you will need to run ``nvflare poc prepare`` again after setting the location.
-
-Start Package(s)
-----------------
-Once the startup kits are generated with the prepare command, they are ready to be started. If you prepared the POC startup kits using default workspace,
-then you need to start with the same default workspace, otherwise, you need to specify the workspace.
-
-Start ALL Packages
-~~~~~~~~~~~~~~~~~~
-Running the following command:
-
-.. code-block:: none
-
-  nvflare poc start
-
-will start ALL clients (site-1, site-2) and server as well as FLARE Console (aka Admin Client) located in the default workspace="/tmp/nvflare/poc".
-
-.. raw:: html
-
-   <details>
-   <summary><a>Example Output</a></summary>
-
-.. code-block:: none
-
-    start_poc at /tmp/nvflare/poc, gpu_ids=[], excluded = [], services_list=[]
-    WORKSPACE set to /tmp/nvflare/poc/example_project/prod_00/site-2/startup/..
-    WORKSPACE set to /tmp/nvflare/poc/example_project/prod_00/server/startup/..
-    WORKSPACE set to /tmp/nvflare/poc/example_project/prod_00/site-1/startup/..
-    PYTHONPATH is /local/custom:
-    PYTHONPATH is /local/custom:
-    start fl because of no pid.fl
-    start fl because of no pid.fl
-    start fl because of no pid.fl
-    new pid 24462
-    new pid 24463
-    new pid 24461
-    Waiting for SP....
-    Waiting for SP....
-    2023-07-20 16:29:32,709 - Cell - INFO - server: creating listener on grpc://0:8002
-    2023-07-20 16:29:32,718 - Cell - INFO - site-1: created backbone external connector to grpc://localhost:8002
-    2023-07-20 16:29:32,718 - Cell - INFO - site-2: created backbone external connector to grpc://localhost:8002
-    2023-07-20 16:29:32,719 - ConnectorManager - INFO - 24462: Try start_listener Listener resources: {'secure': False, 'host': 'localhost'}
-    2023-07-20 16:29:32,719 - ConnectorManager - INFO - 24463: Try start_listener Listener resources: {'secure': False, 'host': 'localhost'}
-    2023-07-20 16:29:32,719 - Cell - INFO - server: created backbone external listener for grpc://0:8002
-    2023-07-20 16:29:32,719 - ConnectorManager - INFO - 24461: Try start_listener Listener resources: {'secure': False, 'host': 'localhost'}
-    2023-07-20 16:29:32,719 - nvflare.fuel.f3.sfm.conn_manager - INFO - Connector [CH00002 PASSIVE tcp://0:31953] is starting
-    2023-07-20 16:29:32,719 - nvflare.fuel.f3.sfm.conn_manager - INFO - Connector [CH00002 PASSIVE tcp://0:22614] is starting
-    2023-07-20 16:29:32,720 - nvflare.fuel.f3.sfm.conn_manager - INFO - Connector [CH00002 PASSIVE tcp://0:41710] is starting
-    Trying to obtain server address
-    Obtained server address: localhost:8003
-    Trying to login, please wait ...
-    2023-07-20 16:29:33,220 - Cell - INFO - site-1: created backbone internal listener for tcp://localhost:31953
-    2023-07-20 16:29:33,220 - nvflare.fuel.f3.sfm.conn_manager - INFO - Connector [CH00001 ACTIVE grpc://localhost:8002] is starting
-    2023-07-20 16:29:33,220 - Cell - INFO - site-2: created backbone internal listener for tcp://localhost:22614
-    2023-07-20 16:29:33,220 - Cell - INFO - server: created backbone internal listener for tcp://localhost:41710
-    2023-07-20 16:29:33,220 - nvflare.fuel.f3.sfm.conn_manager - INFO - Connector [CH00001 PASSIVE grpc://0:8002] is starting
-    2023-07-20 16:29:33,220 - nvflare.fuel.f3.sfm.conn_manager - INFO - Connector [CH00001 ACTIVE grpc://localhost:8002] is starting
-    2023-07-20 16:29:33,221 - FederatedClient - INFO - Wait for engine to be created.
-    2023-07-20 16:29:33,221 - FederatedClient - INFO - Wait for engine to be created.
-    2023-07-20 16:29:33,222 - ServerState - INFO - Got the primary sp: localhost fl_port: 8002 SSID: ebc6125d-0a56-4688-9b08-355fe9e4d61a. Turning to hot.
-    deployed FL server trainer.
-    2023-07-20 16:29:33,229 - nvflare.fuel.hci.server.hci - INFO - Starting Admin Server localhost on Port 8003
-    2023-07-20 16:29:33,229 - root - INFO - Server started
-    2023-07-20 16:29:33,710 - ClientManager - INFO - Client: New client site-2@192.168.86.53 joined. Sent token: cbb4983f-c895-4364-8508-f58cca53dc31.  Total clients: 1
-    2023-07-20 16:29:33,711 - ClientManager - INFO - Client: New client site-1@192.168.86.53 joined. Sent token: e70a1568-2025-4d47-8e64-e3d1a3667a22.  Total clients: 2
-    2023-07-20 16:29:33,711 - FederatedClient - INFO - Successfully registered client:site-2 for project example_project. Token:cbb4983f-c895-4364-8508-f58cca53dc31 SSID:ebc6125d-0a56-4688-9b08-355fe9e4d61a
-    2023-07-20 16:29:33,712 - FederatedClient - INFO - Successfully registered client:site-1 for project example_project. Token:e70a1568-2025-4d47-8e64-e3d1a3667a22 SSID:ebc6125d-0a56-4688-9b08-355fe9e4d61a
-    2023-07-20 16:29:33,712 - FederatedClient - INFO - Got engine after 0.49114251136779785 seconds
-    2023-07-20 16:29:33,713 - FederatedClient - INFO - Got the new primary SP: grpc://localhost:8002
-    2023-07-20 16:29:33,714 - FederatedClient - INFO - Got engine after 0.49308180809020996 seconds
-    2023-07-20 16:29:33,714 - FederatedClient - INFO - Got the new primary SP: grpc://localhost:8002
-    Trying to login, please wait ...
-    Logged into server at localhost:8003 with SSID: ebc6125d-0a56-4688-9b08-355fe9e4d61a
-    Type ? to list commands; type "? cmdName" to show usage of a command.
-    >
-
-.. raw:: html
-
-   </details>
-   <br />
-
-.. note::
-
-    If you run ``nvflare poc start`` before prepare, you will get the following error:
-
-        .. code-block:: none
-
-           /tmp/nvflare/poc/project.yml is missing, make sure you have first run 'nvflare poc prepare'
-
-.. note::
-
-    If you run ``nvflare poc start`` after having already started the server or any of the clients, you will get errors like:
-
-        .. code-block:: none
-
-            There seems to be one instance, pid=12458, running.
-            If you are sure it's not the case, please kill process 12458 and then remove daemon_pid.fl in /tmp/nvflare/poc/server/startup/..
-
-        .. code-block:: none
-
-            There seems to be one instance, pid=12468, running.
-            If you are sure it's not the case, please kill process 12468.
-
-.. note::
-
-    If you prefer to have the FLARE Console on a different terminal, you can start everything else with: ``nvflare poc start -ex admin@nvidia.com``.
-
-Start the server only
-~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block::
-
-    nvflare poc start -p server
-
-An example of successful output for starting a server:
-
-.. code-block:: none
-
-    WORKSPACE set to /tmp/nvflare/poc/example_project/prod_00/server/startup/..
-    start fl because of no pid.fl
-    new pid 26314
-    2023-07-20 16:35:49,591 - Cell - INFO - server: creating listener on grpc://0:8002
-    2023-07-20 16:35:49,596 - Cell - INFO - server: created backbone external listener for grpc://0:8002
-    2023-07-20 16:35:49,597 - ConnectorManager - INFO - 26314: Try start_listener Listener resources: {'secure': False, 'host': 'localhost'}
-    2023-07-20 16:35:49,597 - nvflare.fuel.f3.sfm.conn_manager - INFO - Connector [CH00002 PASSIVE tcp://0:36446] is starting
-    2023-07-20 16:35:50,098 - Cell - INFO - server: created backbone internal listener for tcp://localhost:36446
-    2023-07-20 16:35:50,098 - nvflare.fuel.f3.sfm.conn_manager - INFO - Connector [CH00001 PASSIVE grpc://0:8002] is starting
-    2023-07-20 16:35:50,100 - ServerState - INFO - Got the primary sp: localhost fl_port: 8002 SSID: ebc6125d-0a56-4688-9b08-355fe9e4d61a. Turning to hot.
-    deployed FL server trainer.
-    2023-07-20 16:35:50,107 - nvflare.fuel.hci.server.hci - INFO - Starting Admin Server localhost on Port 8003
-    2023-07-20 16:35:50,107 - root - INFO - Server started
-
-Start the FLARE Console (previously called the Admin Client)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: none
-
-    nvflare poc start -p admin@nvidia.com
-
-Start Clients with GPU Assignment
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The user can provide the GPU device IDs in a certain order, for example:
-
-.. code-block::
-
-    nvflare poc start -gpu 1 0 0 2
-
-The system will try to match the clients with the given GPU devices in order. In this example, the matches will be site-1 with GPU_id = 1,
-site-2 with GPU_id = 0, site-3 with GPU_id = 0 and site-4 with GPU_id = 2.
-
-If the GPU ID does not exist on the client machine, you will get an error like:
+Examples:
 
 .. code-block:: shell
 
-    gpu_id provided is not available in the host machine, available GPUs are [0]
+   nvflare poc config
+   nvflare poc config --pw /tmp/nvflare/poc
 
-If no GPU id is specified, the host GPU ID will be used if available.
+*******************
+Prepare Workspace
+*******************
 
-If there is no GPU, then there will be no assignments. If there are GPUs, they will be assigned to clients automatically.
-
-.. tip::
-
-    You can check the GPUs available with the following command (assuming you have NVIDIA GPUs with drivers installed):
-
-        .. code-block:: shell
-
-           nvidia-smi --list-gpus
-
-Operating the System and Submitting a Job
-------------------------------------------
-After preparing the poc workspace and starting the server, clients, and console (optional), we have several options to operate the whole system.
-
-First, link the desired job directory to the admin's transfer directory:
+Use ``nvflare poc prepare`` to provision a local project:
 
 .. code-block:: none
 
-    nvflare poc prepare-jobs-dir -j NVFlare/examples
+   nvflare poc prepare [-h] [-n [NUMBER_OF_CLIENTS]] [-c [CLIENTS ...]]
+                       [-he] [-i [PROJECT_INPUT]] [-d [DOCKER_IMAGE]]
+                       [-debug] [--force] [--schema]
 
-FLARE Console
-~~~~~~~~~~~~~~
-You can start the FLARE console with:
+Options:
 
-.. code-block:: none
+- ``-n, --number_of_clients``: number of sites or clients. Default: ``2``.
+- ``-c, --clients``: space-separated client names. If specified,
+  ``number_of_clients`` is ignored.
+- ``-he, --he``: enable homomorphic encryption in the generated local project.
+- ``-i, --project_input``: path to a ``project.yaml`` file. If specified,
+  client-count, client-name, and docker-image options are ignored.
+- ``-d, --docker_image``: generate docker-oriented startup scripts using the
+  specified image. If given without a value, the default image is used.
+- ``-debug, --debug``: debug mode.
+- ``--force``: overwrite the existing workspace without prompting.
+- ``--schema``: print command schema as JSON and exit.
 
-    nvflare poc start -p admin@nvidia.com
+Behavior notes:
 
-Submitting Jobs
-~~~~~~~~~~~~~~~~~~~~~~~
+- If the workspace already exists and stdin is non-interactive, ``--force`` is
+  required.
+- ``nvflare poc prepare`` updates ``~/.nvflare/config.conf`` with the POC
+  workspace, registers generated admin/user startup kits, and activates the
+  default Project Admin kit. Site startup kits stay in the POC workspace and are
+  not registered as CLI identities.
+- On success, the command prints a JSON result containing the workspace path and
+  discovered client list.
 
-**For Recipe API jobs** (like hello-numpy):
+Example:
 
-Recipe API jobs can be run in POC environment in two ways:
+.. code-block:: shell
 
-**Option 1: Use PocEnv directly** (recommended):
+   nvflare poc prepare -n 2
 
-Modify your ``job.py`` to use ``PocEnv`` instead of ``SimEnv``:
+***************
+Add Participant
+***************
 
-.. code-block:: python
-
-    # In your job.py:
-    from nvflare.recipe import PocEnv
-    from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
-
-    # Create your recipe
-    # Model can be class instance, array, or dict config
-    # For pre-trained weights: initial_ckpt="/server/path/to/model.npy"
-    recipe = NumpyFedAvgRecipe(
-        name="hello-numpy",
-        model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
-        min_clients=2,
-        num_rounds=3,
-        train_script="client.py",
-        # ... other config
-    )
-
-    # Execute with PocEnv (runs on POC deployment)
-    env = PocEnv(num_clients=2)
-    run = recipe.execute(env)
-
-Then run: ``python job.py``
-
-**Option 2: Export and submit via FLARE Console**:
-
-If you need to use the FLARE Console's ``submit_job`` command:
-
-.. code-block:: bash
-
-    # Export the Recipe API job to traditional format
-    cd hello-world/hello-numpy
-    python job.py --export_config
-
-    # Then submit the exported job after logging in to the FLARE console
-    submit_job /tmp/nvflare/jobs/job_config/hello-numpy
-
-**For traditional jobs** (with meta.json and app/config):
+Use ``nvflare poc add-user`` or ``nvflare poc add-site`` to extend the prepared
+local POC workspace with another user or site:
 
 .. code-block:: none
 
-    submit_job path/to/traditional/job
+   nvflare poc add-user [-h] [--org ORG] [--force] [--schema]
+                        {org_admin,lead,member} email
 
-Refer to :ref:`operating_nvflare` for more details.
+   nvflare poc add-site [-h] [--org ORG] [--force] [--schema] name
 
-FLARE API
-~~~~~~~~~
-To programmatically operate the system and submit a job, use the :ref:`flare_api`.
+Behavior notes:
 
-**For Recipe API jobs**, using ``PocEnv`` directly is recommended (see Option 1 above).
+- ``poc add-user`` and ``poc add-site`` are local POC workspace operations.
+  They use the local POC project metadata and local POC CA created by
+  ``poc prepare``; they are not gated by the currently active startup kit.
+- ``poc add-user`` adds a secondary admin participant to the persisted POC
+  ``project.yml``, dynamically provisions only that new user with the existing
+  POC CA, and registers the generated user startup kit in the shared startup
+  kit registry. It cannot add another ``project_admin``; the POC Project Admin
+  is created by ``poc prepare``.
+- ``poc add-site`` adds a client participant to the persisted POC
+  ``project.yml`` and dynamically provisions only that new site with the
+  existing POC CA. The generated site kit is placed in the current POC output
+  directory, normally ``prod_00``, and is not registered in
+  ``~/.nvflare/config.conf`` because only admin/user kits are CLI identities.
+- POC add uses the existing provision state/rootCA and does not regenerate
+  existing participant startup kits.
+- Use ``--force`` only to replace an existing participant entry in the local
+  POC project metadata.
 
-**For traditional jobs or exported Recipe jobs**, use ``submit_job()``:
+Examples:
 
-.. code-block:: python
+.. code-block:: shell
 
-    import os
-    from nvflare.fuel.flare_api.flare_api import new_secure_session
+   nvflare poc add-user lead bob@nvidia.com --org nvidia
+   nvflare config use bob@nvidia.com
 
-    poc_workspace = "/tmp/nvflare/poc"
-    poc_prepared = os.path.join(poc_workspace, "example_project/prod_00")
-    admin_dir = os.path.join(poc_prepared, "admin@nvidia.com")
-    sess = new_secure_session("admin@nvidia.com", startup_kit_location=admin_dir)
+   nvflare poc add-site site-3 --org nvidia
+   nvflare config list
+   nvflare poc start -p site-3
 
-    # For exported Recipe API job or traditional job
-    job_id = sess.submit_job("path/to/job")
+**************
+Start Services
+**************
 
-    print(f"Job is running with ID {job_id}")
-
-
-Job CLI
-~~~~~~~
-The :ref:`job_cli` also provides a convenient command to submit a job:
+Use ``nvflare poc start`` to launch services in the prepared POC workspace:
 
 .. code-block:: none
 
-    nvflare job submit -j NVFlare/examples/hello-world/hello-numpy
+   nvflare poc start [-h] [-p [SERVICE]] [-ex [EXCLUDE]] [-gpu [GPU ...]]
+                     [--study STUDY] [--no-wait] [--timeout SECONDS]
+                     [-debug] [--schema]
 
+Options:
 
-Stop Package(s)
----------------
+- ``-p, --service``: participant to start. By default, starts the server and
+  clients; admin consoles are excluded unless explicitly requested.
+- ``-ex, --exclude``: participant to exclude from startup.
+- ``-gpu, --gpu``: GPU device IDs to use as ``CUDA_VISIBLE_DEVICES``.
+- ``--study``: study for admin console launches only. Ignored for server and
+  client services.
+- ``--no-wait``: return after starting processes without waiting for the admin
+  server and selected clients to become ready.
+- ``--timeout``: seconds to wait for the admin server and selected clients to
+  become ready. Defaults to the built-in POC readiness timeout.
+- ``-debug, --debug``: debug mode.
+- ``--schema``: print command schema as JSON and exit.
 
-To stop packages, issue the command:
+Behavior changes:
 
-.. code-block::
+- Admin console participants are **not started by default**.
+- Running ``nvflare poc start`` with no explicit service starts the server and
+  clients only.
+- By default, the command waits until the admin server accepts connections and
+  selected clients are registered before returning ``status: running``.
+- Use ``--timeout`` to control this readiness wait.
+- With ``--no-wait``, the command returns immediately with ``status: starting``.
+- The command returns JSON with ``status``, ``server_url``, ``server_address``,
+  ``admin_address``, ``clients``, ``ready_timeout``, ``port_conflict``,
+  ``port_preflight``, ``warnings``, and, when readiness was checked or
+  explicitly skipped, ``ready``.
+- Use ``data.server_address`` and ``data.admin_address`` as the machine-readable
+  endpoint addresses for subsequent automation. ``data.server_url`` is kept for
+  compatibility with existing clients.
+- ``data.port_conflict`` is a best-effort pre-start warning based on local port
+  checks. When true, inspect ``data.port_preflight.conflicts`` and
+  ``data.warnings`` before submitting jobs to avoid connecting to a different
+  running POC system.
 
-    nvflare poc stop
+Examples:
 
-Similarly, you can stop a specific package, for example:
+.. code-block:: shell
 
-.. code-block::
+   nvflare poc start
+   nvflare poc start --timeout 60
+   nvflare poc start -p server
+   nvflare poc start -p admin@nvidia.com
+   nvflare poc start -p admin@nvidia.com --study cancer_research
+   nvflare poc start -ex admin@nvidia.com
 
-    nvflare poc stop -p server
+To start an admin console, specify it explicitly with ``-p``.
 
-Note that you may need to exit the FLARE Console yourself.
+Study notes:
 
-Clean Up
---------
+- Use ``--study`` only when starting an admin console.
+- Named studies require the POC workspace to be prepared from a custom
+  ``project.yml`` with ``api_version: 4`` and ``studies:``. If the workspace
+  was prepared from the default generated project, only the ``default`` study
+  is valid.
 
-There is a command to clean up the POC workspace added in version 2.2 that will delete the POC workspaces:
+*************
+Stop Services
+*************
 
-.. code-block::
+Use ``nvflare poc stop`` to stop running POC services:
 
-    nvflare poc clean
+.. code-block:: none
 
-Learn More
------------
+   nvflare poc stop [-h] [-p [SERVICE]] [-ex [EXCLUDE]] [--no-wait]
+                    [-debug] [--schema]
 
-To learn more about the different options of the POC command in more detail, see the
-:github_nvflare_link:`Setup NVFLARE in POC Mode Tutorial <examples/tutorials/setup_poc.ipynb>`.
+Options:
+
+- ``-p, --service``: participant to stop. By default, stops all running
+  services, including admin consoles.
+- ``-ex, --exclude``: participant to exclude from stop handling.
+- ``--no-wait``: return after requesting shutdown without waiting for completion.
+- ``-debug, --debug``: debug mode.
+- ``--schema``: print command schema as JSON and exit.
+
+Examples:
+
+.. code-block:: shell
+
+   nvflare poc stop
+   nvflare poc stop -p server
+   nvflare poc stop -p site-1
+   nvflare poc stop --no-wait
+
+Stopping the server path uses coordinated system shutdown logic. Stopping a
+subset of services uses the local stop script flow. By default, the server path
+waits for shutdown completion before returning ``status: stopped``. With
+``--no-wait``, it returns immediately with ``status: shutdown_initiated``.
+
+****************
+Clean Workspace
+****************
+
+Use ``nvflare poc clean`` to remove the POC workspace:
+
+.. code-block:: none
+
+   nvflare poc clean [-h] [-debug] [--force] [--schema]
+
+Options:
+
+- ``-debug, --debug``: debug mode.
+- ``--force``: stop a running local POC system before removing the workspace.
+- ``--schema``: print command schema as JSON and exit.
+
+Behavior notes:
+
+- The workspace is removed only when it is a valid POC directory.
+- If the POC system is still running, ``nvflare poc clean`` fails with a hint to
+  stop it first. Use ``nvflare poc clean --force`` to stop the local POC system
+  and then remove the workspace in one command.
+
+*********************
+Workspace Configuration
+*********************
+
+The default POC workspace is ``/tmp/nvflare/poc``.
+
+The workspace can also be controlled by:
+
+- ``NVFLARE_POC_WORKSPACE``
+- ``~/.nvflare/config.conf`` via ``nvflare poc config --pw <poc_workspace>``
+
+Use ``nvflare poc config`` to show or set the local POC workspace:
+
+.. code-block:: shell
+
+   nvflare poc config
+   nvflare poc config --pw /tmp/nvflare/poc
+
+The older root command ``nvflare config -pw <poc_workspace>`` remains accepted
+for compatibility, but it is deprecated and prints a warning that points to
+``nvflare poc config --pw``.
+
+``nvflare poc prepare`` writes the POC workspace into the local NVFlare config
+and registers generated admin/user startup kits in the shared startup kit
+registry automatically. If a generated POC identity collides with an existing
+startup-kit registration outside the POC workspace, prepare preserves the
+existing registration when its path still exists. If the existing registration
+points to a path that no longer exists, prepare treats it as stale local POC
+state and replaces it. Site startup kits remain in the POC workspace for local
+service management.
+
+The default Project Admin startup kit becomes active, so server-connected
+commands such as ``nvflare job list`` and ``nvflare system status`` work
+without extra startup-kit flags.
+
+In JSON mode, ``nvflare poc prepare`` reports the active-kit transition:
+``data.startup_kit.prior_active`` is the startup-kit ID that was active before
+prepare, ``data.startup_kit.active`` is the ID active after prepare, and
+``data.startup_kit.changed`` indicates whether prepare changed the default
+identity. Agents can use this information to restore the user's previous
+identity after the POC workflow.
+
+``nvflare poc prepare`` also reports a best-effort local server port preflight
+under ``data.port_preflight``. The command checks the generated POC server ports
+on the loopback address when the project configuration can be read and lists
+unavailable ports in ``data.port_preflight.conflicts``. These conflicts are
+warnings for the later ``nvflare poc start`` step; they do not make
+``poc prepare`` fail. Since the preflight does not bind wildcard interfaces,
+``data.port_preflight.note`` describes the check as best effort.
+
+In JSON mode, ``nvflare poc start`` reports the bound POC endpoints under
+``data.server_address`` and ``data.admin_address``. The command waits for
+readiness by default unless ``--no-wait`` is used. It also repeats a best-effort
+local server port preflight before startup and reports unavailable configured
+ports under ``data.port_preflight.conflicts`` with ``data.port_conflict`` set to
+``true``. The preflight is loopback-scoped and is intended as an early warning;
+startup can still fail if another local bind address conflicts.
+
+Use :ref:`kit_command` to inspect generated POC startup kit registrations or
+switch between POC-generated user startup kits.
+
+*********************
+JSON Output and Help
+*********************
+
+Add ``--format json`` after the subcommand for machine-readable output:
+
+.. code-block:: shell
+
+   nvflare poc prepare -n 2 --format json
+   nvflare poc start --format json
+
+Use ``--schema`` for machine-readable command discovery. ``--schema`` always
+returns JSON so ``--format json`` is not needed with it:
+
+.. code-block:: shell
+
+   nvflare poc prepare --schema
+   nvflare poc start --schema
+
+Human-readable argument errors print help first, followed by the specific
+error. JSON mode prints only the JSON error envelope.

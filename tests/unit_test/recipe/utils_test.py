@@ -18,7 +18,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nvflare.recipe.utils import prepare_initial_ckpt, validate_ckpt
+from nvflare.recipe.utils import (
+    extract_persistor_id,
+    prepare_initial_ckpt,
+    resolve_initial_ckpt,
+    setup_custom_persistor,
+    validate_ckpt,
+)
 
 
 @pytest.fixture
@@ -149,3 +155,175 @@ class TestPrepareInitialCkpt:
         assert result2 == "ckpt2.pt"
 
         assert job.add_file_to_server.call_count == 2
+
+
+class TestPersistorUtils:
+    """Tests for persistor utility helpers."""
+
+    def test_extract_persistor_id(self):
+        assert extract_persistor_id({"persistor_id": "persistor_a"}) == "persistor_a"
+        assert extract_persistor_id({"persistor_id": 123}) == ""
+        assert extract_persistor_id("persistor_b") == "persistor_b"
+        assert extract_persistor_id(None) == ""
+
+    def test_setup_custom_persistor_returns_empty_when_not_provided(self):
+        job = MagicMock()
+
+        result = setup_custom_persistor(job=job, model_persistor=None)
+
+        assert result == ""
+        job.to_server.assert_not_called()
+
+    def test_setup_custom_persistor_registers_component(self):
+        job = MagicMock()
+        custom_persistor = object()
+        job.to_server.return_value = "custom_persistor"
+
+        result = setup_custom_persistor(job=job, model_persistor=custom_persistor)
+
+        assert result == "custom_persistor"
+        job.to_server.assert_called_once_with(custom_persistor, id="persistor")
+
+    def test_setup_custom_persistor_extracts_dict_result(self):
+        job = MagicMock()
+        custom_persistor = object()
+        job.to_server.return_value = {"persistor_id": "custom_from_dict"}
+
+        result = setup_custom_persistor(job=job, model_persistor=custom_persistor)
+
+        assert result == "custom_from_dict"
+
+    def test_resolve_initial_ckpt_prefers_prepared_value(self):
+        job = MagicMock()
+
+        result = resolve_initial_ckpt(
+            initial_ckpt="relative/path/model.pt",
+            prepared_initial_ckpt="already_prepared.pt",
+            job=job,
+        )
+
+        assert result == "already_prepared.pt"
+        job.add_file_to_server.assert_not_called()
+
+    def test_resolve_initial_ckpt_uses_prepare_when_prepared_missing(self, monkeypatch):
+        calls = {}
+
+        def fake_prepare(initial_ckpt, job):
+            calls["initial_ckpt"] = initial_ckpt
+            calls["job"] = job
+            return "prepared_by_helper.pt"
+
+        monkeypatch.setattr("nvflare.recipe.utils.prepare_initial_ckpt", fake_prepare)
+        job = MagicMock()
+
+        result = resolve_initial_ckpt(
+            initial_ckpt="relative/path/model.pt",
+            prepared_initial_ckpt=None,
+            job=job,
+        )
+
+        assert result == "prepared_by_helper.pt"
+        assert calls["initial_ckpt"] == "relative/path/model.pt"
+        assert calls["job"] is job
+
+
+class TestRecipePackageExports:
+    """Tests for public API exports from nvflare.recipe."""
+
+    def test_add_cross_site_evaluation_importable_from_recipe(self):
+        """add_cross_site_evaluation must be importable from the top-level nvflare.recipe package."""
+        from nvflare.recipe import add_cross_site_evaluation
+
+        assert callable(add_cross_site_evaluation)
+
+
+class TestCrossSiteEvalIdempotency:
+    """Tests for resilient idempotency in add_cross_site_evaluation."""
+
+    def test_idempotency_survives_missing_flag(self):
+        from nvflare.fuel.utils.constants import FrameworkType
+        from nvflare.recipe import FedAvgRecipe
+        from nvflare.recipe.utils import add_cross_site_evaluation
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write("# dummy train script\n")
+            train_script = f.name
+
+        try:
+            recipe = FedAvgRecipe(
+                name="test_cse_idempotency",
+                model=[1.0, 2.0],
+                min_clients=2,
+                num_rounds=2,
+                train_script=train_script,
+                framework=FrameworkType.NUMPY,
+            )
+
+            add_cross_site_evaluation(recipe)
+            assert getattr(recipe, "_cse_added", False) is True
+
+            # Simulate transient attribute loss (e.g. serialization boundary).
+            del recipe._cse_added
+            assert not hasattr(recipe, "_cse_added")
+
+            with pytest.raises(RuntimeError, match="already been added"):
+                add_cross_site_evaluation(recipe)
+        finally:
+            os.unlink(train_script)
+
+    def test_unified_numpy_recipe_supports_cross_site_evaluation(self):
+        from nvflare.fuel.utils.constants import FrameworkType
+        from nvflare.recipe import FedAvgRecipe
+        from nvflare.recipe.utils import add_cross_site_evaluation
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write("# dummy train script\n")
+            train_script = f.name
+
+        try:
+            recipe = FedAvgRecipe(
+                name="test_unified_numpy_cse",
+                model=[1.0, 2.0],
+                min_clients=2,
+                num_rounds=2,
+                train_script=train_script,
+                framework=FrameworkType.NUMPY,
+            )
+
+            add_cross_site_evaluation(recipe)
+
+            assert getattr(recipe, "_cse_added", False) is True
+        finally:
+            os.unlink(train_script)
+
+    def test_participating_clients_passed_to_cross_site_eval_controller(self, tmp_path, monkeypatch):
+        from nvflare.app_common.workflows import cross_site_model_eval
+        from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+        from nvflare.fuel.utils.constants import FrameworkType
+        from nvflare.recipe import FedAvgRecipe
+        from nvflare.recipe.utils import add_cross_site_evaluation
+
+        train_script = tmp_path / "client.py"
+        train_script.write_text("# dummy train script\n")
+        participating_clients = ["site-1", "site-3"]
+        captured_kwargs = {}
+
+        class RecordingCrossSiteModelEval(CrossSiteModelEval):
+            def __init__(self, *args, **kwargs):
+                captured_kwargs.update(kwargs)
+                super().__init__(*args, **kwargs)
+
+        monkeypatch.setattr(cross_site_model_eval, "CrossSiteModelEval", RecordingCrossSiteModelEval)
+
+        recipe = FedAvgRecipe(
+            name="test_cse_participating_clients",
+            model=[1.0, 2.0],
+            min_clients=2,
+            num_rounds=2,
+            train_script=str(train_script),
+            framework=FrameworkType.NUMPY,
+        )
+
+        add_cross_site_evaluation(recipe, participating_clients=participating_clients)
+
+        assert captured_kwargs["participating_clients"] == participating_clients

@@ -10,7 +10,7 @@ FedOBD was accepted in [IJCAI2023](https://www.ijcai.org/proceedings/2023/0394.p
 
 ## License
 
-This project is open-sourced under the Apache v2 License.
+This project is open-sourced under the Apache-2.0 License.
 
 ## Implementation
 

@@ -45,6 +45,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
         clients = self._get_all_clients(site_list)
         self._validate_min_clients(job_name, meta, clients)
         self._validate_resource(job_name, meta)
+        self._validate_launcher_spec(job_name, meta)
         self._validate_mandatory_clients(job_name, meta, clients)
         return meta
 
@@ -104,6 +105,16 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
         site_list = []
         for deployments in deploy_map.values():
+            if isinstance(deployments, list):
+                for item in deployments:
+                    if isinstance(item, dict):
+                        known_keys = {JobConstants.SITES, "targets"}
+                        unknown_keys = set(item.keys()) - known_keys
+                        if unknown_keys:
+                            raise ValueError(
+                                f"Unknown keys {unknown_keys} in deploy_map entry for job {job_name}. "
+                                f"Valid keys are: {sorted(known_keys)}"
+                            )
             deployments = extract_participants(deployments)
             for site in deployments:
                 site_list.append(site)
@@ -214,6 +225,29 @@ class JobMetaValidator(JobMetaValidatorSpec):
             for k in resource_spec:
                 if resource_spec[k] and not isinstance(resource_spec[k], dict):
                     raise ValueError(f"value for key {k} in resource spec is expecting a dictionary")
+
+    _VALID_LAUNCHER_MODES = {"process", "docker", "k8s"}
+
+    @staticmethod
+    def _validate_launcher_spec(job_name: str, meta: dict) -> None:
+        logger.debug(f"validate launcher_spec for job {job_name}")
+
+        launcher_spec = meta.get(JobMetaKey.JOB_LAUNCHER_SPEC.value)
+        if launcher_spec is None:
+            return
+        if not isinstance(launcher_spec, dict):
+            raise ValueError(f"launcher_spec for job {job_name} must be a dict")
+        for site, site_val in launcher_spec.items():
+            if not isinstance(site_val, dict):
+                raise ValueError(f"launcher_spec['{site}'] for job {job_name} must be a dict")
+            for mode, mode_val in site_val.items():
+                if mode not in JobMetaValidator._VALID_LAUNCHER_MODES:
+                    raise ValueError(
+                        f"launcher_spec['{site}'] for job {job_name} contains unknown launcher mode '{mode}'; "
+                        f"valid modes: {sorted(JobMetaValidator._VALID_LAUNCHER_MODES)}"
+                    )
+                if not isinstance(mode_val, dict):
+                    raise ValueError(f"launcher_spec['{site}']['{mode}'] for job {job_name} must be a dict")
 
     @staticmethod
     def _get_all_clients(site_list: Optional[list]) -> Set[str]:

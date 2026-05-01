@@ -9,7 +9,7 @@ All examples in this folder are based on using [TensorFlow](https://tensorflow.o
 
 This example demonstrates TensorFlow-based federated learning algorithms on the CIFAR-10 dataset.
 This example is analogous to [the example using `Pytorch`
-backend](../../cifar10/cifar10-sim)
+backend](../../cifar10/pt/cifar10-sim/README.md)
 on the same dataset, where same experiments
 were conducted and analyzed. You should expect the same
 experimental results when comparing this example with the `Pytorch` one.
@@ -204,4 +204,3 @@ number of training steps as FedAvg/FedProx.
 ![Impact of different FL algorithms](./figs/fedavg-diff-algos-new.png)
 > [!NOTE]
 > More examples can be found at https://nvidia.github.io/NVFlare.
-

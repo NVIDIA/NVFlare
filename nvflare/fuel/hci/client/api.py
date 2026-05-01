@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import threading
 import time
 import traceback
@@ -26,6 +27,7 @@ from typing import List, Optional
 import nvflare.fuel.f3.streaming.file_downloader as downloader
 from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, ProcessType, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext, FLContextManager
+from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
@@ -101,6 +103,16 @@ class ResultKey(object):
     STATUS = ProtoKey.STATUS
     DETAILS = ProtoKey.DETAILS
     META = ProtoKey.META
+    AUTH_CODE = "auth_code"
+
+
+def _print_hci_message(msg: str):
+    try:
+        from nvflare.tool.cli_output import print_human
+
+        print_human(msg)
+    except ImportError:
+        print(msg, file=sys.stderr)
 
 
 class _ServerReplyJsonProcessor(object):
@@ -237,6 +249,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         debug: bool = False,
         auto_login_max_tries: int = 15,
         event_handlers=None,
+        study: str = DEFAULT_STUDY,
     ):
         """API to keep certs, keys and connection information and to execute admin commands through do_command.
 
@@ -291,6 +304,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.file_download_progress_timeout = admin_config.get(AdminConfigKey.FILE_DOWNLOAD_PROGRESS_TIMEOUT, 5.0)
         self.authenticate_msg_timeout = admin_config.get(AdminConfigKey.AUTHENTICATE_MSG_TIMEOUT, 5.0)
         self.user_name = user_name
+        self.study = study
         self.event_handlers = event_handlers
 
         if not self.ca_cert:
@@ -368,7 +382,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             # use value configured in admin config
             timeout = self.default_login_timeout
 
-        print("Connecting to FLARE ...")
+        self._print_hci("Connecting to FLARE ...")
         if self.cell:
             return
 
@@ -479,7 +493,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             per_request_timeout=self.file_download_progress_timeout,
         )
         if err:
-            print(f"failed to receive file {file_name}: {err}")
+            self._print_hci(f"failed to receive file {file_name}: {err}")
             return None
 
         file_stats = os.stat(file_path)
@@ -498,7 +512,10 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
     def debug(self, msg):
         if self._debug:
-            print(f"DEBUG: {msg}")
+            self._print_hci(f"DEBUG: {msg}")
+
+    def _print_hci(self, msg: str):
+        _print_hci_message(msg)
 
     def fire_event(self, event_type: str, ctx: EventContext):
         self.debug(f"firing event {event_type}")
@@ -536,7 +553,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             try:
                 self.fire_session_event(EventType.TRYING_LOGIN, "Trying to login, please wait ...")
             except Exception as ex:
-                print(f"exception handling event {EventType.TRYING_LOGIN}: {secure_format_exception(ex)}")
+                self._print_hci(f"exception handling event {EventType.TRYING_LOGIN}: {secure_format_exception(ex)}")
                 return {
                     ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
                     ResultKey.DETAILS: f"exception handling event {EventType.TRYING_LOGIN}",
@@ -662,6 +679,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             "user_name": self.user_name,
             "cert": id_asserter.cert_data,
             "signature": cn_signature,
+            "study": self.study,
         }
 
         self.login_result = None
@@ -671,11 +689,25 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
                 ResultKey.DETAILS: "Communication Error - please try later",
             }
-        elif self.login_result == "REJECT":
-            return {
+        elif self.login_result == "REJECT" or str(self.login_result).startswith("REJECT:"):
+            detail = "Incorrect user name or password"
+            auth_code = None
+            if str(self.login_result).startswith("REJECT:"):
+                reject_detail = str(self.login_result).split(":", 1)[1].strip()
+                if reject_detail:
+                    parts = reject_detail.split(":", 1)
+                    if len(parts) == 2 and parts[0].strip().startswith("AUTH_"):
+                        auth_code = parts[0].strip()
+                        detail = parts[1].strip() or detail
+                    else:
+                        detail = reject_detail or detail
+            result = {
                 ResultKey.STATUS: APIStatus.ERROR_AUTHENTICATION,
-                ResultKey.DETAILS: "Incorrect user name or password",
+                ResultKey.DETAILS: detail,
             }
+            if auth_code:
+                result[ResultKey.AUTH_CODE] = auth_code
+            return result
         return self._after_login()
 
     def _send_to_cell(self, ctx: CommandContext):
@@ -707,7 +739,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         if requester:
             try:
                 reply = requester.send_request(self, conn, ctx)
-            except:
+            except Exception:
                 traceback.print_exc()
                 process_json_func(make_error(f"{type(requester)} failed to send request to Admin Server"))
                 return
@@ -726,7 +758,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             try:
                 json_data = validate_proto(reply)
                 process_json_func(json_data)
-            except:
+            except Exception:
                 traceback.print_exc()
                 process_json_func(make_error(f"{ReplyKeyword.COMM_FAILURE} with Admin Server"))
 
@@ -827,8 +859,10 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         ctx.set_command_entry(ent)
         return ctx
 
-    def _do_client_command(self, command, args, ent: CommandEntry):
+    def _do_client_command(self, command, args, ent: CommandEntry, props=None):
         ctx = self._new_command_context(command, args, ent)
+        if props:
+            ctx.set_command_props(props)
         return_result = ent.handler(args, ctx)
         result = ctx.get_command_result()
         if return_result:
@@ -881,7 +915,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
         ent = entries[0]
         if cmd_type == _CMD_TYPE_CLIENT:
-            return self._do_client_command(command=command, args=args, ent=ent)
+            return self._do_client_command(command=command, args=args, ent=ent, props=props)
 
         # server command
         if not self.server_sess_active:

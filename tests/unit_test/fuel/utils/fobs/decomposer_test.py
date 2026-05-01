@@ -15,6 +15,8 @@
 from collections import OrderedDict
 from enum import Enum, IntEnum
 
+import pytest
+
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
 
@@ -59,14 +61,36 @@ class TestDecomposers:
         self._check_decomposer(data, False)
 
     def test_generic_str_enum_type(self):
-        # Decomposers for enum classes are auto-registered by default
+        type_name = "tests.unit_test.fuel.utils.fobs.decomposer_test.EnumClass"
         test_enum = EnumClass.A
-        self._check_decomposer(test_enum)
+        buffer = fobs.dumps(test_enum)
+        fobs.reset()
+        with pytest.raises(ValueError, match="not allowed"):
+            fobs.loads(buffer)
+
+        # Re-add to whitelist after reset so deserialization exercises the whitelist gate.
+        fobs.add_type_name_whitelist(type_name)
+        new_data = fobs.loads(buffer)
+        assert type(test_enum) == type(
+            new_data
+        ), f"Original type {type(test_enum)} doesn't match new data type {type(new_data)}"
+        assert test_enum == new_data, f"Original data {test_enum} doesn't match new data {new_data}"
 
     def test_generic_int_enum_type(self):
-        # Decomposers for enum classes are auto-registered by default
+        type_name = "tests.unit_test.fuel.utils.fobs.decomposer_test.IntEnumClass"
         test_enum = IntEnumClass.X
-        self._check_decomposer(test_enum)
+        buffer = fobs.dumps(test_enum)
+        fobs.reset()
+        with pytest.raises(ValueError, match="not allowed"):
+            fobs.loads(buffer)
+
+        # Re-add to whitelist after reset so deserialization exercises the whitelist gate.
+        fobs.add_type_name_whitelist(type_name)
+        new_data = fobs.loads(buffer)
+        assert type(test_enum) == type(
+            new_data
+        ), f"Original type {type(test_enum)} doesn't match new data type {type(new_data)}"
+        assert test_enum == new_data, f"Original data {test_enum} doesn't match new data {new_data}"
 
     def test_ordered_dict(self):
 

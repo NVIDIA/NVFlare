@@ -18,6 +18,7 @@ from nvflare.app_opt.pt.job_config.model import PTModel
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.cyclic import CyclicRecipe as BaseCyclicRecipe
+from nvflare.recipe.utils import extract_persistor_id
 
 
 class CyclicRecipe(BaseCyclicRecipe):
@@ -62,6 +63,8 @@ class CyclicRecipe(BaseCyclicRecipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         server_memory_gc_rounds: int = 1,
+        client_memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ):
         # Validate initial_ckpt early (base class won't see it since we pass None)
         from nvflare.recipe.utils import validate_ckpt
@@ -93,6 +96,8 @@ class CyclicRecipe(BaseCyclicRecipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             server_memory_gc_rounds=server_memory_gc_rounds,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            cuda_empty_cache=cuda_empty_cache,
         )
 
     def _setup_model_and_persistor(self, job) -> str:
@@ -103,11 +108,17 @@ class CyclicRecipe(BaseCyclicRecipe):
         # If model is already a PTModel wrapper (user passed PTModel directly), use as-is
         if hasattr(self.model, "add_to_fed_job"):
             result = job.to_server(self.model, id="persistor")
-            return result["persistor_id"]
+            return extract_persistor_id(result)
 
-        from nvflare.recipe.utils import prepare_initial_ckpt
+        from nvflare.recipe.utils import resolve_initial_ckpt
 
-        ckpt_path = prepare_initial_ckpt(self._pt_initial_ckpt, job)
-        pt_model = PTModel(model=self.model, initial_ckpt=ckpt_path)
+        ckpt_path = resolve_initial_ckpt(self._pt_initial_ckpt, getattr(self, "_prepared_initial_ckpt", None), job)
+        if self.model is None and ckpt_path:
+            raise ValueError("FrameworkType.PYTORCH requires 'model' when using initial_ckpt.")
+        if self.model is None:
+            return ""
+
+        allow_numpy_conversion = self.server_expected_format != ExchangeFormat.PYTORCH
+        pt_model = PTModel(model=self.model, initial_ckpt=ckpt_path, allow_numpy_conversion=allow_numpy_conversion)
         result = job.to_server(pt_model, id="persistor")
-        return result["persistor_id"]
+        return extract_persistor_id(result)

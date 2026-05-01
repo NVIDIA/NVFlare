@@ -41,10 +41,8 @@ and client and vice versa.  Filters can be applied when the data is sent or rece
 
 FLAdminAPI
 ==========
-:class:`FLAdminAPI<nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI>` is a wrapper for admin commands that can be issued
-by an admin client to the FL server. You can use a provisioned admin client's certs and keys to initialize an instance
-of FLAdminAPI to programmatically submit commands to the FL server. :ref:`flare_api` is a redesigned version of this introduced
-in version 2.3.0.
+FLAdminAPI was the legacy Python wrapper for issuing admin commands to the FL server. It has been removed from the
+current runtime and replaced by the :ref:`flare_api`.
 
 FLARE API
 =========
@@ -163,6 +161,15 @@ Startup kits are products of the provisioning process and contain the configurat
 secure connections between the FL server, FL clients, and Admin clients. These files are used to establish identity
 and authorization policies between server and clients. Startup kits are distributed to the FL server, clients,
 and Admin clients depending on role.
+
+Study
+=====
+A study provides multi-tenant isolation within a single NVFlare deployment. Each study defines which
+sites participate and what role each admin user has. Jobs, job listings, and study-aware client-targeted
+admin operations are scoped to the active study session. The ``"default"`` study is the fallback session
+context and preserves the certificate-based role behavior.
+Studies are configured in the ``studies:`` section of ``project.yml`` and require ``api_version: 4``.
+See :ref:`multi_study_guide` for details.
 
 Task
 ====

@@ -21,6 +21,7 @@ from nvflare.apis.fl_context import FLContext
 # this is treated as all online sites in job deploy_map
 ALL_SITES = "@ALL"
 SERVER_SITE_NAME = "server"
+DEFAULT_STUDY = "default"
 
 
 class RunStatus(str, Enum):
@@ -76,6 +77,34 @@ class JobMetaKey(str, Enum):
     CUSTOM_PROPS = "custom_props"
     EDGE_METHOD = "edge_method"
     JOB_CLIENTS = "job_clients"  # clients that participated the job
+    STUDY = "study"
+    JOB_LAUNCHER_SPEC = "launcher_spec"
+
+    def __repr__(self):
+        return self.value
+
+
+class SubmitRecordState(str, Enum):
+    CREATING = "creating"
+    CREATED = "created"
+    JOB_DELETED = "job_deleted"
+
+
+class SubmitRecordKey(str, Enum):
+    SCHEMA_VERSION = "schema_version"
+    STATE = "state"
+    SUBMIT_TOKEN = "submit_token"
+    JOB_ID = "job_id"
+    STUDY = "study"
+    SUBMITTER_NAME = "submitter_name"
+    SUBMITTER_ORG = "submitter_org"
+    SUBMITTER_ROLE = "submitter_role"
+    JOB_NAME = "job_name"
+    JOB_FOLDER_NAME = "job_folder_name"
+    JOB_CONTENT_HASH = "job_content_hash"
+    SUBMIT_TIME = "submit_time"
+    DELETED_TIME = "deleted_time"
+    DELETED_BY = "deleted_by"
 
     def __repr__(self):
         return self.value
@@ -212,6 +241,15 @@ def is_valid_job_id(jid: str) -> bool:
     # If the jid string is a valid hex code, but an invalid uuid4,the UUID.__init__ will convert it to a
     # valid uuid4. This is bad for validation purposes.
     return val.hex == jid.replace("-", "")
+
+
+def get_job_meta_study(meta: dict) -> str:
+    if not isinstance(meta, dict):
+        return DEFAULT_STUDY
+    study = meta.get(JobMetaKey.STUDY.value)
+    if isinstance(study, str) and study:
+        return study
+    return DEFAULT_STUDY
 
 
 def get_custom_prop(meta: dict, prop_key: str, default=None):

@@ -17,6 +17,7 @@ from unittest.mock import Mock
 
 import pytest
 
+import nvflare.app_common.job_schedulers.job_scheduler as job_scheduler_module
 from nvflare.apis.client import Client
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
@@ -162,6 +163,22 @@ class MockServerEngine(ServerEngineSpec):
 
     def update_job_run_status(self):
         pass
+
+
+class _FakeStudyRegistry:
+    def __init__(self, sites=None):
+        self.sites = sites or {}
+
+    def get_sites(self, study):
+        return self.sites.get(study)
+
+
+class _FakeStudyRegistryService:
+    registry = None
+
+    @staticmethod
+    def get_registry():
+        return _FakeStudyRegistryService.registry
 
 
 def create_servers(server_num, sites: list[Site]):
@@ -504,3 +521,57 @@ class TestDefaultJobScheduler:
                 _, _ = scheduler.schedule_job(job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx)
         assert candidate.meta[JobMetaKey.SCHEDULE_COUNT.value] == 3
         assert job_manager.set_status.call_args[0][1] == RunStatus.FINISHED_CANT_SCHEDULE
+
+    def test_all_sites_are_narrowed_to_study_enrolled_sites(self, monkeypatch, setup_and_teardown):
+        servers, scheduler, num_sites, job_manager = setup_and_teardown
+        monkeypatch.setattr(job_scheduler_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
+        monkeypatch.setattr(
+            _FakeStudyRegistryService,
+            "registry",
+            _FakeStudyRegistry(sites={"cancer-research": {"site0", "site2"}}),
+            raising=False,
+        )
+
+        candidate = create_job(
+            job_id="study_job",
+            resource_spec={},
+            deploy_map={"app5": [ALL_SITES]},
+            min_sites=2,
+        )
+        candidate.meta[JobMetaKey.STUDY.value] = "cancer-research"
+
+        with servers[0].new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx
+            )
+
+        assert job == candidate
+        assert set(dispatch_info) == {"server", "site0", "site2"}
+
+    def test_required_out_of_study_site_blocks_job(self, monkeypatch, setup_and_teardown):
+        servers, scheduler, num_sites, job_manager = setup_and_teardown
+        monkeypatch.setattr(job_scheduler_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
+        monkeypatch.setattr(
+            _FakeStudyRegistryService,
+            "registry",
+            _FakeStudyRegistry(sites={"cancer-research": {"site0"}}),
+            raising=False,
+        )
+
+        candidate = create_job(
+            job_id="blocked_job",
+            resource_spec={"site0": create_resource(1, 1), "site2": create_resource(1, 1)},
+            deploy_map={"app1": ["server", "site0", "site2"]},
+            min_sites=1,
+            required_sites=["site2"],
+        )
+        candidate.meta[JobMetaKey.STUDY.value] = "cancer-research"
+
+        with servers[0].new_context() as fl_ctx:
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx
+            )
+
+        assert job is None
+        assert dispatch_info is None
+        assert job_manager.set_status.called

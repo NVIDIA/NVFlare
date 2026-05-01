@@ -1,0 +1,56 @@
+api_version: 4
+name: study_session_with_studies
+description: Multi-study NVFlare deployment for Phase 2 study integration tests
+
+participants:
+  - name: localhost
+    type: server
+    org: nvidia
+    fed_learn_port: 8202
+    admin_port: 8203
+  - name: site-1
+    type: client
+    org: nvidia
+  - name: site-2
+    type: client
+    org: nvidia
+  - name: site-3
+    type: client
+    org: nvidia
+  - name: admin@nvidia.com
+    type: admin
+    org: nvidia
+    role: project_admin
+  - name: lead@nvidia.com
+    type: admin
+    org: nvidia
+    role: org_admin
+  - name: outsider@nvidia.com
+    type: admin
+    org: nvidia
+    role: project_admin
+
+studies:
+  study-a:
+    site_orgs:
+      nvidia: [site-1, site-2]
+    admins: [admin@nvidia.com, lead@nvidia.com]
+  study-b:
+    site_orgs:
+      nvidia: [site-3]
+    admins: [admin@nvidia.com, lead@nvidia.com]
+
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+    args:
+      template_file: master_template.yml
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      config_folder: config
+      overseer_agent:
+        path: nvflare.ha.dummy_overseer_agent.DummyOverseerAgent
+        overseer_exists: false
+        args:
+          sp_end_point: localhost:8202:8203
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder

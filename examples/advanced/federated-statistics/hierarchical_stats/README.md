@@ -24,7 +24,7 @@ pip install -r requirements.txt
 
 ## 1. Prepare data
 
-In this example, we are using synthetic anonymous students scores datasets generated for student belonging to 7 different universities.
+In this example, we are using synthetic anonymous student score datasets generated for students belonging to 7 different universities.
 
 Run the script `prepare_data.sh` that generates 7 different datasets each having random number of entries between 1000 to 2000. Each entry in the datasets has three columns - `Pass`, `Fail` and `Percentage`. `Pass`/`Fail` represents whether the particular student passed or failed the exam and `Percentage` represents the overall percentage marks scored by the student.
 

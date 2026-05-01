@@ -63,6 +63,9 @@ which you can use to customize configurations to fit your own requirements.
 Edit the :ref:`Project yaml file <project_yml>` in the directory with the provisioning tool to meet your project requirements (make sure the
 server, client sites, admin, orgs, and everything else are right for your project).
 
+For multi-study deployments, set ``api_version: 4`` and add a ``studies:`` section to define per-study
+site enrollment and admin role mappings. See :ref:`multi_study_guide`.
+
 Then run the provision command with (here we assume your
 project.yml is in current working directory):
 
@@ -151,6 +154,8 @@ As mentioned above, you can run NVIDIA FLARE in the public cloud.  If you prefer
 you can find the deployment guide in :ref:`aws_eks`.
 
 
+.. _starting_fl_servers:
+
 Starting Federated Learning Servers
 =============================================
 The FL Server will coordinate the federated learning training and be the main hub all clients and admin
@@ -171,6 +176,17 @@ If clients from other machines cannot connect to the server, make sure that the 
 participants in project.yml) specified when generating the startup kits in the provisioning process resolves to the
 correct IP. If the FL server is on an internal network without a DNS hostname, in Ubuntu, an entry may need to be added
 to ``/etc/hosts`` with the internal IP and the hostname.
+
+.. note::
+
+   For PyTorch FedAvg jobs that enable ``enable_tensor_disk_offload=True``, the FL server writes incoming streamed
+   tensors to the server process temporary directory. This directory is resolved by Python ``tempfile`` from
+   ``TMPDIR``, ``TEMP``, ``TMP``, and the OS default, often ``/tmp``. If ``TMPDIR`` is unset, does not exist, or is not
+   writable, Python may silently fall back to another writable temp directory. Configure the server service or shell
+   that starts ``startup/start.sh`` so ``TMPDIR`` points to an existing, writable, disk-backed mount with enough free
+   space for the expected tensor payloads. Avoid RAM-backed temporary filesystems such as ``tmpfs`` or ``ramfs`` for
+   tensor disk offload, because they do not reduce server memory usage. Verify both the resolved temp directory and its
+   backing filesystem as part of server IT setup.
 
 Starting Federated Learning Clients
 ============================================
@@ -294,11 +310,7 @@ The workload, which typically includes training and evaluation code, can be depl
 
   This feature is mostly used by data scientists during experiments and POCs. For production loads, where security requires no dynamic code loading, a pre-installed workload is necessary before running experiments.
 
-- **Pre-deployed Code**: In cases where security or other requirements demand no dynamic code loading, pre-installation is required before starting the experiments. You can pre-install the workload via the :ref:`pre_installer` command of the FLARE CLI.
-
-.. code-block::
-
-    nvflare pre-install
+- **Pre-deployed Code**: In cases where security or other requirements demand no dynamic code loading, pre-installation is required before starting the experiments. The application and its dependencies can be pre-installed by building Docker images with the workload included.
 
 .. note::
     Ensure that both the server and clients have the proper dependencies for the workload. For example, if both the server and client need to save a checkpoint of the model using the `torch.save()` method, then PyTorch must be installed on both the server and client. If Docker is used, it must be installed inside the Docker container.
@@ -308,8 +320,8 @@ Running federated learning from the administration console
 ==========================================================
 With all connections between the FL server, FL clients, and administration consoles open and all of the parties
 started successfully as described in the preceding section, `Federated Learning Administration Console`_,
-admin commands can be used to operate a federated learning project. The FLAdminAPI provides a way to programmatically
-issue commands to operate the system so it can be run with a script.
+admin commands can be used to operate a federated learning project. The :ref:`flare_api` provides the supported Python
+interface for issuing these commands from scripts and notebooks.
 
 For a complete list of admin commands, see :ref:`operating_nvflare`.
 
@@ -348,10 +360,6 @@ Administrator side folder and file structure
                 config/
                 models/
                 resources/
-
-
-
-
 
 
 

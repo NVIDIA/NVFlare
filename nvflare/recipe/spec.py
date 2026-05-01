@@ -12,8 +12,54 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import sys
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from typing import Dict, List, Optional, Union
+
+
+def _consume_recipe_args() -> tuple:
+    """Strip --export / --export-dir from sys.argv and return (export, export_dir).
+
+    Called once at module import time so that the caller's argparse never sees
+    these flags regardless of the order in which parse_args() and execute() appear
+    in job.py.
+    """
+    argv = sys.argv[1:]
+    export = False
+    export_dir = "./fl_job"
+    remaining = []
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--export":
+            export = True
+            i += 1
+        elif argv[i] == "--export-dir":
+            if i + 1 >= len(argv):
+                raise ValueError("--export-dir requires an argument")
+            export_dir = argv[i + 1]
+            i += 2
+        elif argv[i].startswith("--export-dir="):
+            export_dir = argv[i].split("=", 1)[1]
+            i += 1
+        else:
+            remaining.append(argv[i])
+            i += 1
+    sys.argv[1:] = remaining
+    return export, export_dir
+
+
+# Intentional import-time sys.argv mutation: strip --export / --export-dir before
+# any ArgumentParser.parse_args() call in job.py runs. Doing this lazily (e.g. inside
+# execute()) would be too late if the caller calls parse_args() first, which is the
+# common pattern. The mutation is safe because job.py is always the process entry point.
+_RECIPE_EXPORT, _RECIPE_EXPORT_DIR = _consume_recipe_args()
+
+
+def _peek_recipe_args(argv: Optional[List[str]] = None) -> tuple:
+    """Return the export flags consumed at import time (argv argument is ignored)."""
+    return _RECIPE_EXPORT, _RECIPE_EXPORT_DIR
+
 
 from nvflare.apis.filter import Filter
 from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
@@ -30,7 +76,7 @@ class ExecEnv(ABC):
         Args:
             extra: a dict of extra properties
         """
-        if not extra:
+        if extra is None:
             extra = {}
         if not isinstance(extra, dict):
             raise ValueError(f"extra must be dict but got {type(extra)}")
@@ -94,6 +140,19 @@ class ExecEnv(ABC):
         """
         pass
 
+    def stop(self, clean_up: bool = False) -> None:
+        """Stop the execution environment and optionally clean up resources.
+
+        This method is called after job execution to ensure proper cleanup.
+        Default implementation is a no-op. Override in subclasses that need cleanup.
+
+        Args:
+            clean_up: If True, remove workspace and temporary files after stopping.
+                      If False, only stop running processes but preserve workspace.
+                      Defaults to False.
+        """
+        pass
+
 
 class Recipe(ABC):
 
@@ -113,6 +172,81 @@ class Recipe(ABC):
         Script validation is handled by each ExecEnv subclass in deploy().
         """
         pass
+
+    def _snapshot_additional_params(self) -> Dict[str, Dict]:
+        snapshot = {}
+        deploy_map = getattr(self.job, "_deploy_map", {})
+        for target, app in deploy_map.items():
+            app_config = getattr(app, "app_config", None)
+            if app_config is None:
+                continue
+            params = getattr(app_config, "additional_params", None)
+            if isinstance(params, dict):
+                snapshot[target] = dict(params)
+        return snapshot
+
+    def _restore_additional_params(self, snapshot: Dict[str, Dict]) -> None:
+        deploy_map = getattr(self.job, "_deploy_map", {})
+        for target, app in deploy_map.items():
+            app_config = getattr(app, "app_config", None)
+            if app_config is None:
+                continue
+            params = getattr(app_config, "additional_params", None)
+            if isinstance(params, dict):
+                original = snapshot.get(target, {})
+                params.clear()
+                params.update(original)
+
+    def _replace_additional_params_for_targets(self, targets: List[str], new_params: dict) -> None:
+        deploy_map = getattr(self.job, "_deploy_map", {})
+        for target in targets:
+            app = deploy_map.get(target)
+            if app is None:
+                continue
+            app_config = getattr(app, "app_config", None)
+            if app_config is None:
+                continue
+            params = getattr(app_config, "additional_params", None)
+            if isinstance(params, dict):
+                params.clear()
+                params.update(new_params)
+
+    @contextmanager
+    def _temporary_exec_params(
+        self, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None
+    ):
+        """Temporarily override per-target additional_params during execute/export.
+
+        Semantics:
+        - None: leave the target's existing additional_params unchanged.
+        - non-empty dict: temporarily apply/merge those params for the target.
+        - empty dict ({}): temporarily clear the target's additional_params for this call.
+
+        Any original additional_params are restored when the context exits.
+        """
+        params_snapshot = None
+        if server_exec_params is not None or client_exec_params is not None:
+            params_snapshot = self._snapshot_additional_params()
+
+        try:
+            if server_exec_params is not None:
+                if server_exec_params:
+                    self.job.to_server(server_exec_params)
+                else:
+                    # Preserve the long-standing "empty dict means temporarily clear params"
+                    # behavior rather than treating {} as a no-op.
+                    self._replace_additional_params_for_targets(["server"], {})
+
+            if client_exec_params is not None:
+                if client_exec_params:
+                    self._add_to_client_apps(client_exec_params)
+                else:
+                    client_targets = [target for target in getattr(self.job, "_deploy_map", {}) if target != "server"]
+                    self._replace_additional_params_for_targets(client_targets, {})
+            yield
+        finally:
+            if params_snapshot is not None:
+                self._restore_additional_params(params_snapshot)
 
     def _add_to_client_apps(self, obj, clients: Optional[List[str]] = None, **kwargs):
         """Add an object to client apps, preserving existing per-site structure.
@@ -304,18 +438,18 @@ class Recipe(ABC):
                 class_names.append(d)
             elif isinstance(d, Decomposer):
                 class_names.append(self._get_full_class_name(d))
+            else:
+                raise TypeError(f"decomposer must be str or Decomposer, got {type(d).__name__}")
 
-        reg = DecomposerRegister(class_names)
-        self.job.to_server(reg, id="decomposer_reg")
-
-        self._add_to_client_apps(reg, id="decomposer_reg")
+        self.job.to_server(DecomposerRegister(class_names), id="decomposer_reg")
+        self._add_to_client_apps(DecomposerRegister(class_names), id="decomposer_reg")
 
     def export(
         self,
         job_dir: str,
         server_exec_params: Optional[dict] = None,
         client_exec_params: Optional[dict] = None,
-        env: ExecEnv = None,
+        env: Optional[ExecEnv] = None,
     ):
         """Export the recipe to a job definition.
 
@@ -328,21 +462,15 @@ class Recipe(ABC):
         Returns: None
 
         """
-        if server_exec_params:
-            self.job.to_server(server_exec_params)
+        with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
+            if env is not None:
+                self.process_env(env)
+            self.job.export_job(job_dir)
 
-        if client_exec_params:
-            self._add_to_client_apps(client_exec_params)
-
-        if env:
-            self.process_env(env)
-
-        self.job.export_job(job_dir)
-
-    def execute(
+    def run(
         self, env: ExecEnv, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None
     ) -> "Run":
-        """Execute the recipe in a specified execution environment.
+        """Run the recipe in a specified execution environment.
 
         Args:
             env: the execution environment
@@ -352,15 +480,46 @@ class Recipe(ABC):
         Returns: Run to get job ID and execution results
 
         """
-        if server_exec_params:
-            self.job.to_server(server_exec_params)
+        with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
+            self.process_env(env)
+            job_id = env.deploy(self.job)
+            from nvflare.recipe.run import Run
 
-        if client_exec_params:
-            self._add_to_client_apps(client_exec_params)
+            return Run(env, job_id)
 
-        self.process_env(env)
-        job_id = env.deploy(self.job)
-        from nvflare.recipe.run import Run
+    def execute(
+        self,
+        env: ExecEnv,
+        server_exec_params: Optional[dict] = None,
+        client_exec_params: Optional[dict] = None,
+    ) -> Optional["Run"]:
+        """Execute or export the recipe based on command-line flags.
 
-        run = Run(env, job_id)
-        return run
+        Transparently checks sys.argv for ``--export`` / ``--export-dir`` without
+        interfering with the caller's own argument parser.
+
+        * ``python job.py``                         → run the job
+        * ``python job.py --export``                → export to ``./fl_job``
+        * ``python job.py --export --export-dir X`` → export to ``X``
+
+        Args:
+            env: the execution environment
+            server_exec_params: execution params for the server
+            client_exec_params: execution params for clients
+
+        Returns:
+            Run when executing; raises SystemExit(0) when exporting so callers
+            need not guard against a None return value.
+        """
+        recipe_export, recipe_export_dir = _peek_recipe_args()
+        if recipe_export:
+            self.export(
+                job_dir=recipe_export_dir,
+                server_exec_params=server_exec_params,
+                client_exec_params=client_exec_params,
+                env=env,
+            )
+            print(f"Job exported to: {recipe_export_dir}")
+            raise SystemExit(0)
+
+        return self.run(env, server_exec_params=server_exec_params, client_exec_params=client_exec_params)

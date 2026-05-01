@@ -14,6 +14,14 @@
 
 from enum import Enum
 
+# Server-to-CLI protocol value used in job metadata to signal that a retry-safe
+# submit token conflicts with an existing submission.
+SUBMIT_TOKEN_CONFLICT_STATUS = "submit_token_conflict"
+
+# Server-to-CLI protocol value used when a retry-safe submit token points to a job
+# that was deliberately deleted.
+SUBMIT_TOKEN_JOB_DELETED_STATUS = "submit_token_job_deleted"
+
 
 class ReturnCode(object):
 
@@ -198,6 +206,9 @@ class FLContextKey(object):
     CELL_MESSAGE = "__cell_message__"
     CLIENT_HIERARCHY = "__client_hierarchy__"
 
+    # Tensor streaming: minimum get_task_timeout required by server (stored in FLContext)
+    MIN_GET_TASK_TIMEOUT = "__min_get_task_timeout__"
+
 
 class ProcessType:
     SERVER_PARENT = "SP"
@@ -222,6 +233,14 @@ class ReservedTopic(object):
 
 class AdminCommandNames(object):
 
+    REGISTER_STUDY = "register_study"
+    ADD_STUDY_SITE = "add_study_site"
+    REMOVE_STUDY_SITE = "remove_study_site"
+    REMOVE_STUDY = "remove_study"
+    LIST_STUDIES = "list_studies"
+    SHOW_STUDY = "show_study"
+    ADD_STUDY_USER = "add_study_user"
+    REMOVE_STUDY_USER = "remove_study_user"
     SUBMIT_JOB = "submit_job"
     LIST_JOBS = "list_jobs"
     GET_JOB_META = "get_job_meta"
@@ -239,16 +258,20 @@ class AdminCommandNames(object):
     ABORT = "abort"
     ABORT_TASK = "abort_task"
     REMOVE_CLIENT = "remove_client"
+    DISABLE_CLIENT = "disable_client"
+    ENABLE_CLIENT = "enable_client"
     SHUTDOWN = "shutdown"
     RESTART = "restart"
     SET_TIMEOUT = "set_timeout"
     SHOW_STATS = "show_stats"
     SHOW_ERRORS = "show_errors"
     RESET_ERRORS = "reset_errors"
+    GET_JOB_LOG = "get_job_log"
     AUX_COMMAND = "aux_command"
     SYS_INFO = "sys_info"
     REPORT_RESOURCES = "report_resources"
     REPORT_ENV = "report_env"
+    REPORT_VERSION = "report_version"
     SHOW_SCOPES = "show_scopes"
     CALL = "call"
     SHELL_PWD = "pwd"
@@ -258,6 +281,7 @@ class AdminCommandNames(object):
     SHELL_TAIL = "tail"
     SHELL_GREP = "grep"
     APP_COMMAND = "app_command"
+    GET_JOB_LOG = "get_job_log"
     CONFIGURE_JOB_LOG = "configure_job_log"
     CONFIGURE_SITE_LOG = "configure_site_log"
 
@@ -535,6 +559,12 @@ class ConfigVarName:
     # server: wait this long since job schedule time before starting to check dead/disconnected clients
     DEAD_CLIENT_CHECK_LEAD_TIME = "dead_client_check_lead_time"
 
+    # server: require all start-job replies to be non-timeout and OK before considering the run started
+    STRICT_START_JOB_REPLY_CHECK = "strict_start_job_reply_check"
+
+    # server: require prior positive job observation before reporting "missing job on client" as dead-job
+    SYNC_CLIENT_JOBS_REQUIRE_PREVIOUS_REPORT = "sync_client_jobs_require_previous_report"
+
     # customized nvflare decomposers module name
     DECOMPOSER_MODULE = "nvflare_decomposers"
 
@@ -555,6 +585,11 @@ class ConfigVarName:
 
     # SJ and CJ: chunk size for downloading
     DOWNLOAD_CHUNK_SIZE = "download_chunk_size"
+
+    # SJ and CJ: minimum transaction lifetime for large-tensor downloads.
+    # Raise via job config when model size or network latency exceeds the default 60s.
+    # Example: recipe.add_client_config({"np_min_download_timeout": 600.0})
+    MIN_DOWNLOAD_TIMEOUT = "min_download_timeout"
 
     # SJ and CJ: min file size for streaming. If file size is less than this, it will be attached to msg directly.
     MIN_FILE_SIZE_FOR_STREAMING = "min_file_size_for_streaming"

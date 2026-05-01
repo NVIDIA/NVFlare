@@ -14,13 +14,16 @@
 
 import concurrent.futures
 import copy
+import os
 import threading
 import uuid
 from typing import Dict, List, Union
 
+from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell, TargetMessage
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, MessagePropKey, MessageType, ReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, make_reply
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
@@ -52,6 +55,21 @@ def _is_stream_channel(channel: str) -> bool:
     return True
 
 
+def _is_server_job_cell(my_info) -> bool:
+    """Return True only for server cells owned by one job run.
+
+    Parent server cell FQCN is "server"; server job cells start with
+    "server.<job_id>" and may have nested children like "server.<job_id>.cell_pipe".
+    The fail-fast path must only exit a job process, never the parent server.
+    """
+    fqcn = getattr(my_info, "fqcn", "")
+    if not fqcn:
+        return False
+
+    path = FQCN.split(fqcn)
+    return len(path) >= 2 and path[0] == FQCN.ROOT_SERVER
+
+
 class SimpleWaiter:
     def __init__(self, req_id, result):
         super().__init__()
@@ -76,11 +94,32 @@ class Adapter:
         self.logger.debug(f"{stream_req_id=}: {headers=}, incoming data={result}")
         request = Message(headers, result)
 
-        decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.cell.get_fobs_context())
-
+        # PASS_THROUGH can be requested per-message (sender stamps
+        # MessageHeaderKey.PASS_THROUGH) or per-channel (receiver adds the
+        # channel name to cell.decode_pass_through_channels).  Either source
+        # activates LazyDownloadRef decode so tensors are not downloaded at
+        # this hop.
         channel = request.get_header(StreamHeaderKey.CHANNEL)
-        request.set_header(MessageHeaderKey.CHANNEL, channel)
         topic = request.get_header(StreamHeaderKey.TOPIC)
+        passthrough = bool(request.get_header(MessageHeaderKey.PASS_THROUGH, False))
+        if channel in self.cell.decode_pass_through_channels:
+            passthrough = True
+        decode_ctx = self.cell.get_fobs_context(props={FOBSContextKey.PASS_THROUGH: passthrough})
+        try:
+            decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=decode_ctx)
+        except Exception as ex:
+            if (
+                channel == CellChannel.SERVER_COMMAND
+                and topic == ServerCommandNames.SUBMIT_UPDATE
+                and _is_server_job_cell(self.my_info)
+            ):
+                self.logger.critical(
+                    f"failed to decode streamed submit_update in server job cell {self.my_info.fqcn}; "
+                    f"exiting job process to fail the job: {secure_format_exception(ex)}"
+                )
+                os._exit(1)
+            raise
+        request.set_header(MessageHeaderKey.CHANNEL, channel)
         request.set_header(MessageHeaderKey.TOPIC, topic)
         self.logger.debug(f"Call back on {stream_req_id=}: {channel=}, {topic=}")
 
@@ -120,6 +159,7 @@ class Cell(StreamCell):
         self.logger = get_obj_logger(self)
         self.register_blob_cb(CellChannel.RETURN_ONLY, "*", self._process_reply)  # this should be one-time registration
         self.core_cell.update_fobs_context({FOBSContextKey.CELL: self})
+        self.decode_pass_through_channels: set = set()  # per-channel opt-in for receiver-side PASS_THROUGH
 
     def update_fobs_context(self, props: dict):
         self.core_cell.update_fobs_context(props)
@@ -392,10 +432,15 @@ class Cell(StreamCell):
                 return self._get_result(req_id)
             self.logger.debug(f"{req_id=}: receiving complete")
             waiter.result = Message(r_future.headers, r_future.result())
+            pt = bool(waiter.result.get_header(MessageHeaderKey.PASS_THROUGH, False))
+            if channel in self.decode_pass_through_channels:
+                pt = True
             decode_payload(
                 waiter.result,
                 encoding_key=StreamHeaderKey.PAYLOAD_ENCODING,
-                fobs_ctx=self.get_fobs_context(props={FOBSContextKey.ABORT_SIGNAL: abort_signal}),
+                fobs_ctx=self.get_fobs_context(
+                    props={FOBSContextKey.ABORT_SIGNAL: abort_signal, FOBSContextKey.PASS_THROUGH: pt}
+                ),
             )
             self.logger.debug(f"{req_id=}: return result {waiter.result=}")
             return self._get_result(req_id)

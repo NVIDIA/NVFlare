@@ -62,43 +62,36 @@ Software Requirements
 
 2. **Image Builder**
 
+   The image builder is the tool that constructs CVM images. It is shipped as part of the NVFlare source
+   tree under ``nvflare/lighter/cc/image_builder/`` and contains the ``cvm_build.sh`` script along with
+   Ansible playbooks and helper scripts.
+
    - Obtain the image builder code from the NVFlare team
    - Contact: federatedlearning@nvidia.com
    - Install location: ``~/cc/image_builder``
 
+   The path to ``cvm_build.sh`` inside this directory is referenced in ``project.yml`` as
+   ``build_image_cmd`` (see Step 2.1 of the Deployment Workflow).
+
 3. **Base Images**
 
-   - Obtain base images from the NVFlare team
+   - Build the Ubuntu base image and firmware following :ref:`base_image_build`
    - Copy to: ``~/cc/image_builder/base_images``
 
 4. **KBS Client**
 
-   - Build or obtain KBS client matching your KBS server
+   - Build the kbs-client binary following :ref:`base_image_build`
    - Recommended commit: ``a2570329cc33daf9ca16370a1948b5379bb17fbe``
    - Copy the kbs-client and credentials to: ``~/cc/image_builder/binaries``
 
 5. **SNPGuest Tool**
 
-   - Build SNPGuest version v0.9.2
+   - Build the snpguest binary following :ref:`base_image_build`
    - Copy snpguest and credentials to: ``~/cc/image_builder/binaries``
 
 **AMD Firmware Installation**
 
-To install the AMD SEV-SNP firmware:
-
-.. code-block:: bash
-
-   echo 'deb http://archive.ubuntu.com/ubuntu plucky-proposed main restricted universe multiverse' | \
-     sudo tee /etc/apt/sources.list.d/plucky-proposed.list
-
-   sudo tee /etc/apt/preferences.d/99-plucky-proposed <<'EOF'
-   Package: *
-   Pin: release a=plucky-proposed
-   Pin-Priority: 100
-   EOF
-
-   sudo apt update
-   sudo apt install -t plucky-proposed ovmf
+See :ref:`base_image_build` for full instructions on fetching and installing the ``OVMF.amdsev.fd`` firmware.
 
 The firmware will be installed at ``/usr/share/ovmf/OVMF.amdsev.fd``.
 
@@ -229,6 +222,13 @@ Edit ``cc_site-1.yml``:
 
 
 **2.4 Run Provision**
+
+Before running provisioning, ensure NBD (Network Block Device) devices are available, as the builder uses
+them to access disk images:
+
+.. code-block:: bash
+
+   sudo modprobe nbd max_part=8
 
 .. code-block:: bash
 

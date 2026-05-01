@@ -18,7 +18,7 @@ from threading import Lock
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.streaming import StreamableEngine
 from nvflare.app_common.app_constant import AppConstants
@@ -139,7 +139,7 @@ class TensorServerStreamer(FLComponent):
         # Set minimum get_task_timeout requirement for clients
         # This will be automatically communicated to clients in task responses
         recommended_get_task_timeout = self.wait_task_data_sent_to_all_clients_timeout + self.GET_TASK_TIMEOUT_BUFFER
-        fl_ctx.set_prop(ServerCommandKey.MIN_GET_TASK_TIMEOUT, recommended_get_task_timeout, sticky=True)
+        fl_ctx.set_prop(FLContextKey.MIN_GET_TASK_TIMEOUT, recommended_get_task_timeout, sticky=True)
 
         self.log_info(
             fl_ctx,

@@ -14,6 +14,7 @@
 
 """Tests for recipe utilities and ExecEnv script validation."""
 
+import importlib
 import json
 import logging
 import os
@@ -23,11 +24,11 @@ import pytest
 
 from nvflare.job_config.api import FedApp, FedJob
 from nvflare.job_config.fed_app_config import ClientAppConfig
-from nvflare.recipe.utils import _collect_non_local_scripts
+from nvflare.recipe.utils import collect_non_local_scripts
 
 
 class TestCollectNonLocalScriptsUtility:
-    """Test the _collect_non_local_scripts utility function."""
+    """Test the collect_non_local_scripts utility function."""
 
     def setup_method(self):
         self.job = FedJob(name="test_job", min_clients=1)
@@ -36,7 +37,7 @@ class TestCollectNonLocalScriptsUtility:
 
     def test_no_scripts_returns_empty_list(self):
         """Test with no scripts added."""
-        result = _collect_non_local_scripts(self.job)
+        result = collect_non_local_scripts(self.job)
         assert result == []
 
     def test_local_script_not_included(self):
@@ -47,7 +48,7 @@ class TestCollectNonLocalScriptsUtility:
 
         try:
             self.client_app.add_external_script(temp_path)
-            result = _collect_non_local_scripts(self.job)
+            result = collect_non_local_scripts(self.job)
             assert result == []
         finally:
             os.unlink(temp_path)
@@ -57,7 +58,7 @@ class TestCollectNonLocalScriptsUtility:
         non_local_script = "/preinstalled/remote_script.py"
         self.client_app.add_external_script(non_local_script)
 
-        result = _collect_non_local_scripts(self.job)
+        result = collect_non_local_scripts(self.job)
         assert non_local_script in result
 
     def test_multiple_non_local_scripts(self):
@@ -70,7 +71,7 @@ class TestCollectNonLocalScriptsUtility:
         for script in scripts:
             self.client_app.add_external_script(script)
 
-        result = _collect_non_local_scripts(self.job)
+        result = collect_non_local_scripts(self.job)
         for script in scripts:
             assert script in result
 
@@ -86,7 +87,7 @@ class TestCollectNonLocalScriptsUtility:
             non_local_script = "/preinstalled/remote_script.py"
             self.client_app.add_external_script(non_local_script)
 
-            result = _collect_non_local_scripts(self.job)
+            result = collect_non_local_scripts(self.job)
             assert non_local_script in result
             assert local_script not in result
         finally:
@@ -102,7 +103,7 @@ class TestCollectNonLocalScriptsUtility:
         self.client_app.add_external_script(script1)
         client_app2.add_external_script(script2)
 
-        result = _collect_non_local_scripts(self.job)
+        result = collect_non_local_scripts(self.job)
         assert script1 in result
         assert script2 in result
 
@@ -171,7 +172,6 @@ class TestRecipeConfigMethods:
 
     def test_add_server_config(self, temp_script):
         """Test add_server_config adds params to server app."""
-        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -179,8 +179,7 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
-            initial_ckpt="/abs/path/to/model.npy",
-            framework=FrameworkType.NUMPY,  # NUMPY can load from ckpt without model
+            model={"class_path": "model.DummyModel", "args": {}},
         )
 
         config = {"np_download_chunk_size": 2097152}
@@ -193,7 +192,6 @@ class TestRecipeConfigMethods:
     def test_add_client_config(self, temp_script):
         """Test add_client_config applies to all clients and specific clients."""
         from nvflare.apis.job_def import ALL_SITES
-        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         # Test all clients
@@ -202,8 +200,7 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
-            initial_ckpt="/abs/path/to/model.npy",
-            framework=FrameworkType.NUMPY,
+            model={"class_path": "model.DummyModel", "args": {}},
         )
         config = {"timeout": 600}
         recipe.add_client_config(config)
@@ -215,7 +212,6 @@ class TestRecipeConfigMethods:
     def test_add_client_file_adds_to_ext_scripts_and_ext_dirs(self, temp_script):
         """Test add_client_file stores file paths in ext_scripts and dirs in ext_dirs."""
         from nvflare.apis.job_def import ALL_SITES
-        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -223,8 +219,7 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
-            initial_ckpt="/abs/path/to/model.npy",
-            framework=FrameworkType.NUMPY,
+            model={"class_path": "model.DummyModel", "args": {}},
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -239,7 +234,6 @@ class TestRecipeConfigMethods:
     def test_add_client_file_preserves_per_site_clients_without_all_sites(self, temp_script):
         """Test add_client_file keeps per-site topology and does not create ALL_SITES app."""
         from nvflare.apis.job_def import ALL_SITES
-        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -247,8 +241,7 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
-            initial_ckpt="/abs/path/to/model.npy",
-            framework=FrameworkType.NUMPY,
+            model={"class_path": "model.DummyModel", "args": {}},
             per_site_config={"site-1": {}, "site-2": {}},
         )
 
@@ -264,7 +257,6 @@ class TestRecipeConfigMethods:
 
     def test_add_client_file_with_specific_clients_only_updates_selected_sites(self, temp_script):
         """Test add_client_file(..., clients=[...]) only adds file to specified sites."""
-        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -272,8 +264,7 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
-            initial_ckpt="/abs/path/to/model.npy",
-            framework=FrameworkType.NUMPY,
+            model={"class_path": "model.DummyModel", "args": {}},
             per_site_config={"site-1": {}, "site-2": {}, "site-3": {}},
         )
 
@@ -298,7 +289,6 @@ class TestRecipeConfigMethods:
 
     def test_add_server_file_adds_to_server_ext_scripts_and_ext_dirs(self, temp_script):
         """Test add_server_file stores file paths in ext_scripts and dirs in ext_dirs."""
-        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -306,8 +296,7 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
-            initial_ckpt="/abs/path/to/model.npy",
-            framework=FrameworkType.NUMPY,
+            model={"class_path": "model.DummyModel", "args": {}},
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -321,7 +310,6 @@ class TestRecipeConfigMethods:
 
     def test_config_in_generated_json(self, temp_script):
         """Test that configs appear in generated JSON files."""
-        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -329,8 +317,7 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
-            initial_ckpt="/abs/path/to/model.npy",
-            framework=FrameworkType.NUMPY,
+            model={"class_path": "model.DummyModel", "args": {}},
         )
 
         recipe.add_server_config({"server_param": 123})
@@ -352,7 +339,6 @@ class TestRecipeConfigMethods:
 
     def test_config_type_error(self, temp_script):
         """Test TypeError is raised for non-dict arguments."""
-        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -360,8 +346,7 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
-            initial_ckpt="/abs/path/to/model.npy",
-            framework=FrameworkType.NUMPY,
+            model={"class_path": "model.DummyModel", "args": {}},
         )
 
         with pytest.raises(TypeError, match="config must be a dict"):
@@ -369,3 +354,229 @@ class TestRecipeConfigMethods:
 
         with pytest.raises(TypeError, match="config must be a dict"):
             recipe.add_client_config(123)  # type: ignore[arg-type]
+
+    def test_add_decomposers_type_error(self, temp_script):
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_job",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            model={"class_path": "model.DummyModel", "args": {}},
+        )
+
+        with pytest.raises(TypeError, match="decomposer must be str or Decomposer"):
+            recipe.add_decomposers([object()])  # type: ignore[list-item]
+
+    def test_add_decomposers_uses_distinct_registers_for_server_and_clients(self, temp_script, monkeypatch):
+        import nvflare.recipe.spec as spec_module
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_job",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            model={"class_path": "model.DummyModel", "args": {}},
+        )
+
+        captured = {}
+
+        def _capture_server(obj, **kwargs):
+            captured["server_obj"] = obj
+            captured["server_kwargs"] = kwargs
+
+        def _capture_clients(obj, **kwargs):
+            captured["client_obj"] = obj
+            captured["client_kwargs"] = kwargs
+
+        class _DummyRegister:
+            def __init__(self, class_names):
+                self.class_names = class_names
+
+        monkeypatch.setattr(spec_module, "DecomposerRegister", _DummyRegister)
+        monkeypatch.setattr(recipe.job, "to_server", _capture_server)
+        monkeypatch.setattr(recipe, "_add_to_client_apps", _capture_clients)
+
+        recipe.add_decomposers(["pkg.mod.Dec"])
+
+        assert captured["server_kwargs"] == {"id": "decomposer_reg"}
+        assert captured["client_kwargs"] == {"id": "decomposer_reg"}
+        assert captured["server_obj"] is not captured["client_obj"]
+
+
+class _DummyExecEnv:
+    def __init__(self):
+        self.extra = {}
+
+    def get_extra_prop(self, prop_name, default=None):
+        return self.extra.get(prop_name, default)
+
+    def deploy(self, job):
+        return "dummy-job-id"
+
+    def get_job_status(self, job_id):
+        return None
+
+    def abort_job(self, job_id):
+        return None
+
+    def get_job_result(self, job_id, timeout: float = 0.0):
+        return None
+
+
+class TestRecipeExecuteExportParamIsolation:
+    """Test that execute/export do not permanently mutate recipe additional_params."""
+
+    @pytest.fixture
+    def temp_script(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write("# Test training script\n")
+            temp_path = f.name
+        yield temp_path
+        os.unlink(temp_path)
+
+    def test_execute_server_params_do_not_accumulate(self, temp_script):
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_execute_param_isolation",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            model={"class_path": "model.DummyModel", "args": {}},
+        )
+
+        env = _DummyExecEnv()
+        server_app = recipe.job._deploy_map.get("server")
+        assert server_app is not None
+        assert server_app.app_config.additional_params == {}
+        recipe.execute(env, server_exec_params={"param_a": 1})
+        assert server_app.app_config.additional_params == {}
+
+        recipe.execute(env, server_exec_params={"param_b": 2})
+        assert server_app.app_config.additional_params == {}
+
+    def test_execute_empty_server_params_temporarily_clear_then_restore_snapshot(self, temp_script):
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_execute_empty_param_isolation",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            model={"class_path": "model.DummyModel", "args": {}},
+        )
+
+        env = _DummyExecEnv()
+        server_app = recipe.job._deploy_map.get("server")
+        assert server_app is not None
+        server_app.app_config.additional_params.update({"persisted": 1})
+
+        seen_during_execute = {}
+
+        def _capture_deploy(job):
+            server = job._deploy_map.get("server")
+            assert server is not None
+            seen_during_execute.update(server.app_config.additional_params)
+            return "dummy-job-id"
+
+        env.deploy = _capture_deploy
+
+        recipe.execute(env, server_exec_params={})
+
+        assert seen_during_execute == {}
+        assert server_app.app_config.additional_params == {"persisted": 1}
+
+    def test_execute_then_export_no_cross_contamination(self, temp_script):
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_execute_export_isolation",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            model={"class_path": "model.DummyModel", "args": {}},
+        )
+
+        env = _DummyExecEnv()
+        recipe.execute(env, server_exec_params={"from_execute": 1})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            recipe.export(job_dir=tmpdir, server_exec_params={"from_export": 2})
+            server_cfg_path = os.path.join(
+                tmpdir, "test_execute_export_isolation", "app", "config", "config_fed_server.json"
+            )
+            with open(server_cfg_path) as f:
+                server_cfg = json.load(f)
+
+        assert "from_execute" not in server_cfg
+        assert server_cfg.get("from_export") == 2
+
+        server_app = recipe.job._deploy_map.get("server")
+        assert server_app is not None
+        assert server_app.app_config.additional_params == {}
+
+
+def test_recipe_spec_import_strips_export_flags_from_sys_argv(monkeypatch):
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["python", "job.py", "--export", "--export-dir", "/tmp/out", "--other", "value"])
+
+    import nvflare.recipe.spec as spec_module
+
+    importlib.reload(spec_module)
+
+    assert sys.argv == ["python", "job.py", "--other", "value"]
+
+
+def test_consume_recipe_args_requires_export_dir_argument(monkeypatch):
+    import sys
+
+    import nvflare.recipe.spec as spec_module
+
+    monkeypatch.setattr(sys, "argv", ["python", "job.py", "--export", "--export-dir"])
+    with pytest.raises(ValueError, match="--export-dir requires an argument"):
+        spec_module._consume_recipe_args()
+
+
+def test_export_processes_falsy_env(tmp_path):
+    from nvflare.recipe.fedavg import FedAvgRecipe
+    from nvflare.recipe.spec import ExecEnv
+
+    class _FalsyEnv(ExecEnv):
+        def __bool__(self):
+            return False
+
+        def deploy(self, job):
+            return "dummy-job-id"
+
+        def get_job_status(self, job_id):
+            return None
+
+        def abort_job(self, job_id):
+            return None
+
+        def get_job_result(self, job_id, timeout: float = 0.0):
+            return None
+
+    recipe = FedAvgRecipe(
+        name="test_export_falsy_env",
+        num_rounds=2,
+        min_clients=2,
+        train_script=__file__,
+        model={"class_path": "model.DummyModel", "args": {}},
+    )
+
+    seen = {}
+
+    def _capture_process_env(env):
+        seen["env"] = env
+
+    recipe.process_env = _capture_process_env
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        recipe.export(job_dir=tmpdir, env=_FalsyEnv())
+
+    assert "env" in seen

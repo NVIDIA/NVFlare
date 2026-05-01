@@ -42,6 +42,8 @@ class FlowerJob(FedJob):
         tx_timeout=100.0,
         client_shutdown_timeout=5.0,
         extra_env: Optional[dict] = None,
+        run_config: Optional[dict] = None,
+        allow_runtime_dependency_installation: bool = False,
     ):
         """
         Flower Job.
@@ -61,6 +63,8 @@ class FlowerJob(FedJob):
             tx_timeout (float, optional): Timeout for transmitting data. Defaults to 100.0 seconds.
             client_shutdown_timeout (float, optional): Timeout for client shutdown. Defaults to 5.0 seconds.
             extra_env (dict, optional): optional extra env variables to be passed to Flower client
+            run_config (dict, optional): optional dict for flwr run --run-config arguments
+            allow_runtime_dependency_installation (bool, optional): whether to allow dynamic dependency installation. Defaults to False. (only flwr>=1.29)
         """
         if not os.path.isdir(flower_content):
             raise ValueError(f"{flower_content} is not a valid directory")
@@ -74,6 +78,8 @@ class FlowerJob(FedJob):
             start_task_timeout=start_task_timeout,
             max_client_op_interval=max_client_op_interval,
             progress_timeout=progress_timeout,
+            run_config=run_config,
+            allow_runtime_dependency_installation=allow_runtime_dependency_installation,
         )
         self.to_server(controller)
         self.to_server(obj=flower_content)
@@ -83,6 +89,7 @@ class FlowerJob(FedJob):
             tx_timeout=tx_timeout,
             client_shutdown_timeout=client_shutdown_timeout,
             extra_env=extra_env,
+            allow_runtime_dependency_installation=allow_runtime_dependency_installation,
         )
         self.to_clients(executor)
         self.to_clients(obj=flower_content)

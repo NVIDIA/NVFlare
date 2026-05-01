@@ -14,6 +14,8 @@
 import traceback
 from typing import List
 
+from nvflare.apis.job_def import DEFAULT_STUDY
+from nvflare.apis.utils.format_check import name_check
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.conn import Connection
@@ -24,6 +26,7 @@ from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.lighter.utils import cert_to_dict, load_crt_bytes
 from nvflare.security.logging import secure_format_exception
+from nvflare.security.study_registry import StudyRegistryService
 
 from .reg import CommandFilter
 from .sess import Session, SessionManager
@@ -67,14 +70,21 @@ class LoginModule(CommandModule, CommandFilter):
         )
 
     def handle_cert_login(self, conn: Connection, args: List[str]):
+        def _reject(reason: str = "", code: str = ""):
+            if code:
+                conn.append_string(f"REJECT: {code}: {reason}" if reason else f"REJECT: {code}")
+            else:
+                conn.append_string(f"REJECT: {reason}" if reason else "REJECT")
+
         if len(args) != 2:
-            conn.append_string("REJECT")
+            _reject()
             return
 
         user_name = args[1]
         headers = conn.get_prop(ConnProps.CMD_HEADERS)
         cert_data = headers.get("cert")
         signature = headers.get("signature")
+        study = headers.get("study", DEFAULT_STUDY)
 
         self.logger.debug(f"got cert login headers: {headers=}")
         hci = conn.get_prop(ConnProps.HCI_SERVER)
@@ -96,8 +106,35 @@ class LoginModule(CommandModule, CommandFilter):
             ok = False
 
         if not ok:
-            conn.append_string("REJECT")
+            _reject()
             return
+
+        if not isinstance(study, str):
+            _reject("study must be a string", code="AUTH_INVALID_STUDY")
+            return
+
+        invalid, _ = name_check(study, "study")
+        if invalid:
+            _reject(f"invalid study name '{study}'", code="AUTH_INVALID_STUDY_NAME")
+            return
+
+        registry = StudyRegistryService.get_registry()
+        if study != DEFAULT_STUDY:
+            if not registry:
+                self.logger.warning(f"rejecting login for user '{user_name}': no study registry for study '{study}'")
+                _reject(f"study '{study}' is not configured on the server", code="AUTH_STUDY_NOT_CONFIGURED")
+                return
+            if not registry.has_study(study):
+                self.logger.warning(f"rejecting login for user '{user_name}': unknown study '{study}'")
+                _reject(f"unknown study '{study}'", code="AUTH_UNKNOWN_STUDY")
+                return
+            if not registry.has_user(user_name, study):
+                self.logger.warning(f"rejecting login for user '{user_name}': no mapping for study '{study}'")
+                _reject(
+                    f"user '{user_name}' is not mapped to study '{study}'",
+                    code="AUTH_STUDY_USER_NOT_MAPPED",
+                )
+                return
 
         cert_dict = cert_to_dict(cert)
         self.logger.debug(f"got cert dict: {cert_dict}")
@@ -109,9 +146,10 @@ class LoginModule(CommandModule, CommandFilter):
 
         session = self.session_mgr.create_session(
             user_name=user_name,
-            user_org=identity.get(IdentityKey.ORG, ""),
-            user_role=identity.get(IdentityKey.ROLE, ""),
+            user_org=identity.get(IdentityKey.ORG) or "",
+            user_role=identity.get(IdentityKey.ROLE) or "",
             origin_fqcn=origin,
+            active_study=study,
         )
         token = session.make_token(id_asserter)
         self.logger.info(f"Created user session for {user_name}")
@@ -136,15 +174,15 @@ class LoginModule(CommandModule, CommandFilter):
             conn.append_error("not authenticated - no token")
             return False
 
-        sess = self.session_mgr.get_session(token)
+        hci = conn.get_prop(ConnProps.HCI_SERVER)
+        id_asserter = hci.get_id_asserter()
+
+        sess = self.session_mgr.get_session(token, id_asserter)
         if not sess:
             # try to recreate the session
             request = conn.get_prop(ConnProps.REQUEST)
             assert isinstance(request, CellMessage)
             origin = request.get_header(MessageHeaderKey.ORIGIN)
-
-            hci = conn.get_prop(ConnProps.HCI_SERVER)
-            id_asserter = hci.get_id_asserter()
 
             try:
                 sess = self.session_mgr.recreate_session(token, origin, id_asserter)
@@ -165,6 +203,7 @@ class LoginModule(CommandModule, CommandFilter):
         conn.set_prop(ConnProps.USER_NAME, sess.user_name)
         conn.set_prop(ConnProps.USER_ORG, sess.user_org)
         conn.set_prop(ConnProps.USER_ROLE, sess.user_role)
+        conn.set_prop(ConnProps.ACTIVE_STUDY, sess.active_study)
         conn.set_prop(ConnProps.TOKEN, token)
         return True
 

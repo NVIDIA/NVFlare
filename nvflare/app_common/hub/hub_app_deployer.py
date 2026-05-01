@@ -24,6 +24,9 @@ from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.utils.job_utils import load_job_def_bytes
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.dict_utils import update_components
+from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
+from nvflare.lighter.utils import verify_folder_signature
+from nvflare.private.fed.utils.fed_utils import require_signed_jobs
 
 
 class HubAppDeployer(AppDeployerSpec, FLComponent):
@@ -70,6 +73,17 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
         t2_job_id = job_id + "_t2"  # temporary ID for creating T2 job
         t2_run_dir = workspace.get_run_dir(t2_job_id)
         shutil.copytree(t1_run_dir, t2_run_dir)
+
+        # Verify the original T1 app before HUB rewrites any job files.
+        # FROM_HUB_SITE=True later signals that the hub verified the job, so we must actually do so here.
+        app_path = workspace.get_app_dir(job_id)
+        root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
+        sig_file = os.path.join(app_path, NVFLARE_SIG_FILE)
+        if os.path.exists(sig_file):
+            if not verify_folder_signature(app_path, root_ca_path):
+                return "hub: job signature verification failed before forwarding", None, None
+        elif require_signed_jobs(workspace):
+            return "hub: unsigned job rejected — require_signed_jobs is enabled", None, None
 
         # step 3: modify the T1 client's config_fed_client.json to use HubExecutor
         # simply use t1_config_fed_client.json in the site folder
@@ -162,6 +176,11 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
         t2_meta_path = workspace.get_job_meta_path(t2_job_id)
         with open(t2_meta_path, "w") as f:
             json.dump(t2_meta, f, indent=4)
+
+        # The copied T2 app has been rewritten, so the originator signature no longer describes its contents.
+        t2_sig_file = os.path.join(workspace.get_app_dir(t2_job_id), NVFLARE_SIG_FILE)
+        if os.path.exists(t2_sig_file):
+            os.remove(t2_sig_file)
 
         # step 5: submit T2 app (as a job) to T1's job store
         t2_job_def = load_job_def_bytes(from_path=workspace.root_dir, def_name=t2_job_id)

@@ -23,7 +23,7 @@ from typing import Any, BinaryIO, Dict, Type, TypeVar, Union
 import msgpack
 
 from nvflare.fuel.utils.class_loader import get_class_name, load_class
-from nvflare.fuel.utils.fobs.builtin_decomposers import BUILTIN_DECOMPOSERS
+from nvflare.fuel.utils.fobs.builtin_decomposers import BUILTIN_DECOMPOSERS, BUILTIN_TYPES
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposer import (
     DataClassDecomposer,
@@ -46,6 +46,7 @@ __all__ = [
     "deserialize_stream",
     "reset",
     "get_dot_handler",
+    "add_type_name_whitelist",
 ]
 
 from nvflare.security.logging import secure_format_exception
@@ -65,6 +66,9 @@ _decomposers_registered = False
 # If this is enabled, FOBS will try to register generic decomposers automatically
 _enum_auto_registration = True
 _data_auto_registration = True
+# Whitelist of type names allowed for deserialization when not already in _decomposers.
+# Pre-populated from BUILTIN_TYPES.
+_type_name_whitelist: set[str] = set(BUILTIN_TYPES)
 
 
 def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
@@ -126,13 +130,17 @@ class Packer:
             registered = False
             if isinstance(obj, Enum):
                 if _enum_auto_registration:
-                    register_enum_types(type(obj))
+                    # Use register() directly to avoid adding to _type_name_whitelist;
+                    # auto-registered types are session-only and should not survive reset().
+                    register(EnumTypeDecomposer(type(obj)))
                     registered = True
             else:
                 if callable(obj) or (not hasattr(obj, "__dict__")):
                     raise TypeError(f"{type(obj)} can't be serialized by FOBS without a decomposer")
                 if _data_auto_registration:
-                    register_data_classes(type(obj))
+                    # Use register() directly to avoid adding to _type_name_whitelist;
+                    # auto-registered types are session-only and should not survive reset().
+                    register(DataClassDecomposer(type(obj)))
                     registered = True
 
             if not registered:
@@ -153,20 +161,32 @@ class Packer:
             return obj
 
         type_name = obj[FOBS_TYPE]
+        # Security boundary: types already present in _decomposers are implicitly trusted and
+        # bypass the whitelist and BUILTIN_DECOMPOSERS checks below. This is intentional — only
+        # explicitly registered decomposers are allowed, and registration is the trust grant.
+        # The whitelist only gates the first deserialization of a type (before it is registered).
         if type_name not in _decomposers:
             registered = False
             decomposer_name = obj.get(FOBS_DECOMPOSER)
 
             # For security reason, only builtin decomposers are allowed without registration
-            if decomposer_name not in BUILTIN_DECOMPOSERS:
+            if decomposer_name and decomposer_name not in BUILTIN_DECOMPOSERS:
                 raise ValueError(f"Decomposer {decomposer_name} must be registered")
+
+            # Validate type_name against whitelist to prevent arbitrary class loading (RCE)
+            if type_name not in _type_name_whitelist:
+                raise ValueError(
+                    f"Type '{type_name}' is not allowed. "
+                    f"Use fobs.register_data_classes(), fobs.register_enum_types(), "
+                    f"or fobs.add_type_name_whitelist() to allow this type."
+                )
 
             cls = load_class(type_name)
             if not decomposer_name:
                 # Maintaining backward compatibility with auto enum registration
                 if _enum_auto_registration:
                     if issubclass(cls, Enum):
-                        register_enum_types(cls)
+                        register(EnumTypeDecomposer(cls))
                         registered = True
             else:
                 decomposer_class = load_class(decomposer_name)
@@ -191,8 +211,25 @@ class Packer:
         return decomposer.recompose(data, self.manager)
 
 
+def add_type_name_whitelist(*type_names: str) -> None:
+    """Add type names to the whitelist for deserialization.
+
+    Type names added here are allowed to be auto-loaded during deserialization
+    when they have not been explicitly pre-registered. This prevents arbitrary
+    class loading (RCE) while still supporting lazy registration use cases.
+
+    Args:
+        type_names: Fully qualified class names (e.g. "mypackage.MyClass")
+    """
+    _type_name_whitelist.update(type_names)
+
+
 def register_data_classes(*data_classes: Type[T]) -> None:
-    """Register generic decomposers for data classes
+    """Register generic decomposers for data classes.
+
+    Also adds each class to the type-name whitelist so that it can be lazily
+    re-loaded during deserialization. The whitelist entry is cleared when
+    fobs.reset() is called.
 
     Args:
         data_classes: The classes to be registered
@@ -201,10 +238,15 @@ def register_data_classes(*data_classes: Type[T]) -> None:
     for data_class in data_classes:
         decomposer = DataClassDecomposer(data_class)
         register(decomposer)
+        _type_name_whitelist.add(get_class_name(data_class))
 
 
 def register_enum_types(*enum_types: Type[Enum]) -> None:
-    """Register generic decomposers for enum classes
+    """Register generic decomposers for enum classes.
+
+    Also adds each class to the type-name whitelist so that it can be lazily
+    re-loaded during deserialization. The whitelist entry is cleared when
+    fobs.reset() is called.
 
     Args:
         enum_types: The enum classes to be registered
@@ -215,6 +257,7 @@ def register_enum_types(*enum_types: Type[Enum]) -> None:
             raise TypeError(f"Can't register class {enum_type}, which is not a subclass of Enum")
         decomposer = EnumTypeDecomposer(enum_type)
         register(decomposer)
+        _type_name_whitelist.add(get_class_name(enum_type))
 
 
 def auto_register_enum_types(enabled=True) -> None:
@@ -401,4 +444,6 @@ def reset():
     global _decomposers, _decomposers_registered, _dot_handlers
     _decomposers.clear()
     _dot_handlers.clear()
+    _type_name_whitelist.clear()
+    _type_name_whitelist.update(BUILTIN_TYPES)
     _decomposers_registered = False

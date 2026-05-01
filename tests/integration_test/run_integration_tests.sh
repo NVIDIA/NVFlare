@@ -9,7 +9,7 @@ PYTHONPATH="${PWD}/../.."
 export GRPC_POLL_STRATEGY="poll"
 export GRPC_ENABLE_FORK_SUPPORT="False"
 
-backends=(numpy tensorflow pytorch auth preflight cifar auto stats xgboost client_api client_api_qa model_controller_api)
+backends=(numpy tensorflow pytorch auth preflight cifar stats xgboost client_api client_api_qa model_controller_api standalone)
 
 usage()
 {
@@ -24,21 +24,21 @@ usage()
     exit 1
 }
 
+base_cmd="pytest -v --log-cli-level=INFO --capture=no"
 no_args="true"
 while getopts ":m:dc" option; do
     case "${option}" in
         m) # framework/backend
-            cmd="pytest --junitxml=./integration_test.xml -v --log-cli-level=INFO --capture=no"
             m=${OPTARG}
             prefix="NVFLARE_TEST_FRAMEWORK=$m PYTHONPATH=${PYTHONPATH}"
             ;;
         d) # debug
             export FL_LOG_LEVEL=DEBUG
-            cmd="pytest --junitxml=./integration_test.xml -vv --log-cli-level=DEBUG --capture=no"
+            base_cmd="pytest -vv --log-cli-level=DEBUG --capture=no"
             ;;
         c) # Clean up
             echo "Clean up integration tests result"
-            rm -rf ./integration_test.xml
+            rm -rf ./*_test.xml ./integration_test.xml
             ;;
         *) # Invalid option
             usage
@@ -47,11 +47,12 @@ while getopts ":m:dc" option; do
     no_args="false"
 done
 [[ "$no_args" == "true" ]] && usage
+cmd="$base_cmd"
 
 run_preflight_check_test()
 {
     echo "Running preflight check integration tests."
-    cmd="$cmd preflight_check_test.py"
+    cmd="$cmd --junitxml=./integration_test.xml preflight_check_test.py"
     echo "$cmd"
     eval "$cmd"
 }
@@ -59,24 +60,50 @@ run_preflight_check_test()
 run_system_test()
 {
     echo "Running system integration tests with backend $m."
-    cmd="$prefix $cmd system_test.py"
+    cmd="$prefix $cmd --junitxml=./integration_test.xml system_test.py"
     echo "$cmd"
     eval "$cmd"
+}
+
+run_pytest_files()
+{
+    files=$(python -c "
+import yaml, sys
+with open('test_configs.yml') as f:
+    cfg = yaml.safe_load(f)
+for f in cfg.get('pytest_files', {}).get('$m', []):
+    print(f)
+")
+    if [ -n "$files" ]; then
+        for f in $files; do
+            local xml_name="${f%.py}.xml"
+            echo "Running standalone pytest file: $f"
+            eval "$prefix $base_cmd --junitxml=./$xml_name $f"
+        done
+    fi
 }
 
 run_tensorflow()
 {
     echo "Running integration tests using tensorflow related jobs."
-    cmd="$prefix TF_FORCE_GPU_ALLOW_GROWTH=true $cmd system_test.py"
+    cmd="$prefix TF_FORCE_GPU_ALLOW_GROWTH=true $cmd --junitxml=./integration_test.xml system_test.py"
     python -c "import tensorflow; print('TF version is ' + tensorflow.__version__)"
     echo "$cmd"
     eval "$cmd"
 }
 
+has_system_tests=$(python -c "
+import yaml
+with open('test_configs.yml') as f:
+    cfg = yaml.safe_load(f)
+print('yes' if cfg.get('test_configs', {}).get('$m') else 'no')
+")
+
 if [[ $m == "tensorflow" ]]; then
     run_tensorflow
 elif [[ $m == "preflight" ]]; then
     run_preflight_check_test
-else
+elif [[ $has_system_tests == "yes" ]]; then
     run_system_test
 fi
+run_pytest_files

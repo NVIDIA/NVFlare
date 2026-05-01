@@ -2,8 +2,8 @@
 
 ## sag_pt_gnn
     name = "sag_gnn"
-    description = "FedAvg with Scatter and Gather Workflow for GNN learning" 
-    class_name  =  "ScatterAndGather"
+    description = "FedAvg with Scatter and Gather workflow for GNN learning" 
+    class_name = "ScatterAndGather"
     controller_type = "server"
     executor_type = "launcher_executor"
     contributor = "NVIDIA"

@@ -23,6 +23,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+from nvflare.apis.job_def import DEFAULT_STUDY
+
 try:
     import readline
 except ImportError:
@@ -79,11 +81,13 @@ class AdminClient(cmd.Cmd, EventHandler):
         handlers=None,
         cli_history_dir: str = str(Path.home() / ".nvflare"),
         cli_history_size: int = 1000,
+        study: str = DEFAULT_STUDY,
     ):
         super().__init__()
         self.intro = "Type help or ? to list commands.\n"
         self.prompt = admin_config.get(AdminConfigKey.PROMPT, "> ")
         self.user_name = username
+        self._study = study
         self.debug = debug
         self.out_file = None
         self.no_stdout = False
@@ -118,6 +122,7 @@ class AdminClient(cmd.Cmd, EventHandler):
             user_name=self.user_name,
             debug=self.debug,
             event_handlers=event_handlers,
+            study=study,
         )
 
         if not os.path.isdir(cli_history_dir):

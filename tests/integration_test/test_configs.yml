@@ -1,4 +1,6 @@
 test_configs:
+  # No configs; -m auto runs zero tests (legacy backend, registry removed).
+  auto: []
   auth:
     - ./data/test_configs/authorization/test_diff_job_config.yml
     - ./data/test_configs/authorization/submit_job.yml
@@ -28,3 +30,9 @@ test_configs:
     - ./data/test_configs/standalone_job/client_api_qa.yml
   model_controller_api:
     - ./data/test_configs/standalone_job/model_controller_api.yml
+
+  standalone: []
+
+pytest_files:
+  standalone:
+    - study_session_test.py

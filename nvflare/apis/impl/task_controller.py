@@ -127,7 +127,14 @@ class TaskController(FLComponent, ControllerSpec):
         request.set_header(ReservedKey.TASK_NAME, task.name)
         msg_root_id = task.msg_root_id
         request.set_header(ReservedHeaderKey.MSG_ROOT_ID, msg_root_id)
-        request.set_header(ReservedHeaderKey.MSG_ROOT_TTL, task.timeout)
+        # Use MSG_ROOT_TTL if already set on the request (e.g. a task-lifetime
+        # timeout that differs from the cell-level ACK/send timeout).  This lets
+        # callers such as SwarmClientController stamp a separate large-model
+        # download lifetime without changing the ACK wait time.  Fall back to
+        # task.timeout when no override is present.
+        pre_set_ttl = request.get_header(ReservedHeaderKey.MSG_ROOT_TTL)
+        msg_root_ttl = pre_set_ttl if pre_set_ttl is not None else task.timeout
+        request.set_header(ReservedHeaderKey.MSG_ROOT_TTL, msg_root_ttl)
 
         replies = engine.send_aux_request(
             targets=targets,

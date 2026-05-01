@@ -4,230 +4,631 @@
 NVIDIA FLARE Job CLI
 #########################
 
-The NVIDIA FLARE :mod:`Job CLI<nvflare.tool.job.job_cli>` provides options to create and submit
-jobs from a command line interface. See the :github_nvflare_link:`NVFlare Job CLI Notebook <examples/tutorials/job_cli.ipynb>`
-for a tutorial on how to use the Job CLI.
+The ``nvflare job`` command family is used to submit, inspect, monitor, and
+manage federated learning jobs from an admin startup kit.
 
-.. note::
-    
-    We have introduced a new Pythonic Job API experience, please
-    check :ref:`fed_job_api`.
+Before using server-connected job commands, either run ``nvflare poc prepare``
+or activate a registered startup kit with :ref:`kit_command`:
+
+.. code-block:: shell
+
+   nvflare config add project_admin /path/to/admin@nvidia.com
+   nvflare config use project_admin
 
 ***********************
 Command Usage
 ***********************
 
-.. code-block::
-
-    usage: nvflare job [-h] {list_templates,create,submit,show_variables} ...
-
-    options:
-    -h, --help            show this help message and exit
-
-    job:
-    {list_templates,create,submit,show_variables}
-                        job subcommand
-    list_templates      show available job templates
-    create              create job
-    submit              submit job
-    show_variables      show template variable values in configuration
-
-
-*****************
-Command examples
-*****************
-
-Lists Job Templates
-===================
-
-The ``nvflare job list_templates`` command lists the available job templates. The option
-``-d "<job_templates_dir>"`` or ``--job_template_dir "<job_templates_dir>"`` is the location of
-the job_templates.
-
-.. code-block:: shell
-
-    nvflare job list_templates -d "<NVFlare location>/job_templates"
-
-The output should be similar to the following:
-
 .. code-block:: none
 
-    The following job templates are available: 
+   nvflare job -h
 
-    ----------------------------------------------------------------------------------------------------------------------
-    name                 Description                                                  Controller Type   Execution API Type
-    ----------------------------------------------------------------------------------------------------------------------
-    cyclic_cc_pt         client-controlled cyclic workflow with PyTorch ClientAPI tra client            client_api
-    cyclic_pt            server-controlled cyclic workflow with PyTorch ClientAPI tra server            client_api
-    psi_csv              private-set intersection for csv data                        server            Executor
-    sag_cross_np         scatter & gather and cross-site validation using numpy       server            client executor
-    sag_cse_pt           scatter & gather workflow and cross-site evaluation with PyT server            client_api
-    sag_gnn              scatter & gather workflow for gnn learning                   server            client_api
-    sag_nemo             Scatter and Gather Workflow for NeMo                         server            client_api
-    sag_np               scatter & gather workflow using numpy                        server            client_api
-    sag_np_cell_pipe     scatter & gather workflow using numpy                        server            client_api
-    sag_np_metrics       scatter & gather workflow using numpy                        server            client_api
-    sag_pt               scatter & gather workflow using pytorch                      server            client_api
-    sag_pt_deploy_map    SAG workflow with pytorch, deploy_map, site-specific configs server            client_api
-    sag_pt_executor      scatter & gather workflow and cross-site evaluation with PyT server            Executor
-    sag_pt_he            scatter & gather workflow using pytorch and homomorphic encr server            client_api
-    sag_pt_mlflow        scatter & gather workflow using pytorch with MLflow tracking server            client_api
-    sag_pt_model_learner scatter & gather workflow and cross-site evaluation with PyT server            ModelLearner
-    sag_tf               scatter & gather workflow using TensorFlow                   server            client_api
-    sklearn_kmeans       scikit-learn KMeans model                                    server            client_api
-    sklearn_linear       scikit-learn linear model                                    server            client_api
-    sklearn_svm          scikit-learn SVM model                                       server            client_api
-    stats_df             FedStats: tabular data with pandas                           server            stats executor
-    stats_image          FedStats: image intensity histogram                          server            stats executor
-    swarm_cse_pt         Swarm Learning with Cross-Site Evaluation with PyTorch       client            client_api
-    swarm_cse_pt_model_l Swarm Learning with Cross-Site Evaluation with PyTorch Model client            ModelLearner
-    vertical_xgb         vertical federated xgboost                                   server            Executor
-    xgboost_tree         xgboost horizontal tree-based collaboration model            server            client_api
-    ----------------------------------------------------------------------------------------------------------------------
+   usage: nvflare job [-h]  ...
 
-View all the available templates at the :github_nvflare_link:`FLARE Job Template Registry <job_templates>`.
+   job subcommands:
+     submit          submit job
+     wait            wait for a job and return one final JSON envelope
+     monitor         wait for a job and stream progress to stderr
+     list            list jobs on the server
+     abort           abort a running job
+     meta            get metadata for a job
+     logs            retrieve job logs from the server-side log store
+     log-config      change logging configuration for a running job
+     stats           show running job statistics
+     download        download job result
+     clone           clone an existing job
+     delete          delete a job
+     list_templates  [DEPRECATED] use 'nvflare recipe list'
+     create          [DEPRECATED] use 'python job.py --export --export-dir <job_folder>' + 'nvflare job submit -j <job_folder>'
+     show_variables  [DEPRECATED] use 'nvflare recipe list' or the Job Recipe API
 
-Setting job_template path
--------------------------
-You can also use the ``nvflare job list_templates`` command without the `-d` option. When the job templates directory
-is not specified, the Job CLI will try to find the location with the following logic:
+*****************
+Common Workflow
+*****************
 
-See if the ``NVFLARE_HOME`` environment variable is set. If ``NVFLARE_HOME`` is not empty, the Job CLI will look for the job templates at
-``${NVFLARE_HOME}/job_templates``.
- 
-If the ``NVFLARE_HOME`` environment variable is not set, the Job CLI will look for the ``job_template`` path in the config in the nvflare
-hidden directory (located at ``~/.nvflare/config.conf``). Once the ``-d <job_template_dir>`` option is used, the ``job_template`` value
-in ``~/.nvflare/config.conf`` will be updated so you don't need to specify ``-d`` again. 
+1. Export or prepare a job folder.
+2. Submit the job with ``nvflare job submit -j <job_folder>``.
+3. In automation, wait for completion with ``nvflare job wait <job_id>``.
+   For interactive progress output, use ``nvflare job monitor <job_id>``.
+4. Inspect metadata, stats, or logs as needed.
+5. Download, clone, abort, or delete the job when appropriate.
 
-If you want to change the ``job_template`` path, you can directly edit this config file or use the ``nvflare config`` command with the
-``-jt`` or ``--job_templates_dir`` option:
+*****************************
+Startup Kit Selection
+*****************************
 
-.. code-block:: shell
+Server-connected job commands use this startup kit resolution order:
 
-    nvflare config -jt ../../job_templates
+1. Optional ``--kit-id <id>``: override the active startup kit for this command
+   only by using a registered startup-kit ID.
+2. Optional ``--startup-kit <path>``: override the active startup kit for this
+   command only by using an explicit admin startup-kit directory.
+3. ``NVFLARE_STARTUP_KIT_DIR`` when set.
+4. ``startup_kits.active`` from ``~/.nvflare/config.conf``.
+5. If no source resolves to a valid admin startup kit, the command fails before connecting.
 
+``--kit-id`` and ``--startup-kit`` are not required. When provided, they take
+precedence over the active startup kit for the current command only and do not
+change the globally active startup kit. They are useful for scripts, notebooks,
+and concurrent workflows that must not mutate ``~/.nvflare/config.conf``.
 
-Create new job
-===================
+****************
+Submit a Job
+****************
 
-The ``nvflare job create`` command will allow you to create a new job based on a template, with options to replace variables in config files.
-The options for usage are as follows:
-
-.. code-block::
-
-    usage: nvflare job create [-h] [-j [JOB_FOLDER]] [-w [TEMPLATE]] [-sd [SCRIPT_DIR]] [-f [CONFIG_FILE [CONFIG_FILE ...]]] [-debug] [-force]
-
-    optional arguments:
-    -h, --help            show this help message and exit
-    -j [JOB_FOLDER], --job_folder [JOB_FOLDER]
-                            job_folder path, default to ./current_job directory
-    -w [TEMPLATE], --template [TEMPLATE]
-                            template name or template folder. You can use list_templates to see available jobs from job templates, pick name such as 'sag_pt' as template name. Alternatively, you can use the path to the job
-                            template folder, such as job_templates/sag_pt
-    -sd [SCRIPT_DIR], --script_dir [SCRIPT_DIR]
-                            script directory contains additional related files. All files or directories under this directory will be copied over to the custom directory.
-    -f [CONFIG_FILE [CONFIG_FILE ...]], --config_file [CONFIG_FILE [CONFIG_FILE ...]]
-                            Training config file with corresponding optional key=value pairs. If key presents in the preceding config file, the value in the config file will be overwritten by the new value
-    -debug, --debug       debug is on
-    -force, --force       force create is on, if -force, overwrite existing configuration with newly created configurations
-
-The ``-j`` option or ``--job_folder`` option is the path to the job folder to be created. If the job folder is not specified, the Job CLI will create a
-``current_job`` folder in the current directory.
-
-The ``-w`` option or ``--template`` option is the name of the template that the new job will be created from.
-
-
-Show variables
-===============
-The ``nvflare job show_variables`` command can be used to show the variables in a job. The options for usage are as follows:
+Use ``nvflare job submit`` to submit a pre-built NVFlare job folder:
 
 .. code-block:: shell
 
-    nvflare job show_variables -j <path/to/my_job>
+   nvflare job submit -j /tmp/nvflare/hello-pt
 
+Submit options:
 
-Submit job with CLI
-===================
+- ``-j, --job_folder``: job folder path. Defaults to ``./current_job``.
+- ``--study``: submit into a named study when the server is configured for
+  multi-study access. If omitted, the literal study name ``default`` is
+  submitted.
+- ``--submit-token``: caller-generated token for retry-safe submit and later
+  recovery with ``nvflare job list --submit-token``.
+- ``-debug, --debug``: keep the temporary copied job folder for inspection.
+- ``--schema``: print the command schema as JSON and exit.
 
-The ``nvflare job submit`` command can be used to submit jobs:
+Submit returns immediately with a ``job_id``. It does not wait for terminal
+job status.
 
-.. code-block::
+To change job configuration values, edit the exported job files before
+submission. Submit-time ``-f/--config_file`` overrides are not supported.
 
-    usage: nvflare job submit [-h] [-j [JOB_FOLDER]] [-f [CONFIG_FILE ...]] [-debug]
-
-    options:
-    -h, --help            show this help message and exit
-    -j [JOB_FOLDER], --job_folder [JOB_FOLDER]
-                            job_folder path, default to ./current_job directory
-    -f [CONFIG_FILE ...], --config_file [CONFIG_FILE ...]
-                            Training config file with corresponding optional key=value pairs. If key presents in the preceding config file, the value in the config file will be overwritten by the new value
-    -debug, --debug       debug is on
-
-In order to do this, it will need to know the location of the admin console
-startup kit directory. In POC mode, this is set for the user automatically. For a provisioned setup, the user will need to set the path to
-the startup kit for the Job CLI. The startup kit path is stored in the ``~/.nvflare/config.conf`` file in the nvflare hidden directory at
-the user's home directory. You can edit this path in the file and set it directly for example:
+Examples:
 
 .. code-block:: shell
 
-    startup_kit {
-        path = /tmp/nvflare/poc/example_project/prod_00
-    }
+   nvflare config use project_admin
+   nvflare job submit -j /tmp/nvflare/hello-pt
+   nvflare job list --kit-id project_admin
+   nvflare job submit -j /tmp/nvflare/hello-pt --startup-kit /path/to/admin@nvidia.com
 
-Alternatively, you can use the ``nvflare config`` command with the ``-d`` or ``--startup_kit_dir`` option to set the startup kit path:
+Registered startup kit paths must point to the admin startup kit directory
+itself, not the broader ``prod_00`` root.
 
-.. code-block:: shell
+Example JSON success response:
 
-    nvflare config --startup_kit_dir /tmp/nvflare/poc/example_project/prod_00
+.. code-block:: json
 
-With the startup kit directory path set, you can submit the job (this following example is from the
-:github_nvflare_link:`NVFlare Job CLI Notebook <examples/tutorials/job_cli.ipynb>` and
-replaces several variables in the ``config_fed_server.conf`` config file):
+   {"schema_version": "1", "status": "ok", "exit_code": 0, "data": {"job_id": "abc123"}}
 
-.. code-block:: shell
-
-    nvflare job submit -j /tmp/nvflare/my_job -f config_fed_server.conf num_rounds=1 app_config="--dataset_path /tmp/nvflare/data/cifar10"
-
-Troubleshooting with the -debug flag
-------------------------------------
-
-Since the ``nvflare job submit`` command does not overwrite the job folder configuration during submission, it has to use a temp job folder. 
-If you want to check the final configs submitted to the server or simply want to see the stack trace of the exception, you can use the ``-debug`` flag. 
-
-With the ``-debug`` flag, the ``nvflare job submit`` command will not delete the temp job folder once it has finished job submission,
-and it will also print the exception stack trace in case of failure.
-
-When you submit a job with the ``-debug`` flag, you should see a statement like the following after the message that the job was
-submitted (the actual random folder name will vary): 
+If the server is configured for studies, you can target one explicitly:
 
 .. code-block:: shell
 
-    in debug mode, job configurations can be examined in temp job directory '/tmp/tmpdnusoyzj'
+   nvflare job submit -j /tmp/nvflare/my_job --study cancer_research
 
-You can look at the contents of the temp job folder for more information about the job submission. For example, you can look at the
-``config_fed_server.conf`` file in the temp job folder to see if the final configuration is what you intended.
+Retry-Safe Submit Tokens
+========================
+
+Use ``--submit-token`` when an automated caller may retry a submit after a
+timeout or lost client connection:
+
+.. code-block:: shell
+
+   TOKEN=$(uuidgen)
+   nvflare job submit -j /tmp/nvflare/my_job \
+       --study cancer_research \
+       --submit-token "$TOKEN" \
+       --format json
+
+``--submit-token`` is optional. When provided, it must be generated by the
+caller and is used as an idempotency and recovery value for one intended
+submit. NVFlare does not auto-generate a submit token when the flag is omitted.
+The token is not an authentication token, session token, startup-kit credential,
+API key, or certificate secret. Normal startup-kit authentication and
+authorization still apply.
+
+Tokens must be non-empty, at most 128 characters, and use only letters,
+numbers, ``.``, ``_``, ``:``, or ``-``.
+
+Submit-token scope is the selected server/project context, study, submitter
+identity, and token value. Reusing the same token with the same job content in
+the same scope returns the existing ``job_id``. Reusing it with different job
+content fails with ``SUBMIT_TOKEN_CONFLICT``. The same token may be used in a
+different study because studies are separate job namespaces.
+
+If a job created with ``--submit-token`` is later deleted, the server keeps the
+submit record as ``job_deleted``. A later submit or list lookup with the same
+token returns ``SUBMIT_TOKEN_JOB_DELETED`` instead of silently recreating the
+deleted job. Use a new submit token to submit the job again.
+
+The submitted job path should point to the job content root. When the submitted
+artifact is a zip file with one wrapper directory around the job content, the
+wrapper is ignored for submit-token content hashing so a normal
+``zip -r my_job.zip my_job/`` archive matches submitting ``my_job/`` directly.
+Submitting the parent directory that contains ``my_job/`` is different content
+and may conflict when retried with the same token.
+
+The token is stored only as server-owned submission metadata. It is not written
+to the job's ``meta.json``; that file remains job-owned execution metadata such
+as ``deploy_map``, ``resource_spec``, ``min_clients``, and launcher settings.
+If ``--submit-token`` is omitted, submit behavior is unchanged and each submit
+creates a new job as before. The server still records the submitted job through
+the normal job store and job history, but no retry-safe submit-token record is
+created. The job cannot later be recovered with ``job list --submit-token``
+unless the original submit used a caller-provided token.
+
+After a client-side timeout or session loss, recover the accepted job with
+``job list --submit-token``:
+
+.. code-block:: shell
+
+   nvflare job list --study cancer_research --submit-token "$TOKEN" --format json
+
+If the recovered job was deleted, JSON output uses the normal error envelope:
+
+.. code-block:: json
+
+   {
+     "schema_version": "1",
+     "status": "error",
+     "exit_code": 4,
+     "error_code": "SUBMIT_TOKEN_JOB_DELETED",
+     "data": {
+       "job_id": "abc123",
+       "state": "job_deleted",
+       "deleted_time": "2026-04-30T10:00:00-07:00"
+     }
+   }
+
+``--submit-token`` is only for ``job submit`` and ``job list``. To monitor,
+download, abort, delete, or clone the recovered job, first resolve the
+``job_id`` with ``job list --submit-token`` and then use the normal job command.
+
+***********************
+Wait or Monitor a Job
+***********************
+
+Use ``nvflare job wait`` when a script or agent needs one final command result
+after the job reaches a terminal state:
+
+.. code-block:: shell
+
+   nvflare job wait <job_id>
+   nvflare job wait <job_id> --study cancer_research
+   nvflare job wait <job_id> --timeout 3600 --interval 5 --format json
+
+``job wait`` accepts:
+
+- ``job_id``: job ID to wait for.
+- ``--timeout``: max seconds to wait; must be greater than or equal to ``0``.
+  Default: ``0`` (no timeout).
+- ``--interval``: poll interval in seconds; must be greater than ``0``.
+  Default: ``2``.
+- ``--study``: wait for a job in a named study. Use the same study name used at
+  submission time. If omitted, the literal study name ``default`` is used.
+- ``--schema``: print the command schema as JSON and exit.
+
+Unlike ``job monitor``, ``job wait`` is the single-envelope automation command.
+It does not stream progress lines. In JSON mode, stdout contains exactly one
+final JSON envelope with the terminal job status and metadata; human-readable
+diagnostics still go to stderr.
+
+Exit behavior:
+
+- exit code ``0``: job finished successfully.
+- exit code ``1``: job reached a terminal failure state, such as ``FAILED``,
+  ``FINISHED_EXCEPTION``, ``ABORTED``, or ``ABANDONED``.
+- exit code ``2``: connection, authentication, or authorization failure prevented waiting.
+- exit code ``3``: wait timeout.
+
+This enables CI/CD-style chaining without parsing progress output:
+
+.. code-block:: shell
+
+   JOB=$(nvflare job submit -j ./my_job --format json | jq -r .data.job_id)
+   nvflare job wait $JOB --format json && nvflare job download $JOB
+
+Use ``nvflare job monitor`` when a human wants progress updates while waiting.
+It streams status lines to stderr and returns the final result when the job
+reaches a terminal state:
+
+.. code-block:: shell
+
+   nvflare job monitor <job_id>
+   nvflare job monitor <job_id> --study cancer_research
+   nvflare job monitor <job_id> --timeout 3600 --format jsonl
+
+Monitor options:
+
+- ``job_id``: job ID to monitor.
+- ``--timeout``: max seconds to wait; must be greater than or equal to ``0``.
+  Default: ``0`` (no timeout).
+- ``--interval``: poll interval in seconds; must be greater than ``0``.
+  Default: ``2``.
+- ``--study``: monitor a job in a named study. Use the same study name used
+  at submission time. If omitted, the literal study name ``default`` is used.
+- ``--stats-target``: where to fetch stats from. Choices: ``server``, ``client``, ``all``. Default: ``server``.
+- ``--metric``: extra metric key to surface from stats. Repeatable.
+- ``--schema``: print the command schema as JSON and exit.
+
+``job monitor`` exit behavior matches ``job wait``:
+
+- exit code ``0``: job finished successfully
+- exit code ``1``: job reached a terminal failure state: ``FAILED``, ``FINISHED_EXCEPTION``, ``ABORTED``, or ``ABANDONED``
+- exit code ``2``: connection, authentication, or authorization failure prevented monitoring
+- exit code ``3``: monitor timeout
+
+For automation that needs progress events, use ``--format jsonl``. Each stdout
+line is one complete JSON object. Progress events include ``terminal: false``;
+the final event always includes ``terminal: true``. Timeout emits a final event
+with ``status: "TIMEOUT"`` and exits with code ``3``. Successful terminal job
+statuses such as ``FINISHED_OK`` are normalized to ``status: "COMPLETED"`` and
+the raw server status is preserved in ``job_status``. Connection,
+authentication, and authorization failures emit a terminal error event with
+``status: "error"`` and the specific code in ``error_code``.
+
+Example JSONL terminal event:
+
+.. code-block:: json
+
+   {"schema_version":"1","event":"terminal","job_id":"abc123","status":"COMPLETED","job_status":"FINISHED_OK","terminal":true}
+
+*********************
+List and Inspect Jobs
+*********************
+
+List jobs currently known to the server:
+
+.. code-block:: shell
+
+   nvflare job list
+
+Common list filters:
+
+- ``-n, --name``: filter by job name prefix.
+- ``-i, --id``: filter by job ID prefix.
+- ``-r, --reverse``: reverse sort order.
+- ``-m, --max``: maximum number of results to return.
+- ``--study``: list jobs from a named study. If omitted, the literal study name
+  ``default`` is used. Values such as ``all`` are passed through to the server
+  unchanged.
+- ``--submit-token``: find the job associated with a retry-safe submit token in
+  the selected study. This is the recovery path after submitting with
+  ``--submit-token``.
+- ``--schema``: print the command schema as JSON and exit.
+
+Retrieve metadata for a single job:
+
+.. code-block:: shell
+
+   nvflare job meta <job_id>
+   nvflare job meta <job_id> --study cancer_research
+
+Use metadata to inspect job identity, lifecycle fields, and server-reported
+status information after submission. Human output is grouped into a concise
+summary; use ``--format json`` to retrieve the full raw metadata envelope.
+
+All job-ID lookup and control commands accept ``--study``. Use the same study
+name used at submission time. If omitted, the command searches the literal
+``default`` study. If the job is not found, the error reports which study was
+searched and suggests retrying with ``--study``.
+
+``nvflare job meta`` also supports ``--schema``.
+
+******************************
+Download, Clone, Abort, Delete
+******************************
+
+Download job results:
+
+.. code-block:: shell
+
+   nvflare job download <job_id> -o ./downloads
+   nvflare job download <job_id> --study cancer_research -o ./downloads
+   nvflare job download <job_id> --study cancer_research --force
+
+For automation, use JSON output:
+
+.. code-block:: shell
+
+   nvflare job download <job_id> -o ./downloads --format json
+
+The job must be in a terminal state before download. For a running job, wait
+first:
+
+.. code-block:: shell
+
+   nvflare job wait <job_id> --study cancer_research
+   nvflare job download <job_id> --study cancer_research
+
+The local destination defaults to ``./<job_id>``. If that directory already
+exists, the command fails unless ``--force`` is specified. Use ``--force`` only
+when replacing the existing local download is intended.
+
+Human output remains concise and prints only the final download location. Use
+``--format json`` when agents or scripts need artifact discovery fields. The
+JSON success response reports local paths on the machine running the CLI:
+
+.. code-block:: json
+
+   {
+     "schema_version": "1",
+     "status": "ok",
+     "exit_code": 0,
+     "data": {
+       "job_id": "abc123",
+       "download_path": "/abs/path/downloads/abc123",
+       "path": "/abs/path/downloads/abc123",
+       "artifact_discovery": "completed",
+       "artifacts": {
+         "global_model": "/abs/path/downloads/abc123/workspace/FL_global_model.pt",
+         "metrics_summary": "/abs/path/downloads/abc123/workspace/metrics_summary.json",
+         "client_logs": {
+           "site-1": "/abs/path/downloads/abc123/workspace/site-1/log.txt"
+         }
+       },
+       "missing_artifacts": []
+     }
+   }
+
+``download_path`` is the final local directory returned by the download API.
+``path`` is a backward-compatible alias for ``download_path`` when present.
+
+``artifacts`` contains local paths discovered under ``download_path``. Agents
+and scripts should use ``data.artifacts.*`` as the source of truth for
+consumable files instead of assuming a server workspace layout or constructing
+paths from ``download_path``. ``missing_artifacts`` lists expected categories,
+such as model, metrics, or client logs, that were not found locally. Missing
+artifacts do not make the command fail when the download itself succeeds.
+When ``artifact_discovery`` is ``skipped``, the CLI did not have a local
+directory to inspect, so ``artifacts`` and ``missing_artifacts`` are ``null``
+instead of claiming that expected artifacts were verified absent.
+
+The server download protocol is unchanged; artifact discovery is a local CLI
+post-processing step after the result has been downloaded.
+
+Clone an existing job:
+
+.. code-block:: shell
+
+   nvflare job clone <job_id>
+   nvflare job clone <job_id> --study cancer_research
+
+``nvflare job clone`` clones the full server-side job for reuse. The current
+CLI surface takes the source ``job_id``, optional ``--study``, and ``--schema``.
+It returns ``source_job_id`` and ``new_job_id``. Use the returned ``new_job_id``
+to monitor or manage the cloned job.
+
+Abort a running job:
+
+.. code-block:: shell
+
+   nvflare job abort <job_id>
+   nvflare job abort <job_id> --study cancer_research
+   nvflare job abort <job_id> --force
+
+Delete a job:
+
+.. code-block:: shell
+
+   nvflare job delete <job_id>
+   nvflare job delete <job_id> --study cancer_research
+   nvflare job delete <job_id> --force
+
+Notes:
+
+- ``abort`` and ``delete`` support ``--force`` to skip the confirmation prompt.
+- ``abort`` and ``delete`` search the selected study. If omitted, ``default``
+  is used.
+- ``delete --format json`` returns ``job_id`` and
+  ``submit_records_marked_deleted``. When this count is nonzero, future use of
+  the same submit token returns ``SUBMIT_TOKEN_JOB_DELETED``.
+- ``download`` supports ``-o, --output-dir`` to choose the destination
+  directory. Default: job-specific directory under the current working
+  directory (``./<job_id>``).
+- ``clone``, ``download``, ``abort``, and ``delete`` all support ``--schema``.
+
+**************
+Observability
+**************
+
+Retrieve job logs from the server-side log store:
+
+.. code-block:: shell
+
+   nvflare job logs <job_id>
+   nvflare job logs <job_id> --site site-1
+   nvflare job logs <job_id> --site all
+   nvflare job logs <job_id> --site all --tail 200
+   nvflare job logs <job_id> --site site-1 --since 2026-04-28T10:00:00
+   nvflare job logs <job_id> --site all --max-bytes 200000
+   nvflare job logs <job_id> --study cancer_research
+
+``job logs`` accepts:
+
+- ``--study``: retrieve logs for a job in a named study. If omitted, ``job
+  logs`` searches the default study. Use the same study name used for
+  ``job submit`` or ``job list``.
+- ``--site server``: return the server job log. This is the default.
+- ``--site <client_name>``: return that client's job log after it has been
+  streamed to and stored by the server.
+- ``--site all``: return the server log and all client logs currently available
+  in the server-side log store. If a known job site does not have stored log
+  content, the JSON response includes it under ``unavailable``.
+- ``--sites`` is accepted as an alias for ``--site`` but still selects one
+  target value.
+- ``--tail N``: return at most the last N log lines per site.
+- ``--since timestamp``: return timestamped log lines at or after the timestamp
+  when line timestamps are parseable. Continuation lines following an included
+  timestamped line are included.
+- ``--max-bytes N``: return at most N UTF-8 bytes per site.
+- ``job logs`` also supports ``--schema``.
+
+If no explicit bound is provided, ``job logs`` returns at most the last 500
+lines per site. JSON output includes ``logs_truncated``, per-site availability
+and line/byte counts under ``sites``, and the applied ``filters``.
+When any of ``--tail``, ``--since``, or ``--max-bytes`` is provided, the
+default 500-line tail is disabled and ``filters.default_tail_applied`` is
+``false``. The explicit bounds are applied in this order: ``--since``,
+``--tail``, then ``--max-bytes``.
+
+The bound options are applied by the CLI after the server returns the stored
+log content. They bound the printed or JSON output from ``nvflare job logs``;
+they do not reduce the amount of log content requested from the server. If a
+large log is already limited by the server-side maximum response size before it
+reaches the CLI, these client-side bounds are applied to that returned content.
+
+In normal human output mode, ``job logs`` prints the log text directly. With
+``--site all``, each site is separated by a short header. Use ``--format json``
+when a structured ``logs`` dictionary is needed for automation.
+
+``job logs`` does not provide a built-in ``grep`` option. Pipe or post-process
+the returned content when text matching is needed.
+
+Client logs are not fetched from client machines at command time. The command
+asks the server for logs that were already streamed to the server during the
+job. Streamed client logs are read from the server job workspace, where they are
+stored as ``<client_name>/log.txt`` or ``<client_name>/log.json`` depending on
+the configured log streamer; after the job workspace is archived, the same files
+are read from the stored job ``workspace`` artifact.
+
+To enable client job log streaming in a portable job, add the job-level log
+streamer and receiver components to the job definition:
+
+.. code-block:: python
+
+   from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
+   from nvflare.app_common.logging.job_log_streamer import JobLogStreamer
+
+   # Tails each client's job log.txt and streams it to the server.
+   recipe.job.to_clients(JobLogStreamer())
+
+   # Receives streamed log chunks on the server and stores them with the job.
+   recipe.job.to_server(JobLogReceiver())
+
+System-level logging configuration in ``resources.json.default`` is separate
+from this job-level opt-in. Some deployments may configure a server-side
+``JobLogReceiver`` globally, but including both components in the job makes the
+job self-contained across POC and production deployments.
+
+To stream structured JSON logs instead, configure the streamer with
+``JobLogStreamer(log_file_name="log.json")``. ``nvflare job logs --format json``
+uses ``log.json`` when available and falls back to ``log.txt`` otherwise. Human
+output prints readable text; if only ``log.json`` is available, the CLI renders
+the JSON log records as text for display.
+
+The ``examples/hello-world/hello-log-streaming`` example shows this pattern.
+
+Change logging configuration for a running job:
+
+.. code-block:: shell
+
+   nvflare job log-config <job_id> DEBUG
+   nvflare job log-config <job_id> concise
+   nvflare job log-config <job_id> msg_only
+   nvflare job log-config <job_id> DEBUG --study cancer_research
+
+``job log-config`` accepts:
+
+- positional ``level``: ``DEBUG``, ``INFO``, ``WARNING``, ``ERROR``, ``CRITICAL``
+- log modes: ``concise``, ``msg_only``, ``full``, ``verbose``, ``reload``
+- ``--site``: target site name or ``all``. Default: ``all``; specifying
+  ``--site all`` explicitly is equivalent to omitting it.
+- ``--study``: study containing the job. If omitted, ``default`` is used.
+- ``--schema``: print the command schema as JSON and exit
+
+Show running job statistics:
+
+.. code-block:: shell
+
+   nvflare job stats <job_id>
+   nvflare job stats <job_id> --study cancer_research
+
+``job stats`` supports ``--study`` to select the study containing the job, and
+``--site`` to target a specific site or ``all``. The default site is ``all``,
+so specifying ``--site all`` explicitly is equivalent to omitting it.
+It also supports ``--schema``.
 
 ***************************
-Advanced Job Configurations
+Recipe-Based Job Creation
 ***************************
 
-For different configurations for different client sites, you can use the ``-f`` option to specify the variables to change for each
-config file for each client site.
-
-For example, to change number of training rounds to 2, change default app_script from "cifar10.py" to "train.py" for both app_1 and app_2,
-and change the app_1 batch_size to 4, app_2 batch_size to 6 for sag_pt_deploy_map as in the
-:github_nvflare_link:`NVFlare Job CLI Notebook <examples/tutorials/job_cli.ipynb>`:
+The recommended way to create a new job folder is through the Job Recipe API or
+an example ``job.py`` script that supports ``--export``:
 
 .. code-block:: shell
 
-    nvflare job create \
-    -j /tmp/nvflare/my_job -w sag_pt_deploy_map \
-    -f app_server/config_fed_server.conf num_rounds=2 \
-    -f app_1/config_fed_client.conf app_script=train.py app_config="--batch_size 4" \
-    -f app_2/config_fed_client.conf app_script=train.py app_config="--batch_size 6" \
-    -sd /path/to/your/code
+   python job.py --export --export-dir /tmp/nvflare/hello-pt
+   nvflare job submit -j /tmp/nvflare/hello-pt
 
-.. note::
+To discover built-in recipes, use:
 
-    The app names must be defined in the job template being used: in this case ``app_1``, ``app_2``, and ``app_server``,
-    are in ``sag_pt_deploy_map``.
+.. code-block:: shell
+
+   nvflare recipe list
+
+Deprecated commands:
+
+- ``nvflare job create``: retained for compatibility. Prefer ``python job.py --export`` followed by ``nvflare job submit``.
+- ``nvflare job list_templates``: use ``nvflare recipe list``.
+- ``nvflare job show_variables``: use the Job Recipe API.
+
+Current deprecation notes:
+
+- ``nvflare job create`` still exposes template- and config-oriented arguments for
+  legacy workflows.
+- ``nvflare job list_templates`` and ``nvflare job show_variables`` remain
+  available for backward compatibility but are not the preferred interfaces for
+  recipe discovery or job-variable inspection.
+
+*********************
+JSON Output and Help
+*********************
+
+Add ``--format json`` anywhere after the subcommand for machine-readable output:
+
+.. code-block:: shell
+
+   nvflare job meta <job_id> --format json
+
+``--format json`` may be placed anywhere in the command after the subcommand
+name. stdout contains a single JSON envelope; human-readable progress and
+diagnostics go to stderr.
+
+Use ``--schema`` for machine-readable command discovery. ``--schema`` always
+returns JSON regardless of ``--format``, so the flag is not needed with it:
+
+.. code-block:: shell
+
+   nvflare job submit --schema
+   nvflare job wait --schema
+   nvflare job monitor --schema
+
+Schema fields such as ``mutating`` and ``idempotent`` describe the command as a
+whole, not the effective behavior of one invocation. For example, ``job submit``
+reports ``idempotent: false`` because plain submission can create duplicate jobs
+when retried after a timeout. It also reports ``retry_token.supported: true`` to
+show that ``--submit-token`` makes retries safe for identical job content in the
+same study by the same submitter. ``job list --submit-token`` is different:
+there ``--submit-token`` is only a lookup filter, so ``retry_token.supported``
+remains ``false``.
+
+Human-readable argument errors print command help first, followed by the
+specific error and hint. JSON mode prints only the JSON error envelope.

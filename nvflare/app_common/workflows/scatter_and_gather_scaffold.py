@@ -40,7 +40,7 @@ class ScatterAndGatherScaffold(ScatterAndGather):
         shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
         train_task_name=AppConstants.TASK_TRAIN,
         train_timeout: int = 0,
-        ignore_result_error: bool = False,
+        ignore_result_error: bool = None,
         task_check_period: float = 0.5,
         persist_every_n_rounds: int = 1,
         snapshot_every_n_rounds: int = 1,
@@ -65,8 +65,10 @@ class ScatterAndGatherScaffold(ScatterAndGather):
             shareable_generator_id (str, optional): ID of the shareable generator. Defaults to "shareable_generator".
             train_task_name (str, optional): Name of the train task. Defaults to "train".
             train_timeout (int, optional): Time to wait for clients to do local training.
-            ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
-                Defaults to False.
+            ignore_result_error (bool or None, optional): How to handle client result errors.
+                - None: Dynamic mode (default) - ignore errors if min_clients still reachable, panic otherwise.
+                - False: Strict mode - panic on any client error.
+                - True: Resilient mode - always ignore client errors.
             task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
             persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
                 If n is 0 then no persist.

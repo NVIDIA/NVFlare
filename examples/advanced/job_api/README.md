@@ -1,7 +1,7 @@
 # Additional Examples for NVIDIA FLARE Job API
 
-you have probably already looked at [getting started](../../getting_started) examples,
-and [hello-world](../../hello-world) examples. Here are additional examples for advanced algorithms 
+you have probably already looked at the [examples overview](../../README.md)
+and the [hello-world](../../hello-world/README.md) examples. Here are additional examples for advanced algorithms.
 
 ### Basic Concepts
 At the heart of NVFlare lies the concept of collaboration through tasks. An FL controller assigns tasks 

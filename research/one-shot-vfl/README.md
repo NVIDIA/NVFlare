@@ -11,8 +11,8 @@ Activations and corresponding gradients are being exchanged between the clients 
 
 <img src="./figs/oneshotVFL.png" alt="One-shot VFL setup" width="800"/>
 
-For instructions of how to run CIFAR-10 in real-world deployment settings, 
-see the example on ["Real-world Federated Learning with CIFAR-10"](../../examples/advanced/cifar10/cifar10-real-world/README.md).
+For instructions of how to run CIFAR-10 in real-world deployment settings,
+see the example on ["Real-world Federated Learning with CIFAR-10"](../../examples/advanced/cifar10/pt/cifar10-real-world/README.md).
 
 ## License
 The code in this directory is released under Apache v2 License.

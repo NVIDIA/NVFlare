@@ -71,7 +71,7 @@ def load_numpy_model(
                 f"Loading model from source checkpoint: {ckpt_path}",
                 fire_event=False,
             )
-            data = np.load(ckpt_path)
+            data = np.load(ckpt_path, allow_pickle=False)
         except Exception as e:
             # If loading fails after file exists, this is a real error - raise it
             raise ValueError(
@@ -81,7 +81,7 @@ def load_numpy_model(
     # Priority 2: Load from model file path
     if data is None:
         try:
-            data = np.load(model_file_path)
+            data = np.load(model_file_path, allow_pickle=False)
             logger.log_info(fl_ctx, f"Loaded model from {model_file_path}", fire_event=False)
         except Exception as e:
             logger.log_info(

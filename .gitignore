@@ -156,6 +156,7 @@ wrksp/*
 # ide
 .idea/
 .ipynb_checkpoints/
+*.ipynb.backup
 
 # nvflare artifacts
 log.txt
@@ -172,5 +173,22 @@ __pycache__
 docs/apidocs/
 !docs/apidocs/modules.rst
 
+# dependency marker
+.deps_marker
+
+# local test temp dir
+.tmp/
+
 # Claude Code personal config
 CLAUDE.local.md
+
+# local agent/tooling artifacts
+.codex/
+.cursor/
+.claude/
+tmp/review/
+
+# memory profiler output
+tests/memory_profile/**/*.dat
+/HEAD
+uv.lock

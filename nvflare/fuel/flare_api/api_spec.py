@@ -25,7 +25,7 @@ class MonitorReturnCode(int, enum.Enum):
     ENDED_BY_CB = 2
 
 
-class NoConnection(Exception):
+class NoConnection(ConnectionError):
     pass
 
 
@@ -39,6 +39,20 @@ class InvalidArgumentError(Exception):
 
 class InvalidJobDefinition(Exception):
     pass
+
+
+class SubmitTokenConflict(Exception):
+    def __init__(self, message: str, existing_job_id: str = None):
+        super().__init__(message)
+        self.existing_job_id = existing_job_id
+
+
+class SubmitTokenJobDeleted(Exception):
+    def __init__(self, message: str, job_id: str = None, state: str = None, deleted_time: str = None):
+        super().__init__(message)
+        self.job_id = job_id
+        self.state = state
+        self.deleted_time = deleted_time
 
 
 class JobNotFound(Exception):
@@ -57,8 +71,14 @@ class InternalError(Exception):
     pass
 
 
-class AuthenticationError(Exception):
+class JobTimeout(Exception):
     pass
+
+
+class AuthenticationError(Exception):
+    def __init__(self, message="", auth_code=None):
+        super().__init__(message)
+        self.auth_code = auth_code
 
 
 class AuthorizationError(Exception):
@@ -81,6 +101,15 @@ class NoReply(Exception):
     pass
 
 
+class CommandError(Exception):
+    def __init__(self, error_code: str, message: str = "", hint: str = "", exit_code: int = 1):
+        super().__init__(message or error_code)
+        self.error_code = error_code
+        self.message = message or error_code
+        self.hint = hint or ""
+        self.exit_code = exit_code
+
+
 class TargetType:
     ALL = "all"
     SERVER = "server"
@@ -93,7 +122,8 @@ class ServerInfo:
         self.start_time = start_time
 
     def __str__(self) -> str:
-        return f"status: {self.status}, start_time: {time.asctime(time.localtime(self.start_time))}"
+        start_time = "unknown" if self.start_time is None else time.asctime(time.localtime(self.start_time))
+        return f"status: {self.status}, start_time: {start_time}"
 
 
 class ClientInfo:
@@ -102,7 +132,10 @@ class ClientInfo:
         self.last_connect_time = last_connect_time
 
     def __str__(self) -> str:
-        return f"{self.name}(last_connect_time: {time.asctime(time.localtime(self.last_connect_time))})"
+        last_connect_time = (
+            "unknown" if self.last_connect_time is None else time.asctime(time.localtime(self.last_connect_time))
+        )
+        return f"{self.name} (last_connect_time: {last_connect_time})"
 
 
 class JobInfo:
@@ -130,11 +163,12 @@ class SystemInfo:
 
 class SessionSpec(ABC):
     @abstractmethod
-    def submit_job(self, job_definition_path: str) -> str:
+    def submit_job(self, job_definition_path: str, submit_token: str = None) -> str:
         """Submit a predefined job to the NVFLARE system
 
         Args:
             job_definition_path: path to the folder that defines a NVFLARE job
+            submit_token: optional retry-safe submit token scoped by study and submitter
 
         Returns: the job id if accepted by the system
 
@@ -168,12 +202,26 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def list_jobs(self, detailed: bool = False, all: bool = False) -> List[dict]:
+    def list_jobs(
+        self,
+        detailed: bool = False,
+        limit: Optional[int] = None,
+        id_prefix: Optional[str] = None,
+        name_prefix: Optional[str] = None,
+        reverse: bool = False,
+        submit_token: Optional[str] = None,
+        **kwargs,
+    ) -> List[dict]:
         """Get the job info from the server
 
         Args:
             detailed: True to get the detailed information for each job, False by default
-            all: True to get jobs submitted by all users (default is to only list jobs submitted by the same user)
+            limit: maximum number of jobs to show, with 0 or None to show all
+            id_prefix: if included, only return jobs with the beginning of the job ID matching the prefix
+            name_prefix: if included, only return jobs with the beginning of the job name matching the prefix
+            reverse: if specified, list jobs in the reverse order of submission times
+            submit_token: optional retry-safe submit token to resolve the submitted job
+            **kwargs: deprecated legacy aliases accepted for compatibility
 
         Returns: a list of job metadata
 
@@ -181,12 +229,13 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def download_job_result(self, job_id: str) -> str:
+    def download_job_result(self, job_id: str, destination: str = None) -> str:
         """
         Download result of the job
 
         Args:
             job_id: ID of the job
+            destination: optional directory to move the downloaded result into.
 
         Returns: folder path to the location of the job result
 
@@ -209,6 +258,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def download_job_components(self, job_id: str) -> str:
         """Download additional job components (e.g., ERRORLOG_site-1) for a specified job.
 
@@ -243,7 +293,7 @@ class SessionSpec(ABC):
         Args:
             job_id: job to be deleted
 
-        Returns: None
+        Returns: delete result metadata, including the number of submit-token records marked deleted.
 
         If the job is being executed, the job will be stopped first.
         Everything of the job will be deleted from the job store, as well as workspaces on
@@ -253,8 +303,99 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
+    def get_job_logs(
+        self,
+        job_id: str,
+        target: str = "server",
+        tail_lines: Optional[int] = None,
+        grep_pattern: Optional[str] = None,
+        log_file_name: str = "log.txt",
+    ) -> dict:
+        """Retrieve logs for the specified job.
+
+        Args:
+            job_id: ID of the job
+            target: ``server``, ``all``, or a client site name
+            tail_lines: deprecated compatibility option to return the last N lines
+            grep_pattern: deprecated compatibility option to return matching lines
+            log_file_name: internal log file selector. Defaults to ``log.txt``.
+
+        Returns: dict with ``logs`` mapping site names to log content, and
+            optional ``unavailable`` mapping site names to reasons.
+
+        """
+        pass
+
+    @abstractmethod
+    def configure_job_log(self, job_id: str, config, target: str = "all") -> None:
+        """Configure logging for a running job.
+
+        Args:
+            job_id: ID of the running job
+            config: log level, log mode, file path, or dictConfig payload
+            target: ``all``, ``server``, or a client site name
+
+        Returns: None
+
+        """
+        pass
+
+    @abstractmethod
+    def configure_site_log(self, config, target: str = "all") -> None:
+        """Configure site-level logging.
+
+        Args:
+            config: log level or built-in log mode
+            target: ``all``, ``server``, or a client site name
+
+        Returns: None
+
+        """
+        pass
+
+    @abstractmethod
+    def wait_for_job(self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0) -> dict:
+        """Wait until the specified job reaches a terminal state.
+
+        Args:
+            job_id: ID of the job
+            timeout: maximum seconds to wait, or ``0`` to wait indefinitely
+            poll_interval: seconds between status polls
+
+        Returns: terminal job metadata/status information.
+
+        """
+        pass
+
+    @abstractmethod
     def get_system_info(self) -> SystemInfo:
         """Get general info of the FLARE system"""
+        pass
+
+    @abstractmethod
+    def check_status(self, target_type: str, targets=None) -> dict:
+        """Report status for the server and/or clients.
+
+        Args:
+            target_type: ``server``, ``client``, or ``all``
+            targets: optional client names when ``target_type`` is ``client``
+
+        Returns: status information keyed by site name.
+
+        """
+        pass
+
+    @abstractmethod
+    def report_resources(self, target_type: str, targets=None) -> dict:
+        """Report resource information for the server and/or clients.
+
+        Args:
+            target_type: ``server``, ``client``, or ``all``
+            targets: optional client names when ``target_type`` is ``client``
+
+        Returns: resource information keyed by site name.
+
+        """
         pass
 
     @abstractmethod
@@ -272,32 +413,46 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def restart(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
+    def restart(
+        self,
+        target_type: str,
+        client_names: Optional[List[str]] = None,
+        wait: bool = True,
+        timeout: float = 30.0,
+    ) -> dict:
         """
-        Restart specified system target(s)
+        Restart the FL server.
 
         Args:
-            target_type: what system target (server, client, or all) to restart
-            client_names: clients to be restarted if target_type is client. If not specified, all clients.
+            target_type: must be ``server``
+            client_names: unused; retained for signature compatibility
+            wait: whether to wait for the restart to complete before returning
+            timeout: maximum seconds to wait for completion
 
         Returns: a dict that contains detailed info about the restart request:
         status - the overall status of the result.
-        server_status - whether the server is restarted successfully - only if target_type is "all" or "server".
-        client_status - a dict (keyed on client name) that specifies status of each client - only if target_type
-        is "all" or "client".
+        server_status - whether the server is restarted successfully.
 
         """
         pass
 
     @abstractmethod
-    def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None):
-        """Shut down specified system target(s)
+    def shutdown(
+        self,
+        target_type: TargetType,
+        client_names: Optional[List[str]] = None,
+        wait: bool = True,
+        timeout: float = 30.0,
+    ) -> dict:
+        """Shut down the FL server.
 
         Args:
-            target_type: what system target (server, client, or all) to shut down
-            client_names: clients to be shut down if target_type is client. If not specified, all clients.
+            target_type: must be ``server``
+            client_names: unused; retained for signature compatibility
+            wait: whether to wait for shutdown completion before returning
+            timeout: maximum seconds to wait for completion
 
-        Returns: None
+        Returns: a dict that contains detailed info about the shutdown request.
         """
         pass
 
@@ -510,8 +665,57 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
+    def report_version(self, target_type: str, targets: Optional[List[str]] = None) -> dict:
+        """Report NVFlare version for specified system target(s).
+
+        Args:
+            target_type: type of target (server, client, or all)
+            targets: list of client names if target type is "client". All clients if not specified.
+
+        Returns: a dict with version information per site
+
+        """
+        pass
+
+    @abstractmethod
+    def remove_client(self, client_name: str) -> None:
+        """Remove a connected client from the system.
+
+        Args:
+            client_name: name of the client to remove
+
+        Returns: None
+
+        """
+        pass
+
+    @abstractmethod
+    def disable_client(self, client_name: str) -> dict:
+        """Disable a client from reconnecting to the system.
+
+        Args:
+            client_name: name of the client to disable
+
+        Returns: command result dictionary
+
+        """
+        pass
+
+    @abstractmethod
+    def enable_client(self, client_name: str) -> dict:
+        """Enable a disabled client to reconnect to the system.
+
+        Args:
+            client_name: name of the client to enable
+
+        Returns: command result dictionary
+
+        """
+        pass
+
+    @abstractmethod
     def monitor_job_and_return_job_meta(
-        self, job_id: str, timeout: int = 0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs
+        self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs
     ) -> (MonitorReturnCode, Optional[dict]):
         """Monitor the job progress until one of the conditions occurs:
          - job is done
@@ -556,6 +760,115 @@ class SessionSpec(ABC):
         return rc
 
     @abstractmethod
+    def register_study(
+        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
+    ) -> dict:
+        """Create or merge a study in the server registry.
+
+        Exactly one of sites or site_orgs must be provided; passing both raises
+        InvalidArgumentError. Use sites for org_admin callers (own-org sites only)
+        and site_orgs for project_admin callers (cross-org enrollment).
+
+        Args:
+            study: study name
+            sites: flat site list for org_admin callers; mutually exclusive with site_orgs
+            site_orgs: repeatable "org:s1,s2,..." groups for project_admin callers; mutually exclusive with sites
+
+        Returns: study payload dict
+        """
+        pass
+
+    @abstractmethod
+    def add_study_site(
+        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
+    ) -> dict:
+        """Add sites to an existing study.
+
+        Exactly one of sites or site_orgs must be provided; passing both raises
+        InvalidArgumentError.
+
+        Args:
+            study: study name
+            sites: flat site list for org_admin callers; mutually exclusive with site_orgs
+            site_orgs: repeatable "org:s1,s2,..." groups for project_admin callers; mutually exclusive with sites
+
+        Returns: study payload dict with added/already_enrolled lists
+        """
+        pass
+
+    @abstractmethod
+    def remove_study_site(
+        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
+    ) -> dict:
+        """Remove sites from an existing study.
+
+        Exactly one of sites or site_orgs must be provided; passing both raises
+        InvalidArgumentError.
+
+        Args:
+            study: study name
+            sites: flat site list for org_admin callers; mutually exclusive with site_orgs
+            site_orgs: repeatable "org:s1,s2,..." groups for project_admin callers; mutually exclusive with sites
+
+        Returns: study payload dict with removed/not_enrolled lists
+        """
+        pass
+
+    @abstractmethod
+    def remove_study(self, study: str) -> dict:
+        """Remove a study and all its registry entries.
+
+        Args:
+            study: study name
+
+        Returns: study payload dict
+        """
+        pass
+
+    @abstractmethod
+    def list_studies(self) -> dict:
+        """List studies visible to the caller.
+
+        Returns: dict with studies list
+        """
+        pass
+
+    @abstractmethod
+    def show_study(self, study: str) -> dict:
+        """Show details for a single study.
+
+        Args:
+            study: study name
+
+        Returns: study payload dict
+        """
+        pass
+
+    @abstractmethod
+    def add_study_user(self, study: str, user: str) -> dict:
+        """Add a user to the study admins list.
+
+        Args:
+            study: study name
+            user: user name to add
+
+        Returns: study payload dict
+        """
+        pass
+
+    @abstractmethod
+    def remove_study_user(self, study: str, user: str) -> dict:
+        """Remove a user from the study admins list.
+
+        Args:
+            study: study name
+            user: user name to remove
+
+        Returns: study payload dict
+        """
+        pass
+
+    @abstractmethod
     def close(self):
         """Close the session
 
@@ -565,13 +878,13 @@ class SessionSpec(ABC):
         pass
 
 
-def job_monitor_cb_signature(session: SessionSpec, job_id: str, job_mea: dict, *args, **kwargs) -> bool:
+def job_monitor_cb_signature(session: SessionSpec, job_id: str, job_meta: dict, *args, **kwargs) -> bool:
     """
 
     Args:
         session: the session
         job_id: ID of the job being monitored
-        job_mea: meta info of the job
+        job_meta: meta info of the job
         *args:
         **kwargs:
 

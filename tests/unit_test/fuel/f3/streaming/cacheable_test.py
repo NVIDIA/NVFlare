@@ -179,7 +179,12 @@ class TestCacheableObject:
         DownloadService.delete_transaction(tx_id)
 
     def test_cacheable_object_downloaded_to_all(self, cell):
-        """Test downloaded_to_all callback clears cache."""
+        """Test downloaded_to_all clears the chunk cache (C1 fix).
+
+        downloaded_to_all() calls clear_cache(), which now only clears self.cache.
+        base_obj is released via release() after the transaction_done_cb fires —
+        not here.  So base_obj must still be valid after downloaded_to_all().
+        """
         items = ["item1", "item2"]
         obj = MockCacheableObject(items, max_chunk_size=100)
 
@@ -193,28 +198,93 @@ class TestCacheableObject:
         # Call downloaded_to_all
         obj.downloaded_to_all()
 
-        # Cache should be cleared
+        # Cache must be cleared; base_obj is intact until release() is called (C1 fix).
         assert obj.cache is None
+        assert obj.base_obj is not None, (
+            "downloaded_to_all() calls clear_cache() which must not touch base_obj (C1 fix). "
+            "base_obj is released via release() after the transaction_done_cb."
+        )
 
         # Cleanup
         DownloadService.delete_transaction(tx_id)
 
     def test_cacheable_object_transaction_done(self):
-        """Test transaction_done callback clears cache."""
+        """Test transaction_done clears the chunk cache only (C1 fix).
+
+        transaction_done() calls clear_cache(), which now only nulls self.cache.
+        base_obj is released via release() — called by _Transaction.transaction_done()
+        after the callback — not by clear_cache() directly.
+        """
         items = ["item1", "item2"]
         obj = MockCacheableObject(items, max_chunk_size=100)
 
         # Produce some items
         obj.produce({}, "receiver1")
 
-        # Call transaction_done
+        # Call transaction_done (as _Transaction would invoke it)
         obj.transaction_done("tx123", "finished")
 
-        # Cache should be cleared
+        # Cache must be cleared; base_obj is intact until release() is called (C1 fix).
         assert obj.cache is None
+        assert obj.base_obj is not None, (
+            "transaction_done() must not clear base_obj (C1 fix). "
+            "base_obj is released via release() after the transaction_done_cb."
+        )
+
+        # Explicitly calling release() (as _Transaction does after the callback)
+        # must then clear base_obj.
+        obj.release()
+        assert obj.base_obj is None
+
+    def test_clear_cache_only_nulls_cache(self):
+        """C1 fix: clear_cache() must only null self.cache, not base_obj.
+
+        Before C1 fix, clear_cache() nulled both cache and base_obj.  That caused
+        a race: a concurrent _get_item() saw cache=None and fell through to
+        produce_item() with base_obj already None → crash.
+
+        With C1 fix, clear_cache() only nulls self.cache.  base_obj is released
+        separately via release() after the transaction_done_cb fires.
+        """
+        items = ["item1", "item2"]
+        obj = MockCacheableObject(items, max_chunk_size=100)
+        original_base_obj = obj.base_obj
+        assert original_base_obj is not None
+
+        obj.clear_cache()
+
+        assert obj.cache is None
+        assert obj.base_obj is original_base_obj, "clear_cache() must not touch base_obj (C1 fix)."
+
+    def test_release_nulls_base_obj(self):
+        """C1 fix: release() must set base_obj to None."""
+        items = ["item1"]
+        obj = MockCacheableObject(items, max_chunk_size=100)
+        assert obj.base_obj is not None
+
+        obj.release()
+
+        assert obj.base_obj is None
+
+    def test_clear_cache_is_idempotent(self):
+        """Calling clear_cache() twice must not raise."""
+        items = ["item1"]
+        obj = MockCacheableObject(items, max_chunk_size=100)
+
+        obj.clear_cache()
+        obj.clear_cache()  # must not raise
+
+        assert obj.cache is None
+        # base_obj is NOT touched by clear_cache (C1 fix)
+        assert obj.base_obj is not None
 
     def test_cacheable_object_produce_after_cache_cleared(self):
-        """Test that producing after cache is cleared still works."""
+        """Producing after clear_cache() regenerates items via produce_item().
+
+        After clear_cache(): cache=None, base_obj still valid.  _get_item() falls
+        through to produce_item() since base_obj is not None — items are regenerated.
+        (This differs from after release(), where base_obj=None causes RuntimeError.)
+        """
         items = ["item1", "item2"]
         obj = MockCacheableObject(items, max_chunk_size=100)
 
@@ -222,10 +292,11 @@ class TestCacheableObject:
         rc1, data1, state1 = obj.produce({}, "receiver1")
         assert rc1 == ProduceRC.OK
 
-        # Clear cache
+        # Clear cache only — base_obj remains valid (C1 fix)
         obj.clear_cache()
+        assert obj.base_obj is not None
 
-        # Produce again - should regenerate items
+        # Produce again — should regenerate items since base_obj is still valid
         rc2, data2, state2 = obj.produce({}, "receiver2")
         assert rc2 == ProduceRC.OK
         assert data2 is not None

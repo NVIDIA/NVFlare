@@ -435,6 +435,30 @@ class TestNumpyRecipeComponentConfig(unittest.TestCase):
         server_config = os.path.join(job_dir, "test-np-fedavg", "app/config/config_fed_server.json")
         self._verify_persistor_config(server_config, self.checkpoint_path)
 
+    def test_unified_numpy_fedavg(self):
+        """Test unified FedAvg generates correct NumPy persistor config with checkpoint."""
+        print("\n  Testing unified NumPy FedAvg...")
+        from nvflare.client.config import ExchangeFormat
+        from nvflare.fuel.utils.constants import FrameworkType
+        from nvflare.recipe import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test-unified-np-fedavg",
+            min_clients=2,
+            num_rounds=2,
+            model=None,
+            initial_ckpt=self.checkpoint_path,
+            train_script=self.train_script,
+            framework=FrameworkType.NUMPY,
+            server_expected_format=ExchangeFormat.NUMPY,
+        )
+
+        job_dir = os.path.join(self.temp_dir, "export_unified")
+        recipe.export(job_dir=job_dir)
+
+        server_config = os.path.join(job_dir, "test-unified-np-fedavg", "app/config/config_fed_server.json")
+        self._verify_persistor_config(server_config, self.checkpoint_path)
+
 
 class TestPTSpecialRecipesComponentConfig(unittest.TestCase):
     """Test PyTorch special recipes component config generation (PR3)."""
@@ -491,23 +515,24 @@ class TestPTSpecialRecipesComponentConfig(unittest.TestCase):
         print("\n  Testing PT Swarm (PR3)...")
         import torch.nn as nn
 
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        # SimpleSwarmLearningRecipe requires an actual nn.Module
+        # SwarmLearningRecipe requires an actual nn.Module
         simple_model = nn.Linear(10, 2)
 
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="test-pt-swarm",
             model=simple_model,
-            initial_ckpt=self.checkpoint_path,
             num_rounds=2,
             train_script=self.train_script,
+            min_clients=2,
+            initial_ckpt=self.checkpoint_path,
         )
 
         job_dir = os.path.join(self.temp_dir, "export_swarm")
         recipe.export(job_dir=job_dir)
 
-        # SimpleSwarmLearningRecipe puts persistor on client side (swarm topology)
+        # SwarmLearningRecipe puts persistor on client side (swarm topology)
         client_config_path = os.path.join(job_dir, "test-pt-swarm", "app/config/config_fed_client.json")
         with open(client_config_path, "r") as f:
             config = json.load(f)

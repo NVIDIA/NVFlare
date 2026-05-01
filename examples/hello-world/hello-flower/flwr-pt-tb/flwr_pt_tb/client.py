@@ -13,28 +13,44 @@
 # limitations under the License.
 
 
+import threading
+
 from flwr.client import ClientApp, NumPyClient
 from flwr.common import Context
 from flwr.common.record import MetricRecord, RecordDict
 
+import nvflare.client as flare
+from nvflare.client.tracking import SummaryWriter
+
 from .task import DEVICE, Net, get_weights, load_data, set_weights, test, train
 
-# Load model and data (simple CNN, CIFAR-10)
-net = Net().to(DEVICE)
-trainloader, testloader = load_data()
+# Module-level cache for model and data to avoid reloading every round.
+# Flower's supernode runs as a long-lived subprocess (not re-imported per round),
+# so module-level state persists across FL rounds.
+net = None
+trainloader = None
+testloader = None
+_init_lock = threading.Lock()
 
-import nvflare.client as flare
 
-# initializes NVFlare interface
-from nvflare.client.tracking import SummaryWriter
+def _ensure_data_loaded():
+    """Load model and data once, reusing cached values on subsequent calls."""
+    global net, trainloader, testloader
+    with _init_lock:
+        if net is None:
+            net = Net().to(DEVICE)
+        if trainloader is None or testloader is None:
+            trainloader, testloader = load_data()
 
 
 # Define FlowerClient and client_fn
 class FlowerClient(NumPyClient):
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, learning_rate: float, momentum: float):
         super().__init__()
         self.writer = SummaryWriter()
         self.flwr_context = context
+        self.learning_rate = learning_rate
+        self.momentum = momentum
 
         if "step" not in context.state.metric_records:
             self.set_step(0)
@@ -50,7 +66,15 @@ class FlowerClient(NumPyClient):
     def fit(self, parameters, config):
         step = self.get_step()
         set_weights(net, parameters)
-        results = train(net, trainloader, testloader, epochs=1, device=DEVICE)
+        results = train(
+            net,
+            trainloader,
+            testloader,
+            epochs=1,
+            device=DEVICE,
+            learning_rate=self.learning_rate,
+            momentum=self.momentum,
+        )
 
         self.writer.add_scalar("train_loss", results["train_loss"], step)
         self.writer.add_scalar("train_accuracy", results["train_accuracy"], step)
@@ -74,7 +98,10 @@ class FlowerClient(NumPyClient):
 
 def client_fn(context: Context):
     """Create and return an instance of Flower `Client`."""
-    return FlowerClient(context).to_client()
+    _ensure_data_loaded()
+    learning_rate = context.run_config.get("learning-rate", 0.001)
+    momentum = context.run_config.get("momentum", 0.9)
+    return FlowerClient(context, learning_rate, momentum).to_client()
 
 
 # Flower ClientApp

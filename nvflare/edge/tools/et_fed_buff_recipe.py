@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib.util
 import json
 from typing import Dict, Optional
 
@@ -48,6 +49,12 @@ class ETFedBuffRecipe(EdgeFedBuffRecipe):
         simulation_config: Configuration for simulated devices settings (optional).
         device_training_params: Training parameters for device (optional).
         custom_source_root: Path to custom source code (optional).
+        device_wait_timeout: Timeout in seconds for waiting for sufficient devices
+            to join before stopping the job. None means wait indefinitely.
+            WARNING: when device_reuse=False with a finite device pool, leaving this
+            as None can cause the job to hang indefinitely once the pool is exhausted.
+            In that case, set an explicit timeout (e.g., 300.0 seconds).
+            Default: None
     """
 
     def __init__(
@@ -63,7 +70,15 @@ class ETFedBuffRecipe(EdgeFedBuffRecipe):
         simulation_config: SimulationConfig = None,
         device_training_params: Dict = None,
         custom_source_root: str = None,
+        device_wait_timeout: Optional[float] = None,
     ):
+        if importlib.util.find_spec("executorch.extension.training") is None:
+            raise ImportError(
+                "ETFedBuffRecipe requires executorch. "
+                "See installation instructions: "
+                "https://pytorch.org/executorch/stable/getting-started-setup.html"
+            )
+
         self.device_model = device_model
         self.input_shape = input_shape
         self.output_shape = output_shape
@@ -80,6 +95,7 @@ class ETFedBuffRecipe(EdgeFedBuffRecipe):
             evaluator_config=evaluator_config,
             simulation_config=simulation_config,
             custom_source_root=custom_source_root,
+            device_wait_timeout=device_wait_timeout,
         )
 
     def create_job(self):

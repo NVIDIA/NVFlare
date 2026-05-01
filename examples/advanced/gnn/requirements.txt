@@ -5,4 +5,4 @@ tensorboard
 scikit-learn
 tqdm
 filelock
-pandas
+pandas~=2.3

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,9 +23,11 @@ from nvflare.fuel.hci.client.event import EventType
 from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.proto import MetaKey, ProtoKey
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_file, zip_directory_to_file
 from nvflare.lighter.utils import load_private_key_file, sign_folders
 
+from .api import _print_hci_message
 from .api_spec import CommandContext, HCIRequester
 from .api_status import APIStatus
 
@@ -72,6 +74,7 @@ class FileTransferModule(CommandModule):
 
         self.upload_dir = upload_dir
         self.download_dir = download_dir
+        self.logger = get_obj_logger(self)
 
         self.cmd_handlers = {
             ftd.PUSH_FOLDER_FQN: self.push_folder,
@@ -92,7 +95,7 @@ class FileTransferModule(CommandModule):
                 CommandSpec(
                     name="push_folder",
                     description="Submit application to the server",
-                    usage="submit_job job_folder",
+                    usage="submit_job job_folder [submit_args...]",
                     handler_func=self.push_folder,
                     visible=False,
                 ),
@@ -121,7 +124,7 @@ class FileTransferModule(CommandModule):
 
         handler = self.cmd_handlers.get(server_cmd_spec.client_cmd)
         if handler is None:
-            print("no cmd handler found for {}".format(server_cmd_spec.client_cmd))
+            _print_hci_message("no cmd handler found for {}".format(server_cmd_spec.client_cmd))
             return None
 
         return CommandModuleSpec(
@@ -292,10 +295,11 @@ class FileTransferModule(CommandModule):
         # upload with binary protocol
         cmd_entry = ctx.get_command_entry()
         assert isinstance(cmd_entry, CommandEntry)
-        if len(args) != 2:
+        if len(args) < 2:
             return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: {}".format(cmd_entry.usage)}
 
         folder_name = args[1]
+        submit_args = args[2:]
         if folder_name.endswith("/"):
             folder_name = folder_name.rstrip("/")
 
@@ -303,11 +307,17 @@ class FileTransferModule(CommandModule):
         if not os.path.isdir(full_path):
             return {"status": APIStatus.ERROR_RUNTIME, "details": f"'{full_path}' is not a valid folder."}
 
-        # sign folders and files
+        # sign folders and files (skip gracefully when key is absent — e.g. simulator)
         api = ctx.get_api()
         client_key_file_path = api.client_key
-        private_key = load_private_key_file(client_key_file_path)
-        sign_folders(full_path, private_key, api.client_cert)
+        if client_key_file_path and os.path.exists(client_key_file_path) and api.client_cert:
+            try:
+                private_key = load_private_key_file(client_key_file_path)
+                sign_folders(full_path, private_key, api.client_cert)
+            except Exception as e:
+                return {"status": APIStatus.ERROR_RUNTIME, "details": f"Failed to sign job folder: {e}"}
+        else:
+            self.logger.warning("job folder '%s' submitted without signing — no client key available", folder_name)
 
         # zip the data
         out_file = os.path.join(tempfile.gettempdir(), str(uuid.uuid4()))
@@ -315,6 +325,7 @@ class FileTransferModule(CommandModule):
 
         folder_name = split_path(full_path)[1]
         parts = [cmd_entry.full_command_name(), folder_name]
+        parts.extend(submit_args)
         command = join_args(parts)
         sender = _FileSender(out_file)
         ctx.set_requester(sender)

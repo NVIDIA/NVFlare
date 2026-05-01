@@ -169,6 +169,14 @@ also be evaluated. The job will be rejected if either right fails.
 
 Hence it is quite possible that the job is accepted at submission time, but cannot run due to authorization errors from FL clients.
 
+Study-Scoped Authorization
+""""""""""""""""""""""""""
+When multi-study is enabled, the user's role for study-scoped authorization is determined by the active
+study session rather than the certificate role. At login time, the server verifies that the user is mapped
+in the study's ``admins`` configuration and uses the mapped role for subsequent study-scoped authorization
+checks. This means the same user can have different privileges in different studies. See
+:ref:`multi_study_guide` for configuration details.
+
 You may ask why we don't check authorization with each involved FL client at the time of job submission. There are three considerations:
 
 1) This will make the system more complicated since the server would need to interact with the clients
@@ -214,6 +222,8 @@ Command Categories
         AC.RESTART: CommandCategory.OPERATE,
         AC.SHUTDOWN: CommandCategory.OPERATE,
         AC.REMOVE_CLIENT: CommandCategory.OPERATE,
+        AC.DISABLE_CLIENT: CommandCategory.OPERATE,
+        AC.ENABLE_CLIENT: CommandCategory.OPERATE,
         AC.SET_TIMEOUT: CommandCategory.OPERATE,
         AC.CALL: CommandCategory.OPERATE,
         AC.CONFIGURE_SITE_LOG: CommandCategory.OPERATE,

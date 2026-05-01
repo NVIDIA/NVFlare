@@ -27,6 +27,7 @@ def test_poc_env_initialization():
     env = PocEnv()
     assert env.num_clients == 2
     assert env.gpu_ids == []
+    assert env.study == "default"
 
 
 @patch("nvflare.recipe.poc_env.get_poc_workspace")
@@ -62,6 +63,12 @@ def test_poc_env_validation():
         PocEnv(num_clients=3, clients=["site1", "site2"])
 
 
+def test_poc_env_none_num_clients_raises():
+    """Test that PocEnv(num_clients=None) raises ValueError instead of crashing with TypeError."""
+    with pytest.raises(ValueError, match="num_clients must be greater than 0"):
+        PocEnv(num_clients=None, clients=None)
+
+
 def test_poc_env_client_names():
     """Test PocEnv client name generation and validation."""
     # Test auto-generated client names (delegated to prepare_poc_provision)
@@ -79,6 +86,20 @@ def test_poc_env_client_names():
     env = PocEnv(num_clients=2, clients=["site-x", "site-y"])
     assert env.clients == ["site-x", "site-y"]
     assert env.num_clients == 2
+
+
+@patch("nvflare.recipe.poc_env.get_poc_workspace")
+def test_poc_env_initialization_with_study(mock_get_workspace):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        mock_get_workspace.return_value = temp_dir
+        env = PocEnv(num_clients=2, study="cancer-research")
+
+        assert env.study == "cancer-research"
+
+
+def test_poc_env_rejects_invalid_study_name():
+    with pytest.raises(ValueError):
+        PocEnv(study="Bad Study")
 
 
 @patch("nvflare.recipe.poc_env.get_poc_workspace")
@@ -123,17 +144,39 @@ def test_get_admin_startup_kit_path_not_found(mock_setup, mock_get_prod_dir, moc
 @patch("nvflare.recipe.poc_env._stop_poc")
 @patch("nvflare.recipe.poc_env._clean_poc")
 @patch("nvflare.recipe.poc_env.is_poc_running")
-@patch("nvflare.recipe.poc_env.shutil.rmtree")
-def test_stop_poc(mock_rmtree, mock_is_running, mock_clean_poc, mock_stop_poc, mock_setup):
+def test_stop_poc(mock_is_running, mock_clean_poc, mock_stop_poc, mock_setup):
     """Test stop and clean POC functionality."""
     mock_setup.return_value = ({"name": "test"}, {"server": "server"})
-    mock_is_running.return_value = False  # POC stops successfully
+    # Mock is_poc_running to return True initially (POC is running),
+    # then False (POC stops successfully after _stop_poc is called)
+    mock_is_running.side_effect = [True, False]
 
     env = PocEnv()
-    env.stop(clean_poc=True)
+    env.stop(clean_up=True)
 
     mock_stop_poc.assert_called_once_with(
         poc_workspace=env.poc_workspace, excluded=["admin@nvidia.com"], services_list=[]
     )
+    # _clean_poc handles workspace removal internally via shutil.rmtree
     mock_clean_poc.assert_called_once_with(env.poc_workspace)
-    mock_rmtree.assert_called_once_with(env.poc_workspace, ignore_errors=True)
+
+
+@patch("nvflare.recipe.poc_env.SessionManager")
+@patch("nvflare.recipe.poc_env.setup_service_config")
+@patch("nvflare.recipe.poc_env.get_prod_dir")
+@patch("nvflare.recipe.poc_env.get_poc_workspace")
+def test_poc_env_session_manager_passes_study(mock_get_workspace, mock_get_prod_dir, mock_setup, mock_session_manager):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        mock_get_workspace.return_value = temp_dir
+        prod_dir = os.path.join(temp_dir, "prod_00")
+        mock_get_prod_dir.return_value = prod_dir
+        mock_setup.return_value = ({"name": "test_project"}, {SC.FLARE_PROJ_ADMIN: "admin@nvidia.com"})
+
+        admin_dir = os.path.join(prod_dir, "admin@nvidia.com")
+        os.makedirs(admin_dir, exist_ok=True)
+
+        env = PocEnv(study="cancer-research")
+        env._get_session_manager()
+
+        session_params = mock_session_manager.call_args[0][0]
+        assert session_params["study"] == "cancer-research"

@@ -30,7 +30,7 @@ The generated plugin files under build folder are,
     nvflare_plugin/libnvflare.so
 ```
 
-> **_NOTE:_**  You can pass option to cmake to disable the build of CUDA plugin
+> **Note:** You can pass an option to CMake to disable the build of the CUDA plugin
 > if you don't have the environment: ```cmake -DBUILD_CUDA_PLUGIN=OFF ..```
 
 

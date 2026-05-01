@@ -6,6 +6,150 @@ Migration Guide
 
 This guide covers API and configuration changes when upgrading between FLARE releases.
 
+Upcoming Main-Branch Changes
+============================
+
+FLARE API Compatibility Note
+----------------------------
+
+On the current ``main`` branch, :class:`NoConnection<nvflare.fuel.flare_api.api_spec.NoConnection>`
+now subclasses Python's built-in ``ConnectionError`` instead of directly subclassing
+``Exception``.
+
+Impact:
+
+- Existing code that catches ``ConnectionError`` will now also catch
+  ``NoConnection``.
+- Existing code that catches ``NoConnection`` continues to work unchanged.
+
+If your application distinguishes FLARE connection failures from broader OS or
+network exceptions, review any broad ``except ConnectionError:`` handlers before
+upgrading to the next release built from ``main``.
+
+FLARE API Lifecycle Restriction
+-------------------------------
+
+On the current ``main`` branch, :meth:`Session.shutdown<nvflare.fuel.flare_api.api_spec.SessionSpec.shutdown>`
+and :meth:`Session.restart<nvflare.fuel.flare_api.api_spec.SessionSpec.restart>`
+are now restricted to ``TargetType.SERVER`` only.
+
+Impact:
+
+- Existing callers that pass ``TargetType.ALL`` or ``TargetType.CLIENT`` will now fail.
+- Server-scoped lifecycle control continues to work unchanged.
+- :meth:`Session.shutdown_system<nvflare.fuel.flare_api.api_spec.SessionSpec.shutdown_system>`
+  is unchanged and still supports whole-system shutdown.
+
+For whole local PoC lifecycle control, use the PoC start/stop flow instead of
+the general system admin API.
+
+CLI Startup Kit Resolution Change
+---------------------------------
+
+On the current ``main`` branch, server-connected CLI commands use a shared
+active startup kit registry in ``~/.nvflare/config.conf``.
+
+Impact:
+
+- Use ``nvflare config add <id> <startup-kit-dir>`` and
+  ``nvflare config use <id>`` to register and activate a startup kit.
+- ``nvflare config -d/--startup_kit_dir`` remains accepted for compatibility
+  with 2.7.x scripts, but is deprecated.
+- ``NVFLARE_STARTUP_KIT_DIR`` remains an automation override and takes
+  precedence over the active registry entry when set.
+- ``nvflare config -jt/--job_templates_dir`` remains accepted for compatibility
+  with 2.7.x scripts, but job template config is deprecated.
+- Root ``nvflare config`` continues to manage local settings such as the POC
+  workspace. Startup kit paths are managed by the ``nvflare config``
+  subcommands.
+
+If you use shell profiles or CI settings that export ``NVFLARE_STARTUP_KIT_DIR``,
+review them before upgrading because they override the active registry entry.
+
+CLI Config Flag Compatibility
+-----------------------------
+
+On the current ``main`` branch, ``nvflare config`` keeps the 2.7.x POC
+workspace flag names.
+
+Impact:
+
+- ``-pw`` and ``--poc_workspace_dir`` remain the supported flags for setting
+  the POC workspace.
+- The interim development-only ``--poc.workspace`` spelling is not part of the
+  public compatibility contract.
+
+If you have older scripts that use ``-pw`` or ``--poc_workspace_dir``, they
+continue to work.
+
+Client Disable Semantics
+------------------------
+
+``nvflare system remove-client`` is not exposed as a supported public CLI
+command. The legacy interactive-console ``remove_client`` operation remains a
+registry cleanup operation only; it does not stop the client process, revoke
+credentials, or prevent reconnect.
+
+Use the new durable access-control commands when the intent is to keep a client
+out of the federation:
+
+- ``nvflare system disable-client <client> --force`` persists a disabled flag
+  in the server workspace, removes any active registry entry, and rejects
+  later registration or heartbeat from that client.
+- ``nvflare system enable-client <client> --force`` clears the disabled flag so
+  the client can rejoin on the next registration or heartbeat.
+
+This is operational disablement, not certificate revocation.
+
+Study Name Validation Relaxation
+--------------------------------
+
+On the current ``main`` branch, study names now allow underscores in internal
+positions, so names such as ``my_study`` are valid.
+
+Impact:
+
+- ``project.yml`` validation now accepts study names with internal underscores.
+- Login and study-scoped authorization paths will accept the same names.
+
+If you maintain external validation or naming policy around study identifiers,
+update those checks to match the new rule before upgrading.
+
+Site Log Configuration Restriction
+----------------------------------
+
+On the current ``main`` branch, :meth:`Session.configure_site_log<nvflare.fuel.flare_api.api_spec.SessionSpec.configure_site_log>`
+and the corresponding ``nvflare system log-config`` path now accept only simple
+log levels and built-in log modes.
+
+Impact:
+
+- JSON ``dictConfig`` payloads are no longer accepted for site-wide log changes.
+- File-path based logging configs are no longer accepted for site-wide log changes.
+- Supported values remain the standard log levels plus built-in modes such as
+  ``concise``, ``msg_only``, ``full``, ``verbose``, and ``reload``.
+
+If you previously used advanced JSON/file-based configs with
+``configure_site_log``, switch to the supported level/mode values before
+upgrading to the next release built from ``main``.
+For dict-based or file-path logging, use ``configure_job_log`` on a running job instead.
+
+POC Start Default Service Clarification
+---------------------------------------
+
+On the current ``main`` branch, the documented default behavior of
+``nvflare poc start`` is clarified to reflect the actual runtime behavior:
+the default start set is the server plus client services, not every
+participant directory under the workspace.
+
+Impact:
+
+- Running ``nvflare poc start`` with no explicit ``-p`` / ``--service`` starts
+  the server and clients.
+- Admin consoles are not started unless explicitly selected.
+
+This is a documentation/help clarification, not a runtime behavior change.
+
 Upgrading from 2.7.0/2.7.1 to 2.7.2
 ======================================
 

@@ -13,10 +13,12 @@
 # limitations under the License.
 
 import datetime
+import ipaddress
 import json
 import os
-import random
+import secrets
 import shutil
+import string
 from base64 import b64decode, b64encode
 from pathlib import Path
 
@@ -25,9 +27,15 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
-from cryptography.x509.oid import NameOID
+from cryptography.x509.oid import ExtensionOID, NameOID
 
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
+
+_GENERATE_CERT_RESERVED_EXTENSION_OIDS = {
+    ExtensionOID.SUBJECT_KEY_IDENTIFIER,
+    ExtensionOID.AUTHORITY_KEY_IDENTIFIER,
+    ExtensionOID.SUBJECT_ALTERNATIVE_NAME,
+}
 
 
 class Identity:
@@ -35,6 +43,30 @@ class Identity:
         self.name = name
         self.org = org
         self.role = role
+
+
+def _host_to_subject_alt_name(host: str):
+    try:
+        return x509.IPAddress(ipaddress.ip_address(host))
+    except ValueError:
+        return x509.DNSName(host)
+
+
+def build_subject_alt_names(server_default_host=None, server_additional_hosts=None, fallback_subject_name=None):
+    if isinstance(server_additional_hosts, str):
+        server_additional_hosts = [server_additional_hosts]
+
+    if server_default_host:
+        sans = [_host_to_subject_alt_name(server_default_host)]
+        if server_additional_hosts:
+            for h in server_additional_hosts:
+                if h != server_default_host:
+                    sans.append(_host_to_subject_alt_name(h))
+        return sans
+
+    if not fallback_subject_name:
+        raise ValueError("fallback_subject_name is required when server_default_host is not set")
+    return [x509.DNSName(fallback_subject_name)]
 
 
 def generate_cert(
@@ -46,9 +78,12 @@ def generate_cert(
     ca=False,
     server_default_host=None,
     server_additional_hosts=None,
+    not_valid_before=None,
+    not_valid_after=None,
+    extra_extensions=None,
 ):
-    if isinstance(server_additional_hosts, str):
-        server_additional_hosts = [server_additional_hosts]
+    now = not_valid_before or datetime.datetime.now(datetime.timezone.utc)
+    cert_not_valid_after = not_valid_after or now + datetime.timedelta(days=valid_days)
 
     x509_subject = x509_name(subject.name, subject.org, subject.role)
     x509_issuer = x509_name(issuer.name, issuer.org, issuer.role)
@@ -59,8 +94,8 @@ def generate_cert(
         .issuer_name(x509_issuer)
         .public_key(subject_pub_key)
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.datetime.utcnow())
-        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=valid_days))
+        .not_valid_before(now)
+        .not_valid_after(cert_not_valid_after)
         .add_extension(
             x509.SubjectKeyIdentifier.from_public_key(subject_pub_key),
             critical=False,
@@ -75,34 +110,41 @@ def generate_cert(
         builder = builder.add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True).add_extension(
             x509.KeyUsage(
                 digital_signature=True,
-                content_commitment=True,
-                key_encipherment=True,
-                data_encipherment=True,
-                key_agreement=True,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
                 key_cert_sign=True,
                 crl_sign=True,
                 encipher_only=False,
                 decipher_only=False,
             ),
-            critical=False,
+            critical=True,
         )
 
-    if server_default_host:
-        # This is to generate a server cert.
-        # Use SubjectAlternativeName for all host names
-        sans = [x509.DNSName(server_default_host)]
-        if server_additional_hosts:
-            for h in server_additional_hosts:
-                if h != server_default_host:
-                    sans.append(x509.DNSName(h))
-        builder = builder.add_extension(x509.SubjectAlternativeName(sans), critical=False)
-    else:
-        builder = builder.add_extension(x509.SubjectAlternativeName([x509.DNSName(subject.name)]), critical=False)
+    if extra_extensions:
+        seen_extension_oids = set()
+        for extension, critical in extra_extensions:
+            if extension.oid in _GENERATE_CERT_RESERVED_EXTENSION_OIDS:
+                raise ValueError(f"extra_extensions must not include reserved extension OID '{extension.oid._name}'")
+            if extension.oid in seen_extension_oids:
+                raise ValueError(f"duplicate extra extension OID '{extension.oid._name}'")
+            seen_extension_oids.add(extension.oid)
+            builder = builder.add_extension(extension, critical=critical)
+
+    builder = builder.add_extension(
+        x509.SubjectAlternativeName(
+            build_subject_alt_names(server_default_host, server_additional_hosts, subject.name)
+        ),
+        critical=False,
+    )
     return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
 
 
 def serialize_pri_key(pri_key, passphrase=None):
-    if passphrase is None or not isinstance(passphrase, bytes):
+    if passphrase is not None and not isinstance(passphrase, bytes):
+        raise TypeError(f"passphrase must be bytes or None, got {type(passphrase)}")
+    if passphrase is None:
         return pri_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.TraditionalOpenSSL,
@@ -149,7 +191,7 @@ def cert_to_dict(cert):
         "subject": {attr.oid._name: attr.value for attr in cert.subject},
         "issuer": {attr.oid._name: attr.value for attr in cert.issuer},
         "version": cert.version.name,
-        "serial_number": cert.serial_number,
+        "serial_number": hex(cert.serial_number),
         # "not_valid_before": cert.not_valid_before.isoformat(),
         # "not_valid_after": cert.not_valid_after.isoformat(),
         # "signature_algorithm": cert.signature_algorithm.name,
@@ -157,8 +199,8 @@ def cert_to_dict(cert):
 
 
 def generate_password(passlen=16):
-    s = "abcdefghijklmnopqrstuvwxyz01234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    p = "".join(random.sample(s, passlen))
+    s = string.ascii_letters + string.digits
+    p = "".join(secrets.choice(s) for _ in range(passlen))
     return p
 
 
@@ -213,8 +255,8 @@ def load_private_key(data: str):
 
 
 def load_private_key_file(file_path):
-    with open(file_path, "rt") as f:
-        return load_private_key(f.read())
+    with open(file_path, "rb") as f:
+        return serialization.load_pem_private_key(f.read(), password=None, backend=default_backend())
 
 
 def sign_folders(folder, signing_pri_key, crt_path=None, max_depth=9999, signature_file=NVFLARE_SIG_FILE):
@@ -340,6 +382,18 @@ def load_yaml(file):
     return yaml_data
 
 
+def _resolve_include_path(root, item):
+    root_real = os.path.realpath(root or ".")
+    include_path = os.path.realpath(os.path.join(root_real, item))
+    try:
+        common = os.path.commonpath([root_real, include_path])
+    except ValueError:
+        raise ValueError(f"include path escapes root: {item}")
+    if common != root_real:
+        raise ValueError(f"include path escapes root: {item}")
+    return include_path
+
+
 def load_yaml_include(root, yaml_data):
     new_data = {}
     for k, v in yaml_data.items():
@@ -349,7 +403,7 @@ def load_yaml_include(root, yaml_data):
             elif isinstance(v, list):
                 includes = v
             for item in includes:
-                new_data.update(load_yaml(os.path.join(root, item)))
+                new_data.update(load_yaml(_resolve_include_path(root, item)))
         elif isinstance(v, list):
             new_list = []
             for item in v:

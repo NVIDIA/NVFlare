@@ -190,6 +190,12 @@ class StaticFileBuilder(Builder):
 
         ctx.build_from_template(dest_dir, authz_section_key, ProvFileName.AUTHORIZATION_JSON_DEFAULT, exe=False)
 
+        studies = project.get_prop("studies")
+        if studies:
+            os.makedirs(dest_dir, exist_ok=True)
+            registry = {"format_version": "1.0", "studies": studies}
+            utils.write(os.path.join(dest_dir, "study_registry.json"), json.dumps(registry, indent=2), mode="t")
+
         # workspace folder file
         dest_dir = ctx.get_ws_dir(server)
         ctx.build_from_template(dest_dir, TemplateSectionKey.SERVER_README, ProvFileName.README_TXT, exe=False)
@@ -316,7 +322,7 @@ class StaticFileBuilder(Builder):
             TemplateSectionKey.LOCAL_CLIENT_RESOURCES,
             ProvFileName.RESOURCES_JSON_DEFAULT,
             replacement=replacement_dict,
-            content_modify_cb=self._modify_error_sender,
+            content_modify_cb=self._modify_system_log_streamer,
             client=client,
         )
 
@@ -408,9 +414,9 @@ class StaticFileBuilder(Builder):
         dest_dir = ctx.get_ws_dir(client)
         ctx.build_from_template(dest_dir, TemplateSectionKey.CLIENT_README, ProvFileName.README_TXT)
 
-    def _modify_error_sender(self, section: str, client: Participant) -> str:
-        """Modify the local resources section and remove the "error_log_sender" component if necessary.
-        By default, the "error_log_sender" component is included in local resources.
+    def _modify_system_log_streamer(self, section: str, client: Participant) -> str:
+        """Modify the local resources section and remove the "system_log_streamer" component if necessary.
+        By default, the "system_log_streamer" component is included in local resources.
         However, if the project does not allow errors to be sent, then this component must be removed.
 
         Args:
@@ -420,7 +426,7 @@ class StaticFileBuilder(Builder):
         Returns: modified section content
 
         """
-        allow = client.get_prop_fb(PropKey.ALLOW_ERROR_SENDING, False)
+        allow = client.get_prop_fb(PropKey.ALLOW_ERROR_SENDING, default=False)
         if allow:
             # error sending is allowed - so no change needed.
             return section
@@ -433,7 +439,7 @@ class StaticFileBuilder(Builder):
 
         assert isinstance(components, list)
         for c in components:
-            if c["id"] == "error_log_sender":
+            if c["id"] == "system_log_streamer":
                 # must remove this component
                 components.remove(c)
                 break

@@ -14,14 +14,18 @@
 
 import os
 import shutil
+import threading
 import time
 from typing import Optional
 
 from pydantic import BaseModel, conint, model_validator
 
+from nvflare.apis.job_def import DEFAULT_STUDY
+from nvflare.apis.utils.format_check import name_check
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
-from nvflare.recipe.utils import _collect_non_local_scripts
+from nvflare.recipe.utils import collect_non_local_scripts
 from nvflare.tool.poc.poc_commands import (
     _clean_poc,
     _start_poc,
@@ -50,6 +54,7 @@ class _PocEnvValidator(BaseModel):
     docker_image: Optional[str] = None
     project_conf_path: str = ""
     username: str = DEFAULT_ADMIN_USER
+    study: str = DEFAULT_STUDY
 
     @model_validator(mode="after")
     def check_client_configuration(self):
@@ -64,8 +69,13 @@ class _PocEnvValidator(BaseModel):
             )
 
         # Check if num_clients is valid when clients is None
-        if self.clients is None and self.num_clients <= 0:
+        if self.clients is None and (self.num_clients is None or self.num_clients <= 0):
             raise ValueError("num_clients must be greater than 0")
+
+        if name_check(self.study, "study")[0]:
+            raise ValueError(
+                f"study name '{self.study}' contains unsupported characters. Use only lowercase letters, numbers, and hyphens."
+            )
 
         return self
 
@@ -87,6 +97,7 @@ class PocEnv(ExecEnv):
         docker_image: Optional[str] = None,
         project_conf_path: str = "",
         username: str = DEFAULT_ADMIN_USER,
+        study: str = DEFAULT_STUDY,
         extra: Optional[dict] = None,
     ):
         """Initialize POC execution environment.
@@ -101,9 +112,11 @@ class PocEnv(ExecEnv):
             project_conf_path (str, optional): Path to the project configuration file. Defaults to "".
                 If specified, 'number_of_clients','clients' and 'docker' specific options will be ignored.
             username (str, optional): Admin user. Defaults to "admin@nvidia.com".
+            study (str, optional): Study name to tag submitted jobs. Defaults to "default".
             extra: extra env info.
         """
         super().__init__(extra)
+        self.logger = get_obj_logger(self)
 
         v = _PocEnvValidator(
             num_clients=num_clients,
@@ -113,6 +126,7 @@ class PocEnv(ExecEnv):
             docker_image=docker_image,
             project_conf_path=project_conf_path,
             username=username,
+            study=study,
         )
 
         self.clients = v.clients
@@ -123,19 +137,24 @@ class PocEnv(ExecEnv):
         self.project_conf_path = v.project_conf_path
         self.docker_image = v.docker_image
         self.username = v.username
+        self.study = v.study
         self._session_manager = None  # Lazy initialization
+        self._session_manager_lock = threading.Lock()
 
-    def deploy(self, job: FedJob):
+    def deploy(self, job: FedJob) -> str:
         """Deploy a FedJob to the POC environment.
 
         Args:
             job (FedJob): The FedJob to deploy.
 
         Returns:
-            str: Job ID or deployment result.
+            str: Job ID.
+
+        Raises:
+            ValueError: If scripts do not exist locally.
         """
         # Validate scripts exist locally for POC
-        non_local_scripts = _collect_non_local_scripts(job)
+        non_local_scripts = collect_non_local_scripts(job)
         if non_local_scripts:
             raise ValueError(
                 f"The following scripts do not exist locally: {non_local_scripts}. "
@@ -143,9 +162,9 @@ class PocEnv(ExecEnv):
             )
 
         if self._check_poc_running():
-            self.stop(clean_poc=True)
+            self.stop(clean_up=True)
 
-        print("Preparing and starting fresh POC services...")
+        self.logger.info("Preparing and starting fresh POC services...")
         prepare_poc_provision(
             clients=self.clients or [],  # Empty list if None, let prepare_clients generate
             number_of_clients=self.num_clients,
@@ -162,7 +181,7 @@ class PocEnv(ExecEnv):
             excluded=[self.username],
             services_list=[],
         )
-        print("POC services started successfully")
+        self.logger.info("POC services started successfully")
 
         # Give services time to start up
         time.sleep(SERVICE_START_TIMEOUT)
@@ -171,9 +190,14 @@ class PocEnv(ExecEnv):
         return self._get_session_manager().submit_job(job)
 
     def _check_poc_running(self) -> bool:
+        """Check if POC services are currently running.
+
+        Returns:
+            bool: True if POC is running, False otherwise.
+        """
         try:
             project_config, service_config = setup_service_config(self.poc_workspace)
-        except Exception as e:
+        except Exception:
             # POC workspace is not initialized yet, so we don't need to stop and clean it
             return False
 
@@ -182,16 +206,26 @@ class PocEnv(ExecEnv):
 
         return True
 
-    def stop(self, clean_poc: bool = False):
+    def stop(self, clean_up: bool = False) -> None:
         """Try to stop and clean existing POC.
 
+        This method is idempotent - safe to call multiple times.
+
         Args:
-            clean_poc (bool, optional): Whether to clean the POC workspace. Defaults to False.
+            clean_up (bool, optional): Whether to clean the POC workspace. Defaults to False.
         """
-        project_config, service_config = setup_service_config(self.poc_workspace)
+        # Check if already stopped (idempotent)
+        if not self._check_poc_running():
+            # POC already stopped or workspace doesn't exist
+            if clean_up and os.path.exists(self.poc_workspace):
+                self.logger.info(f"Removing POC workspace: {self.poc_workspace}")
+                shutil.rmtree(self.poc_workspace, ignore_errors=True)
+            self._session_manager = None  # Clear stale session manager
+            return
 
         try:
-            print("Stopping existing POC services...")
+            project_config, service_config = setup_service_config(self.poc_workspace)
+            self.logger.info("Stopping existing POC services...")
             _stop_poc(
                 poc_workspace=self.poc_workspace,
                 excluded=[self.username],  # Exclude admin console (consistent with start)
@@ -200,31 +234,60 @@ class PocEnv(ExecEnv):
             count = 0
             poc_running = True
             while count < STOP_POC_TIMEOUT:
-                if not is_poc_running(self.poc_workspace, service_config, project_config):
+                try:
+                    if not is_poc_running(self.poc_workspace, service_config, project_config):
+                        poc_running = False
+                        break
+                except Exception:
                     poc_running = False
                     break
                 time.sleep(1)
                 count += 1
 
-            if clean_poc:
+            if clean_up:
                 if poc_running:
-                    print(
-                        f"Warning: POC still running after {STOP_POC_TIMEOUT} seconds, cannot clean workspace. Skipping cleanup."
+                    self.logger.warning(
+                        f"POC still running after {STOP_POC_TIMEOUT} seconds, cannot clean workspace. Skipping cleanup."
                     )
                 else:
-                    _clean_poc(self.poc_workspace)
+                    try:
+                        _clean_poc(self.poc_workspace)
+                    except Exception as e:
+                        self.logger.debug(f"Failed to clean POC: {e}")
         except Exception as e:
-            print(f"Warning: Failed to stop and clean existing POC: {e}")
-        print(f"Removing POC workspace: {self.poc_workspace}")
-        shutil.rmtree(self.poc_workspace, ignore_errors=True)
+            self.logger.warning(f"Failed to stop and clean existing POC: {e}")
+        finally:
+            self._session_manager = None  # Clear stale session manager
 
     def get_job_status(self, job_id: str) -> Optional[str]:
+        """Get the status of a job.
+
+        Args:
+            job_id: The job ID to check status for.
+
+        Returns:
+            Optional[str]: The status of the job, or None if not available.
+        """
         return self._get_session_manager().get_job_status(job_id)
 
     def abort_job(self, job_id: str) -> None:
+        """Abort a running job.
+
+        Args:
+            job_id: The job ID to abort.
+        """
         self._get_session_manager().abort_job(job_id)
 
     def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
+        """Get the result workspace of a job.
+
+        Args:
+            job_id: The job ID to get results for.
+            timeout: The timeout for the job to complete. Defaults to 0.0 (no timeout).
+
+        Returns:
+            Optional[str]: The result workspace path if job completed, None otherwise.
+        """
         return self._get_session_manager().get_job_result(job_id, timeout)
 
     def _get_admin_startup_kit_path(self) -> str:
@@ -248,15 +311,17 @@ class PocEnv(ExecEnv):
             return admin_dir
 
         except Exception as e:
-            raise RuntimeError(f"Failed to locate admin startup kit: {e}")
+            raise RuntimeError(f"Failed to locate admin startup kit: {e}") from e
 
-    def _get_session_manager(self):
-        """Get or create SessionManager with lazy initialization."""
-        if self._session_manager is None:
-            session_params = {
-                "username": self.username,
-                "startup_kit_location": self._get_admin_startup_kit_path(),
-                "timeout": self.get_extra_prop("login_timeout", 10),
-            }
-            self._session_manager = SessionManager(session_params)
-        return self._session_manager
+    def _get_session_manager(self) -> SessionManager:
+        """Get or create SessionManager with lazy initialization (thread-safe)."""
+        with self._session_manager_lock:
+            if self._session_manager is None:
+                session_params = {
+                    "username": self.username,
+                    "startup_kit_location": self._get_admin_startup_kit_path(),
+                    "timeout": self.get_extra_prop("login_timeout", 10),
+                    "study": self.study,
+                }
+                self._session_manager = SessionManager(session_params)
+            return self._session_manager

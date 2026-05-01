@@ -30,7 +30,14 @@ from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.defs import FilterType
 from nvflare.job_config.script_runner import ScriptRunner
-from nvflare.recipe.spec import Recipe
+from nvflare.recipe.spec import ExecEnv, Recipe
+
+HE_CONTEXT_PROVISIONING_DOC_LINK = "https://nvflare.readthedocs.io/en/latest/programming_guide/provisioning_system.html"
+HE_SIM_ENV_NOT_SUPPORTED_ERROR = (
+    "FedAvgRecipeWithHE does not support SimEnv. "
+    "Use provisioned startup kits with nvflare.lighter.impl.he.HEBuilder and run with ProdEnv or PocEnv. "
+    f"See: {HE_CONTEXT_PROVISIONING_DOC_LINK}"
+)
 
 
 # Internal — not part of the public API
@@ -52,6 +59,8 @@ class _FedAvgRecipeWithHEValidator(BaseModel):
     params_transfer_type: TransferType = TransferType.FULL
     encrypt_layers: Optional[Union[List[str], str]] = None
     server_memory_gc_rounds: int = 1
+    client_memory_gc_rounds: int = 0
+    cuda_empty_cache: bool = False
 
 
 class FedAvgRecipeWithHE(Recipe):
@@ -70,6 +79,23 @@ class FedAvgRecipeWithHE(Recipe):
     - HE model encryptor/decryptor filters on the client side
     - HE model serialization filter on the server side
     - Script runners for client-side training execution
+
+    Important:
+        TenSEAL context files must be generated before running this recipe:
+        - `server_context.tenseal` for the server startup folder
+        - `client_context.tenseal` for each client startup folder
+
+        Use NVFlare provisioning with `nvflare.lighter.impl.he.HEBuilder` so these
+        context files are generated automatically into startup kits.
+
+        Example project config:
+        `examples/advanced/cifar10/pt/cifar10-real-world/workspaces/secure_project.yml`
+
+        SimEnv is not supported for this HE recipe. Use ProdEnv or PocEnv with
+        provisioned startup kits.
+
+        For provisioning details, see:
+        https://nvflare.readthedocs.io/en/2.7/programming_guide/provisioning_system.html
 
     Args:
         name: Name of the federated learning job. Defaults to "fedavg".
@@ -145,6 +171,8 @@ class FedAvgRecipeWithHE(Recipe):
         params_transfer_type: TransferType = TransferType.FULL,
         encrypt_layers: Optional[Union[List[str], str]] = None,
         server_memory_gc_rounds: int = 1,
+        client_memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ):
         # Validate inputs internally
         v = _FedAvgRecipeWithHEValidator(
@@ -163,6 +191,8 @@ class FedAvgRecipeWithHE(Recipe):
             params_transfer_type=params_transfer_type,
             encrypt_layers=encrypt_layers,
             server_memory_gc_rounds=server_memory_gc_rounds,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            cuda_empty_cache=cuda_empty_cache,
         )
 
         self.name = v.name
@@ -188,6 +218,8 @@ class FedAvgRecipeWithHE(Recipe):
         self.params_transfer_type: TransferType = v.params_transfer_type
         self.encrypt_layers: Optional[Union[List[str], str]] = v.encrypt_layers
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
+        self.client_memory_gc_rounds = v.client_memory_gc_rounds
+        self.cuda_empty_cache = v.cuda_empty_cache
 
         # Create BaseFedJob without model first (model setup done manually below for HE)
         job = BaseFedJob(
@@ -254,6 +286,8 @@ class FedAvgRecipeWithHE(Recipe):
             framework=FrameworkType.PYTORCH,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
+            memory_gc_rounds=self.client_memory_gc_rounds,
+            cuda_empty_cache=self.cuda_empty_cache,
         )
         job.to_clients(executor)
 
@@ -280,3 +314,11 @@ class FedAvgRecipeWithHE(Recipe):
         )
 
         Recipe.__init__(self, job)
+
+    def process_env(self, env: ExecEnv):
+        from nvflare.recipe.sim_env import SimEnv
+
+        if isinstance(env, SimEnv):
+            raise ValueError(HE_SIM_ENV_NOT_SUPPORTED_ERROR)
+
+        super().process_env(env)

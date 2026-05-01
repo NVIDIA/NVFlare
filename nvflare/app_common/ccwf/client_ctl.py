@@ -540,7 +540,7 @@ class ClientSideController(Executor, TaskController):
         return make_reply(ReturnCode.OK)
 
     def _process_end_workflow(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        self.log_info(fl_ctx, f"ending workflow {self.get_config_prop(FLContextKey.WORKFLOW)}")
+        self.log_debug(fl_ctx, f"ending workflow {self.get_config_prop(FLContextKey.WORKFLOW)}")
         self.asked_to_stop = True
         self._abort_current_task(fl_ctx)
         self.finalize(fl_ctx)

@@ -71,7 +71,7 @@ def main():
         print(
             f"Accuracy of the received model on round {input_model.current_round} on the test images: {test_global_acc * 100} %"
         )
-        writer.add_scalar(tag="local_acc", scalar=test_global_acc)
+        writer.add_scalar(tag="local_acc", scalar=test_global_acc, global_step=input_model.current_round)
 
         # training
         model.fit(train_images, train_labels, epochs=1, validation_data=(test_images, test_labels))

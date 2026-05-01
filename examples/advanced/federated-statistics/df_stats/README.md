@@ -15,7 +15,7 @@ So we assigned the training data and test data to two clients.
  
 Now we use the data utility to download the UCI dataset into separate client directories under /tmp/nvflare/df_stats/data/
 
-Please note that the UCI's website may experience occasional downtime.
+Please note that the UCI website may experience occasional downtime.
 
 ```shell
 python prepare_data.py
@@ -52,6 +52,12 @@ To calculate federated quantiles, we need to select a package that satisfies the
 We chose the fastdigest Python package, a Rust-based package. The digest only carries the cluster coordinates; 
 initially, each data point is in its own cluster. By default, we will compress with max_bin = sqrt(datasize) 
 to compress the coordinates, so the data won't leak. You can always override max_bins if you prefer more or less compression.
+
+Install and pin:
+
+```bash
+pip install fastdigest==0.4.0
+```
 
  
 ## Configuration and Code

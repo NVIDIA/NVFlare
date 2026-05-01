@@ -55,3 +55,26 @@ class TestNameCheck:
         assert err == err_value
         err, reason = name_check(name, "email")
         assert err == err_value
+
+    @pytest.mark.parametrize(
+        "name, err_value",
+        [
+            ["default", False],
+            ["cancer-research", False],
+            ["cancer_research", False],
+            ["a_b", False],
+            ["a", False],
+            ["a" * 63, False],
+            ["", True],
+            ["A", True],
+            ["_abc", True],
+            ["abc_", True],
+            ["-abc", True],
+            ["abc-", True],
+            ["a" * 64, True],
+            ["with space", True],
+        ],
+    )
+    def test_study(self, name, err_value):
+        err, reason = name_check(name, "study")
+        assert err == err_value

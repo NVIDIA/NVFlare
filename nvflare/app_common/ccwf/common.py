@@ -71,6 +71,7 @@ class Constant:
 
     TOPIC_SHARE_RESULT = "cwf.share_result"
     TOPIC_END_WORKFLOW = "cwf.end_wf"
+    TOPIC_UPDATE_MEMBERSHIP = "cwf.update_membership"
 
     RC_NO_GLOBAL_MODELS = "cwf.no_global_models"
     RC_NO_LOCAL_MODEL = "cwf.no_local_model"
@@ -188,6 +189,10 @@ def rotate_to_front(item, items: list):
 
 def topic_for_end_workflow(wf_id):
     return f"{Constant.TOPIC_END_WORKFLOW}.{wf_id}"
+
+
+def topic_for_membership_update(wf_id):
+    return f"{Constant.TOPIC_UPDATE_MEMBERSHIP}.{wf_id}"
 
 
 def make_task_name(prefix: str, base_name: str) -> str:

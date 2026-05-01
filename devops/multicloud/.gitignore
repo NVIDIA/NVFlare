@@ -1,0 +1,4 @@
+.venv/
+.work/
+__pycache__/
+scripts/__pycache__/

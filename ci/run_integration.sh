@@ -83,7 +83,6 @@ integration_test() {
     add_dns_entries
     testFolder="tests/integration_test"
     pushd ${testFolder}
-    pipenv run ./generate_test_configs_for_examples.sh
     pipenv run ./run_integration_tests.sh -m "$1"
     popd
     clean_up_snapshot_and_job
@@ -91,11 +90,35 @@ integration_test() {
     remove_pipenv
 }
 
+integration_test_pt() {
+    echo "Run PT integration test with backend $1..."
+    ln -sfn /usr/bin/python3.12 /usr/bin/python
+    ln -sfn /usr/bin/python3.12 /usr/bin/python3
+    # somehow the base container has blinker which should be removed
+    apt remove -y python3-blinker python-blinker-doc || true
+    pip install -e .[dev]
+    # CI machine supports CUDA 12.4; pin to known compatible versions
+    pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
+    export PYTHONPATH=$PWD
+    add_dns_entries
+    testFolder="tests/integration_test"
+    clean_up_snapshot_and_job
+    pushd ${testFolder}
+    ./run_integration_tests.sh -m "$1"
+    popd
+    clean_up_snapshot_and_job
+    remove_dns_entries
+}
+
 case $BUILD_TYPE in
 
     tensorflow)
         echo "Run TF tests..."
         integration_test_tf
+        ;;
+    client_api|client_api_qa|pytorch|cifar)
+        echo "Run PT tests..."
+        integration_test_pt "$BUILD_TYPE"
         ;;
     *)
         integration_test "$BUILD_TYPE"

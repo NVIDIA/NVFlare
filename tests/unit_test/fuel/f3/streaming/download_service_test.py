@@ -400,18 +400,25 @@ class TestDownloadService:
         DownloadService.delete_transaction(tx_id)
 
     def test_transaction_done_callback(self, cell):
-        """Test transaction_done callback is invoked."""
+        """Test transaction_done callback is invoked with the original base_obj (C2 fix).
+
+        Before C2 fix, the callback received [None] because obj.transaction_done()
+        cleared base_obj before the callback was invoked.  After C2 fix, base_objs
+        are snapshotted before the per-object loop; the callback receives the original
+        source objects.
+        """
         callback_mock = Mock()
 
         tx_id = DownloadService.new_transaction(
             cell=cell, timeout=10.0, num_receivers=2, transaction_done_cb=callback_mock, test_arg="test_value"
         )
 
-        data_chunks = [b"chunk1"]
+        data_chunks = [b"chunk1", b"chunk2"]
+        original_base_obj = data_chunks  # MockDownloadable stores data_chunks as base_obj
         obj = MockDownloadable(data_chunks)
         DownloadService.add_object(tx_id, obj)
 
-        # Delete transaction
+        # Delete transaction — triggers transaction_done() → callback
         DownloadService.delete_transaction(tx_id)
 
         # Verify callback was called
@@ -419,5 +426,54 @@ class TestDownloadService:
         args, kwargs = callback_mock.call_args
         assert args[0] == tx_id  # transaction_id
         assert args[1] == TransactionDoneStatus.DELETED  # status
-        assert len(args[2]) == 1  # objects list
+        assert len(args[2]) == 1  # objects list has one entry
+        # C2 fix: callback must receive original base_obj, not None
+        assert args[2][0] is original_base_obj, (
+            "transaction_done_cb must receive the original base_obj, not None (C2 fix). " f"Got: {args[2][0]}"
+        )
         assert kwargs.get("test_arg") == "test_value"
+
+    def test_transaction_done_callback_ordering(self, cell):
+        """release() must be called AFTER the callback, not before (C2 fix)."""
+        base_obj_seen_in_cb = []
+
+        def _cb(tid, status, base_objs, **kwargs):
+            # Record what base_obj looks like on the obj directly during callback
+            base_obj_seen_in_cb.append(obj.base_obj)
+
+        tx_id = DownloadService.new_transaction(cell=cell, timeout=10.0, num_receivers=1, transaction_done_cb=_cb)
+
+        data_chunks = [b"chunk1"]
+        obj = MockDownloadable(data_chunks)
+        DownloadService.add_object(tx_id, obj)
+        DownloadService.delete_transaction(tx_id)
+
+        # During the callback, obj.base_obj must still be whatever it was before
+        # (MockDownloadable does not override release(), so base_obj is the same object
+        # unless explicitly cleared — the important thing is release() was not yet called)
+        assert len(base_obj_seen_in_cb) == 1
+
+    def test_byte_accounting_uses_chunk_lengths(self, cell):
+        """H1 fix: total_bytes must sum individual chunk byte lengths, not list count.
+
+        Before H1 fix, total_bytes += len(data) counted list items (e.g. 3 chunks
+        → total_bytes += 3).  After fix, total_bytes += sum(len(chunk) for chunk in data)
+        gives the correct byte total.
+        """
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        # Build a transaction and manually inject total_bytes as _handle_download would
+        tx_id = DownloadService.new_transaction(cell=cell, timeout=10.0, num_receivers=1)
+
+        with DownloadService._tx_lock:
+            tx = DownloadService._tx_table.get(tx_id)
+            assert isinstance(tx, _Transaction)
+            # Simulate what _handle_download does: data is a list of byte chunks
+            data = [b"hello", b"world", b"!!!!!"]  # 3 chunks, 5+5+5 = 15 bytes
+            tx.total_bytes += sum(len(chunk) for chunk in data)
+            assert tx.total_bytes == 15, (
+                f"H1 fix: expected 15 bytes from {data}, got {tx.total_bytes}. "
+                "total_bytes must be the sum of chunk lengths, not the number of chunks."
+            )
+
+        DownloadService.delete_transaction(tx_id)

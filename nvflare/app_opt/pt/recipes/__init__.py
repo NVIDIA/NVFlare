@@ -25,10 +25,10 @@ def __getattr__(name):
         from .fedavg_he import FedAvgRecipeWithHE
 
         return FedAvgRecipeWithHE
-    if name == "SimpleSwarmLearningRecipe":
-        from .swarm import SimpleSwarmLearningRecipe
+    if name == "SwarmLearningRecipe":
+        from .swarm import SwarmLearningRecipe
 
-        return SimpleSwarmLearningRecipe
+        return SwarmLearningRecipe
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -39,5 +39,5 @@ __all__ = [
     "ScaffoldRecipe",
     "FedAvgRecipeWithHE",
     "FedEvalRecipe",
-    "SimpleSwarmLearningRecipe",
+    "SwarmLearningRecipe",
 ]

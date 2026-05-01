@@ -84,19 +84,47 @@ class CacheableObject(Downloadable):
         self.clear_cache()
 
     def clear_cache(self):
+        """Clear the chunk cache only.
+
+        Does NOT touch base_obj — the source object is released separately
+        via release() after the transaction_done_cb has been invoked, so the
+        callback can still observe the original data if needed.
+        """
         with self.lock:
             self.cache = None
 
+    def release(self):
+        """Drop the reference to the source object.
+
+        Called by _Transaction.transaction_done() AFTER the transaction_done_cb
+        fires.  Setting base_obj to None drops the last infrastructure reference
+        to the source data (e.g. a 5 GiB numpy dict), allowing it to be
+        reclaimed by the GC immediately rather than waiting for a future cycle.
+
+        Overrides Downloadable.release() (which is a no-op by default).
+        """
+        with self.lock:
+            self.base_obj = None
+
     def _get_item(self, index: int, requester: str) -> bytes:
         with self.lock:
-            if not self.cache:
-                cache_available = False
-                data = None
-            else:
-                cache_available = True
-                data, _ = self.cache[index]
+            cache_available = bool(self.cache)
+            data = None if not cache_available else self.cache[index][0]
+            base_obj = self.base_obj  # snapshot under lock for thread-safety
 
         if not cache_available:
+            if base_obj is None:
+                # release() was already called — no new chunk requests should
+                # arrive after transaction_done(), but guard defensively.
+                raise RuntimeError(f"item {index} requested after base_obj released for {requester}")
+            # produce_item() reads self.base_obj internally and is called outside
+            # the lock.  A concurrent release() could set self.base_obj to None
+            # between the guard above and produce_item's first read.  In practice
+            # this window cannot open: release() is only invoked from
+            # transaction_done_cb, which fires after the download service confirms
+            # all chunks have been delivered — i.e. after this code path has
+            # already returned.  The guard above handles the only truly invalid
+            # state (request arriving after a completed transaction).
             return self.produce_item(index)
 
         if data is not None:
