@@ -35,8 +35,8 @@ TODO: Decide if these should be added to an existing test category (e.g., CIFAR 
 or run in a separate recipe test suite (takes ~1-2 minutes).
 """
 
+import importlib.util
 import os
-import sys
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
@@ -62,35 +62,12 @@ class TestExperimentTrackingRecipes:
     def client_script_dir(self):
         return os.path.dirname(self.client_script_path)
 
-    def _is_client_script_module(self, module):
-        spec = getattr(module, "__spec__", None)
-        origin = getattr(spec, "origin", None)
-        if not origin or origin in {"built-in", "frozen"}:
-            return False
-
-        client_script_dir = os.path.realpath(self.client_script_dir)
-        module_origin = os.path.realpath(origin)
-        return module_origin.startswith(client_script_dir + os.sep)
-
     def _make_model(self):
-        original_sys_path = list(sys.path)
-        previous_modules = {
-            name: module
-            for name, module in list(sys.modules.items())
-            if name == "model" or self._is_client_script_module(module)
-        }
-        sys.modules.pop("model", None)
-        sys.path.insert(0, self.client_script_dir)
-        try:
-            from model import SimpleNetwork
-
-            return SimpleNetwork()
-        finally:
-            for name, module in list(sys.modules.items()):
-                if name == "model" or self._is_client_script_module(module):
-                    sys.modules.pop(name, None)
-            sys.modules.update(previous_modules)
-            sys.path[:] = original_sys_path
+        model_path = os.path.join(self.client_script_dir, "model.py")
+        spec = importlib.util.spec_from_file_location("_exp_tracking_model", model_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.SimpleNetwork()
 
     def test_tensorboard_tracking_integration(self):
         """Test TensorBoard tracking can be added and job completes."""

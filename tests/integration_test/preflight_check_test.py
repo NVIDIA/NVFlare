@@ -114,14 +114,25 @@ def _verify_checks(actual_checks: dict[str, str], expected_checks: dict[str, str
         raise AssertionError(error_msg)
 
 
-def _run_preflight_check_command_in_subprocess(package_path: str):
+def _raise_preflight_command_error(command: str, returncode: int, output: bytes):
+    output_text = output.decode("utf-8", errors="replace")
+    raise AssertionError(
+        f"Preflight command failed with return code {returncode}: {command}\n"
+        f"Output:\n{output_text}"
+    )
+
+
+def _run_preflight_check_command_in_subprocess(package_path: str, expect_success: bool = True):
     command = f"{sys.executable} -m {PREFLIGHT_CHECK_SCRIPT} -p {package_path}"
     print(f"Executing command {command} in subprocess")
     process = subprocess.run(shlex.split(command), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+    print(f"Preflight command return code: {process.returncode}")
+    if expect_success and process.returncode != 0:
+        _raise_preflight_command_error(command, process.returncode, process.stdout)
     return process.stdout
 
 
-def _run_preflight_check_command_in_pseudo_terminal(package_path: str):
+def _run_preflight_check_command_in_pseudo_terminal(package_path: str, expect_success: bool = True):
     command = f"{sys.executable} -m {PREFLIGHT_CHECK_SCRIPT} -p {package_path}"
     print(f"Executing command {command} in pty")
 
@@ -132,16 +143,20 @@ def _run_preflight_check_command_in_pseudo_terminal(package_path: str):
             output.write(data)
             return data
 
-        pty.spawn(shlex.split(command), read)
+        status = pty.spawn(shlex.split(command), read)
+        returncode = os.waitstatus_to_exitcode(status)
+        print(f"Preflight command return code: {returncode}")
+        if expect_success and returncode != 0:
+            _raise_preflight_command_error(command, returncode, output.getvalue())
 
         return output.getvalue()
 
 
-def _run_preflight_check_command(package_path: str, method: str = "subprocess"):
+def _run_preflight_check_command(package_path: str, method: str = "subprocess", expect_success: bool = True):
     if method == "subprocess":
-        return _run_preflight_check_command_in_subprocess(package_path)
+        return _run_preflight_check_command_in_subprocess(package_path, expect_success=expect_success)
     else:
-        return _run_preflight_check_command_in_pseudo_terminal(package_path)
+        return _run_preflight_check_command_in_pseudo_terminal(package_path, expect_success=expect_success)
 
 
 @pytest.fixture(
@@ -173,7 +188,9 @@ class TestPreflightCheck:
                 site_launcher.start_overseer()
             # preflight-check on server
             for server_name, server_props in site_launcher.server_properties.items():
-                output = _run_preflight_check_command(package_path=server_props.root_dir)
+                output = _run_preflight_check_command(
+                    package_path=server_props.root_dir, expect_success=is_dummy_overseer
+                )
                 actual_checks = _parse_preflight_output(output)
 
                 # Get expected checks based on communication scheme
