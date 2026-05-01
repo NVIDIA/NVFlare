@@ -117,8 +117,7 @@ def _verify_checks(actual_checks: dict[str, str], expected_checks: dict[str, str
 def _raise_preflight_command_error(command: str, returncode: int, output: bytes):
     output_text = output.decode("utf-8", errors="replace")
     raise AssertionError(
-        f"Preflight command failed with return code {returncode}: {command}\n"
-        f"Output:\n{output_text}"
+        f"Preflight command failed with return code {returncode}: {command}\n" f"Output:\n{output_text}"
     )
 
 
