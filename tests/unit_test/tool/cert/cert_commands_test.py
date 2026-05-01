@@ -894,6 +894,7 @@ class TestCertInit:
         help_text = capsys.readouterr().out
         assert "--version differs" in help_text
         assert "--version matches" in help_text
+        assert "ca.json is absent" in help_text
         assert "existing CA's provision version" in help_text
 
     def test_missing_required_args_show_help_and_missing_flags(self, capsys, monkeypatch):

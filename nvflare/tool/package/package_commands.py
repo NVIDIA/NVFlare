@@ -365,7 +365,6 @@ class FixedProdWorkspaceBuilder(WorkspaceBuilder):
         if target_exists and not os.path.isdir(self.target_prod_dir):
             raise ValueError(f"target production path exists but is not a directory: {self.target_prod_dir}")
         os.makedirs(self.target_prod_dir, exist_ok=True)
-        ctx[CtxKey.CURRENT_PROD_DIR] = self.target_prod_dir
 
         wip_dir = ctx.get_wip_dir()
         for name in os.listdir(wip_dir):
@@ -382,6 +381,7 @@ class FixedProdWorkspaceBuilder(WorkspaceBuilder):
                 continue
             shutil.move(src, dst)
 
+        ctx[CtxKey.CURRENT_PROD_DIR] = self.target_prod_dir
         ctx.info(f"Generated results can be found under {self.target_prod_dir}. ")
 
 

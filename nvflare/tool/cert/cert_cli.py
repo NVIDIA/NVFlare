@@ -118,7 +118,7 @@ def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         help=(
             "Replace existing CA files only when --version differs from the existing CA's provision version. "
             "Fails with an error if --version matches the existing CA's provision version. "
-            "Backs up existing files first."
+            "If ca.json is absent, --version is not checked. Backs up existing files first."
         ),
     )
     p.add_argument(

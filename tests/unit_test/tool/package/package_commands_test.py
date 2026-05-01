@@ -3731,6 +3731,22 @@ class TestSignedZipPackageMode:
         assert "INVALID_SIGNED_ZIP" in err
         assert "Invalid provision version" in err
 
+    def test_signed_zip_rejects_non_mapping_ca_info(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path, provision_version="00")
+        _rewrite_signed_zip_metadata(
+            signed_zip,
+            lambda meta: meta.update({CA_INFO_FIELD: ["not", "a", "dict"]}),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(_signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir)))
+
+        assert exc_info.value.code == 4
+        err = capsys.readouterr().err
+        assert "INVALID_SIGNED_ZIP" in err
+        assert "ca_info must be a mapping" in err
+
     def test_signed_zip_rejects_malformed_ca_info_rootca_fingerprint(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path, provision_version="00")
@@ -3843,10 +3859,11 @@ class TestSignedZipPackageMode:
 
         assert exc_info.value.code != 0
         assert "exists" in capsys.readouterr().err.lower()
+        workspace = str(tmp_path / "ws")
+        assert os.path.isdir(os.path.join(workspace, "example_project", "prod_00", "site-3"))
 
         handle_package(_signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir), force=True))
 
-        workspace = str(tmp_path / "ws")
         assert os.path.isdir(os.path.join(workspace, "example_project", "prod_00", "site-3"))
         assert not os.path.exists(os.path.join(workspace, "example_project", "prod_01", "site-3"))
 
