@@ -417,17 +417,19 @@ def _normalize_global_args(argv, global_parser):
     option_actions = global_parser._option_string_actions
     global_args = []
     remaining_args = []
+    subcommand_seen = False
     i = 0
     while i < len(argv):
         arg = argv[i]
         option, has_inline_value = (arg.split("=", 1)[0], True) if arg.startswith("--") and "=" in arg else (arg, False)
         action = option_actions.get(option)
-        if option in {"--version", "-V"} and remaining_args:
+        if option in {"--version", "-V"} and subcommand_seen:
             remaining_args.append(arg)
             i += 1
             continue
         if action is None:
             remaining_args.append(arg)
+            subcommand_seen = True
             i += 1
             continue
 

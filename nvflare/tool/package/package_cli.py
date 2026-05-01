@@ -97,7 +97,10 @@ def def_package_cli_parser(sub_cmd) -> dict:
         "--force",
         action="store_true",
         default=False,
-        help="Allow replacing an existing participant output when packaging into the signed provision version.",
+        help=(
+            "Allow replacing an existing participant output when packaging into the signed provision version. "
+            "Other participants in the same provision directory are not affected."
+        ),
     )
     p.add_argument(
         "--schema",

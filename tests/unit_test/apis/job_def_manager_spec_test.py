@@ -30,8 +30,8 @@ def test_submit_token_extension_methods_are_not_abstract():
     assert extension_methods.isdisjoint(JobDefManagerSpec.__abstractmethods__)
 
 
-def test_new_submit_record_default_is_instance_method():
-    assert not isinstance(JobDefManagerSpec.__dict__["new_submit_record"], staticmethod)
+def test_new_submit_record_default_is_static_method():
+    assert isinstance(JobDefManagerSpec.__dict__["new_submit_record"], staticmethod)
 
 
 def test_submit_token_extension_defaults_raise_not_implemented():
@@ -40,7 +40,7 @@ def test_submit_token_extension_defaults_raise_not_implemented():
     with pytest.raises(NotImplementedError):
         JobDefManagerSpec.get_submit_record(object(), "study", {}, "token", None)
     with pytest.raises(NotImplementedError):
-        JobDefManagerSpec.new_submit_record(object(), "study", {}, "token", "hash")
+        JobDefManagerSpec.new_submit_record("study", {}, "token", "hash")
     with pytest.raises(NotImplementedError):
         JobDefManagerSpec.create_submit_record(object(), {}, None)
     with pytest.raises(NotImplementedError):

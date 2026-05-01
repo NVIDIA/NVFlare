@@ -69,7 +69,12 @@ from nvflare.tool.cert.cert_commands import (
     handle_cert_sign,
     sign_csr_files,
 )
-from nvflare.tool.cert.cert_constants import CA_INFO_FIELD, PROVISION_VERSION_FIELD, ROOTCA_FINGERPRINT_FIELD
+from nvflare.tool.cert.cert_constants import (
+    CA_INFO_FIELD,
+    PROVISION_VERSION_FIELD,
+    ROOTCA_FINGERPRINT_FIELD,
+    is_valid_provision_version,
+)
 from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256
 
 # ---------------------------------------------------------------------------
@@ -883,6 +888,9 @@ class TestCertInit:
         )
 
         assert args.version == "01"
+
+    def test_provision_version_rejects_unicode_digits(self):
+        assert not is_valid_provision_version("０１")
 
     def test_parser_force_help_mentions_new_version_requirement(self, capsys):
         parser, _ = _cert_root_parser()

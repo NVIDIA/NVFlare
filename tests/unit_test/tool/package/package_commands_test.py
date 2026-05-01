@@ -3892,9 +3892,17 @@ class TestSignedZipPackageMode:
 
         assert exc_info.value.code == 1
         err = capsys.readouterr().err
-        assert "OUTPUT_DIR_EXISTS" in err
-        assert "Participant output already exists" in err
+        assert "BUILD_FAILED" in err
+        assert "participant output already exists" in err
         assert sentinel_path.exists()
+
+    def test_fixed_prod_workspace_builder_uses_workspace_builder_default_templates(self, tmp_path):
+        builder = FixedProdWorkspaceBuilder(
+            target_prod_dir=str(tmp_path / "workspace" / "project" / "prod_00"),
+            participant_name="site-1",
+        )
+
+        assert builder.template_files == WorkspaceBuilder().template_files
 
     def test_signed_zip_returns_build_error_without_success_output(self, tmp_path, monkeypatch):
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)

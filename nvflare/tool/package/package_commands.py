@@ -346,8 +346,15 @@ def _remove_existing_path(path: str) -> None:
 class FixedProdWorkspaceBuilder(WorkspaceBuilder):
     """Workspace builder variant that finalizes signed-zip kits into a fixed provision directory."""
 
-    def __init__(self, target_prod_dir: str, participant_name: str, force: bool = False, exclude_names=None):
-        super().__init__()
+    def __init__(
+        self,
+        target_prod_dir: str,
+        participant_name: str,
+        force: bool = False,
+        exclude_names=None,
+        template_files=None,
+    ):
+        super().__init__(template_file=template_files)
         self.target_prod_dir = target_prod_dir
         self.participant_name = participant_name
         self.force = force
@@ -374,13 +381,7 @@ class FixedProdWorkspaceBuilder(WorkspaceBuilder):
             dst = os.path.join(self.target_prod_dir, name)
             if name == self.participant_name and os.path.exists(dst):
                 if not self.force:
-                    output_error_message(
-                        "OUTPUT_DIR_EXISTS",
-                        f"Participant output already exists: {dst}.",
-                        "Use --force to replace this participant output. --force does not bypass root CA mismatch checks.",
-                        None,
-                        exit_code=1,
-                    )
+                    raise ValueError(f"participant output already exists: {dst}")
                 _remove_existing_path(dst)
             if os.path.exists(dst):
                 # Preserve existing root-level files when adding another participant to the same provision directory.
@@ -770,6 +771,7 @@ def _build_selected_participant_package(
     target_prod_dir = None
     workspace_builder = None
     if provision_version is not None:
+        # Defense in depth for direct internal callers. Signed-zip mode validates this earlier in _resolve_signed_ca_info.
         if not _validate_provision_version(provision_version):
             return 1
         target_prod_dir = _fixed_signed_prod_dir(workspace, project_name, provision_version)

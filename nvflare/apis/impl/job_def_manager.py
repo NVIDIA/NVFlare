@@ -276,8 +276,8 @@ class SimpleJobDefManager(JobDefManagerSpec):
             return None
         return self.get_job(jid, fl_ctx)
 
+    @staticmethod
     def new_submit_record(
-        self,
         study: str,
         submitter,
         submit_token: str,

@@ -54,8 +54,8 @@ class JobDefManagerSpec(FLComponent, ABC):
         """Get the persistent submit-token record for the scoped submit token."""
         raise NotImplementedError("submit-token records are not supported by this JobDefManager")
 
+    @staticmethod
     def new_submit_record(
-        self,
         study: str,
         submitter,
         submit_token: str,

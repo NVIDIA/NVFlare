@@ -31,4 +31,4 @@ KIT_TYPE_TO_ROLE = {
 
 
 def is_valid_provision_version(value: str) -> bool:
-    return isinstance(value, str) and len(value) == 2 and value.isdigit()
+    return isinstance(value, str) and value.isascii() and len(value) == 2 and value.isdigit()
