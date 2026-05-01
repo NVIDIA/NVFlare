@@ -14,6 +14,7 @@
 
 import json
 import os
+import tempfile
 import threading
 import time
 import uuid
@@ -66,7 +67,9 @@ class ClientManager:
         try:
             with open(self.disabled_clients_file) as f:
                 data = json.load(f)
-            clients = data.get("disabled_clients", []) if isinstance(data, dict) else data
+            if not isinstance(data, dict):
+                raise ValueError("disabled clients file must be a JSON object")
+            clients = data.get("disabled_clients")
             if not isinstance(clients, list):
                 raise ValueError("disabled_clients must be a list")
             with self.lock:
@@ -88,14 +91,21 @@ class ClientManager:
         if dirname:
             os.makedirs(dirname, exist_ok=True)
         data = {"disabled_clients": sorted(disabled_clients)}
-        tmp_path = self.disabled_clients_file + ".tmp"
+        tmp_path = None
         try:
-            with open(tmp_path, "w") as f:
+            fd, tmp_path = tempfile.mkstemp(
+                prefix=f"{os.path.basename(self.disabled_clients_file)}.",
+                suffix=".tmp",
+                dir=dirname or ".",
+                text=True,
+            )
+            with os.fdopen(fd, "w") as f:
                 json.dump(data, f, indent=2)
             os.replace(tmp_path, self.disabled_clients_file)
         except Exception:
-            with suppress(OSError):
-                os.unlink(tmp_path)
+            if tmp_path:
+                with suppress(OSError):
+                    os.unlink(tmp_path)
             raise
 
     def is_client_disabled(self, client_name: str) -> bool:

@@ -457,7 +457,7 @@ def _generate_csr(name: str, org: str = None, role: str = None):
 
 def _write_private_key(path: str, pem_bytes: bytes) -> None:
     """Write private key PEM to path with 0600 permissions set atomically at creation."""
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     fd = os.open(path, flags, 0o600)

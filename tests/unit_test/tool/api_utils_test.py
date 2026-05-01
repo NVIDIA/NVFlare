@@ -14,6 +14,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from nvflare.fuel.flare_api.api_spec import ClientInfo, ServerInfo
 from nvflare.tool import cli_output
 
@@ -84,3 +86,32 @@ def test_wait_for_system_start_reports_missing_expected_clients_concisely(capsys
     out = capsys.readouterr().out
     assert "Waiting for clients: site-2 (1/2 ready)" in out
     assert "Clients ready: 2/2 (site-1, site-2)" in out
+
+
+def test_wait_for_system_start_timeout_message_uses_expected_clients(monkeypatch):
+    from nvflare.tool.api_utils import SystemStartTimeout, wait_for_system_start
+
+    monkeypatch.setattr(cli_output, "_output_format", "txt")
+    sys_info = MagicMock(
+        server_info=ServerInfo("running", None),
+        client_info=[ClientInfo("site-1", None)],
+    )
+    sess = MagicMock()
+    sess.get_system_info.return_value = sys_info
+
+    with patch("nvflare.tool.api_utils.Session", return_value=sess):
+        with pytest.raises(SystemStartTimeout) as exc_info:
+            wait_for_system_start(
+                99,
+                "/tmp/prod",
+                username="admin@nvidia.com",
+                second_to_wait=0,
+                timeout_in_sec=0.01,
+                poll_interval=0,
+                conn_timeout=0.1,
+                expected_clients=["site-1", "site-2"],
+            )
+
+    message = str(exc_info.value)
+    assert "expected clients site-1, site-2" in message
+    assert "99 clients" not in message

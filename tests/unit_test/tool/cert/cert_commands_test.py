@@ -265,6 +265,16 @@ def test_write_private_key_forces_owner_only_mode(tmp_path):
     assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
 
 
+def test_write_private_key_does_not_overwrite_existing_key(tmp_path):
+    path = tmp_path / "site-3.key"
+    path.write_bytes(b"existing key")
+
+    with pytest.raises(FileExistsError):
+        _write_private_key(str(path), b"new key")
+
+    assert path.read_bytes() == b"existing key"
+
+
 # ---------------------------------------------------------------------------
 # cert init tests
 # ---------------------------------------------------------------------------

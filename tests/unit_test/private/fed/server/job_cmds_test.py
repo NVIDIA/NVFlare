@@ -1846,7 +1846,7 @@ def test_get_job_log_specific_missing_client_returns_unavailable(monkeypatch, tm
     }
 
 
-def test_get_job_log_missing_server_file_returns_empty_logs(monkeypatch, tmp_path):
+def test_get_job_log_missing_server_file_marks_server_unavailable(monkeypatch, tmp_path):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
 
     workspace = _FakeWorkspace(tmp_path)
@@ -1858,7 +1858,10 @@ def test_get_job_log_missing_server_file_returns_empty_logs(monkeypatch, tmp_pat
     JobCommandModule().get_job_log(conn, ["get_job_log", "job-123"])
 
     assert conn.errors == []
-    assert conn.dicts[0][0] == {"logs": {}}
+    assert conn.dicts[0][0] == {
+        "logs": {},
+        "unavailable": {"server": "server log not available for this job"},
+    }
     assert conn.successes == []
 
 
@@ -1881,7 +1884,10 @@ def test_get_job_log_handles_file_deleted_after_exists(monkeypatch, tmp_path):
     JobCommandModule().get_job_log(conn, ["get_job_log", "job-123"])
 
     assert conn.errors == []
-    assert conn.dicts[0][0] == {"logs": {"server": ""}}
+    assert conn.dicts[0][0] == {
+        "logs": {},
+        "unavailable": {"server": "server log not available for this job"},
+    }
 
 
 def test_get_job_log_mismatched_job_id_sources_returns_error(monkeypatch, tmp_path):

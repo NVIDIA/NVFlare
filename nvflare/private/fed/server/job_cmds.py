@@ -590,8 +590,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             if server_log is not None:
                 payload["logs"][SERVER_SITE_NAME] = server_log or ""
             else:
-                if target_lower in all_targets:
-                    payload.setdefault("unavailable", {})[SERVER_SITE_NAME] = "server log not available for this job"
+                payload.setdefault("unavailable", {})[SERVER_SITE_NAME] = "server log not available for this job"
 
         try:
             if target_lower not in {SERVER_SITE_NAME, *all_targets}:

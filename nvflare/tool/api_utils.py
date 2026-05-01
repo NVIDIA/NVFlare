@@ -178,4 +178,9 @@ def wait_for_system_start(
             time.sleep(min(poll_interval, remaining))
 
     detail = f"; last error: {last_error}" if last_error else ""
-    raise SystemStartTimeout(f"cannot connect to server with {num_clients} clients within {timeout_in_sec} sec{detail}")
+    client_target = (
+        f"expected clients {', '.join(sorted(expected_client_set))}"
+        if expected_client_set
+        else f"{num_clients} clients"
+    )
+    raise SystemStartTimeout(f"cannot connect to server with {client_target} within {timeout_in_sec} sec{detail}")

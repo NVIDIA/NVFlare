@@ -116,6 +116,15 @@ def test_disabled_clients_file_load_failure_fails_closed(tmp_path):
         manager.set_disabled_clients_file(str(disabled_file))
 
 
+def test_disabled_clients_file_rejects_bare_list_schema(tmp_path):
+    disabled_file = tmp_path / "disabled_clients.json"
+    disabled_file.write_text(json.dumps(["site-a"]), encoding="utf-8")
+    manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+
+    with pytest.raises(ValueError, match="JSON object"):
+        manager.set_disabled_clients_file(str(disabled_file))
+
+
 def test_disable_client_restores_active_client_when_persist_fails():
     manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
     client = Client("site-a", "token-a")
@@ -148,7 +157,6 @@ def test_disable_enable_persist_while_holding_client_manager_lock():
 
 def test_save_disabled_clients_removes_tmp_on_replace_failure(tmp_path):
     disabled_file = tmp_path / "disabled_clients.json"
-    tmp_file = tmp_path / "disabled_clients.json.tmp"
     manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
     manager.set_disabled_clients_file(str(disabled_file))
 
@@ -156,7 +164,7 @@ def test_save_disabled_clients_removes_tmp_on_replace_failure(tmp_path):
         with pytest.raises(OSError):
             manager._save_disabled_clients({"site-a"})
 
-    assert not tmp_file.exists()
+    assert list(tmp_path.glob("disabled_clients.json.*.tmp")) == []
 
 
 def test_remove_client_unknown_token_returns_none():

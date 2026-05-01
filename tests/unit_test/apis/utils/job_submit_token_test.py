@@ -107,3 +107,9 @@ def test_canonical_job_content_hash_rejects_oversized_zip_member(monkeypatch):
 
     with pytest.raises(ValueError, match="zip member exceeds size limit"):
         canonical_job_content_hash(output.getvalue())
+
+
+def test_canonical_job_content_hash_default_zip_member_limit_is_defensive():
+    import nvflare.apis.utils.job_submit_token as job_submit_token
+
+    assert job_submit_token._MAX_HASH_ZIP_MEMBER_SIZE == 10 * 1024 * 1024

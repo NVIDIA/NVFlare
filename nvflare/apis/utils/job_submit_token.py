@@ -24,7 +24,7 @@ from typing import Iterable, Optional, Tuple, Union
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
 
 _VOLATILE_SUBMIT_ARTIFACTS = {NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE}
-_MAX_HASH_ZIP_MEMBER_SIZE = 512 * 1024 * 1024
+_MAX_HASH_ZIP_MEMBER_SIZE = 10 * 1024 * 1024
 SUBMIT_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 SUBMIT_TOKEN_ERROR = "submit_token must be non-empty, at most 128 characters, and match ^[A-Za-z0-9._:-]{1,128}$"
 
