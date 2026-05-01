@@ -12,9 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 from pathlib import Path
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 from pyhocon import ConfigFactory as CF
 
 
@@ -53,6 +58,37 @@ def _make_invalid_startup_kit(parent: Path, name: str = "invalid@nvidia.com") ->
     (kit_dir / "startup").mkdir(parents=True)
     (kit_dir / "startup" / "fed_admin.json").write_text('{"admin": {"username": "%s"}}\n' % name)
     return kit_dir
+
+
+def _write_client_cert(
+    kit_dir: Path,
+    *,
+    common_name: str = "lead@nvidia.com",
+    org: str = "NVIDIA",
+    role: str = "lead",
+    issuer_project: str = "CancerProject",
+    expires_delta: datetime.timedelta = datetime.timedelta(days=90),
+):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    not_valid_after = now + expires_delta
+    not_valid_before = min(now - datetime.timedelta(minutes=1), not_valid_after - datetime.timedelta(days=1))
+    subject = [
+        x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, org),
+        x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, role),
+    ]
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(x509.Name(subject))
+        .issuer_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, issuer_project)]))
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(not_valid_before.replace(tzinfo=None))
+        .not_valid_after(not_valid_after.replace(tzinfo=None))
+        .sign(key, hashes.SHA256())
+    )
+    (kit_dir / "startup" / "client.crt").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
 
 
 def _entry_path(config, kit_id: str):
@@ -197,6 +233,74 @@ class TestStartupKitRegistryConfig:
         assert Path(normalized_path) == site_kit.resolve()
         assert metadata["identity"] == "site-1"
         assert metadata["kind"] == "site"
+        assert metadata["findings"] == []
+
+    def test_inspect_startup_kit_metadata_extracts_cert_identity_and_expiration(self, tmp_path):
+        from nvflare.tool.kit import kit_config
+
+        kit_dir = _make_admin_startup_kit(tmp_path, "lead@nvidia.com")
+        _write_client_cert(
+            kit_dir,
+            common_name="cert-lead@nvidia.com",
+            org="NVIDIA",
+            role="lead",
+            issuer_project="CancerProject",
+            expires_delta=datetime.timedelta(days=90),
+        )
+
+        metadata = kit_config.inspect_startup_kit_metadata(str(kit_dir))
+
+        assert metadata["identity"] == "lead@nvidia.com"
+        assert metadata["cert_role"] == "lead"
+        assert metadata["role"] == "lead"
+        assert metadata["org"] == "NVIDIA"
+        assert metadata["project"] == "CancerProject"
+        assert metadata["certificate"]["status"] == "ok"
+        assert metadata["certificate"]["path"].endswith("startup/client.crt")
+        assert metadata["certificate"]["days_remaining"] >= 80
+        assert metadata["findings"] == []
+
+    def test_inspect_startup_kit_metadata_falls_back_to_cert_cn_and_reports_expired_cert(self, tmp_path):
+        from nvflare.tool.kit import kit_config
+
+        kit_dir = _make_poc_admin_startup_kit(tmp_path, "admin@nvidia.com")
+        _write_client_cert(
+            kit_dir,
+            common_name="admin@nvidia.com",
+            org="NVIDIA",
+            role="project_admin",
+            issuer_project="ExampleProject",
+            expires_delta=datetime.timedelta(days=-1),
+        )
+
+        metadata = kit_config.inspect_startup_kit_metadata(str(kit_dir))
+
+        assert metadata["identity"] == "admin@nvidia.com"
+        assert metadata["cert_role"] == "project_admin"
+        assert metadata["org"] == "NVIDIA"
+        assert metadata["project"] == "ExampleProject"
+        assert metadata["certificate"]["status"] == "expired"
+        assert any(f["code"] == "STARTUP_KIT_CERT_EXPIRED" for f in metadata["findings"])
+
+    def test_get_startup_kit_status_reports_unreadable_and_stale_findings(self, tmp_path):
+        from nvflare.tool.kit import kit_config
+
+        unreadable_kit = _make_admin_startup_kit(tmp_path, "admin@nvidia.com")
+        missing_kit = tmp_path / "missing"
+        invalid_kit = _make_invalid_startup_kit(tmp_path, "invalid@nvidia.com")
+
+        status, _path, metadata = kit_config.get_startup_kit_status(str(unreadable_kit))
+        assert status == "ok"
+        assert metadata["certificate"]["status"] == "unreadable"
+        assert any(f["code"] == "STARTUP_KIT_CERT_UNREADABLE" for f in metadata["findings"])
+
+        status, _path, metadata = kit_config.get_startup_kit_status(str(missing_kit))
+        assert status == "missing"
+        assert any(f["code"] == "STARTUP_KIT_PATH_MISSING" for f in metadata["findings"])
+
+        status, _path, metadata = kit_config.get_startup_kit_status(str(invalid_kit))
+        assert status == "invalid"
+        assert any(f["code"] == "STARTUP_KIT_INVALID" for f in metadata["findings"])
 
     def test_remove_entries_under_workspace_matches_symlink_and_real_paths(self, tmp_path):
         from nvflare.tool.kit import kit_config
@@ -291,7 +395,7 @@ class TestStartupKitResolution:
         with pytest.raises(Exception) as exc_info:
             resolve_startup_kit_dir()
 
-        _assert_error_contains(exc_info, "active startup kit", "nvflare config kit use")
+        _assert_error_contains(exc_info, "active startup kit", "nvflare config use")
 
     def test_active_id_absent_reports_kit_list_and_use_hint(self, tmp_path, monkeypatch):
         from nvflare.tool.kit.kit_config import resolve_startup_kit_dir
@@ -313,7 +417,7 @@ class TestStartupKitResolution:
         with pytest.raises(Exception) as exc_info:
             resolve_startup_kit_dir()
 
-        _assert_error_contains(exc_info, "cancer_lead", "nvflare config kit list", "nvflare config kit use")
+        _assert_error_contains(exc_info, "cancer_lead", "nvflare config list", "nvflare config use")
 
     def test_active_path_missing_reports_registered_id_and_path(self, tmp_path, monkeypatch):
         from nvflare.tool.kit.kit_config import resolve_startup_kit_dir
@@ -338,7 +442,7 @@ class TestStartupKitResolution:
         with pytest.raises(Exception) as exc_info:
             resolve_startup_kit_dir()
 
-        _assert_error_contains(exc_info, "cancer_lead", str(missing_path), "nvflare config kit use")
+        _assert_error_contains(exc_info, "cancer_lead", str(missing_path), "nvflare config use")
         assert "missing" in str(exc_info.value).lower() or "does not exist" in str(exc_info.value).lower()
 
     def test_active_path_invalid_reports_registered_id_and_path(self, tmp_path, monkeypatch):
@@ -406,4 +510,4 @@ class TestStartupKitResolution:
         with pytest.raises(Exception) as exc_info:
             resolve_startup_kit_dir()
 
-        _assert_error_contains(exc_info, "active startup kit", "nvflare config kit use")
+        _assert_error_contains(exc_info, "active startup kit", "nvflare config use")

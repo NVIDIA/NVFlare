@@ -4,10 +4,10 @@
 Startup Kit Config Subcommands
 ################################
 
-Use ``nvflare config kit`` to register local startup kit paths and choose the active
+Use ``nvflare config`` to register local startup kit paths and choose the active
 admin startup kit used by server-connected CLI commands.
 
-The registry is local to the current machine. ``nvflare config kit`` does not contact
+The registry is local to the current machine. ``nvflare config`` does not contact
 the server. It updates ``~/.nvflare/config.conf`` so commands such as
 ``nvflare job list``, ``nvflare study list``, and ``nvflare system status`` can
 connect without repeated startup-kit arguments.
@@ -18,16 +18,18 @@ Command Usage
 
 .. code-block:: none
 
-   usage: nvflare config kit [-h]  ...
+   usage: nvflare config [-h] [--schema] [-d [STARTUP_KIT_DIR]]
+                         [-pw [POC_WORKSPACE_DIR]] [-jt [JOB_TEMPLATES_DIR]]
+                         {add,use,inspect,list,remove} ...
 
-   kit subcommands:
+   config subcommands:
      add       register a startup kit path
      use       activate a registered startup kit
-     show      show the configured active startup kit
+     inspect   inspect the configured active startup kit
      list      list registered startup kits
      remove    remove a local startup kit registration
 
-Running ``nvflare config kit`` without a subcommand prints this help text.
+Running ``nvflare config`` without a subcommand prints the current local config.
 
 *****************
 Common Workflow
@@ -45,16 +47,16 @@ For a production or manually copied startup kit, register and activate it once:
 
 .. code-block:: shell
 
-   nvflare config kit add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com
-   nvflare config kit use cancer_lead
+   nvflare config add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com
+   nvflare config use cancer_lead
    nvflare job list
 
 To switch local identity, activate another registered ID:
 
 .. code-block:: shell
 
-   nvflare config kit add fraud_org_admin /secure/startup_kits/fraud/org_admin@nvidia.com
-   nvflare config kit use fraud_org_admin
+   nvflare config add fraud_org_admin /secure/startup_kits/fraud/org_admin@nvidia.com
+   nvflare config use fraud_org_admin
    nvflare system status
 
 ************************
@@ -69,8 +71,8 @@ Server-connected commands resolve the startup kit in this order:
    connecting.
 
 The environment variable is intended for automation. For normal interactive
-use, register startup kits with ``nvflare config kit add`` and switch with
-``nvflare config kit use``.
+use, register startup kits with ``nvflare config add`` and switch with
+``nvflare config use``.
 
 *********************
 Register a Startup Kit
@@ -78,7 +80,7 @@ Register a Startup Kit
 
 .. code-block:: shell
 
-   nvflare config kit add <id> <startup-kit-dir>
+   nvflare config add <id> <startup-kit-dir>
 
 Arguments and options:
 
@@ -104,7 +106,7 @@ Example:
 
 .. code-block:: shell
 
-   nvflare config kit add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com
+   nvflare config add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com
 
 Example output:
 
@@ -112,9 +114,9 @@ Example output:
 
    registered_startup_kit: cancer_lead
    path: /secure/startup_kits/cancer/lead@nvidia.com
-   next_step: nvflare config kit use cancer_lead
+   next_step: nvflare config use cancer_lead
 
-``kit add`` registers the path only. It does not make the kit active.
+``nvflare config add`` registers the path only. It does not make the kit active.
 
 ************************
 Activate a Startup Kit
@@ -122,48 +124,99 @@ Activate a Startup Kit
 
 .. code-block:: shell
 
-   nvflare config kit use <id>
+   nvflare config use <id>
 
-``kit use`` validates that the registered path is an admin/user startup kit and
+``nvflare config use`` validates that the registered path is an admin/user startup kit and
 then sets ``startup_kits.active``.
+
+This command mutates the global active startup-kit setting in
+``~/.nvflare/config.conf``. For automation, scripts, notebooks, and agents,
+prefer optional per-command selectors such as ``--kit-id <id>`` or
+``--startup-kit <path>`` on server-connected commands. These selectors override
+the active startup kit for one command only and do not mutate
+``startup_kits.active``.
 
 Example:
 
 .. code-block:: shell
 
-   nvflare config kit use cancer_lead
+   nvflare config use cancer_lead
 
 Example output:
 
 .. code-block:: none
 
-   active_startup_kit: cancer_lead
-   identity: lead@nvidia.com
-   cert_role: lead
-   path: /secure/startup_kits/cancer/lead@nvidia.com
+   active  id           status  identity         cert_role  path
+   ------------------------------------------------------------------------
+   *       cancer_lead  ok      lead@nvidia.com  lead       /secure/startup_kits/cancer/lead@nvidia.com
 
-**********************
-Show Active Startup Kit
-**********************
+In JSON mode, ``nvflare config use`` returns the selected startup kit and
+identity using the same nested shape as server-connected commands such as
+``nvflare study list``. It also includes a warning finding that the command
+changes global CLI state.
+
+.. code-block:: json
+
+   {
+     "startup_kit": {
+       "source": "active",
+       "id": "cancer_lead",
+       "path": "/secure/startup_kits/cancer/lead@nvidia.com"
+     },
+     "identity": {
+       "name": "lead@nvidia.com",
+       "org": "nvidia",
+       "role": "lead"
+     },
+     "project": "cancer_project",
+     "certificate": {
+       "path": "/secure/startup_kits/cancer/lead@nvidia.com/startup/client.crt",
+       "expires_at": "2027-04-26T00:01:14Z",
+       "days_remaining": 359,
+       "status": "ok"
+     },
+     "findings": [
+       {
+         "code": "CONFIG_USE_MUTATES_GLOBAL_STATE",
+         "severity": "warning",
+         "message": "nvflare config use changes the global active startup kit.",
+         "hint": "Automation should prefer --kit-id or --startup-kit on each server-connected command."
+       }
+     ]
+   }
+
+**************************
+Inspect Active Startup Kit
+**************************
 
 .. code-block:: shell
 
-   nvflare config kit show
+   nvflare config inspect
 
 Example output:
 
 .. code-block:: none
 
-   active: cancer_lead
-   path: /secure/startup_kits/cancer/lead@nvidia.com
-   config_file: /home/user/.nvflare/config.conf
-   status: ok
-   identity: lead@nvidia.com
-   cert_role: lead
+   active  id           status  identity         cert_role  path
+   ------------------------------------------------------------------------
+   *       cancer_lead  ok      lead@nvidia.com  lead       /secure/startup_kits/cancer/lead@nvidia.com
 
-If ``NVFLARE_STARTUP_KIT_DIR`` is set, ``kit show`` still shows the configured
-active kit and prints a warning that normal commands will use the environment
-path instead.
+   config_file: /home/user/.nvflare/config.conf
+
+In JSON mode, ``nvflare config inspect`` also includes best-effort identity and
+certificate metadata for the active startup kit:
+
+- ``role``: same certificate role as ``cert_role``.
+- ``org``: organization from the certificate subject when available.
+- ``project``: issuer common name, usually the project CA name.
+- ``certificate``: certificate path, expiration timestamp, days remaining, and
+  status.
+- ``findings``: non-fatal local findings such as expired, expiring, unreadable,
+  missing, or invalid startup-kit material.
+
+If ``NVFLARE_STARTUP_KIT_DIR`` is set, ``nvflare config inspect`` still shows the
+configured active kit and prints a warning that normal commands will use the
+environment path instead.
 
 **********************
 List Registered Kits
@@ -171,7 +224,7 @@ List Registered Kits
 
 .. code-block:: shell
 
-   nvflare config kit list
+   nvflare config list
 
 Example output:
 
@@ -190,8 +243,13 @@ The active startup kit is marked with ``*``. Status values:
 - ``invalid``: the path exists but does not contain the required startup kit
   files.
 
-``kit list`` does not contact the server and does not fail just because one
+``nvflare config list`` does not contact the server and does not fail just because one
 registered path is stale.
+
+In JSON mode, each row keeps the human-facing fields above and adds ``role``,
+``org``, ``project``, ``certificate``, and ``findings`` when those values can be
+determined locally. Missing and invalid paths remain in the list with stale-path
+findings so agents can report and repair local configuration without guessing.
 
 *********************
 Remove a Registration
@@ -199,7 +257,7 @@ Remove a Registration
 
 .. code-block:: shell
 
-   nvflare config kit remove <id>
+   nvflare config remove <id>
 
 This removes the local registry entry only. It does not delete the startup kit
 directory.
@@ -211,7 +269,7 @@ activate another kit before running server-connected commands.
 Config File
 *********************
 
-``nvflare config kit`` stores startup kit registrations in
+``nvflare config`` stores startup kit registrations in
 ``~/.nvflare/config.conf``:
 
 .. code-block:: none
@@ -227,6 +285,23 @@ Config File
      }
    }
 
-Startup kit paths are managed by the ``kit`` subcommands under
-``nvflare config``. Other local CLI state in ``~/.nvflare/config.conf`` is an
-implementation detail and is not part of the normal startup kit workflow.
+Startup kit paths are managed by the flat ``nvflare config`` subcommands. Other
+local CLI state in ``~/.nvflare/config.conf`` is an implementation detail and is
+not part of the normal startup kit workflow.
+
+************************
+Compatibility Flags
+************************
+
+For compatibility with 2.7.x scripts, the root ``nvflare config`` command still
+accepts:
+
+- ``-d`` / ``--startup_kit_dir``: deprecated. Registers the path under the
+  default startup kit ID and makes it active. New workflows should use
+  ``nvflare config add`` and ``nvflare config use``.
+- ``-pw`` / ``--poc_workspace_dir``: deprecated POC workspace compatibility flag.
+  New workflows should use ``nvflare poc config --pw <poc-workspace-dir>``.
+- ``-jt`` / ``--job_templates_dir``: deprecated job template config flag.
+
+The interim development spellings ``--poc.workspace``, ``--poc.startup_kit``,
+and ``--prod.startup_kit`` are not supported compatibility flags.

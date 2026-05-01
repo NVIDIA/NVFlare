@@ -17,9 +17,16 @@ import os
 import time
 from typing import List, Optional
 
-from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.apis.fl_constant import (
+    SUBMIT_TOKEN_CONFLICT_STATUS,
+    SUBMIT_TOKEN_JOB_DELETED_STATUS,
+    AdminCommandNames,
+    WorkspaceConstants,
+)
+from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey
 from nvflare.apis.utils.format_check import name_check
+from nvflare.apis.utils.job_submit_token import validate_submit_token
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
@@ -58,11 +65,42 @@ from .api_spec import (
     ServerInfo,
     SessionClosed,
     SessionSpec,
+    SubmitTokenConflict,
+    SubmitTokenJobDeleted,
     SystemInfo,
     TargetType,
 )
 
 _VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
+_DEFAULT_STATE_CHANGE_TIMEOUT = 30.0
+_STATE_CHANGE_POLL_INTERVAL = 0.5
+_STATE_CHANGE_CONNECT_TIMEOUT = 1.0
+_LEGACY_TERMINAL_JOB_STATUSES = {
+    "FINISHED_OK",
+    "FINISHED_EXCEPTION",
+    "ABORTED",
+    "ABANDONED",
+    "FAILED",
+}
+
+
+def _is_terminal_job_status(status: str) -> bool:
+    return isinstance(status, str) and (status.startswith("FINISHED") or status in _LEGACY_TERMINAL_JOB_STATUSES)
+
+
+def _validate_job_polling_options(timeout: float, poll_interval: float) -> None:
+    if timeout < 0:
+        raise InvalidArgumentError("timeout must be >= 0")
+    if poll_interval <= 0:
+        raise InvalidArgumentError("poll_interval must be > 0")
+
+
+def _validate_submit_token_arg(submit_token: Optional[str]) -> Optional[str]:
+    try:
+        return validate_submit_token(submit_token)
+    except ValueError as ex:
+        raise InvalidArgumentError(str(ex)) from ex
+
 
 __all__ = ["NoConnection", "NoReply", "SystemInfo", "TargetType"]
 
@@ -105,6 +143,8 @@ class Session(SessionSpec):
         assert isinstance(study, str), "study must be str"
         assert os.path.isdir(startup_path), f"startup kit does not exist at {startup_path}"
 
+        self.startup_path = startup_path
+        self.secure_mode = secure_mode
         workspace = Workspace(root_dir=startup_path)
         conf = secure_load_admin_config(workspace)
         admin_config = conf.get_admin_config()
@@ -115,6 +155,7 @@ class Session(SessionSpec):
             admin_config[AdminConfigKey.UID_SOURCE] = UidSource.CERT
 
         self.username = username
+        self._debug = debug
         upload_dir = admin_config.get(AdminConfigKey.UPLOAD_DIR)
         download_dir = admin_config.get(AdminConfigKey.DOWNLOAD_DIR)
         if not os.path.isdir(download_dir):
@@ -143,7 +184,13 @@ class Session(SessionSpec):
         if self.api.closed:
             raise SessionClosed("session closed")
 
-        self.api.connect(timeout)
+        try:
+            self.api.connect(timeout)
+        except FLCommunicationError as e:
+            message = str(e)
+            if "cannot connect to server" in message or "cannot authenticate to server" in message:
+                raise NoConnection(message) from e
+            raise
         result = self.api.login()
         status = result.get(ResultKey.STATUS) if isinstance(result, dict) else None
         details = result.get(ResultKey.DETAILS, "") if isinstance(result, dict) else ""
@@ -177,6 +224,18 @@ class Session(SessionSpec):
             info = meta.get(MetaKey.INFO, "")
             if cmd_status == MetaStatusValue.INVALID_JOB_DEFINITION:
                 raise InvalidJobDefinition(f"invalid job definition: {info}")
+            elif cmd_status == SUBMIT_TOKEN_CONFLICT_STATUS:
+                raise SubmitTokenConflict(
+                    info or "submit token was already used for different job content",
+                    meta.get(MetaKey.JOB_ID),
+                )
+            elif cmd_status == SUBMIT_TOKEN_JOB_DELETED_STATUS:
+                raise SubmitTokenJobDeleted(
+                    info or "submit token refers to a deleted job",
+                    meta.get(MetaKey.JOB_ID),
+                    meta.get("submit_record_state"),
+                    meta.get("deleted_time"),
+                )
             elif cmd_status == MetaStatusValue.NOT_AUTHORIZED:
                 raise AuthorizationError(f"user not authorized for the action '{command}: {info}'")
             elif cmd_status == MetaStatusValue.NOT_AUTHENTICATED:
@@ -263,11 +322,12 @@ class Session(SessionSpec):
             raise InternalError(f"server failed to return job id: {info}")
         return job_id
 
-    def submit_job(self, job_definition_path: str) -> str:
+    def submit_job(self, job_definition_path: str, submit_token: str = None) -> str:
         """Submit a predefined job to the NVFLARE system.
 
         Args:
             job_definition_path: path to the folder that defines a NVFLARE job
+            submit_token: optional retry-safe submit token scoped by study and submitter
 
         Returns: the job id if accepted by the system
 
@@ -293,7 +353,11 @@ class Session(SessionSpec):
                 f"job folder name '{job_folder_name}' contains unsupported characters. "
                 "Use only letters, numbers, dots, underscores, and hyphens, with no spaces."
             )
-        result = self._do_command(AdminCommandNames.SUBMIT_JOB + " " + job_definition_path)
+        submit_token = _validate_submit_token_arg(submit_token)
+        parts = [AdminCommandNames.SUBMIT_JOB, job_definition_path]
+        if submit_token:
+            parts.extend(["--submit-token", submit_token])
+        result = self._do_command(join_args(parts))
         meta = result[ResultKey.META]
         job_id = meta.get(MetaKey.JOB_ID, None)
         if not job_id:
@@ -324,6 +388,7 @@ class Session(SessionSpec):
         id_prefix: Optional[str] = None,
         name_prefix: Optional[str] = None,
         reverse: bool = False,
+        submit_token: Optional[str] = None,
         **kwargs,
     ) -> List[dict]:
         """Get the job info from the server.
@@ -334,6 +399,7 @@ class Session(SessionSpec):
             id_prefix (str): if included, only return jobs with the beginning of the job ID matching the id_prefix
             name_prefix (str): if included, only return jobs with the beginning of the job name matching the name_prefix
             reverse (bool): if specified, list jobs in the reverse order of submission times
+            submit_token: optional retry-safe submit token to resolve the submitted job
             **kwargs: deprecated legacy aliases accepted for compatibility
 
         Returns: a list of job metadata
@@ -370,6 +436,7 @@ class Session(SessionSpec):
             raise ValueError(f"id_prefix must be None or str but got {type(id_prefix)}")
         if name_prefix is not None and not isinstance(name_prefix, str):
             raise ValueError(f"name_prefix must be None or str but got {type(name_prefix)}")
+        submit_token = _validate_submit_token_arg(submit_token)
 
         parts = [AdminCommandNames.LIST_JOBS]
         if detailed:
@@ -388,6 +455,8 @@ class Session(SessionSpec):
             if not isinstance(id_prefix, str):
                 raise InvalidArgumentError("id_prefix must be str but got {}.".format(type(id_prefix)))
             parts.append(id_prefix)
+        if submit_token:
+            parts.extend(["--submit-token", submit_token])
         command = join_args(parts)
         result = self._do_command(command)
         meta = result[ResultKey.META]
@@ -481,13 +550,18 @@ class Session(SessionSpec):
             job_id (str): job to be deleted
 
         Returns:
-            None
+            A dict with the deleted job id and submit-token records marked deleted.
 
         The job will be deleted from the job store if the job is not currently running.
 
         """
         self._validate_job_id(job_id)
-        self._do_command(AdminCommandNames.DELETE_JOB + " " + job_id)
+        result = self._do_command(AdminCommandNames.DELETE_JOB + " " + job_id)
+        meta = result[ResultKey.META]
+        return {
+            "job_id": meta.get(MetaKey.JOB_ID, job_id),
+            "submit_records_marked_deleted": meta.get("submit_records_marked_deleted", 0),
+        }
 
     def get_system_info(self):
         """Get general system information.
@@ -541,7 +615,151 @@ class Session(SessionSpec):
         meta = result[ResultKey.META]
         return meta.get(MetaKey.CLIENT_STATUS, None)
 
-    def restart(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
+    def _close_ignore_errors(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+    def _new_poll_session(self):
+        return Session(
+            username=self.username,
+            startup_path=self.startup_path,
+            secure_mode=self.secure_mode,
+            debug=self._debug,
+            study=self._study,
+        )
+
+    def _poll_system_info(self, connect_timeout: float):
+        sess = None
+        try:
+            sess = self._new_poll_session()
+            sess.try_connect(connect_timeout)
+            return sess.get_system_info()
+        finally:
+            if sess:
+                sess._close_ignore_errors()
+
+    @staticmethod
+    def _validate_state_change_timeout(timeout: float) -> float:
+        try:
+            timeout = float(timeout)
+        except (TypeError, ValueError) as e:
+            raise ValueError("timeout must be a positive number when wait=True; use wait=False for no-wait") from e
+        if timeout <= 0:
+            raise ValueError("timeout must be a positive number when wait=True; use wait=False for no-wait")
+        return timeout
+
+    def _wait_for_server_down(self, timeout: float):
+        timeout = self._validate_state_change_timeout(timeout)
+        deadline = time.time() + timeout
+        last_error = "server is still reachable"
+        while time.time() < deadline:
+            try:
+                remaining = max(deadline - time.time(), 0.1)
+                sys_info = self._poll_system_info(min(_STATE_CHANGE_CONNECT_TIMEOUT, remaining))
+                last_error = f"server is still reachable: {sys_info.server_info.status}"
+            except NoConnection:
+                return
+            except Exception as e:
+                last_error = str(e)
+            time.sleep(min(_STATE_CHANGE_POLL_INTERVAL, max(deadline - time.time(), 0.0)))
+
+        raise TimeoutError(f"server did not stop within {timeout} seconds; last error: {last_error}")
+
+    def _wait_for_server_restart(self, previous_start_time, timeout: float):
+        timeout = self._validate_state_change_timeout(timeout)
+        deadline = time.time() + timeout
+        seen_down = previous_start_time is None
+        last_error = "server restart has not completed"
+        while time.time() < deadline:
+            try:
+                remaining = max(deadline - time.time(), 0.1)
+                sys_info = self._poll_system_info(min(_STATE_CHANGE_CONNECT_TIMEOUT, remaining))
+                current_start_time = sys_info.server_info.start_time
+                if seen_down or (previous_start_time is not None and current_start_time != previous_start_time):
+                    return sys_info
+                last_error = "server is still running with the previous start time"
+            except NoConnection:
+                seen_down = True
+                last_error = "server is not reachable yet"
+            except Exception as e:
+                last_error = str(e)
+            time.sleep(min(_STATE_CHANGE_POLL_INTERVAL, max(deadline - time.time(), 0.0)))
+
+        raise TimeoutError(f"server did not restart within {timeout} seconds; last error: {last_error}")
+
+    def _client_last_connect_times(self, client_names: Optional[List[str]] = None):
+        sys_info = self.get_system_info()
+        connected = {client.name: client.last_connect_time for client in sys_info.client_info}
+        if client_names:
+            return {client_name: connected.get(client_name) for client_name in client_names}
+        return connected
+
+    def _wait_for_clients_shutdown(self, client_names: Optional[List[str]], timeout: float):
+        timeout = self._validate_state_change_timeout(timeout)
+        deadline = time.time() + timeout
+        target_names = set(client_names or [])
+        last_error = "clients are still connected"
+        while time.time() < deadline:
+            sys_info = self.get_system_info()
+            connected = {client.name for client in sys_info.client_info}
+            remaining = target_names & connected if target_names else connected
+            if not remaining:
+                return
+            last_error = f"clients are still connected: {', '.join(sorted(remaining))}"
+            time.sleep(min(_STATE_CHANGE_POLL_INTERVAL, max(deadline - time.time(), 0.0)))
+
+        raise TimeoutError(f"clients did not stop within {timeout} seconds; last error: {last_error}")
+
+    def _wait_for_clients_restart(self, previous_client_times, timeout: float, use_poll_session: bool = False):
+        if not previous_client_times:
+            return
+
+        timeout = self._validate_state_change_timeout(timeout)
+        deadline = time.time() + timeout
+        expected_names = set(previous_client_times)
+        last_error = "clients have not reconnected yet"
+        while time.time() < deadline:
+            try:
+                if use_poll_session:
+                    remaining = max(deadline - time.time(), 0.1)
+                    sys_info = self._poll_system_info(min(_STATE_CHANGE_CONNECT_TIMEOUT, remaining))
+                else:
+                    sys_info = self.get_system_info()
+            except NoConnection:
+                last_error = "server is not reachable yet"
+                time.sleep(min(_STATE_CHANGE_POLL_INTERVAL, max(deadline - time.time(), 0.0)))
+                continue
+            except Exception as e:
+                last_error = str(e)
+                time.sleep(min(_STATE_CHANGE_POLL_INTERVAL, max(deadline - time.time(), 0.0)))
+                continue
+            connected = {client.name: client.last_connect_time for client in sys_info.client_info}
+            waiting = []
+            for client_name in expected_names:
+                current_time = connected.get(client_name)
+                previous_time = previous_client_times.get(client_name)
+                if previous_time is None:
+                    # Client was not connected before restart; skip — no reconnection to wait for.
+                    continue
+                if current_time is None or current_time == previous_time:
+                    waiting.append(client_name)
+
+            if not waiting:
+                return
+            last_error = f"clients have not reconnected: {', '.join(sorted(waiting))}"
+            time.sleep(min(_STATE_CHANGE_POLL_INTERVAL, max(deadline - time.time(), 0.0)))
+
+        raise TimeoutError(f"clients did not restart within {timeout} seconds; last error: {last_error}")
+
+    def restart(
+        self,
+        target_type: str,
+        client_names: Optional[List[str]] = None,
+        wait: bool = True,
+        timeout: float = _DEFAULT_STATE_CHANGE_TIMEOUT,
+    ) -> dict:
         """Restart the server, specific clients, or all participants.
 
         Args:
@@ -552,17 +770,51 @@ class Session(SessionSpec):
         """
         if target_type not in _VALID_TARGET_TYPES:
             raise ValueError(f"restart target_type must be one of {_VALID_TARGET_TYPES}")
+        if target_type == TargetType.CLIENT and client_names:
+            _validate_target_strs(client_names)
+        if wait:
+            timeout = self._validate_state_change_timeout(timeout)
+
+        previous_server_start_time = None
+        previous_client_times = None
+        if wait:
+            if target_type in (TargetType.SERVER, TargetType.ALL):
+                try:
+                    sys_info = self.get_system_info()
+                    previous_server_start_time = sys_info.server_info.start_time
+                    if target_type == TargetType.ALL:
+                        previous_client_times = {
+                            client.name: client.last_connect_time for client in sys_info.client_info
+                        }
+                except Exception:
+                    previous_server_start_time = None
+                    previous_client_times = None
+            elif target_type == TargetType.CLIENT:
+                previous_client_times = self._client_last_connect_times(client_names)
 
         parts = [AdminCommandNames.RESTART, target_type]
         if target_type == TargetType.CLIENT and client_names:
-            _validate_target_strs(client_names)
             parts.extend(client_names)
 
         command = join_args(parts)
         result = self._do_command(command)
+        if wait:
+            if target_type in (TargetType.SERVER, TargetType.ALL):
+                self._close_ignore_errors()
+                self._wait_for_server_restart(previous_server_start_time, timeout)
+                if target_type == TargetType.ALL:
+                    self._wait_for_clients_restart(previous_client_times, timeout, use_poll_session=True)
+            else:
+                self._wait_for_clients_restart(previous_client_times, timeout)
         return result[ResultKey.META]
 
-    def shutdown(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
+    def shutdown(
+        self,
+        target_type: str,
+        client_names: Optional[List[str]] = None,
+        wait: bool = True,
+        timeout: float = _DEFAULT_STATE_CHANGE_TIMEOUT,
+    ) -> dict:
         """Shut down the server, specific clients, or all participants.
 
         Args:
@@ -573,22 +825,23 @@ class Session(SessionSpec):
         """
         if target_type not in _VALID_TARGET_TYPES:
             raise ValueError(f"shutdown target_type must be one of {_VALID_TARGET_TYPES}")
+        if target_type == TargetType.CLIENT and client_names:
+            _validate_target_strs(client_names)
+        if wait:
+            timeout = self._validate_state_change_timeout(timeout)
 
         parts = [AdminCommandNames.SHUTDOWN, target_type]
         if target_type == TargetType.CLIENT and client_names:
-            _validate_target_strs(client_names)
             parts.extend(client_names)
 
         command = join_args(parts)
         result = self._do_command(command)
         if target_type in (TargetType.SERVER, TargetType.ALL):
-            try:
-                self.close()
-            except Exception:
-                # The shutdown request already succeeded; the server may tear down the
-                # connection before the client can complete logout. Preserve the command
-                # result instead of masking it with a secondary close failure.
-                pass
+            self._close_ignore_errors()
+            if wait:
+                self._wait_for_server_down(timeout)
+        elif wait:
+            self._wait_for_clients_shutdown(client_names, timeout)
         return result[ResultKey.META]
 
     def set_timeout(self, value: float):
@@ -1083,6 +1336,36 @@ class Session(SessionSpec):
 
         self._do_command(join_args([AdminCommandNames.REMOVE_CLIENT, client_name]))
 
+    def disable_client(self, client_name: str) -> dict:
+        """Disable a client from reconnecting to the system.
+
+        Args:
+            client_name (str): name of the client to disable
+
+        Returns: command result dictionary
+
+        """
+        if not client_name or not isinstance(client_name, str):
+            raise ValueError("client_name must be a non-empty str")
+
+        reply = self._do_command(join_args([AdminCommandNames.DISABLE_CLIENT, client_name]))
+        return self._get_dict_data(reply)
+
+    def enable_client(self, client_name: str) -> dict:
+        """Enable a disabled client to reconnect to the system.
+
+        Args:
+            client_name (str): name of the client to enable
+
+        Returns: command result dictionary
+
+        """
+        if not client_name or not isinstance(client_name, str):
+            raise ValueError("client_name must be a non-empty str")
+
+        reply = self._do_command(join_args([AdminCommandNames.ENABLE_CLIENT, client_name]))
+        return self._get_dict_data(reply)
+
     @staticmethod
     def _filter_job_log_text(log_text: str, tail_lines: Optional[int], grep_pattern: Optional[str]) -> str:
         lines = log_text.splitlines(keepends=True)
@@ -1125,6 +1408,7 @@ class Session(SessionSpec):
         target: str = "server",
         tail_lines: Optional[int] = None,
         grep_pattern: Optional[str] = None,
+        log_file_name: str = WorkspaceConstants.LOG_FILE_NAME,
     ) -> dict:
         """Retrieve job logs from the server-side log store.
 
@@ -1133,6 +1417,7 @@ class Session(SessionSpec):
             target (str): "server", "all", or a client site name
             tail_lines (int, optional): deprecated compatibility filter that returns only the last N lines
             grep_pattern (str, optional): deprecated compatibility filter that returns matching lines
+            log_file_name (str): internal log file selector. Defaults to log.txt.
 
         Returns: dict with "logs" mapping site name to log text, and optional
             "unavailable" mapping site names to reasons.
@@ -1143,8 +1428,15 @@ class Session(SessionSpec):
             raise ValueError("target must be a non-empty str")
 
         parts = [AdminCommandNames.GET_JOB_LOG, job_id, target]
+        if log_file_name != WorkspaceConstants.LOG_FILE_NAME:
+            parts.append(log_file_name)
         command = join_args(parts)
-        reply = self._do_command(command, enforce_meta=False)
+        try:
+            reply = self._do_command(command, enforce_meta=False)
+        except InternalError as e:
+            if log_file_name != WorkspaceConstants.LOG_FILE_NAME and "unrecognized arguments" in str(e):
+                return {"logs": {}}
+            raise
         payload = self._get_dict_data(reply)
         if isinstance(payload, dict) and "logs" in payload:
             result = {"logs": payload.get("logs", {})}
@@ -1326,6 +1618,7 @@ class Session(SessionSpec):
         should continue. If False, this method ends.
 
         """
+        _validate_job_polling_options(timeout, poll_interval)
         start_time = time.time()
         while True:
             if 0 < timeout < time.time() - start_time:
@@ -1342,7 +1635,7 @@ class Session(SessionSpec):
             if not job_status:
                 raise InternalError(f"missing status in job {job_id}")
 
-            if job_status.startswith("FINISHED"):
+            if _is_terminal_job_status(job_status):
                 return MonitorReturnCode.JOB_FINISHED, job_meta
 
             time.sleep(poll_interval)

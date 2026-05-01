@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import Job, RunStatus
+from nvflare.apis.job_def import Job, RunStatus, SubmitRecordState
 
 
 class JobDefManagerSpec(FLComponent, ABC):
@@ -40,6 +40,58 @@ class JobDefManagerSpec(FLComponent, ABC):
             a unique Job ID (jid) which has been created.
         """
         pass
+
+    @abstractmethod
+    def get_job_content_hash(self, uploaded_content: Union[str, bytes]) -> str:
+        """Compute the canonical content hash for uploaded job content.
+
+        The hash is based on sorted real job file paths and bytes, excluding volatile
+        submit signing artifacts. It is stable across repeated signed uploads of the
+        same job content.
+        """
+        pass
+
+    def get_submit_record(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> Optional[dict]:
+        """Get the persistent submit-token record for the scoped submit token."""
+        raise NotImplementedError("submit-token records are not supported by this JobDefManager")
+
+    @staticmethod
+    def new_submit_record(
+        study: str,
+        submitter,
+        submit_token: str,
+        job_content_hash: str,
+        job_name: str = "",
+        job_folder_name: str = "",
+        job_id: str = None,
+        state: str = SubmitRecordState.CREATING.value,
+    ) -> dict:
+        """Build a submit-token record with a pre-generated job_id for reservation before job creation."""
+        raise NotImplementedError("submit-token records are not supported by this JobDefManager")
+
+    def create_submit_record(self, record: dict, fl_ctx: FLContext) -> bool:
+        """Create a persistent submit-token record with no-overwrite semantics.
+
+        Returns True when the record is created, False when a record already exists
+        for the same study, submitter, and submit token.
+        """
+        raise NotImplementedError("submit-token records are not supported by this JobDefManager")
+
+    def update_submit_record(self, record: dict, fl_ctx: FLContext) -> dict:
+        """Replace the persistent submit-token record with updated metadata."""
+        raise NotImplementedError("submit-token records are not supported by this JobDefManager")
+
+    def mark_submit_records_job_deleted(self, job_id: str, deleted_by, fl_ctx: FLContext) -> List[dict]:
+        """Mark submit-token records that reference a deleted job.
+
+        Custom job managers that do not maintain submit-token records can keep the
+        default no-op behavior for compatibility.
+        """
+        return []
+
+    def get_job_by_submit_token(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> Optional[Job]:
+        """Resolve a submit-token record to its referenced Job, if both exist."""
+        raise NotImplementedError("submit-token records are not supported by this JobDefManager")
 
     @abstractmethod
     def clone(self, from_jid: str, meta: dict, fl_ctx: FLContext) -> Dict[str, Any]:

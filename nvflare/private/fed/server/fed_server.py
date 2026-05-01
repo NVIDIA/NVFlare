@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -332,6 +333,8 @@ class FederatedServer(BaseServer):
         self.secure_train = secure_train
 
         self.workspace = args.workspace
+        if isinstance(self.workspace, str):
+            self.client_manager.set_disabled_clients_file(os.path.join(self.workspace, "disabled_clients.json"))
         self.snapshot_location = None
         self.overseer_agent = overseer_agent
         self.server_state: ServerState = ColdState()
@@ -789,8 +792,13 @@ class FederatedServer(BaseServer):
             token = request.get_header(CellMessageHeaderKeys.TOKEN)
             client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
             client_fqcn = request.get_header(MessageHeaderKey.ORIGIN)
+            if self.client_manager.is_client_disabled(client_name):
+                return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=f"Client '{client_name}' is disabled")
             if self.client_manager.heartbeat(token, client_name, client_fqcn, fl_ctx):
                 self.tokens[token] = self.task_meta_info(client_name)
+            unauthenticated = fl_ctx.get_prop(FLContextKey.UNAUTHENTICATED, None)
+            if isinstance(unauthenticated, str) and unauthenticated:
+                return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=str(unauthenticated))
             if self.admin_server:
                 self.admin_server.client_heartbeat(token, client_name, client_fqcn)
 

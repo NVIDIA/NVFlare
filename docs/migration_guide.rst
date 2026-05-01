@@ -51,31 +51,55 @@ active startup kit registry in ``~/.nvflare/config.conf``.
 
 Impact:
 
-- Use ``nvflare config kit add <id> <startup-kit-dir>`` and
-  ``nvflare config kit use <id>`` to register and activate a startup kit.
+- Use ``nvflare config add <id> <startup-kit-dir>`` and
+  ``nvflare config use <id>`` to register and activate a startup kit.
+- ``nvflare config -d/--startup_kit_dir`` remains accepted for compatibility
+  with 2.7.x scripts, but is deprecated.
 - ``NVFLARE_STARTUP_KIT_DIR`` remains an automation override and takes
   precedence over the active registry entry when set.
+- ``nvflare config -jt/--job_templates_dir`` remains accepted for compatibility
+  with 2.7.x scripts, but job template config is deprecated.
 - Root ``nvflare config`` continues to manage local settings such as the POC
-  workspace. Startup kit paths are managed by the ``nvflare config kit``
+  workspace. Startup kit paths are managed by the ``nvflare config``
   subcommands.
 
 If you use shell profiles or CI settings that export ``NVFLARE_STARTUP_KIT_DIR``,
 review them before upgrading because they override the active registry entry.
 
-CLI Config Flag Clarification
+CLI Config Flag Compatibility
 -----------------------------
 
-On the current ``main`` branch, ``nvflare config`` standardizes on the explicit
-``--poc.workspace`` flag name for the POC workspace setting.
+On the current ``main`` branch, ``nvflare config`` keeps the 2.7.x POC
+workspace flag names.
 
 Impact:
 
-- ``--poc.workspace`` is the preferred flag name in docs and examples.
-- The legacy ``-pw`` shorthand remains accepted as a compatibility alias for
-  the POC workspace setting.
+- ``-pw`` and ``--poc_workspace_dir`` remain the supported flags for setting
+  the POC workspace.
+- The interim development-only ``--poc.workspace`` spelling is not part of the
+  public compatibility contract.
 
-If you have older scripts that still use ``-pw``, they continue to work, but
-new examples and documentation use ``--poc.workspace`` for clarity.
+If you have older scripts that use ``-pw`` or ``--poc_workspace_dir``, they
+continue to work.
+
+Client Disable Semantics
+------------------------
+
+``nvflare system remove-client`` is not exposed as a supported public CLI
+command. The legacy interactive-console ``remove_client`` operation remains a
+registry cleanup operation only; it does not stop the client process, revoke
+credentials, or prevent reconnect.
+
+Use the new durable access-control commands when the intent is to keep a client
+out of the federation:
+
+- ``nvflare system disable-client <client> --force`` persists a disabled flag
+  in the server workspace, removes any active registry entry, and rejects
+  later registration or heartbeat from that client.
+- ``nvflare system enable-client <client> --force`` clears the disabled flag so
+  the client can rejoin on the next registration or heartbeat.
+
+This is operational disablement, not certificate revocation.
 
 Study Name Validation Relaxation
 --------------------------------

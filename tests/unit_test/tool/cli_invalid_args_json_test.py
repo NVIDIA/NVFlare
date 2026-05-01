@@ -90,3 +90,23 @@ def test_display_unknown_args_keeps_signed_zip_as_positional_input():
     )
 
     assert result == ["--unknown-flag"]
+
+
+def test_jsonl_rejected_for_non_streaming_command(capsys, monkeypatch):
+    from nvflare import cli as cli_mod
+
+    monkeypatch.setattr(
+        cli_mod.sys,
+        "argv",
+        ["nvflare", "job", "wait", "abc123", "--format", "jsonl"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli_mod.parse_args("nvflare")
+    assert exc_info.value.code == 4
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["event"] == "terminal"
+    assert payload["terminal"] is True
+    assert payload["error_code"] == "INVALID_ARGS"
+    assert "nvflare job monitor" in payload["message"]

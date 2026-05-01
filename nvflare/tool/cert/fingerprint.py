@@ -19,6 +19,7 @@ import re
 from cryptography.hazmat.primitives import hashes
 
 _SHA256_HEX_PATTERN = re.compile(r"[0-9a-fA-F]{64}")
+_SHA256_COLON_PATTERN = re.compile(r"[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){31}")
 
 
 def _format_sha256_fingerprint(digest_hex: str) -> str:
@@ -47,7 +48,12 @@ def normalize_sha256_fingerprint(value: str) -> str:
     text = value.strip()
     text = re.sub(r"^\s*sha256\s+fingerprint\s*=\s*", "", text, count=1, flags=re.IGNORECASE)
     text = re.sub(r"^\s*sha256\s*[:=]\s*", "", text, count=1, flags=re.IGNORECASE)
-    compact = re.sub(r"[^0-9a-fA-F]", "", text)
+    if ":" in text:
+        if not _SHA256_COLON_PATTERN.fullmatch(text):
+            return ""
+        compact = text.replace(":", "")
+    else:
+        compact = text
     if not _SHA256_HEX_PATTERN.fullmatch(compact):
         return ""
     return _format_sha256_fingerprint(compact)
