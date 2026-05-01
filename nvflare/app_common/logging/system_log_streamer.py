@@ -116,19 +116,15 @@ class SystemLogStreamer(Widget):
             filtered = [c for c in components if "JobLogStreamer" not in c.get("path", "")]
             if len(filtered) != len(components):
                 cfg["components"] = filtered
-                try:
-                    with open(config_path, "w") as f:
-                        json.dump(cfg, f, indent=2)
-                    self.log_warning(
-                        fl_ctx,
-                        f"Removed JobLogStreamer from job {job_id}: site does not allow log streaming",
-                    )
-                except Exception as ex:
-                    self.log_exception(
-                        fl_ctx,
-                        f"Failed to write {config_path} after stripping JobLogStreamer: "
-                        f"{secure_format_exception(ex)}",
-                    )
+                # Persist atomically so the on-disk config is never partially
+                # written. If the write fails, raise so the failure is captured
+                # in FLContextKey.EXCEPTIONS rather than silently leaving the
+                # original (un-stripped) JobLogStreamer config on disk.
+                self._atomic_write_json(config_path, cfg)
+                self.log_warning(
+                    fl_ctx,
+                    f"Removed JobLogStreamer from job {job_id}: site does not allow log streaming",
+                )
             else:
                 self.log_debug(
                     fl_ctx,
@@ -159,8 +155,7 @@ class SystemLogStreamer(Widget):
         components.append(entry)
 
         try:
-            with open(config_path, "w") as f:
-                json.dump(cfg, f, indent=2)
+            self._atomic_write_json(config_path, cfg)
         except Exception as ex:
             self.log_exception(
                 fl_ctx,
@@ -169,6 +164,25 @@ class SystemLogStreamer(Widget):
             return
 
         self.log_info(fl_ctx, f"Injected JobLogStreamer into job {job_id}")
+
+    @staticmethod
+    def _atomic_write_json(path: str, data: dict) -> None:
+        """Write JSON to ``path`` atomically via tempfile + os.replace.
+
+        The original file is left untouched until the rename succeeds, so a
+        partial write cannot corrupt it. Raises on any failure.
+        """
+        tmp_path = f"{path}.{os.getpid()}.tmp"
+        try:
+            with open(tmp_path, "w") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp_path, path)
+        except Exception:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
 
     def _stream_completed_log(self, fl_ctx: FLContext, log_path: str, client_name: str, job_id: str):
         stop_event = threading.Event()
