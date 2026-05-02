@@ -14,6 +14,7 @@
 
 """FL Server / Client startup configure."""
 
+import logging
 import os
 import re
 import sys
@@ -39,6 +40,8 @@ from .fl_app_validator import FLAppValidator
 
 FL_PACKAGES = ["nvflare"]
 FL_MODULES = ["server", "client", "app_common", "private"]
+
+_logger = logging.getLogger(__name__)
 
 
 class FLServerStarterConfiger(JsonConfigurator):
@@ -85,7 +88,6 @@ class FLServerStarterConfiger(JsonConfigurator):
         self.deployer = None
         self.app_validator = None
         self.snapshot_persistor = None
-        self.overseer_agent = None
         self.site_org = ""
 
     def start_config(self, config_ctx: ConfigContext):
@@ -142,7 +144,7 @@ class FLServerStarterConfiger(JsonConfigurator):
             return
 
         if path == "overseer_agent":
-            self.overseer_agent = self.build_component(element)
+            _logger.warning("'overseer_agent' in server config is obsolete and will be ignored.")
             return
 
         if re.search(r"^components\.#[0-9]+$", path):
@@ -181,7 +183,6 @@ class FLServerStarterConfiger(JsonConfigurator):
             "server_host": self.cmd_vars.get("host", None),
             "site_org": self.cmd_vars.get("org", ""),
             "snapshot_persistor": self.snapshot_persistor,
-            "overseer_agent": self.overseer_agent,
             "server_components": self.components,
             "server_handlers": self.handlers,
         }
@@ -243,7 +244,6 @@ class FLClientStarterConfiger(JsonConfigurator):
         self.workspace = workspace
         self.client_config_file_names = config_files
         self.base_deployer = None
-        self.overseer_agent = None
         self.site_org = ""
         self.app_validator = None
 
@@ -262,7 +262,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             return
 
         if path == "overseer_agent":
-            self.overseer_agent = self.build_component(element)
+            _logger.warning("'overseer_agent' in client config is obsolete and will be ignored.")
             return
 
         if re.search(r"^components\.#[0-9]+$", path):
@@ -409,7 +409,6 @@ class FLClientStarterConfiger(JsonConfigurator):
             "client_config": client_config,
             "secure_train": secure_train,
             "server_host": self.cmd_vars.get("host", None),
-            "overseer_agent": self.overseer_agent,
             "client_components": self.components,
             "client_handlers": self.handlers,
         }

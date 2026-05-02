@@ -108,38 +108,6 @@ paths:
                     type: "string"
                   project:
                     $ref: '#/components/schemas/Project'
-  /overseer/blob:
-    post:
-      security:
-      - bearerAuth: []
-      summary: "Get overseer startup kit"
-      operationId: "get_overseer_blob"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: "object"
-              properties:
-                pin:
-                  type: string
-      responses:
-        "200":
-          description: API accepted
-          content:
-            application/zip:
-              schema:
-                type: "string"
-                format: "binary"
-        "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                type: "object"
-                properties:
-                  status:
-                    type: "string"
   /servers/{id}/blob:
     post:
       security:
@@ -607,14 +575,8 @@ components:
           type: string
         app_location:
           type: string
-        overseer:
-          type: "string"
         server1:
           type: "string"
-        server2:
-          type: "string"
-        ha_mode:
-          type: "boolean"
         starting_date:
           type: "string"
         end_date:

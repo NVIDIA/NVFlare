@@ -417,10 +417,6 @@ own requirements:
         │   │   ├── local
         │   │   ├── startup
         │   │   └── transfer
-        │   ├── server2
-        │   │   ├── local
-        │   │   ├── startup
-        │   │   └── transfer
         │   ├── site-1
         │   │   ├── local
         │   │   ├── startup

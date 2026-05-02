@@ -74,7 +74,6 @@ Abstract base class for launching jobs (`class JobLauncherSpec(FLComponent, ABC)
 | `PARENT_CONN_SEC` | `"parent_conn_sec"` | Client |
 | `SERVICE_HOST` | `"service_host"` | Server |
 | `SERVICE_PORT` | `"service_port"` | Server |
-| `HA_MODE` | `"ha_mode"` | Server |
 | `TARGET` | `"target"` | Client |
 | `SCHEME` | `"scheme"` | Client |
 | `STARTUP_CONFIG_FILE` | `"startup_config_file"` | Server, Client |
