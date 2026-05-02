@@ -33,6 +33,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -46,9 +47,57 @@ TOOL_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TOOL_DIR.parents[1]
 WORK_DIR = TOOL_DIR / ".work"
 PROJECT_TEMPLATE = TOOL_DIR / "project.yml"
+MONITORING_STACK = TOOL_DIR / "monitoring-stack.yaml"
 DEFAULT_KUBECONFIG_DIR = REPO_ROOT / ".tmp" / "kubeconfigs"
 K8S_RUNTIME = "k8s"
 VALID_ROLES = {"server", "client"}
+STARTUP_STABILITY_SECONDS = 20
+MONITORING_STACK_NAMESPACE = "nvflare-monitoring"
+MONITORING_NAMESPACE_PREFIX = "nvflare-"
+MONITORING_NAMESPACE_SUFFIX = "-monitoring"
+STATSD_SERVICE_NAME = "statsd-exporter"
+STATSD_PORT = 9125
+MONITORING_COMPONENT_IDS = {
+    "sys_metrics_collector",
+    "remote_metrics_receiver",
+    "statsd_reporter",
+    "event_to_fed",
+}
+
+
+def _safe_k8s_name(value: str, *, max_len: int = 63) -> str:
+    name = re.sub(r"[^a-z0-9-]+", "-", value.lower()).strip("-")
+    name = name or "system"
+    if len(name) <= max_len:
+        return name
+    digest = hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
+    return f"{name[: max_len - 9].rstrip('-')}-{digest}"
+
+
+def monitoring_namespace(config_name: str) -> str:
+    name_budget = 63 - len(MONITORING_NAMESPACE_PREFIX) - len(MONITORING_NAMESPACE_SUFFIX)
+    return (
+        f"{MONITORING_NAMESPACE_PREFIX}{_safe_k8s_name(config_name, max_len=name_budget)}{MONITORING_NAMESPACE_SUFFIX}"
+    )
+
+
+def statsd_host(namespace: str) -> str:
+    return f"{STATSD_SERVICE_NAME}.{namespace}.svc.cluster.local"
+
+
+DEFAULT_MONITORING_NAMESPACE = monitoring_namespace("default")
+
+
+# ---------------------------------------------------------------------------
+# Monitoring config
+# ---------------------------------------------------------------------------
+@dataclass
+class MonitoringConfig:
+    enabled: bool = False
+    namespace: str = DEFAULT_MONITORING_NAMESPACE
+    statsd_host: str = statsd_host(DEFAULT_MONITORING_NAMESPACE)
+    statsd_port: int = STATSD_PORT
+    env: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +131,78 @@ class DeployConfig:
     aws_eks_cluster_name: str | None
     azure_resource_group: str | None
     azure_location: str | None
+    monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
+
+
+def load_monitoring_config(raw: dict, *, config_name: str, config_path: Path) -> MonitoringConfig:
+    cfg = raw.get("monitoring", {})
+    if cfg is None:
+        cfg = {}
+    if isinstance(cfg, bool):
+        enabled = cfg
+    elif isinstance(cfg, dict):
+        enabled = bool(cfg.get("enabled", False))
+    else:
+        raise ValueError(f"{config_path}: monitoring must be true, false, or a YAML mapping")
+
+    namespace = monitoring_namespace(config_name)
+    return MonitoringConfig(enabled=enabled, namespace=namespace, statsd_host=statsd_host(namespace), env=config_name)
+
+
+def _site_tag(participant_name: str, role: str) -> str:
+    return "server" if role == "server" else participant_name
+
+
+def system_monitoring_components(participant_name: str, role: str, monitoring: MonitoringConfig) -> list[dict]:
+    tags = {"site": _site_tag(participant_name, role), "env": monitoring.env}
+    if role == "server":
+        return [
+            {
+                "id": "sys_metrics_collector",
+                "path": "nvflare.metrics.system_metrics_collector.SysMetricsCollector",
+                "args": {"tags": tags},
+            },
+            {
+                "id": "remote_metrics_receiver",
+                "path": "nvflare.metrics.remote_metrics_receiver.RemoteMetricsReceiver",
+                "args": {"events": ["fed.metrics_event"]},
+            },
+            {
+                "id": "statsd_reporter",
+                "path": "nvflare.fuel_opt.statsd.statsd_reporter.StatsDReporter",
+                "args": {"site": "server", "host": monitoring.statsd_host, "port": monitoring.statsd_port},
+            },
+        ]
+
+    return [
+        {
+            "id": "sys_metrics_collector",
+            "path": "nvflare.metrics.system_metrics_collector.SysMetricsCollector",
+            "args": {"tags": tags, "streaming_to_server": True},
+        },
+        {
+            "id": "event_to_fed",
+            "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
+            "args": {"events_to_convert": ["metrics_event"]},
+        },
+    ]
+
+
+def patch_resources_for_system_monitoring(
+    resources_path: Path, *, participant_name: str, role: str, monitoring: MonitoringConfig
+) -> None:
+    resources = json.loads(resources_path.read_text())
+    components = resources.setdefault("components", [])
+    if not isinstance(components, list):
+        raise ValueError(f"{resources_path}: components must be a list")
+
+    resources["components"] = [c for c in components if c.get("id") not in MONITORING_COMPONENT_IDS]
+    resources["components"] = system_monitoring_components(participant_name, role, monitoring) + resources["components"]
+    resources_path.write_text(json.dumps(resources, indent=4) + "\n")
+
+    active_resources = resources_path.with_name("resources.json")
+    if active_resources.exists():
+        active_resources.unlink()
 
 
 def _normalize_study_data(study_data: dict | None) -> dict:
@@ -105,6 +226,7 @@ def load_config(config_path: Path) -> DeployConfig:
     config_path = config_path.resolve()
     raw = yaml.safe_load(config_path.read_text())
     name = raw.get("name") or config_path.stem
+    monitoring = load_monitoring_config(raw, config_name=name, config_path=config_path)
     clouds = raw.get("clouds") or {}
     if not clouds:
         raise ValueError(f"{config_path}: missing 'clouds' section")
@@ -171,6 +293,7 @@ def load_config(config_path: Path) -> DeployConfig:
         name=name,
         participants=participants,
         server_cloud=server_cloud,
+        monitoring=monitoring,
         gcp_project=gcp.get("project"),
         gcp_region=gcp.get("region"),
         aws_region=aws.get("region"),
@@ -246,8 +369,8 @@ def run_quiet(cmd: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
-def kubectl(kubeconfig: str, *args) -> subprocess.CompletedProcess:
-    return run(["kubectl", "--kubeconfig", kubeconfig] + list(args))
+def kubectl(kubeconfig: str, *args, **kwargs) -> subprocess.CompletedProcess:
+    return run(["kubectl", "--kubeconfig", kubeconfig] + list(args), **kwargs)
 
 
 def helm(kubeconfig: str, *args) -> subprocess.CompletedProcess:
@@ -373,12 +496,83 @@ def _write_yaml_file(path: Path, data: dict):
     path.write_text(payload)
 
 
-def prepare_runtime_kits(prod_dir: Path, participants: list[Participant]) -> dict[str, Path]:
+def render_monitoring_stack(namespace: str) -> str:
+    return MONITORING_STACK.read_text().replace(MONITORING_STACK_NAMESPACE, namespace)
+
+
+def deploy_monitoring_stack(config: DeployConfig):
+    monitoring = config.monitoring
+    if not monitoring.enabled:
+        return
+
+    server = next(p for p in config.participants if p.role == "server")
+    print(f"Deploying monitoring stack in {server.cloud}/{monitoring.namespace} ...")
+    kubectl(server.kubeconfig, "apply", "-f", "-", input=render_monitoring_stack(monitoring.namespace))
+    for deployment in ("statsd-exporter", "prometheus", "grafana"):
+        kubectl(
+            server.kubeconfig,
+            "-n",
+            monitoring.namespace,
+            "rollout",
+            "status",
+            f"deployment/{deployment}",
+            "--timeout=300s",
+        )
+
+
+def teardown_monitoring_stack(config: DeployConfig) -> bool:
+    monitoring = config.monitoring
+    if not monitoring.enabled:
+        return True
+
+    server = next(p for p in config.participants if p.role == "server")
+    print(f"Tearing down monitoring stack ({monitoring.namespace}) ...")
+    try:
+        check_auth_for(server.cloud)
+    except SystemExit:
+        print(f"  Auth failed for {server.cloud} — skipping")
+        return False
+    r = run(
+        [
+            "kubectl",
+            "--kubeconfig",
+            server.kubeconfig,
+            "delete",
+            "ns",
+            monitoring.namespace,
+            "--ignore-not-found",
+            "--timeout=120s",
+        ],
+        check=False,
+    )
+    return r.returncode == 0
+
+
+def inject_system_monitoring(kit_dir: Path, participant: Participant, monitoring: MonitoringConfig):
+    if not monitoring.enabled:
+        return
+
+    resources_path = kit_dir / "local" / "resources.json.default"
+    if DRY_RUN:
+        print(f"  Would inject system monitoring into {_mask(str(resources_path))}")
+        return
+    patch_resources_for_system_monitoring(
+        resources_path,
+        participant_name=participant.name,
+        role=participant.role,
+        monitoring=monitoring,
+    )
+
+
+def prepare_runtime_kits(
+    prod_dir: Path, participants: list[Participant], monitoring: MonitoringConfig | None = None
+) -> dict[str, Path]:
     print("Preparing K8s runtime kits ...")
     config_dir = WORK_DIR / "prepare-configs"
     if not DRY_RUN and config_dir.exists():
         shutil.rmtree(config_dir)
 
+    monitoring = monitoring or MonitoringConfig()
     kit_dirs = {}
     for p in participants:
         kit_dir = prod_dir / p.name
@@ -403,8 +597,62 @@ def prepare_runtime_kits(prod_dir: Path, participants: list[Participant]) -> dic
                 str(config_path),
             ]
         )
+        inject_system_monitoring(output_dir, p, monitoring)
         kit_dirs[p.name] = output_dir
     return kit_dirs
+
+
+def verify_deployment_stable(p: Participant, seconds: int = STARTUP_STABILITY_SECONDS):
+    if DRY_RUN:
+        return
+
+    def _pods():
+        r = kubectl(
+            p.kubeconfig,
+            "-n",
+            p.namespace,
+            "get",
+            "pods",
+            "-l",
+            f"app.kubernetes.io/name={p.name}",
+            "-o",
+            "json",
+            capture=True,
+        )
+        return json.loads(r.stdout).get("items", [])
+
+    pods = _pods()
+    if not pods:
+        raise RuntimeError(f"No pod found for deployment {p.name} in namespace {p.namespace}")
+    restart_baseline = {
+        pod["metadata"]["name"]: sum(
+            status.get("restartCount", 0) for status in pod.get("status", {}).get("containerStatuses") or []
+        )
+        for pod in pods
+    }
+
+    time.sleep(seconds)
+    pods = _pods()
+    if not pods:
+        raise RuntimeError(f"No pod found for deployment {p.name} in namespace {p.namespace}")
+
+    failures = []
+    for pod in pods:
+        pod_name = pod["metadata"]["name"]
+        phase = pod.get("status", {}).get("phase")
+        statuses = pod.get("status", {}).get("containerStatuses") or []
+        restarts = sum(status.get("restartCount", 0) for status in statuses)
+        ready = statuses and all(status.get("ready") for status in statuses)
+        baseline = restart_baseline.get(pod_name)
+        if baseline is None:
+            failures.append(f"{pod_name}: appeared during stability check")
+        elif phase != "Running" or not ready:
+            failures.append(f"{pod_name}: phase={phase} ready={ready} restarts={restarts}")
+        elif restarts > baseline:
+            failures.append(f"{pod_name}: restarts increased from {baseline} to {restarts}")
+
+    if failures:
+        raise RuntimeError(f"{p.name} did not stay stable after startup: " + "; ".join(failures))
 
 
 # ---------------------------------------------------------------------------
@@ -535,6 +783,7 @@ def deploy_participant(
             f"deployment/{p.name}",
             "--timeout=600s",
         )
+        verify_deployment_stable(p)
 
 
 def deploy_participants(participants: list[Participant], kit_dirs: dict[str, Path], server_ip: str, state: dict):
@@ -606,8 +855,10 @@ def cmd_up(args):
     server_provider.prepare_server_state(run=run, state=state, config=config, ip_name=ip_name, aws_region=aws_region)
     state["server_ip"] = server_ip
 
+    deploy_monitoring_stack(config)
+
     prod_dir = provision(server_ip, config)
-    kit_dirs = prepare_runtime_kits(prod_dir, participants)
+    kit_dirs = prepare_runtime_kits(prod_dir, participants, monitoring=config.monitoring)
 
     deploy_participants(participants, kit_dirs, server_ip=server_ip, state=state)
 
@@ -671,8 +922,9 @@ def cmd_down(args):
     server_items = [(name, info) for name, info in participant_items if info["role"] == "server"]
     clients_ok = teardown_participants(client_items)
     server_ok = teardown_participants(server_items)
+    monitoring_ok = teardown_monitoring_stack(config)
 
-    if not clients_ok or not server_ok:
+    if not clients_ok or not server_ok or not monitoring_ok:
         print("Partial teardown. Re-run down with the same config after fixing the failure.")
         sys.exit(1)
 
