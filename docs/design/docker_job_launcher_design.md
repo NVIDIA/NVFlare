@@ -135,15 +135,15 @@ If a job package is intended to be portable across deployments and carries both 
 
 ### Workspace / Storage
 - SP/CP containers receive a read-write bind mount of the host workspace directory.
-- SJ/CJ containers receive a filtered read-only workspace root at `/var/tmp/nvflare/workspace`, plus a read-write bind mount of only the current job directory at `/var/tmp/nvflare/workspace/<job_id>`.
+- SJ/CJ containers receive an empty read-only workspace root at `/var/tmp/nvflare/workspace`, read-only bind mounts for `startup/` and `local/`, and a read-write bind mount of only the current job directory at `/var/tmp/nvflare/workspace/<job_id>`.
 - The container-internal workspace mount point is always `/var/tmp/nvflare/workspace` (hardcoded).
-- Docker mode does not need workspace transfer: the job sees filtered startup/local files and its own extracted app directly through bind mounts, while Docker prevents it from reading or writing other job directories through the workspace.
+- Docker mode does not need workspace transfer: the job sees startup/local files and its own extracted app directly through bind mounts, while Docker prevents it from reading or writing other job directories through the workspace.
 
 ```
 workspace/               ← read-write in SP/CP; not mounted wholesale into SJ/CJ
-  startup/               ← selected .crt/.key/.pem/.json files copied into SJ/CJ view
+  startup/               ← read-only in SJ/CJ
   local/
-    study_data.yaml      ← used by launcher only; not copied into SJ/CJ view
+    study_data.yaml      ← read-only in SJ/CJ
   job_001/               ← over-mounted read-write only for job_001's SJ/CJ
   job_002/               ← over-mounted read-write only for job_002's SJ/CJ
 ```
@@ -181,9 +181,9 @@ SP/CP container (site admin grants via start_docker.sh)
 
 SJ/CJ container (DockerJobLauncher controls)
   ├── NO Docker socket                        ← cannot create further containers
-  ├── filtered workspace root at /var/tmp/nvflare/workspace (read-only)
-  │   ├── startup/ selected .crt/.key/.pem/.json files
-  │   └── local/ copied site-local files except study_data.yaml
+  ├── empty workspace root at /var/tmp/nvflare/workspace (read-only)
+  ├── startup bind mount at /var/tmp/nvflare/workspace/startup (read-only)
+  ├── local bind mount at /var/tmp/nvflare/workspace/local (read-only)
   ├── job workspace bind mount at /var/tmp/nvflare/workspace/<job_id> (read-write)
   ├── optional data bind mounts at /data/<study>/<dataset>
   └── nvflare-network                         ← intra-site to SP/CP only (PARENT_URL)

@@ -15,8 +15,6 @@ import logging
 import os
 import posixpath
 import re
-import shutil
-import tempfile
 import time
 from abc import abstractmethod
 
@@ -54,11 +52,7 @@ class DockerStatus:
 
 
 TERMINAL_STATUSES = {DockerStatus.EXITED, DockerStatus.DEAD}
-_DOCKER_LAUNCHER_TEMP_DIR = ".nvflare_docker_launcher"
-_STARTUP_KEEP_SUFFIXES = (".crt", ".key", ".pem", ".json")
-_LOCAL_COPY_EXCLUDES = frozenset({"study_data.yaml"})
 _RESERVED_WORKSPACE_CHILD_NAMES = {
-    _DOCKER_LAUNCHER_TEMP_DIR,
     WorkspaceConstants.STARTUP_FOLDER_NAME,
     WorkspaceConstants.SITE_FOLDER_NAME,
 }
@@ -108,37 +102,6 @@ def _safe_workspace_child_path(workspace: str, child_name: str, allow_reserved: 
     return child_path
 
 
-def _copy_startup_files(src_dir: str, dst_dir: str) -> None:
-    """Copy the startup files job containers need, matching K8s startup Secret filtering."""
-    os.makedirs(dst_dir, exist_ok=True)
-    if not os.path.isdir(src_dir):
-        return
-    for fname in os.listdir(src_dir):
-        src = os.path.join(src_dir, fname)
-        if not fname.endswith(_STARTUP_KEEP_SUFFIXES) or not os.path.isfile(src):
-            continue
-        shutil.copy2(src, os.path.join(dst_dir, fname))
-
-
-def _copy_local_files(src_dir: str, dst_dir: str) -> None:
-    """Copy site-local files for the job view, excluding launcher-only study data mapping."""
-    os.makedirs(dst_dir, exist_ok=True)
-    if not os.path.isdir(src_dir):
-        return
-    for dirpath, _dirs, files in os.walk(src_dir):
-        rel_dir = os.path.relpath(dirpath, src_dir)
-        for fname in files:
-            rel_path = fname if rel_dir == "." else os.path.join(rel_dir, fname)
-            if rel_path.replace(os.sep, "/") in _LOCAL_COPY_EXCLUDES:
-                continue
-            src = os.path.join(dirpath, fname)
-            if not os.path.isfile(src):
-                continue
-            dst = os.path.join(dst_dir, rel_path)
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copy2(src, dst)
-
-
 class DockerJobHandle(JobHandleSpec):
     """Handle for a running Docker container job.
 
@@ -153,14 +116,12 @@ class DockerJobHandle(JobHandleSpec):
         container_name: str,
         docker_client,
         timeout: int = 30,
-        cleanup_dirs: list = None,
     ):
         super().__init__()
         self.container_id = container_id
         self.container_name = container_name
         self.docker_client = docker_client
         self.timeout = timeout
-        self.cleanup_dirs = cleanup_dirs or []
         self.terminal_state: JobReturnCode = None  # set once, never cleared
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -175,7 +136,6 @@ class DockerJobHandle(JobHandleSpec):
             self.logger.info(f"container {self.container_name} not found; assuming terminated")
             if self.terminal_state is None:
                 self.terminal_state = JobReturnCode.ABORTED
-            self._cleanup_host_dirs()
             return None
         except docker.errors.APIError as e:
             self.logger.warning(f"error querying container {self.container_name}: {e}")
@@ -198,20 +158,10 @@ class DockerJobHandle(JobHandleSpec):
             container = self.docker_client.containers.get(self.container_id)
             container.remove(force=True)
             self.logger.debug(f"removed container {self.container_name}")
-            self._cleanup_host_dirs()
         except docker.errors.NotFound:
-            self._cleanup_host_dirs()  # already gone
+            pass  # already gone
         except docker.errors.APIError as e:
             self.logger.warning(f"error removing container {self.container_name}: {e}")
-
-    def _cleanup_host_dirs(self):
-        """Remove launcher-created host directories that are not job output."""
-        for cleanup_dir in self.cleanup_dirs:
-            try:
-                shutil.rmtree(cleanup_dir, ignore_errors=True)
-            except Exception as e:
-                self.logger.warning(f"error removing launcher temp dir {cleanup_dir}: {e}")
-        self.cleanup_dirs = []
 
     def poll(self) -> JobReturnCode:
         """Non-blocking status check. Returns UNKNOWN while still running."""
@@ -247,10 +197,8 @@ class DockerJobHandle(JobHandleSpec):
             container = self.docker_client.containers.get(self.container_id)
             container.stop(timeout=0)
             container.remove(force=True)
-            self._cleanup_host_dirs()
         except docker.errors.NotFound:
             self.logger.info(f"container {self.container_name} not found during termination; assuming terminated")
-            self._cleanup_host_dirs()
         except docker.errors.APIError as e:
             self.logger.error(f"error terminating container {self.container_name}: {e}")
         except Exception as e:
@@ -317,7 +265,7 @@ class DockerJobLauncher(JobLauncherSpec):
     Assumptions:
     - Docker network already exists (created by start_docker.sh or site admin).
     - Job containers get an isolated workspace view at /var/tmp/nvflare/workspace:
-      startup/local are filtered and read-only; only the current job workspace is read-write.
+      startup/local are read-only; only the current job workspace is read-write.
     - SP/CP container name is known and reachable via Docker DNS on the network.
     - parent_url is derived at runtime from the site name and the port in JOB_PROCESS_ARGS.
     """
@@ -340,10 +288,10 @@ class DockerJobLauncher(JobLauncherSpec):
         """
         Args:
             workspace: host path to the NVFlare workspace directory. Job containers receive an isolated
-                       workspace view: startup/local are filtered and mounted read-only, and the current
-                       job workspace is mounted read-write at /var/tmp/nvflare/workspace/<job_id>. If
-                       not provided, reads from NVFL_DOCKER_WORKSPACE environment variable. Must be the
-                       HOST path because it is passed directly to the Docker daemon as a volume bind source.
+                       workspace view: startup/local are mounted read-only, and the current job workspace
+                       is mounted read-write at /var/tmp/nvflare/workspace/<job_id>. If not provided,
+                       reads from NVFL_DOCKER_WORKSPACE environment variable. Must be the HOST path
+                       because it is passed directly to the Docker daemon as a volume bind source.
             network: Docker network name. Must already exist.
             python_path: Deprecated alias for default_python_path.
             timeout: max seconds to wait for container to reach RUNNING state (default 30).
@@ -419,32 +367,6 @@ class DockerJobLauncher(JobLauncherSpec):
                 raise RuntimeError(f"error checking Docker network '{self.network}': {e}")
             self._docker_client = client
         return self._docker_client
-
-    def _make_isolated_workspace_root(self, workspace: str, container_name: str) -> tuple[str, str]:
-        """Create a launcher temp root and return (container_path, host_path)."""
-        if os.path.isdir(self.WORKSPACE_MOUNT):
-            container_temp_base = os.path.join(self.WORKSPACE_MOUNT, _DOCKER_LAUNCHER_TEMP_DIR)
-            os.makedirs(container_temp_base, exist_ok=True)
-            container_root = tempfile.mkdtemp(prefix=f"{container_name}-workspace-", dir=container_temp_base)
-            host_root = os.path.join(workspace, _DOCKER_LAUNCHER_TEMP_DIR, os.path.basename(container_root))
-            return container_root, host_root
-        if os.path.isdir(workspace):
-            temp_base = os.path.join(workspace, _DOCKER_LAUNCHER_TEMP_DIR)
-            os.makedirs(temp_base, exist_ok=True)
-            root = tempfile.mkdtemp(prefix=f"{container_name}-workspace-", dir=temp_base)
-            return root, root
-        root = tempfile.mkdtemp(prefix=f"{container_name}-workspace-")
-        return root, root
-
-    def _prepare_isolated_workspace_root(self, isolated_workspace_root: str, job_workspace_name: str) -> None:
-        """Create the filtered workspace view that is mounted read-only into the job container."""
-        source_root = self.WORKSPACE_MOUNT if os.path.isdir(self.WORKSPACE_MOUNT) else self.workspace
-        startup_dst = os.path.join(isolated_workspace_root, WorkspaceConstants.STARTUP_FOLDER_NAME)
-        local_dst = os.path.join(isolated_workspace_root, WorkspaceConstants.SITE_FOLDER_NAME)
-        job_dst = os.path.join(isolated_workspace_root, job_workspace_name)
-        _copy_startup_files(os.path.join(source_root, WorkspaceConstants.STARTUP_FOLDER_NAME), startup_dst)
-        _copy_local_files(os.path.join(source_root, WorkspaceConstants.SITE_FOLDER_NAME), local_dst)
-        os.makedirs(job_dst, exist_ok=True)
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
         job_id = job_meta.get(JobConstants.JOB_ID)
@@ -569,11 +491,17 @@ class DockerJobLauncher(JobLauncherSpec):
         if num_gpus and "device_requests" not in job_container_kwargs:
             merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
 
-        # Give the job an isolated workspace view: filtered startup/local plus only this job's
-        # workspace. The filtered root is read-only; job outputs still persist in the host job dir.
+        # Give the job an isolated workspace view: startup/local are read-only,
+        # and only this job's workspace is read-write and persistent on the host.
         job_workspace_name = WorkspaceConstants.WORKSPACE_PREFIX + str(job_id)
         host_job_workspace = _safe_workspace_child_path(workspace, job_workspace_name)
+        host_startup_dir = _safe_workspace_child_path(
+            workspace, WorkspaceConstants.STARTUP_FOLDER_NAME, allow_reserved=True
+        )
+        host_local_dir = _safe_workspace_child_path(workspace, WorkspaceConstants.SITE_FOLDER_NAME, allow_reserved=True)
         container_job_workspace = posixpath.join(self.WORKSPACE_MOUNT, job_workspace_name)
+        container_startup_dir = posixpath.join(self.WORKSPACE_MOUNT, WorkspaceConstants.STARTUP_FOLDER_NAME)
+        container_local_dir = posixpath.join(self.WORKSPACE_MOUNT, WorkspaceConstants.SITE_FOLDER_NAME)
         data_mounts = []
 
         # Read study data map from workspace/local/study_data.yaml.
@@ -599,18 +527,21 @@ class DockerJobLauncher(JobLauncherSpec):
         self.logger.info(f"launching job {job_id} as container {container_name} using image {job_image}")
 
         docker_client = self._get_docker_client()
-        isolated_workspace_root, host_isolated_workspace_root = self._make_isolated_workspace_root(
-            workspace, container_name
-        )
         try:
-            self._prepare_isolated_workspace_root(isolated_workspace_root, job_workspace_name)
             mounts = [
                 docker.types.Mount(
                     target=self.WORKSPACE_MOUNT,
-                    source=host_isolated_workspace_root,
+                    source=None,
+                    type="tmpfs",
+                    read_only=True,
+                ),
+                docker.types.Mount(
+                    target=container_startup_dir,
+                    source=host_startup_dir,
                     type="bind",
                     read_only=True,
                 ),
+                docker.types.Mount(target=container_local_dir, source=host_local_dir, type="bind", read_only=True),
                 docker.types.Mount(
                     target=container_job_workspace,
                     source=host_job_workspace,
@@ -643,21 +574,15 @@ class DockerJobLauncher(JobLauncherSpec):
                 **merged_container_kwargs,
             )
         except docker.errors.ImageNotFound:
-            shutil.rmtree(isolated_workspace_root, ignore_errors=True)
             raise RuntimeError(f"image '{job_image}' not found for job {job_id}")
         except docker.errors.APIError as e:
-            shutil.rmtree(isolated_workspace_root, ignore_errors=True)
             raise RuntimeError(f"error creating container for job {job_id}: {e}")
-        except Exception:
-            shutil.rmtree(isolated_workspace_root, ignore_errors=True)
-            raise
 
         job_handle = DockerJobHandle(
             container_id=container.id,
             container_name=container_name,
             docker_client=docker_client,
             timeout=self.timeout,
-            cleanup_dirs=[isolated_workspace_root],
         )
 
         try:
