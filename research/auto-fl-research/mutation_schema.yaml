@@ -24,6 +24,7 @@ mutable_args:
     choices: [moderate_cnn, moderate_cnn_norm, moderate_cnn_small_head]
   max_model_params: {type: int, min: 1, max: 5000000}
   aggregation_epochs: {type: int, min: 1, max: 8}
+  local_train_steps: {type: int, min: 0, max: 1000}
   lr: {type: float, min: 0.0001, max: 0.1, log_scale: true}
   batch_size: {type: int, choices: [32, 64, 128]}
   eval_batch_size: {type: int, choices: [64, 128, 256, 512, 1024, 2048]}
@@ -46,8 +47,9 @@ mutable_args:
 comparison_budget_args:
   h100_default_candidate_budget:
     n_clients: 8
-    num_rounds: 10
+    num_rounds: 20
     aggregation_epochs: 4
+    local_train_steps: 0
     batch_size: 64
     eval_batch_size: 1024
     alpha: 0.5
@@ -57,11 +59,10 @@ comparison_budget_args:
     aggregator: weighted
     cross_site_eval: true
     final_eval_clients: site-1
-    run_timeout_seconds: 600
+    run_timeout_seconds: 1200
   fixed_within_campaign:
     - n_clients
     - num_rounds
-    - aggregation_epochs
     - batch_size
     - eval_batch_size
     - alpha
@@ -71,9 +72,12 @@ comparison_budget_args:
     - cross_site_eval
     - final_eval_clients
   note: >
-    Some fixed budget fields are mutable only when starting a new campaign or
-    explicitly labeled subcampaign. Do not compare candidate scores across
-    different fixed budget values as if they came from the same search.
+    Keep communication and data-budget fields fixed within a comparison
+    campaign. aggregation_epochs and local_train_steps are local-compute knobs:
+    local_train_steps=0 means epoch-based training with aggregation_epochs, and
+    local_train_steps>0 means exact optimizer steps per client per round.
+    Vary only one local-compute mode in a narrow sweep and keep candidates
+    within run_timeout_seconds.
   split_cache: >
     CIFAR-10 train index splits are cached under /tmp/cifar10_splits by
     n_clients, alpha, and seed. Candidate job names must not create new splits

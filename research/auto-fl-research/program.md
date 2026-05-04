@@ -29,10 +29,9 @@ To set up a new experiment campaign, work with the user to:
 
 ## Experimentation
 
-Each experiment should run under a **fixed federated budget**. Keep the following fixed across a comparison campaign unless the human explicitly changes the campaign setup:
+Each experiment should run under a **fixed communication, data, and evaluation budget**. Keep the following fixed across a comparison campaign unless the human explicitly changes the campaign setup:
 - `n_clients`
 - `num_rounds`
-- `aggregation_epochs`
 - `batch_size`
 - `eval_batch_size`
 - `alpha`
@@ -44,10 +43,13 @@ Each experiment should run under a **fixed federated budget**. Keep the followin
 
 Some of these values are technically mutable in `mutation_schema.yaml`, but changing them starts a new comparison budget. Do not compare scores across runs with different values for the fixed budget fields above unless the run is explicitly labeled as a new campaign or subcampaign. Architecture-search scores must be labeled with their `model_arch` and `max_model_params`; do not mix them with optimizer-only `moderate_cnn` results as if they were the same search.
 
+Local compute is mutable within a campaign when each candidate stays within `RUN_TIMEOUT_SECONDS`. The default is epoch-based training with `--aggregation_epochs 4`; the agent may instead use `--local_train_steps <n>` for exact optimizer steps per client per round when that is a better search axis. Do not vary both local-compute modes in the same narrow sweep. Rank primarily by score, then use `runtime_seconds` as the cost/tie-breaker.
+
 Default H100 candidate budget:
 - `--n_clients 8`
-- `--num_rounds 10`
+- `--num_rounds 20`
 - `--aggregation_epochs 4`
+- `--local_train_steps 0`
 - `--batch_size 64`
 - `--alpha 0.5`
 - `--seed 0`
@@ -57,17 +59,17 @@ Default H100 candidate budget:
 - cross-site evaluation enabled
 - final global evaluation on `site-1`
 - `--eval_batch_size 1024`
-- `RUN_TIMEOUT_SECONDS=600`
+- `RUN_TIMEOUT_SECONDS=1200`
 - deterministic PyTorch/DataLoader training enabled
 
-Each candidate targets roughly a 10-minute run on one local H100. The 80 GB H100 can usually support several same-budget candidates concurrently; if runs consistently finish much sooner, increase only one budget axis at a time and label the new subcampaign. If they time out or hit CUDA OOM, reduce candidate parallelism before changing model, parameter-cap, or data contracts.
+Each candidate targets a capped run on one local H100. The 80 GB H100 can usually support several same-budget candidates concurrently; if runs consistently finish much sooner, sweep local compute first with either `aggregation_epochs` or `local_train_steps`. If they time out or hit CUDA OOM, reduce candidate parallelism before changing communication, model, parameter-cap, or data contracts.
 The current CIFAR-10 validation loader is identical on every simulated client, so final scoring evaluates the server/global model on `site-1` by default and keeps the output in NVFlare's `cross_site_val/cross_val_results.json` path. Use `--final_eval_clients all` only for an audit run or after changing validation to be site-specific.
 Training splits are cached by fixed data-budget fields under `/tmp/cifar10_splits/autofl_cifar10_<n>sites_alpha<a>_seed<s>`. Do not make the split path depend on the candidate `--name`; repeated candidates with the same `n_clients`, `alpha`, and `seed` should reuse the same `.npy` indices.
 Client training derives stable per-site RNG seeds from `--seed`, enables PyTorch deterministic algorithms, disables cuDNN benchmarking, and seeds DataLoader shuffling/workers. Treat `--no_deterministic_training` as a separate noisy subcampaign.
 
 ### Initial algorithm calibration
 
-After the first weighted baseline run in a fresh campaign, run an algorithm calibration sequence before open-ended hyperparameter tuning. Keep the same fixed budget and compare the available baseline implementations:
+After the first weighted baseline run in a fresh campaign, run an algorithm calibration sequence before open-ended hyperparameter tuning. Keep the same communication and local-compute budget and compare the available baseline implementations:
 
 | Step | Description | Extra args |
 | --- | --- | --- |
@@ -110,7 +112,7 @@ Default to `PARALLEL_CANDIDATES=4` when the initial instruction does not specify
 
 Prefer **ledger-backed decisions** over ad hoc one-off guesses:
 1. Keep the code state fixed.
-2. Generate a small batch of hyperparameter candidates under the same fixed budget, up to `PARALLEL_CANDIDATES`.
+2. Generate a small batch of hyperparameter candidates under the same communication budget and runtime cap, up to `PARALLEL_CANDIDATES`.
 3. Launch each candidate with a unique `--name`, `RUN_LOG`, and description value.
 4. Wait for the whole batch to finish or time out.
 5. Rank the completed candidates against the ledger by score, inspect crashes with `tail -n 50 <run_log>`, and only then decide the next mutation or sweep.
@@ -121,7 +123,7 @@ Example single-H100 calibration skeleton:
 mkdir -p run_logs
 PYTHON=${PYTHON:-.venv/bin/python}
 PARALLEL_CANDIDATES=${PARALLEL_CANDIDATES:-4}
-COMMON_ARGS="--n_clients 8 --num_rounds 10 --aggregation_epochs 4 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --final_eval_clients site-1"
+COMMON_ARGS="--n_clients 8 --num_rounds 20 --aggregation_epochs 4 --local_train_steps 0 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --final_eval_clients site-1"
 
 launch_algo_candidate() {
   i="$1"
@@ -136,7 +138,7 @@ launch_algo_candidate() {
     7) desc="SCAFFOLD metadata mode"; extra_args="--aggregator scaffold"; name="algo_scaffold" ;;
   esac
   CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" \
-  PYTHON="${PYTHON}" RUN_LOG="run_logs/${name}.log" RUN_TIMEOUT_SECONDS=600 \
+  PYTHON="${PYTHON}" RUN_LOG="run_logs/${name}.log" RUN_TIMEOUT_SECONDS=1200 \
     bash scripts/run_iteration.sh --description "${desc}" --target client.py -- \
     ${COMMON_ARGS} ${extra_args} --name "${name}" &
 }
@@ -155,7 +157,7 @@ wait
 
 Never reuse the same `RUN_LOG` for different candidates.
 Use unique `--name` values so NVFlare result directories and CIFAR split directories do not collide.
-If candidates repeatedly run out of memory on the local H100, reduce `PARALLEL_CANDIDATES` before reducing the fixed budget or starting a clearly labeled smaller-budget subcampaign.
+If candidates repeatedly run out of memory on the local H100, reduce `PARALLEL_CANDIDATES` before reducing the communication budget or starting a clearly labeled smaller-budget subcampaign.
 After each batch, rank the ledger with:
 
 ```bash
@@ -206,7 +208,7 @@ Registered architecture knobs:
 
 ## Goal
 
-The goal is to maximize a **single comparable score** under a fixed federated budget.
+The goal is to maximize a **single comparable score** under a fixed communication/evaluation budget and runtime cap.
 
 Use cross-site evaluation when scoring candidates. The helper script `scripts/extract_score.py` will try to read a comparable metric from:
 
@@ -217,7 +219,7 @@ Use cross-site evaluation when scoring candidates. The helper script `scripts/ex
 The optimized score is the final server/global model, `SRV_FL_global_model.pt`; ignore `SRV_best_FL_global_model.pt` when ranking candidates.
 Higher is better.
 
-For architecture-search campaigns, `--max_model_params` is a hard gate, not a soft preference. Rank candidates primarily by final score under the same fixed budget. Use `runtime_seconds` as a coarse secondary signal: prefer the faster/simpler candidate when scores are within expected noise, and be skeptical of tiny gains that cost much more wall-clock time. Do not collapse score and runtime into a single `score/runtime` scalar; inspect the Pareto tradeoff and rerun finalists before trusting small differences.
+For architecture-search campaigns, `--max_model_params` is a hard gate, not a soft preference. Rank candidates primarily by final score under the same communication/evaluation budget. Use `runtime_seconds` as a coarse secondary signal: prefer the faster/simpler candidate when scores are within expected noise, and be skeptical of tiny gains that cost much more wall-clock time. Do not collapse score and runtime into a single `score/runtime` scalar; inspect the Pareto tradeoff and rerun finalists before trusting small differences.
 
 ### Simplicity criterion
 
@@ -285,12 +287,12 @@ Default single-candidate loop:
 5. Run:
 
    ```bash
-   PYTHON=.venv/bin/python bash scripts/run_iteration.sh --description "..." --target <file> -- <fixed budget args>
+   PYTHON=.venv/bin/python bash scripts/run_iteration.sh --description "..." --target <file> -- <budget args>
    ```
 
    This redirects the full job output to `run.log`.
    With result logging enabled, `run_iteration.sh` refuses to run outside an `autoresearch/` branch and initializes `results.tsv` before the training job starts.
-   Candidate runs default to `RUN_TIMEOUT_SECONDS=600`; set `RUN_TIMEOUT_SECONDS=0` only when deliberately disabling the guard.
+   Candidate runs default to `RUN_TIMEOUT_SECONDS=1200`; set `RUN_TIMEOUT_SECONDS=0` only when deliberately disabling the guard.
    Use `--no-log-results` only for smoke checks that should not consume the first baseline row.
 
 6. Read the summarized result from the script output.
@@ -302,8 +304,8 @@ Default single-candidate loop:
 Same-budget campaign loop for the local H100:
 
 1. Look at the git state: current branch and current commit. Confirm the current branch starts with `autoresearch/`.
-2. Choose one narrow sweep axis, for example LR, momentum, weight decay, scheduler, or FedProx.
-3. Propose a batch of up to `PARALLEL_CANDIDATES` candidates that fit the fixed campaign budget.
+2. Choose one narrow sweep axis, for example LR, momentum, weight decay, scheduler, local compute, or FedProx.
+3. Propose a batch of up to `PARALLEL_CANDIDATES` candidates that fit the communication budget and runtime cap.
 4. Run the candidates concurrently on the same H100 with unique `RUN_LOG` and `--name` values.
 5. Build a short comparison table from `results.tsv`: description, score, status, budget, artifact.
    Prefer `"${PYTHON}" scripts/summarize_results.py results.tsv --status candidate --top "${PARALLEL_CANDIDATES:-4}"`.
@@ -332,7 +334,7 @@ On the local H100, keep cycling through same-budget candidate batches:
 If you run out of obvious ideas, re-read the in-scope files, inspect recent near-misses in `results.tsv`, combine promising settings, or try a new allowed axis from `mutation_schema.yaml`.
 Stay within the hard invariants and current bounds: do not change the FL protocol, evaluation substrate, dependency set, or registered architecture budget unless a human explicitly authorizes a protocol upgrade or new architecture subcampaign.
 
-With the default 10-minute candidate budget and `PARALLEL_CANDIDATES=4`, throughput can reach roughly 24 candidates per hour, or about 192 candidates across an eight-hour overnight run, if the H100, host CPU, storage, and data loaders sustain four concurrent jobs. Reduce the width when contention hurts reliability or score comparability.
+With the default 20-minute candidate cap and `PARALLEL_CANDIDATES=4`, throughput can reach roughly 12 candidates per hour, or about 96 candidates across an eight-hour overnight run, if the H100, host CPU, storage, and data loaders sustain four concurrent jobs. Reduce the width when contention hurts reliability or score comparability.
 The loop runs until the human interrupts it.
 
 ### Think harder with literature

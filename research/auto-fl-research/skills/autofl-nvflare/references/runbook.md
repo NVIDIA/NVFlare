@@ -11,7 +11,7 @@
 8. Run validation.
 9. Run a smoke test.
 10. Assume one local 80 GB H100; launch up to `PARALLEL_CANDIDATES` same-budget candidates concurrently on that one GPU when memory allows, default to `PARALLEL_CANDIDATES=4`, and reduce the width if candidates hit CUDA OOM or host contention.
-11. Use the default H100 candidate budget unless told otherwise: 8 clients, 10 rounds, 4 local epochs, training batch size 64, eval batch size 1024, alpha 0.5, seed 0, `model_arch=moderate_cnn`, `max_model_params=5000000`, weighted aggregation, deterministic client training, final global evaluation on site-1, 600-second timeout.
+11. Use the default H100 candidate budget unless told otherwise: 8 clients, 20 communication rounds, 4 local epochs, `local_train_steps=0`, training batch size 64, eval batch size 1024, alpha 0.5, seed 0, `model_arch=moderate_cnn`, `max_model_params=5000000`, weighted aggregation, deterministic client training, final global evaluation on site-1, 1200-second timeout. Local epochs or `local_train_steps` may be swept under that runtime cap, but do not vary both in the same narrow sweep.
 12. Use unique `RUN_LOG` and `--name` values for every candidate. If the environment exposes multiple GPUs but this campaign should use the local H100 only, pin each run with `CUDA_VISIBLE_DEVICES=0` instead of spreading candidates across devices.
 13. Record each result in `results.tsv`. `run_iteration.sh` initializes the header before launching logged runs; successful runs are appended as `candidate`, which means unreviewed.
 14. Rank the completed batch with `"${PYTHON}" scripts/summarize_results.py results.tsv --status candidate --top "${PARALLEL_CANDIDATES:-4}"`.

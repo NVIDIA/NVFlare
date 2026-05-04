@@ -33,7 +33,7 @@ Preserve these invariants unless the user explicitly asks for a protocol change:
 1. Client-local changes in `client.py`
    - optimizer family
    - scheduler settings
-   - local epochs, batch size, workers
+   - local epochs, fixed local training steps, batch size, workers
    - weight decay
    - gradient clipping
    - label smoothing
@@ -69,7 +69,7 @@ After making edits:
 5. run the client contract validator if present
 6. run the smoke test if the prepared environment has `nvflare`
 7. assume one local 80 GB H100; launch up to `PARALLEL_CANDIDATES` same-budget candidates concurrently on that one GPU when memory allows, default to `PARALLEL_CANDIDATES=4`, and reduce the width if candidates hit CUDA OOM or host contention
-8. use the default H100 candidate budget unless told otherwise: 8 clients, 10 rounds, 4 local epochs, training batch size 64, eval batch size 1024, alpha 0.5, seed 0, `model_arch=moderate_cnn`, `max_model_params=5000000`, weighted aggregation, deterministic client training, final global evaluation on site-1, 600-second timeout
+8. use the default H100 candidate budget unless told otherwise: 8 clients, 20 communication rounds, 4 local epochs, `local_train_steps=0`, training batch size 64, eval batch size 1024, alpha 0.5, seed 0, `model_arch=moderate_cnn`, `max_model_params=5000000`, weighted aggregation, deterministic client training, final global evaluation on site-1, 1200-second timeout; local epochs or `local_train_steps` may be swept under that runtime cap, but do not vary both in the same narrow sweep
 9. use unique `RUN_LOG` and job `--name` values for each candidate; if the environment exposes multiple GPUs but this campaign should use the local H100 only, pin each run with `CUDA_VISIBLE_DEVICES=0` instead of spreading candidates across devices
 10. record the outcome in `results.tsv`; `run_iteration.sh` initializes the header before launching logged runs, and successful runs are appended as `candidate`, which means unreviewed, not kept
 11. after every completed batch, update reviewed `results.tsv` statuses before launching the next batch: promote the selected survivor to `keep`, mark reviewed non-survivors as `discard`, leave crashes as `crash`, and leave only unresolved active rows as `candidate`; prefer `scripts/finalize_batch_status.py --last "${PARALLEL_CANDIDATES:-4}"`

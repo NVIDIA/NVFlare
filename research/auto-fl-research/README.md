@@ -1,6 +1,6 @@
 # Auto-FL-Research with NVFlare
 
-This bundle is a practical starting point for an **autoresearch-style** Auto-FL loop on top of NVFlare.
+This bundle is a practical starting point for an **autoresearch-style** Auto-FL loop on top of NVFlare using agents.
 
 ## Example progress
 
@@ -39,7 +39,7 @@ The [autoresearch](https://github.com/karpathy/autoresearch) repo keeps the setu
 
 - **Primary control plane:** `program.md` is the first file the agent should read.
 - **Bounded edit surface:** mutations should mostly target `client.py`, then `custom_aggregators.py`, then `job.py`; registered, parameter-capped architecture variants may also touch `model.py`.
-- **Fixed evaluation budget:** compare candidates under the same recipe budget (`n_clients`, `num_rounds`, `aggregation_epochs`, `batch_size`, `eval_batch_size`, `alpha`, `seed`, `model_arch`, `max_model_params`).
+- **Fixed communication budget:** compare candidates with the same round/data/evaluation setup while allowing local-compute sweeps (`aggregation_epochs` or `local_train_steps`) under the runtime cap.
 - **Comparable metric extraction:** recommended runs enable cross-site evaluation and extract a single score from `cross_val_results.json`.
 - **Run keep / discard loop:** on one local H100, the agent can launch several same-budget candidates concurrently when the 80 GB memory budget allows, then rank the completed batch against the ledger and keep, narrow, or discard.
 - **Autonomous continuation:** after setup and baseline, the agent keeps running same-budget candidates until manually interrupted.
@@ -173,9 +173,10 @@ Treat that PYTHON value as authoritative. First verify it with `test -x "$PYTHON
 Do not create a virtual environment, install dependencies, or search for alternate Python interpreters unless I explicitly ask you to. If `.venv/bin/python` is missing, invalid, or not Python 3.12, stop and tell me to rerun the README preflight in this directory with `python3.12`.
 
 Use the default H100 candidate budget unless `program.md` says otherwise:
---n_clients 8 --num_rounds 20 --aggregation_epochs 4 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
+--n_clients 8 --num_rounds 20 --aggregation_epochs 4 --local_train_steps 0 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
 
 Use cross-site evaluation and keep RUN_TIMEOUT_SECONDS=1200.
+Keep `--num_rounds 20` fixed as the communication budget. You may sweep either `--aggregation_epochs` or `--local_train_steps` as the local-compute budget knob when each candidate stays within RUN_TIMEOUT_SECONDS; do not vary both in the same narrow sweep. `--local_train_steps 0` means epoch-based training with `--aggregation_epochs`; positive values use exact optimizer steps per client per round.
 
 Set PARALLEL_CANDIDATES=4 unless I override it. Use one local GPU; if multiple GPUs are visible, pin candidate runs to CUDA_VISIBLE_DEVICES=0 rather than spreading candidates across devices. Lower the candidate width if CUDA memory, host memory, or I/O contention appears.
 
@@ -199,10 +200,11 @@ Because the current CIFAR-10 validation loader is the same full test set on ever
 The default single-H100 candidate budget is:
 
 ```bash
---n_clients 8 --num_rounds 20 --aggregation_epochs 4 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
+--n_clients 8 --num_rounds 20 --aggregation_epochs 4 --local_train_steps 0 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
 ```
 
 Candidate runs default to a 1200-second timeout through `scripts/run_iteration.sh`, and each appended `results.tsv` row includes `runtime_seconds` for experimental cost accounting. With result logging enabled, `run_iteration.sh` refuses to run outside an `autoresearch/` branch and initializes the `results.tsv` header before the training job starts; the scored row is appended after the candidate exits.
+The agent may optimize local training work with `--aggregation_epochs` or `--local_train_steps` while keeping `--num_rounds 20` fixed. Compare score first, use `runtime_seconds` as the cost/tie-breaker, and keep the full args in the logged `budget` string.
 Training splits are reused across candidates with the same `n_clients`, `alpha`, and `seed` under `/tmp/cifar10_splits/autofl_cifar10_*`. A lock guards split creation, so candidate `--name` values do not create duplicate data-partition directories.
 Client training is deterministic by default for a fixed `--seed`: each site derives a stable per-site RNG seed, PyTorch deterministic algorithms are enabled, cuDNN benchmarking is disabled, and DataLoader shuffling/workers are seeded. Use `--no_deterministic_training` only for a deliberately faster but noisier subcampaign, and do not compare those scores directly with deterministic runs.
 
@@ -228,7 +230,7 @@ The current harness covers the NVFlare CIFAR-10 simulation benchmark modes that 
 
 SCAFFOLD is an explicit opt-in protocol mode. It still preserves the core model contract (`ParamsType.DIFF`, same model keys, `NUM_STEPS_CURRENT_ROUND`) but it does add SCAFFOLD-specific metadata, so keep SCAFFOLD comparisons labeled separately from strict no-extra-meta baselines.
 
-The first post-baseline calibration should run these algorithm families before broader tuning. Run them in batches of up to `PARALLEL_CANDIDATES` concurrent candidates on the same H100 under the same fixed budget:
+The first post-baseline calibration should run these algorithm families before broader tuning. Run them in batches of up to `PARALLEL_CANDIDATES` concurrent candidates on the same H100 under the same communication and local-compute budget:
 
 | Step | Description | Extra args |
 | --- | --- | --- |
