@@ -19,6 +19,8 @@ Launch with:
     python -m torch.distributed.run --nnodes=1 --nproc_per_node=2 --master_port=7777 client.py
 """
 
+import os
+
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -31,8 +33,18 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 # (1) import nvflare client API
 import nvflare.client as flare
 
-DATASET_PATH = "/var/tmp/nvflare/data"
+STUDY_DATASET_PATH = "/data/cifar10/data"
 CHECKPOINT_PATH = "./cifar_net.pth"
+
+
+def _default_dataset_path():
+    if os.path.isdir(STUDY_DATASET_PATH):
+        return STUDY_DATASET_PATH
+    job_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return os.path.join(job_root, "data")
+
+
+DATASET_PATH = os.environ.get("NVFL_CIFAR10_ROOT", _default_dataset_path())
 
 
 # wraps evaluation logic into a method to re-use for

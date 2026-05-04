@@ -62,7 +62,28 @@ GPUs directly. The default `GPUResourceManager` will reject all jobs. Replace it
 }
 ```
 
-## Step 5: Start server and clients
+## Step 5: Configure CIFAR-10 data mount for PyTorch jobs
+
+The PyTorch examples declare `"study": "cifar10"` and look for CIFAR-10 at
+`/data/cifar10/data` when that Docker study-data mount is present. Create a
+site-local `study_data.yaml` for each Docker-mode client site that should reuse
+a host-side dataset cache:
+
+```bash
+mkdir -p /tmp/nvflare/cifar10
+cat > workspace/docker_test_project/prod_00/site-1/local/study_data.yaml <<'EOF'
+cifar10:
+  data:
+    source: /tmp/nvflare/cifar10
+    mode: rw
+EOF
+```
+
+The `rw` mode lets `torchvision.datasets.CIFAR10(..., download=True)` populate
+the host cache on first run. If this file is omitted, the examples fall back to
+a writable `data/` directory inside each job workspace.
+
+## Step 6: Start server and clients
 
 This example runs in **hybrid mode**: site-1 uses Docker job launcher (`start_docker.sh`),
 site-2 runs in process mode (`start.sh`). This tests that both modes work together in the
@@ -84,7 +105,7 @@ cd workspace/docker_test_project/prod_00/site-2
 bash startup/start.sh
 ```
 
-## Step 6: Submit a job
+## Step 7: Submit a job
 
 ```bash
 nvflare job submit \
@@ -111,6 +132,8 @@ Available jobs:
   ```
   Sites without a `docker` entry (e.g. `site-2` in these examples) run in process mode. Both
   modes can coexist in the same job.
+- Jobs with a `study` entry use `local/study_data.yaml` on Docker-mode sites to
+  bind host data paths into the job container at `/data/<study>/<dataset>`.
 - Site-level Docker defaults (e.g. `shm_size`, `ipc_mode`) can be set via
   `default_job_container_kwargs` in `resources.json` — job-level `resource_spec` takes
   precedence on conflict.
@@ -118,8 +141,9 @@ Available jobs:
   Set this site-wide with `default_job_env` in `resources.json`, for example:
   ```json
   "default_job_env": {"NCCL_P2P_DISABLE": "1"}
-  ```
-- Workspace files are bind-mounted at `/var/tmp/nvflare/workspace` inside all containers.
+- Workspace files are bind-mounted read-write into SP/CP containers. Job containers get a
+  filtered read-only workspace view and a read-write bind mount for only their own job
+  workspace.
 - Job containers run as the same UID/GID as the SP/CP so all workspace files remain
   readable and writable by the parent process.
 - To watch job container logs: `docker logs -f <site>-<job_id>`

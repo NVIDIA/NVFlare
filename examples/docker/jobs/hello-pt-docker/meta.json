@@ -1,5 +1,6 @@
 {
     "name": "hello-pt",
+    "study": "cifar10",
     "min_clients": 2,
     "deploy_map": {
         "app": ["site-1", "server", "site-2"]

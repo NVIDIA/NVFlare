@@ -1,5 +1,6 @@
 {
     "name": "pt_ddp",
+    "study": "cifar10",
     "min_clients": 2,
     "deploy_map": {
         "app_server": ["server"],
