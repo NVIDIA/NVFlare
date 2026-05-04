@@ -266,6 +266,7 @@ class TestDockerJobHandleTerminalState:
         assert rc == JobReturnCode.SUCCESS
         assert h.terminal_state == JobReturnCode.SUCCESS
 
+
 # ---------------------------------------------------------------------------
 # DockerJobHandle — terminate
 # ---------------------------------------------------------------------------
