@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -102,6 +103,78 @@ class TestPrepareRuntimeKits:
                 str(config_path),
             ]
         ]
+
+    def test_injects_server_forwarded_system_monitoring_after_prepare(self, monkeypatch, tmp_path):
+        prod_dir = tmp_path / "prod"
+        work_dir = tmp_path / ".work"
+        for site in ("gcp-server", "aws-client-2"):
+            (prod_dir / site / "local").mkdir(parents=True)
+
+        common_prepare = {
+            "runtime": "k8s",
+            "parent": {
+                "docker_image": "repo/image:tag",
+                "workspace_pvc": "nvflws",
+                "workspace_mount_path": "/var/tmp/nvflare/workspace",
+            },
+            "job_launcher": {"default_python_path": "/usr/local/bin/python3"},
+        }
+        participants = [
+            DEPLOY_MODULE.Participant(
+                name="gcp-server",
+                namespace="nvflare-server",
+                kubeconfig="/tmp/gcp",
+                role="server",
+                cloud="gcp",
+                prepare=common_prepare,
+            ),
+            DEPLOY_MODULE.Participant(
+                name="aws-client-2",
+                namespace="nvflare-client-2",
+                kubeconfig="/tmp/aws",
+                role="client",
+                cloud="aws",
+                prepare=common_prepare,
+            ),
+        ]
+        monitoring = DEPLOY_MODULE.MonitoringConfig(
+            enabled=True,
+            namespace="nvflare-all-clouds-monitoring",
+            statsd_host="statsd-exporter.nvflare-all-clouds-monitoring.svc.cluster.local",
+            env="all-clouds",
+        )
+
+        def _run(cmd, **kwargs):
+            output_dir = Path(cmd[cmd.index("--output") + 1])
+            (output_dir / "local").mkdir(parents=True)
+            (output_dir / "local" / "resources.json.default").write_text(
+                json.dumps({"components": [{"id": "k8s_launcher", "path": "launcher", "args": {}}]})
+            )
+            return DEPLOY_MODULE.FakeProc(0)
+
+        monkeypatch.setattr(DEPLOY_MODULE, "WORK_DIR", work_dir)
+        monkeypatch.setattr(DEPLOY_MODULE, "nvflare_cmd", lambda: "nvflare")
+        monkeypatch.setattr(DEPLOY_MODULE, "run", _run)
+
+        prepared = DEPLOY_MODULE.prepare_runtime_kits(prod_dir, participants, monitoring=monitoring)
+
+        server_resources = json.loads((prepared["gcp-server"] / "local" / "resources.json.default").read_text())
+        client_resources = json.loads((prepared["aws-client-2"] / "local" / "resources.json.default").read_text())
+        server_components = {c["id"]: c for c in server_resources["components"]}
+        client_components = {c["id"]: c for c in client_resources["components"]}
+
+        assert {"sys_metrics_collector", "remote_metrics_receiver", "statsd_reporter", "k8s_launcher"} <= set(
+            server_components
+        )
+        assert server_components["statsd_reporter"]["args"] == {
+            "site": "server",
+            "host": "statsd-exporter.nvflare-all-clouds-monitoring.svc.cluster.local",
+            "port": 9125,
+        }
+        assert {"sys_metrics_collector", "event_to_fed", "k8s_launcher"} <= set(client_components)
+        assert "statsd_reporter" not in client_components
+        assert client_components["sys_metrics_collector"]["args"]["streaming_to_server"] is True
+        assert client_components["event_to_fed"]["args"] == {"events_to_convert": ["metrics_event"]}
 
 
 class TestLoadConfig:
@@ -195,6 +268,68 @@ participants:
 
         with pytest.raises(ValueError, match="must define pvc and mode"):
             DEPLOY_MODULE.load_config(config_path)
+
+    def test_loads_enabled_monitoring(self, tmp_path):
+        config_path = tmp_path / "deploy.yaml"
+        config_path.write_text(
+            """
+name: all-clouds
+monitoring:
+  enabled: true
+clouds:
+  gcp:
+    prepare:
+      runtime: k8s
+      parent:
+        docker_image: repo/image:tag
+participants:
+  - {name: gcp-server, cloud: gcp, namespace: nvflare-server, role: server}
+"""
+        )
+
+        config = DEPLOY_MODULE.load_config(config_path)
+
+        assert config.monitoring.enabled is True
+        assert config.monitoring.namespace == "nvflare-all-clouds-monitoring"
+        assert config.monitoring.statsd_host == "statsd-exporter.nvflare-all-clouds-monitoring.svc.cluster.local"
+        assert config.monitoring.statsd_port == 9125
+        assert config.monitoring.env == "all-clouds"
+
+
+class TestMonitoringStack:
+    def test_dry_run_applies_monitoring_stack(self, monkeypatch, capsys):
+        monkeypatch.setattr(DEPLOY_MODULE, "DRY_RUN", True)
+        config = DEPLOY_MODULE.DeployConfig(
+            name="all-clouds",
+            participants=[
+                DEPLOY_MODULE.Participant(
+                    name="gcp-server",
+                    namespace="nvflare-server",
+                    kubeconfig="/tmp/gcp.yaml",
+                    role="server",
+                    cloud="gcp",
+                    prepare={},
+                )
+            ],
+            server_cloud="gcp",
+            gcp_project=None,
+            gcp_region=None,
+            aws_region=None,
+            aws_eks_cluster_name=None,
+            azure_resource_group=None,
+            azure_location=None,
+            monitoring=DEPLOY_MODULE.MonitoringConfig(
+                enabled=True,
+                namespace="nvflare-all-clouds-monitoring",
+                statsd_host="statsd-exporter.nvflare-all-clouds-monitoring.svc.cluster.local",
+            ),
+        )
+
+        DEPLOY_MODULE.deploy_monitoring_stack(config)
+
+        output = capsys.readouterr().out
+        assert "apply -f -" in output
+        assert "name: nvflare-all-clouds-monitoring" in output
 
 
 class TestDryRunGoldenOutput:

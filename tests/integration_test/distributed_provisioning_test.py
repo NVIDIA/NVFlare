@@ -89,7 +89,7 @@ _STARTUP_ADMIN = {"client.crt", "client.key", "fed_admin.json", "fl_admin.sh"}
 
 def _ns(**kwargs):
     """Build a SimpleNamespace with common defaults for CLI args."""
-    defaults = dict(force=True, output_fmt=None, schema=False, org=None)
+    defaults = dict(force=False, output_fmt=None, schema=False, org=None)
     defaults.update(kwargs)
     return types.SimpleNamespace(**defaults)
 
@@ -112,6 +112,7 @@ def _request_participant(project: str, name: str, cert_type: str, org: str = "my
 
 
 def _write_project_profile(path: str, project: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(
             {
@@ -161,8 +162,7 @@ def _run_package(signed_zip: str, request_dir: str, workspace: str, endpoint: st
         endpoint=endpoint,
         request_dir=request_dir,
         workspace=workspace,
-        expected_rootca_fingerprint=None,
-        confirm_rootca=False,
+        expected_fingerprint=None,
     )
     with unittest.mock.patch("nvflare.tool.package.package_commands.output_ok", side_effect=_capture):
         handle_package(args)
@@ -304,25 +304,21 @@ class TestDistributedProvisioningWorkflow:
     # Config consistency tests — server, client, admin configs must agree
     # ------------------------------------------------------------------
 
-    def test_fed_server_json_target_and_sp_end_point(self, provisioned):
+    def test_fed_server_json_target(self, provisioned):
         with open(os.path.join(provisioned[_SERVER_NAME], "startup", "fed_server.json")) as f:
             cfg = json.load(f)
         svc = cfg["servers"][0]["service"]
         assert svc["target"] == "localhost:8002"
         assert svc["scheme"] == "grpc"
-        sp = cfg["overseer_agent"]["args"]["sp_end_point"]
-        assert sp.startswith("localhost:8002:")
 
-    def test_fed_client_sp_end_point_matches_server(self, provisioned):
+    def test_fed_client_target_matches_server(self, provisioned):
         with open(os.path.join(provisioned[_SERVER_NAME], "startup", "fed_server.json")) as f:
-            srv_cfg = json.load(f)
-        server_sp = srv_cfg["overseer_agent"]["args"]["sp_end_point"]
+            srv_target = json.load(f)["servers"][0]["service"]["target"]
 
         for name in ("site-1", "site-2"):
             with open(os.path.join(provisioned[name], "startup", "fed_client.json")) as f:
-                cli_cfg = json.load(f)
-            client_sp = cli_cfg["overseer_agent"]["args"]["sp_end_point"]
-            assert client_sp == server_sp, f"{name} sp_end_point {client_sp!r} != server sp_end_point {server_sp!r}"
+                cli_target = json.load(f)["servers"][0]["service"]["target"]
+            assert cli_target == srv_target, f"{name} target {cli_target!r} != server target {srv_target!r}"
 
     def test_fed_admin_json_port_matches_server(self, provisioned):
         with open(os.path.join(provisioned[_SERVER_NAME], "startup", "fed_server.json")) as f:
@@ -357,13 +353,13 @@ class TestDistributedProvisioningWorkflow:
             else:
                 assert content == ref, f"rootCA.pem in {name} differs from {_PARTICIPANTS[0][0]}"
 
-    def test_no_server_placeholder_dir_in_non_server_kits(self, provisioned):
-        """The server placeholder directory must be removed for non-server kits."""
-        for name in ("site-1", "site-2", "admin@myfl.com"):
-            prod_dir = os.path.dirname(provisioned[name])
-            assert not os.path.exists(
-                os.path.join(prod_dir, _SERVER_NAME)
-            ), f"Server placeholder dir found in prod dir for {name}"
+    def test_all_participants_land_in_same_provision_version_dir(self, provisioned):
+        """Distributed packages signed by the same CA/version land in one prod_00 directory."""
+        prod_dirs = {os.path.dirname(provisioned[name]) for name, _ in _PARTICIPANTS}
+        assert len(prod_dirs) == 1
+        prod_dir = prod_dirs.pop()
+        assert os.path.basename(prod_dir) == "prod_00"
+        assert os.path.isdir(os.path.join(prod_dir, _SERVER_NAME))
 
 
 # ---------------------------------------------------------------------------
@@ -716,7 +712,7 @@ class TestKitParity:
         assert _json_keys_recursive(c) == _json_keys_recursive(d)
 
     def test_fed_server_json_endpoint_values_match(self, parity_kits):
-        """fed_server.json target, scheme, and sp_end_point must be identical."""
+        """fed_server.json target and scheme must be identical."""
         centralized, distributed = parity_kits
         with open(os.path.join(centralized["localhost"], "startup", "fed_server.json")) as f:
             c = json.load(f)
@@ -725,16 +721,15 @@ class TestKitParity:
         assert c["servers"][0]["service"]["target"] == d["servers"][0]["service"]["target"]
         assert c["servers"][0]["service"]["scheme"] == d["servers"][0]["service"]["scheme"]
         assert c["servers"][0]["admin_port"] == d["servers"][0]["admin_port"]
-        assert c["overseer_agent"]["args"]["sp_end_point"] == d["overseer_agent"]["args"]["sp_end_point"]
 
-    def test_fed_client_sp_end_point_matches_server(self, parity_kits):
-        """fed_client.json sp_end_point must match fed_server.json in both workflows."""
+    def test_fed_client_target_matches_server(self, parity_kits):
+        """fed_client.json target must match fed_server.json in both workflows."""
         for kit_dirs in parity_kits:
             with open(os.path.join(kit_dirs["localhost"], "startup", "fed_server.json")) as f:
-                srv_sp = json.load(f)["overseer_agent"]["args"]["sp_end_point"]
+                srv_target = json.load(f)["servers"][0]["service"]["target"]
             with open(os.path.join(kit_dirs["site-1"], "startup", "fed_client.json")) as f:
-                cli_sp = json.load(f)["overseer_agent"]["args"]["sp_end_point"]
-            assert cli_sp == srv_sp
+                cli_target = json.load(f)["servers"][0]["service"]["target"]
+            assert cli_target == srv_target
 
     def test_cert_key_content_differs(self, parity_kits):
         """Cert and key files must differ — each workflow uses its own CA."""

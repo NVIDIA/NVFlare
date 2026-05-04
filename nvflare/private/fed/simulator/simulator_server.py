@@ -106,7 +106,6 @@ class SimulatorServer(FederatedServer):
         secure_train=False,
         enable_byoc=False,
         snapshot_persistor=None,
-        overseer_agent=None,
     ):
         super().__init__(
             project_name,
@@ -119,7 +118,6 @@ class SimulatorServer(FederatedServer):
             secure_train,
             # enable_byoc,
             snapshot_persistor,
-            overseer_agent,
         )
 
         self.job_cell = None

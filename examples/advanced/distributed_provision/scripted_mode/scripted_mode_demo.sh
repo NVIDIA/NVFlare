@@ -4,7 +4,7 @@ set -euo pipefail
 # Simple scripted-mode demo for the same federation used by interactive_mode.
 #
 # Initial setup:
-#   1. Project Admin initializes the CA.
+#   1. Project Admin initializes the CA with deploy version 00.
 #
 # What the default mode automates:
 #   1. Requesters create request zips from the checked-in participant YAML files.
@@ -22,6 +22,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PROJECT_NAME="fed_project"
+PROVISION_VERSION="00"
 
 # Demo inputs. These YAML files are checked in the parent example directory.
 PARTICIPANTS=(
@@ -124,7 +125,7 @@ package_participant() {
 
   rootca_fp="$(json_field "${approve_json}" data.rootca_fingerprint_sha256)"
   run_logged_to_file "${output_file}" \
-    nvflare package "${name}.signed.zip" --expected-rootca-fingerprint "${rootca_fp}" --force --format json
+    nvflare package "${name}.signed.zip" --fingerprint "${rootca_fp}" --format json
 }
 
 # Process command-line arguments and check required commands.
@@ -154,8 +155,8 @@ require_command python3
 
 if [[ "${MODE}" == "initial" ]]; then
   # Setup the output directory. The initial demo requires a fresh work directory
-  # so a run does not mix old request, signed zip, or prod_NN artifacts with new
-  # output.
+  # so a run does not mix old request, signed zip, or versioned package
+  # artifacts with new output.
   if [[ -e "${WORK_DIR}" ]]; then
     echo "Work directory already exists: ${WORK_DIR}" >&2
     echo "Choose a new path or remove the existing directory first." >&2
@@ -212,7 +213,7 @@ fi
 # Setup step: Project Admin creates the CA material needed to approve requests.
 show "Project Admin initializes CA"
 run_logged_to_file 01_cert_init.json \
-  nvflare cert init --profile "${BASE_DIR}/project_profile.yaml" -o ca --force --format json
+  nvflare cert init --profile "${BASE_DIR}/project_profile.yaml" -o ca --deploy-version "${PROVISION_VERSION}" --force --format json
 
 # Start of the automated distributed provisioning process.
 #
