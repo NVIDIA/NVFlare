@@ -107,7 +107,9 @@ Before starting the container shell, make sure `.devcontainer/devcontainer.json`
 
 ```json
 {
-  "runArgs": ["--gpus=all"]
+  "runArgs": [
+    "--gpus=all"
+  ]
 }
 ```
 
@@ -192,9 +194,9 @@ Treat that PYTHON value as authoritative. First verify it with `test -x "$PYTHON
 Do not create a virtual environment, install dependencies, or search for alternate Python interpreters unless I explicitly ask you to. If `.venv/bin/python` is missing, invalid, or not Python 3.12, stop and tell me to rerun the README preflight in this directory with `python3.12`.
 
 Use the default H100 candidate budget unless `program.md` says otherwise:
---n_clients 8 --num_rounds 10 --aggregation_epochs 4 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
+--n_clients 8 --num_rounds 20 --aggregation_epochs 4 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
 
-Use cross-site evaluation and keep RUN_TIMEOUT_SECONDS=600.
+Use cross-site evaluation and keep RUN_TIMEOUT_SECONDS=1200.
 
 Set PARALLEL_CANDIDATES=4 unless I override it. Use one local GPU; if multiple GPUs are visible, pin candidate runs to CUDA_VISIBLE_DEVICES=0 rather than spreading candidates across devices. Lower the candidate width if CUDA memory, host memory, or I/O contention appears.
 
