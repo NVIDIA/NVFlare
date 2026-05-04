@@ -96,16 +96,3 @@ class TestFlowerJob:
             )
             call_kwargs = mock_controller.call_args.kwargs
             assert call_kwargs["flower_app_path"] == "/opt/flower_apps/my_app"
-
-    def test_flower_job_propagates_flower_app_path_to_executor(self):
-        with (
-            patch("nvflare.app_opt.flower.flower_job.FlowerController", return_value=_make_mock_component("server")),
-            patch("nvflare.app_opt.flower.flower_job.FlowerExecutor") as mock_executor,
-        ):
-            mock_executor.return_value = _make_mock_component("client")
-            FlowerJob(
-                name="test_job",
-                flower_app_path="/opt/flower_apps/my_app",
-            )
-            call_kwargs = mock_executor.call_args.kwargs
-            assert call_kwargs["flower_app_path"] == "/opt/flower_apps/my_app"

@@ -100,18 +100,6 @@ def test_flower_recipe_with_predeployed_path(flwr_version):
     assert kwargs["flower_content"] is None
 
 
-@pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])
-def test_flower_recipe_passes_content_and_path_through(flwr_version):
-    fake_job = object()
-    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value=flwr_version):
-        with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job) as mock_flower_job:
-            recipe = FlowerRecipe(flower_content="mock_flower_content", flower_app_path="/opt/flower_apps/my_app")
-
-    kwargs = mock_flower_job.call_args.kwargs
-    assert kwargs["flower_content"] == "mock_flower_content"
-    assert kwargs["flower_app_path"] == "/opt/flower_apps/my_app"
-
-
 def test_flower_recipe_rejects_both_content_and_path():
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.26.0"):
         with patch(

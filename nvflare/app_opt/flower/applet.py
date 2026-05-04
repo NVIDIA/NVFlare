@@ -133,12 +133,14 @@ class FlowerClientApplet(CLIApplet):
         self,
         extra_env: dict = None,
         allow_runtime_dependency_installation: bool = False,
-        flower_app_path: Optional[str] = None,
     ):
-        """Constructor of FlowerClientApplet, which extends CLIApplet."""
+        """Constructor of FlowerClientApplet, which extends CLIApplet.
+
+        Note: flower_app_path is not used on clients - the Flower app is distributed
+        from the server via Flower's FAB mechanism.
+        """
         CLIApplet.__init__(self, stop_method="term")
         self.allow_runtime_dependency_installation = allow_runtime_dependency_installation
-        self.flower_app_path = flower_app_path
 
         # Ensure PATH includes the venv bin directory so Flower's internal
         # subprocesses (flower-superexec, etc.) can find executables

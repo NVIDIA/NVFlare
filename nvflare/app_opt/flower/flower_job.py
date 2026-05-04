@@ -100,7 +100,6 @@ class FlowerJob(FedJob):
             client_shutdown_timeout=client_shutdown_timeout,
             extra_env=extra_env,
             allow_runtime_dependency_installation=allow_runtime_dependency_installation,
-            flower_app_path=flower_app_path,
         )
         self.to_clients(executor)
         if flower_content:
