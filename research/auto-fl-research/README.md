@@ -82,10 +82,7 @@ npm install -g @devcontainers/cli
 git clone https://github.com/trailofbits/claude-code-devcontainer ~/.claude-devcontainer
 ~/.claude-devcontainer/install.sh self-install
 
-# From this repository checkout, make the Auto-FL harness the devcontainer workspace.
-cd research/auto-fl-research
-
-# Install the template without starting it.
+# From the NVFlare repository root, install the template without starting it.
 devc template .
 ```
 
@@ -108,9 +105,10 @@ devc up
 devc shell
 ```
 
-This workflow assumes the workspace is a writable git checkout or worktree, not a source archive, and that the agent can create commits and push branches without another credentials handoff. Before an overnight run, verify the container has git identity and SSH access to the fork or working remote:
+This workflow assumes `/workspace` is a writable NVFlare git clone, not a source archive, and that the agent can create commits and push branches without another credentials handoff. Before an overnight run, verify the container has git identity and SSH access to the fork or working remote:
 
 ```bash
+cd /workspace/research/auto-fl-research
 git remote -v
 git config user.name
 git config user.email
@@ -119,11 +117,13 @@ ssh -T git@github.com
 
 If you use a devcontainer, make sure your SSH agent is forwarded into the container or an appropriate GitHub SSH key is available there. Without this, the agent can still run local experiments, but it will stop when it needs to push a branch or commit reporting artifacts.
 
-Inside the container, stay in `/workspace`, which is the mounted `research/auto-fl-research` harness directory. Install this harness' Python requirements once with Python 3.12, export the prepared interpreter, and run preflight before handing control to the agent. Do not use the container's default `python3` if it points to Python 3.13. For Debian/Ubuntu-based devcontainers, install Python 3.12 first if it is missing.
+Inside the container, `cd` to `/workspace/research/auto-fl-research`, install this harness' Python requirements once with Python 3.12, export the prepared interpreter, and run preflight before handing control to the agent. Do not use the container's default `python3` if it points to Python 3.13. For Debian/Ubuntu-based devcontainers, install Python 3.12 first if it is missing.
 
-Run the following from `/workspace`. This directory is the entry point for the harness, and it contains the `Makefile`, `requirements.txt`, `program.md`, and run scripts:
+Run the following from `/workspace/research/auto-fl-research`. This directory is the entry point for the harness, and it contains the `Makefile`, `requirements.txt`, `program.md`, and run scripts:
 
 ```bash
+cd /workspace/research/auto-fl-research
+
 if ! command -v python3.12 >/dev/null 2>&1; then
   sudo apt-get update
   sudo apt-get install -y python3.12 python3.12-venv python3.12-dev
@@ -160,7 +160,7 @@ For Claude Code, start the agent from the devcontainer shell with:
 claude --permission-mode auto
 ```
 
-For Codex CLI, install it inside the same devcontainer if needed, start Codex from `/workspace`, then use `/permissions` to set permissions inside the Codex session to `Auto-review`
+For Codex CLI, install it inside the same devcontainer if needed, start Codex from `/workspace/research/auto-fl-research`, then use `/permissions` to set permissions inside the Codex session to `Auto-review`
 
 Keep the devcontainer boundary meaningful: mount only the repository and deliberate scratch/drop paths, avoid mounting broad host directories or secrets, and remember that the container may still have outbound network access, git identity, and forwarded SSH-agent access depending on how it is configured. For overnight runs, use `tmux` or the devcontainer's persistent shell workflow so the agent can keep running after you disconnect.
 
