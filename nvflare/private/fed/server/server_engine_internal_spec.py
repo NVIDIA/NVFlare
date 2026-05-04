@@ -159,6 +159,30 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
+    def disable_clients(self, client_names: [str]) -> dict:
+        """Disable specified clients so they cannot rejoin until enabled.
+
+        Args:
+            client_names: client names to disable
+
+        Returns:
+             A result dictionary describing disabled clients.
+        """
+        pass
+
+    @abstractmethod
+    def enable_clients(self, client_names: [str]) -> dict:
+        """Enable specified disabled clients so they can rejoin.
+
+        Args:
+            client_names: client names to enable
+
+        Returns:
+             A result dictionary describing enabled clients.
+        """
+        pass
+
+    @abstractmethod
     def restart_server(self) -> str:
         """Restart the server.
 

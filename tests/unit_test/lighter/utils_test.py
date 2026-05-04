@@ -127,6 +127,35 @@ def test_generate_cert_ca_key_usage_is_restricted():
     assert key_usage.key_agreement is False
 
 
+def test_generate_cert_rejects_reserved_extra_extensions():
+    root_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+    subject_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+
+    with pytest.raises(ValueError, match="reserved extension OID"):
+        lighter_generate_cert(
+            subject=Identity("client", "nvidia"),
+            issuer=Identity("root", "nvidia"),
+            signing_pri_key=root_pri_key,
+            subject_pub_key=subject_pri_key.public_key(),
+            extra_extensions=[(x509.SubjectAlternativeName([x509.DNSName("client")]), False)],
+        )
+
+
+def test_generate_cert_rejects_duplicate_extra_extensions():
+    root_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+    subject_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+    eku = x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH])
+
+    with pytest.raises(ValueError, match="duplicate extra extension OID"):
+        lighter_generate_cert(
+            subject=Identity("client", "nvidia"),
+            issuer=Identity("root", "nvidia"),
+            signing_pri_key=root_pri_key,
+            subject_pub_key=subject_pri_key.public_key(),
+            extra_extensions=[(eku, False), (eku, False)],
+        )
+
+
 def create_folder():
     tmp_dir = tempfile.TemporaryDirectory().name
     for folder in folders:

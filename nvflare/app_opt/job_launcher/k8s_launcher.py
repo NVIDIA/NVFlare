@@ -343,9 +343,10 @@ class K8sJobLauncher(JobLauncherSpec):
         timeout=None,
         namespace=DEFAULT_NAMESPACE,
         pending_timeout=DEFAULT_PENDING_TIMEOUT,
-        python_path=DEFAULT_PYTHON_PATH,
+        python_path=None,
         security_context: dict = None,
         ephemeral_storage: str = DEFAULT_EPHEMERAL_STORAGE,
+        default_python_path: str = None,
     ):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -354,7 +355,11 @@ class K8sJobLauncher(JobLauncherSpec):
         self.timeout = timeout
         self.namespace = namespace
         self.pending_timeout = pending_timeout
-        self.python_path = python_path
+        self.default_python_path = default_python_path if default_python_path is not None else python_path
+        if self.default_python_path is None:
+            self.default_python_path = DEFAULT_PYTHON_PATH
+        if not isinstance(self.default_python_path, str) or not self.default_python_path:
+            raise ValueError("default_python_path must be a non-empty string")
         self.security_context = security_context
         self.ephemeral_storage = ephemeral_storage
         self.study_data_pvc_dict = None
@@ -457,11 +462,17 @@ class K8sJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"missing {JobProcessArgs.EXE_MODULE} in {FLContextKey.JOB_PROCESS_ARGS}")
         _, job_cmd = exe_module_entry
 
+        workspace_root = args.workspace
         env = {}
         if app_custom_folder:
-            env["PYTHONPATH"] = app_custom_folder
+            workspace_root_abs = os.path.abspath(workspace_root)
+            custom_folder_abs = os.path.abspath(app_custom_folder)
+            if os.path.commonpath([workspace_root_abs, custom_folder_abs]) != workspace_root_abs:
+                raise RuntimeError(f"custom folder {app_custom_folder} is not under workspace {workspace_root}")
+            env["PYTHONPATH"] = os.path.join(
+                WORKSPACE_MOUNT_PATH, os.path.relpath(custom_folder_abs, workspace_root_abs)
+            )
 
-        workspace_root = args.workspace
         startup_dir = workspace_obj.get_startup_kit_dir()
         engine = fl_ctx.get_engine()
         owner_cell = getattr(engine, "cell", None) if engine else None
@@ -527,6 +538,9 @@ class K8sJobLauncher(JobLauncherSpec):
             job_config["resources"] = resources
             if self.security_context:
                 job_config["security_context"] = self.security_context
+            python_path = k8s_spec.get("python_path", self.default_python_path)
+            if not isinstance(python_path, str) or not python_path:
+                raise RuntimeError(f"launcher_spec['{site_name}']['k8s']['python_path'] must be a non-empty string")
             job_handle = K8sJobHandle(
                 job_id,
                 self.core_v1,
@@ -534,7 +548,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 namespace=self.namespace,
                 timeout=self.timeout,
                 pending_timeout=self.pending_timeout,
-                python_path=self.python_path,
+                python_path=python_path,
                 workspace_transfer=workspace_transfer,
                 workspace_job_id=raw_job_id,
             )

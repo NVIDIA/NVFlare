@@ -52,10 +52,14 @@ Tests verify:
 """
 
 import threading
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.fuel.f3.cellnet.cell import Adapter, Cell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message as F3Message
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -118,6 +122,18 @@ def _headers_without_pass_through(stream_req_id=""):
         StreamHeaderKey.TOPIC: "aggregate",
         MessageHeaderKey.ORIGIN: "client1",
         MessageHeaderKey.REQ_ID: "req-swarm-001",
+        MessageHeaderKey.SECURE: False,
+        MessageHeaderKey.OPTIONAL: False,
+    }
+
+
+def _stream_headers(channel, topic):
+    return {
+        StreamHeaderKey.STREAM_REQ_ID: "stream-1",
+        StreamHeaderKey.CHANNEL: channel,
+        StreamHeaderKey.TOPIC: topic,
+        MessageHeaderKey.ORIGIN: "client1",
+        MessageHeaderKey.REQ_ID: "req-1",
         MessageHeaderKey.SECURE: False,
         MessageHeaderKey.OPTIONAL: False,
     }
@@ -278,6 +294,67 @@ class TestAdapterPassThroughHeader:
         # Verify the cell method was called with props, not without
         cell = adapter.cell
         cell.get_fobs_context.assert_called_once_with(props={FOBSContextKey.PASS_THROUGH: True})
+
+    @pytest.mark.parametrize("fqcn", ["server.job-1", "server.job-1.cell_pipe"])
+    def test_submit_update_decode_failure_exits_server_job_process(self, fqcn):
+        captured = {}
+        cell = _make_mock_cell(captured)
+        cb = MagicMock()
+        adapter = Adapter(cb=cb, my_info=SimpleNamespace(fqcn=fqcn), cell=cell)
+
+        headers = _stream_headers(CellChannel.SERVER_COMMAND, ServerCommandNames.SUBMIT_UPDATE)
+        future = _make_future(headers, payload=b"encoded-result")
+
+        with patch("nvflare.fuel.f3.cellnet.cell.decode_payload", side_effect=OSError("No space left on device")):
+            with patch("nvflare.fuel.f3.cellnet.cell.os._exit", side_effect=SystemExit(1)) as mock_exit:
+                with pytest.raises(SystemExit) as ex_info:
+                    adapter.call(future)
+
+        assert ex_info.value.code == 1
+        mock_exit.assert_called_once_with(1)
+        cb.assert_not_called()
+        cell.send_blob.assert_not_called()
+
+    def test_submit_update_decode_failure_on_parent_server_cell_is_raised(self):
+        captured = {}
+        cell = _make_mock_cell(captured)
+        cb = MagicMock()
+        adapter = Adapter(cb=cb, my_info=SimpleNamespace(fqcn="server"), cell=cell)
+
+        headers = _stream_headers(CellChannel.SERVER_COMMAND, ServerCommandNames.SUBMIT_UPDATE)
+        future = _make_future(headers, payload=b"encoded-result")
+
+        with patch("nvflare.fuel.f3.cellnet.cell.decode_payload", side_effect=OSError("No space left on device")):
+            with patch("nvflare.fuel.f3.cellnet.cell.os._exit") as mock_exit:
+                with pytest.raises(OSError, match="No space left on device"):
+                    adapter.call(future)
+
+        mock_exit.assert_not_called()
+        cb.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "channel, topic",
+        [
+            (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK),
+            (CellChannel.AUX_COMMUNICATION, ServerCommandNames.SUBMIT_UPDATE),
+        ],
+    )
+    def test_decode_failure_on_other_server_job_streams_is_raised(self, channel, topic):
+        captured = {}
+        cell = _make_mock_cell(captured)
+        cb = MagicMock()
+        adapter = Adapter(cb=cb, my_info=SimpleNamespace(fqcn="server.job-1"), cell=cell)
+
+        headers = _stream_headers(channel, topic)
+        future = _make_future(headers, payload=b"encoded-result")
+
+        with patch("nvflare.fuel.f3.cellnet.cell.decode_payload", side_effect=OSError("No space left on device")):
+            with patch("nvflare.fuel.f3.cellnet.cell.os._exit") as mock_exit:
+                with pytest.raises(OSError, match="No space left on device"):
+                    adapter.call(future)
+
+        mock_exit.assert_not_called()
+        cb.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

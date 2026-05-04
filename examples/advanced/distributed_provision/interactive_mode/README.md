@@ -1,172 +1,196 @@
-# Distributed Provisioning — Interactive Mode (Bash)
+# Distributed Provisioning - Interactive Mode
 
-Role-separated shell scripts for a step-by-step federated provisioning flow.
-Each step is owned by either the **Project Admin** or a **Site Admin**.
+This demo shows the role-separated distributed provisioning flow with direct
+`nvflare` CLI commands. There is no wrapper script: each command is what a human
+Project Admin or requester runs.
 
-## Example scenario
+Run all commands in this README from the parent `distributed_provision`
+directory, not from `interactive_mode/`. The command examples use paths such as
+`server.yaml` and `project_profile.yaml`, and those files are in the parent
+directory.
 
-| Role | Name | Type | Org | Host |
+```bash
+cd examples/advanced/distributed_provision
+```
+
+The shared demo input files are checked in the parent directory:
+
+- `project_profile.yaml`: Project Admin profile used for CA initialization and approvals; includes the approved server endpoint.
+- `project.yaml`: Equivalent centralized provisioning project file for comparison.
+- `server.yaml`: server requester participant definition.
+- `site-1.yaml`: client requester participant definition.
+- `site-2.yaml`: client requester participant definition.
+- `alice.yaml`: admin user requester participant definition.
+- `site-3.yaml`: client requester participant definition for dynamic add.
+- `bob.yaml`: admin user requester participant definition for dynamic add.
+
+## Example Scenario
+
+| Role | Name | Type | Org | Server endpoint source |
 |---|---|---|---|---|
-| Project Admin | — | — | NvidiaOrg | (local machine) |
-| Server | `server` | `server` | NvidiaOrg | `server.example.com:8002` |
-| Client 1 | `site-1` | `client` | Org1 | (local machine) |
-| Client 2 | `site-2` | `client` | Org2 | (local machine) |
+| Project Admin | - | - | - | - |
+| Server | `server.example.com` | `server` | nvidia | `project_profile.yaml` |
+| Client 1 | `site-1` | `client` | org1 | signed zip from approval |
+| Client 2 | `site-2` | `client` | org2 | signed zip from approval |
+| User | `alice@nvidia.com` | `admin` | nvidia | signed zip from approval |
 
-Working directory used throughout: `./distprov_demo`
+`org` is required and is validated by NVFlare as an organization name.
 
----
-
-## Step 0 — Create `site.yml` for each participant
-
-Start from the template:
-```bash
-cp ../site.template.yml server.yml
-cp ../site.template.yml site-1.yml
-cp ../site.template.yml site-2.yml
-```
-
-Edit each file so it looks like the examples below.
-
-**`server.yml`**
-```yaml
-name: server
-org: NvidiaOrg
-type: server
-```
-
-**`site-1.yml`**
-```yaml
-name: site-1
-org: Org1
-type: client
-```
-
-**`site-2.yml`**
-```yaml
-name: site-2
-org: Org2
-type: client
-```
-
-> `org` must match `^[A-Za-z0-9_]+$` (no hyphens or spaces).
-
----
-
-## Step 1 — Project Admin: initialise root CA
+## Step 1 - Project Admin: Initialize Root CA
 
 ```bash
-./01_project_admin_init_ca.sh fed-project ./distprov_demo/ca
+nvflare cert init --profile project_profile.yaml -o ca --deploy-version 00
 ```
 
-Outputs: `./distprov_demo/ca/rootCA.pem` and the CA private key.
+This creates `ca/rootCA.pem`, `ca/rootCA.key`, and `ca/ca.json`. The
+`ca.json` metadata records `provision_version: "00"` and the root CA
+fingerprint used in signed approvals.
 
----
+## Step 2 - Requesters: Create Request Zips
 
-## Step 2 — Site Admin: generate CSR + private key
-
-Each site admin runs this on their own machine, one call per site.
+Each requester runs the command for their own participant definition on the
+machine that should keep the private key.
 
 ```bash
-# Server site admin
-./02_site_admin_csr.sh ./server.yml ./distprov_demo/server-csr
-
-# Client site-1 admin
-./02_site_admin_csr.sh ./site-1.yml ./distprov_demo/site-1-csr
-
-# Client site-2 admin
-./02_site_admin_csr.sh ./site-2.yml ./distprov_demo/site-2-csr
+nvflare cert request --participant server.yaml
+nvflare cert request --participant site-1.yaml
+nvflare cert request --participant site-2.yaml
+nvflare cert request --participant alice.yaml
 ```
 
-Each `<csr_dir>` receives `<name>.csr` and `<name>.key`.
-The site admin **keeps the `.key` private** and sends only the `.csr` to the Project Admin.
+Each request creates a local folder named after the participant. For example,
+`site-1/` contains `site-1.key`, `site-1.csr`, `site.yaml`, `request.json`, and
+`site-1.request.zip`.
 
----
+The requester keeps the folder and `.key` private, and sends only the
+`.request.zip` file to the Project Admin.
 
-## Step 3 — Project Admin: sign each CSR
+## Step 3 - Project Admin: Approve Request Zips
 
-The Project Admin receives the `.csr` files and signs them one at a time.
+The Project Admin approves the received zip files directly with the local
+`project_profile.yaml`. The profile is the source of the server endpoint:
+`server.host`, `server.fed_learn_port`, and `server.admin_port`.
 
 ```bash
-./03_project_admin_sign.sh \
-  ./distprov_demo/server-csr/server.csr \
-  ./distprov_demo/ca \
-  ./distprov_demo/server-signed
-
-./03_project_admin_sign.sh \
-  ./distprov_demo/site-1-csr/site-1.csr \
-  ./distprov_demo/ca \
-  ./distprov_demo/site-1-signed
-
-./03_project_admin_sign.sh \
-  ./distprov_demo/site-2-csr/site-2.csr \
-  ./distprov_demo/ca \
-  ./distprov_demo/site-2-signed
+nvflare cert approve server.example.com/server.example.com.request.zip --ca-dir ca --profile project_profile.yaml
+nvflare cert approve site-1/site-1.request.zip --ca-dir ca --profile project_profile.yaml
+nvflare cert approve site-2/site-2.request.zip --ca-dir ca --profile project_profile.yaml
+nvflare cert approve alice@nvidia.com/alice@nvidia.com.request.zip --ca-dir ca --profile project_profile.yaml
 ```
 
-Each `<out_dir>` receives `<name>.crt` and `rootCA.pem`.
-The script prints the `rootCA.pem` SHA256 fingerprint — share it with each site admin
-through a **trusted out-of-band channel** (e.g. a secure Slack DM or signed email)
-so they can verify it before packaging.
+Each approval command creates a `<name>.signed.zip` next to the request zip.
+The signed zip includes the approved server endpoint information from
+`project_profile.yaml`. Return only this signed zip to the matching requester.
 
----
+The approval command prints `rootca_fingerprint_sha256`. Share this value with
+the requester through a trusted out-of-band channel so they can verify it before
+packaging.
 
-## Step 4 — Site Admin: assemble bundle and package startup kit
+## Step 4 - Requesters: Package Startup Kits
 
-Each site admin assembles a bundle directory containing:
-- `<name>.key` (kept from Step 2)
-- `<name>.crt` and `rootCA.pem` (received from the Project Admin in Step 3)
-
-Then runs `04_site_admin_package.sh`. The script prints the `rootCA.pem` fingerprint
-and asks for confirmation before building the kit.
+Recommended trust-checked packaging uses the `rootca_fingerprint_sha256` value
+shared by the Project Admin:
 
 ```bash
-# Server site admin
-mkdir -p ./distprov_demo/server-bundle
-cp ./distprov_demo/server-csr/server.key   ./distprov_demo/server-bundle/
-cp ./distprov_demo/server-signed/server.crt ./distprov_demo/server-bundle/
-cp ./distprov_demo/server-signed/rootCA.pem ./distprov_demo/server-bundle/
-
-./04_site_admin_package.sh \
-  ./server.yml \
-  grpc://server.example.com:8002 \
-  ./distprov_demo/server-bundle
-
-# Client site-1 admin
-mkdir -p ./distprov_demo/site-1-bundle
-cp ./distprov_demo/site-1-csr/site-1.key    ./distprov_demo/site-1-bundle/
-cp ./distprov_demo/site-1-signed/site-1.crt ./distprov_demo/site-1-bundle/
-cp ./distprov_demo/site-1-signed/rootCA.pem ./distprov_demo/site-1-bundle/
-
-./04_site_admin_package.sh \
-  ./site-1.yml \
-  grpc://server.example.com:8002 \
-  ./distprov_demo/site-1-bundle
-
-# Client site-2 admin
-mkdir -p ./distprov_demo/site-2-bundle
-cp ./distprov_demo/site-2-csr/site-2.key    ./distprov_demo/site-2-bundle/
-cp ./distprov_demo/site-2-signed/site-2.crt ./distprov_demo/site-2-bundle/
-cp ./distprov_demo/site-2-signed/rootCA.pem ./distprov_demo/site-2-bundle/
-
-./04_site_admin_package.sh \
-  ./site-2.yml \
-  grpc://server.example.com:8002 \
-  ./distprov_demo/site-2-bundle
+nvflare package server.example.com/server.example.com.signed.zip --fingerprint <rootca_fingerprint_sha256>
+nvflare package site-1/site-1.signed.zip --fingerprint <rootca_fingerprint_sha256>
+nvflare package site-2/site-2.signed.zip --fingerprint <rootca_fingerprint_sha256>
+nvflare package alice@nvidia.com/alice@nvidia.com.signed.zip --fingerprint <rootca_fingerprint_sha256>
 ```
 
-The startup kits are written into the standard NVFlare production directory
-(`~/nvflare/poc/<project>/prod_00/` by default).
+`nvflare package` uses the signed zip endpoint information and the local request
+folder containing the private key. No endpoint, project-file, or template
+argument is needed. The startup kits are written under
+`workspace/<project>/prod_00/<name>/` because this demo initializes the CA with
+deploy version `00`. All four packages land under the same `prod_00`
+directory.
 
----
+For a quick local demo where you intentionally skip the out-of-band fingerprint
+check, omit `--fingerprint`:
 
-## Notes
+```bash
+nvflare package server.example.com/server.example.com.signed.zip
+nvflare package site-1/site-1.signed.zip
+nvflare package site-2/site-2.signed.zip
+nvflare package alice@nvidia.com/alice@nvidia.com.signed.zip
+```
 
-- `openssl` is required by `04_site_admin_package.sh` to display and verify the
-  `rootCA.pem` fingerprint before packaging.
-- Root CA initialisation does **not** require an `org` in `site.yml`.
-- `org` **is required** for every participant and must match `^[A-Za-z0-9_]+$`.
-- To override a participant's role at signing time, pass the type as a fourth
-  argument to `03_project_admin_sign.sh`:
-  ```bash
-  ./03_project_admin_sign.sh <csr_path> <ca_dir> <out_dir> org_admin
-  ```
+## Dynamic Provisioning - Add Participants Later
+
+After the project has started, do not run `cert init` again and do not
+repackage existing participants. A new participant repeats the same
+request/approve/package flow with the existing Project Admin `ca/` directory and
+`project_profile.yaml`, so the new signed zip receives the same approved server
+endpoint.
+
+Example: add a new client site:
+
+```bash
+nvflare cert request --participant site-3.yaml
+nvflare cert approve site-3/site-3.request.zip --ca-dir ca --profile project_profile.yaml
+nvflare package site-3/site-3.signed.zip
+```
+
+Example: add a new admin user:
+
+```bash
+nvflare cert request --participant bob.yaml
+nvflare cert approve bob@nvidia.com/bob@nvidia.com.request.zip --ca-dir ca --profile project_profile.yaml
+nvflare package bob@nvidia.com/bob@nvidia.com.signed.zip
+```
+
+The new participant receives a new startup kit under
+`workspace/fed_project/prod_00/<name>/` when using the existing deploy version
+`00`
+CA. Existing startup kits are left as-is.
+Provisioning creates the identity and startup kit; study membership and other
+runtime policy changes are managed separately.
+
+## Compare With Centralized Provisioning
+
+`project.yaml` describes the same project and participants in the centralized
+provisioning format. Run centralized provisioning from the same parent
+`distributed_provision` directory:
+
+```bash
+nvflare provision -p project.yaml -w centralized_workspace --force
+```
+
+Now compare the generated startup-kit layout:
+
+```bash
+find workspace/fed_project -path '*/startup' -type d | sort
+find centralized_workspace/fed_project -path '*/startup' -type d | sort
+```
+
+Expected layout:
+
+- Distributed interactive provisioning packages one signed zip at a time, but
+  the deploy version comes from the CA. Because this demo uses deploy version
+  `00`,
+  all distributed kits are generated under
+  `workspace/fed_project/prod_00/<name>/startup`.
+- Centralized provisioning generates all participant kits in one run, so the
+  kits are together under
+  `centralized_workspace/fed_project/prod_00/<name>/startup`.
+
+The startup-kit contents for each participant should be equivalent. To inspect
+the generated files:
+
+```bash
+find workspace/fed_project -path '*/startup/*' -type f | sort
+find centralized_workspace/fed_project -path '*/startup/*' -type f | sort
+```
+
+The distributed flow also leaves the role-specific request folders,
+`*.request.zip`, and `*.signed.zip` files because those are the artifacts passed
+between requesters and the Project Admin. The centralized flow uses the single
+`project.yaml` directly and does not model that handoff.
+
+## Optional - Custom Builders
+
+`cert request` and `cert approve` only handle identity and certificate approval.
+If a participant needs custom startup-kit generation, add `builders:` to that
+participant definition before running `cert request`. `nvflare package` honors
+those builders from the local request folder when it builds the signed
+participant's kit.

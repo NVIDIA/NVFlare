@@ -16,7 +16,7 @@ import json
 import os
 import tempfile
 from copy import deepcopy
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from nvflare.apis.client import ClientPropKey
 from nvflare.apis.fl_constant import AdminCommandNames
@@ -28,6 +28,7 @@ from nvflare.fuel.hci.proto import ConfirmMethod, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.security.study_registry import StudyRegistry, StudyRegistryService
@@ -109,7 +110,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
                     description="list visible studies",
                     usage=AdminCommandNames.LIST_STUDIES,
                     handler_func=self.cmd_list_studies,
-                    authz_func=self.authorize_study_admin,
+                    authz_func=self.authorize_list_studies,
                     visible=True,
                 ),
                 CommandSpec(
@@ -142,6 +143,15 @@ class StudyCommandModule(CommandModule, CommandUtil):
     def authorize_study_admin(self, conn: Connection, args: List[str]):
         role = conn.get_prop(ConnProps.USER_ROLE, "")
         if role in {"project_admin", "org_admin"}:
+            return PreAuthzReturnCode.OK
+        conn.append_error(f"NOT_AUTHORIZED for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))
+        return PreAuthzReturnCode.ERROR
+
+    def authorize_list_studies(self, conn: Connection, args: List[str]):
+        role = conn.get_prop(ConnProps.USER_ROLE, "")
+        # This only authorizes invoking the list command. cmd_list_studies still
+        # filters each returned study by caller role, org, and explicit user mapping.
+        if role in {"project_admin", "org_admin", "lead", "member"}:
             return PreAuthzReturnCode.OK
         conn.append_error(f"NOT_AUTHORIZED for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))
         return PreAuthzReturnCode.ERROR
@@ -285,13 +295,54 @@ class StudyCommandModule(CommandModule, CommandUtil):
         return bad
 
     def _is_visible_to_caller(self, conn: Connection, study_def: dict) -> bool:
-        if self._caller_role(conn) == "project_admin":
+        # Visibility policy:
+        # - project_admin can see every study.
+        # - org_admin can see studies that include at least one site from the caller's org.
+        # - lead/member and other non-admin roles can see only studies where the
+        #   caller is explicitly listed in the study admins mapping.
+        caller_role = self._caller_role(conn)
+        if caller_role == "project_admin":
             return True
+        if caller_role != "org_admin":
+            return self._caller_name(conn) in set((study_def or {}).get("admins", []))
         caller_org = self._caller_org(conn)
         if not caller_org:
             return False
         site_orgs = (study_def or {}).get("site_orgs", {})
         return caller_org in site_orgs
+
+    def _is_list_visible_to_caller(self, conn: Connection, study_def: dict) -> bool:
+        return self._is_visible_to_caller(conn, study_def)
+
+    def _study_list_item(self, conn: Connection, study_name: str) -> dict:
+        role = self._caller_role(conn)
+        can_submit, reason = self._can_submit_job(conn)
+        item = {
+            "name": study_name,
+            "role": role,
+            "capabilities": {"submit_job": can_submit},
+            "can_submit_job": can_submit,
+        }
+        if not can_submit:
+            item["reason"] = reason or f"user '{self._caller_name(conn)}' is not authorized for 'submit_job'"
+        return item
+
+    def _can_submit_job(self, conn: Connection) -> Tuple[bool, str]:
+        user = Person(
+            name=self._caller_name(conn),
+            org=self._caller_org(conn),
+            role=self._caller_role(conn),
+        )
+        submitter = Person(name="", org="", role="")
+        ctx = AuthzContext(user=user, submitter=submitter, right=AdminCommandNames.SUBMIT_JOB)
+        return AuthorizationService.authorize(ctx)
+
+    def _caller_identity_payload(self, conn: Connection) -> dict:
+        return {
+            "name": self._caller_name(conn),
+            "org": self._caller_org(conn),
+            "role": self._caller_role(conn),
+        }
 
     @staticmethod
     def _normalize_admins(study_def: dict) -> List[str]:
@@ -599,11 +650,20 @@ class StudyCommandModule(CommandModule, CommandUtil):
             return
         registry = StudyRegistryService.get_registry()
         studies = []
+        study_details = []
         if registry:
             for study_name, study_def in registry.get_studies().items():
-                if self._caller_role(conn) == "project_admin" or self._is_visible_to_caller(conn, study_def):
+                if self._is_list_visible_to_caller(conn, study_def):
                     studies.append(study_name)
-        self._reply(conn, {"studies": sorted(studies)})
+                    study_details.append(self._study_list_item(conn, study_name))
+        self._reply(
+            conn,
+            {
+                "identity": self._caller_identity_payload(conn),
+                "studies": sorted(studies),
+                "study_details": sorted(study_details, key=lambda item: item["name"]),
+            },
+        )
 
     def cmd_show_study(self, conn: Connection, args: List[str]):
         parser = _study_parser(AdminCommandNames.SHOW_STUDY)

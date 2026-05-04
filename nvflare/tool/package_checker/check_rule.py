@@ -21,7 +21,6 @@ from nvflare.tool.package_checker.utils import (
     NVFlareRole,
     check_grpc_server_running,
     check_socket_server_running,
-    construct_dummy_overseer_response,
     get_communication_scheme,
     try_bind_address,
     try_write_dir,
@@ -92,13 +91,6 @@ class CheckWriting(CheckRule):
         return CheckResult(CHECK_PASSED, "N/A")
 
 
-def _get_primary_sp(sp_list):
-    for sp in sp_list:
-        if sp["primary"]:
-            return sp
-    return None
-
-
 class CheckServerAvailable(CheckRule):
     def __init__(self, name: str, role: str):
         """Initialize server availability checker.
@@ -144,17 +136,21 @@ class CheckServerAvailable(CheckRule):
             port = admin["port"]
             scheme = admin.get("scheme", "grpc")
         else:
-            # For client/server, get info from overseer agent
-            overseer_agent_conf = fed_config["overseer_agent"]
-            resp = construct_dummy_overseer_response(overseer_agent_conf=overseer_agent_conf, role=self.role)
-            resp = resp.json()
-            sp_list = resp.get("sp_list", [])
-            psp = _get_primary_sp(sp_list)
-            sp_end_point = psp["sp_end_point"]
-            host, port, admin_port = sp_end_point.split(":")
-            port = int(port)
-
-            # Determine the communication scheme
+            # For client/server, the FL server endpoint is in servers[0].service.target
+            servers = fed_config.get("servers", [])
+            if not servers:
+                return CheckResult(
+                    f"No servers defined in {nvf_config}",
+                    "Please re-provision the package.",
+                )
+            service = servers[0].get("service", {})
+            target = service.get("target")
+            if not target:
+                return CheckResult(
+                    f"Missing servers[0].service.target in {nvf_config}",
+                    "Please re-provision the package.",
+                )
+            host, port = target.split(":")[0], int(target.split(":")[1])
             scheme = get_communication_scheme(package_path, nvf_config, default_scheme="grpc")
 
         # Check connectivity based on the communication scheme

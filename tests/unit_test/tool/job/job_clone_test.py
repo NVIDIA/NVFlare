@@ -52,7 +52,7 @@ class TestJobClone:
         assert data["data"]["source_job_id"] == "abc123"
         assert data["data"]["new_job_id"] == "def456"
 
-    def test_clone_not_found_exits_1(self):
+    def test_clone_not_found_exits_1(self, capsys):
         """job clone with unknown job exits with code 1."""
         from nvflare.tool.job.job_cli import cmd_job_clone
 
@@ -64,6 +64,10 @@ class TestJobClone:
             with pytest.raises(SystemExit) as exc_info:
                 cmd_job_clone(args)
         assert exc_info.value.code == 1
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "JOB_NOT_FOUND"
+        assert "searched study 'default'" in envelope["message"]
+        assert "nvflare job list --study <study_name>" in envelope["hint"]
 
     def test_clone_authentication_error_propagates(self):
         from nvflare.tool.job.job_cli import cmd_job_clone

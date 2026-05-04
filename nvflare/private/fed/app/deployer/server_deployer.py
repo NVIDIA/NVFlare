@@ -41,7 +41,6 @@ class ServerDeployer:
         self.app_validator = None
         self.host = None
         self.snapshot_persistor = None
-        self.overseer_agent = None
         self.components = None
         self.handlers = None
 
@@ -57,7 +56,6 @@ class ServerDeployer:
         self.app_validator = build_ctx["app_validator"]
         self.host = build_ctx["server_host"]
         self.snapshot_persistor = build_ctx["snapshot_persistor"]
-        self.overseer_agent = build_ctx["overseer_agent"]
         self.components = build_ctx["server_components"]
         self.handlers = build_ctx["server_handlers"]
 
@@ -89,7 +87,6 @@ class ServerDeployer:
             args=args,
             secure_train=secure_train,
             snapshot_persistor=self.snapshot_persistor,
-            overseer_agent=self.overseer_agent,
             shutdown_period=first_server.get("shutdown_period", 30.0),
             check_engine_frequency=first_server.get("check_engine_frequency", 3.0),
         )

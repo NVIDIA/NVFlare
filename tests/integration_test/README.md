@@ -2,10 +2,10 @@
 
 ## Setup
 
-Note that the HA test cases are using `./data/project.yml` to provision the whole system.
-That will require we have `localhost0` and `localhost1` map to `127.0.0.1`.
-You need to either modify `/etc/hosts` file before running the test.
-Or if you are running using docker container you should use `--add-host localhost0:127.0.0.1`.
+Some integration test configs use local host aliases when provisioning the test system.
+That requires `localhost0` and `localhost1` to map to `127.0.0.1`.
+You need to either modify the `/etc/hosts` file before running the test,
+or, if you are running in a docker container, use `--add-host localhost0:127.0.0.1`.
 
 ## Run
 
@@ -49,8 +49,8 @@ Each test configuration YAML defines a whole FL system.
 The `system_test.py` will read and parse the config to determine which `SiteLauncher` to use
 to set up the whole system.
 
-The test configuration yaml can be categorized 2 types, one is for Proof-Of-Concept (POC),
-the other is for High-Availability (HA) mode:
+The test configuration YAML files fall into two groups: Proof-Of-Concept (POC)
+configs and provisioned-system configs.
 
 1. Required attributes for POC-type test config:
 
@@ -64,11 +64,10 @@ the other is for High-Availability (HA) mode:
 
 An example would be `tests/integration_test/data/test_configs/one_job/test_hello_numpy.yml`.
 
-2. Required attributes for HA test config:
+2. Required attributes for provisioned-system test config:
 
 | Attributes      | Description                                                                            |
 |-----------------|----------------------------------------------------------------------------------------|
-| `ha`            | Need to set to True for HA.                                                            |
 | `project_yaml`  | The file that would be passed to NVFlare provision script to generate the startup kits |
 | `poll_period`   | The polling period of `NVFTestDriver`. (Default to 5 seconds.)                          |
 | `cleanup`       | Whether to clean up test folders or not. (Default to True.)                            |
@@ -175,7 +174,6 @@ The following result type is supported:
   - action_handlers.py: define how to handle event actions.
   - constants.py: define constants shared by the test system.
   - nvf_test_driver.py: the test driver controls and coordinates the test system.
-  - oa_launcher.py: overseer and overseer agent launcher.
   - poc_site_launcher.py: site launcher implementation for Proof-Of-Concept mode.
   - provision_site_launcher.py: site launcher implementation that utilizes NVFlare provision.
   - site_launcher.py: base class of a site launcher.
@@ -185,7 +183,6 @@ The following result type is supported:
   - projects: project configurations for feed into NVFlare provision
   - test_configs: test configurations root folder:
     - authorization: test configurations for authorization
-    - ha: test configurations for high-availability (HA)
     - one_job: test configurations for simple 1 app job run
 - validators: Codes that implement the logic to validate the running result
   once the job is finished

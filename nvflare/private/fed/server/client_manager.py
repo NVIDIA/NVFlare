@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+import os
+import tempfile
 import threading
 import time
 import uuid
+from contextlib import suppress
 from typing import Optional
 
 from nvflare.apis.client import Client, ClientPropKey
@@ -45,11 +49,111 @@ class ClientManager:
         self.max_num_clients = max_num_clients
         self.clients = dict()  # token => Client
         self.name_to_clients = dict()  # name => Client
+        self.disabled_clients = set()
+        self.disabled_clients_file = None
         self.cred_keeper = CredKeeper()
         self.lock = threading.Lock()
         self.num_relays = 0
 
         self.logger = get_obj_logger(self)
+
+    def set_disabled_clients_file(self, file_path: str):
+        self.disabled_clients_file = file_path
+        self._load_disabled_clients()
+
+    def _load_disabled_clients(self):
+        if not self.disabled_clients_file or not os.path.exists(self.disabled_clients_file):
+            return
+        try:
+            with open(self.disabled_clients_file) as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                raise ValueError("disabled clients file must be a JSON object")
+            clients = data.get("disabled_clients")
+            if not isinstance(clients, list):
+                raise ValueError("disabled_clients must be a list")
+            with self.lock:
+                self.disabled_clients = {str(client_name) for client_name in clients if client_name}
+        except Exception as ex:
+            self.logger.critical(
+                f"failed to load disabled clients from {self.disabled_clients_file}: {ex}; "
+                "refusing to start to preserve disable-client policy"
+            )
+            raise
+
+    def _save_disabled_clients(self, disabled_clients=None):
+        if not self.disabled_clients_file:
+            return
+        if disabled_clients is None:
+            with self.lock:
+                disabled_clients = set(self.disabled_clients)
+        dirname = os.path.dirname(self.disabled_clients_file)
+        if dirname:
+            os.makedirs(dirname, exist_ok=True)
+        data = {"disabled_clients": sorted(disabled_clients)}
+        tmp_path = None
+        try:
+            fd, tmp_path = tempfile.mkstemp(
+                prefix=f"{os.path.basename(self.disabled_clients_file)}.",
+                suffix=".tmp",
+                dir=dirname or ".",
+                text=True,
+            )
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp_path, self.disabled_clients_file)
+        except Exception:
+            if tmp_path:
+                with suppress(OSError):
+                    os.unlink(tmp_path)
+            raise
+
+    def is_client_disabled(self, client_name: str) -> bool:
+        with self.lock:
+            return client_name in self.disabled_clients
+
+    def disable_client(self, client_name: str) -> list:
+        with self.lock:
+            already_disabled = client_name in self.disabled_clients
+            self.disabled_clients.add(client_name)
+            removed_clients = []
+            for token, client in list(self.clients.items()):
+                if client.name == client_name:
+                    removed_clients.append((token, client))
+                    self.clients.pop(token, None)
+            self.name_to_clients.pop(client_name, None)
+            disabled_snapshot = set(self.disabled_clients)
+            try:
+                self._save_disabled_clients(disabled_snapshot)
+            except Exception as ex:
+                if not already_disabled:
+                    self.disabled_clients.discard(client_name)
+                for token, client in removed_clients:
+                    self.clients[token] = client
+                    self.name_to_clients[client.name] = client
+                self.logger.error(f"failed to persist disabled-client state for {client_name}: {ex}")
+                raise
+        removed_tokens = [token for token, _client in removed_clients]
+        self.logger.info(f"Client {client_name} disabled. Removed active tokens: {removed_tokens}")
+        return removed_tokens
+
+    def enable_client(self, client_name: str) -> bool:
+        with self.lock:
+            was_disabled = client_name in self.disabled_clients
+            if was_disabled:
+                self.disabled_clients.remove(client_name)
+                disabled_snapshot = set(self.disabled_clients)
+            else:
+                disabled_snapshot = None
+            if was_disabled:
+                try:
+                    self._save_disabled_clients(disabled_snapshot)
+                except Exception as ex:
+                    self.disabled_clients.add(client_name)
+                    self.logger.error(f"failed to persist enabled-client state for {client_name}: {ex}")
+                    raise
+        self.logger.info(f"Client {client_name} enabled. Was disabled: {was_disabled}")
+        return was_disabled
 
     def set_clients(self, clients: dict):
         self.clients = clients
@@ -96,9 +200,11 @@ class ClientManager:
             client = self.clients.pop(token, None)
             if client:
                 self.name_to_clients.pop(client.name, None)
-            self.logger.info(
-                "Client Name:{} \tToken: {} left.  Total clients: {}".format(client.name, token, len(self.clients))
-            )
+                self.logger.info(
+                    "Client Name:{} \tToken: {} left.  Total clients: {}".format(client.name, token, len(self.clients))
+                )
+            else:
+                self.logger.warning("remove_client: unknown token %s", token)
             return client
 
     def login_client(self, client_login, fl_ctx: FLContext, client_type):
@@ -157,6 +263,11 @@ class ClientManager:
             Client object.
         """
         client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+        if self.is_client_disabled(client_name):
+            fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, f"Client '{client_name}' is disabled", sticky=False)
+            self.logger.warning(f"Reject disabled client registration: {client_name}")
+            return None
+
         shareable = request.payload
         if not isinstance(shareable, Shareable):
             self.logger.error(f"payload must be Shareable but got {type(shareable)}")
@@ -208,6 +319,12 @@ class ClientManager:
                 pass
 
         with self.lock:
+            # Recheck under lock so disable_client cannot race with registration after the fast-path checks above.
+            if client_name in self.disabled_clients:
+                fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, f"Client '{client_name}' is disabled", sticky=False)
+                self.logger.warning(f"Reject disabled client registration: {client_name}")
+                return None
+
             clients_to_be_removed = [token for token, client in self.clients.items() if client.name == client_name]
             for item in clients_to_be_removed:
                 client = self.clients.pop(item, None)
@@ -265,6 +382,11 @@ class ClientManager:
             If a new client needs to be created.
         """
         with self.lock:
+            if client_name in self.disabled_clients:
+                fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, f"Client '{client_name}' is disabled", sticky=False)
+                self.logger.warning(f"Reject disabled client heartbeat: {client_name}")
+                return False
+
             client = self.clients.get(token)
             if client:
                 client.last_connect_time = time.time()
@@ -299,6 +421,9 @@ class ClientManager:
         if peer_ctx:
             client.set_fqsn(peer_ctx.get_prop(ReservedKey.FQSN, "?"))
             client.set_is_leaf(peer_ctx.get_prop(ReservedKey.IS_LEAF, "?"))
+        site_config = fl_ctx.get_prop(FLContextKey.CLIENT_SITE_CONFIG)
+        if site_config is not None:
+            client.set_site_config(site_config)
 
     def get_clients(self):
         """Get the list of registered clients.

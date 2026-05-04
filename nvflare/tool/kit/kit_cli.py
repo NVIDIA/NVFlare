@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""nvflare config kit command parser and handlers."""
+"""nvflare config startup kit command parser and handlers."""
 
 import os
 import sys
@@ -38,13 +38,15 @@ from nvflare.tool.kit.kit_config import (
 
 CMD_KIT_ADD = "add"
 CMD_KIT_USE = "use"
-CMD_KIT_SHOW = "show"
+CMD_KIT_INSPECT = "inspect"
 CMD_KIT_LIST = "list"
 CMD_KIT_REMOVE = "remove"
-# The kit parser is registered under the config subparser in nvflare/cli.py.
-KIT_COMMAND = "nvflare config kit"
+# The startup kit commands are registered directly under nvflare config.
+KIT_COMMAND = "nvflare config"
 
-_kit_root_parser = None
+_JSON_OUTPUT_MODES = ["json"]
+_NO_RETRY_TOKEN_SCHEMA = {"supported": False}
+
 _kit_sub_cmd_parsers = {}
 
 
@@ -57,7 +59,23 @@ def _metadata_for_output(path: str) -> Dict[str, str]:
     return {
         "identity": metadata.get("identity") or "-",
         "cert_role": metadata.get("cert_role") or "-",
+        "role": metadata.get("role") or metadata.get("cert_role") or "-",
+        "org": metadata.get("org") or "-",
+        "project": metadata.get("project") or "-",
+        "certificate": metadata.get("certificate"),
+        "findings": metadata.get("findings") or [],
     }
+
+
+def _json_value(value):
+    return None if value in (None, "-") else value
+
+
+def default_startup_kit_id(path: str) -> str:
+    """Return the default local registry ID for a compatibility startup-kit path."""
+    metadata = inspect_startup_kit_metadata(path)
+    identity = metadata.get("identity")
+    return identity or os.path.basename(os.path.abspath(path.rstrip(os.sep)))
 
 
 def cmd_kit_add(args):
@@ -92,6 +110,11 @@ def cmd_kit_use(args):
         f"{KIT_COMMAND} use",
         [f"{KIT_COMMAND} use cancer_lead"],
         sys.argv[1:],
+        output_modes=_JSON_OUTPUT_MODES,
+        streaming=False,
+        mutating=True,
+        idempotent=True,
+        retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
 
     kit_id = args.kit_id.strip()
@@ -106,29 +129,93 @@ def cmd_kit_use(args):
 
     path = entries[kit_id]
     metadata = _metadata_for_output(path)
-    output_ok(
-        {
-            "active_startup_kit": kit_id,
-            "identity": metadata["identity"],
-            "cert_role": metadata["cert_role"],
-            "path": path,
+    if is_json_mode():
+        data = {
+            "startup_kit": {
+                "source": "active",
+                "id": kit_id,
+                "path": path,
+            },
+            "identity": {
+                "name": _json_value(metadata["identity"]),
+                "org": _json_value(metadata["org"]),
+                "role": _json_value(metadata["role"]),
+            },
+            "project": _json_value(metadata["project"]),
+            "certificate": metadata["certificate"],
+            "findings": metadata["findings"]
+            + [
+                {
+                    "code": "CONFIG_USE_MUTATES_GLOBAL_STATE",
+                    "severity": "warning",
+                    "message": "nvflare config use changes the global active startup kit.",
+                    "hint": "Automation should prefer --kit-id or --startup-kit on each server-connected command.",
+                }
+            ],
         }
-    )
+        output_ok(data)
+    else:
+        _render_startup_kit_table(
+            [
+                {
+                    "active": "*",
+                    "id": kit_id,
+                    "status": "ok",
+                    "identity": metadata["identity"],
+                    "cert_role": metadata["cert_role"],
+                    "path": path,
+                }
+            ]
+        )
 
 
 def _print_env_warning():
     env_path = os.getenv(NVFLARE_STARTUP_KIT_DIR)
-    if env_path:
+    if env_path and not is_json_mode():
         print_human(f"warning: {NVFLARE_STARTUP_KIT_DIR} is set ({env_path})")
         print_human("         normal commands will use this path instead of the active kit above")
 
 
-def cmd_kit_show(args):
+def _render_startup_kit_table(rows):
+    keys = ["active", "id", "status", "identity", "cert_role", "path"]
+    widths = [max(len(key), max(len(str(row.get(key, ""))) for row in rows)) for key in keys]
+    header = "  ".join(key.ljust(width) for key, width in zip(keys, widths))
+    print_human(header)
+    print_human("-" * len(header))
+    for row in rows:
+        print_human("  ".join(str(row.get(key, "")).ljust(width) for key, width in zip(keys, widths)))
+
+
+def _render_kit_inspect_human(data: dict):
+    _render_startup_kit_table(
+        [
+            {
+                "active": "*",
+                "id": data.get("active") or "-",
+                "status": data.get("status") or "-",
+                "identity": data.get("identity") or "-",
+                "cert_role": data.get("cert_role") or "-",
+                "path": data.get("path") or "-",
+            }
+        ]
+    )
+    print_human("")
+    print_human(f"config_file: {data.get('config_file') or '-'}")
+    if data.get("hint"):
+        print_human(f"hint: {data['hint']}")
+
+
+def cmd_kit_inspect(args):
     handle_schema_flag(
-        _kit_sub_cmd_parsers[CMD_KIT_SHOW],
-        f"{KIT_COMMAND} show",
-        [f"{KIT_COMMAND} show"],
+        _kit_sub_cmd_parsers[CMD_KIT_INSPECT],
+        f"{KIT_COMMAND} inspect",
+        [f"{KIT_COMMAND} inspect"],
         sys.argv[1:],
+        output_modes=_JSON_OUTPUT_MODES,
+        streaming=False,
+        mutating=False,
+        idempotent=True,
+        retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
 
     try:
@@ -143,7 +230,20 @@ def cmd_kit_show(args):
     if not active:
         _print_env_warning()
         if is_json_mode():
-            output_ok({"active": None, "config_file": str(get_cli_config_path())})
+            output_ok(
+                {
+                    "active": None,
+                    "config_file": str(get_cli_config_path()),
+                    "findings": [
+                        {
+                            "code": "NO_ACTIVE_STARTUP_KIT",
+                            "severity": "info",
+                            "message": "No active startup kit is configured.",
+                            "hint": f"Run {KIT_COMMAND} use <id>, or pass --kit-id/--startup-kit per command.",
+                        }
+                    ],
+                }
+            )
         else:
             print_human("No active startup kit.")
             print_human(f"Hint: Run {KIT_COMMAND} use <id>.")
@@ -161,13 +261,28 @@ def cmd_kit_show(args):
         if status == "ok":
             data["identity"] = metadata.get("identity") or "-"
             data["cert_role"] = metadata.get("cert_role") or "-"
+            if is_json_mode():
+                data["role"] = metadata.get("role") or metadata.get("cert_role") or "-"
+                data["org"] = metadata.get("org") or "-"
+                data["project"] = metadata.get("project") or "-"
+                data["certificate"] = metadata.get("certificate")
+                data["findings"] = metadata.get("findings") or []
         else:
             data["identity"] = "-"
             data["cert_role"] = "-"
             data["hint"] = f"run {KIT_COMMAND} use <id> or {KIT_COMMAND} remove {active}"
+            if is_json_mode():
+                data["role"] = "-"
+                data["org"] = "-"
+                data["project"] = "-"
+                data["certificate"] = None
+                data["findings"] = metadata.get("findings") or []
 
     _print_env_warning()
-    output_ok(data)
+    if is_json_mode():
+        output_ok(data)
+    else:
+        _render_kit_inspect_human(data)
 
 
 def cmd_kit_list(args):
@@ -176,6 +291,11 @@ def cmd_kit_list(args):
         f"{KIT_COMMAND} list",
         [f"{KIT_COMMAND} list"],
         sys.argv[1:],
+        output_modes=_JSON_OUTPUT_MODES,
+        streaming=False,
+        mutating=False,
+        idempotent=True,
+        retry_token=_NO_RETRY_TOKEN_SCHEMA,
     )
 
     try:
@@ -189,16 +309,25 @@ def cmd_kit_list(args):
     rows = []
     for kit_id, path in sorted(entries.items()):
         status, normalized_path, metadata = get_startup_kit_status(path)
-        rows.append(
-            {
-                "active": "*" if kit_id == active else "",
-                "id": kit_id,
-                "status": status,
-                "identity": metadata.get("identity") or "-",
-                "cert_role": metadata.get("cert_role") or "-",
-                "path": normalized_path or path,
-            }
-        )
+        row = {
+            "active": "*" if kit_id == active else "",
+            "id": kit_id,
+            "status": status,
+            "identity": metadata.get("identity") or "-",
+            "cert_role": metadata.get("cert_role") or "-",
+            "path": normalized_path or path,
+        }
+        if is_json_mode():
+            row.update(
+                {
+                    "role": metadata.get("role") or metadata.get("cert_role") or "-",
+                    "org": metadata.get("org") or "-",
+                    "project": metadata.get("project") or "-",
+                    "certificate": metadata.get("certificate"),
+                    "findings": metadata.get("findings") or [],
+                }
+            )
+        rows.append(row)
 
     if not rows and not is_json_mode():
         print_human("No startup kits registered.")
@@ -233,64 +362,48 @@ def cmd_kit_remove(args):
 _KIT_HANDLERS: Dict[str, Callable] = {
     CMD_KIT_ADD: cmd_kit_add,
     CMD_KIT_USE: cmd_kit_use,
-    CMD_KIT_SHOW: cmd_kit_show,
+    CMD_KIT_INSPECT: cmd_kit_inspect,
     CMD_KIT_LIST: cmd_kit_list,
     CMD_KIT_REMOVE: cmd_kit_remove,
 }
 
 
 def def_kit_cli_parser(sub_cmd):
-    global _kit_root_parser
-    parser = sub_cmd.add_parser("kit", help="manage local startup kit registrations")
-    _kit_root_parser = parser
-    kit_subparser = parser.add_subparsers(title="kit subcommands", metavar="", dest="kit_sub_cmd")
-
-    add_parser = kit_subparser.add_parser(CMD_KIT_ADD, help="register a startup kit path")
+    add_parser = sub_cmd.add_parser(CMD_KIT_ADD, help="register a startup kit path")
     add_parser.add_argument("kit_id", help="local startup kit ID")
     add_parser.add_argument("startup_kit_dir", help="admin/user startup kit directory")
     add_parser.add_argument("--force", action="store_true", help="replace an existing local registration")
     add_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _kit_sub_cmd_parsers[CMD_KIT_ADD] = add_parser
 
-    use_parser = kit_subparser.add_parser(CMD_KIT_USE, help="activate a registered startup kit")
+    use_parser = sub_cmd.add_parser(CMD_KIT_USE, help="activate a registered startup kit")
     use_parser.add_argument("kit_id", help="local startup kit ID")
     use_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _kit_sub_cmd_parsers[CMD_KIT_USE] = use_parser
 
-    show_parser = kit_subparser.add_parser(CMD_KIT_SHOW, help="show the configured active startup kit")
-    show_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
-    _kit_sub_cmd_parsers[CMD_KIT_SHOW] = show_parser
+    inspect_parser = sub_cmd.add_parser(CMD_KIT_INSPECT, help="inspect the configured active startup kit")
+    inspect_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    _kit_sub_cmd_parsers[CMD_KIT_INSPECT] = inspect_parser
 
-    list_parser = kit_subparser.add_parser(CMD_KIT_LIST, help="list registered startup kits")
+    list_parser = sub_cmd.add_parser(CMD_KIT_LIST, help="list registered startup kits")
     list_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _kit_sub_cmd_parsers[CMD_KIT_LIST] = list_parser
 
-    remove_parser = kit_subparser.add_parser(CMD_KIT_REMOVE, help="remove a local startup kit registration")
+    remove_parser = sub_cmd.add_parser(CMD_KIT_REMOVE, help="remove a local startup kit registration")
     remove_parser.add_argument("kit_id", help="local startup kit ID")
     remove_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _kit_sub_cmd_parsers[CMD_KIT_REMOVE] = remove_parser
 
-    return {"kit": parser}
+    return {name: parser for name, parser in _kit_sub_cmd_parsers.items()}
 
 
 def handle_kit_cmd(args):
-    sub_cmd = getattr(args, "kit_sub_cmd", None)
-    if "--schema" in getattr(args, "_argv", []) and sub_cmd is None:
-        handle_schema_flag(
-            _kit_root_parser,
-            KIT_COMMAND,
-            [
-                f"{KIT_COMMAND} add cancer_lead /secure/startup_kits/cancer/lead@nvidia.com",
-                f"{KIT_COMMAND} use cancer_lead",
-                f"{KIT_COMMAND} list",
-            ],
-            sys.argv[1:],
-        )
+    sub_cmd = getattr(args, "config_sub_cmd", None)
 
     handler = _KIT_HANDLERS.get(sub_cmd)
     if handler:
         handler(args)
     elif sub_cmd is None:
-        _kit_root_parser.print_help()
+        return
     else:
-        raise CLIUnknownCmdException("invalid kit command")
+        raise CLIUnknownCmdException("invalid config command")

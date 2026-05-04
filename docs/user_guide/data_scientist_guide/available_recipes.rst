@@ -43,9 +43,10 @@ Most training recipes accept the following model-related parameters:
 
     .. warning::
 
-       Temporary files use the process temp directory (``TMPDIR`` / OS default such as ``/tmp``). In
-       containers, ``/tmp`` may be tmpfs (RAM-backed), which can reduce memory offload impact. Set
-       ``TMPDIR`` to a disk-backed mount for the server process.
+       Temporary files use the server process temp directory (``TMPDIR`` / OS default such as ``/tmp``).
+       The server IT setup must point this to a writable, disk-backed mount. In containers or Kubernetes,
+       ``/tmp`` may be RAM-backed, which prevents memory offload benefits. See
+       :ref:`Starting Federated Learning Servers <starting_fl_servers>`.
 
 See :ref:`job_recipe` for detailed explanations of these options.
 
@@ -155,7 +156,7 @@ FedAvg with secure aggregation using homomorphic encryption.
 .. code-block:: python
 
     from nvflare.app_opt.pt.recipes import FedAvgRecipeWithHE
-    from nvflare.recipe import SimEnv
+    from nvflare.recipe import ProdEnv
 
     recipe = FedAvgRecipeWithHE(
         name="fedavg-he",
@@ -164,12 +165,19 @@ FedAvg with secure aggregation using homomorphic encryption.
         model=MyModel(),
         train_script="client.py",
     )
-    env = SimEnv(num_clients=2)
+    env = ProdEnv(
+        startup_kit_location="/path/to/startup_kit/admin@nvidia.com",
+        username="admin@nvidia.com",
+    )
     run = recipe.execute(env)
+
+.. note::
+   ``FedAvgRecipeWithHE`` requires provisioned startup kits with homomorphic encryption context files.
+   Use ``ProdEnv`` or ``PocEnv`` with HE provisioning; ``SimEnv`` is not supported.
 
 **Examples:**
 
-- `examples/advanced/kaplan-meier-he <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/kaplan-meier-he>`_
+- `examples/advanced/cifar10/pt/cifar10-real-world#secure-aggregation-using-homomorphic-encryption <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/pt/cifar10-real-world#42-secure-aggregation-using-homomorphic-encryption>`_
 
 
 FedProx
@@ -576,6 +584,39 @@ Compute federated statistics across distributed data.
 - `examples/advanced/federated-statistics/df_stats <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/federated-statistics/df_stats>`_
 - `examples/advanced/federated-statistics/image_stats <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/federated-statistics/image_stats>`_
 
+Kaplan-Meier Survival Analysis
+------------------------------
+
+Federated Kaplan-Meier survival analysis with optional homomorphic encryption over binned event histograms.
+The ``KMRecipe`` is defined in the Kaplan-Meier example's ``job.py`` rather than exported as a package-level
+recipe.
+
+Run the snippet from the Kaplan-Meier example directory so ``from job import KMRecipe`` resolves correctly:
+
+.. code-block:: bash
+
+    cd examples/advanced/kaplan-meier-he
+
+.. code-block:: python
+
+    from job import KMRecipe
+    from nvflare.recipe import SimEnv
+
+    # KMRecipe is defined in examples/advanced/kaplan-meier-he/job.py
+    recipe = KMRecipe(
+        num_clients=5,
+        encryption=True,
+        data_root="/tmp/nvflare/dataset/km_data",
+        he_context_path_client="/tmp/nvflare/he_context/he_context_client.txt",
+        he_context_path_server="/tmp/nvflare/he_context/he_context_server.txt",
+    )
+    env = SimEnv(num_clients=5)
+    run = recipe.execute(env)
+
+**Examples:**
+
+- `examples/advanced/kaplan-meier-he <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/kaplan-meier-he>`_
+
 
 Federated Evaluation
 ====================
@@ -785,6 +826,8 @@ Add cross-site evaluation to any training recipe.
     from nvflare.recipe.utils import add_cross_site_evaluation
 
     add_cross_site_evaluation(recipe)
+    # or limit evaluation to selected clients
+    add_cross_site_evaluation(recipe, participating_clients=["site-1", "site-3"])
 
 
 Execution Environments

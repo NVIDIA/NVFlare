@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+import os
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -50,13 +52,13 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.authn import add_authentication_headers
-from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import (
     CellChannel,
     CellChannelTopic,
     CellMessageHeaderKeys,
+    ClientRegMsgKey,
     ClientRegSession,
     ClientType,
     InternalFLContextKey,
@@ -74,17 +76,7 @@ from nvflare.widgets.fed_event import ServerFedEventRunner
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
-from .server_state import (
-    ABORT_RUN,
-    ACTION,
-    MESSAGE,
-    NIS,
-    Cold2HotState,
-    ColdState,
-    Hot2ColdState,
-    HotState,
-    ServerState,
-)
+from .server_state import ABORT_RUN, ACTION, MESSAGE, NIS, HotState, ServerState
 from .server_status import ServerStatus
 
 
@@ -284,7 +276,6 @@ class FederatedServer(BaseServer):
         args=None,
         secure_train=False,
         snapshot_persistor=None,
-        overseer_agent=None,
         shutdown_period=30.0,
         check_engine_frequency=3.0,
     ):
@@ -332,12 +323,11 @@ class FederatedServer(BaseServer):
         self.secure_train = secure_train
 
         self.workspace = args.workspace
+        if isinstance(self.workspace, str):
+            self.client_manager.set_disabled_clients_file(os.path.join(self.workspace, "disabled_clients.json"))
         self.snapshot_location = None
-        self.overseer_agent = overseer_agent
-        self.server_state: ServerState = ColdState()
+        self.server_state: ServerState = HotState()
         self.snapshot_persistor = snapshot_persistor
-        self.checking_server_state = False
-        self.ha_mode = False
 
         self.reg_lock = threading.Lock()
         self.name_to_reg = {}
@@ -640,6 +630,38 @@ class FederatedServer(BaseServer):
             self.logger.debug(f"challenge ok: {reply=}")
             return make_cellnet_reply(rc=F3ReturnCode.OK, body=reply)
 
+    # Cap on serialized site_config so a misbehaving client cannot push large blobs
+    # into Client objects and downstream job metadata.
+    _SITE_CONFIG_MAX_SERIALIZED_BYTES = 64 * 1024
+
+    def _get_validated_site_config(self, shareable: Shareable, client_name: str):
+        site_config = shareable.get(ClientRegMsgKey.SITE_CONFIG)
+        if site_config is None:
+            return None
+
+        if not isinstance(site_config, dict):
+            self.logger.warning(
+                f"dropping site config from client {client_name}: "
+                f"expected dict but got {type(site_config).__name__}"
+            )
+            return None
+
+        try:
+            serialized_size = len(json.dumps(site_config))
+        except (TypeError, ValueError) as e:
+            self.logger.warning(f"dropping site config from client {client_name}: not JSON-serializable ({e})")
+            return None
+
+        if serialized_size > self._SITE_CONFIG_MAX_SERIALIZED_BYTES:
+            self.logger.warning(
+                f"dropping site config from client {client_name}: "
+                f"serialized size {serialized_size} exceeds limit "
+                f"{self._SITE_CONFIG_MAX_SERIALIZED_BYTES}"
+            )
+            return None
+
+        return site_config
+
     def register_client(self, request: Message) -> Message:
         """Register a new client.
         Each client must be registered before being able to run jobs.
@@ -673,6 +695,12 @@ class FederatedServer(BaseServer):
                 if client_type:
                     fl_ctx.set_prop(key=FLContextKey.CLIENT_TYPE, value=client_type, private=False, sticky=False)
 
+                client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+                site_config = self._get_validated_site_config(data, client_name)
+                if site_config is not None and client_type != ClientType.REGULAR:
+                    self.logger.warning(f"dropping site config from non-regular client {client_name}: {client_type}")
+                    site_config = None
+
                 self.engine.fire_event(EventType.CLIENT_REGISTER_RECEIVED, fl_ctx=fl_ctx)
 
                 exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
@@ -681,9 +709,17 @@ class FederatedServer(BaseServer):
                         if isinstance(exception, NotAuthenticated):
                             raise exception
 
+                if site_config is not None:
+                    fl_ctx.set_prop(key=FLContextKey.CLIENT_SITE_CONFIG, value=site_config, private=True, sticky=False)
+
                 client = self.client_manager.authenticate(request, fl_ctx)
                 if client and client.token:
-                    client_type = request.get_header(CellMessageHeaderKeys.CLIENT_TYPE)
+                    accepted_site_config = client.get_site_config()
+                    if accepted_site_config:
+                        self.logger.info(
+                            f"client {client.name} registered with site_config keys: "
+                            f"{sorted(accepted_site_config.keys())}"
+                        )
                     if client_type == ClientType.REGULAR:
                         self.tokens[client.token] = self.task_meta_info(client.name)
                         if self.admin_server:
@@ -789,8 +825,13 @@ class FederatedServer(BaseServer):
             token = request.get_header(CellMessageHeaderKeys.TOKEN)
             client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
             client_fqcn = request.get_header(MessageHeaderKey.ORIGIN)
+            if self.client_manager.is_client_disabled(client_name):
+                return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=f"Client '{client_name}' is disabled")
             if self.client_manager.heartbeat(token, client_name, client_fqcn, fl_ctx):
                 self.tokens[token] = self.task_meta_info(client_name)
+            unauthenticated = fl_ctx.get_prop(FLContextKey.UNAUTHENTICATED, None)
+            if isinstance(unauthenticated, str) and unauthenticated:
+                return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=str(unauthenticated))
             if self.admin_server:
                 self.admin_server.client_heartbeat(token, client_name, client_fqcn)
 
@@ -1006,19 +1047,7 @@ class FederatedServer(BaseServer):
 
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
         with self.lock:
-            self.server_state.host = target.split(":")[0]
-            self.server_state.service_port = target.split(":")[1]
-
-        self.overseer_agent = self._init_agent(args)
-        self.ha_mode = False
-
-        if secure_train:
-            if self.overseer_agent:
-                self.overseer_agent.set_secure_context(
-                    ca_path=grpc_args["ssl_root_cert"],
-                    cert_path=grpc_args["ssl_cert"],
-                    prv_key_path=grpc_args["ssl_private_key"],
-                )
+            self.server_state = HotState(host=target.split(":")[0], port=target.split(":")[1])
 
         self.engine.initialize_comm(self.cell)
         self._register_cellnet_cbs()
@@ -1035,89 +1064,6 @@ class FederatedServer(BaseServer):
             core_cell.add_outgoing_reply_filter(channel="*", topic="*", cb=self._add_auth_headers)
             core_cell.add_outgoing_request_filter(channel="*", topic="*", cb=self._add_auth_headers)
 
-        self.overseer_agent.start(self.overseer_callback)
-
-    def _init_agent(self, args=None):
-        kv_list = parse_vars(args.set)
-        sp = kv_list.get("sp")
-
-        if sp:
-            with self.engine.new_context() as fl_ctx:
-                fl_ctx.set_prop(FLContextKey.SP_END_POINT, sp)
-                self.overseer_agent.initialize(fl_ctx)
-
-        return self.overseer_agent
-
-    def _check_server_state(self, overseer_agent):
-        if self.status != ServerStatus.STARTED:
-            return
-
-        if overseer_agent.is_shutdown():
-            self.engine.shutdown_server()
-            return
-
-        sp = overseer_agent.get_primary_sp()
-
-        old_state_name = self.server_state.__class__.__name__
-        with self.lock:
-            with self.engine.new_context() as fl_ctx:
-                self.server_state = self.server_state.handle_sd_callback(sp, fl_ctx)
-
-        if isinstance(self.server_state, Cold2HotState):
-            self._turn_to_hot()
-
-        elif isinstance(self.server_state, Hot2ColdState):
-            self._turn_to_cold(old_state_name)
-
-    def _notify_state_change(self, old_state_name):
-        new_state_name = self.server_state.__class__.__name__
-        if new_state_name != old_state_name:
-            self.logger.info(f"state changed from: {old_state_name} to: {new_state_name}")
-            keys = list(self.engine.run_processes.keys())
-            if keys:
-                target_fqcns = []
-                for job_id in keys:
-                    target_fqcns.append(FQCN.join([FQCN.ROOT_SERVER, job_id]))
-                cell_msg = new_cell_message(headers={}, payload=self.server_state)
-                self.cell.broadcast_request(
-                    channel=CellChannel.SERVER_COMMAND,
-                    topic=ServerCommandNames.SERVER_STATE,
-                    request=cell_msg,
-                    targets=target_fqcns,
-                    timeout=5.0,
-                    optional=True,
-                )
-
-    def overseer_callback(self, overseer_agent):
-        if self.checking_server_state:
-            self.logger.debug("busy checking server state")
-            return
-
-        self.checking_server_state = True
-        try:
-            self._check_server_state(overseer_agent)
-        except Exception as ex:
-            self.logger.error(f"exception in checking server state: {secure_format_exception(ex)}")
-        finally:
-            self.checking_server_state = False
-
-    def _turn_to_hot(self):
-        # Restore Snapshot
-        with self.engine.new_context() as fl_ctx:
-            self.snapshot_persistor.delete()
-            self.engine.job_runner.update_unfinished_jobs(fl_ctx=fl_ctx)
-
-        with self.lock:
-            self.server_state = HotState(
-                host=self.server_state.host, port=self.server_state.service_port, ssid=self.server_state.ssid
-            )
-
-    def _turn_to_cold(self, old_state_name):
-        with self.lock:
-            self.server_state = ColdState(host=self.server_state.host, port=self.server_state.service_port)
-        self._notify_state_change(old_state_name)
-        self.engine.pause_server_jobs()
-
     def stop_training(self):
         self.status = ServerStatus.STOPPED
         self.logger.info("Server app stopped.\n\n")
@@ -1132,6 +1078,4 @@ class FederatedServer(BaseServer):
         """Shutdown the server."""
         self.logger.info("shutting down server")
         self.shutdown = True
-        if self.overseer_agent:
-            self.overseer_agent.end()
         return super().close()

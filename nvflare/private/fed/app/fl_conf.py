@@ -14,6 +14,7 @@
 
 """FL Server / Client startup configure."""
 
+import logging
 import os
 import re
 import sys
@@ -28,7 +29,8 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.url_utils import make_url
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
-from nvflare.private.defs import SSLConstants
+from nvflare.private.defs import ClientRegMsgKey, SSLConstants
+from nvflare.private.fed.utils.site_config import project_site_config
 from nvflare.private.json_configer import JsonConfigurator
 from nvflare.private.privacy_manager import PrivacyManager, Scope
 
@@ -38,6 +40,8 @@ from .fl_app_validator import FLAppValidator
 
 FL_PACKAGES = ["nvflare"]
 FL_MODULES = ["server", "client", "app_common", "private"]
+
+_logger = logging.getLogger(__name__)
 
 
 class FLServerStarterConfiger(JsonConfigurator):
@@ -84,7 +88,6 @@ class FLServerStarterConfiger(JsonConfigurator):
         self.deployer = None
         self.app_validator = None
         self.snapshot_persistor = None
-        self.overseer_agent = None
         self.site_org = ""
 
     def start_config(self, config_ctx: ConfigContext):
@@ -141,7 +144,7 @@ class FLServerStarterConfiger(JsonConfigurator):
             return
 
         if path == "overseer_agent":
-            self.overseer_agent = self.build_component(element)
+            _logger.warning("'overseer_agent' in server config is obsolete and will be ignored.")
             return
 
         if re.search(r"^components\.#[0-9]+$", path):
@@ -180,7 +183,6 @@ class FLServerStarterConfiger(JsonConfigurator):
             "server_host": self.cmd_vars.get("host", None),
             "site_org": self.cmd_vars.get("org", ""),
             "snapshot_persistor": self.snapshot_persistor,
-            "overseer_agent": self.overseer_agent,
             "server_components": self.components,
             "server_handlers": self.handlers,
         }
@@ -242,7 +244,6 @@ class FLClientStarterConfiger(JsonConfigurator):
         self.workspace = workspace
         self.client_config_file_names = config_files
         self.base_deployer = None
-        self.overseer_agent = None
         self.site_org = ""
         self.app_validator = None
 
@@ -261,7 +262,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             return
 
         if path == "overseer_agent":
-            self.overseer_agent = self.build_component(element)
+            _logger.warning("'overseer_agent' in client config is obsolete and will be ignored.")
             return
 
         if re.search(r"^components\.#[0-9]+$", path):
@@ -391,14 +392,23 @@ class FLClientStarterConfiger(JsonConfigurator):
         if self.cmd_vars.get("secure_train"):
             secure_train = self.cmd_vars["secure_train"]
 
+        client_config = self.config_data["client"]
+        # If the user didn't set site_config explicitly under "client", project
+        # it from the merged config (resources.json + fed_client.json) minus
+        # local-only keys, so site operators can advertise custom top-level
+        # vars to the server just by adding them to resources.json.
+        if ClientRegMsgKey.SITE_CONFIG not in client_config:
+            projected_site_config = project_site_config(self.config_data)
+            if projected_site_config:
+                client_config[ClientRegMsgKey.SITE_CONFIG] = projected_site_config
+
         build_ctx = {
             "client_name": self.cmd_vars.get("uid", ""),
             "site_org": self.cmd_vars.get("org", ""),
             "server_config": self.config_data.get("servers", []),
-            "client_config": self.config_data["client"],
+            "client_config": client_config,
             "secure_train": secure_train,
             "server_host": self.cmd_vars.get("host", None),
-            "overseer_agent": self.overseer_agent,
             "client_components": self.components,
             "client_handlers": self.handlers,
         }

@@ -182,11 +182,13 @@ docs/apidocs/
 # Claude Code personal config
 CLAUDE.local.md
 
-# local Codex artifacts
+# local agent/tooling artifacts
 .codex/
+.cursor/
+.claude/
+tmp/review/
 
 # memory profiler output
 tests/memory_profile/**/*.dat
 /HEAD
-.claude/
 uv.lock

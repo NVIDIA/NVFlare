@@ -69,7 +69,9 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
-        save_filename: Filename for saving the best model. Defaults to "FL_global_model.pt".
+        best_model_filename: Filename for saving the best model. If unset, the default
+            PyTorch persistor uses DefaultCheckpointFileName.BEST_GLOBAL_MODEL.
+        save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
         enable_tensor_disk_offload: Enable disk-backed tensor offload for incoming streamed payloads.
@@ -121,7 +123,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         # New FedAvg features
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
-        save_filename: str = "FL_global_model.pt",
+        best_model_filename: Optional[str] = None,
+        save_filename: Optional[str] = None,
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[dict[str, float]] = None,
         server_memory_gc_rounds: int = 0,
@@ -155,6 +158,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             key_metric=key_metric,
             stop_cond=stop_cond,
             patience=patience,
+            best_model_filename=best_model_filename,
             save_filename=save_filename,
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
@@ -192,6 +196,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             initial_ckpt=ckpt_path,
             locator=self._pt_model_locator,
             allow_numpy_conversion=allow_numpy_conversion,
+            best_model_filename=self.best_model_filename,
         )
         result = job.to_server(pt_model, id="persistor")
         if isinstance(result, dict) and hasattr(job, "comp_ids"):

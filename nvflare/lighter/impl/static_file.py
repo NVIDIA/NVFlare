@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import logging
 import os
 import shutil
 
@@ -30,6 +31,8 @@ from nvflare.lighter.constants import (
 from nvflare.lighter.entity import Participant
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
+_logger = logging.getLogger(__name__)
+
 
 class StaticFileBuilder(Builder):
     def __init__(
@@ -39,6 +42,7 @@ class StaticFileBuilder(Builder):
         app_validator="",
         download_job_url="",
         docker_image="",
+        overseer_agent=None,
         **kwargs,
     ):
         """Build all static files from template.
@@ -57,6 +61,9 @@ class StaticFileBuilder(Builder):
             docker_image: when docker_image is set to a docker image name, docker.sh will be generated on
             server/client/admin
         """
+        if overseer_agent is not None:
+            _logger.warning("'overseer_agent' arg in StaticFileBuilder is obsolete and will be ignored.")
+
         if not isinstance(scheme, str):
             raise ValueError(f"invalid scheme: must be str but got {type(scheme)}")
         scheme = scheme.lower().strip()
@@ -114,7 +121,6 @@ class StaticFileBuilder(Builder):
         admin_port = ctx.get(CtxKey.ADMIN_PORT)
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
         target = f"{server.name}:{fed_learn_port}"
-        sp_end_point = f"{server.name}:{fed_learn_port}:{admin_port}"
         conn_sec = self._build_conn_properties(server, ctx)
 
         ctx.build_from_template(
@@ -128,7 +134,6 @@ class StaticFileBuilder(Builder):
                 "admin_port": admin_port,
                 "scheme": self._determine_scheme(server),
                 "conn_sec": conn_sec,
-                "sp_end_point": sp_end_point,
             },
         )
 
@@ -158,7 +163,6 @@ class StaticFileBuilder(Builder):
             dest_dir,
             TemplateSectionKey.START_SERVER_SH,
             ProvFileName.START_SH,
-            replacement={"ha_mode": "false"},
             exe=True,
         )
 
@@ -251,7 +255,7 @@ class StaticFileBuilder(Builder):
         conn_host, conn_port = self._determine_conn_target(client, ctx)
         if conn_port:
             fl_port = conn_port
-        sp_end_point = f"{conn_host}:{fl_port}:{admin_port}"
+        target = f"{conn_host}:{fl_port}"
 
         ctx.build_from_template(
             dest_dir,
@@ -261,10 +265,10 @@ class StaticFileBuilder(Builder):
                 "scheme": self._determine_scheme(client),
                 "name": project.name,
                 "server_identity": server.name,
+                "target": target,
                 "fqsn": client.get_prop(PropKey.FQSN),
                 "is_leaf": is_leaf,
                 "conn_sec": self._build_conn_properties(client, ctx),
-                "sp_end_point": sp_end_point,
             },
         )
 
@@ -312,9 +316,16 @@ class StaticFileBuilder(Builder):
             num_gpus = capacity.get(PropKey.NUM_GPUS, 0)
             gpu_mem = capacity.get(PropKey.GPU_MEM, 0)
 
+        # allow_log_streaming is rendered as a JSON literal ("true"/"false").
+        # Default is True at provision time; sites that want to disable
+        # streaming opt out by setting allow_log_streaming=false on the
+        # participant in project.yml or by editing the generated
+        # resources.json.default.
+        allow_log_streaming = bool(client.get_prop_fb(PropKey.ALLOW_LOG_STREAMING, default=True))
         replacement_dict = {
             "num_gpus": num_gpus,
             "gpu_mem": gpu_mem,
+            "allow_log_streaming": "true" if allow_log_streaming else "false",
         }
 
         ctx.build_from_template(
@@ -322,8 +333,6 @@ class StaticFileBuilder(Builder):
             TemplateSectionKey.LOCAL_CLIENT_RESOURCES,
             ProvFileName.RESOURCES_JSON_DEFAULT,
             replacement=replacement_dict,
-            content_modify_cb=self._modify_system_log_streamer,
-            client=client,
         )
 
         ctx.build_from_template(
@@ -414,39 +423,6 @@ class StaticFileBuilder(Builder):
         dest_dir = ctx.get_ws_dir(client)
         ctx.build_from_template(dest_dir, TemplateSectionKey.CLIENT_README, ProvFileName.README_TXT)
 
-    def _modify_system_log_streamer(self, section: str, client: Participant) -> str:
-        """Modify the local resources section and remove the "system_log_streamer" component if necessary.
-        By default, the "system_log_streamer" component is included in local resources.
-        However, if the project does not allow errors to be sent, then this component must be removed.
-
-        Args:
-            section: the local resources section generated from template
-            client: the client being provisioned
-
-        Returns: modified section content
-
-        """
-        allow = client.get_prop_fb(PropKey.ALLOW_ERROR_SENDING, default=False)
-        if allow:
-            # error sending is allowed - so no change needed.
-            return section
-
-        # convert to dict for easy modification
-        section_dict = json.loads(section)
-        components = section_dict.get("components")
-        if not components:
-            return section
-
-        assert isinstance(components, list)
-        for c in components:
-            if c["id"] == "system_log_streamer":
-                # must remove this component
-                components.remove(c)
-                break
-
-        # Must convert to Json string
-        return json.dumps(section_dict, indent=2)
-
     @staticmethod
     def _check_host_name_against_server(host_name: str, server: Participant) -> str:
         return StaticFileBuilder._validate_host_name_against_listener(
@@ -507,8 +483,8 @@ class StaticFileBuilder(Builder):
                 port = ct.port
         else:
             # connect_to is not explicitly specified: use the server's name by default
-            # Note: by doing this dynamically, we guarantee the sp_end_point to be correct, even if the
-            # project.yaml does not specify the default server host correctly!
+            # Note: by doing this dynamically, we guarantee the connection target to be correct, even if
+            # the project.yaml does not specify the default server host correctly!
             conn_host = server.get_default_host()
         return conn_host, port
 

@@ -1,130 +1,212 @@
 .. _package_command:
 
-#########################
+###############
 Package Command
-#########################
+###############
 
-``nvflare package`` assembles startup kits for distributed (manual)
-provisioning from a locally held private key, a signed certificate, and
-``rootCA.pem``.
+``nvflare package`` assembles a startup kit from a signed zip returned by the
+Project Admin and the requester's local private key.
 
-The command does not generate ``signature.json``. Trust is anchored in mTLS
-using the signed participant certificate and the project root CA.
-
-***********************
-Command Usage
-***********************
+The public distributed provisioning form is:
 
 .. code-block:: none
 
-   usage: nvflare package [-h] [-t {client,server,org_admin,lead,member}]
-                          [-e ENDPOINT] [-n NAME] [--dir DIR] [--cert CERT]
-                          [--key KEY] [--rootca ROOTCA] [-w WORKSPACE]
-                          [--project-name PROJECT_NAME] [-p PROJECT_FILE]
-                          [--admin-port ADMIN_PORT] [--force] [--schema]
+   usage: nvflare package [-h] [-w WORKSPACE] [--request-dir REQUEST_DIR]
+                          [--fingerprint EXPECTED_FINGERPRINT]
+                          [--force] [--schema]
+                          input
 
-*****************
-Packaging Modes
-*****************
+The ``input`` positional argument is the ``*.signed.zip`` file produced by
+``nvflare cert approve``.
 
-Three packaging modes are supported. Choose the one that best matches how your
-site stores its certificate material.
+*******************
+Basic Package Flow
+*******************
 
-From a Working Directory
-========================
-
-Directory mode is the simplest path for a single participant. Put the private
-key, signed certificate, and ``rootCA.pem`` in one directory:
+For a site request created in ``./hospital-a``:
 
 .. code-block:: shell
 
-   nvflare package -e grpc://fl-server:8002 --dir ./hospital-1-kit
+   nvflare package hospital-a.signed.zip
 
-Behavior in this mode:
+This still validates the signed zip, signed metadata, certificate chain, and
+local private-key match. It does not perform an out-of-band root CA fingerprint
+comparison.
 
-- participant name is auto-detected from the ``.key`` filename
-- kit type is derived from the signed certificate's embedded type
-- no ``-t`` is needed
-
-From Explicit File Paths
-========================
-
-Use explicit mode when the key, cert, and root CA are stored in different
-locations:
+To verify the signed zip root CA against the value received from the Project
+Admin through a trusted out-of-band channel, pass the expected fingerprint:
 
 .. code-block:: shell
 
-   nvflare package -n hospital-1 -e grpc://fl-server:8002 \
-     --cert ./signed/hospital-1/hospital-1.crt \
-     --key ./csr/hospital-1.key \
-     --rootca ./signed/hospital-1/rootCA.pem
+   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
-In explicit mode:
-
-- ``-n`` supplies the participant name
-- ``--cert``, ``--key``, and ``--rootca`` are all provided explicitly
-- this mode is for a single participant
-
-From YAML
-=========
-
-Use ``--project-file`` when you want to package from either:
-
-- a single-site YAML with ``name``, ``org``, and ``type``
-- a project-style YAML compatible with ``nvflare provision``
+The longer spelling ``--expected-fingerprint`` is also accepted:
 
 .. code-block:: shell
 
-   nvflare package -e grpc://fl-server:8002 -p ./site.yaml --dir ./certs
+   nvflare package hospital-a.signed.zip \
+       --expected-fingerprint <rootca_fingerprint_sha256>
 
-When ``--project-file`` is used:
+If the signed zip is not next to the request folder and package cannot find the
+folder from local request state, specify it:
 
-- ``-t`` becomes an optional type filter
-- certs are discovered from ``--dir`` by participant common name
-- kit type is still derived from each signed certificate
+.. code-block:: shell
+
+   nvflare package hospital-a.signed.zip \
+       --request-dir ./hospital-a \
+       --fingerprint <rootca_fingerprint_sha256>
+
+The command validates that:
+
+- the signed zip contains ``signed.json``, ``signed.json.sig``, ``site.yaml``,
+  one signed certificate, and ``rootCA.pem``;
+- ``signed.json.sig`` verifies against ``rootCA.pem`` before the signed
+  endpoint, scheme, connection security, or ``ca_info`` fields are trusted;
+- the signed zip does not contain private keys;
+- the local private key matches the signed certificate;
+- the certificate chains to ``rootCA.pem``;
+- signed CA fingerprint metadata matches the ``rootCA.pem`` in the signed zip;
+- local ``request.json`` metadata and signed metadata match;
+- identity fields in the local request-folder ``site.yaml`` match the signed
+  zip.
+
+The command always prints ``rootca_fingerprint_sha256`` in its result. Without
+``--fingerprint <rootca_fingerprint_sha256>``, packaging does not perform an
+out-of-band trust comparison.
+
+The signed ``ca_info`` check prevents accidental CA mixing inside the package
+workspace, but it does not replace out-of-band fingerprint verification because
+the signed zip carries its own ``rootCA.pem``.
+Older signed zips that do not contain signed CA metadata are treated as deploy
+version ``00`` and use the fingerprint computed from the included
+``rootCA.pem`` for workspace consistency checks.
+
+The output goes under:
+
+.. code-block:: text
+
+   <workspace>/<project-name>/prod_<NN>/<identity>/
+
+For example:
+
+.. code-block:: text
+
+   workspace/hospital_federation/prod_00/hospital-a/
+
+The deploy version comes from signed CA metadata in ``signed.json``. It is set
+by ``nvflare cert init --deploy-version`` and defaults to ``00``. Normally
+ignore it. Multiple participants approved by the same CA and deploy version are
+packaged side by side in the same ``prod_00`` directory. Packaging does not
+increment a directory counter for each participant.
+
+If ``prod_<NN>`` already exists, ``nvflare package`` verifies that the existing
+package root uses the same ``rootCA.pem`` fingerprint. A root CA mismatch is a
+hard error. Deploy version ``00`` maps to ``prod_00``; deploy version ``01``
+maps to ``prod_01``. Use ``--force`` only to replace an existing participant
+under the same deploy version and CA.
+
+****************************
+Connection Configuration
+****************************
+
+The package command does not require an endpoint argument in the distributed
+provisioning flow.
+
+Connection values are resolved from:
+
+- ``signed.json`` in the signed zip, which contains the Project Admin-approved
+  ``scheme``, default ``connection_security``, ``server`` endpoint from
+  ``project_profile.yaml``, and signed ``ca_info`` from ``ca.json``;
+- the original local participant definition in the request folder, which
+  contains participant identity and package-time fields.
+
+The server host and port fields are part of the signed approval metadata.
+``nvflare package`` uses the signed ``server`` endpoint to generate startup
+kits. Client and user request folders do not provide local endpoint overrides.
+If the server endpoint changes after approval, update ``project_profile.yaml``
+and regenerate affected signed zips.
+
+Local package-time fields that are intentionally excluded from the signed zip,
+such as custom builders and the server-side ``connection_security`` override,
+remain local packaging inputs.
+
+Client and user participant definitions do not include the server endpoint:
+
+.. code-block:: yaml
+
+   participants:
+     - name: hospital-a
+       type: client
+       org: hospital_alpha
+
+For user startup kits, the same signed endpoint from ``signed.json`` is used:
+
+.. code-block:: yaml
+
+   participants:
+     - name: alice@hospital-alpha.org
+       type: admin
+       org: hospital_alpha
+       role: lead
+
+For server kits, ``connection_security`` may be set in the server participant
+definition:
+
+.. code-block:: yaml
+
+   participants:
+     - name: server1.hospital-central.org
+       type: server
+       org: hospital_central
+       connection_security: mtls
+
+This server-side value is a local package-time override. It is read from the
+request folder when building the server kit. It is not approved by the Project
+Admin and is not distributed as federation policy. If it is not set, package
+uses the default ``connection_security`` from the signed zip.
+
+**************************
+Package a User Startup Kit
+**************************
+
+For a lead user:
+
+.. code-block:: shell
+
+   nvflare cert request --participant alice.yaml
+   nvflare cert approve alice@hospital-alpha.org.request.zip --ca-dir ./ca --profile project_profile.yaml
+   nvflare package alice@hospital-alpha.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
+
+The generated startup kit contains:
+
+.. code-block:: text
+
+   startup/fl_admin.sh
+
+Run it with:
+
+.. code-block:: shell
+
+   cd workspace/hospital_federation/prod_00/alice@hospital-alpha.org
+   ./startup/fl_admin.sh
 
 ****************
 Main Arguments
 ****************
 
-- ``-e, --endpoint``: server endpoint URI. Supported schemes are ``grpc://``,
-  ``tcp://``, and ``http://``. Required for all modes.
-- ``-t, --type``: optional type filter for YAML mode only. Choices:
-  ``client``, ``server``, ``org_admin``, ``lead``, ``member``.
-- ``-n, --name``: participant name. Auto-detected in directory mode. In admin
-  kit types, this must be an email address.
-- ``--dir``: working directory containing key, cert, and ``rootCA.pem`` by
-  convention. Mutually exclusive with explicit ``--cert/--key/--rootca`` input.
-- ``--cert``: signed certificate from the Project Admin.
-- ``--key``: private key generated locally by ``nvflare cert csr``.
-- ``--rootca``: ``rootCA.pem`` from the Project Admin.
-- ``-w, --workspace``: workspace root directory. Output goes to
-  ``<workspace>/<project-name>/prod_NN/<name>/``. Default: ``workspace``.
-- ``--project-name``: project name used in output path and in generated
-  challenge-response configuration. Default: ``project``.
-- ``-p, --project-file``: site-scoped or project-style YAML. Mutually exclusive
-  with ``-n`` and explicit ``--cert/--key/--rootca`` mode.
-- ``--admin-port``: server admin port. Default: same as the service port
-  (single-port mode).
-- ``--force``: allow re-packaging when the same participant name appears in the
-  most recent ``prod_NN`` directory. A new ``prod_NN`` is created alongside the
-  existing one.
-- ``--schema``: print the JSON schema for this command's arguments and exit.
-
-*********************
-Important Notes
-*********************
-
-- ``--endpoint`` is required in all packaging modes.
-- In single-participant mode, the startup-kit type is derived from the signed
-  certificate produced by ``nvflare cert sign``. The certificate is the source
-  of truth.
-- ``WorkspaceBuilder`` and ``StaticFileBuilder`` are always managed by
-  ``nvflare package``. If they appear in a project YAML builders list, those
-  entries and their custom arguments are ignored.
-- The output path is ``<workspace>/<project-name>/prod_NN/<name>/``.
-- The server hostname in ``--endpoint`` must match the hostname expected by the
-  server certificate for mTLS validation.
+- ``input``: approved ``*.signed.zip`` returned by ``nvflare cert approve``.
+- ``-w, --workspace``: workspace root directory. Default: ``workspace``.
+- ``--request-dir``: local request directory containing the private key,
+  ``request.json``, and the full local participant definition. Use it when the
+  signed zip is not next to the request folder and local request state is not
+  available.
+- ``--fingerprint``: expected SHA256 fingerprint for
+  ``rootCA.pem`` in the signed zip. The command fails if it does not match.
+- ``--expected-fingerprint``: longer spelling for ``--fingerprint``.
+- ``--force``: allow replacing an existing participant package under the same
+  ``prod_<NN>`` directory when the signed CA information still matches. It
+  does not bypass root CA mismatch checks.
+- ``--schema``: print JSON schema for this command.
 
 *********************
 JSON Output and Help
@@ -140,7 +222,9 @@ The top-level CLI also supports JSON output mode:
 
 .. code-block:: shell
 
-   nvflare package -e grpc://fl-server:8002 --dir ./hospital-1-kit --format json
+   nvflare package hospital-a.signed.zip \
+       --fingerprint <rootca_fingerprint_sha256> \
+       --format json
 
-For end-to-end distributed provisioning workflow details, see
+For the end-to-end distributed provisioning workflow, see
 :ref:`distributed_provisioning`.

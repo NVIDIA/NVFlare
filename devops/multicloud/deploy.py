@@ -24,8 +24,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import copy
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import hashlib
 import json
-import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -36,18 +39,65 @@ from pathlib import Path
 
 import yaml
 
-DRY_RUN = False
+from clouds import CLOUD_ORDER, get_provider
 
-LAUNCHER_FOR_ROLE = {
-    "server": "nvflare.app_opt.job_launcher.k8s_launcher.ServerK8sJobLauncher",
-    "client": "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
-}
+DRY_RUN = False
 
 TOOL_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TOOL_DIR.parents[1]
 WORK_DIR = TOOL_DIR / ".work"
-STATE_FILE = WORK_DIR / "state.json"
 PROJECT_TEMPLATE = TOOL_DIR / "project.yml"
+MONITORING_STACK = TOOL_DIR / "monitoring-stack.yaml"
+DEFAULT_KUBECONFIG_DIR = REPO_ROOT / ".tmp" / "kubeconfigs"
+K8S_RUNTIME = "k8s"
+VALID_ROLES = {"server", "client"}
+STARTUP_STABILITY_SECONDS = 20
+MONITORING_STACK_NAMESPACE = "nvflare-monitoring"
+MONITORING_NAMESPACE_PREFIX = "nvflare-"
+MONITORING_NAMESPACE_SUFFIX = "-monitoring"
+STATSD_SERVICE_NAME = "statsd-exporter"
+STATSD_PORT = 9125
+MONITORING_COMPONENT_IDS = {
+    "sys_metrics_collector",
+    "remote_metrics_receiver",
+    "statsd_reporter",
+    "event_to_fed",
+}
+
+
+def _safe_k8s_name(value: str, *, max_len: int = 63) -> str:
+    name = re.sub(r"[^a-z0-9-]+", "-", value.lower()).strip("-")
+    name = name or "system"
+    if len(name) <= max_len:
+        return name
+    digest = hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
+    return f"{name[: max_len - 9].rstrip('-')}-{digest}"
+
+
+def monitoring_namespace(config_name: str) -> str:
+    name_budget = 63 - len(MONITORING_NAMESPACE_PREFIX) - len(MONITORING_NAMESPACE_SUFFIX)
+    return (
+        f"{MONITORING_NAMESPACE_PREFIX}{_safe_k8s_name(config_name, max_len=name_budget)}{MONITORING_NAMESPACE_SUFFIX}"
+    )
+
+
+def statsd_host(namespace: str) -> str:
+    return f"{STATSD_SERVICE_NAME}.{namespace}.svc.cluster.local"
+
+
+DEFAULT_MONITORING_NAMESPACE = monitoring_namespace("default")
+
+
+# ---------------------------------------------------------------------------
+# Monitoring config
+# ---------------------------------------------------------------------------
+@dataclass
+class MonitoringConfig:
+    enabled: bool = False
+    namespace: str = DEFAULT_MONITORING_NAMESPACE
+    statsd_host: str = statsd_host(DEFAULT_MONITORING_NAMESPACE)
+    statsd_port: int = STATSD_PORT
+    env: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -60,11 +110,8 @@ class Participant:
     kubeconfig: str
     role: str  # "server" or "client"
     cloud: str
-    launcher_class: str
-    image: str
+    prepare: dict
     helm_overrides: list = field(default_factory=list)
-    security_context: dict | None = None
-    pending_timeout: int | None = None
     pvc_config: dict = field(default_factory=dict)
     pod_annotations: dict = field(default_factory=dict)
     study_data: dict = field(default_factory=dict)
@@ -75,6 +122,7 @@ class Participant:
 
 @dataclass
 class DeployConfig:
+    name: str
     participants: list[Participant]
     server_cloud: str
     gcp_project: str | None
@@ -83,41 +131,78 @@ class DeployConfig:
     aws_eks_cluster_name: str | None
     azure_resource_group: str | None
     azure_location: str | None
+    monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
 
 
-def _parse_kubeconfig(kc_path: Path, cloud: str) -> dict:
-    """Extract cluster-identifying fields (region, project, cluster name) from a kubeconfig.
+def load_monitoring_config(raw: dict, *, config_name: str, config_path: Path) -> MonitoringConfig:
+    cfg = raw.get("monitoring", {})
+    if cfg is None:
+        cfg = {}
+    if isinstance(cfg, bool):
+        enabled = cfg
+    elif isinstance(cfg, dict):
+        enabled = bool(cfg.get("enabled", False))
+    else:
+        raise ValueError(f"{config_path}: monitoring must be true, false, or a YAML mapping")
 
-    Relies on the default context-name formats produced by:
-      * GCP: ``gcloud container clusters get-credentials`` → ``gke_<project>_<region>_<cluster>``
-      * AWS: ``aws eks update-kubeconfig`` → ``arn:aws:eks:<region>:<account>:cluster/<name>``
-    """
-    data = yaml.safe_load(kc_path.read_text())
-    current_ctx = data.get("current-context")
-    if not current_ctx:
-        raise ValueError(f"{kc_path}: no current-context")
-    ctx = next((c for c in data.get("contexts", []) if c.get("name") == current_ctx), None)
-    if not ctx:
-        raise ValueError(f"{kc_path}: current-context {current_ctx!r} not found in contexts")
-    cluster_name = ctx["context"]["cluster"]
+    namespace = monitoring_namespace(config_name)
+    return MonitoringConfig(enabled=enabled, namespace=namespace, statsd_host=statsd_host(namespace), env=config_name)
 
-    if cloud == "gcp":
-        parts = cluster_name.split("_")
-        if len(parts) < 4 or parts[0] != "gke":
-            raise ValueError(
-                f"{kc_path}: GKE context cluster {cluster_name!r} not in 'gke_<project>_<region>_<cluster>' form"
-            )
-        return {"project": parts[1], "region": parts[2]}
-    if cloud == "aws":
-        if not cluster_name.startswith("arn:aws:eks:"):
-            raise ValueError(f"{kc_path}: EKS context cluster {cluster_name!r} is not an ARN")
-        parts = cluster_name.split(":")
-        if len(parts) < 6:
-            raise ValueError(f"{kc_path}: malformed EKS ARN {cluster_name!r}")
-        return {"region": parts[3], "eks_cluster_name": parts[5].split("/", 1)[1]}
-    # Azure kubeconfig context names are just the cluster name; resource_group and
-    # location are read directly from the deployment YAML instead.
-    return {}
+
+def _site_tag(participant_name: str, role: str) -> str:
+    return "server" if role == "server" else participant_name
+
+
+def system_monitoring_components(participant_name: str, role: str, monitoring: MonitoringConfig) -> list[dict]:
+    tags = {"site": _site_tag(participant_name, role), "env": monitoring.env}
+    if role == "server":
+        return [
+            {
+                "id": "sys_metrics_collector",
+                "path": "nvflare.metrics.system_metrics_collector.SysMetricsCollector",
+                "args": {"tags": tags},
+            },
+            {
+                "id": "remote_metrics_receiver",
+                "path": "nvflare.metrics.remote_metrics_receiver.RemoteMetricsReceiver",
+                "args": {"events": ["fed.metrics_event"]},
+            },
+            {
+                "id": "statsd_reporter",
+                "path": "nvflare.fuel_opt.statsd.statsd_reporter.StatsDReporter",
+                "args": {"site": "server", "host": monitoring.statsd_host, "port": monitoring.statsd_port},
+            },
+        ]
+
+    return [
+        {
+            "id": "sys_metrics_collector",
+            "path": "nvflare.metrics.system_metrics_collector.SysMetricsCollector",
+            "args": {"tags": tags, "streaming_to_server": True},
+        },
+        {
+            "id": "event_to_fed",
+            "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
+            "args": {"events_to_convert": ["metrics_event"]},
+        },
+    ]
+
+
+def patch_resources_for_system_monitoring(
+    resources_path: Path, *, participant_name: str, role: str, monitoring: MonitoringConfig
+) -> None:
+    resources = json.loads(resources_path.read_text())
+    components = resources.setdefault("components", [])
+    if not isinstance(components, list):
+        raise ValueError(f"{resources_path}: components must be a list")
+
+    resources["components"] = [c for c in components if c.get("id") not in MONITORING_COMPONENT_IDS]
+    resources["components"] = system_monitoring_components(participant_name, role, monitoring) + resources["components"]
+    resources_path.write_text(json.dumps(resources, indent=4) + "\n")
+
+    active_resources = resources_path.with_name("resources.json")
+    if active_resources.exists():
+        active_resources.unlink()
 
 
 def _normalize_study_data(study_data: dict | None) -> dict:
@@ -133,9 +218,15 @@ def _normalize_study_data(study_data: dict | None) -> dict:
     return result
 
 
+def _kubeconfig_path(cloud: str) -> Path:
+    return (DEFAULT_KUBECONFIG_DIR / f"{cloud}.yaml").resolve()
+
+
 def load_config(config_path: Path) -> DeployConfig:
     config_path = config_path.resolve()
     raw = yaml.safe_load(config_path.read_text())
+    name = raw.get("name") or config_path.stem
+    monitoring = load_monitoring_config(raw, config_name=name, config_path=config_path)
     clouds = raw.get("clouds") or {}
     if not clouds:
         raise ValueError(f"{config_path}: missing 'clouds' section")
@@ -145,12 +236,9 @@ def load_config(config_path: Path) -> DeployConfig:
 
     cloud_derived: dict[str, dict] = {}
     for cloud_name, cloud_cfg in clouds.items():
-        kc_rel = (cloud_cfg or {}).get("kubeconfig")
-        if not kc_rel:
-            continue
-        kc_path = (config_path.parent / kc_rel).resolve()
+        kc_path = _kubeconfig_path(cloud_name)
         if kc_path.exists():
-            cloud_derived[cloud_name] = _parse_kubeconfig(kc_path, cloud_name)
+            cloud_derived[cloud_name] = get_provider(cloud_name).parse_kubeconfig(kc_path)
 
     participants: list[Participant] = []
     servers: list[str] = []
@@ -162,19 +250,19 @@ def load_config(config_path: Path) -> DeployConfig:
         if cloud not in clouds:
             raise ValueError(f"{config_path}: participant {entry['name']} references unknown cloud '{cloud}'")
         role = entry["role"]
-        if role not in LAUNCHER_FOR_ROLE:
+        if role not in VALID_ROLES:
             raise ValueError(f"{config_path}: participant {entry['name']} has invalid role '{role}'")
         if role == "server":
             servers.append(entry["name"])
 
-        merged = {**clouds[cloud], **entry}
-        kubeconfig = merged.get("kubeconfig")
-        if not kubeconfig:
-            raise ValueError(f"{config_path}: participant {entry['name']} has no kubeconfig (set on cloud or entry)")
-        image = merged.get("image")
-        if not image:
-            raise ValueError(f"{config_path}: participant {entry['name']} has no image (set on cloud or entry)")
-        kc_path = (config_path.parent / kubeconfig).resolve()
+        cloud_cfg = clouds[cloud] or {}
+        merged = {**cloud_cfg, **entry}
+        prepare = copy.deepcopy(entry.get("prepare") or cloud_cfg.get("prepare") or {})
+        if not prepare:
+            raise ValueError(f"{config_path}: participant {entry['name']} has no prepare config")
+        if prepare.get("runtime") != K8S_RUNTIME:
+            raise ValueError(f"{config_path}: participant {entry['name']} prepare.runtime must be '{K8S_RUNTIME}'")
+        kc_path = _kubeconfig_path(cloud)
         pvc_config = merged.get("pvc_config") or {}
         study_data = _normalize_study_data(merged.get("study_data"))
 
@@ -185,11 +273,8 @@ def load_config(config_path: Path) -> DeployConfig:
                 kubeconfig=str(kc_path),
                 role=role,
                 cloud=cloud,
-                launcher_class=LAUNCHER_FOR_ROLE[role],
-                image=image,
+                prepare=prepare,
                 helm_overrides=list(merged.get("helm_overrides") or []),
-                security_context=merged.get("security_context"),
-                pending_timeout=merged.get("pending_timeout"),
                 pvc_config=pvc_config,
                 pod_annotations=merged.get("pod_annotations") or {},
                 study_data=study_data,
@@ -205,8 +290,10 @@ def load_config(config_path: Path) -> DeployConfig:
     aws = cloud_derived.get("aws", {})
     azure = clouds.get("azure") or {}
     return DeployConfig(
+        name=name,
         participants=participants,
         server_cloud=server_cloud,
+        monitoring=monitoring,
         gcp_project=gcp.get("project"),
         gcp_region=gcp.get("region"),
         aws_region=aws.get("region"),
@@ -231,6 +318,10 @@ def _dry_run_stdout(cmd: list[str]) -> str:
         return "<gcp-project>\n"
     if cmd[:4] == ["gcloud", "compute", "addresses", "describe"]:
         return "<server-ip>\n"
+    if cmd[:3] == ["aws", "ec2", "describe-addresses"]:
+        return json.dumps([{"PublicIp": "<server-ip>", "AllocationId": "<alloc-id>"}]) + "\n"
+    if cmd[:4] == ["aws", "configure", "get", "region"]:
+        return "<aws-region>\n"
     if cmd[:3] == ["aws", "ec2", "allocate-address"]:
         return json.dumps({"PublicIp": "<server-ip>", "AllocationId": "<alloc-id>"}) + "\n"
     if cmd[:3] == ["aws", "eks", "describe-cluster"]:
@@ -278,13 +369,8 @@ def run_quiet(cmd: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
-def kubectl(kubeconfig: str, *args) -> subprocess.CompletedProcess:
-    return run(["kubectl", "--kubeconfig", kubeconfig] + list(args))
-
-
-def kubectl_check(kubeconfig: str, *args) -> bool:
-    r = run_quiet(["kubectl", "--kubeconfig", kubeconfig] + list(args))
-    return r.returncode == 0
+def kubectl(kubeconfig: str, *args, **kwargs) -> subprocess.CompletedProcess:
+    return run(["kubectl", "--kubeconfig", kubeconfig] + list(args), **kwargs)
 
 
 def helm(kubeconfig: str, *args) -> subprocess.CompletedProcess:
@@ -293,336 +379,67 @@ def helm(kubeconfig: str, *args) -> subprocess.CompletedProcess:
 
 def check_auth(clouds_used: set):
     print("Checking cloud auth ...")
-    if "gcp" in clouds_used:
-        r = run_quiet(["gcloud", "auth", "print-access-token"])
+    for cloud in CLOUD_ORDER:
+        if cloud not in clouds_used:
+            continue
+        provider = get_provider(cloud)
+        r = run_quiet(provider.auth_check_cmd)
         if r.returncode != 0:
-            sys.exit("GCP auth failed. Run: gcloud auth login")
-    if "aws" in clouds_used:
-        r = run_quiet(["aws", "sts", "get-caller-identity"])
-        if r.returncode != 0:
-            sys.exit("AWS auth failed. Run: aws sso login")
-    if "azure" in clouds_used:
-        r = run_quiet(["az", "account", "show"])
-        if r.returncode != 0:
-            sys.exit("Azure auth failed. Run: az login")
+            sys.exit(provider.auth_failed_message)
     print("  Auth OK")
 
 
 def check_auth_for(cloud: str):
     """Re-check auth before cloud-specific operations."""
-    if cloud == "aws":
-        r = run_quiet(["aws", "sts", "get-caller-identity"])
-        if r.returncode != 0:
-            sys.exit("AWS session expired. Run: aws sso login")
-    elif cloud == "gcp":
-        r = run_quiet(["gcloud", "auth", "print-access-token"])
-        if r.returncode != 0:
-            sys.exit("GCP auth expired. Run: gcloud auth login")
-    elif cloud == "azure":
-        r = run_quiet(["az", "account", "show"])
-        if r.returncode != 0:
-            sys.exit("Azure session expired. Run: az login")
+    provider = get_provider(cloud)
+    r = run_quiet(provider.auth_check_cmd)
+    if r.returncode != 0:
+        sys.exit(provider.auth_expired_message)
 
 
-def load_state() -> dict:
-    if DRY_RUN:
-        return {}
-    if STATE_FILE.exists():
-        return json.loads(STATE_FILE.read_text())
-    return {}
+def _safe_resource_name(name: str) -> str:
+    base = re.sub(r"[^a-z0-9-]+", "-", name.lower()).strip("-")
+    if not base:
+        base = "cluster"
+    full = f"nvflare-{base}"
+    if len(full) <= 63:
+        return full
+    digest = hashlib.sha1(full.encode("utf-8")).hexdigest()[:8]
+    return f"{full[:54].rstrip('-')}-{digest}"
 
 
-def _synthetic_state(config: DeployConfig) -> dict:
-    ip_name = "<alloc-id>" if config.server_cloud == "aws" else "nvflare-DRYRUN-0"
-    state = {
-        "server_ip": "<server-ip>",
+def _participant_state(p: Participant) -> dict:
+    return {"kubeconfig": p.kubeconfig, "namespace": p.namespace, "cloud": p.cloud, "role": p.role}
+
+
+def deployment_state(config: DeployConfig, *, gcp_project: str | None = None) -> dict:
+    ip_name = _safe_resource_name(config.name)
+    return {
         "ip_name": ip_name,
-        "gcp_project": "<gcp-project>",
+        "gcp_project": gcp_project or config.gcp_project,
         "gcp_region": config.gcp_region or "us-central1",
         "aws_region": config.aws_region,
         "server_cloud": config.server_cloud,
-        "participants": {
-            p.name: {"kubeconfig": p.kubeconfig, "namespace": p.namespace, "cloud": p.cloud}
-            for p in config.participants
-        },
+        "azure_resource_group": config.azure_resource_group,
+        "azure_location": config.azure_location,
+        "azure_pip_name": ip_name if config.server_cloud == "azure" else None,
+        "participants": {p.name: _participant_state(p) for p in config.participants},
     }
-    if config.server_cloud == "aws":
-        state["aws_eip_allocation_id"] = "<alloc-id>"
-        state["aws_nlb_subnet_id"] = "<subnet-id>"
-    if config.server_cloud == "azure":
-        state["azure_resource_group"] = config.azure_resource_group or "<resource-group>"
-        state["azure_location"] = config.azure_location or "<location>"
-        state["azure_pip_name"] = ip_name
-    return state
-
-
-def save_state(state: dict):
-    if DRY_RUN:
-        return
-    WORK_DIR.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
 def namespace_exists(kubeconfig: str, ns: str) -> bool:
-    return kubectl_check(kubeconfig, "get", "ns", ns)
-
-
-def helm_release_status(kubeconfig: str, name: str, ns: str) -> str | None:
-    r = run_quiet(["helm", "--kubeconfig", kubeconfig, "status", name, "-n", ns, "--output", "json"])
-    if r.returncode != 0:
-        return None
-    try:
-        status = json.loads(r.stdout).get("info", {}).get("status")
-    except (json.JSONDecodeError, AttributeError):
-        return None
-    return status if isinstance(status, str) else None
+    return run_quiet(["kubectl", "--kubeconfig", kubeconfig, "get", "ns", ns]).returncode == 0
 
 
 def helm_release_exists(kubeconfig: str, name: str, ns: str) -> bool:
-    return helm_release_status(kubeconfig, name, ns) is not None
+    return run_quiet(["helm", "--kubeconfig", kubeconfig, "status", name, "-n", ns]).returncode == 0
 
 
-def pod_exists(kubeconfig: str, ns: str, name: str) -> bool:
-    return kubectl_check(kubeconfig, "-n", ns, "get", "pod", name)
-
-
-# ---------------------------------------------------------------------------
-# Reserve / release static IP
-# ---------------------------------------------------------------------------
-def _ip_tag() -> str:
+def nvflare_cmd() -> str:
     if DRY_RUN:
-        return "nvflare-DRYRUN-0"
-    return f"nvflare-{os.environ.get('USER', 'dev')}-{int(time.time())}"
-
-
-def reserve_ip(
-    server_cloud: str,
-    *,
-    gcp_project: str | None = None,
-    gcp_region: str | None = None,
-    aws_region: str | None = None,
-    azure_resource_group: str | None = None,
-    azure_location: str | None = None,
-) -> tuple[str, str]:
-    if server_cloud == "gcp":
-        return _reserve_ip_gcp(gcp_project, gcp_region)
-    if server_cloud == "aws":
-        return _reserve_ip_aws(aws_region)
-    if server_cloud == "azure":
-        return _reserve_ip_azure(azure_resource_group, azure_location)
-    raise ValueError(f"unknown server cloud: {server_cloud}")
-
-
-def _reserve_ip_gcp(project: str, region: str) -> tuple[str, str]:
-    ip_name = _ip_tag()
-    print(f"Reserving static IP {ip_name} ...")
-    run(["gcloud", "compute", "addresses", "create", ip_name, f"--region={region}", f"--project={project}", "--quiet"])
-    r = run(
-        [
-            "gcloud",
-            "compute",
-            "addresses",
-            "describe",
-            ip_name,
-            f"--region={region}",
-            f"--project={project}",
-            "--format=value(address)",
-        ],
-        capture=True,
-    )
-    ip = r.stdout.strip()
-    print(f"  Reserved: {ip} ({ip_name})")
-    return ip, ip_name
-
-
-def _reserve_ip_aws(region: str) -> tuple[str, str]:
-    tag = _ip_tag()
-    print(f"Allocating Elastic IP {tag} ...")
-    r = run(
-        [
-            "aws",
-            "ec2",
-            "allocate-address",
-            "--domain",
-            "vpc",
-            "--region",
-            region,
-            "--tag-specifications",
-            f"ResourceType=elastic-ip,Tags=[{{Key=Name,Value={tag}}}]",
-            "--output",
-            "json",
-        ],
-        capture=True,
-    )
-    resp = json.loads(r.stdout) if r.stdout.strip() else {}
-    ip = resp.get("PublicIp", "")
-    alloc_id = resp.get("AllocationId", "")
-    if not ip or not alloc_id:
-        raise RuntimeError(f"allocate-address returned unexpected response: {r.stdout!r}")
-    print(f"  Reserved: {ip} ({alloc_id})")
-    return ip, alloc_id
-
-
-def _reserve_ip_azure(resource_group: str, location: str) -> tuple[str, str]:
-    if not isinstance(resource_group, str) or not resource_group.strip():
-        raise ValueError(
-            "Azure static IP reservation requires a non-empty resource_group. "
-            "Set clouds.azure.resource_group in the deploy config or repair the saved state."
-        )
-    if not isinstance(location, str) or not location.strip():
-        raise ValueError(
-            "Azure static IP reservation requires a non-empty location. "
-            "Set clouds.azure.location in the deploy config or repair the saved state."
-        )
-    ip_name = _ip_tag()
-    print(f"Reserving Azure Public IP {ip_name} ...")
-    run(
-        [
-            "az",
-            "network",
-            "public-ip",
-            "create",
-            "--resource-group",
-            resource_group,
-            "--name",
-            ip_name,
-            "--sku",
-            "Standard",
-            "--allocation-method",
-            "Static",
-            "--location",
-            location,
-        ]
-    )
-    r = run(
-        [
-            "az",
-            "network",
-            "public-ip",
-            "show",
-            "--resource-group",
-            resource_group,
-            "--name",
-            ip_name,
-            "--query",
-            "ipAddress",
-            "--output",
-            "tsv",
-        ],
-        capture=True,
-    )
-    ip = r.stdout.strip()
-    if not ip:
-        raise RuntimeError(f"az network public-ip show returned no IP for {ip_name}")
-    print(f"  Reserved: {ip} ({ip_name})")
-    return ip, ip_name
-
-
-def _discover_aws_public_subnet(cluster_name: str, region: str) -> str:
-    print(f"Discovering public subnet for EKS cluster {cluster_name} ...")
-    r = run(
-        [
-            "aws",
-            "eks",
-            "describe-cluster",
-            "--name",
-            cluster_name,
-            "--region",
-            region,
-            "--query",
-            "cluster.resourcesVpcConfig.vpcId",
-            "--output",
-            "text",
-        ],
-        capture=True,
-    )
-    vpc_id = r.stdout.strip()
-    if not vpc_id:
-        raise RuntimeError(f"could not resolve VPC id for EKS cluster {cluster_name}")
-    r = run(
-        [
-            "aws",
-            "ec2",
-            "describe-subnets",
-            "--filters",
-            f"Name=vpc-id,Values={vpc_id}",
-            "Name=tag:kubernetes.io/role/elb,Values=1",
-            "--region",
-            region,
-            "--query",
-            "Subnets[0].SubnetId",
-            "--output",
-            "text",
-        ],
-        capture=True,
-    )
-    subnet_id = r.stdout.strip()
-    if not subnet_id or subnet_id == "None":
-        raise RuntimeError(f"no public subnet (tag kubernetes.io/role/elb=1) in VPC {vpc_id}")
-    print(f"  Using subnet: {subnet_id}")
-    return subnet_id
-
-
-def release_ip(
-    server_cloud: str,
-    ip_name: str,
-    *,
-    gcp_project: str | None = None,
-    gcp_region: str | None = None,
-    aws_region: str | None = None,
-    azure_resource_group: str | None = None,
-):
-    if not ip_name:
-        return
-    if server_cloud == "gcp":
-        print(f"Releasing IP {ip_name} ...")
-        run(
-            [
-                "gcloud",
-                "compute",
-                "addresses",
-                "delete",
-                ip_name,
-                f"--region={gcp_region}",
-                f"--project={gcp_project}",
-                "--quiet",
-            ],
-            check=False,
-        )
-        return
-    if server_cloud == "aws":
-        print(f"Releasing Elastic IP {ip_name} ...")
-        run(
-            ["aws", "ec2", "release-address", "--allocation-id", ip_name, "--region", aws_region],
-            check=False,
-        )
-        return
-    if server_cloud == "azure":
-        _release_ip_azure(ip_name, azure_resource_group)
-        return
-    raise ValueError(f"unknown server cloud: {server_cloud}")
-
-
-def _release_ip_azure(ip_name: str, resource_group: str):
-    if not isinstance(resource_group, str) or not resource_group.strip():
-        raise ValueError(
-            "Azure static IP release requires a non-empty resource_group. "
-            "Repair the saved state or pass a config that includes clouds.azure.resource_group."
-        )
-    print(f"Releasing Azure Public IP {ip_name} ...")
-    r = run(
-        ["az", "network", "public-ip", "delete", "--resource-group", resource_group, "--name", ip_name],
-        check=False,
-    )
-    if r.returncode != 0:
-        detail = ""
-        stderr = getattr(r, "stderr", "") or ""
-        if stderr.strip():
-            detail = f": {stderr.strip()}"
-        print(
-            f"  Warning: failed to delete Azure Public IP {ip_name} in resource group {resource_group}{detail}. "
-            "The IP may still be allocated and require manual cleanup."
-        )
+        return "nvflare"
+    nvflare = REPO_ROOT / ".venv" / "bin" / "nvflare"
+    return str(nvflare) if nvflare.exists() else "nvflare"
 
 
 # ---------------------------------------------------------------------------
@@ -636,11 +453,9 @@ def provision(server_ip: str, config: DeployConfig) -> Path:
         run(["nvflare", "provision", "-p", str(project_file), "-w", str(provision_dir)])
         return Path("<prod_dir>")
 
-    server = next(p for p in config.participants if p.role == "server")
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     project_text = PROJECT_TEMPLATE.read_text()
     project_text = project_text.replace("__SERVER_IP__", server_ip)
-    project_text = project_text.replace("__DOCKER_IMAGE__", server.image)
     project = yaml.safe_load(project_text)
 
     template_server = next(e for e in project["participants"] if e.get("type") == "server")
@@ -658,14 +473,11 @@ def provision(server_ip: str, config: DeployConfig) -> Path:
     project_file = WORK_DIR / "project.yml"
     project_file.write_text(yaml.dump(project, default_flow_style=False, sort_keys=False))
 
-    nvflare = REPO_ROOT / ".venv" / "bin" / "nvflare"
-    nvflare_cmd = str(nvflare) if nvflare.exists() else "nvflare"
-
     provision_dir = WORK_DIR / "provision"
     if provision_dir.exists():
         shutil.rmtree(provision_dir)
 
-    run([nvflare_cmd, "provision", "-p", str(project_file), "-w", str(provision_dir)])
+    run([nvflare_cmd(), "provision", "-p", str(project_file), "-w", str(provision_dir)])
 
     prod_dirs = sorted(provision_dir.glob("*/prod_*"))
     if not prod_dirs:
@@ -673,53 +485,174 @@ def provision(server_ip: str, config: DeployConfig) -> Path:
     return prod_dirs[-1]
 
 
-# ---------------------------------------------------------------------------
-# Post-process resources.json for K8sJobLauncher
-# ---------------------------------------------------------------------------
-def patch_resources_json(
-    kit_dir: Path,
-    namespace: str,
-    launcher_class: str,
-    security_context: dict | None = None,
-    pending_timeout: int | None = None,
-    study_data: dict | None = None,
-):
-    src = kit_dir / "local" / "resources.json.default"
-    dst = kit_dir / "local" / "resources.json"
+def _write_yaml_file(path: Path, data: dict):
+    payload = yaml.safe_dump(data, sort_keys=False)
     if DRY_RUN:
-        preview = {"namespace": namespace, "launcher_class": launcher_class}
-        if security_context:
-            preview["security_context"] = security_context
-        if pending_timeout is not None:
-            preview["pending_timeout"] = pending_timeout
-        if study_data:
-            preview["study_data"] = study_data
-        print(f"  Would patch {dst}: {json.dumps(preview)}")
-        if study_data:
-            print(f"  Would write {kit_dir / 'local' / 'study_data.yaml'}: {yaml.safe_dump(study_data)}")
+        print(f"  Would write {_mask(str(path))}:")
+        for line in payload.splitlines():
+            print(f"    | {line}")
         return
-    r = json.loads(src.read_text())
-    replaced = False
-    for i, c in enumerate(r["components"]):
-        if "process_launcher" in c.get("id", "") or "ProcessJobLauncher" in c.get("path", ""):
-            args = {
-                "config_file_path": None,
-                "study_data_pvc_file_path": "/var/tmp/nvflare/workspace/local/study_data.yaml",
-                "namespace": namespace,
-                "python_path": "/usr/local/bin/python3",
-            }
-            if security_context:
-                args["security_context"] = security_context
-            if pending_timeout is not None:
-                args["pending_timeout"] = pending_timeout
-            r["components"][i] = {"id": "k8s_launcher", "path": launcher_class, "args": args}
-            replaced = True
-    if not replaced:
-        raise RuntimeError(f"No ProcessJobLauncher component found in {src}; cannot inject K8sJobLauncher.")
-    dst.write_text(json.dumps(r, indent=4))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(payload)
 
-    if study_data:
-        (kit_dir / "local" / "study_data.yaml").write_text(yaml.safe_dump(study_data, sort_keys=False))
+
+def render_monitoring_stack(namespace: str) -> str:
+    return MONITORING_STACK.read_text().replace(MONITORING_STACK_NAMESPACE, namespace)
+
+
+def deploy_monitoring_stack(config: DeployConfig):
+    monitoring = config.monitoring
+    if not monitoring.enabled:
+        return
+
+    server = next(p for p in config.participants if p.role == "server")
+    print(f"Deploying monitoring stack in {server.cloud}/{monitoring.namespace} ...")
+    kubectl(server.kubeconfig, "apply", "-f", "-", input=render_monitoring_stack(monitoring.namespace))
+    for deployment in ("statsd-exporter", "prometheus", "grafana"):
+        kubectl(
+            server.kubeconfig,
+            "-n",
+            monitoring.namespace,
+            "rollout",
+            "status",
+            f"deployment/{deployment}",
+            "--timeout=300s",
+        )
+
+
+def teardown_monitoring_stack(config: DeployConfig) -> bool:
+    monitoring = config.monitoring
+    if not monitoring.enabled:
+        return True
+
+    server = next(p for p in config.participants if p.role == "server")
+    print(f"Tearing down monitoring stack ({monitoring.namespace}) ...")
+    try:
+        check_auth_for(server.cloud)
+    except SystemExit:
+        print(f"  Auth failed for {server.cloud} — skipping")
+        return False
+    r = run(
+        [
+            "kubectl",
+            "--kubeconfig",
+            server.kubeconfig,
+            "delete",
+            "ns",
+            monitoring.namespace,
+            "--ignore-not-found",
+            "--timeout=120s",
+        ],
+        check=False,
+    )
+    return r.returncode == 0
+
+
+def inject_system_monitoring(kit_dir: Path, participant: Participant, monitoring: MonitoringConfig):
+    if not monitoring.enabled:
+        return
+
+    resources_path = kit_dir / "local" / "resources.json.default"
+    if DRY_RUN:
+        print(f"  Would inject system monitoring into {_mask(str(resources_path))}")
+        return
+    patch_resources_for_system_monitoring(
+        resources_path,
+        participant_name=participant.name,
+        role=participant.role,
+        monitoring=monitoring,
+    )
+
+
+def prepare_runtime_kits(
+    prod_dir: Path, participants: list[Participant], monitoring: MonitoringConfig | None = None
+) -> dict[str, Path]:
+    print("Preparing K8s runtime kits ...")
+    config_dir = WORK_DIR / "prepare-configs"
+    if not DRY_RUN and config_dir.exists():
+        shutil.rmtree(config_dir)
+
+    monitoring = monitoring or MonitoringConfig()
+    kit_dirs = {}
+    for p in participants:
+        kit_dir = prod_dir / p.name
+        prepare_config = copy.deepcopy(p.prepare)
+        prepare_config["namespace"] = p.namespace
+        if p.study_data:
+            _write_yaml_file(kit_dir / "local" / "study_data.yaml", p.study_data)
+
+        config_path = config_dir / f"{p.name}.yaml"
+        output_dir = kit_dir / "prepared" / K8S_RUNTIME
+        _write_yaml_file(config_path, prepare_config)
+        run(
+            [
+                nvflare_cmd(),
+                "deploy",
+                "prepare",
+                "--kit",
+                str(kit_dir),
+                "--output",
+                str(output_dir),
+                "--config",
+                str(config_path),
+            ]
+        )
+        inject_system_monitoring(output_dir, p, monitoring)
+        kit_dirs[p.name] = output_dir
+    return kit_dirs
+
+
+def verify_deployment_stable(p: Participant, seconds: int = STARTUP_STABILITY_SECONDS):
+    if DRY_RUN:
+        return
+
+    def _pods():
+        r = kubectl(
+            p.kubeconfig,
+            "-n",
+            p.namespace,
+            "get",
+            "pods",
+            "-l",
+            f"app.kubernetes.io/name={p.name}",
+            "-o",
+            "json",
+            capture=True,
+        )
+        return json.loads(r.stdout).get("items", [])
+
+    pods = _pods()
+    if not pods:
+        raise RuntimeError(f"No pod found for deployment {p.name} in namespace {p.namespace}")
+    restart_baseline = {
+        pod["metadata"]["name"]: sum(
+            status.get("restartCount", 0) for status in pod.get("status", {}).get("containerStatuses") or []
+        )
+        for pod in pods
+    }
+
+    time.sleep(seconds)
+    pods = _pods()
+    if not pods:
+        raise RuntimeError(f"No pod found for deployment {p.name} in namespace {p.namespace}")
+
+    failures = []
+    for pod in pods:
+        pod_name = pod["metadata"]["name"]
+        phase = pod.get("status", {}).get("phase")
+        statuses = pod.get("status", {}).get("containerStatuses") or []
+        restarts = sum(status.get("restartCount", 0) for status in statuses)
+        ready = statuses and all(status.get("ready") for status in statuses)
+        baseline = restart_baseline.get(pod_name)
+        if baseline is None:
+            failures.append(f"{pod_name}: appeared during stability check")
+        elif phase != "Running" or not ready:
+            failures.append(f"{pod_name}: phase={phase} ready={ready} restarts={restarts}")
+        elif restarts > baseline:
+            failures.append(f"{pod_name}: restarts increased from {baseline} to {restarts}")
+
+    if failures:
+        raise RuntimeError(f"{p.name} did not stay stable after startup: " + "; ".join(failures))
 
 
 # ---------------------------------------------------------------------------
@@ -727,14 +660,10 @@ def patch_resources_json(
 # ---------------------------------------------------------------------------
 def deploy_participant(
     p: Participant,
-    prod_dir: Path,
+    kit_dir: Path,
     server_ip: str | None = None,
-    aws_server_alloc_id: str | None = None,
-    aws_server_subnet: str | None = None,
-    azure_pip_name: str | None = None,
-    azure_resource_group: str | None = None,
+    state: dict | None = None,
 ):
-    kit_dir = prod_dir / p.name
     chart_dir = kit_dir / "helm_chart"
 
     print(f"\n{'=' * 60}")
@@ -742,17 +671,16 @@ def deploy_participant(
     print(f"{'=' * 60}")
 
     check_auth_for(p.cloud)
-    helm_status = helm_release_status(p.kubeconfig, p.name, p.namespace)
 
-    # 1. Namespace (idempotent)
+    # 1. Namespace
     if not namespace_exists(p.kubeconfig, p.namespace):
         print(f"  Creating namespace {p.namespace}")
         kubectl(p.kubeconfig, "create", "ns", p.namespace)
     else:
         print(f"  Namespace {p.namespace} exists")
 
-    # 2. PVCs (idempotent via apply)
-    print("  Creating PVCs ...")
+    # 2. PVCs
+    print("  Applying PVCs ...")
     for pvc_name, cfg in p.pvc_config.items():
         pvc_yaml = json.dumps(
             {
@@ -766,123 +694,84 @@ def deploy_participant(
                 },
             }
         )
-        r = run_quiet(["kubectl", "--kubeconfig", p.kubeconfig, "-n", p.namespace, "get", "pvc", pvc_name])
-        if r.returncode != 0:
-            run(["kubectl", "--kubeconfig", p.kubeconfig, "-n", p.namespace, "apply", "-f", "-"], input=pvc_yaml)
-        else:
-            print(f"    PVC {pvc_name} exists")
+        run(["kubectl", "--kubeconfig", p.kubeconfig, "-n", p.namespace, "apply", "-f", "-"], input=pvc_yaml)
 
-    # 3. Stage kit files (skip only when the release is healthy and deployed)
-    if helm_status == "deployed":
-        print(f"  Helm release {p.name} already deployed — skipping kit staging")
-    else:
-        if helm_status:
-            print(f"  Helm release {p.name} is in state '{helm_status}' — restaging kit files")
-        print("  Staging kit files via temp pod ...")
-        pod_name = f"kit-copy-{p.name}"
+    # 3. Remove any running participant so the fresh kit is the only source of truth.
+    if helm_release_exists(p.kubeconfig, p.name, p.namespace):
+        print(f"  Removing existing Helm release {p.name} ...")
+        helm(p.kubeconfig, "uninstall", p.name, "-n", p.namespace, "--wait", "--timeout=600s")
 
-        # Build pod spec
-        sec_ctx = {}
-        if p.security_context:
-            sec_ctx = {"securityContext": p.security_context}
+    # 4. Stage kit files
+    print("  Staging kit files via temp pod ...")
+    pod_name = f"kit-copy-{p.name}"
 
-        copy_image = "busybox:1.36"
-        pod_spec = {
-            "spec": {
-                **sec_ctx,
-                "volumes": [{"name": "ws", "persistentVolumeClaim": {"claimName": "nvflws"}}],
-                "containers": [
-                    {
-                        "name": "copy",
-                        "image": copy_image,
-                        "command": ["sleep", "600"],
-                        "volumeMounts": [{"name": "ws", "mountPath": "/ws"}],
-                        "resources": {
-                            "requests": {"cpu": "10m", "memory": "64Mi"},
-                            "limits": {"cpu": "100m", "memory": "128Mi"},
-                        },
-                    }
-                ],
-            }
+    parent_prepare = p.prepare.get("parent") or {}
+    sec_ctx = {}
+    security_context = parent_prepare.get("pod_security_context")
+    if security_context:
+        sec_ctx = {"securityContext": security_context}
+    workspace_pvc = parent_prepare.get("workspace_pvc", "nvflws")
+
+    copy_image = "busybox:1.36"
+    pod_spec = {
+        "spec": {
+            **sec_ctx,
+            "volumes": [{"name": "ws", "persistentVolumeClaim": {"claimName": workspace_pvc}}],
+            "containers": [
+                {
+                    "name": "copy",
+                    "image": copy_image,
+                    "command": ["sleep", "600"],
+                    "volumeMounts": [{"name": "ws", "mountPath": "/ws"}],
+                    "resources": {
+                        "requests": {"cpu": "10m", "memory": "64Mi"},
+                        "limits": {"cpu": "100m", "memory": "128Mi"},
+                    },
+                }
+            ],
         }
+    }
 
-        if pod_exists(p.kubeconfig, p.namespace, pod_name):
-            kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name, "--timeout=60s")
+    kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name, "--ignore-not-found", "--timeout=60s")
+    kubectl(
+        p.kubeconfig,
+        "-n",
+        p.namespace,
+        "run",
+        pod_name,
+        f"--image={copy_image}",
+        "--restart=Never",
+        f"--overrides={json.dumps(pod_spec)}",
+    )
 
-        kubectl(
-            p.kubeconfig,
-            "-n",
-            p.namespace,
-            "run",
-            pod_name,
-            f"--image={copy_image}",
-            "--restart=Never",
-            f"--overrides={json.dumps(pod_spec)}",
-        )
+    print("  Waiting for staging pod ...")
+    kubectl(p.kubeconfig, "-n", p.namespace, "wait", "--for=condition=Ready", f"pod/{pod_name}", "--timeout=600s")
 
-        print("  Waiting for PVCs to bind ...")
-        kubectl(p.kubeconfig, "-n", p.namespace, "wait", "--for=condition=Ready", f"pod/{pod_name}", "--timeout=600s")
+    kubectl(p.kubeconfig, "-n", p.namespace, "exec", pod_name, "--", "rm", "-rf", "/ws/startup", "/ws/local")
+    kubectl(p.kubeconfig, "-n", p.namespace, "cp", str(kit_dir / "startup"), f"{pod_name}:/ws/startup")
+    kubectl(p.kubeconfig, "-n", p.namespace, "cp", str(kit_dir / "local"), f"{pod_name}:/ws/local")
+    kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name, "--timeout=60s")
 
-        kubectl(p.kubeconfig, "-n", p.namespace, "cp", str(kit_dir / "startup"), f"{pod_name}:/ws/startup")
-        kubectl(p.kubeconfig, "-n", p.namespace, "cp", str(kit_dir / "local"), f"{pod_name}:/ws/local")
-        kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name, "--timeout=60s")
+    # 5. Helm install
+    print(f"  Helm installing {p.name} ...")
+    helm_args = ["upgrade", "--install", p.name, str(chart_dir), "-n", p.namespace]
+    helm_args += p.helm_overrides
 
-        # 4. Helm install/upgrade
-        print(f"  Helm upgrading/installing {p.name} ...")
-        helm_args = ["upgrade", "--install", p.name, str(chart_dir), "-n", p.namespace]
-        helm_args += p.helm_overrides
+    if p.role == "server" and server_ip:
+        helm_args += ["--set", "service.type=LoadBalancer"]
+        helm_args += get_provider(p.cloud).server_service_helm_args(server_ip=server_ip, state=state or {})
 
-        if p.role == "server" and server_ip:
-            helm_args += ["--set", "service.type=LoadBalancer"]
-            if p.cloud == "aws":
-                if not aws_server_alloc_id or not aws_server_subnet:
-                    raise RuntimeError("AWS server requires EIP allocation id and NLB subnet id")
-                annotations = {
-                    "service.beta.kubernetes.io/aws-load-balancer-type": "external",
-                    "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type": "ip",
-                    "service.beta.kubernetes.io/aws-load-balancer-scheme": "internet-facing",
-                    "service.beta.kubernetes.io/aws-load-balancer-eip-allocations": aws_server_alloc_id,
-                    "service.beta.kubernetes.io/aws-load-balancer-subnets": aws_server_subnet,
-                    # Single-AZ NLB (one subnet annotation) needs cross-zone to reach pods in other AZs.
-                    "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled": "true",
-                }
-                for k, v in annotations.items():
-                    escaped = k.replace(".", r"\.")
-                    helm_args += ["--set-string", f"service.annotations.{escaped}={v}"]
-            elif p.cloud == "azure":
-                if not azure_pip_name or not azure_resource_group:
-                    raise RuntimeError("Azure server requires azure_pip_name and azure_resource_group")
-                annotations = {
-                    "service.beta.kubernetes.io/azure-pip-name": azure_pip_name,
-                    "service.beta.kubernetes.io/azure-load-balancer-resource-group": azure_resource_group,
-                }
-                for k, v in annotations.items():
-                    escaped = k.replace(".", r"\.")
-                    helm_args += ["--set-string", f"service.annotations.{escaped}={v}"]
-            else:
-                helm_args += ["--set", f"service.loadBalancerIP={server_ip}"]
+    for k, v in p.pod_annotations.items():
+        escaped = k.replace(".", r"\.").replace("/", r"\/")
+        escaped_v = str(v).replace("\\", r"\\").replace(",", r"\,").replace("=", r"\=")
+        helm_args += ["--set-string", f"podAnnotations.{escaped}={escaped_v}"]
 
-        if p.security_context:
-            for k, v in _flatten_set("securityContext", p.security_context):
-                helm_args += ["--set", f"{k}={v}"]
+    if p.pull_policy:
+        helm_args += ["--set", f"image.pullPolicy={p.pull_policy}"]
 
-        for k, v in p.pod_annotations.items():
-            escaped = k.replace(".", r"\.").replace("/", r"\/")
-            escaped_v = str(v).replace("\\", r"\\").replace(",", r"\,").replace("=", r"\=")
-            helm_args += ["--set-string", f"podAnnotations.{escaped}={escaped_v}"]
+    helm(p.kubeconfig, *helm_args)
 
-        if ":" in p.image:
-            repo, tag = p.image.rsplit(":", 1)
-            helm_args += ["--set", f"image.repository={repo}", "--set", f"image.tag={tag}"]
-        else:
-            helm_args += ["--set", f"image.repository={p.image}"]
-
-        if p.pull_policy:
-            helm_args += ["--set", f"image.pullPolicy={p.pull_policy}"]
-
-        helm(p.kubeconfig, *helm_args)
-
-    # 5. Wait for server deployment
+    # 6. Wait for server deployment
     if p.role == "server":
         print("  Waiting for server to be ready ...")
         kubectl(
@@ -894,20 +783,41 @@ def deploy_participant(
             f"deployment/{p.name}",
             "--timeout=600s",
         )
+        verify_deployment_stable(p)
 
 
-def _flatten_set(prefix: str, d: dict) -> list[tuple[str, str]]:
-    result = []
-    for k, v in d.items():
-        key = f"{prefix}.{k}"
-        if isinstance(v, dict):
-            result.extend(_flatten_set(key, v))
-        elif isinstance(v, bool):
-            # helm --set treats only lowercase true/false as booleans
-            result.append((key, "true" if v else "false"))
-        else:
-            result.append((key, str(v)))
-    return result
+def deploy_participants(participants: list[Participant], kit_dirs: dict[str, Path], server_ip: str, state: dict):
+    servers = [p for p in participants if p.role == "server"]
+    clients = [p for p in participants if p.role != "server"]
+
+    for server in servers:
+        deploy_participant(server, kit_dirs[server.name], server_ip=server_ip, state=state)
+
+    if DRY_RUN or len(clients) <= 1:
+        for client in clients:
+            deploy_participant(client, kit_dirs[client.name], server_ip=server_ip, state=state)
+        return
+
+    print(f"\nDeploying {len(clients)} clients in parallel ...")
+    errors = []
+    with ThreadPoolExecutor(max_workers=len(clients)) as executor:
+        future_to_participant = {
+            executor.submit(deploy_participant, client, kit_dirs[client.name], server_ip=server_ip, state=state): client
+            for client in clients
+        }
+        for future in as_completed(future_to_participant):
+            participant = future_to_participant[future]
+            try:
+                future.result()
+            except BaseException as e:
+                if isinstance(e, KeyboardInterrupt):
+                    raise
+                errors.append((participant.name, e))
+
+    if errors:
+        for name, error in errors:
+            print(f"  {name} failed: {error}")
+        raise RuntimeError("Client deploy failed for: " + ", ".join(name for name, _ in errors))
 
 
 # ---------------------------------------------------------------------------
@@ -919,12 +829,8 @@ def cmd_up(args):
     clouds_used = {p.cloud for p in participants}
     check_auth(clouds_used)
 
-    if config.server_cloud == "aws" and not config.aws_eks_cluster_name:
-        sys.exit("clouds.aws.eks_cluster_name is required when the server is in AWS")
-    if config.server_cloud == "azure" and not config.azure_resource_group:
-        sys.exit("clouds.azure.resource_group is required when the server is in Azure")
-    if config.server_cloud == "azure" and not config.azure_location:
-        sys.exit("clouds.azure.location is required when the server is in Azure")
+    server_provider = get_provider(config.server_cloud)
+    server_provider.validate_server_config(config)
 
     gcp_project = None
     if "gcp" in clouds_used:
@@ -934,79 +840,27 @@ def cmd_up(args):
     gcp_region = config.gcp_region or "us-central1"
     aws_region = config.aws_region
 
-    state = load_state()
-
-    # Reserve IP (skip if already in state)
-    if "server_ip" in state and state["server_ip"]:
-        server_ip = state["server_ip"]
-        ip_name = state.get("ip_name", "")
-        print(f"Reusing IP from state: {server_ip}")
-    else:
-        server_ip, ip_name = reserve_ip(
-            config.server_cloud,
-            gcp_project=gcp_project,
-            gcp_region=gcp_region,
-            aws_region=aws_region,
-            azure_resource_group=config.azure_resource_group,
-            azure_location=config.azure_location,
-        )
-
-    # Discover AWS NLB subnet when server is in AWS
-    if config.server_cloud == "aws":
-        nlb_subnet = state.get("aws_nlb_subnet_id") or _discover_aws_public_subnet(
-            config.aws_eks_cluster_name, aws_region
-        )
-        state["aws_nlb_subnet_id"] = nlb_subnet
-        state["aws_eip_allocation_id"] = ip_name
-
-    # Save state
-    state.update(
-        {
-            "server_ip": server_ip,
-            "ip_name": ip_name,
-            "gcp_project": gcp_project,
-            "gcp_region": gcp_region,
-            "aws_region": aws_region,
-            "server_cloud": config.server_cloud,
-            "azure_resource_group": config.azure_resource_group,
-            "azure_location": config.azure_location,
-            "azure_pip_name": ip_name if config.server_cloud == "azure" else None,
-            "participants": {
-                p.name: {"kubeconfig": p.kubeconfig, "namespace": p.namespace, "cloud": p.cloud} for p in participants
-            },
-        }
+    state = deployment_state(config, gcp_project=gcp_project)
+    server_ip, ip_name = server_provider.reserve_ip(
+        run=run,
+        ip_tag=state["ip_name"],
+        state=state,
+        gcp_project=gcp_project,
+        gcp_region=gcp_region,
+        aws_region=aws_region,
+        azure_resource_group=config.azure_resource_group,
+        azure_location=config.azure_location,
     )
-    save_state(state)
+
+    server_provider.prepare_server_state(run=run, state=state, config=config, ip_name=ip_name, aws_region=aws_region)
+    state["server_ip"] = server_ip
+
+    deploy_monitoring_stack(config)
 
     prod_dir = provision(server_ip, config)
+    kit_dirs = prepare_runtime_kits(prod_dir, participants, monitoring=config.monitoring)
 
-    # Post-process resources.json
-    print("Post-processing resources.json for K8sJobLauncher ...")
-    for p in participants:
-        patch_resources_json(
-            prod_dir / p.name,
-            p.namespace,
-            p.launcher_class,
-            p.security_context,
-            p.pending_timeout,
-            p.study_data,
-        )
-
-    # Deploy each participant
-    aws_alloc_id = state.get("aws_eip_allocation_id")
-    aws_subnet = state.get("aws_nlb_subnet_id")
-    azure_pip = state.get("azure_pip_name")
-    azure_rg = state.get("azure_resource_group")
-    for p in participants:
-        deploy_participant(
-            p,
-            prod_dir,
-            server_ip=server_ip,
-            aws_server_alloc_id=aws_alloc_id,
-            aws_server_subnet=aws_subnet,
-            azure_pip_name=azure_pip,
-            azure_resource_group=azure_rg,
-        )
+    deploy_participants(participants, kit_dirs, server_ip=server_ip, state=state)
 
     print(f"\n{'=' * 60}")
     print("Deployment complete.")
@@ -1015,61 +869,73 @@ def cmd_up(args):
     print(f"{'=' * 60}")
 
 
+def teardown_participant(name: str, info: dict) -> bool:
+    kc, ns, cloud = info["kubeconfig"], info["namespace"], info.get("cloud", "")
+    print(f"Tearing down {name} ({ns}) ...")
+    try:
+        check_auth_for(cloud)
+    except SystemExit:
+        print(f"  Auth failed for {kc} — skipping")
+        return False
+
+    run(["helm", "--kubeconfig", kc, "uninstall", name, "-n", ns], check=False)
+    r = run(["kubectl", "--kubeconfig", kc, "delete", "ns", ns, "--ignore-not-found", "--timeout=120s"], check=False)
+    if r.returncode != 0:
+        return False
+
+    return True
+
+
+def teardown_participants(items: list[tuple[str, dict]], parallel: bool = True) -> bool:
+    if not items:
+        return True
+
+    if DRY_RUN or not parallel or len(items) <= 1:
+        ok = True
+        for name, info in items:
+            ok = teardown_participant(name, info) and ok
+        return ok
+
+    errors = []
+    with ThreadPoolExecutor(max_workers=len(items)) as executor:
+        future_to_name = {executor.submit(teardown_participant, name, info): name for name, info in items}
+        for future in as_completed(future_to_name):
+            name = future_to_name[future]
+            try:
+                if not future.result():
+                    errors.append(name)
+            except BaseException as e:
+                if isinstance(e, KeyboardInterrupt):
+                    raise
+                print(f"  {name} failed: {e}")
+                errors.append(name)
+
+    return not errors
+
+
 def cmd_down(args):
-    state = load_state()
-    if not state and DRY_RUN:
-        state = _synthetic_state(load_config(Path(args.config)))
-    if not state:
-        sys.exit("No state file found. Nothing to destroy.")
-
+    config = load_config(Path(args.config))
+    state = deployment_state(config)
     participants = state.get("participants", {})
-    fail = False
+    participant_items = list(participants.items())
+    client_items = [(name, info) for name, info in participant_items if info["role"] != "server"]
+    server_items = [(name, info) for name, info in participant_items if info["role"] == "server"]
+    clients_ok = teardown_participants(client_items)
+    server_ok = teardown_participants(server_items)
+    monitoring_ok = teardown_monitoring_stack(config)
 
-    for name, info in participants.items():
-        kc, ns, cloud = info["kubeconfig"], info["namespace"], info.get("cloud", "")
-        print(f"Tearing down {name} ({ns}) ...")
-        try:
-            check_auth_for(cloud)
-        except SystemExit:
-            print(f"  Auth failed for {kc} — skipping")
-            fail = True
-            continue
-
-        run(["helm", "--kubeconfig", kc, "uninstall", name, "-n", ns], check=False)
-        r = run(
-            ["kubectl", "--kubeconfig", kc, "delete", "ns", ns, "--ignore-not-found", "--timeout=120s"], check=False
-        )
-        if r.returncode != 0:
-            fail = True
-
-    if fail:
-        print("Partial teardown. State preserved for retry.")
+    if not clients_ok or not server_ok or not monitoring_ok:
+        print("Partial teardown. Re-run down with the same config after fixing the failure.")
         sys.exit(1)
 
-    ip_name = state.get("ip_name")
-    if ip_name:
-        release_ip(
-            state.get("server_cloud", "gcp"),
-            ip_name,
-            gcp_project=state.get("gcp_project", ""),
-            gcp_region=state.get("gcp_region", "us-central1"),
-            aws_region=state.get("aws_region"),
-            azure_resource_group=state.get("azure_resource_group"),
-        )
-
-    STATE_FILE.unlink(missing_ok=True)
+    get_provider(state.get("server_cloud", "gcp")).release_ip(run=run, ip_name=state["ip_name"], state=state)
     print("Destroyed.")
 
 
 def cmd_status(args):
-    state = load_state()
-    if not state and DRY_RUN:
-        state = _synthetic_state(load_config(Path(args.config)))
-    if not state:
-        print("No deployment state found.")
-        return
+    config = load_config(Path(args.config))
+    state = deployment_state(config)
 
-    print(f"Server IP: {state.get('server_ip', 'N/A')}")
     print(f"IP name:   {state.get('ip_name', 'N/A')}")
     for name, info in state.get("participants", {}).items():
         kc, ns = info["kubeconfig"], info["namespace"]
@@ -1086,7 +952,7 @@ def cmd_status(args):
 # Main
 # ---------------------------------------------------------------------------
 def main():
-    default_config = str(TOOL_DIR / "gcp-server.yaml")
+    default_config = str(TOOL_DIR / "all-clouds.yaml")
     parser = argparse.ArgumentParser(description="Multicloud NVFlare deploy tool")
     parser.add_argument("--dry-run", action="store_true", help="Print commands without executing")
     parser.add_argument("--config", default=default_config, help="Path to deploy config YAML")
