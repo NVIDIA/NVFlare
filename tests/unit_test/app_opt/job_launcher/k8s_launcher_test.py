@@ -861,6 +861,26 @@ class TestK8sJobLauncherInit:
         # study_data.yaml is populated lazily
         assert launcher.study_data_pvc_dict is None
 
+    def test_init_rejects_empty_ephemeral_storage(self):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        with pytest.raises(ValueError, match="ephemeral_storage"):
+            ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path="/fake/study_data.yaml",
+                ephemeral_storage="",
+            )
+
+    def test_init_rejects_non_string_ephemeral_storage(self):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        with pytest.raises(ValueError, match="ephemeral_storage"):
+            ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path="/fake/study_data.yaml",
+                ephemeral_storage=1,
+            )
+
 
 # ---------------------------------------------------------------------------
 # ClientK8sJobLauncher.get_module_args
@@ -1204,6 +1224,35 @@ class TestK8sJobLauncherLaunchJob:
             assert vol_map["workspace-job"]["emptyDir"]["sizeLimit"] == "8Gi"
             assert resources["requests"]["ephemeral-storage"] == "8Gi"
             assert resources["limits"]["ephemeral-storage"] == "8Gi"
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_ephemeral_storage_null_uses_launcher_default(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, ephemeral_storage="3Gi")
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"]["ephemeral_storage"] = None
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            vol_map = {v["name"]: v for v in manifest["spec"]["volumes"]}
+            resources = manifest["spec"]["containers"][0]["resources"]
+            assert vol_map["workspace-job"]["emptyDir"]["sizeLimit"] == "3Gi"
+            assert resources["requests"]["ephemeral-storage"] == "3Gi"
+            assert resources["limits"]["ephemeral-storage"] == "3Gi"
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_rejects_non_string_ephemeral_storage_from_launcher_spec(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, ephemeral_storage="3Gi")
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta(ephemeral_storage=1)
+            with pytest.raises(RuntimeError, match="ephemeral_storage"):
+                launcher.launch_job(meta, _make_launch_fl_ctx())
+            mock_api.create_namespaced_pod.assert_not_called()
         finally:
             _exit_patches(patches)
 

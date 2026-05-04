@@ -361,6 +361,8 @@ class K8sJobLauncher(JobLauncherSpec):
         if not isinstance(self.default_python_path, str) or not self.default_python_path:
             raise ValueError("default_python_path must be a non-empty string")
         self.security_context = security_context
+        if not isinstance(ephemeral_storage, str) or not ephemeral_storage:
+            raise ValueError("ephemeral_storage must be a non-empty string")
         self.ephemeral_storage = ephemeral_storage
         self.study_data_pvc_dict = None
         self.core_v1 = None
@@ -432,7 +434,11 @@ class K8sJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"missing {FLContextKey.ARGS} in FLContext")
         k8s_spec = get_job_launcher_spec(job_meta, site_name, "k8s")
         job_image = k8s_spec.get("image")
-        job_ephemeral_storage = k8s_spec.get("ephemeral_storage", self.ephemeral_storage)
+        job_ephemeral_storage = k8s_spec.get("ephemeral_storage")
+        if job_ephemeral_storage is None:
+            job_ephemeral_storage = self.ephemeral_storage
+        if not isinstance(job_ephemeral_storage, str) or not job_ephemeral_storage:
+            raise RuntimeError(f"launcher_spec['{site_name}']['k8s']['ephemeral_storage'] must be a non-empty string")
         if not job_image:
             raise RuntimeError(
                 f"K8sJobLauncher is configured for site '{site_name}' but no job image "
