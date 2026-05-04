@@ -186,6 +186,7 @@ CLAUDE.local.md
 .codex/
 .cursor/
 .claude/
+.devcontainer/
 tmp/review/
 
 # memory profiler output
