@@ -129,10 +129,16 @@ def _format_run_config_value(value) -> str:
 
 
 class FlowerClientApplet(CLIApplet):
-    def __init__(self, extra_env: dict = None, allow_runtime_dependency_installation: bool = False):
+    def __init__(
+        self,
+        extra_env: dict = None,
+        allow_runtime_dependency_installation: bool = False,
+        flower_app_path: Optional[str] = None,
+    ):
         """Constructor of FlowerClientApplet, which extends CLIApplet."""
         CLIApplet.__init__(self, stop_method="term")
         self.allow_runtime_dependency_installation = allow_runtime_dependency_installation
+        self.flower_app_path = flower_app_path
 
         # Ensure PATH includes the venv bin directory so Flower's internal
         # subprocesses (flower-superexec, etc.) can find executables
@@ -238,6 +244,7 @@ class FlowerServerApplet(Applet):
         superlink_min_query_interval=10.0,
         run_config: Optional[dict] = None,
         allow_runtime_dependency_installation: bool = False,
+        flower_app_path: Optional[str] = None,
     ):
         """Constructor of FlowerServerApplet.
 
@@ -248,6 +255,7 @@ class FlowerServerApplet(Applet):
             superlink_min_query_interval: minimal interval for querying superlink for status
             run_config: optional dict for flwr run --run-config arguments
             allow_runtime_dependency_installation: whether to allow dynamic dependency installation (flwr>=1.29)
+            flower_app_path: absolute path to pre-deployed Flower app on the server (clients receive via FAB)
         """
         Applet.__init__(self)
         self._superlink_process_mgr = None
@@ -257,6 +265,7 @@ class FlowerServerApplet(Applet):
         self.superlink_grace_period = superlink_grace_period
         self.superlink_min_query_interval = superlink_min_query_interval
         self.allow_runtime_dependency_installation = allow_runtime_dependency_installation
+        self.flower_app_path = flower_app_path
         self.run_id = None
         self.last_query_time = None
         self.last_check_status = None
@@ -311,8 +320,17 @@ class FlowerServerApplet(Applet):
             self.logger.error(f"expect workspace to be Workspace but got {type(ws)}")
             raise RuntimeError("invalid workspace")
 
-        custom_dir = ws.get_app_custom_dir(fl_ctx.get_job_id())
-        self.flower_app_dir = custom_dir
+        if self.flower_app_path:
+            if not os.path.isdir(self.flower_app_path):
+                raise RuntimeError(
+                    f"flower_app_path '{self.flower_app_path}' does not exist on this host. "
+                    "Ensure the Flower app is pre-deployed on the server. "
+                    "(Clients receive the app from the server via Flower's FAB distribution)."
+                )
+            self.flower_app_dir = self.flower_app_path
+        else:
+            custom_dir = ws.get_app_custom_dir(fl_ctx.get_job_id())
+            self.flower_app_dir = custom_dir
         self.exec_api_addr = exec_api_addr
         self.flwr_home_dir = self._prepare_flwr_home(ws.get_run_dir(fl_ctx.get_job_id()))
 

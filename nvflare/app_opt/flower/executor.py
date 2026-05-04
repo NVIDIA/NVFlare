@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Optional
+
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tie.executor import TieExecutor
 from nvflare.app_opt.flower.applet import FlowerClientApplet
@@ -30,6 +32,7 @@ class FlowerExecutor(TieExecutor):
         client_shutdown_timeout=5.0,
         extra_env: dict = None,
         allow_runtime_dependency_installation: bool = False,
+        flower_app_path: Optional[str] = None,
     ):
         """FlowerExecutor constructor
 
@@ -41,6 +44,7 @@ class FlowerExecutor(TieExecutor):
             client_shutdown_timeout: how long to wait for graceful shutdown of the client
             extra_env: extra env variables to be passed to client applet
             allow_runtime_dependency_installation: whether to allow dynamic dependency installation (only flwr>=1.29)
+            flower_app_path: absolute path to pre-deployed Flower app on the server (clients receive via FAB)
         """
         TieExecutor.__init__(
             self,
@@ -58,6 +62,7 @@ class FlowerExecutor(TieExecutor):
         self.num_rounds = None
         self.extra_env = extra_env
         self.allow_runtime_dependency_installation = allow_runtime_dependency_installation
+        self.flower_app_path = flower_app_path
 
     def get_connector(self, fl_ctx: FLContext):
         return GrpcClientConnector(
@@ -70,6 +75,7 @@ class FlowerExecutor(TieExecutor):
         return FlowerClientApplet(
             extra_env=self.extra_env,
             allow_runtime_dependency_installation=self.allow_runtime_dependency_installation,
+            flower_app_path=self.flower_app_path,
         )
 
     def configure(self, config: dict, fl_ctx: FLContext):
