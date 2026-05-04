@@ -70,23 +70,6 @@ The current flow is:
 
 This keeps the Camyla/QWBE idea inside the existing harness contract: no new dependencies, no evaluation changes, and no server-client protocol changes except explicitly labeled modes such as `--aggregator scaffold`. Architecture changes are allowed only as registered `--model_arch` variants under the active `--max_model_params` budget.
 
-## Assumed usage
-
-This starter is intended to live inside an NVFlare working tree or another repo where `nvflare`, `torch`, and `torchvision` are installed.
-Install the dependencies before handing the repository to an agent; the agent should use that prepared Python environment rather than creating virtual environments or installing packages during the research loop.
-
-A simple layout is:
-
-```text
-NVFlare/
-  examples/
-    advanced/
-      cifar10/
-        pt/
-          autofl_nvflare/
-            <this bundle>
-```
-
 ## Recommended agent runtime
 
 For long autonomous runs, prefer launching the coding agent inside a devcontainer rather than directly on the host. The recommended starting point is Trail of Bits' [`claude-code-devcontainer`](https://github.com/trailofbits/claude-code-devcontainer), which is designed to run Claude Code with broad command permissions inside a filesystem-isolated container.
@@ -99,7 +82,10 @@ npm install -g @devcontainers/cli
 git clone https://github.com/trailofbits/claude-code-devcontainer ~/.claude-devcontainer
 ~/.claude-devcontainer/install.sh self-install
 
-# From this repository checkout, install the template without starting it.
+# From this repository checkout, make the Auto-FL harness the devcontainer workspace.
+cd research/auto-fl-research
+
+# Install the template without starting it.
 devc template .
 ```
 
@@ -122,7 +108,7 @@ devc up
 devc shell
 ```
 
-This workflow assumes the checkout is a writable git clone, not a source archive, and that the agent can create commits and push branches without another credentials handoff. Before an overnight run, verify the container has git identity and SSH access to the fork or working remote:
+This workflow assumes the workspace is a writable git checkout or worktree, not a source archive, and that the agent can create commits and push branches without another credentials handoff. Before an overnight run, verify the container has git identity and SSH access to the fork or working remote:
 
 ```bash
 git remote -v
@@ -133,9 +119,9 @@ ssh -T git@github.com
 
 If you use a devcontainer, make sure your SSH agent is forwarded into the container or an appropriate GitHub SSH key is available there. Without this, the agent can still run local experiments, but it will stop when it needs to push a branch or commit reporting artifacts.
 
-Inside the container, `cd` to `research/auto-fl-research`, install this harness' Python requirements once with Python 3.12, export the prepared interpreter, and run preflight before handing control to the agent. Do not use the container's default `python3` if it points to Python 3.13. For Debian/Ubuntu-based devcontainers, install Python 3.12 first if it is missing.
+Inside the container, stay in `/workspace`, which is the mounted `research/auto-fl-research` harness directory. Install this harness' Python requirements once with Python 3.12, export the prepared interpreter, and run preflight before handing control to the agent. Do not use the container's default `python3` if it points to Python 3.13. For Debian/Ubuntu-based devcontainers, install Python 3.12 first if it is missing.
 
-Run the following from `research/auto-fl-research`. This directory is the entry point for the harness, and it contains the `Makefile`, `requirements.txt`, `program.md`, and run scripts:
+Run the following from `/workspace`. This directory is the entry point for the harness, and it contains the `Makefile`, `requirements.txt`, `program.md`, and run scripts:
 
 ```bash
 if ! command -v python3.12 >/dev/null 2>&1; then
@@ -174,7 +160,7 @@ For Claude Code, start the agent from the devcontainer shell with:
 claude --permission-mode auto
 ```
 
-For Codex CLI, install it inside the same devcontainer if needed, start Codex from the repository root, then use `/permissions` to set permissions inside the Codex session to `Auto-review`
+For Codex CLI, install it inside the same devcontainer if needed, start Codex from `/workspace`, then use `/permissions` to set permissions inside the Codex session to `Auto-review`
 
 Keep the devcontainer boundary meaningful: mount only the repository and deliberate scratch/drop paths, avoid mounting broad host directories or secrets, and remember that the container may still have outbound network access, git identity, and forwarded SSH-agent access depending on how it is configured. For overnight runs, use `tmux` or the devcontainer's persistent shell workflow so the agent can keep running after you disconnect.
 
@@ -223,10 +209,10 @@ Because the current CIFAR-10 validation loader is the same full test set on ever
 The default single-H100 candidate budget is:
 
 ```bash
---n_clients 8 --num_rounds 10 --aggregation_epochs 4 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
+--n_clients 8 --num_rounds 20 --aggregation_epochs 4 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
 ```
 
-Candidate runs default to a 600-second timeout through `scripts/run_iteration.sh`, and each appended `results.tsv` row includes `runtime_seconds` for experimental cost accounting. With result logging enabled, `run_iteration.sh` refuses to run outside an `autoresearch/` branch and initializes the `results.tsv` header before the training job starts; the scored row is appended after the candidate exits.
+Candidate runs default to a 1200-second timeout through `scripts/run_iteration.sh`, and each appended `results.tsv` row includes `runtime_seconds` for experimental cost accounting. With result logging enabled, `run_iteration.sh` refuses to run outside an `autoresearch/` branch and initializes the `results.tsv` header before the training job starts; the scored row is appended after the candidate exits.
 Training splits are reused across candidates with the same `n_clients`, `alpha`, and `seed` under `/tmp/cifar10_splits/autofl_cifar10_*`. A lock guards split creation, so candidate `--name` values do not create duplicate data-partition directories.
 Client training is deterministic by default for a fixed `--seed`: each site derives a stable per-site RNG seed, PyTorch deterministic algorithms are enabled, cuDNN benchmarking is disabled, and DataLoader shuffling/workers are seeded. Use `--no_deterministic_training` only for a deliberately faster but noisier subcampaign, and do not compare those scores directly with deterministic runs.
 
