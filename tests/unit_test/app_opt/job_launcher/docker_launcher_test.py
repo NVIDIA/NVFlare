@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import sys
+import tempfile
 from types import ModuleType
 from unittest.mock import MagicMock, patch
 
@@ -74,7 +75,10 @@ from nvflare.app_opt.job_launcher.docker_launcher import (
     DockerJobHandle,
     DockerJobLauncher,
     ServerDockerJobLauncher,
+    _copy_local_files,
+    _copy_startup_files,
     _exit_code_to_return_code,
+    _safe_workspace_child_path,
     _sanitize_container_name,
 )
 
@@ -162,6 +166,72 @@ class TestExitCodeToReturnCode:
 
 
 # ---------------------------------------------------------------------------
+# _safe_workspace_child_path
+# ---------------------------------------------------------------------------
+
+
+class TestSafeWorkspaceChildPath:
+    def test_returns_child_under_workspace(self):
+        assert _safe_workspace_child_path("/workspace", "job-1") == "/workspace/job-1"
+
+    def test_rejects_path_escape(self):
+        with pytest.raises(RuntimeError, match="single workspace child"):
+            _safe_workspace_child_path("/workspace", "../other")
+
+    def test_rejects_nested_child(self):
+        with pytest.raises(RuntimeError, match="single workspace child"):
+            _safe_workspace_child_path("/workspace", "job-1/../job-2")
+
+    def test_rejects_reserved_workspace_name(self):
+        with pytest.raises(RuntimeError, match="reserved workspace name"):
+            _safe_workspace_child_path("/workspace", "local")
+        with pytest.raises(RuntimeError, match="reserved workspace name"):
+            _safe_workspace_child_path("/workspace", ".nvflare_docker_launcher")
+
+
+# ---------------------------------------------------------------------------
+# filtered workspace copy helpers
+# ---------------------------------------------------------------------------
+
+
+class TestFilteredWorkspaceCopy:
+    def test_copy_startup_files_keeps_runtime_suffixes_only(self, tmp_path):
+        src = tmp_path / "startup-src"
+        dst = tmp_path / "startup-dst"
+        src.mkdir()
+        (src / "server.crt").write_text("cert")
+        (src / "server.key").write_text("key")
+        (src / "rootCA.pem").write_text("ca")
+        (src / "fed_server.json").write_text("{}")
+        (src / "sub_start.sh").write_text("#!/bin/bash")
+
+        _copy_startup_files(str(src), str(dst))
+
+        assert sorted(p.name for p in dst.iterdir()) == [
+            "fed_server.json",
+            "rootCA.pem",
+            "server.crt",
+            "server.key",
+        ]
+
+    def test_copy_local_files_excludes_study_data_mapping(self, tmp_path):
+        src = tmp_path / "local-src"
+        dst = tmp_path / "local-dst"
+        src.mkdir()
+        (src / "resources.json").write_text("{}")
+        (src / "study_data.yaml").write_text("secret-map")
+        custom = src / "custom"
+        custom.mkdir()
+        (custom / "site_code.py").write_text("x = 1")
+
+        _copy_local_files(str(src), str(dst))
+
+        assert (dst / "resources.json").exists()
+        assert (dst / "custom" / "site_code.py").exists()
+        assert not (dst / "study_data.yaml").exists()
+
+
+# ---------------------------------------------------------------------------
 # DockerJobHandle — terminal_state pattern
 # ---------------------------------------------------------------------------
 
@@ -224,6 +294,17 @@ class TestDockerJobHandleTerminalState:
         rc = h.poll()
         assert rc == JobReturnCode.SUCCESS
         assert h.terminal_state == JobReturnCode.SUCCESS
+
+    def test_poll_cleans_launcher_temp_dirs_on_terminal(self):
+        dc = _make_docker_client()
+        dc.containers.get.return_value = _make_container("exited", exit_code=0)
+        h = _make_handle(docker_client=dc, cleanup_dirs=["/tmp/nvflare-isolated-root"])
+
+        with patch("nvflare.app_opt.job_launcher.docker_launcher.shutil.rmtree") as mock_rmtree:
+            h.poll()
+
+        mock_rmtree.assert_called_once_with("/tmp/nvflare-isolated-root", ignore_errors=True)
+        assert h.cleanup_dirs == []
 
 
 # ---------------------------------------------------------------------------
@@ -492,16 +573,38 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.get.return_value = _make_container("running")
 
         fl_ctx, _ = _make_fl_ctx()
-        launcher.launch_job(_make_job_meta(), fl_ctx)
+        with tempfile.TemporaryDirectory() as isolated_root:
+            with patch("nvflare.app_opt.job_launcher.docker_launcher.tempfile.mkdtemp", return_value=isolated_root):
+                launcher.launch_job(_make_job_meta(), fl_ctx)
 
-        call_kwargs = dc.containers.run.call_args[1]
-        mounts_by_target = _mounts_by_target(call_kwargs["mounts"])
-        assert mounts_by_target["/var/tmp/nvflare/workspace"] == {
-            "Target": "/var/tmp/nvflare/workspace",
-            "Source": "/host/workspace",
-            "Type": "bind",
-            "ReadOnly": False,
-        }
+            call_kwargs = dc.containers.run.call_args[1]
+            mounts = call_kwargs["mounts"]
+            assert mounts[0]["Target"] == "/var/tmp/nvflare/workspace"
+            assert mounts[1]["Target"] == "/var/tmp/nvflare/workspace/job-1"
+
+            mounts_by_target = _mounts_by_target(call_kwargs["mounts"])
+            assert mounts_by_target["/var/tmp/nvflare/workspace"] == {
+                "Target": "/var/tmp/nvflare/workspace",
+                "Source": isolated_root,
+                "Type": "bind",
+                "ReadOnly": True,
+            }
+            assert mounts_by_target["/var/tmp/nvflare/workspace/job-1"] == {
+                "Target": "/var/tmp/nvflare/workspace/job-1",
+                "Source": "/host/workspace/job-1",
+                "Type": "bind",
+                "ReadOnly": False,
+            }
+
+    def test_launch_rejects_job_workspace_path_escape(self):
+        launcher = _make_launcher(workspace="/host/workspace")
+        dc = launcher._docker_client
+
+        fl_ctx, _ = _make_fl_ctx()
+        with pytest.raises(RuntimeError, match="single workspace child"):
+            launcher.launch_job(_make_job_meta(job_id="../other"), fl_ctx)
+
+        dc.containers.run.assert_not_called()
 
     def test_launch_study_data_mounts_nested_datasets(self):
         launcher = _make_launcher()
@@ -615,7 +718,10 @@ class TestDockerJobLauncherLaunchJob:
 
         mock_load.assert_called_once_with("/var/tmp/nvflare/workspace/local/study_data.yaml")
         mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
-        assert set(mounts_by_target) == {"/var/tmp/nvflare/workspace"}
+        assert set(mounts_by_target) == {
+            "/var/tmp/nvflare/workspace",
+            "/var/tmp/nvflare/workspace/job-1",
+        }
 
     def test_launch_default_study_mounts_default_mapping_when_present(self):
         launcher = _make_launcher()
@@ -653,7 +759,10 @@ class TestDockerJobLauncherLaunchJob:
             launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
 
         mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
-        assert set(mounts_by_target) == {"/var/tmp/nvflare/workspace"}
+        assert set(mounts_by_target) == {
+            "/var/tmp/nvflare/workspace",
+            "/var/tmp/nvflare/workspace/job-1",
+        }
 
     def test_launch_no_docker_socket_in_job_container(self):
         """Job containers must never receive the Docker socket."""
