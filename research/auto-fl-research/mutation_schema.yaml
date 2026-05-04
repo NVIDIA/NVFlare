@@ -101,7 +101,10 @@ local_sweep:
 
 literature_review:
   trigger_after_non_improving_batches: 2
+  ledger_event_status: literature
   ledger_source_rule: >
+    Record each literature-review cycle as a non-scored results.tsv row with
+    status=literature so the progress plot shows where paper review happened.
     When a candidate implements a method or design choice from a research
     paper, include a compact source reference in the results.tsv description
     field, such as [src: Li20 FedProx arXiv:1812.06127]. Put fuller citations

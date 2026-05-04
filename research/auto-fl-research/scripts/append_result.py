@@ -83,14 +83,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--results", default="results.tsv")
     parser.add_argument("--commit", required=True)
-    parser.add_argument("--score", required=True)
+    parser.add_argument("--score", default="")
     parser.add_argument("--runtime-seconds", required=True)
     parser.add_argument("--budget", required=True)
-    parser.add_argument("--status", required=True, choices=["candidate", "crash", "discard", "keep"])
+    parser.add_argument("--status", required=True, choices=["candidate", "crash", "discard", "keep", "literature"])
     parser.add_argument("--target", required=True)
     parser.add_argument("--description", required=True)
     parser.add_argument("--artifacts", required=True)
     args = parser.parse_args()
+    if args.status != "literature" and args.score == "":
+        parser.error("--score is required unless --status=literature")
 
     append_result(
         Path(args.results),

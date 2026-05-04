@@ -16,16 +16,15 @@ To set up a new experiment campaign, work with the user to:
    - `test -x "$PYTHON"`
    - `"$PYTHON" -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version; print(sys.executable)"`
 5. Agree on a descriptive run tag derived from the current date at runtime. Use the pattern `<node>-<campaign-topic>-$(date +%Y%m%d)`, for example `h100-fedavgm-$(date +%Y%m%d)`, `h100-archsearch-$(date +%Y%m%d)`, or `h100-baseline-$(date +%Y%m%d)`. Do not use date-only tags such as `h100-$(date +%Y%m%d)`, and do not copy stale example dates from docs.
-6. Create a fresh branch: `autoresearch/<tag>`.
-7. Treat this file as the agent entry point, then inspect only the supporting files needed for the next action:
+6. Before validation, smoke tests, baseline, or any candidate run, initialize the campaign with `bash scripts/init_run.sh <tag>`. This must create or switch to `autoresearch/<tag>` and initialize `results.tsv`.
+7. Verify `git branch --show-current` starts with `autoresearch/`. If it does not, stop before running experiments; do not run campaigns on `main`, `upstream/main`, the starter branch, or a shared feature branch.
+8. Treat this file as the agent entry point, then inspect only the supporting files needed for the next action:
    - `mutation_schema.yaml` for hard mutation bounds
    - `client.py`, `custom_aggregators.py`, and `job.py` for the active code surface
    - `README.md` or `ACKNOWLEDGEMENTS.md` only when user-facing setup or provenance context is needed
-8. Verify the prepared environment is ready:
+9. Verify the prepared environment is ready:
    - `PYTHON=.venv/bin/python make validate`
    - `PYTHON=.venv/bin/python make smoke`
-9. Initialize the run ledger:
-   - `bash scripts/init_run.sh <tag>`
 10. Confirm the setup and start with the baseline.
 
 ## Experimentation
@@ -244,12 +243,14 @@ Where:
 2. `score` = extracted comparable metric, or `0.000000` for failures
 3. `runtime_seconds` = wall-clock seconds spent in the candidate command, including failures
 4. `budget` = short string describing the fixed recipe budget
-5. `status` = `keep`, `discard`, `crash`, or `candidate`
+5. `status` = `keep`, `discard`, `crash`, `candidate`, or `literature`
 6. `target` = main file edited
 7. `description` = short mutation description
 8. `artifacts` = result dir or log path
 
 Use `runtime_seconds` when comparing research cost. A tiny score gain that consumes much more runtime is weaker evidence than a similar gain at the same cost.
+
+`literature` rows are non-scored event markers for the stall-recovery loop. They use a blank `score`, `budget=literature_loop`, `target=templates/literature_loop.md`, a short description of the plateau/search/proposals, and `artifacts=templates/literature_loop.md`. The progress plot draws these rows as vertical markers so long plateaus show whether the agent was doing useful paper synthesis or simply burning candidate runs.
 
 `candidate` is a temporary status for a run that has finished but has not yet gone through review. After every completed run or batch, update the reviewed rows in `results.tsv`: mark the selected survivor as `keep` when it materially improves the score or is comparable with simpler/faster behavior, and mark reviewed non-survivors as `discard`. Do not let stale reviewed rows remain `candidate`; the progress plot uses this status column directly.
 
@@ -267,14 +268,15 @@ If an old campaign already has many stale candidate rows, clean it once with:
 
 If a candidate implements a method or design choice from a research paper, include a compact source reference in the `description` field, for example `fedprox mu=0.01 [src: Li20 FedProx arXiv:1812.06127]`. Keep the TSV single-line and tab-free; use semicolon-separated short refs for multiple sources. Put fuller citations, URLs, and the extracted hypothesis in `templates/mutation_report.md`.
 
-Commit `results.tsv` after the baseline and after each completed run or checkpoint so the experiment branch records its run provenance.
+Commit `results.tsv` after the baseline and after each completed run or checkpoint so the active `autoresearch/` branch records its run provenance.
+Commit surviving code changes on that same branch as soon as they are kept; never launch the next batch with kept code changes still only in the working tree.
 Do not commit bulky runtime artifacts such as `run.log`, `run_logs/`, NVFlare result directories, or generated `progress.png`.
 
 ## The experiment loop
 
 Default single-candidate loop:
 
-1. Look at the git state: current branch and current commit.
+1. Look at the git state: current branch and current commit. Confirm the current branch starts with `autoresearch/`.
 2. Propose one small mutation.
 3. Edit the smallest possible set of files.
 4. Commit the mutation.
@@ -291,12 +293,12 @@ Default single-candidate loop:
 6. Read the summarized result from the script output.
 7. If the run crashed, inspect `tail -n 50 run.log`, attempt a small fix, and stop after only a few retries.
 8. Record the result in `results.tsv`.
-9. If the score improved materially, or stayed comparable with simpler code, keep the commit.
+9. If the score improved materially, or stayed comparable with simpler code, keep the commit on the active `autoresearch/` branch.
 10. If the score got worse or the change is not worth the added complexity, revert to the previous good commit.
 
 Same-budget campaign loop for the local H100:
 
-1. Look at the git state: current branch and current commit.
+1. Look at the git state: current branch and current commit. Confirm the current branch starts with `autoresearch/`.
 2. Choose one narrow sweep axis, for example LR, momentum, weight decay, scheduler, or FedProx.
 3. Propose a batch of up to `PARALLEL_CANDIDATES` candidates that fit the fixed campaign budget.
 4. Run the candidates concurrently on the same H100 with unique `RUN_LOG` and `--name` values.
@@ -308,7 +310,7 @@ Same-budget campaign loop for the local H100:
    - run a narrower follow-up sweep around the best candidate if results are close;
    - discard the whole axis if all candidates regress or add complexity without gain.
 8. Update the `status` column for reviewed runs in `results.tsv`. Use `scripts/finalize_batch_status.py --last "${PARALLEL_CANDIDATES:-4}"` or edit the TSV carefully: promoted rows must be `keep`, reviewed non-survivors must be `discard`, crashes remain `crash`, and only unresolved active rows may remain `candidate`.
-9. Commit code mutations that survive the run analysis. Also commit `results.tsv` at checkpoint boundaries, even when the run only tested runtime hyperparameters.
+9. Commit code mutations that survive the run analysis on the active `autoresearch/` branch before launching the next batch. Also commit `results.tsv` at checkpoint boundaries, even when the run only tested runtime hyperparameters.
 
 ### Never stop
 
@@ -352,6 +354,20 @@ Before searching, gather the working memory:
 
 Use `templates/literature_loop.md` as a scratch worksheet. Keep it compact enough to read during a long run.
 
+Before searching, start a literature-review timer:
+
+```bash
+"${PYTHON}" scripts/log_literature_review.py --start --description "plateau after <row or batch>: <symptom>"
+```
+
+After proposal scoring and before launching the selected candidate batch, append the review event:
+
+```bash
+"${PYTHON}" scripts/log_literature_review.py --finish --description "literature review: <plateau symptom>; selected <proposal ids or mechanisms>"
+```
+
+If you forgot to start the timer, do not interrupt the campaign; use `--log` with a short description and, if known, `--runtime-seconds`.
+
 Literature mode workflow:
 1. Generate 3 distinct search queries from the observed failure mode, not generic method names. Each query should explore a different angle, such as client drift, server optimization, non-IID local overfitting, control variates, robust aggregation, or short-budget convergence.
 2. Search at least two available sources when possible: arXiv, Semantic Scholar, OpenAlex, PubMed, official project pages, or paper PDFs. If API access is unavailable, browser/web search is acceptable. Prefer primary papers over blog posts.
@@ -361,8 +377,9 @@ Literature mode workflow:
 6. Run duplicate/null filtering before scoring. Reject proposals that are the same core idea as existing kept/null rows or that require forbidden protocol changes, new dependencies, unregistered or over-budget model architectures, evaluation changes, or server-coupled tensors beyond explicit SCAFFOLD metadata mode.
 7. Score each remaining proposal from 1-5 on: expected score gain, contract safety, implementation simplicity, evidence strength, novelty relative to `results.tsv`, and runtime cost. Use total score `2*expected_gain + 2*contract_safety + simplicity + evidence + novelty - runtime_cost`.
 8. Select the next candidate batch QWBE-style from the top proposals. Give the strongest proposal a nearby variant when useful, but keep a distinct second idea in the batch or in reserve if any safe alternative remains.
-9. Launch the selected candidate batch under the same compute budget. Rank after the batch finishes or times out.
-10. Record reflective memory: what paper-derived hypothesis helped, what failed, and which source-backed idea should not be retried. Put full source details in `templates/mutation_report.md`; include short refs in `results.tsv` descriptions, for example `[src: Li20 FedProx arXiv:1812.06127]`.
+9. Record the `literature` event in `results.tsv` before launching the selected candidate batch.
+10. Launch the selected candidate batch under the same compute budget. Rank after the batch finishes or times out.
+11. Record reflective memory: what paper-derived hypothesis helped, what failed, and which source-backed idea should not be retried. Put full source details in `templates/mutation_report.md`; include short refs in candidate `results.tsv` descriptions, for example `[src: Li20 FedProx arXiv:1812.06127]`.
 
 Examples of compatible literature-derived directions:
 - FedProx coefficient sweeps for client drift.

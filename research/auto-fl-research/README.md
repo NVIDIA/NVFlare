@@ -26,6 +26,7 @@ It is designed to combine:
 - `scripts/init_run.sh` — creates an autoresearch branch and initializes `results.tsv`
 - `scripts/run_iteration.sh` — runs one candidate mutation with log redirection and score extraction
 - `scripts/finalize_batch_status.py` — promotes reviewed candidates to `keep` or demotes them to `discard`
+- `scripts/log_literature_review.py` — records stall-recovery literature review events in `results.tsv`
 - `scripts/extract_score.py` — extracts a comparable score from cross-site validation JSON
 - `scripts/validate_contract.py` — static contract checks
 - `templates/` — result logging templates
@@ -43,7 +44,7 @@ The [autoresearch](https://github.com/karpathy/autoresearch) repo keeps the setu
 - **Run keep / discard loop:** on one local H100, the agent can launch several same-budget candidates concurrently when the 80 GB memory budget allows, then rank the completed batch against the ledger and keep, narrow, or discard.
 - **Autonomous continuation:** after setup and baseline, the agent keeps running same-budget candidates until manually interrupted.
 - **Literature-grounded recovery:** when progress stalls, the agent should use the Camyla-inspired literature loop in `program.md` to generate diverse paper queries, extract challenge cards, score compatible proposals, fill `templates/literature_loop.md`, and select the next contract-safe idea.
-- **Tracked experiment ledger:** `results.tsv` is committed on experiment branches so the branch carries its run provenance.
+- **Tracked experiment ledger:** `results.tsv` is committed on experiment branches so the branch carries run provenance, including non-scored literature-review events when progress stalls.
 
 > Note: This is not a literal clone of [karpathy/autoresearch](https://github.com/karpathy/autoresearch); it is an NVFlare-specific adaptation of the same operating model.
 
@@ -53,7 +54,7 @@ QWBE is currently implemented as an **instruction and artifact workflow**, not a
 
 The current flow is:
 
-1. Generate source-backed proposal cards from recent `results.tsv` symptoms and relevant papers.
+1. Start a literature-review timer with `scripts/log_literature_review.py --start`, then generate source-backed proposal cards from recent `results.tsv` symptoms and relevant papers.
 2. Filter out duplicates, known null/worse ideas, and proposals that violate the current contract.
 3. Score each remaining proposal from 1-5 on expected gain, contract safety, simplicity, evidence, novelty, and runtime cost.
 4. Compute:
@@ -63,8 +64,9 @@ The current flow is:
    ```
 
 5. Rank the next compatible proposals with the scoring rubric and select a small batch of top candidates, up to the current `PARALLEL_CANDIDATES` width.
-6. Launch the selected candidates with the normal `scripts/run_iteration.sh` mechanism, using unique `RUN_LOG` and `--name` values for each concurrent run on the same H100.
-7. Wait for the batch to finish or time out, rank the completed runs, then finalize reviewed ledger rows so completed `candidate` rows become `keep` or `discard`.
+6. Append a `literature` event row with `scripts/log_literature_review.py --finish` so the ledger and plot show how long the review cycle took.
+7. Launch the selected candidates with the normal `scripts/run_iteration.sh` mechanism, using unique `RUN_LOG` and `--name` values for each concurrent run on the same H100.
+8. Wait for the batch to finish or time out, rank the completed runs, then finalize reviewed ledger rows so completed `candidate` rows become `keep` or `discard`.
 
 This keeps the Camyla/QWBE idea inside the existing harness contract: no new dependencies, no evaluation changes, and no server-client protocol changes except explicitly labeled modes such as `--aggregator scaffold`. Architecture changes are allowed only as registered `--model_arch` variants under the active `--max_model_params` budget.
 
@@ -174,7 +176,7 @@ Then use the autofl-nvflare skill.
 
 Start in this directory and read `program.md` first. Treat it as the complete research control plane and follow its setup, mutation, budget, ledger, literature-loop, and continuation instructions.
 
-Start a fresh autoresearch campaign for the local single GPU node. If no campaign is initialized yet, derive a descriptive run tag at runtime using `<node>-<campaign-topic>-$(date +%Y%m%d)`, initialize the ledger, and establish the baseline first. Do not use date-only names or copy stale example dates.
+Start a fresh autoresearch campaign for the local single GPU node before running validation, smoke tests, the baseline, or any candidate experiment. Derive a descriptive run tag at runtime using `<node>-<campaign-topic>-$(date +%Y%m%d)`, then run `bash scripts/init_run.sh <run-tag>` to create and switch to `autoresearch/<run-tag>` and initialize `results.tsv`. Verify with `git branch --show-current` that you are on that new `autoresearch/` branch. Do not run experiments on `main`, `upstream/main`, or the starter branch, and do not use date-only names or copy stale example dates.
 
 Use the local Python 3.12 environment created by preflight. Set:
 export PYTHON=.venv/bin/python
@@ -189,6 +191,8 @@ Use cross-site evaluation and keep RUN_TIMEOUT_SECONDS=600.
 Set PARALLEL_CANDIDATES=4 unless I override it. Use one local GPU; if multiple GPUs are visible, pin candidate runs to CUDA_VISIBLE_DEVICES=0 rather than spreading candidates across devices. Lower the candidate width if CUDA memory, host memory, or I/O contention appears.
 
 Once setup and baseline are complete, do not ask whether to keep going or whether this is a good stopping point. Continue the experiment loop until manually interrupted.
+
+Commit `results.tsv` after the baseline and after each reviewed batch. Commit surviving code changes on the active `autoresearch/` branch as soon as they are kept; do not let kept mutations accumulate only in the working tree.
 ```
 
 ## Scoring recommendation
@@ -263,6 +267,7 @@ After reviewing the table, finalize the completed batch status:
 ```
 
 The progress plot reads the `status` column directly. If all successful rows remain `candidate`, the plot will correctly show no kept runs.
+Rows with `status=literature` are shown as vertical markers, with their `runtime_seconds` counted separately from candidate runtime, so long score plateaus can be compared against actual paper-review cycles.
 
 To generate an autoresearch-style progress image from the ledger:
 
