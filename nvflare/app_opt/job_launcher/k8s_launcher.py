@@ -432,6 +432,7 @@ class K8sJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"missing {FLContextKey.ARGS} in FLContext")
         k8s_spec = get_job_launcher_spec(job_meta, site_name, "k8s")
         job_image = k8s_spec.get("image")
+        job_ephemeral_storage = k8s_spec.get("ephemeral_storage", self.ephemeral_storage)
         if not job_image:
             raise RuntimeError(
                 f"K8sJobLauncher is configured for site '{site_name}' but no job image "
@@ -488,7 +489,7 @@ class K8sJobLauncher(JobLauncherSpec):
             env[ENV_WORKSPACE_TRANSFER_TOKEN] = workspace_transfer_token
 
             volume_list = [
-                {"name": "workspace-job", "emptyDir": {"sizeLimit": self.ephemeral_storage}},
+                {"name": "workspace-job", "emptyDir": {"sizeLimit": job_ephemeral_storage}},
                 {"name": "startup-kit", "secret": {"secretName": startup_secret_name}},
             ]
             volume_mount_list = [
@@ -519,8 +520,8 @@ class K8sJobLauncher(JobLauncherSpec):
             if args is not None and getattr(args, "set", None) is not None:
                 job_config.update({"set_list": args.set})
             resources = {
-                "requests": {"ephemeral-storage": self.ephemeral_storage},
-                "limits": {"ephemeral-storage": self.ephemeral_storage},
+                "requests": {"ephemeral-storage": job_ephemeral_storage},
+                "limits": {"ephemeral-storage": job_ephemeral_storage},
             }
             for key in ("cpu", "memory"):
                 limit_val = k8s_spec.get(key)
