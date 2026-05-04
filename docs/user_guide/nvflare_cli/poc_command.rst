@@ -79,8 +79,11 @@ Options:
 - ``-he, --he``: enable homomorphic encryption in the generated local project.
 - ``-i, --project_input``: path to a ``project.yaml`` file. If specified,
   client-count, client-name, and docker-image options are ignored.
-- ``-d, --docker_image``: generate docker-oriented startup scripts using the
-  specified image. If given without a value, the default image is used.
+- ``-d, --docker_image``: provision POC in Docker runtime mode and prepare
+  server/client startup kits with the same Docker preparation used by
+  ``nvflare deploy prepare``. The value is the SP/CP Docker image; if given
+  without a value, the default image is used. Jobs submitted to Docker-mode
+  sites must specify their SJ/CJ Docker image in job ``launcher_spec``.
 - ``-debug, --debug``: debug mode.
 - ``--force``: overwrite the existing workspace without prompting.
 - ``--schema``: print command schema as JSON and exit.
@@ -93,6 +96,11 @@ Behavior notes:
   workspace, registers generated admin/user startup kits, and activates the
   default Project Admin kit. Site startup kits stay in the POC workspace and are
   not registered as CLI identities.
+- Docker POC mode starts server and client parent processes with
+  ``start_docker.sh`` and uses ``DockerJobLauncher`` to start job containers.
+  The POC workspace ``data`` directory is mounted into Docker job containers at
+  ``/data/default/poc`` for jobs in the default study, so examples can download
+  or read local datasets from that path.
 - On success, the command prints a JSON result containing the workspace path and
   discovered client list.
 

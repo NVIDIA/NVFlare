@@ -24,3 +24,5 @@ class FlareServiceConstants(object):
     EXAMPLES = "examples"
     TRANSFER = "transfer"
     IS_DOCKER_RUN = "is_docker_run"
+    DOCKER_RUN_MODE = "docker_run_mode"
+    DOCKER_RUN_MODE_DEPLOY = "deploy"
