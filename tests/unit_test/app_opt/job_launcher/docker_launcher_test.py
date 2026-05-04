@@ -171,6 +171,10 @@ class TestSafeWorkspaceChildPath:
     def test_returns_child_under_workspace(self):
         assert _safe_workspace_child_path("/workspace", "job-1") == "/workspace/job-1"
 
+    def test_allows_reserved_workspace_name_when_requested(self):
+        assert _safe_workspace_child_path("/workspace", "startup", allow_reserved=True) == "/workspace/startup"
+        assert _safe_workspace_child_path("/workspace", "local", allow_reserved=True) == "/workspace/local"
+
     def test_rejects_path_escape(self):
         with pytest.raises(RuntimeError, match="single workspace child"):
             _safe_workspace_child_path("/workspace", "../other")

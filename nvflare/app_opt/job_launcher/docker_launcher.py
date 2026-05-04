@@ -82,6 +82,7 @@ def _safe_workspace_child_path(workspace: str, child_name: str, allow_reserved: 
     """Return a host workspace child path, rejecting paths that escape workspace."""
     child_name = str(child_name)
     normalized_child_name = os.path.normpath(child_name)
+    # normpath catches traversal spellings; the separator checks catch already-normalized nested paths.
     if (
         not child_name
         or os.path.isabs(child_name)
