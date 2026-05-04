@@ -149,8 +149,9 @@ Similarly deployment approach to Google Cloud will be made available in a future
 
 Kubernetes Deployment
 =====================
-As mentioned above, you can run NVIDIA FLARE in the public cloud.  If you prefer to deploy NVIDIA FLARE in Amazon Elastic Kubernetes Service (EKS),
-you can find the deployment guide in :ref:`aws_eks`.
+Use ``nvflare deploy prepare`` after provisioning to generate per-participant
+Helm charts and K8s launcher configuration. See :ref:`helm_chart` for the
+current Kubernetes deployment workflow.
 
 
 .. _starting_fl_servers:
@@ -359,4 +360,3 @@ Administrator side folder and file structure
                 config/
                 models/
                 resources/
-

@@ -23,6 +23,7 @@ from nvflare.tool.poc.poc_commands import (
     get_service_command,
     get_service_config,
     prepare_builders,
+    prepare_env,
     update_clients,
 )
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
@@ -66,6 +67,33 @@ class TestPOCCommands:
         with pytest.raises(CLIException) as e:
             # gpu id =1 is not valid GPU ID as the host only has 1 gpu where id = 0
             gpu_ids = get_gpu_ids([0, 1], host_gpu_ids)
+
+    def test_prepare_env_docker_single_gpu(self):
+        my_env = prepare_env("site-1", [0], {SC.IS_DOCKER_RUN: True})
+        assert my_env["CUDA_VISIBLE_DEVICES"] == "0"
+        assert my_env["GPU2USE"] == '--gpus="device=0"'
+        assert my_env["SVR_NAME"] == "site-1"
+        assert "MY_DATA_DIR" in my_env
+
+    def test_prepare_env_docker_multi_gpu(self):
+        my_env = prepare_env("site-1", [0, 1], {SC.IS_DOCKER_RUN: True})
+        assert my_env["CUDA_VISIBLE_DEVICES"] == "0,1"
+        assert my_env["GPU2USE"] == '--gpus="device=0,1"'
+
+    def test_prepare_env_docker_no_gpu(self, monkeypatch):
+        monkeypatch.delenv("GPU2USE", raising=False)
+        my_env = prepare_env("site-1", [], {SC.IS_DOCKER_RUN: True})
+        assert "GPU2USE" not in my_env
+        assert my_env["SVR_NAME"] == "site-1"
+        assert "MY_DATA_DIR" in my_env
+
+    def test_prepare_env_non_docker_with_gpu(self, monkeypatch):
+        monkeypatch.delenv("GPU2USE", raising=False)
+        monkeypatch.delenv("SVR_NAME", raising=False)
+        my_env = prepare_env("site-1", [0], {})
+        assert my_env["CUDA_VISIBLE_DEVICES"] == "0"
+        assert "GPU2USE" not in my_env
+        assert "SVR_NAME" not in my_env
 
     def test_get_package_command(self):
         cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_SERVER, {})
