@@ -105,17 +105,7 @@ devc up
 devc shell
 ```
 
-This workflow assumes `/workspace` is a writable NVFlare git clone, not a source archive, and that the agent can create commits and push branches without another credentials handoff. Before an overnight run, verify the container has git identity and SSH access to the fork or working remote:
-
-```bash
-cd /workspace/research/auto-fl-research
-git remote -v
-git config user.name
-git config user.email
-ssh -T git@github.com
-```
-
-If you use a devcontainer, make sure your SSH agent is forwarded into the container or an appropriate GitHub SSH key is available there. Without this, the agent can still run local experiments, but it will stop when it needs to push a branch or commit reporting artifacts.
+This workflow assumes `/workspace` is a writable NVFlare git clone, not a source archive. The agent only needs local git access inside the container: it should create an `autoresearch/` branch and commit `results.tsv` plus kept code changes locally. Pushing the experiment branch is optional and can be done later from outside the devcontainer.
 
 Inside the container, `cd` to `/workspace/research/auto-fl-research`, install this harness' Python requirements once with Python 3.12, export the prepared interpreter, and run preflight before handing control to the agent. Do not use the container's default `python3` if it points to Python 3.13. For Debian/Ubuntu-based devcontainers, install Python 3.12 first if it is missing.
 
@@ -162,7 +152,7 @@ claude --permission-mode auto
 
 For Codex CLI, install it inside the same devcontainer if needed, start Codex from `/workspace/research/auto-fl-research`, then use `/permissions` to set permissions inside the Codex session to `Auto-review`
 
-Keep the devcontainer boundary meaningful: mount only the repository and deliberate scratch/drop paths, avoid mounting broad host directories or secrets, and remember that the container may still have outbound network access, git identity, and forwarded SSH-agent access depending on how it is configured. For overnight runs, use `tmux` or the devcontainer's persistent shell workflow so the agent can keep running after you disconnect.
+Keep the devcontainer boundary meaningful: mount only the repository and deliberate scratch/drop paths, avoid mounting broad host directories or secrets, and remember that the container may still have outbound network access and git identity depending on how it is configured. For overnight runs, use `tmux` or the devcontainer's persistent shell workflow so the agent can keep running after you disconnect.
 
 ## Recommended agent entrypoint
 
@@ -191,7 +181,7 @@ Set PARALLEL_CANDIDATES=4 unless I override it. Use one local GPU; if multiple G
 
 Once setup and baseline are complete, do not ask whether to keep going or whether this is a good stopping point. Continue the experiment loop until manually interrupted.
 
-Commit `results.tsv` after the baseline and after each reviewed batch. Commit surviving code changes on the active `autoresearch/` branch as soon as they are kept; do not let kept mutations accumulate only in the working tree.
+Commit `results.tsv` locally after the baseline and after each reviewed batch. Commit surviving code changes locally on the active `autoresearch/` branch as soon as they are kept; do not let kept mutations accumulate only in the working tree. Do not require pushing from inside the devcontainer.
 ```
 
 ## Scoring recommendation
