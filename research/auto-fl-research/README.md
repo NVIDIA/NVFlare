@@ -99,8 +99,8 @@ npm install -g @devcontainers/cli
 git clone https://github.com/trailofbits/claude-code-devcontainer ~/.claude-devcontainer
 ~/.claude-devcontainer/install.sh self-install
 
-# From this repository checkout.
-devc .
+# From this repository checkout, install the template without starting it.
+devc template .
 ```
 
 Before starting the container shell, make sure `.devcontainer/devcontainer.json` exposes the H100 to Docker by including `--gpus=all` in `runArgs`. If `runArgs` already exists, append the value and keep the existing entries:
@@ -113,9 +113,10 @@ Before starting the container shell, make sure `.devcontainer/devcontainer.json`
 }
 ```
 
-Then start the container shell:
+Then start the container and open a shell:
 
 ```bash
+devc up
 devc shell
 ```
 
