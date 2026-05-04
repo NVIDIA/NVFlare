@@ -128,7 +128,9 @@ ssh -T git@github.com
 
 If you use a devcontainer, make sure your SSH agent is forwarded into the container or an appropriate GitHub SSH key is available there. Without this, the agent can still run local experiments, but it will stop when it needs to push a branch or commit reporting artifacts.
 
-Inside the container, install this harness' Python requirements once with Python 3.12, export the prepared interpreter, and run preflight before handing control to the agent. Do not use the container's default `python3` if it points to Python 3.13. For Debian/Ubuntu-based devcontainers, install Python 3.12 first if it is missing:
+Inside the container, `cd` to `research/auto-fl-research`, install this harness' Python requirements once with Python 3.12, export the prepared interpreter, and run preflight before handing control to the agent. Do not use the container's default `python3` if it points to Python 3.13. For Debian/Ubuntu-based devcontainers, install Python 3.12 first if it is missing.
+
+Run the following from `research/auto-fl-research`. This directory is the entry point for the harness, and it contains the `Makefile`, `requirements.txt`, `program.md`, and run scripts:
 
 ```bash
 if ! command -v python3.12 >/dev/null 2>&1; then
@@ -140,12 +142,18 @@ python3.12 --version
 python3.12 -m venv .venv
 . .venv/bin/activate
 python -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
+
+python -m pip install --upgrade pip
+python -m pip uninstall -y nvflare-nightly
 python -m pip install -r requirements.txt
 export PYTHON=.venv/bin/python
 "$PYTHON" -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
+"$PYTHON" -c 'import nvflare; print(nvflare.__version__, nvflare.__file__)'
 make validate
 make smoke
 ```
+
+The harness expects the released PyPI `nvflare` package from `requirements.txt`, not an editable install of the repository checkout. If `pip freeze` shows `nvflare-nightly @ file://...`, remove it with `python -m pip uninstall -y nvflare-nightly` and rerun `python -m pip install -r requirements.txt`.
 
 If `apt-get` cannot find the Python 3.12 packages, update the devcontainer image or add an appropriate Python 3.12 package source before continuing; do not fall back to Python 3.13.
 
