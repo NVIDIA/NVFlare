@@ -23,6 +23,7 @@ import socket
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Dict, List, Optional, OrderedDict, Tuple
 
@@ -91,6 +92,15 @@ POC_PORT_PREFLIGHT_HOST = "127.0.0.1"
 POC_PORT_PREFLIGHT_SCOPE = "loopback"
 POC_PORT_PREFLIGHT_NOTE = "Preflight checks loopback port availability only; poc start may still fail if another local bind address conflicts."
 POC_SERVICE_CONSOLE_LOG = "poc_console.log"
+POC_RUNTIME_KEY = "poc_runtime"
+POC_RUNTIME_DOCKER = "docker"
+POC_DOCKER_IMAGE_KEY = "docker_image"
+POC_DOCKER_NETWORK_KEY = "network"
+POC_DOCKER_DEFAULT_NETWORK = "nvflare-network"
+POC_DOCKER_SERVER_ALIAS = "server"
+POC_DOCKER_DATA_STUDY = "default"
+POC_DOCKER_DATA_DATASET = "poc"
+POC_DOCKER_DATA_MOUNT = f"/data/{POC_DOCKER_DATA_STUDY}/{POC_DOCKER_DATA_DATASET}"
 
 
 def _quiet_cli_streams(enabled: bool):
@@ -147,7 +157,7 @@ def get_service_command(
             if service_dir in admin_dirs:
                 cmd = get_cmd_path(prod_dir, service_dir, "fl_admin.sh")
             else:
-                cmd = get_cmd_path(prod_dir, service_dir, "docker.sh -d")
+                cmd = get_cmd_path(prod_dir, service_dir, "start_docker.sh")
 
     elif cmd_type == SC.CMD_STOP:
         if not service_config.get(SC.IS_DOCKER_RUN):
@@ -363,13 +373,14 @@ def local_provision(
         project_config = update_clients(clients, number_of_clients, project_config)
         project_config = add_he_builder(use_he, project_config)
         if docker_image:
-            project_config = update_static_file_builder(docker_image, project_config)
+            project_config = add_poc_docker_runtime(docker_image, project_config)
     project_config = update_server_default_host(project_config, "localhost")
     save_project_config(project_config, dst_project_file)
     service_config = get_service_config(project_config)
-    project = prepare_project(project_config)
-    builders = prepare_builders(project_config)
-    packager = prepare_packager(project_config)
+    provision_config = copy.deepcopy(project_config)
+    project = prepare_project(provision_config)
+    builders = prepare_builders(provision_config)
+    packager = prepare_packager(provision_config)
     provisioner = Provisioner(workspace, builders, packager)
     provisioner.provision(project, mode=ProvisionMode.POC)
 
@@ -377,12 +388,14 @@ def local_provision(
 
 
 def get_service_config(project_config):
+    docker_run_mode = get_docker_run_mode(project_config)
     service_config = {
         SC.FLARE_SERVER: get_fl_server_name(project_config),
         SC.FLARE_PROJ_ADMIN: get_proj_admin(project_config),
         SC.FLARE_OTHER_ADMINS: get_other_admins(project_config),
         SC.FLARE_CLIENTS: get_fl_client_names(project_config),
-        SC.IS_DOCKER_RUN: is_docker_run(project_config),
+        SC.IS_DOCKER_RUN: bool(docker_run_mode),
+        SC.DOCKER_RUN_MODE: docker_run_mode,
     }
     return service_config
 
@@ -400,38 +413,162 @@ def update_server_name(project_config):
     return project_config
 
 
+def get_docker_run_mode(project_config: OrderedDict):
+    runtime_config = _get_poc_runtime_config(project_config)
+    if runtime_config.get("runtime") == POC_RUNTIME_DOCKER:
+        return SC.DOCKER_RUN_MODE_DEPLOY
+    return ""
+
+
 def is_docker_run(project_config: OrderedDict):
-    if "builders" not in project_config:
-        return False
-    static_builders = [
-        b
-        for b in project_config.get("builders")
-        if b.get("path") == "nvflare.lighter.impl.static_file.StaticFileBuilder"
-    ]
-    if not static_builders:
-        return False
-    static_builder = static_builders[0]
-    return "docker_image" in static_builder["args"]
+    return bool(get_docker_run_mode(project_config))
 
 
-def update_static_file_builder(docker_image: str, project_config: OrderedDict):
-    # need to keep the order of the builders
-    for b in project_config.get("builders"):
-        if b.get("path") == "nvflare.lighter.impl.static_file.StaticFileBuilder":
-            b["args"]["docker_image"] = docker_image
-
+def add_poc_docker_runtime(docker_image: str, project_config: OrderedDict):
+    project_config[POC_RUNTIME_KEY] = {
+        "runtime": POC_RUNTIME_DOCKER,
+        POC_DOCKER_IMAGE_KEY: docker_image,
+        POC_DOCKER_NETWORK_KEY: POC_DOCKER_DEFAULT_NETWORK,
+    }
     return project_config
 
 
-def add_docker_builder(use_docker: bool, project_config: OrderedDict):
-    if use_docker:
-        docker_builder = {
-            "path": "nvflare.lighter.impl.docker.DockerBuilder",
-            "args": {"base_image": "python:3.8", "requirements_file": "requirements.txt"},
-        }
-        project_config["builders"].append(docker_builder)
+def _get_poc_runtime_config(project_config: Dict) -> Mapping:
+    runtime_config = project_config.get(POC_RUNTIME_KEY)
+    if runtime_config is None:
+        return {}
+    if not isinstance(runtime_config, Mapping):
+        raise CLIException(f"{POC_RUNTIME_KEY} must be a mapping")
 
-    return project_config
+    runtime = runtime_config.get("runtime")
+    if runtime is not None and not isinstance(runtime, str):
+        raise CLIException(f"{POC_RUNTIME_KEY}.runtime must be a string")
+    return runtime_config
+
+
+def get_poc_docker_runtime_config(project_config: Dict) -> Optional[Dict]:
+    runtime_config = _get_poc_runtime_config(project_config)
+    if runtime_config.get("runtime") != POC_RUNTIME_DOCKER:
+        return None
+
+    parent_config = runtime_config.get("parent")
+    if parent_config is None or parent_config == {}:
+        parent = runtime_config
+    else:
+        if not isinstance(parent_config, Mapping):
+            raise CLIException(f"{POC_RUNTIME_KEY}.parent must be a mapping")
+        parent = parent_config
+
+    job_launcher_config = runtime_config.get("job_launcher")
+    if job_launcher_config is None or job_launcher_config == {}:
+        job_launcher = {}
+    else:
+        if not isinstance(job_launcher_config, Mapping):
+            raise CLIException(f"{POC_RUNTIME_KEY}.job_launcher must be a mapping")
+        job_launcher = job_launcher_config
+
+    docker_image = parent.get(POC_DOCKER_IMAGE_KEY)
+    if not docker_image:
+        raise CLIException(f"{POC_RUNTIME_KEY}.{POC_DOCKER_IMAGE_KEY} is required for Docker POC runtime")
+
+    return {
+        "runtime": POC_RUNTIME_DOCKER,
+        "parent": {
+            "docker_image": docker_image,
+            "network": parent.get(POC_DOCKER_NETWORK_KEY, POC_DOCKER_DEFAULT_NETWORK),
+        },
+        "job_launcher": job_launcher,
+    }
+
+
+def _prepare_poc_docker_deployments(poc_workspace: str, project_config: Dict):
+    docker_config = get_poc_docker_runtime_config(project_config)
+    if not docker_config:
+        return False
+
+    project_name = project_config.get("name")
+    prod_dir = get_prod_dir(poc_workspace, project_name)
+    participants = project_config.get("participants", [])
+    for participant in participants:
+        p_type = participant.get("type")
+        if p_type not in ("server", "client"):
+            continue
+        kit_dir = os.path.join(prod_dir, participant["name"])
+        _prepare_poc_docker_kit(kit_dir, docker_config, poc_workspace)
+    return True
+
+
+def _write_poc_docker_study_data(kit_dir: Path, poc_workspace: str) -> None:
+    study_data_file = kit_dir / "local" / "study_data.yaml"
+    try:
+        with study_data_file.open("rt", encoding="utf-8") as f:
+            study_data = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        study_data = {}
+    except yaml.YAMLError as e:
+        raise CLIException(f"invalid study data file for POC Docker kit '{kit_dir}': {e}") from e
+
+    if not isinstance(study_data, dict):
+        raise CLIException(f"study data file for POC Docker kit '{kit_dir}' must contain a dictionary")
+
+    study_entry = study_data.setdefault(POC_DOCKER_DATA_STUDY, {})
+    if not isinstance(study_entry, dict):
+        raise CLIException(
+            f"study data entry '{POC_DOCKER_DATA_STUDY}' for POC Docker kit '{kit_dir}' must contain a dictionary"
+        )
+    study_entry.setdefault(
+        POC_DOCKER_DATA_DATASET,
+        {"source": os.path.realpath(os.path.join(poc_workspace, "data")), "mode": "rw"},
+    )
+
+    with study_data_file.open("wt", encoding="utf-8") as f:
+        yaml.safe_dump(study_data, f, default_flow_style=False, sort_keys=False)
+
+
+def _prepare_poc_docker_kit(kit_dir: str, docker_config: Dict, poc_workspace: str):
+    from nvflare.tool.deploy.deploy_commands import (
+        ROLE_CLIENT,
+        RUNTIME_DOCKER,
+        _prepare_docker,
+        _validate_kit,
+        _validate_runtime_config,
+    )
+
+    kit_path = Path(kit_dir)
+    try:
+        _validate_runtime_config(RUNTIME_DOCKER, docker_config)
+        kit_info = _validate_kit(kit_path)
+        _prepare_docker(kit_info, kit_path, docker_config)
+        _write_poc_docker_study_data(kit_path, poc_workspace)
+        if kit_info.role == ROLE_CLIENT:
+            _patch_poc_docker_client_target(kit_path)
+    except SystemExit as e:
+        raise CLIException(f"failed to prepare Docker deployment for startup kit '{kit_dir}'") from e
+    except Exception as e:
+        raise CLIException(f"failed to prepare Docker deployment for startup kit '{kit_dir}': {e}") from e
+
+
+def _patch_poc_docker_client_target(kit_dir: Path):
+    fed_client_file = kit_dir / SC.STARTUP / "fed_client.json"
+    with fed_client_file.open("rt", encoding="utf-8") as f:
+        fed_client = json.load(f)
+
+    changed = False
+    for server in fed_client.get("servers") or []:
+        service = server.get("service") or {}
+        target = service.get("target")
+        if not isinstance(target, str) or ":" not in target:
+            continue
+        host, port = target.rsplit(":", 1)
+        if host not in {POC_LOCAL_HOST, "127.0.0.1", "0.0.0.0"}:
+            continue
+        service["target"] = f"{POC_DOCKER_SERVER_ALIAS}:{port}"
+        changed = True
+
+    if changed:
+        with fed_client_file.open("wt", encoding="utf-8") as f:
+            json.dump(fed_client, f, indent=2)
+            f.write("\n")
 
 
 def add_he_builder(use_he: bool, project_config: OrderedDict):
@@ -940,6 +1077,11 @@ def _provision_poc_participant_only(
             _remove_path(target_kit)
 
         shutil.move(generated_kit, target_kit)
+        if get_docker_run_mode(project_config) == SC.DOCKER_RUN_MODE_DEPLOY and participant.get("type") in (
+            "server",
+            "client",
+        ):
+            _prepare_poc_docker_kit(target_kit, get_poc_docker_runtime_config(project_config), poc_workspace)
         return target_kit
     finally:
         if temp_prod_dir and os.path.isdir(temp_prod_dir):
@@ -1358,6 +1500,7 @@ def prepare_poc_provision(
     )
     project_name = project_config.get("name")
     server_name = service_config[SC.FLARE_SERVER]
+    _prepare_poc_docker_deployments(workspace, project_config)
     # update storage
     if workspace != DEFAULT_WORKSPACE:
         prod_dir = get_prod_dir(workspace, project_name)
@@ -2253,8 +2396,8 @@ def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optio
         nargs="?",
         default=None,
         const="nvflare/nvflare",
-        help="generate docker.sh based on the docker_image, used in '--prepare' command. and generate docker.sh "
-        + " 'start/stop' commands will start with docker.sh ",
+        help="prepare Docker runtime start_docker.sh using this SP/CP Docker image. "
+        + "Jobs must specify a Docker job image in launcher_spec.",
     )
 
     prepare_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
