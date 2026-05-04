@@ -52,6 +52,7 @@ class DockerStatus:
 
 
 TERMINAL_STATUSES = {DockerStatus.EXITED, DockerStatus.DEAD}
+_WORKSPACE_TMPFS_MODE = 0o555
 _RESERVED_WORKSPACE_CHILD_NAMES = {
     WorkspaceConstants.STARTUP_FOLDER_NAME,
     WorkspaceConstants.SITE_FOLDER_NAME,
@@ -96,10 +97,12 @@ def _safe_workspace_child_path(workspace: str, child_name: str, allow_reserved: 
         raise RuntimeError(f"job workspace path uses reserved workspace name: {child_name}")
 
     child_path = os.path.normpath(os.path.join(workspace, child_name))
-    workspace_abs = os.path.abspath(workspace)
-    child_abs = os.path.abspath(child_path)
-    if os.path.commonpath([workspace_abs, child_abs]) != workspace_abs:
+    workspace_real = os.path.realpath(workspace)
+    child_real = os.path.realpath(child_path)
+    if os.path.commonpath([workspace_real, child_real]) != workspace_real:
         raise RuntimeError(f"job workspace path escapes workspace: {child_name}")
+    if os.path.islink(child_path):
+        raise RuntimeError(f"workspace child path must not be a symlink: {child_name}")
     return child_path
 
 
@@ -534,7 +537,8 @@ class DockerJobLauncher(JobLauncherSpec):
                     target=self.WORKSPACE_MOUNT,
                     source=None,
                     type="tmpfs",
-                    read_only=True,
+                    read_only=False,
+                    tmpfs_mode=_WORKSPACE_TMPFS_MODE,
                 ),
                 docker.types.Mount(
                     target=container_startup_dir,

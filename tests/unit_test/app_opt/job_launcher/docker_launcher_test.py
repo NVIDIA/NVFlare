@@ -48,7 +48,7 @@ _docker_types.DeviceRequest = MagicMock
 
 class _Mount(dict):
     def __init__(self, target, source, type="volume", read_only=False, **kwargs):
-        super().__init__(Target=target, Source=source, Type=type, ReadOnly=read_only)
+        super().__init__(Target=target, Source=source, Type=type, ReadOnly=read_only, **kwargs)
 
 
 _docker_types.Mount = _Mount
@@ -186,6 +186,20 @@ class TestSafeWorkspaceChildPath:
     def test_rejects_reserved_workspace_name(self):
         with pytest.raises(RuntimeError, match="reserved workspace name"):
             _safe_workspace_child_path("/workspace", "local")
+
+    def test_rejects_child_symlink(self, tmp_path):
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        target = workspace / "job-2"
+        target.mkdir()
+        child = workspace / "job-1"
+        try:
+            child.symlink_to(target, target_is_directory=True)
+        except (NotImplementedError, OSError):
+            pytest.skip("symlinks are not supported on this filesystem")
+
+        with pytest.raises(RuntimeError, match="must not be a symlink"):
+            _safe_workspace_child_path(str(workspace), "job-1")
 
 
 # ---------------------------------------------------------------------------
@@ -532,7 +546,8 @@ class TestDockerJobLauncherLaunchJob:
             "Target": "/var/tmp/nvflare/workspace",
             "Source": None,
             "Type": "tmpfs",
-            "ReadOnly": True,
+            "ReadOnly": False,
+            "tmpfs_mode": 0o555,
         }
         assert mounts_by_target["/var/tmp/nvflare/workspace/startup"] == {
             "Target": "/var/tmp/nvflare/workspace/startup",
