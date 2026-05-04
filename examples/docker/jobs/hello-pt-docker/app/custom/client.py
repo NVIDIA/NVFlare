@@ -17,7 +17,6 @@ client side training scripts
 """
 
 import argparse
-import os
 
 import torch
 import torchvision
@@ -30,17 +29,7 @@ from torchvision.transforms import Compose, Normalize, ToTensor
 import nvflare.client as flare
 from nvflare.client.tracking import SummaryWriter
 
-STUDY_DATASET_PATH = "/data/cifar10/data"
-
-
-def _default_dataset_path():
-    if os.path.isdir(STUDY_DATASET_PATH):
-        return STUDY_DATASET_PATH
-    job_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return os.path.join(job_root, "data")
-
-
-DATASET_PATH = os.environ.get("NVFL_CIFAR10_ROOT", _default_dataset_path())
+DATASET_PATH = "/var/tmp/nvflare/data"
 
 
 def evaluate(net, data_loader, device):
