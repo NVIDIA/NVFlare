@@ -571,7 +571,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 detach=True,
                 environment=environment if environment else None,
                 mounts=mounts,
-                working_dir=self.WORKSPACE_MOUNT,
+                working_dir=container_job_workspace,
                 # Run as the same user as SP/CP so job-written files are accessible to SP/CP
                 # (e.g. cross_val_results.json written by SJ must be readable/deletable by SP).
                 # Never pass Docker socket to job containers.

@@ -136,6 +136,7 @@ If a job package is intended to be portable across deployments and carries both 
 - SJ/CJ containers receive an empty tmpfs workspace root at `/var/tmp/nvflare/workspace` with `0555` permissions, read-only bind mounts for `startup/` and `local/`, and a read-write bind mount of only the current job directory at `/var/tmp/nvflare/workspace/<job_id>`.
 - The container-internal workspace mount point is always `/var/tmp/nvflare/workspace` (hardcoded).
 - Docker mode does not need workspace transfer: the job sees startup/local files and its own extracted app directly through bind mounts, while Docker prevents it from reading or writing other job directories through the workspace.
+- SJ/CJ containers use the current job workspace as their process working directory, so relative job outputs persist on the host.
 
 ```
 workspace/               ← read-write in SP/CP; not mounted wholesale into SJ/CJ

@@ -614,7 +614,7 @@ class TestDockerJobLauncherLaunchJob:
             "-u",
             "tcp://site-1:8002",
         ]
-        assert call_kwargs["working_dir"] == "/var/tmp/nvflare/workspace"
+        assert call_kwargs["working_dir"] == "/var/tmp/nvflare/workspace/job-1"
 
         mounts_by_target = _mounts_by_target(call_kwargs["mounts"])
         assert mounts_by_target["/data/study-a/training"] == {
