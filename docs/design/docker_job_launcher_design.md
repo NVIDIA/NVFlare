@@ -58,7 +58,7 @@ graph TD
         SP -- "creates via docker.sock" --> SJ
         SP -. "docker.sock mounted" .-> DS1
         SP -- "workspace bind mount" --> WS1
-        SJ -- "workspace bind mount" --> WS1
+        SJ -- "isolated workspace view\nread-write job bind" --> WS1
         SJ -- "PARENT_URL\ntcp://server:8004\n(Docker DNS)" --> SP
     end
 
@@ -70,7 +70,7 @@ graph TD
         CP -- "creates via docker.sock" --> CJ
         CP -. "docker.sock mounted" .-> DS2
         CP -- "workspace bind mount" --> WS2
-        CJ -- "workspace bind mount" --> WS2
+        CJ -- "isolated workspace view\nread-write job bind" --> WS2
         CJ -- "PARENT_URL\ntcp://site-1:8102\n(Docker DNS)" --> CP
     end
 
@@ -132,18 +132,19 @@ If a job package is intended to be portable across deployments and carries both 
 **Future:** A `DockerResourceManager` that queries the host GPU inventory without needing SP/CP GPU passthrough is a natural follow-up.
 
 ### Workspace / Storage
-- Workspace is shared via a **bind mount** of the host workspace directory into all containers (SP/CP and SJ/CJ).
-- The container-internal mount point is always `/var/tmp/nvflare/workspace` (hardcoded).
-- Each job writes to its own subdirectory (`workspace/runs/job_id/`) — same guarantee as the process launcher today.
+- SP/CP containers receive a read-write bind mount of the host workspace directory.
+- SJ/CJ containers receive an empty tmpfs workspace root at `/var/tmp/nvflare/workspace` with `0555` permissions, read-only bind mounts for `startup/` and `local/`, and a read-write bind mount of only the current job directory at `/var/tmp/nvflare/workspace/<job_id>`.
+- The container-internal workspace mount point is always `/var/tmp/nvflare/workspace` (hardcoded).
+- Docker mode does not need workspace transfer: the job sees startup/local files and its own extracted app directly through bind mounts, while Docker prevents it from reading or writing other job directories through the workspace.
+- SJ/CJ containers use the current job workspace as their process working directory, so relative job outputs persist on the host.
 
 ```
-workspace/               ← bind-mounted into all containers at /var/tmp/nvflare/workspace
-  startup/               ← certs, config, sub_start.sh
+workspace/               ← read-write in SP/CP; not mounted wholesale into SJ/CJ
+  startup/               ← read-only in SJ/CJ
   local/
-    study_data.yaml      ← optional: site admin maps study/dataset names to host data paths
-  runs/
-    job_001/             ← written by SJ/CJ for job 1
-    job_002/             ← written by SJ/CJ for job 2
+    study_data.yaml      ← read-only in SJ/CJ
+  job_001/               ← over-mounted read-write only for job_001's SJ/CJ
+  job_002/               ← over-mounted read-write only for job_002's SJ/CJ
 ```
 
 ### Custom Code (BYOC)
@@ -179,7 +180,10 @@ SP/CP container (site admin grants via start_docker.sh)
 
 SJ/CJ container (DockerJobLauncher controls)
   ├── NO Docker socket                        ← cannot create further containers
-  ├── workspace bind mount at /var/tmp/nvflare/workspace
+  ├── empty tmpfs workspace root at /var/tmp/nvflare/workspace (0555 mode)
+  ├── startup bind mount at /var/tmp/nvflare/workspace/startup (read-only)
+  ├── local bind mount at /var/tmp/nvflare/workspace/local (read-only)
+  ├── job workspace bind mount at /var/tmp/nvflare/workspace/<job_id> (read-write)
   ├── optional data bind mounts at /data/<study>/<dataset>
   └── nvflare-network                         ← intra-site to SP/CP only (PARENT_URL)
 ```
@@ -251,7 +255,7 @@ Docker-specific runtime flags live under `launcher_spec[site][docker]`. Keys use
 
 GPU can also be declared in a flat `resource_spec[site] = {"num_of_gpus": N}` (no mode nesting) — `DockerJobLauncher` falls back to this for backward compatibility when `launcher_spec[site]["docker"]["num_of_gpus"]` is absent and `resource_spec[site]` has no mode keys. New jobs should use `launcher_spec`.
 
-Job-level `launcher_spec[site][docker]` is merged with site-level defaults from `default_job_container_kwargs` in `local/resources.json`; job-level wins on conflict. Reserved keys controlled by the launcher (`volumes`, `network`, `environment`, `command`, `name`, `detach`, `user`, `working_dir`) cannot be overridden.
+Job-level `launcher_spec[site][docker]` is merged with site-level defaults from `default_job_container_kwargs` in `local/resources.json`; job-level wins on conflict. Reserved keys controlled by the launcher (`volumes`, `mounts`, `network`, `environment`, `command`, `name`, `detach`, `user`, `working_dir`) cannot be overridden.
 
 Site-level default environment variables can be set with `default_job_env` in `local/resources.json`. Launcher-controlled variables like `USER`, `HOME`, and `PYTHONPATH` still take precedence.
 
@@ -315,7 +319,7 @@ sequenceDiagram
     SP->>Launcher: launch_job(job_meta, fl_ctx)
     Launcher->>Launcher: read image from launcher_spec[site][docker]
     Launcher->>Launcher: override PARENT_URL → SP/CP container name
-    Launcher->>Docker: containers.run(job_image, command, network, volumes, ...)
+    Launcher->>Docker: containers.run(job_image, command, network, mounts, ...)
     Docker->>SJ: start container
     SJ->>SP: connect via PARENT_URL (Docker DNS)
     SJ->>SJ: run FL training
@@ -467,11 +471,11 @@ nvflare job submit -j /path/to/job
 
 ### Step 6 — Results
 
-Job output is written to `/var/tmp/nvflare/workspace/runs/{job_id}/` inside the container, bind-mounted from the host:
+Job output is written to `/var/tmp/nvflare/workspace/{job_id}/` inside the container. That job directory is a read-write bind mount from the host, while other job directories are not present in the job container's workspace view:
 
 ```
-workspace/server/runs/job_001/      ← server-side artifacts
-workspace/site-1/runs/job_001/      ← client-side artifacts
+workspace/server/job_001/      ← server-side artifacts
+workspace/site-1/job_001/      ← client-side artifacts
 ```
 
 ---
