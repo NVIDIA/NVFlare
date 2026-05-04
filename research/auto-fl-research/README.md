@@ -103,11 +103,13 @@ git clone https://github.com/trailofbits/claude-code-devcontainer ~/.claude-devc
 devc template .
 ```
 
-Before starting the container shell, make sure `.devcontainer/devcontainer.json` exposes the H100 to Docker by including `--gpus=all` in `runArgs`. If `runArgs` already exists, append the value and keep the existing entries:
+Before starting the container shell, make sure `.devcontainer/devcontainer.json` exposes the H100 to Docker by including `--gpus=all` in `runArgs`. Do not replace the generated `runArgs` block; append the GPU value and keep existing entries such as `--cap-add=NET_ADMIN` and `--cap-add=NET_RAW`:
 
 ```json
 {
   "runArgs": [
+    "--cap-add=NET_ADMIN",
+    "--cap-add=NET_RAW",
     "--gpus=all"
   ]
 }
