@@ -213,7 +213,7 @@ The default single-H100 candidate budget is:
 --n_clients 8 --num_rounds 10 --aggregation_epochs 4 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
 ```
 
-Candidate runs default to a 600-second timeout through `scripts/run_iteration.sh`, and each appended `results.tsv` row includes `runtime_seconds` for experimental cost accounting.
+Candidate runs default to a 600-second timeout through `scripts/run_iteration.sh`, and each appended `results.tsv` row includes `runtime_seconds` for experimental cost accounting. With result logging enabled, `run_iteration.sh` refuses to run outside an `autoresearch/` branch and initializes the `results.tsv` header before the training job starts; the scored row is appended after the candidate exits.
 Training splits are reused across candidates with the same `n_clients`, `alpha`, and `seed` under `/tmp/cifar10_splits/autofl_cifar10_*`. A lock guards split creation, so candidate `--name` values do not create duplicate data-partition directories.
 Client training is deterministic by default for a fixed `--seed`: each site derives a stable per-site RNG seed, PyTorch deterministic algorithms are enabled, cuDNN benchmarking is disabled, and DataLoader shuffling/workers are seeded. Use `--no_deterministic_training` only for a deliberately faster but noisier subcampaign, and do not compare those scores directly with deterministic runs.
 

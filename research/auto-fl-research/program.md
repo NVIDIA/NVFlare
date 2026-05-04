@@ -238,6 +238,8 @@ Keep a tracked `results.tsv` file on experiment branches with this header:
 commit	score	runtime_seconds	budget	status	target	description	artifacts
 ```
 
+`scripts/init_run.sh <tag>` creates this header before the baseline. As a guardrail, `scripts/run_iteration.sh` also creates or migrates the header before launching a logged run, then appends the row only after the candidate exits. If `results.tsv` is missing after an experiment command has started, treat that as evidence the agent skipped `run_iteration.sh`, used `--no-log-results`, or is not on the required `autoresearch/` branch.
+
 Where:
 1. `commit` = short git commit hash
 2. `score` = extracted comparable metric, or `0.000000` for failures
@@ -287,6 +289,7 @@ Default single-candidate loop:
    ```
 
    This redirects the full job output to `run.log`.
+   With result logging enabled, `run_iteration.sh` refuses to run outside an `autoresearch/` branch and initializes `results.tsv` before the training job starts.
    Candidate runs default to `RUN_TIMEOUT_SECONDS=600`; set `RUN_TIMEOUT_SECONDS=0` only when deliberately disabling the guard.
    Use `--no-log-results` only for smoke checks that should not consume the first baseline row.
 
