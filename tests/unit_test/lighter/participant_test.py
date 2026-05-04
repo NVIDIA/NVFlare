@@ -28,7 +28,6 @@ class TestParticipant:
             ("client", "client@"),
             ("admin", "admin"),
             ("admin", "admin@example_1.com"),
-            ("overseer", "overseer_"),
         ],
     )
     def test_invalid_name(self, type, invalid_name):

@@ -44,7 +44,7 @@ from nvflare.apis.job_def import Job
 from nvflare.apis.job_launcher_spec import JobLauncherSpec, JobProcessArgs
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
-from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx, get_serializable_data
+from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -268,7 +268,6 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             JobProcessArgs.WORKSPACE: ("-m", args.workspace),
             JobProcessArgs.STARTUP_CONFIG_FILE: ("-s", "fed_server.json"),
             JobProcessArgs.APP_ROOT: ("-r", app_root),
-            JobProcessArgs.HA_MODE: ("--ha_mode", server.ha_mode),
             JobProcessArgs.AUTH_TOKEN: ("-t", token),
             JobProcessArgs.TOKEN_SIGNATURE: ("-ts", signature),
             JobProcessArgs.PARENT_URL: ("-p", str(cell.get_internal_listener_url())),
@@ -879,53 +878,9 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         return result
 
     def persist_components(self, fl_ctx: FLContext, completed: bool):
-        if not self.server.ha_mode:
-            return
-
-        self.logger.info("Start saving snapshot on server.")
-
-        # Call the State Persistor to persist all the component states
-        # 1. call every component to generate the component states data
-        #    Make sure to include the current round number
-        # 2. call persistence API to save the component states
-
-        try:
-            job_id = fl_ctx.get_job_id()
-            snapshot = RunSnapshot(job_id)
-            for component_id, component in self.run_manager.components.items():
-                if isinstance(component, FLComponent):
-                    snapshot.set_component_snapshot(
-                        component_id=component_id, component_state=component.get_persist_state(fl_ctx)
-                    )
-
-            snapshot.set_component_snapshot(
-                component_id=SnapshotKey.FL_CONTEXT, component_state=copy.deepcopy(get_serializable_data(fl_ctx).props)
-            )
-
-            workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-            data = zip_directory_to_bytes(workspace.get_run_dir(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)), "")
-            snapshot.set_component_snapshot(component_id=SnapshotKey.WORKSPACE, component_state={"content": data})
-
-            job_info = fl_ctx.get_prop(FLContextKey.JOB_INFO)
-            if not job_info:
-                job_clients = self.get_participating_clients()
-                fl_ctx.set_prop(FLContextKey.JOB_INFO, (job_id, job_clients))
-            else:
-                (job_id, job_clients) = job_info
-            snapshot.set_component_snapshot(
-                component_id=SnapshotKey.JOB_INFO,
-                component_state={SnapshotKey.JOB_CLIENTS: job_clients, SnapshotKey.JOB_ID: job_id},
-            )
-
-            snapshot.completed = completed
-
-            self.server.snapshot_location = self.snapshot_persistor.save(snapshot=snapshot)
-            if not completed:
-                self.logger.info(f"persist the snapshot to: {self.server.snapshot_location}")
-            else:
-                self.logger.info(f"The snapshot: {self.server.snapshot_location} has been removed.")
-        except Exception as e:
-            self.logger.error(f"Failed to persist the components. {secure_format_exception(e)}")
+        # Component snapshot persistence has been removed; keep this as a no-op
+        # so existing callers do not have to be changed.
+        return
 
     def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
         for component_id, component in self.run_manager.components.items():

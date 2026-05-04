@@ -108,16 +108,6 @@ def login():
         return jsonify({"status": "unauthenticated"}), 401
 
 
-@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/overseer/blob", methods=["POST"])
-@jwt_required()
-def overseer_blob():
-    claims = get_jwt()
-    if claims.get("role") == "project_admin":
-        return jsonify({"status": "unauthorized"}), 403
-    else:
-        return jsonify({"status": "unauthorized"}), 403
-
-
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/servers/<int:id>/blob", methods=["POST"])
 @jwt_required()
 def server_blob(id):

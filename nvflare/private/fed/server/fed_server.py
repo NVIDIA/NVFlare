@@ -52,7 +52,6 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.authn import add_authentication_headers
-from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import (
@@ -77,17 +76,7 @@ from nvflare.widgets.fed_event import ServerFedEventRunner
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
-from .server_state import (
-    ABORT_RUN,
-    ACTION,
-    MESSAGE,
-    NIS,
-    Cold2HotState,
-    ColdState,
-    Hot2ColdState,
-    HotState,
-    ServerState,
-)
+from .server_state import ABORT_RUN, ACTION, MESSAGE, NIS, HotState, ServerState
 from .server_status import ServerStatus
 
 
@@ -287,7 +276,6 @@ class FederatedServer(BaseServer):
         args=None,
         secure_train=False,
         snapshot_persistor=None,
-        overseer_agent=None,
         shutdown_period=30.0,
         check_engine_frequency=3.0,
     ):
@@ -338,11 +326,8 @@ class FederatedServer(BaseServer):
         if isinstance(self.workspace, str):
             self.client_manager.set_disabled_clients_file(os.path.join(self.workspace, "disabled_clients.json"))
         self.snapshot_location = None
-        self.overseer_agent = overseer_agent
-        self.server_state: ServerState = ColdState()
+        self.server_state: ServerState = HotState()
         self.snapshot_persistor = snapshot_persistor
-        self.checking_server_state = False
-        self.ha_mode = False
 
         self.reg_lock = threading.Lock()
         self.name_to_reg = {}
@@ -1062,19 +1047,7 @@ class FederatedServer(BaseServer):
 
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
         with self.lock:
-            self.server_state.host = target.split(":")[0]
-            self.server_state.service_port = target.split(":")[1]
-
-        self.overseer_agent = self._init_agent(args)
-        self.ha_mode = False
-
-        if secure_train:
-            if self.overseer_agent:
-                self.overseer_agent.set_secure_context(
-                    ca_path=grpc_args["ssl_root_cert"],
-                    cert_path=grpc_args["ssl_cert"],
-                    prv_key_path=grpc_args["ssl_private_key"],
-                )
+            self.server_state = HotState(host=target.split(":")[0], port=target.split(":")[1])
 
         self.engine.initialize_comm(self.cell)
         self._register_cellnet_cbs()
@@ -1091,89 +1064,6 @@ class FederatedServer(BaseServer):
             core_cell.add_outgoing_reply_filter(channel="*", topic="*", cb=self._add_auth_headers)
             core_cell.add_outgoing_request_filter(channel="*", topic="*", cb=self._add_auth_headers)
 
-        self.overseer_agent.start(self.overseer_callback)
-
-    def _init_agent(self, args=None):
-        kv_list = parse_vars(args.set)
-        sp = kv_list.get("sp")
-
-        if sp:
-            with self.engine.new_context() as fl_ctx:
-                fl_ctx.set_prop(FLContextKey.SP_END_POINT, sp)
-                self.overseer_agent.initialize(fl_ctx)
-
-        return self.overseer_agent
-
-    def _check_server_state(self, overseer_agent):
-        if self.status != ServerStatus.STARTED:
-            return
-
-        if overseer_agent.is_shutdown():
-            self.engine.shutdown_server()
-            return
-
-        sp = overseer_agent.get_primary_sp()
-
-        old_state_name = self.server_state.__class__.__name__
-        with self.lock:
-            with self.engine.new_context() as fl_ctx:
-                self.server_state = self.server_state.handle_sd_callback(sp, fl_ctx)
-
-        if isinstance(self.server_state, Cold2HotState):
-            self._turn_to_hot()
-
-        elif isinstance(self.server_state, Hot2ColdState):
-            self._turn_to_cold(old_state_name)
-
-    def _notify_state_change(self, old_state_name):
-        new_state_name = self.server_state.__class__.__name__
-        if new_state_name != old_state_name:
-            self.logger.info(f"state changed from: {old_state_name} to: {new_state_name}")
-            keys = list(self.engine.run_processes.keys())
-            if keys:
-                target_fqcns = []
-                for job_id in keys:
-                    target_fqcns.append(FQCN.join([FQCN.ROOT_SERVER, job_id]))
-                cell_msg = new_cell_message(headers={}, payload=self.server_state)
-                self.cell.broadcast_request(
-                    channel=CellChannel.SERVER_COMMAND,
-                    topic=ServerCommandNames.SERVER_STATE,
-                    request=cell_msg,
-                    targets=target_fqcns,
-                    timeout=5.0,
-                    optional=True,
-                )
-
-    def overseer_callback(self, overseer_agent):
-        if self.checking_server_state:
-            self.logger.debug("busy checking server state")
-            return
-
-        self.checking_server_state = True
-        try:
-            self._check_server_state(overseer_agent)
-        except Exception as ex:
-            self.logger.error(f"exception in checking server state: {secure_format_exception(ex)}")
-        finally:
-            self.checking_server_state = False
-
-    def _turn_to_hot(self):
-        # Restore Snapshot
-        with self.engine.new_context() as fl_ctx:
-            self.snapshot_persistor.delete()
-            self.engine.job_runner.update_unfinished_jobs(fl_ctx=fl_ctx)
-
-        with self.lock:
-            self.server_state = HotState(
-                host=self.server_state.host, port=self.server_state.service_port, ssid=self.server_state.ssid
-            )
-
-    def _turn_to_cold(self, old_state_name):
-        with self.lock:
-            self.server_state = ColdState(host=self.server_state.host, port=self.server_state.service_port)
-        self._notify_state_change(old_state_name)
-        self.engine.pause_server_jobs()
-
     def stop_training(self):
         self.status = ServerStatus.STOPPED
         self.logger.info("Server app stopped.\n\n")
@@ -1188,6 +1078,4 @@ class FederatedServer(BaseServer):
         """Shutdown the server."""
         self.logger.info("shutting down server")
         self.shutdown = True
-        if self.overseer_agent:
-            self.overseer_agent.end()
         return super().close()

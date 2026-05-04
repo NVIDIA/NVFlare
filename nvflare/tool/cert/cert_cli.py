@@ -17,6 +17,8 @@
 import argparse
 from typing import Optional
 
+from nvflare.tool.cert.cert_constants import is_valid_provision_version
+
 # Module-level parser references used by --schema in handlers and for help fallback.
 _cert_init_parser: Optional[argparse.ArgumentParser] = None
 _cert_request_parser: Optional[argparse.ArgumentParser] = None
@@ -39,6 +41,12 @@ def _positive_int(value: str) -> int:
     if parsed < 1:
         raise argparse.ArgumentTypeError("value must be >= 1")
     return parsed
+
+
+def _provision_version_type(value: str) -> str:
+    if not is_valid_provision_version(value):
+        raise argparse.ArgumentTypeError("version must be exactly two digits, for example 00")
+    return value
 
 
 def _add_compat_output_arg(parser: argparse.ArgumentParser) -> None:
@@ -95,10 +103,26 @@ def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         help="Validity period for the root CA certificate in days. Default: 3650.",
     )
     p.add_argument(
+        "--deploy-version",
+        required=False,
+        type=_provision_version_type,
+        default="00",
+        dest="deploy_version",
+        metavar="NN",
+        help=(
+            "Deployment generation used for package output directory prod_<NN>. "
+            "Default: 00. Normally ignore this; use 01, 02, etc. only when creating a new deployment CA."
+        ),
+    )
+    p.add_argument(
         "--force",
         action="store_true",
         default=False,
-        help="Overwrite existing CA files without prompting. Backs up existing files first.",
+        help=(
+            "Replace existing CA files only when --deploy-version differs from the existing CA deploy version. "
+            "Fails with an error if --deploy-version matches the existing CA deploy version. "
+            "If ca.json is absent, --deploy-version is not checked. Backs up existing files first."
+        ),
     )
     p.add_argument(
         "--schema",

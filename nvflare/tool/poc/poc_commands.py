@@ -1916,7 +1916,7 @@ def prepare_env(service_name, gpu_ids: Optional[List[int]], service_config: Dict
     if service_config.get(SC.IS_DOCKER_RUN):
         my_env = os.environ.copy() if my_env is None else my_env
         if gpu_ids:
-            my_env["GPU2USE"] = f"--gpus={my_env['CUDA_VISIBLE_DEVICES']}"
+            my_env["GPU2USE"] = f'--gpus="device={my_env["CUDA_VISIBLE_DEVICES"]}"'
 
         my_env["MY_DATA_DIR"] = os.path.join(get_poc_workspace(), "data")
         my_env["SVR_NAME"] = service_name
