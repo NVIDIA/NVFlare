@@ -333,10 +333,10 @@ def main(args):
                 scalar=val_acc_global_model,
                 global_step=current_round,
             )
+            # Cross-site validation expects a metrics-only DXO (DataKind.METRICS).
+            # Sending no params lets FLModelUtils emit DataKind.METRICS instead of WEIGHT_DIFF.
             flare.send(
                 flare.FLModel(
-                    params={},
-                    params_type=ParamsType.DIFF,
                     metrics={"accuracy": val_acc_global_model},
                     meta={"NUM_STEPS_CURRENT_ROUND": 0},
                 )
