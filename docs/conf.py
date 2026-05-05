@@ -24,11 +24,15 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-import sphinx_rtd_theme
 import os
-import sys
-from sphinx.domains.python import PythonDomain
+import re
 import subprocess
+import sys
+from pathlib import Path
+
+import sphinx_rtd_theme
+from sphinx.domains.python import PythonDomain
+from sphinx.errors import ExtensionError
 
 
 class PatchedPythonDomain(PythonDomain):
@@ -73,6 +77,7 @@ _skip_api = os.environ.get("SKIP_API_DOCS", "").lower() in ("1", "true", "yes")
 
 extensions = [
     "recommonmark",
+    "sphinx_llm.txt",
     "sphinx.ext.intersphinx",
     "sphinx.ext.mathjax",
     "sphinx.ext.napoleon",
@@ -93,6 +98,13 @@ if not _skip_api:
 autoclass_content = "both"
 add_module_names = False
 autosectionlabel_prefix_document = True
+llms_txt_description = (
+    "NVIDIA FLARE is an open-source SDK for federated learning, with tools for simulation, job authoring, "
+    "deployment, security, and production federated ML workflows."
+)
+llms_txt_full_build = False
+llms_txt_build_parallel = False
+llms_txt_suffix_mode = "replace"
 
 # Add any paths that contain templates here, relative to this directory.
 # templates_path = ['_templates']
@@ -100,7 +112,7 @@ autosectionlabel_prefix_document = True
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = []
+exclude_patterns = ["_build"]
 
 if _skip_api:
     # Exclude auto-generated API files but keep the committed stub
@@ -149,7 +161,31 @@ def generate_apidocs(*args):
     )
 
 
+def copy_curated_llms_txt(app, exception):
+    """Publish the curated llms.txt after generated Markdown pages are copied."""
+    if exception or not app.builder or app.builder.name not in ("html", "dirhtml"):
+        return
+
+    source_path = Path(app.confdir) / "llms.txt.in"
+    target_path = Path(app.builder.outdir) / "llms.txt"
+    llms_txt = source_path.read_text(encoding="utf-8")
+    missing_links = []
+
+    for link in re.findall(r"\]\(([^)]+)\)", llms_txt):
+        if "://" in link or link.startswith("#"):
+            continue
+        linked_path = link.split("#", 1)[0]
+        if linked_path and not (Path(app.builder.outdir) / linked_path).is_file():
+            missing_links.append(link)
+
+    if missing_links:
+        raise ExtensionError(f"Missing generated Markdown files referenced by llms.txt: {missing_links}")
+
+    target_path.write_text(llms_txt, encoding="utf-8")
+
+
 def setup(app):
     app.connect("builder-inited", generate_apidocs)
+    app.connect("build-finished", copy_curated_llms_txt, priority=200)
     app.add_domain(PatchedPythonDomain, override=True)
     app.add_css_file("css/additions.css")
