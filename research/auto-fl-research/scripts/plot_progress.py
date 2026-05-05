@@ -184,9 +184,9 @@ def select_literature_labels(literature_rows: list[ResultRow], max_labels: int) 
     longest = sorted(literature_rows, key=lambda row: row.runtime_seconds, reverse=True)
     selected = {latest.index}
     for row in longest:
-        selected.add(row.index)
         if len(selected) >= max_labels:
             break
+        selected.add(row.index)
     return [row for row in literature_rows if row.index in selected]
 
 
