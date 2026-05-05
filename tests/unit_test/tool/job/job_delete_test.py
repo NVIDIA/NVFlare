@@ -41,7 +41,7 @@ class TestJobDelete:
 
         args = self._make_args(force=True)
         mock_sess = MagicMock()
-        mock_sess.delete_job.return_value = None
+        mock_sess.delete_job.return_value = {"job_id": "abc123", "submit_records_marked_deleted": 1}
 
         with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
             with patch("sys.stdin") as mock_stdin:
@@ -57,6 +57,7 @@ class TestJobDelete:
         assert data["status"] == "ok"
         assert data["exit_code"] == 0
         assert data["data"]["job_id"] == "abc123"
+        assert data["data"]["submit_records_marked_deleted"] == 1
         # no JSON on stderr
         assert not captured.err.strip().startswith("{")
 
@@ -143,7 +144,7 @@ class TestJobDelete:
         assert "job999" in captured.err
         assert "job999" not in captured.out
 
-    def test_delete_not_found_exits_1(self):
+    def test_delete_not_found_exits_1(self, capsys):
         """JOB_NOT_FOUND exits with code 1."""
         from nvflare.tool.job.job_cli import cmd_job_delete
 
@@ -155,6 +156,10 @@ class TestJobDelete:
             with pytest.raises(SystemExit) as exc_info:
                 cmd_job_delete(args)
         assert exc_info.value.code == 1
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "JOB_NOT_FOUND"
+        assert "searched study 'default'" in envelope["message"]
+        assert "nvflare job list --study <study_name>" in envelope["hint"]
 
     def test_delete_authentication_error_propagates(self):
         from nvflare.tool.job.job_cli import cmd_job_delete

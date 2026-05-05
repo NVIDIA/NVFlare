@@ -41,7 +41,6 @@ class BaseClientDeployer:
         self.secure_train = build_ctx["secure_train"]
         self.client_name = build_ctx["client_name"]
         self.host = build_ctx["server_host"]
-        self.overseer_agent = build_ctx["overseer_agent"]
         self.components = build_ctx["client_components"]
         self.handlers = build_ctx["client_handlers"]
 
@@ -78,7 +77,6 @@ class BaseClientDeployer:
             retry_timeout=retry_timeout,
             executors=self.executors,
             compression=compression,
-            overseer_agent=self.overseer_agent,
             args=args,
             components=self.components,
             handlers=self.handlers,

@@ -11,11 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 from typing import Any, List, Optional, Union
 
 from nvflare.apis.utils.format_check import name_check
 
 from .constants import DEFINED_PARTICIPANT_TYPES, DEFINED_ROLES, ConnSecurity, ParticipantType, PropKey
+
+_logger = logging.getLogger(__name__)
 
 
 class ListeningHost:
@@ -452,16 +455,6 @@ class Project(Entity):
         self.server = None
         return server
 
-    def get_overseer(self) -> Optional[Participant]:
-        """Get the overseer definition.
-
-        Note: overseer is deprecated.
-
-        Returns: None
-
-        """
-        return None
-
     def add_participant(self, participant: Participant) -> Participant:
         """Add a participant to the project.
         Before adding the participant, this method checks the following conditions:
@@ -469,12 +462,18 @@ class Project(Entity):
         - Only one server is allowed in the project
         - Role must be specified for admin type of participant
 
+        Obsolete participant entries are ignored with a warning.
+
         Args:
             participant: the participant to be added.
 
-        Returns: the participant object added.
+        Returns: the participant object added (or None when an obsolete entry is ignored).
 
         """
+        if participant.type == ParticipantType.OVERSEER:
+            _logger.warning(f"Obsolete participant '{participant.name}' in project.yml will be ignored.")
+            return None
+
         if participant.name in self._all_names:
             raise ValueError(f"the project {self.name} already has a participant with the name '{participant.name}'")
 
@@ -483,8 +482,6 @@ class Project(Entity):
             if self.server:
                 raise ValueError(f"cannot add participant {participant.name} as server - server already exists")
             self.server = participant
-        elif participant.type == ParticipantType.OVERSEER:
-            raise ValueError(f"cannot add participant {participant.name} as overseer - overseer is removed")
 
         participants = self._participants_by_types.get(participant.type)
         if not participants:

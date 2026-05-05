@@ -40,7 +40,7 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "STARTUP_KIT_MISSING": {
         "message": "Startup kit not found.",
-        "hint": "Run 'nvflare config kit list' and 'nvflare config kit use <id>', or set NVFLARE_STARTUP_KIT_DIR for automation.",
+        "hint": "Run 'nvflare config list' and 'nvflare config use <id>', pass --kit-id <id> or --startup-kit <path>, or set NVFLARE_STARTUP_KIT_DIR for automation.",
     },
     "SITE_NOT_FOUND": {
         "message": "Site '{site}' is not connected.",
@@ -53,6 +53,10 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     "SERVER_UNREACHABLE": {
         "message": "Server stopped or job ended before command was delivered.",
         "hint": "Check server status with 'nvflare system status'.",
+    },
+    "SYSTEM_NOT_READY": {
+        "message": "FLARE system is not ready yet.",
+        "hint": "Wait for clients to connect, then retry 'nvflare system status'. If this persists, check POC service logs or client logs.",
     },
     "INTERNAL_ERROR": {
         "message": "An unexpected error occurred.",
@@ -92,7 +96,7 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "STARTUP_KIT_NOT_CONFIGURED": {
         "message": "No active startup kit is configured.",
-        "hint": "Run 'nvflare config kit list' and 'nvflare config kit use <id>', or set NVFLARE_STARTUP_KIT_DIR for automation.",
+        "hint": "Run 'nvflare config list' and 'nvflare config use <id>', pass --kit-id <id> or --startup-kit <path>, or set NVFLARE_STARTUP_KIT_DIR for automation.",
     },
     "LOCK_TIMEOUT": {
         "message": "Study registry is busy.",
@@ -111,9 +115,24 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "Job '{job_id}' is not currently running.",
         "hint": "Use 'nvflare job list' to check job status.",
     },
+    "JOB_NOT_DONE": {
+        "message": "Job '{job_id}' has not finished.",
+        "hint": "Use 'nvflare job wait <job_id>' or 'nvflare job monitor <job_id>' before downloading results.",
+    },
     "JOB_INVALID": {
         "message": "Job folder is not a valid NVFlare job.",
         "hint": "Check meta.json and config_fed_server.json.",
+    },
+    "SUBMIT_TOKEN_CONFLICT": {
+        "message": "A job with this submit token already exists with different content.",
+        "hint": (
+            "Use a new submit token when submitting different job content, "
+            "or resubmit identical job content to reuse the existing job."
+        ),
+    },
+    "SUBMIT_TOKEN_JOB_DELETED": {
+        "message": "This submit token refers to a deleted job.",
+        "hint": "Use a new submit token to submit the job again.",
     },
     "LOG_NOT_FOUND": {
         "message": "Job logs are not available for site '{site}'.",
@@ -207,7 +226,7 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
     },
     "OUTPUT_DIR_EXISTS": {
         "message": "Output directory already exists: {path}.",
-        "hint": "Use --force to package into a new prod_NN stage directory.",
+        "hint": "Use --force only when intentionally replacing the existing participant output.",
     },
     "SIGNED_ZIP_NOT_FOUND": {
         "message": "Signed zip not found: {path}.",

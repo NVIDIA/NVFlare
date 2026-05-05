@@ -35,7 +35,7 @@ and `server.admin_port`.
 
 Setup:
 
-1. Project Admin initializes the CA with `nvflare cert init`.
+1. Project Admin initializes the CA with `nvflare cert init --deploy-version 00`.
 
 Automated distributed provisioning flow:
 
@@ -46,11 +46,13 @@ Automated distributed provisioning flow:
 4. Each requester packages its startup kit with `nvflare package` using only the
    signed zip and local request material.
 
-For automation, the package step uses `--expected-rootca-fingerprint` from the
-approval JSON output. The package command does not pass an endpoint, project
-file, or template argument; those values come from the signed zip. The
-interactive demo uses `--confirm-rootca` instead because a human is expected to
-compare the fingerprint out of band.
+For automation, the package step uses `--fingerprint <rootca_fingerprint_sha256>`
+from the approval JSON output. The package command does not pass an endpoint,
+project file, or template argument; those values come from the signed zip.
+
+The signed zip also carries deploy-version metadata, so all packages in this
+script land under `prod_00` unless the script is changed to initialize a
+different deploy version.
 
 ## Dynamic Provisioning
 
@@ -72,7 +74,7 @@ Add a new admin user:
 
 The `--add` mode uses `site-3.yaml` or `bob.yaml` from the parent directory,
 approves with `./distprov_demo/ca`, and packages the new startup kit under
-`./distprov_demo/workspace/fed_project/prod_NN/<name>/`.
+`./distprov_demo/workspace/fed_project/prod_00/<name>/`.
 
 ## Output
 

@@ -14,19 +14,28 @@
 import os
 import shutil
 import tempfile
+import threading
+from collections import OrderedDict
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ReturnCode, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.storage import DataTypes
 from nvflare.apis.streaming import StreamContext
-from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels
+from nvflare.app_common.logging.constants import ALLOW_LOG_STREAMING_VAR, LIVE_LOG_TOPIC, Channels
 from nvflare.app_common.streamers.log_streamer import LogStreamer
 from nvflare.widgets.widget import Widget
 
 # Keys for per-stream state stored in StreamContext
 _KEY_RECV_FILE = "JobLogReceiver.recv_file"
 _KEY_RECV_PATH = "JobLogReceiver.recv_path"
+
+# Cap on the number of (client, job_id) pairs we remember for "log once"
+# tracking. The receiver is a long-lived server-side widget; without a cap,
+# the set would grow without bound across job churn. When the cap is hit,
+# the oldest entry is evicted (FIFO), at the cost of possibly re-logging a
+# repeat violation from a long-quiescent job.
+_UNAUTHORIZED_LOG_CAP = 4096
 
 
 class JobLogReceiver(Widget):
@@ -70,6 +79,12 @@ class JobLogReceiver(Widget):
         self._dest_dir = dest_dir
         self._idle_timeout = idle_timeout
         self._registered = False
+        # Tracks (client, job_id) pairs we've already logged a "site does not allow
+        # streaming" error for, so the warning is emitted at most once per job.
+        # Bounded with FIFO eviction (see _UNAUTHORIZED_LOG_CAP) and guarded by a
+        # lock so the check-then-add is atomic across concurrent stream chunks.
+        self._unauthorized_logged: OrderedDict = OrderedDict()
+        self._unauthorized_lock = threading.Lock()
         self.register_event_handler([EventType.SYSTEM_START, EventType.START_RUN], self._register)
 
     def _effective_dest_dir(self) -> str:
@@ -97,10 +112,57 @@ class JobLogReceiver(Widget):
         job_id = self._sanitize_path_component(peer_ctx.get_job_id(default="unknown"))
         return client, job_id
 
+    def _is_site_allowed_to_stream(self, client_name: str, fl_ctx: FLContext) -> bool:
+        """Look up the registered Client and check its site_config (forwarded
+        from the client's resources.json during registration).
+
+        Default-allow: only an explicit ``allow_log_streaming=False`` in the
+        site_config disables streaming. Missing fields, unknown clients, and
+        unavailable engine all resolve to allowed.
+        """
+        engine = fl_ctx.get_engine()
+        if engine is None:
+            return True
+        getter = getattr(engine, "get_client_from_name", None)
+        if getter is None:
+            return True
+        client = getter(client_name)
+        if client is None:
+            return True
+        site_config = client.get_site_config() or {}
+        return bool(site_config.get(ALLOW_LOG_STREAMING_VAR, True))
+
+    def _record_unauthorized(self, key: tuple) -> bool:
+        """Atomically record an unauthorized (client, job_id) pair.
+
+        Returns True if this is the first time we've seen this key (caller
+        should emit the once-per-job log line). Bounds the bookkeeping with
+        FIFO eviction so the receiver can run for the lifetime of the
+        server without unbounded memory growth.
+        """
+        with self._unauthorized_lock:
+            if key in self._unauthorized_logged:
+                return False
+            if len(self._unauthorized_logged) >= _UNAUTHORIZED_LOG_CAP:
+                self._unauthorized_logged.popitem(last=False)
+            self._unauthorized_logged[key] = None
+            return True
+
     def _on_chunk_received(self, data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext):
         f = stream_ctx.get(_KEY_RECV_FILE)
         if f is None:
             client, job_id = self._get_trusted_stream_identity(fl_ctx)
+            if not self._is_site_allowed_to_stream(client, fl_ctx):
+                # Drop the chunk: the site has explicitly disabled streaming.
+                # Log once per (client, job_id) so the operator can see it
+                # without flooding the server log.
+                if self._record_unauthorized((client, job_id)):
+                    self.log_error(
+                        fl_ctx,
+                        f"Dropping live log chunk from {client} for job {job_id}: site has "
+                        f"'{ALLOW_LOG_STREAMING_VAR}' disabled in its resources.json",
+                    )
+                return
             log_file_name = self._sanitize_path_component(LogStreamer.get_file_name(stream_ctx) or "log.txt")
             path = os.path.join(self._effective_dest_dir(), job_id, client, log_file_name)
             os.makedirs(os.path.dirname(path), exist_ok=True)

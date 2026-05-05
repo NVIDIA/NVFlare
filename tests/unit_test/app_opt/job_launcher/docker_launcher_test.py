@@ -48,7 +48,7 @@ _docker_types.DeviceRequest = MagicMock
 
 class _Mount(dict):
     def __init__(self, target, source, type="volume", read_only=False, **kwargs):
-        super().__init__(Target=target, Source=source, Type=type, ReadOnly=read_only)
+        super().__init__(Target=target, Source=source, Type=type, ReadOnly=read_only, **kwargs)
 
 
 _docker_types.Mount = _Mount
@@ -75,6 +75,7 @@ from nvflare.app_opt.job_launcher.docker_launcher import (
     DockerJobLauncher,
     ServerDockerJobLauncher,
     _exit_code_to_return_code,
+    _safe_workspace_child_path,
     _sanitize_container_name,
 )
 
@@ -159,6 +160,46 @@ class TestExitCodeToReturnCode:
     def test_nonzero_is_execution_error(self):
         assert _exit_code_to_return_code(1) == JobReturnCode.EXECUTION_ERROR
         assert _exit_code_to_return_code(127) == JobReturnCode.EXECUTION_ERROR
+
+
+# ---------------------------------------------------------------------------
+# _safe_workspace_child_path
+# ---------------------------------------------------------------------------
+
+
+class TestSafeWorkspaceChildPath:
+    def test_returns_child_under_workspace(self):
+        assert _safe_workspace_child_path("/workspace", "job-1") == "/workspace/job-1"
+
+    def test_allows_reserved_workspace_name_when_requested(self):
+        assert _safe_workspace_child_path("/workspace", "startup", allow_reserved=True) == "/workspace/startup"
+        assert _safe_workspace_child_path("/workspace", "local", allow_reserved=True) == "/workspace/local"
+
+    def test_rejects_path_escape(self):
+        with pytest.raises(RuntimeError, match="single workspace child"):
+            _safe_workspace_child_path("/workspace", "../other")
+
+    def test_rejects_nested_child(self):
+        with pytest.raises(RuntimeError, match="single workspace child"):
+            _safe_workspace_child_path("/workspace", "job-1/../job-2")
+
+    def test_rejects_reserved_workspace_name(self):
+        with pytest.raises(RuntimeError, match="reserved workspace name"):
+            _safe_workspace_child_path("/workspace", "local")
+
+    def test_rejects_child_symlink(self, tmp_path):
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        target = workspace / "job-2"
+        target.mkdir()
+        child = workspace / "job-1"
+        try:
+            child.symlink_to(target, target_is_directory=True)
+        except (NotImplementedError, OSError):
+            pytest.skip("symlinks are not supported on this filesystem")
+
+        with pytest.raises(RuntimeError, match="must not be a symlink"):
+            _safe_workspace_child_path(str(workspace), "job-1")
 
 
 # ---------------------------------------------------------------------------
@@ -495,13 +536,48 @@ class TestDockerJobLauncherLaunchJob:
         launcher.launch_job(_make_job_meta(), fl_ctx)
 
         call_kwargs = dc.containers.run.call_args[1]
+        mounts = call_kwargs["mounts"]
+        assert mounts[0]["Target"] == "/var/tmp/nvflare/workspace"
+        assert mounts[1]["Target"] == "/var/tmp/nvflare/workspace/startup"
+        assert mounts[2]["Target"] == "/var/tmp/nvflare/workspace/local"
+        assert mounts[3]["Target"] == "/var/tmp/nvflare/workspace/job-1"
+
         mounts_by_target = _mounts_by_target(call_kwargs["mounts"])
         assert mounts_by_target["/var/tmp/nvflare/workspace"] == {
             "Target": "/var/tmp/nvflare/workspace",
-            "Source": "/host/workspace",
+            "Source": None,
+            "Type": "tmpfs",
+            "ReadOnly": False,
+            "tmpfs_mode": 0o555,
+        }
+        assert mounts_by_target["/var/tmp/nvflare/workspace/startup"] == {
+            "Target": "/var/tmp/nvflare/workspace/startup",
+            "Source": "/host/workspace/startup",
+            "Type": "bind",
+            "ReadOnly": True,
+        }
+        assert mounts_by_target["/var/tmp/nvflare/workspace/local"] == {
+            "Target": "/var/tmp/nvflare/workspace/local",
+            "Source": "/host/workspace/local",
+            "Type": "bind",
+            "ReadOnly": True,
+        }
+        assert mounts_by_target["/var/tmp/nvflare/workspace/job-1"] == {
+            "Target": "/var/tmp/nvflare/workspace/job-1",
+            "Source": "/host/workspace/job-1",
             "Type": "bind",
             "ReadOnly": False,
         }
+
+    def test_launch_rejects_job_workspace_path_escape(self):
+        launcher = _make_launcher(workspace="/host/workspace")
+        dc = launcher._docker_client
+
+        fl_ctx, _ = _make_fl_ctx()
+        with pytest.raises(RuntimeError, match="single workspace child"):
+            launcher.launch_job(_make_job_meta(job_id="../other"), fl_ctx)
+
+        dc.containers.run.assert_not_called()
 
     def test_launch_study_data_mounts_nested_datasets(self):
         launcher = _make_launcher()
@@ -538,7 +614,7 @@ class TestDockerJobLauncherLaunchJob:
             "-u",
             "tcp://site-1:8002",
         ]
-        assert call_kwargs["working_dir"] == "/var/tmp/nvflare/workspace"
+        assert call_kwargs["working_dir"] == "/var/tmp/nvflare/workspace/job-1"
 
         mounts_by_target = _mounts_by_target(call_kwargs["mounts"])
         assert mounts_by_target["/data/study-a/training"] == {
@@ -615,7 +691,12 @@ class TestDockerJobLauncherLaunchJob:
 
         mock_load.assert_called_once_with("/var/tmp/nvflare/workspace/local/study_data.yaml")
         mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
-        assert set(mounts_by_target) == {"/var/tmp/nvflare/workspace"}
+        assert set(mounts_by_target) == {
+            "/var/tmp/nvflare/workspace",
+            "/var/tmp/nvflare/workspace/startup",
+            "/var/tmp/nvflare/workspace/local",
+            "/var/tmp/nvflare/workspace/job-1",
+        }
 
     def test_launch_default_study_mounts_default_mapping_when_present(self):
         launcher = _make_launcher()
@@ -653,7 +734,12 @@ class TestDockerJobLauncherLaunchJob:
             launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
 
         mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
-        assert set(mounts_by_target) == {"/var/tmp/nvflare/workspace"}
+        assert set(mounts_by_target) == {
+            "/var/tmp/nvflare/workspace",
+            "/var/tmp/nvflare/workspace/startup",
+            "/var/tmp/nvflare/workspace/local",
+            "/var/tmp/nvflare/workspace/job-1",
+        }
 
     def test_launch_no_docker_socket_in_job_container(self):
         """Job containers must never receive the Docker socket."""
@@ -704,6 +790,22 @@ class TestDockerJobLauncherLaunchJob:
         environment = call_kwargs["environment"]
         assert environment["USER"] == "actual-user"
         assert environment["HOME"] == "/real/home"
+
+    def test_launch_python_path_from_launcher_spec_overrides_default(self):
+        launcher = _make_launcher(default_python_path="/usr/bin/python")
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1", docker_spec={"python_path": "/opt/conda/bin/python"})
+        launcher.launch_job(job_meta, fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        assert call_kwargs["command"][0] == "/opt/conda/bin/python"
+        assert "python_path" not in call_kwargs
 
     def test_launch_gpu_via_resource_spec_num_of_gpus(self):
         """num_of_gpus in resource_spec.docker is translated to device_requests for the job container."""

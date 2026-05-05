@@ -123,6 +123,19 @@ class WFCommServer(FLComponent, WFCommSpec):
         )
         self._task_monitor.start()
 
+    def _cleanup_inflight_tensor_downloads(self, fl_ctx: FLContext):
+        try:
+            from nvflare.app_opt.pt.tensor_downloader import cleanup_active_disk_tensor_downloads
+
+            cleanup_active_disk_tensor_downloads(reason="workflow finalized before tensor download completed")
+        except ImportError:
+            return
+        except Exception as e:
+            self.log_warning(
+                fl_ctx,
+                "failed to cleanup active tensor downloads: {}".format(secure_format_exception(e)),
+            )
+
     def _try_again(self) -> Tuple[str, str, Optional[Shareable]]:
         # TODO: how to tell client no shareable available now?
         return "", "", None
@@ -829,6 +842,7 @@ class WFCommServer(FLComponent, WFCommSpec):
             fl_ctx (FLContext): FLContext associated with this action
         """
         with self._controller_lock:
+            self._cleanup_inflight_tensor_downloads(fl_ctx)
             self._clear_standing_tasks(fl_ctx=fl_ctx)
             self._all_done = True
 

@@ -29,10 +29,5 @@ builders:
     args:
       config_folder: config
       scheme: tcp
-  - path: nvflare.lighter.impl.helm_chart.HelmChartBuilder
-    args:
-      docker_image: __DOCKER_IMAGE__
-      parent_port: 8102
-      workspace_pvc: nvflws
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder

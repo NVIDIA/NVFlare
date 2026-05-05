@@ -48,10 +48,18 @@ from nvflare.lighter.utils import (
     sign_content,
 )
 from nvflare.tool import cli_output
+from nvflare.tool.cert.cert_constants import (
+    CA_INFO_FIELD,
+    DEFAULT_PROVISION_VERSION,
+    PROVISION_VERSION_FIELD,
+    ROOTCA_FINGERPRINT_FIELD,
+)
 from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256, normalize_sha256_fingerprint
 from nvflare.tool.package.package_commands import (
     _DUMMY_SERVER_NAME,
+    FixedProdWorkspaceBuilder,
     PrebuiltCertBuilder,
+    _build_package_builders,
     _discover_name_from_dir,
     _flat_site_to_project_dict,
     _load_signed_zip,
@@ -137,8 +145,7 @@ def _make_args(**kwargs):
         output_fmt=None,
         schema=False,
         request_dir=None,
-        expected_rootca_fingerprint=None,
-        confirm_rootca=False,
+        expected_fingerprint=None,
     )
     defaults.update(kwargs)
     return types.SimpleNamespace(**defaults)
@@ -417,6 +424,20 @@ class TestSignedZipHelpers:
                 names = _safe_zip_names(zf, str(zip_path))
 
         error.assert_called_once()
+        assert names is None
+
+    def test_safe_zip_names_rejects_private_key_pem_content_when_error_is_mocked(self, tmp_path):
+        zip_path = tmp_path / "signed.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("signed.json", "{}")
+            zf.writestr("private.pem", "-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----\n")
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            with unittest.mock.patch("nvflare.tool.package.package_commands.output_error_message") as error:
+                names = _safe_zip_names(zf, str(zip_path))
+
+        error.assert_called_once()
+        assert "private key" in str(error.call_args)
         assert names is None
 
     def test_read_zip_json_returns_none_after_error_when_error_is_mocked(self, tmp_path):
@@ -703,7 +724,7 @@ def test_package_help_includes_working_examples():
     help_text = parser.format_help()
 
     assert "Examples:" in help_text
-    assert "nvflare package hospital-1.signed.zip --confirm-rootca" in help_text
+    assert "nvflare package hospital-1.signed.zip --fingerprint <expected_fingerprint>" in help_text
     assert "nvflare package hospital-1.signed.zip --request-dir ./hospital-1" in help_text
     assert "--cert ./signed/hospital-1/hospital-1.crt" not in help_text
     assert "--key ./csr/hospital-1.key" not in help_text
@@ -720,6 +741,7 @@ def test_package_help_includes_working_examples():
         ["--rootca", "VALUE"],
         ["--project-name", "VALUE"],
         ["-n", "VALUE"],
+        ["--confirm-rootca"],
     ],
 )
 def test_package_parser_rejects_removed_low_level_options(old_args, tmp_path):
@@ -1075,7 +1097,7 @@ class TestClientKitAssembly:
         assert cfg["servers"][0]["name"] == "testproject"  # project_name used
         assert cfg["servers"][0]["service"]["scheme"] == "grpc"
         assert cfg["client"]["fqsn"] == "hospital-1"
-        assert "8002:8002" in cfg["overseer_agent"]["args"]["sp_end_point"]
+        assert cfg["servers"][0]["service"]["target"] == "server.example.com:8002"
 
     def test_dir_mode_auto_discovery(self, cert_env, tmp_path):
         work = tmp_path / "work"
@@ -1694,7 +1716,7 @@ class TestUX2BindTargetVsIdentity:
 
     def test_server_kit_0000_endpoint_name_used_for_target(self, cert_env, tmp_path):
         """Even when endpoint host is 0.0.0.0, fed_server.json target uses server.name (args.name),
-        not the raw endpoint host.  Both target and sp_end_point use the same identity."""
+        not the raw endpoint host."""
         work = tmp_path / "work"
         work.mkdir()
         ca_key = cert_env["ca_key"]
@@ -1717,10 +1739,8 @@ class TestUX2BindTargetVsIdentity:
         out_dir = _kit_dir(ws, "testproject", "fl-server")
         with open(os.path.join(out_dir, "startup", "fed_server.json")) as f:
             cfg = json.load(f)
-        # target and sp_end_point must both use server.name (fl-server), not the raw endpoint host
+        # target must use server.name (fl-server), not the raw endpoint host
         assert cfg["servers"][0]["service"]["target"] == "fl-server:8002"
-        sp = cfg["overseer_agent"]["args"]["sp_end_point"]
-        assert sp.startswith("fl-server:")
 
     def test_server_kit_hostname_endpoint_target_is_hostname(self, cert_env, tmp_path):
         """When endpoint host is a regular hostname, target equals that hostname."""
@@ -2779,12 +2799,17 @@ def _make_signed_zip(
     cert_member=None,
     key_member=None,
     hash_mismatch=False,
+    ca_key=None,
+    ca_cert=None,
+    rootca_path=None,
+    provision_version=None,
 ):
     request_dir = tmp_path / name
     request_dir.mkdir(exist_ok=True)
-    ca_dir = tmp_path / "ca"
-    ca_dir.mkdir(exist_ok=True)
-    ca_key, ca_cert, rootca_path = _make_ca(str(ca_dir), name=ca_project or project_name)
+    if ca_key is None or ca_cert is None or rootca_path is None:
+        ca_dir = tmp_path / "ca"
+        ca_dir.mkdir(exist_ok=True)
+        ca_key, ca_cert, rootca_path = _make_ca(str(ca_dir), name=ca_project or project_name)
     key_path, cert_path = _make_signed_cert(
         ca_key, ca_cert, name, str(request_dir), f"{name}.crt", role=cert_type, org=cert_org or org
     )
@@ -2839,43 +2864,44 @@ def _make_signed_zip(
             sort_keys=True,
         )
     )
-    signed_json_path.write_text(
-        json.dumps(
-            {
-                "artifact_type": "nvflare.cert.signed",
-                "schema_version": "1",
-                "request_id": request_id,
-                "approved_at": "2026-04-24T00:00:00Z",
-                "project": project_name,
-                "name": name,
-                "org": org,
-                "kind": kind,
-                "cert_type": cert_type,
-                "cert_role": None,
-                "scheme": "grpc",
-                "default_connection_security": "tls",
-                "server": {
-                    "host": "fl-server",
-                    "fed_learn_port": 8002,
-                    "admin_port": 8003,
-                },
-                "certificate": {
-                    "serial": "01",
-                    "valid_until": "2029-04-24T00:00:00Z",
-                },
-                "cert_file": f"{name}.crt",
-                "rootca_file": "rootCA.pem",
-                "hashes": {
-                    "csr_sha256": "1" * 64,
-                    "site_yaml_sha256": _signed_zip_sha256_file(approval_site_yaml_path),
-                    "certificate_sha256": cert_sha256,
-                    "rootca_sha256": _signed_zip_sha256_file(rootca_copy),
-                    "public_key_sha256": public_key_sha256,
-                },
-            },
-            sort_keys=True,
-        )
-    )
+    signed_json = {
+        "artifact_type": "nvflare.cert.signed",
+        "schema_version": "1",
+        "request_id": request_id,
+        "approved_at": "2026-04-24T00:00:00Z",
+        "project": project_name,
+        "name": name,
+        "org": org,
+        "kind": kind,
+        "cert_type": cert_type,
+        "cert_role": None,
+        "scheme": "grpc",
+        "default_connection_security": "tls",
+        "server": {
+            "host": "fl-server",
+            "fed_learn_port": 8002,
+            "admin_port": 8003,
+        },
+        "certificate": {
+            "serial": "01",
+            "valid_until": "2029-04-24T00:00:00Z",
+        },
+        "cert_file": f"{name}.crt",
+        "rootca_file": "rootCA.pem",
+        "hashes": {
+            "csr_sha256": "1" * 64,
+            "site_yaml_sha256": _signed_zip_sha256_file(approval_site_yaml_path),
+            "certificate_sha256": cert_sha256,
+            "rootca_sha256": _signed_zip_sha256_file(rootca_copy),
+            "public_key_sha256": public_key_sha256,
+        },
+    }
+    if provision_version is not None:
+        signed_json[CA_INFO_FIELD] = {
+            PROVISION_VERSION_FIELD: provision_version,
+            ROOTCA_FINGERPRINT_FIELD: cert_fingerprint_sha256(load_crt(str(rootca_copy))),
+        }
+    signed_json_path.write_text(json.dumps(signed_json, sort_keys=True))
     signed_sig_path = request_dir / "signed.json.sig"
     signed_sig_path.write_text(sign_content(signed_json_path.read_bytes(), ca_key))
     signed_zip = request_dir / f"{name}.signed.zip"
@@ -3052,8 +3078,9 @@ def _rewrite_signed_zip_metadata(signed_zip, mutate):
     mutate(metadata)
     members["signed.json"] = json.dumps(metadata, sort_keys=True).encode("utf-8")
     ca_key = _SIGNED_ZIP_CA_KEYS.get(str(signed_zip))
-    if ca_key:
-        members["signed.json.sig"] = sign_content(members["signed.json"], ca_key).encode("utf-8")
+    if ca_key is None:
+        raise RuntimeError(f"missing CA key for signed zip test fixture: {signed_zip}")
+    members["signed.json.sig"] = sign_content(members["signed.json"], ca_key).encode("utf-8")
     with zipfile.ZipFile(signed_zip, "w") as zf:
         for name, content in members.items():
             zf.writestr(name, content)
@@ -3073,8 +3100,7 @@ def _signed_zip_args(signed_zip, tmp_path, **kwargs):
         rootca=None,
         name=None,
         kit_type=None,
-        expected_rootca_fingerprint=None,
-        confirm_rootca=False,
+        expected_fingerprint=None,
     )
     defaults.update(kwargs)
     return _make_args(**defaults)
@@ -3085,9 +3111,17 @@ def _rootca_fingerprint_from_signed_zip(signed_zip) -> str:
         return cert_fingerprint_sha256(load_crt_bytes(zf.read("rootCA.pem")))
 
 
+def _make_shared_package_ca(tmp_path, project_name="example_project", org="nvidia"):
+    ca_dir = tmp_path / "shared-ca"
+    ca_dir.mkdir(exist_ok=True)
+    return _make_ca(str(ca_dir), name=project_name, org=org)
+
+
 def _participant_names(project):
     return sorted(
-        p.name for p in project.get_all_participants() if p.name != "fl-server" and p.name != _DUMMY_SERVER_NAME
+        p.name
+        for p in project.get_all_participants()
+        if p.type != "server" and p.name != "fl-server" and p.name != _DUMMY_SERVER_NAME
     )
 
 
@@ -3222,7 +3256,7 @@ class TestDistributedProvisioningV2PackageMode:
         with open(os.path.join(kit_dir, "startup", "fed_client.json")) as f:
             cfg = json.load(f)
         assert cfg["servers"][0]["identity"] == "profile-server.hospital-central.org"
-        assert cfg["overseer_agent"]["args"]["sp_end_point"] == "profile-server.hospital-central.org:9002:9003"
+        assert cfg["servers"][0]["service"]["target"] == "profile-server.hospital-central.org:9002"
         assert yaml.safe_load((request_dir / "site.yaml").read_text()) == participant_definition
 
     def test_server_signed_zip_uses_signed_endpoint_without_local_endpoint_fields(self, tmp_path):
@@ -3278,7 +3312,7 @@ class TestDistributedProvisioningV2PackageMode:
             signed_zip,
             tmp_path,
             request_dir=str(request_dir),
-            expected_rootca_fingerprint=expected,
+            expected_fingerprint=expected,
         )
 
         with unittest.mock.patch(
@@ -3352,7 +3386,7 @@ class TestDistributedProvisioningV2PackageMode:
         assert cfg["servers"][0]["service"]["scheme"] == "grpc"
         assert cfg["servers"][0]["identity"] == "server1.hospital-central.org"
         assert cfg["client"]["connection_security"] == "tls"
-        assert cfg["overseer_agent"]["args"]["sp_end_point"] == "server1.hospital-central.org:8002:8003"
+        assert cfg["servers"][0]["service"]["target"] == "server1.hospital-central.org:8002"
         assert yaml.safe_load((request_dir / "site.yaml").read_text()) == participant_definition
 
     def test_user_signed_zip_uses_profile_defaults_and_signed_endpoint_without_override_args(self, tmp_path):
@@ -3521,8 +3555,9 @@ class TestSignedZipPackagePublicSurface:
         help_text = parser.format_help()
         assert ".signed.zip" in help_text
         assert "nvflare package" in help_text
-        assert "--confirm-rootca" in help_text
-        assert "--expected-rootca-fingerprint" in help_text
+        assert "--fingerprint" in help_text
+        assert "--expected-fingerprint" in help_text
+        assert "--confirm-rootca" not in help_text
         assert "Custom builders are honored" in help_text
         assert "are ignored" not in help_text
         assert "--cert ./signed/hospital-1/hospital-1.crt" not in help_text
@@ -3533,8 +3568,9 @@ class TestSignedZipPackagePublicSurface:
         assert exc_info.value.code == 0
         schema_text = capsys.readouterr().out
         assert ".signed.zip" in schema_text
-        assert "--confirm-rootca" in schema_text
-        assert "--expected-rootca-fingerprint" in schema_text
+        assert "--fingerprint" in schema_text
+        assert "--expected-fingerprint" in schema_text
+        assert "--confirm-rootca" not in schema_text
         assert "--cert" not in schema_text
         assert "--rootca" not in schema_text
 
@@ -3566,6 +3602,17 @@ class TestSignedZipPackageMode:
             "SHA256:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:" "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"
         )
 
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "SHA256:AA:BB",
+            "SHA256:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:ZZ",
+            "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:",
+        ],
+    )
+    def test_normalize_rootca_fingerprint_rejects_invalid_forms(self, value):
+        assert normalize_sha256_fingerprint(value) == ""
+
     def test_signed_zip_output_includes_rootca_fingerprint_by_default(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
@@ -3578,6 +3625,295 @@ class TestSignedZipPackageMode:
         combined = captured.out + captured.err
         assert "rootca_fingerprint_sha256" in combined
         assert expected in combined
+
+    def test_signed_zip_ca_info_provision_version_selects_prod_dir_out_of_order(self, tmp_path):
+        ca_key, ca_cert, rootca_path = _make_shared_package_ca(tmp_path)
+        signed_01, request_01, _ = _make_signed_zip(
+            tmp_path,
+            name="site-1",
+            request_id="1" * 32,
+            ca_key=ca_key,
+            ca_cert=ca_cert,
+            rootca_path=rootca_path,
+            provision_version="01",
+        )
+        signed_00, request_00, _ = _make_signed_zip(
+            tmp_path,
+            name="site-0",
+            request_id="2" * 32,
+            ca_key=ca_key,
+            ca_cert=ca_cert,
+            rootca_path=rootca_path,
+            provision_version="00",
+        )
+
+        handle_package(_signed_zip_args(signed_01, tmp_path, request_dir=str(request_01)))
+        handle_package(_signed_zip_args(signed_00, tmp_path, request_dir=str(request_00)))
+
+        workspace = str(tmp_path / "ws")
+        assert os.path.isdir(os.path.join(workspace, "example_project", "prod_01", "site-1"))
+        assert os.path.isdir(os.path.join(workspace, "example_project", "prod_00", "site-0"))
+        assert not os.path.exists(os.path.join(workspace, "example_project", "prod_00", "site-1"))
+
+    def test_signed_zip_same_ca_info_version_adds_participants_to_same_prod_dir(self, tmp_path):
+        ca_key, ca_cert, rootca_path = _make_shared_package_ca(tmp_path)
+        signed_a, request_a, _ = _make_signed_zip(
+            tmp_path,
+            name="site-a",
+            request_id="a" * 32,
+            ca_key=ca_key,
+            ca_cert=ca_cert,
+            rootca_path=rootca_path,
+            provision_version="00",
+        )
+        signed_b, request_b, _ = _make_signed_zip(
+            tmp_path,
+            name="site-b",
+            request_id="b" * 32,
+            ca_key=ca_key,
+            ca_cert=ca_cert,
+            rootca_path=rootca_path,
+            provision_version="00",
+        )
+
+        handle_package(_signed_zip_args(signed_a, tmp_path, request_dir=str(request_a)))
+        handle_package(_signed_zip_args(signed_b, tmp_path, request_dir=str(request_b)))
+
+        workspace = str(tmp_path / "ws")
+        assert os.path.isdir(os.path.join(workspace, "example_project", "prod_00", "site-a"))
+        assert os.path.isdir(os.path.join(workspace, "example_project", "prod_00", "site-b"))
+        assert not os.path.exists(os.path.join(workspace, "example_project", "prod_01"))
+
+    def test_signed_zip_missing_ca_info_defaults_to_prod_00(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        ca_key, ca_cert, rootca_path = _make_shared_package_ca(tmp_path)
+        signed_a, request_a, _ = _make_signed_zip(
+            tmp_path,
+            name="site-a",
+            request_id="a" * 32,
+            ca_key=ca_key,
+            ca_cert=ca_cert,
+            rootca_path=rootca_path,
+        )
+        signed_b, request_b, _ = _make_signed_zip(
+            tmp_path,
+            name="site-b",
+            request_id="b" * 32,
+            ca_key=ca_key,
+            ca_cert=ca_cert,
+            rootca_path=rootca_path,
+        )
+
+        handle_package(_signed_zip_args(signed_a, tmp_path, request_dir=str(request_a)))
+        first_output = json.loads(capsys.readouterr().out)
+        handle_package(_signed_zip_args(signed_b, tmp_path, request_dir=str(request_b)))
+
+        workspace = str(tmp_path / "ws")
+        assert os.path.isdir(os.path.join(workspace, "example_project", "prod_00", "site-a"))
+        assert os.path.isdir(os.path.join(workspace, "example_project", "prod_00", "site-b"))
+        assert first_output["data"]["provision_version"] == DEFAULT_PROVISION_VERSION
+        assert first_output["data"]["rootca_fingerprint_sha256"] == _rootca_fingerprint_from_signed_zip(signed_a)
+        assert not os.path.exists(os.path.join(workspace, "example_project", "prod_01"))
+
+    def test_signed_zip_rejects_malformed_ca_info_provision_version(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path, provision_version="00")
+        _rewrite_signed_zip_metadata(
+            signed_zip,
+            lambda meta: meta[CA_INFO_FIELD].update({PROVISION_VERSION_FIELD: "abc"}),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(_signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir)))
+
+        assert exc_info.value.code == 4
+        err = capsys.readouterr().err
+        assert "INVALID_SIGNED_ZIP" in err
+        assert "Invalid provision version" in err
+
+    def test_signed_zip_rejects_non_mapping_ca_info(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path, provision_version="00")
+        _rewrite_signed_zip_metadata(
+            signed_zip,
+            lambda meta: meta.update({CA_INFO_FIELD: ["not", "a", "dict"]}),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(_signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir)))
+
+        assert exc_info.value.code == 4
+        err = capsys.readouterr().err
+        assert "INVALID_SIGNED_ZIP" in err
+        assert "ca_info must be a mapping" in err
+
+    def test_signed_zip_rejects_malformed_ca_info_rootca_fingerprint(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path, provision_version="00")
+        _rewrite_signed_zip_metadata(
+            signed_zip,
+            lambda meta: meta[CA_INFO_FIELD].update({ROOTCA_FINGERPRINT_FIELD: "not-a-fingerprint"}),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(_signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir)))
+
+        assert exc_info.value.code == 4
+        err = capsys.readouterr().err
+        assert "INVALID_ROOTCA_FINGERPRINT" in err
+        assert "Invalid signed ca_info root CA fingerprint" in err
+
+    def test_signed_zip_rejects_ca_info_rootca_fingerprint_mismatch(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(tmp_path, provision_version="00")
+        mismatched_fingerprint = "SHA256:" + ":".join(["00"] * 32)
+        _rewrite_signed_zip_metadata(
+            signed_zip,
+            lambda meta: meta[CA_INFO_FIELD].update({ROOTCA_FINGERPRINT_FIELD: mismatched_fingerprint}),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(_signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir)))
+
+        assert exc_info.value.code == 4
+        err = capsys.readouterr().err
+        assert "ROOTCA_FINGERPRINT_MISMATCH" in err
+        assert "does not match included rootCA.pem" in err
+
+    def test_signed_zip_same_prod_dir_rejects_different_rootca(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_a, request_a, _ = _make_signed_zip(
+            tmp_path,
+            name="site-a",
+            request_id="a" * 32,
+            provision_version="00",
+        )
+        signed_b, request_b, _ = _make_signed_zip(
+            tmp_path,
+            name="site-b",
+            request_id="b" * 32,
+            provision_version="00",
+        )
+
+        handle_package(_signed_zip_args(signed_a, tmp_path, request_dir=str(request_a)))
+        capsys.readouterr()
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(_signed_zip_args(signed_b, tmp_path, request_dir=str(request_b)))
+
+        assert exc_info.value.code != 0
+        err = capsys.readouterr().err.lower()
+        assert "root" in err
+        assert "ca" in err
+        workspace = str(tmp_path / "ws")
+        assert os.path.isdir(os.path.join(workspace, "example_project", "prod_00", "site-a"))
+        assert not os.path.exists(os.path.join(workspace, "example_project", "prod_00", "site-b"))
+        assert not os.path.exists(os.path.join(workspace, "example_project", "prod_01", "site-b"))
+
+    def test_signed_zip_same_prod_dir_reports_unreadable_rootca_load_failure(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        ca_key, ca_cert, rootca_path = _make_shared_package_ca(tmp_path)
+        signed_a, request_a, _ = _make_signed_zip(
+            tmp_path,
+            name="site-a",
+            request_id="a" * 32,
+            ca_key=ca_key,
+            ca_cert=ca_cert,
+            rootca_path=rootca_path,
+            provision_version="00",
+        )
+        signed_b, request_b, _ = _make_signed_zip(
+            tmp_path,
+            name="site-b",
+            request_id="b" * 32,
+            ca_key=ca_key,
+            ca_cert=ca_cert,
+            rootca_path=rootca_path,
+            provision_version="00",
+        )
+
+        handle_package(_signed_zip_args(signed_a, tmp_path, request_dir=str(request_a)))
+        capsys.readouterr()
+        rootca_path = tmp_path / "ws" / "example_project" / "prod_00" / "site-a" / "startup" / "rootCA.pem"
+        rootca_path.write_text("not a certificate")
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(_signed_zip_args(signed_b, tmp_path, request_dir=str(request_b)))
+
+        assert exc_info.value.code == 4
+        err = capsys.readouterr().err
+        assert "ROOTCA_LOAD_FAILED" in err
+        assert "unreadable rootCA.pem" in err
+
+    def test_signed_zip_existing_participant_requires_force_in_ca_info_prod_dir(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(
+            tmp_path,
+            request_id="a" * 32,
+            provision_version="00",
+        )
+
+        handle_package(_signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir)))
+        capsys.readouterr()
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(_signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir), force=False))
+
+        assert exc_info.value.code != 0
+        assert "exists" in capsys.readouterr().err.lower()
+        workspace = str(tmp_path / "ws")
+        assert os.path.isdir(os.path.join(workspace, "example_project", "prod_00", "site-3"))
+
+        handle_package(_signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir), force=True))
+
+        assert os.path.isdir(os.path.join(workspace, "example_project", "prod_00", "site-3"))
+        assert not os.path.exists(os.path.join(workspace, "example_project", "prod_01", "site-3"))
+
+    def test_signed_zip_toctou_existing_participant_reports_output_exists_without_removing_prod_dir(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        signed_zip, request_dir, _ = _make_signed_zip(
+            tmp_path,
+            request_id="a" * 32,
+            provision_version="00",
+        )
+        original_finalize = FixedProdWorkspaceBuilder.finalize
+        sentinel_path = tmp_path / "ws" / "example_project" / "prod_00" / "site-3" / "sentinel.txt"
+
+        def _finalize_with_race(builder, project, ctx):
+            os.makedirs(str(sentinel_path.parent), exist_ok=True)
+            sentinel_path.write_text("existing participant output")
+            return original_finalize(builder, project, ctx)
+
+        monkeypatch.setattr(FixedProdWorkspaceBuilder, "finalize", _finalize_with_race)
+
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(_signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir), force=False))
+
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        assert "OUTPUT_DIR_EXISTS" in err
+        assert "Participant output already exists" in err
+        assert sentinel_path.exists()
+
+    def test_build_package_builders_replaces_workspace_builder_and_preserves_template_files(self, tmp_path):
+        original_workspace_builder = WorkspaceBuilder(template_file="custom_template.yml")
+        fixed_workspace_builder = FixedProdWorkspaceBuilder(
+            target_prod_dir=str(tmp_path / "workspace" / "project" / "prod_00"),
+            participant_name="site-1",
+        )
+        cert_builder = PrebuiltCertBuilder(
+            cert_path=str(tmp_path / "site-1.crt"),
+            key_path=str(tmp_path / "site-1.key"),
+            rootca_path=str(tmp_path / "rootCA.pem"),
+            target_name="site-1",
+        )
+
+        builders = _build_package_builders([original_workspace_builder], cert_builder, "grpc", fixed_workspace_builder)
+
+        assert builders[0] is fixed_workspace_builder
+        assert builders[1] is cert_builder
+        assert fixed_workspace_builder.template_files == "custom_template.yml"
+        assert original_workspace_builder not in builders
 
     def test_signed_zip_returns_build_error_without_success_output(self, tmp_path, monkeypatch):
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
@@ -3639,20 +3975,17 @@ class TestSignedZipPackageMode:
         assert result == 1
         build.assert_not_called()
 
-    def test_signed_zip_accepts_expected_rootca_fingerprint_without_prompting(self, tmp_path, monkeypatch):
+    def test_signed_zip_accepts_expected_fingerprint_without_prompting(self, tmp_path, monkeypatch):
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
         expected = _rootca_fingerprint_from_signed_zip(signed_zip).replace("SHA256:", "sha256 Fingerprint=")
         args = _signed_zip_args(
             signed_zip,
             tmp_path,
             request_dir=str(request_dir),
-            expected_rootca_fingerprint=expected,
+            expected_fingerprint=expected,
         )
 
-        with unittest.mock.patch("nvflare.tool.package.package_commands.prompt_yn") as prompt:
-            handle_package(args)
-
-        prompt.assert_not_called()
+        handle_package(args)
 
     def test_signed_zip_warns_when_rootca_fingerprint_is_not_verified(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
@@ -3666,14 +3999,14 @@ class TestSignedZipPackageMode:
         assert payload["status"] == "ok"
         assert "Root CA SHA256 fingerprint was not verified" in captured.err
 
-    def test_signed_zip_rejects_mismatched_expected_rootca_fingerprint(self, tmp_path, capsys, monkeypatch):
+    def test_signed_zip_rejects_mismatched_expected_fingerprint(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
         args = _signed_zip_args(
             signed_zip,
             tmp_path,
             request_dir=str(request_dir),
-            expected_rootca_fingerprint="SHA256:" + ":".join(["00"] * 32),
+            expected_fingerprint="SHA256:" + ":".join(["00"] * 32),
         )
 
         with pytest.raises(SystemExit) as exc_info:
@@ -3685,14 +4018,14 @@ class TestSignedZipPackageMode:
         assert not (request_dir / "site-3.crt").exists()
         assert not (request_dir / "rootCA.pem").exists()
 
-    def test_signed_zip_rejects_invalid_expected_rootca_fingerprint(self, tmp_path, capsys, monkeypatch):
+    def test_signed_zip_rejects_invalid_expected_fingerprint(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
         args = _signed_zip_args(
             signed_zip,
             tmp_path,
             request_dir=str(request_dir),
-            expected_rootca_fingerprint="not-a-fingerprint",
+            expected_fingerprint="not-a-fingerprint",
         )
 
         with pytest.raises(SystemExit) as exc_info:
@@ -3700,52 +4033,6 @@ class TestSignedZipPackageMode:
 
         assert exc_info.value.code == 4
         assert "INVALID_ROOTCA_FINGERPRINT" in capsys.readouterr().err
-
-    def test_confirm_rootca_is_rejected_in_json_mode(self, tmp_path, capsys, monkeypatch):
-        monkeypatch.setattr(cli_output, "_output_format", "json")
-        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
-        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir), confirm_rootca=True)
-
-        with pytest.raises(SystemExit) as exc_info:
-            handle_package(args)
-
-        assert exc_info.value.code == 4
-        payload = json.loads(capsys.readouterr().out)
-        assert payload["error_code"] == "INVALID_ARGS"
-        assert "--confirm-rootca" in payload["message"]
-
-    def test_confirm_rootca_is_rejected_when_stdin_is_not_a_tty(self, tmp_path, capsys, monkeypatch):
-        import nvflare.tool.package.package_commands as package_commands
-
-        monkeypatch.setattr(cli_output, "_output_format", "txt")
-        monkeypatch.setattr(package_commands.sys.stdin, "isatty", lambda: False)
-        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
-        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir), confirm_rootca=True)
-
-        with pytest.raises(SystemExit) as exc_info:
-            handle_package(args)
-
-        assert exc_info.value.code == 4
-        err = capsys.readouterr().err
-        assert "INVALID_ARGS" in err
-        assert "--confirm-rootca requires an interactive terminal" in err
-
-    def test_confirm_rootca_cancel_does_not_materialize_signed_files(self, tmp_path, capsys, monkeypatch):
-        import nvflare.tool.package.package_commands as package_commands
-
-        monkeypatch.setattr(cli_output, "_output_format", "txt")
-        monkeypatch.setattr(package_commands.sys.stdin, "isatty", lambda: True)
-        signed_zip, request_dir, _ = _make_signed_zip(tmp_path)
-        args = _signed_zip_args(signed_zip, tmp_path, request_dir=str(request_dir), confirm_rootca=True)
-
-        with unittest.mock.patch("nvflare.tool.package.package_commands.prompt_yn", return_value=False):
-            rc = handle_package(args)
-
-        assert rc == 1
-        assert "Cancelled." in capsys.readouterr().out
-        assert not (request_dir / "signed.json").exists()
-        assert not (request_dir / "site-3.crt").exists()
-        assert not (request_dir / "rootCA.pem").exists()
 
     def test_signed_zip_finds_sibling_private_key_and_uses_default_project_model(self, tmp_path):
         signed_zip, request_dir, _ = _make_signed_zip(tmp_path)

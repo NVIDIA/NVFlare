@@ -30,17 +30,6 @@ class DockerBuilder(Builder):
         self.services = {}
         self.compose_file_path = None
 
-    def _build_overseer(self, overseer):
-        protocol = overseer.props.get("protocol", "http")
-        default_port = "443" if protocol == "https" else "80"
-        port = overseer.props.get("port", default_port)
-        info_dict = copy.deepcopy(self.services["__overseer__"])
-        info_dict["volumes"] = [f"./{overseer.name}:" + "${WORKSPACE}"]
-        info_dict["ports"] = [f"{port}:{port}"]
-        info_dict["build"] = "nvflare_compose"
-        info_dict["container_name"] = overseer.name
-        self.services[overseer.name] = info_dict
-
     def _build_server(self, server, ctx: ProvisionContext):
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
         admin_port = ctx.get(CtxKey.ADMIN_PORT)
@@ -75,9 +64,6 @@ class DockerBuilder(Builder):
         compose = ctx.yaml_load_template_section(TemplateSectionKey.COMPOSE_YAML)
         self.services = compose.get("services")
         self.compose_file_path = os.path.join(ctx.get_wip_dir(), ProvFileName.COMPOSE_YAML)
-        overseer = project.get_overseer()
-        if overseer:
-            self._build_overseer(overseer)
         server = project.get_server()
         if server:
             self._build_server(server, ctx)
@@ -85,7 +71,6 @@ class DockerBuilder(Builder):
         for client in project.get_clients():
             self._build_client(client)
 
-        self.services.pop("__overseer__", None)
         self.services.pop("__flserver__", None)
         self.services.pop("__flclient__", None)
         compose["services"] = self.services

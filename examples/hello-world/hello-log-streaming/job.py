@@ -23,8 +23,6 @@ storage when the stream closes.
 """
 import argparse
 
-from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
-from nvflare.app_common.logging.job_log_streamer import JobLogStreamer
 from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
 from nvflare.client.config import TransferType
 from nvflare.recipe import SimEnv, add_experiment_tracking
@@ -68,10 +66,7 @@ def main():
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     # Stream live log from each client to the server while the job is running.
-    recipe.job.to_clients(JobLogStreamer())
-
-    # Receive the streamed log on the server and store it via the job manager.
-    recipe.job.to_server(JobLogReceiver())
+    recipe.enable_log_streaming()
 
     if args.export_config:
         job_dir = "/tmp/nvflare/jobs/job_config"

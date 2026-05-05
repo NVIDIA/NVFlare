@@ -27,3 +27,4 @@ See the sections below for more in-depth information about the different capabil
    server_port_consolidation
    communication_configuration
    logging_configuration
+   site_config
