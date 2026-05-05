@@ -49,10 +49,10 @@ from nvflare.security.study_registry import StudyRegistry, StudyRegistryService
 from ..simulator.simulator_const import SimulatorConstants
 from .app_authz import AppAuthzService
 
-# Distributed provisioning produces startup kits whose certs are signed by a site-local CA
-# rather than the project CA.  The server therefore cannot verify __nvfl_sig.json using its
-# own CA chain, so require_signed_jobs() lets an operator opt out of signature enforcement
-# via fed_server.json.  _warn_once suppresses repeated log noise for the same condition.
+# Job signing uses the same trust model for centralized and distributed provisioning:
+# the submitted job carries the submitter certificate, and verification chains that cert
+# to the server's rootCA.pem.  require_signed_jobs() only controls whether unsigned job
+# folders are accepted.  _warn_once suppresses repeated log noise for the same condition.
 _SIGNED_JOB_WARNINGS_EMITTED = set()
 
 
@@ -67,11 +67,10 @@ def _warn_once(logger: logging.Logger, cache_key: str, message: str, *args) -> N
 def require_signed_jobs(workspace: Workspace) -> bool:
     """Return True if the server requires all submitted jobs to carry __nvfl_sig.json.
 
-    In distributed provisioning each site generates its own private key and gets a cert
-    signed by the project CA, but the server's startup kit was provisioned independently
-    and may not share the same CA chain used to sign __nvfl_sig.json.  Operators who use
-    distributed provisioning can set ``require_signed_jobs: false`` in fed_server.json to
-    disable signature enforcement without restarting the server (hot-reload).
+    Centralized and distributed provisioning use the same verification model: the job
+    carries the submitter certificate, and that certificate must chain to the server's
+    rootCA.pem.  Operators can set ``require_signed_jobs: false`` in fed_server.json to
+    allow unsigned job folders without restarting the server (hot-reload).
 
     Default: True when rootCA.pem is present (any PKI deployment); False otherwise.
     Explicit "require_signed_jobs" key in fed_server.json overrides the inferred default.
@@ -83,17 +82,26 @@ def require_signed_jobs(workspace: Workspace) -> bool:
     server_config_path = os.path.join(workspace.get_startup_kit_dir(), "fed_server.json")
     if os.path.exists(server_config_path):
         try:
-            fd = os.open(server_config_path, os.O_RDONLY)
-            with os.fdopen(fd) as f:
-                st = os.fstat(f.fileno())
-                if st.st_mode & (_stat.S_IWGRP | _stat.S_IWOTH):
-                    _warn_once(
-                        logger,
-                        f"writable:{server_config_path}",
-                        "fed_server.json is group/world-writable — require_signed_jobs policy "
-                        "can be altered by other local users (TOCTOU risk)",
-                    )
-                cfg = json.load(f)
+            _open_flags = os.O_RDONLY
+            if hasattr(os, "O_NOFOLLOW"):
+                _open_flags |= os.O_NOFOLLOW
+            fd = os.open(server_config_path, _open_flags)
+            try:
+                with os.fdopen(fd) as f:
+                    fd = -1  # ownership transferred to f
+                    st = os.fstat(f.fileno())
+                    if st.st_mode & (_stat.S_IWGRP | _stat.S_IWOTH):
+                        _warn_once(
+                            logger,
+                            f"writable:{server_config_path}",
+                            "fed_server.json is group/world-writable — require_signed_jobs policy "
+                            "can be altered by other local users (TOCTOU risk)",
+                        )
+                    cfg = json.load(f)
+            except BaseException:
+                if fd != -1:
+                    os.close(fd)
+                raise
             if "require_signed_jobs" in cfg:
                 value = bool(cfg["require_signed_jobs"])
                 logger.debug("require_signed_jobs=%s (explicit config)", value)
@@ -177,9 +185,9 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
     startup_dir = workspace.get_startup_kit_dir()
     SecurityContentService.initialize(content_folder=startup_dir)
 
-    # valid_config is False when the startup kit has no signature.json. That is the expected
-    # shape for plain centrally provisioned mTLS kits, where TLS credentials are the trust
-    # anchor and there is no additional content-integrity manifest to verify.
+    # valid_config is False when the startup kit has no signature.json. That is expected
+    # for standard mTLS kits without a startup content-integrity manifest; TLS credentials
+    # remain the trust anchor.
     if secure_train and SecurityContentService.security_content_manager.valid_config:
         insecure_list = _check_secure_content(site_type=site_type)
         if len(insecure_list):
@@ -238,9 +246,9 @@ def security_init_for_job(secure_train: bool, workspace: Workspace, site_type: s
     startup_dir = workspace.get_startup_kit_dir()
     SecurityContentService.initialize(content_folder=startup_dir)
 
-    # valid_config is False when the startup kit has no signature.json. That is the expected
-    # shape for plain centrally provisioned mTLS kits, where TLS credentials are the trust
-    # anchor and there is no additional content-integrity manifest to verify.
+    # valid_config is False when the startup kit has no signature.json. That is expected
+    # for standard mTLS kits without a startup content-integrity manifest; TLS credentials
+    # remain the trust anchor.
     if secure_train and SecurityContentService.security_content_manager.valid_config:
         insecure_list = _check_secure_content(site_type=site_type)
         if len(insecure_list):

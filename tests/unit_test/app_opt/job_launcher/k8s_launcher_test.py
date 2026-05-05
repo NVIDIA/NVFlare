@@ -861,6 +861,26 @@ class TestK8sJobLauncherInit:
         # study_data.yaml is populated lazily
         assert launcher.study_data_pvc_dict is None
 
+    def test_init_rejects_empty_ephemeral_storage(self):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        with pytest.raises(ValueError, match="ephemeral_storage"):
+            ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path="/fake/study_data.yaml",
+                ephemeral_storage="",
+            )
+
+    def test_init_rejects_non_string_ephemeral_storage(self):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        with pytest.raises(ValueError, match="ephemeral_storage"):
+            ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path="/fake/study_data.yaml",
+                ephemeral_storage=1,
+            )
+
 
 # ---------------------------------------------------------------------------
 # ClientK8sJobLauncher.get_module_args
@@ -948,10 +968,14 @@ _JOB_UUID = "550e8400-e29b-41d4-a716-446655440000"
 _EXPECTED_JOB_ID = uuid4_to_rfc1123(_JOB_UUID)
 
 
-def _make_launch_job_meta(site_name="site-1", image="nvflare/nvflare:latest", gpu=None, study=None):
+def _make_launch_job_meta(
+    site_name="site-1", image="nvflare/nvflare:latest", gpu=None, study=None, ephemeral_storage=None
+):
     k8s_spec = {"image": image}
     if gpu is not None:
         k8s_spec["num_of_gpus"] = gpu
+    if ephemeral_storage is not None:
+        k8s_spec["ephemeral_storage"] = ephemeral_storage
     meta = {
         JobConstants.JOB_ID: _JOB_UUID,
         JobMetaKey.JOB_LAUNCHER_SPEC.value: {site_name: {"k8s": k8s_spec}},
@@ -994,7 +1018,9 @@ class TestK8sJobLauncherLaunchJob:
     enter_states returns True on the first iteration without sleeping.
     """
 
-    def _setup(self, patches, namespace="test-ns", study_data_pvc_dict=None):
+    def _setup(
+        self, patches, namespace="test-ns", study_data_pvc_dict=None, default_python_path=None, ephemeral_storage=None
+    ):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         mock_open, mock_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
@@ -1011,11 +1037,15 @@ class TestK8sJobLauncherLaunchJob:
         mock_transfer.owner_fqcn = "site-1.parent"
         mock_transfer.add_job.return_value = "transfer-token"
         self.mock_transfer = mock_transfer
-        launcher = ClientK8sJobLauncher(
-            config_file_path="/fake/kube/config",
-            study_data_pvc_file_path="/fake/study_data.yaml",
-            namespace=namespace,
-        )
+        launcher_kwargs = {
+            "config_file_path": "/fake/kube/config",
+            "study_data_pvc_file_path": "/fake/study_data.yaml",
+            "namespace": namespace,
+            "default_python_path": default_python_path,
+        }
+        if ephemeral_storage is not None:
+            launcher_kwargs["ephemeral_storage"] = ephemeral_storage
+        launcher = ClientK8sJobLauncher(**launcher_kwargs)
         return launcher, mock_api
 
     def _prime_running(self, mock_api):
@@ -1164,6 +1194,87 @@ class TestK8sJobLauncherLaunchJob:
             assert "secret" in vol_map["startup-kit"]
             # no study in meta means no study-data mounts
             assert len(volumes) == 2
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_ephemeral_storage_uses_launcher_default(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, ephemeral_storage="3Gi")
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            vol_map = {v["name"]: v for v in manifest["spec"]["volumes"]}
+            resources = manifest["spec"]["containers"][0]["resources"]
+            assert vol_map["workspace-job"]["emptyDir"]["sizeLimit"] == "3Gi"
+            assert resources["requests"]["ephemeral-storage"] == "3Gi"
+            assert resources["limits"]["ephemeral-storage"] == "3Gi"
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_ephemeral_storage_from_launcher_spec(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, ephemeral_storage="3Gi")
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(ephemeral_storage="8Gi"), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            vol_map = {v["name"]: v for v in manifest["spec"]["volumes"]}
+            resources = manifest["spec"]["containers"][0]["resources"]
+            assert vol_map["workspace-job"]["emptyDir"]["sizeLimit"] == "8Gi"
+            assert resources["requests"]["ephemeral-storage"] == "8Gi"
+            assert resources["limits"]["ephemeral-storage"] == "8Gi"
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_ephemeral_storage_null_uses_launcher_default(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, ephemeral_storage="3Gi")
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"]["ephemeral_storage"] = None
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            vol_map = {v["name"]: v for v in manifest["spec"]["volumes"]}
+            resources = manifest["spec"]["containers"][0]["resources"]
+            assert vol_map["workspace-job"]["emptyDir"]["sizeLimit"] == "3Gi"
+            assert resources["requests"]["ephemeral-storage"] == "3Gi"
+            assert resources["limits"]["ephemeral-storage"] == "3Gi"
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_rejects_non_string_ephemeral_storage_from_launcher_spec(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, ephemeral_storage="3Gi")
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta(ephemeral_storage=1)
+            with pytest.raises(RuntimeError, match="ephemeral_storage"):
+                launcher.launch_job(meta, _make_launch_fl_ctx())
+            mock_api.create_namespaced_pod.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_ephemeral_storage_from_default_launcher_spec(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, ephemeral_storage="3Gi")
+        self._prime_running(mock_api)
+        try:
+            meta = {
+                JobConstants.JOB_ID: _JOB_UUID,
+                JobMetaKey.JOB_LAUNCHER_SPEC.value: {
+                    "default": {"k8s": {"image": "nvflare/nvflare:latest", "ephemeral_storage": "4Gi"}},
+                    "site-1": {"k8s": {}},
+                },
+            }
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            vol_map = {v["name"]: v for v in manifest["spec"]["volumes"]}
+            resources = manifest["spec"]["containers"][0]["resources"]
+            assert vol_map["workspace-job"]["emptyDir"]["sizeLimit"] == "4Gi"
+            assert resources["requests"]["ephemeral-storage"] == "4Gi"
+            assert resources["limits"]["ephemeral-storage"] == "4Gi"
         finally:
             _exit_patches(patches)
 
@@ -1321,6 +1432,19 @@ class TestK8sJobLauncherLaunchJob:
             launcher.launch_job(meta, _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_python_path_from_launcher_spec_overrides_default(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, default_python_path="/usr/bin/python")
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"]["python_path"] = "/opt/conda/bin/python"
+            launcher.launch_job(meta, _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["spec"]["containers"][0]["command"] == ["/opt/conda/bin/python"]
         finally:
             _exit_patches(patches)
 

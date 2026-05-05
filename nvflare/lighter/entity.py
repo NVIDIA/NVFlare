@@ -11,11 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 from typing import Any, List, Optional, Union
 
 from nvflare.apis.utils.format_check import name_check
 
 from .constants import DEFINED_PARTICIPANT_TYPES, DEFINED_ROLES, ConnSecurity, ParticipantType, PropKey
+
+_logger = logging.getLogger(__name__)
 
 
 class ListeningHost:
@@ -435,15 +438,22 @@ class Project(Entity):
         """
         return self.server
 
-    def get_overseer(self) -> Optional[Participant]:
-        """Get the overseer definition.
+    def remove_server(self) -> Optional[Participant]:
+        """Remove the server definition from the project.
 
-        Note: overseer is deprecated.
-
-        Returns: None
+        Returns: removed server participant, or None if no server is defined.
 
         """
-        return None
+        server = self.server
+        if not server:
+            return None
+        self._all_names.pop(server.name, None)
+        participants = self._participants_by_types.get(ParticipantType.SERVER)
+        if participants and server in participants:
+            participants.remove(server)
+        server.parent = None
+        self.server = None
+        return server
 
     def add_participant(self, participant: Participant) -> Participant:
         """Add a participant to the project.
@@ -452,12 +462,18 @@ class Project(Entity):
         - Only one server is allowed in the project
         - Role must be specified for admin type of participant
 
+        Obsolete participant entries are ignored with a warning.
+
         Args:
             participant: the participant to be added.
 
-        Returns: the participant object added.
+        Returns: the participant object added (or None when an obsolete entry is ignored).
 
         """
+        if participant.type == ParticipantType.OVERSEER:
+            _logger.warning(f"Obsolete participant '{participant.name}' in project.yml will be ignored.")
+            return None
+
         if participant.name in self._all_names:
             raise ValueError(f"the project {self.name} already has a participant with the name '{participant.name}'")
 
@@ -466,8 +482,6 @@ class Project(Entity):
             if self.server:
                 raise ValueError(f"cannot add participant {participant.name} as server - server already exists")
             self.server = participant
-        elif participant.type == ParticipantType.OVERSEER:
-            raise ValueError(f"cannot add participant {participant.name} as overseer - overseer is removed")
 
         participants = self._participants_by_types.get(participant.type)
         if not participants:

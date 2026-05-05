@@ -20,7 +20,7 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants, ProcessType, St
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
-from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels
+from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels, is_log_streaming_allowed
 from nvflare.app_common.streamers.log_streamer import LogStreamer
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.widget import Widget
@@ -109,6 +109,29 @@ class SystemLogStreamer(Widget):
             components = []
             cfg["components"] = components
 
+        # Site-level kill switch. When the site's resources.json doesn't enable
+        # log streaming, strip any pre-declared JobLogStreamer from the deployed
+        # job config and skip injection.
+        if not is_log_streaming_allowed(fl_ctx):
+            filtered = [c for c in components if "JobLogStreamer" not in c.get("path", "")]
+            if len(filtered) != len(components):
+                cfg["components"] = filtered
+                # Persist atomically so the on-disk config is never partially
+                # written. If the write fails, raise so the failure is captured
+                # in FLContextKey.EXCEPTIONS rather than silently leaving the
+                # original (un-stripped) JobLogStreamer config on disk.
+                self._atomic_write_json(config_path, cfg)
+                self.log_warning(
+                    fl_ctx,
+                    f"Removed JobLogStreamer from job {job_id}: site does not allow log streaming",
+                )
+            else:
+                self.log_debug(
+                    fl_ctx,
+                    f"Job {job_id}: site does not allow log streaming; not injecting JobLogStreamer",
+                )
+            return
+
         for c in components:
             if "JobLogStreamer" in c.get("path", ""):
                 self.log_debug(fl_ctx, f"Job {job_id} already has JobLogStreamer; skipping injection")
@@ -132,8 +155,7 @@ class SystemLogStreamer(Widget):
         components.append(entry)
 
         try:
-            with open(config_path, "w") as f:
-                json.dump(cfg, f, indent=2)
+            self._atomic_write_json(config_path, cfg)
         except Exception as ex:
             self.log_exception(
                 fl_ctx,
@@ -142,6 +164,25 @@ class SystemLogStreamer(Widget):
             return
 
         self.log_info(fl_ctx, f"Injected JobLogStreamer into job {job_id}")
+
+    @staticmethod
+    def _atomic_write_json(path: str, data: dict) -> None:
+        """Write JSON to ``path`` atomically via tempfile + os.replace.
+
+        The original file is left untouched until the rename succeeds, so a
+        partial write cannot corrupt it. Raises on any failure.
+        """
+        tmp_path = f"{path}.{os.getpid()}.tmp"
+        try:
+            with open(tmp_path, "w") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp_path, path)
+        except Exception:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
 
     def _stream_completed_log(self, fl_ctx: FLContext, log_path: str, client_name: str, job_id: str):
         stop_event = threading.Event()
@@ -173,6 +214,8 @@ class SystemLogStreamer(Widget):
         if self._log_file_name != WorkspaceConstants.ERROR_LOG_FILE_NAME:
             return
         if fl_ctx.get_process_type() != ProcessType.CLIENT_PARENT:
+            return
+        if not is_log_streaming_allowed(fl_ctx):
             return
 
         workspace_root = fl_ctx.get_prop(FLContextKey.WORKSPACE_ROOT)

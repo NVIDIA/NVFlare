@@ -157,6 +157,10 @@ class CellMessageHeaderKeys:
     ABORT_JOBS = "abort_jobs"
 
 
+class ClientRegMsgKey:
+    SITE_CONFIG = "site_config"
+
+
 class ClientType:
     RELAY = "relay"
     REGULAR = "regular"

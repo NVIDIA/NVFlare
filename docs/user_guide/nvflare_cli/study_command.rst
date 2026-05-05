@@ -34,16 +34,25 @@ Startup Kit Resolution
 All ``nvflare study`` commands connect to the server through an admin startup kit. Resolution
 is identical to all other server-connected ``nvflare`` commands (``job``, ``system``, etc.):
 
-1. ``NVFLARE_STARTUP_KIT_DIR`` environment variable.
-2. ``startup_kits.active`` from ``~/.nvflare/config.conf``.
-3. If neither resolves to a valid admin startup kit, the command fails before connecting.
+1. Optional ``--kit-id <id>``: override the active startup kit for this command
+   only by using a registered startup-kit ID.
+2. Optional ``--startup-kit <path>``: override the active startup kit for this
+   command only by using an explicit admin startup-kit directory.
+3. ``NVFLARE_STARTUP_KIT_DIR`` environment variable.
+4. ``startup_kits.active`` from ``~/.nvflare/config.conf``.
+5. If no source resolves to a valid admin startup kit, the command fails before connecting.
+
+The command-line selectors are not required. When provided, they take precedence
+over the active startup kit for the current command only and do not change
+``startup_kits.active`` in ``~/.nvflare/config.conf``.
 
 A user can register and activate a startup kit once with :ref:`kit_command`:
 
 .. code-block:: shell
 
-   nvflare config kit add project_admin /path/to/admin@nvidia.com
-   nvflare config kit use project_admin
+   nvflare config add project_admin /path/to/admin@nvidia.com
+   nvflare config use project_admin
+   nvflare study list --kit-id project_admin
 
 If no source resolves, the command exits with error code 4 and ``"error_code": "STARTUP_KIT_MISSING"``.
 
@@ -108,9 +117,44 @@ List all studies the caller has access to.
 .. code-block:: shell
 
    nvflare study list
+   nvflare study list --format json
 
 - ``project_admin`` sees all studies.
 - ``org_admin`` sees studies in which their organisation has enrolled sites.
+- ``lead`` and ``member`` users see studies where they are explicitly mapped.
+
+In JSON mode, the command includes the startup kit selected by the CLI, the
+identity authenticated by the server, and per-study submit preflight fields:
+
+.. code-block:: json
+
+   {
+     "startup_kit": {
+       "source": "active",
+       "id": "lead@nvidia.com",
+       "path": "/path/to/lead@nvidia.com"
+     },
+     "identity": {
+       "name": "lead@nvidia.com",
+       "org": "nvidia",
+       "role": "lead"
+     },
+     "studies": ["cancer-research"],
+     "study_details": [
+       {
+         "name": "cancer-research",
+         "role": "lead",
+         "capabilities": {"submit_job": true},
+         "can_submit_job": true
+       }
+     ]
+   }
+
+``can_submit_job`` is evaluated against the active server authorization policy
+for the ``submit_job`` right. An identity may see a study but still be denied
+job submission; those rows include a denial ``reason`` from authorization. This
+is a submit preflight only; a later submit may still fail for other server-side
+validation or policy reasons.
 
 *********************
 Remove a Study

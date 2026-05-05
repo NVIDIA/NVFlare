@@ -1,0 +1,15 @@
+apiVersion: v1
+clusters:
+- cluster:
+    server: https://aws.example.invalid
+  name: arn:aws:eks:test-region:000000000000:cluster/test-eks-cluster
+contexts:
+- context:
+    cluster: arn:aws:eks:test-region:000000000000:cluster/test-eks-cluster
+    user: aws-user
+  name: arn:aws:eks:test-region:000000000000:cluster/test-eks-cluster
+current-context: arn:aws:eks:test-region:000000000000:cluster/test-eks-cluster
+kind: Config
+users:
+- name: aws-user
+  user: {}

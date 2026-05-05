@@ -419,6 +419,33 @@ class Recipe(ABC):
             return qualname
         return f"{module}.{qualname}"
 
+    def enable_log_streaming(self, *file_names: str) -> None:
+        """Enable live log streaming from clients to the server while the job runs.
+
+        Adds one ``JobLogStreamer`` per file name to clients and a single
+        ``JobLogReceiver`` to the server. Streaming is still gated per-site by
+        ``allow_log_streaming`` in ``resources.json``.
+
+        Args:
+            *file_names: log file base names to stream. If omitted, defaults to
+                ``"log.json"``.
+
+        Example::
+
+            recipe.enable_log_streaming()                     # streams log.json
+            recipe.enable_log_streaming("log.txt")            # streams a single file
+            recipe.enable_log_streaming("log.json", "log.txt")  # streams both
+        """
+        from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
+        from nvflare.app_common.logging.job_log_streamer import JobLogStreamer
+
+        if not file_names:
+            file_names = ("log.json",)
+
+        for name in file_names:
+            self._add_to_client_apps(JobLogStreamer(log_file_name=name))
+        self.job.to_server(JobLogReceiver())
+
     def add_decomposers(self, decomposers: List[Union[str, Decomposer]]):
         """Add decomposers to the job
 

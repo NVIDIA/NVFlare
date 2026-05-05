@@ -29,7 +29,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, new_cell_message
+from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, ClientRegMsgKey, new_cell_message
 from nvflare.private.fed.utils.identity_utils import IdentityAsserter, IdentityVerifier, TokenVerifier, load_crt_bytes
 
 
@@ -70,6 +70,7 @@ class Authenticator:
         msg_timeout: float,
         retry_interval: float,
         timeout=None,
+        site_config=None,
     ):
         """Authenticator is to be used to register a client to the Server.
 
@@ -86,6 +87,7 @@ class Authenticator:
             msg_timeout: timeout for authentication messages
             retry_interval: interval between tries
             timeout: overall timeout for the authentication.
+            site_config: optional validated site config to report to the server during registration.
         """
         self.cell = cell
         self.project_name = project_name
@@ -99,6 +101,7 @@ class Authenticator:
         self.retry_interval = retry_interval
         self.secure_mode = secure_mode
         self.timeout = timeout
+        self.site_config = site_config
         self.logger = get_obj_logger(self)
 
     def _challenge_server(self):
@@ -219,6 +222,9 @@ class Authenticator:
             shareable[IdentityChallengeKey.SIGNATURE] = cn_signature
             shareable[IdentityChallengeKey.COMMON_NAME] = id_asserter.cn
             self.logger.debug(f"sent identity info for client {self.client_name}")
+
+        if self.site_config is not None:
+            shareable[ClientRegMsgKey.SITE_CONFIG] = self.site_config
 
         headers = {
             CellMessageHeaderKeys.CLIENT_NAME: self.client_name,

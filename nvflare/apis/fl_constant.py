@@ -14,6 +14,14 @@
 
 from enum import Enum
 
+# Server-to-CLI protocol value used in job metadata to signal that a retry-safe
+# submit token conflicts with an existing submission.
+SUBMIT_TOKEN_CONFLICT_STATUS = "submit_token_conflict"
+
+# Server-to-CLI protocol value used when a retry-safe submit token points to a job
+# that was deliberately deleted.
+SUBMIT_TOKEN_JOB_DELETED_STATUS = "submit_token_job_deleted"
+
 
 class ReturnCode(object):
 
@@ -98,7 +106,6 @@ class ReservedKey(object):
     FROM_RANK_NUMBER = "__from_rank_number__"
     SECURE_MODE = "__secure_mode__"
     SIMULATE_MODE = "__simulate_mode__"
-    SP_END_POINT = "__sp_end_point__"
     JOB_INFO = "__job_info__"
     JOB_META = "__job_meta__"
     CURRENT_JOB_ID = "__current_job_id__"
@@ -144,7 +151,6 @@ class FLContextKey(object):
     FROM_RANK_NUMBER = ReservedKey.FROM_RANK_NUMBER
     SECURE_MODE = ReservedKey.SECURE_MODE
     SIMULATE_MODE = ReservedKey.SIMULATE_MODE
-    SP_END_POINT = ReservedKey.SP_END_POINT
     JOB_INFO = ReservedKey.JOB_INFO
     JOB_META = ReservedKey.JOB_META
     CURRENT_JOB_ID = ReservedKey.CURRENT_JOB_ID
@@ -191,6 +197,7 @@ class FLContextKey(object):
     NOT_READY_TO_END_RUN = "not_ready_to_end_run__"  # component sets this to indicate it's not ready to end run yet
     CLIENT_CONFIG = "__client_config__"
     SERVER_CONFIG = "__server_config__"
+    CLIENT_SITE_CONFIG = "__client_site_config__"
     SERVER_HOST_NAME = "__server_host_name__"
     PROCESS_TYPE = ReservedKey.PROCESS_TYPE
     JOB_PROCESS_ARGS = ReservedKey.JOB_PROCESS_ARGS
@@ -250,6 +257,8 @@ class AdminCommandNames(object):
     ABORT = "abort"
     ABORT_TASK = "abort_task"
     REMOVE_CLIENT = "remove_client"
+    DISABLE_CLIENT = "disable_client"
+    ENABLE_CLIENT = "enable_client"
     SHUTDOWN = "shutdown"
     RESTART = "restart"
     SET_TIMEOUT = "set_timeout"

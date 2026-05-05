@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Integration test: cert init → cert csr → cert sign → nvflare package.
+"""Integration test: cert init → cert request → cert approve → nvflare package.
 
 Tests the full distributed provisioning workflow for a localhost 2-site
 federation and verifies the resulting startup kits are self-consistent and
 structurally equivalent to what `nvflare provision` would produce.
 
 Run with:
-    python3 -m pytest tests/integration_test/test_distributed_provisioning.py -v
+    python3 -m pytest tests/integration_test/distributed_provisioning_test.py -v
 """
 
 import json
@@ -32,11 +32,13 @@ import sys
 import time
 import types
 import unittest.mock
+import zipfile
 
 import pytest
+import yaml
 
 from nvflare.lighter.provision import provision
-from nvflare.tool.cert.cert_commands import handle_cert_csr, handle_cert_init, handle_cert_sign
+from nvflare.tool.cert.cert_commands import handle_cert_approve, handle_cert_init, handle_cert_request
 from nvflare.tool.package.package_commands import handle_package
 
 
@@ -70,8 +72,9 @@ _PARTICIPANTS = [
 ]
 
 _SERVER_NAME = "localhost"
-_ENDPOINT = "grpc://localhost:8002"
 _PROJECT = "myfl"
+_FED_PORT = 8002
+_ADMIN_PORT = 8003
 
 # Files expected in every startup/ directory
 _STARTUP_CERTS = {"rootCA.pem"}
@@ -86,17 +89,67 @@ _STARTUP_ADMIN = {"client.crt", "client.key", "fed_admin.json", "fl_admin.sh"}
 
 def _ns(**kwargs):
     """Build a SimpleNamespace with common defaults for CLI args."""
-    defaults = dict(force=True, output_fmt=None, schema=False, org=None, accept_csr_role=False)
+    defaults = dict(force=False, output_fmt=None, schema=False, org=None)
     defaults.update(kwargs)
     return types.SimpleNamespace(**defaults)
 
 
-def _run_package(name, cert, key, rootca, workspace):
-    """Call handle_package and return the output result dict.
+def _request_participant(project: str, name: str, cert_type: str, org: str = "myorg") -> dict:
+    if cert_type == "client":
+        participant = {"name": name, "type": "client", "org": org}
+    elif cert_type == "server":
+        participant = {"name": name, "type": "server", "org": org}
+    elif cert_type == "org_admin":
+        participant = {"name": name, "type": "admin", "org": org, "role": "org_admin"}
+    elif cert_type in {"lead", "member"}:
+        participant = {"name": name, "type": "admin", "org": org, "role": cert_type}
+    else:
+        raise ValueError(f"unsupported cert_type: {cert_type}")
+    return {
+        "name": project,
+        "participants": [participant],
+    }
 
-    Kit type is derived automatically from the signed certificate's UNSTRUCTURED_NAME;
-    no -t/--type argument is needed in the new workflow.
-    """
+
+def _write_project_profile(path: str, project: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(
+            {
+                "name": project,
+                "scheme": "grpc",
+                "connection_security": "mtls",
+                "server": {
+                    "host": _SERVER_NAME,
+                    "fed_learn_port": _FED_PORT,
+                    "admin_port": _ADMIN_PORT,
+                },
+            },
+            f,
+            sort_keys=False,
+        )
+
+
+def _run_request(name: str, cert_type: str, project: str, request_root: str, org: str = "myorg"):
+    request_dir = os.path.join(request_root, name)
+    participant_path = os.path.join(request_root, f"{name}.yaml")
+    os.makedirs(request_root, exist_ok=True)
+    with open(participant_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(_request_participant(project, name, cert_type, org), f, sort_keys=False)
+    handle_cert_request(_ns(participant=participant_path, output_dir=request_dir))
+    return request_dir, os.path.join(request_dir, f"{name}.request.zip")
+
+
+def _run_approve(name: str, request_zip: str, ca_dir: str, signed_dir: str, profile: str):
+    signed_zip = os.path.join(signed_dir, f"{name}.signed.zip")
+    handle_cert_approve(
+        _ns(request_zip=request_zip, ca_dir=ca_dir, profile=profile, signed_zip=signed_zip, valid_days=1095)
+    )
+    return signed_zip
+
+
+def _run_package(signed_zip: str, request_dir: str, workspace: str, endpoint: str = None):
+    """Call handle_package signed-zip mode and return the output result dict."""
     result = {}
 
     def _capture(data, exit_code=0, status="ok"):
@@ -105,16 +158,11 @@ def _run_package(name, cert, key, rootca, workspace):
         result["_status"] = status
 
     args = _ns(
-        kit_type=None,  # derived from signed cert
-        name=name,
-        endpoint=_ENDPOINT,
-        dir=None,
-        cert=cert,
-        key=key,
-        rootca=rootca,
+        input=signed_zip,
+        endpoint=endpoint,
+        request_dir=request_dir,
         workspace=workspace,
-        project_name=_PROJECT,
-        admin_port=None,
+        expected_fingerprint=None,
     )
     with unittest.mock.patch("nvflare.tool.package.package_commands.output_ok", side_effect=_capture):
         handle_package(args)
@@ -122,56 +170,44 @@ def _run_package(name, cert, key, rootca, workspace):
 
 
 # ---------------------------------------------------------------------------
-# Test
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture()
 def provisioned(tmp_path):
-    """Run the full 4-step workflow and return a dict of kit_dir paths by participant name."""
+    """Run the full public workflow and return a dict of kit_dir paths by participant name."""
     ca_dir = str(tmp_path / "ca")
-    csr_dir = str(tmp_path / "csr")
+    request_root = str(tmp_path / "requests")
     signed_dir = str(tmp_path / "signed")
     ws = str(tmp_path / "ws")
+    profile = str(tmp_path / "project_profile.yaml")
 
-    # Step 1 — cert init
-    handle_cert_init(_ns(project=_PROJECT, output_dir=ca_dir))
+    # Step 1 — cert init (profile must exist before init so the project name can be read from it)
+    _write_project_profile(profile, _PROJECT)
+    handle_cert_init(_ns(profile=profile, output_dir=ca_dir))
 
-    # Step 2 — cert csr for each participant (propose type in CSR)
+    request_dirs = {}
+    request_zips = {}
+    signed_zips = {}
+    # Step 2 — cert request for each participant. The private key remains in request_dir.
     for name, cert_type in _PARTICIPANTS:
-        handle_cert_csr(_ns(name=name, output_dir=csr_dir, cert_type=cert_type))
+        request_dirs[name], request_zips[name] = _run_request(name, cert_type, _PROJECT, request_root)
 
-    # Step 3 — cert sign for each participant (type read from CSR; no -t needed)
+    # Step 3 — cert approve for each request zip.
     for name, _ in _PARTICIPANTS:
-        sign_out = os.path.join(signed_dir, name)
-        handle_cert_sign(
-            _ns(
-                csr_path=os.path.join(csr_dir, f"{name}.csr"),
-                ca_dir=ca_dir,
-                output_dir=sign_out,
-                cert_type=None,  # read from CSR
-                accept_csr_role=True,
-            )
-        )
+        signed_zips[name] = _run_approve(name, request_zips[name], ca_dir, signed_dir, profile)
 
-    # Step 4 — nvflare package for each participant (kit type derived from signed cert)
+    # Step 4 — nvflare package signed zip for each participant.
     kit_dirs = {}
     for name, _ in _PARTICIPANTS:
-        sign_out = os.path.join(signed_dir, name)
-        result = _run_package(
-            name=name,
-            cert=os.path.join(sign_out, f"{name}.crt"),
-            key=os.path.join(csr_dir, f"{name}.key"),
-            rootca=os.path.join(sign_out, "rootCA.pem"),
-            workspace=ws,
-        )
+        result = _run_package(signed_zip=signed_zips[name], request_dir=request_dirs[name], workspace=ws)
         kit_dirs[name] = result["output_dir"]
 
     return kit_dirs
 
 
 class TestDistributedProvisioningWorkflow:
-    """Full distributed provisioning workflow: cert init → csr → sign → package."""
+    """Full distributed provisioning workflow: cert init → request → approve → package."""
 
     # ------------------------------------------------------------------
     # Step-level smoke tests (fail fast if a command itself breaks)
@@ -179,38 +215,54 @@ class TestDistributedProvisioningWorkflow:
 
     def test_cert_init_produces_ca_files(self, tmp_path):
         ca_dir = str(tmp_path / "ca")
-        handle_cert_init(_ns(project=_PROJECT, output_dir=ca_dir))
+        profile = str(tmp_path / "project_profile.yaml")
+        _write_project_profile(profile, _PROJECT)
+        handle_cert_init(_ns(profile=profile, output_dir=ca_dir))
         assert os.path.isfile(os.path.join(ca_dir, "rootCA.pem"))
         assert os.path.isfile(os.path.join(ca_dir, "rootCA.key"))
         assert os.path.isfile(os.path.join(ca_dir, "ca.json"))
 
-    def test_cert_csr_produces_key_and_csr(self, tmp_path):
-        csr_dir = str(tmp_path / "csr")
-        handle_cert_csr(_ns(name="site-1", output_dir=csr_dir, cert_type="client"))
-        assert os.path.isfile(os.path.join(csr_dir, "site-1.key"))
-        assert os.path.isfile(os.path.join(csr_dir, "site-1.csr"))
+    def test_cert_request_produces_key_csr_and_request_zip(self, tmp_path):
+        request_root = str(tmp_path / "requests")
+        request_dir, request_zip = _run_request("site-1", "client", _PROJECT, request_root)
+        assert os.path.isfile(os.path.join(request_dir, "site-1.key"))
+        assert os.path.isfile(os.path.join(request_dir, "site-1.csr"))
+        assert os.path.isfile(os.path.join(request_dir, "request.json"))
+        assert os.path.isfile(request_zip)
         # Key must be private (permissions 0o600)
-        mode = stat.S_IMODE(os.stat(os.path.join(csr_dir, "site-1.key")).st_mode)
+        mode = stat.S_IMODE(os.stat(os.path.join(request_dir, "site-1.key")).st_mode)
         assert mode == 0o600
 
-    def test_cert_sign_produces_cert_and_rootca(self, tmp_path):
+    def test_cert_approve_produces_signed_zip(self, tmp_path):
         ca_dir = str(tmp_path / "ca")
-        csr_dir = str(tmp_path / "csr")
-        sign_out = str(tmp_path / "signed")
-        handle_cert_init(_ns(project=_PROJECT, output_dir=ca_dir))
-        handle_cert_csr(_ns(name="site-1", output_dir=csr_dir, cert_type="client"))
-        # cert_type=None: type read from CSR UNSTRUCTURED_NAME
-        handle_cert_sign(
-            _ns(
-                csr_path=os.path.join(csr_dir, "site-1.csr"),
-                ca_dir=ca_dir,
-                output_dir=sign_out,
-                cert_type=None,
-                accept_csr_role=True,
-            )
-        )
-        assert os.path.isfile(os.path.join(sign_out, "site-1.crt"))
-        assert os.path.isfile(os.path.join(sign_out, "rootCA.pem"))
+        request_root = str(tmp_path / "requests")
+        signed_dir = str(tmp_path / "signed")
+        profile = str(tmp_path / "project_profile.yaml")
+        _write_project_profile(profile, _PROJECT)
+        handle_cert_init(_ns(profile=profile, output_dir=ca_dir))
+        _request_dir, request_zip = _run_request("site-1", "client", _PROJECT, request_root)
+        signed_zip = _run_approve("site-1", request_zip, ca_dir, signed_dir, profile)
+        assert os.path.isfile(signed_zip)
+        with zipfile.ZipFile(signed_zip) as zf:
+            signed_json = json.loads(zf.read("signed.json"))
+        assert signed_json["server"] == {
+            "host": _SERVER_NAME,
+            "fed_learn_port": _FED_PORT,
+            "admin_port": _ADMIN_PORT,
+        }
+
+    @pytest.mark.parametrize("name,cert_type", [("site-1", "client"), ("admin@myfl.com", "lead")])
+    def test_client_and_user_request_site_yaml_do_not_need_server_blocks(self, tmp_path, name, cert_type):
+        request_root = str(tmp_path / "requests")
+        request_dir, request_zip = _run_request(name, cert_type, _PROJECT, request_root)
+
+        with open(os.path.join(request_dir, "site.yaml"), encoding="utf-8") as f:
+            local_site = yaml.safe_load(f)
+        with zipfile.ZipFile(request_zip) as zf:
+            request_site = yaml.safe_load(zf.read("site.yaml"))
+
+        assert "server" not in local_site["participants"][0]
+        assert "server" not in request_site["participants"][0]
 
     # ------------------------------------------------------------------
     # Kit structure tests
@@ -252,25 +304,21 @@ class TestDistributedProvisioningWorkflow:
     # Config consistency tests — server, client, admin configs must agree
     # ------------------------------------------------------------------
 
-    def test_fed_server_json_target_and_sp_end_point(self, provisioned):
+    def test_fed_server_json_target(self, provisioned):
         with open(os.path.join(provisioned[_SERVER_NAME], "startup", "fed_server.json")) as f:
             cfg = json.load(f)
         svc = cfg["servers"][0]["service"]
         assert svc["target"] == "localhost:8002"
         assert svc["scheme"] == "grpc"
-        sp = cfg["overseer_agent"]["args"]["sp_end_point"]
-        assert sp.startswith("localhost:8002:")
 
-    def test_fed_client_sp_end_point_matches_server(self, provisioned):
+    def test_fed_client_target_matches_server(self, provisioned):
         with open(os.path.join(provisioned[_SERVER_NAME], "startup", "fed_server.json")) as f:
-            srv_cfg = json.load(f)
-        server_sp = srv_cfg["overseer_agent"]["args"]["sp_end_point"]
+            srv_target = json.load(f)["servers"][0]["service"]["target"]
 
         for name in ("site-1", "site-2"):
             with open(os.path.join(provisioned[name], "startup", "fed_client.json")) as f:
-                cli_cfg = json.load(f)
-            client_sp = cli_cfg["overseer_agent"]["args"]["sp_end_point"]
-            assert client_sp == server_sp, f"{name} sp_end_point {client_sp!r} != server sp_end_point {server_sp!r}"
+                cli_target = json.load(f)["servers"][0]["service"]["target"]
+            assert cli_target == srv_target, f"{name} target {cli_target!r} != server target {srv_target!r}"
 
     def test_fed_admin_json_port_matches_server(self, provisioned):
         with open(os.path.join(provisioned[_SERVER_NAME], "startup", "fed_server.json")) as f:
@@ -305,13 +353,13 @@ class TestDistributedProvisioningWorkflow:
             else:
                 assert content == ref, f"rootCA.pem in {name} differs from {_PARTICIPANTS[0][0]}"
 
-    def test_no_server_placeholder_dir_in_non_server_kits(self, provisioned):
-        """The server placeholder directory must be removed for non-server kits."""
-        for name in ("site-1", "site-2", "admin@myfl.com"):
-            prod_dir = os.path.dirname(provisioned[name])
-            assert not os.path.exists(
-                os.path.join(prod_dir, _SERVER_NAME)
-            ), f"Server placeholder dir found in prod dir for {name}"
+    def test_all_participants_land_in_same_provision_version_dir(self, provisioned):
+        """Distributed packages signed by the same CA/version land in one prod_00 directory."""
+        prod_dirs = {os.path.dirname(provisioned[name]) for name, _ in _PARTICIPANTS}
+        assert len(prod_dirs) == 1
+        prod_dir = prod_dirs.pop()
+        assert os.path.basename(prod_dir) == "prod_00"
+        assert os.path.isdir(os.path.join(prod_dir, _SERVER_NAME))
 
 
 # ---------------------------------------------------------------------------
@@ -489,9 +537,9 @@ class TestDistributedProvisioningE2E:
 # Kit parity test: centralized (`nvflare provision`) vs distributed
 # ---------------------------------------------------------------------------
 
-# Participants shared by both workflows.  The server name is "localhost" so
-# that the --endpoint grpc://localhost:8002 aligns with the provision-generated
-# fed_server.json target field.
+# Participants shared by both workflows. The server name is "localhost" so
+# distributed package output aligns with the provision-generated fed_server.json
+# target field.
 _PARITY_PARTICIPANTS = [
     ("localhost", "server"),
     ("site-1", "client"),
@@ -499,9 +547,8 @@ _PARITY_PARTICIPANTS = [
     ("admin@myfl.com", "lead"),
 ]
 _PARITY_PROJECT = "myfl"
-_PARITY_ENDPOINT = "grpc://localhost:8002"
 _PARITY_FED_PORT = 8002
-_PARITY_ADMIN_PORT = 8002
+_PARITY_ADMIN_PORT = 8003
 
 # Files that are cert/key material — content will differ between runs (different CAs).
 _BINARY_CERT_FILES = {"server.crt", "client.crt", "server.key", "client.key", "rootCA.pem"}
@@ -532,7 +579,7 @@ def _run_centralized_provision(workspace: str) -> dict:
             },
             {"name": "site-1", "type": "client", "org": "myorg"},
             {"name": "site-2", "type": "client", "org": "myorg"},
-            {"name": "admin@myfl.com", "type": "admin", "org": "myorg", "role": "project_admin"},
+            {"name": "admin@myfl.com", "type": "admin", "org": "myorg", "role": "lead"},
         ],
         # Standard non-CC/non-HE builders — no SignatureBuilder so file sets are identical.
         "builders": [
@@ -551,54 +598,35 @@ def _run_centralized_provision(workspace: str) -> dict:
 
 
 def _run_distributed_provision(workspace: str) -> dict:
-    """Run the full cert init → csr → sign → package workflow.
+    """Run the full cert init → request → approve → package workflow.
 
     Returns a dict mapping participant name → kit directory.
     """
     ca_dir = os.path.join(workspace, "ca")
-    csr_dir = os.path.join(workspace, "csr")
+    request_root = os.path.join(workspace, "requests")
     signed_dir = os.path.join(workspace, "signed")
     kits_ws = os.path.join(workspace, "kits")
+    profile = os.path.join(workspace, "project_profile.yaml")
 
-    handle_cert_init(_ns(project=_PARITY_PROJECT, output_dir=ca_dir))
+    _write_project_profile(profile, _PARITY_PROJECT)
+    handle_cert_init(_ns(profile=profile, output_dir=ca_dir))
 
+    request_dirs = {}
+    request_zips = {}
+    signed_zips = {}
     for name, cert_type in _PARITY_PARTICIPANTS:
-        handle_cert_csr(_ns(name=name, output_dir=csr_dir, cert_type=cert_type))
+        request_dirs[name], request_zips[name] = _run_request(name, cert_type, _PARITY_PROJECT, request_root)
 
     for name, _ in _PARITY_PARTICIPANTS:
-        sign_out = os.path.join(signed_dir, name)
-        handle_cert_sign(
-            _ns(
-                csr_path=os.path.join(csr_dir, f"{name}.csr"),
-                ca_dir=ca_dir,
-                output_dir=sign_out,
-                cert_type=None,
-                accept_csr_role=True,
-            )
-        )
+        signed_zips[name] = _run_approve(name, request_zips[name], ca_dir, signed_dir, profile)
 
     kit_dirs = {}
     for name, _ in _PARITY_PARTICIPANTS:
-        sign_out = os.path.join(signed_dir, name)
-        result = {}
-
-        def _capture(data, exit_code=0, status="ok"):
-            result.update(data)
-
-        args = _ns(
-            kit_type=None,
-            name=name,
-            endpoint=_PARITY_ENDPOINT,
-            dir=None,
-            cert=os.path.join(sign_out, f"{name}.crt"),
-            key=os.path.join(csr_dir, f"{name}.key"),
-            rootca=os.path.join(sign_out, "rootCA.pem"),
+        result = _run_package(
+            signed_zip=signed_zips[name],
+            request_dir=request_dirs[name],
             workspace=kits_ws,
-            project_name=_PARITY_PROJECT,
-            admin_port=None,
         )
-        with unittest.mock.patch("nvflare.tool.package.package_commands.output_ok", side_effect=_capture):
-            handle_package(args)
         kit_dirs[name] = result["output_dir"]
 
     return kit_dirs
@@ -684,7 +712,7 @@ class TestKitParity:
         assert _json_keys_recursive(c) == _json_keys_recursive(d)
 
     def test_fed_server_json_endpoint_values_match(self, parity_kits):
-        """fed_server.json target, scheme, and sp_end_point must be identical."""
+        """fed_server.json target and scheme must be identical."""
         centralized, distributed = parity_kits
         with open(os.path.join(centralized["localhost"], "startup", "fed_server.json")) as f:
             c = json.load(f)
@@ -693,16 +721,15 @@ class TestKitParity:
         assert c["servers"][0]["service"]["target"] == d["servers"][0]["service"]["target"]
         assert c["servers"][0]["service"]["scheme"] == d["servers"][0]["service"]["scheme"]
         assert c["servers"][0]["admin_port"] == d["servers"][0]["admin_port"]
-        assert c["overseer_agent"]["args"]["sp_end_point"] == d["overseer_agent"]["args"]["sp_end_point"]
 
-    def test_fed_client_sp_end_point_matches_server(self, parity_kits):
-        """fed_client.json sp_end_point must match fed_server.json in both workflows."""
+    def test_fed_client_target_matches_server(self, parity_kits):
+        """fed_client.json target must match fed_server.json in both workflows."""
         for kit_dirs in parity_kits:
             with open(os.path.join(kit_dirs["localhost"], "startup", "fed_server.json")) as f:
-                srv_sp = json.load(f)["overseer_agent"]["args"]["sp_end_point"]
+                srv_target = json.load(f)["servers"][0]["service"]["target"]
             with open(os.path.join(kit_dirs["site-1"], "startup", "fed_client.json")) as f:
-                cli_sp = json.load(f)["overseer_agent"]["args"]["sp_end_point"]
-            assert cli_sp == srv_sp
+                cli_target = json.load(f)["servers"][0]["service"]["target"]
+            assert cli_target == srv_target
 
     def test_cert_key_content_differs(self, parity_kits):
         """Cert and key files must differ — each workflow uses its own CA."""

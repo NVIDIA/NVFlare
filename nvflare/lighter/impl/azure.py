@@ -41,7 +41,6 @@ class AzureBuilder(Builder):
                 "admin_port": admin_port,
                 "fed_learn_port": fl_port,
                 "config_folder": "config",
-                "ha_mode": "false",
                 "docker_image": "nvflare/nvflare",
                 "org_name": "",
                 "type": "server",

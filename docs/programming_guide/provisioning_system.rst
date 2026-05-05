@@ -397,7 +397,6 @@ own requirements:
     - :class:`WorkspaceBuilder<nvflare.lighter.impl.workspace.WorkspaceBuilder>`
     - :class:`TemplateBuilder<nvflare.lighter.impl.template.TemplateBuilder>`
     - :class:`DockerBuilder<nvflare.lighter.impl.docker.DockerBuilder>`
-    - :class:`HelmChartBuilder<nvflare.lighter.impl.helm_chart.HelmChartBuilder>`
     - :class:`StaticFileBuilder<nvflare.lighter.impl.static_file.StaticFileBuilder>`
     - :class:`CertBuilder<nvflare.lighter.impl.cert.CertBuilder>`
     - :class:`SignatureBuilder<nvflare.lighter.impl.signature.SignatureBuilder>`
@@ -412,13 +411,7 @@ own requirements:
         │   │   ├── startup
         │   │   └── transfer
         │   ├── nvflare_compose
-        │   ├── nvflare_hc
-        │   │   └── templates
         │   ├── server1
-        │   │   ├── local
-        │   │   ├── startup
-        │   │   └── transfer
-        │   ├── server2
         │   │   ├── local
         │   │   ├── startup
         │   │   └── transfer

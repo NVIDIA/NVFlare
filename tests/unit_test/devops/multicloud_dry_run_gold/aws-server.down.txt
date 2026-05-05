@@ -1,0 +1,16 @@
+Tearing down gcp-client-1 (nvflare-client-1) ...
+  ? gcloud auth print-access-token
+  $ helm --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml uninstall gcp-client-1 -n nvflare-client-1
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/gcp.yaml delete ns nvflare-client-1 --ignore-not-found --timeout=120s
+Tearing down aws-client-2 (nvflare-client-2) ...
+  ? aws sts get-caller-identity
+  $ helm --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml uninstall aws-client-2 -n nvflare-client-2
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml delete ns nvflare-client-2 --ignore-not-found --timeout=120s
+Tearing down aws-server (nvflare-server) ...
+  ? aws sts get-caller-identity
+  $ helm --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml uninstall aws-server -n nvflare-server
+  $ kubectl --kubeconfig <repo>/tests/unit_test/devops/multicloud_dry_run_configs/kubeconfigs/aws.yaml delete ns nvflare-server --ignore-not-found --timeout=120s
+  $ aws ec2 describe-addresses --filters Name=tag:Name,Values=nvflare-aws-server --region test-region --query 'Addresses[].{PublicIp:PublicIp,AllocationId:AllocationId}' --output json
+Releasing Elastic IP nvflare-aws-server (<alloc-id>) ...
+  $ aws ec2 release-address --allocation-id '<alloc-id>' --region test-region
+Destroyed.

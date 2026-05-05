@@ -27,9 +27,15 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
-from cryptography.x509.oid import NameOID
+from cryptography.x509.oid import ExtensionOID, NameOID
 
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
+
+_GENERATE_CERT_RESERVED_EXTENSION_OIDS = {
+    ExtensionOID.SUBJECT_KEY_IDENTIFIER,
+    ExtensionOID.AUTHORITY_KEY_IDENTIFIER,
+    ExtensionOID.SUBJECT_ALTERNATIVE_NAME,
+}
 
 
 class Identity:
@@ -46,6 +52,23 @@ def _host_to_subject_alt_name(host: str):
         return x509.DNSName(host)
 
 
+def build_subject_alt_names(server_default_host=None, server_additional_hosts=None, fallback_subject_name=None):
+    if isinstance(server_additional_hosts, str):
+        server_additional_hosts = [server_additional_hosts]
+
+    if server_default_host:
+        sans = [_host_to_subject_alt_name(server_default_host)]
+        if server_additional_hosts:
+            for h in server_additional_hosts:
+                if h != server_default_host:
+                    sans.append(_host_to_subject_alt_name(h))
+        return sans
+
+    if not fallback_subject_name:
+        raise ValueError("fallback_subject_name is required when server_default_host is not set")
+    return [x509.DNSName(fallback_subject_name)]
+
+
 def generate_cert(
     subject: Identity,
     issuer: Identity,
@@ -55,11 +78,12 @@ def generate_cert(
     ca=False,
     server_default_host=None,
     server_additional_hosts=None,
+    not_valid_before=None,
+    not_valid_after=None,
+    extra_extensions=None,
 ):
-    if isinstance(server_additional_hosts, str):
-        server_additional_hosts = [server_additional_hosts]
-
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = not_valid_before or datetime.datetime.now(datetime.timezone.utc)
+    cert_not_valid_after = not_valid_after or now + datetime.timedelta(days=valid_days)
 
     x509_subject = x509_name(subject.name, subject.org, subject.role)
     x509_issuer = x509_name(issuer.name, issuer.org, issuer.role)
@@ -71,7 +95,7 @@ def generate_cert(
         .public_key(subject_pub_key)
         .serial_number(x509.random_serial_number())
         .not_valid_before(now)
-        .not_valid_after(now + datetime.timedelta(days=valid_days))
+        .not_valid_after(cert_not_valid_after)
         .add_extension(
             x509.SubjectKeyIdentifier.from_public_key(subject_pub_key),
             critical=False,
@@ -98,17 +122,22 @@ def generate_cert(
             critical=True,
         )
 
-    if server_default_host:
-        # This is to generate a server cert.
-        # Use SubjectAlternativeName for all host names or IP addresses.
-        sans = [_host_to_subject_alt_name(server_default_host)]
-        if server_additional_hosts:
-            for h in server_additional_hosts:
-                if h != server_default_host:
-                    sans.append(_host_to_subject_alt_name(h))
-        builder = builder.add_extension(x509.SubjectAlternativeName(sans), critical=False)
-    else:
-        builder = builder.add_extension(x509.SubjectAlternativeName([x509.DNSName(subject.name)]), critical=False)
+    if extra_extensions:
+        seen_extension_oids = set()
+        for extension, critical in extra_extensions:
+            if extension.oid in _GENERATE_CERT_RESERVED_EXTENSION_OIDS:
+                raise ValueError(f"extra_extensions must not include reserved extension OID '{extension.oid._name}'")
+            if extension.oid in seen_extension_oids:
+                raise ValueError(f"duplicate extra extension OID '{extension.oid._name}'")
+            seen_extension_oids.add(extension.oid)
+            builder = builder.add_extension(extension, critical=critical)
+
+    builder = builder.add_extension(
+        x509.SubjectAlternativeName(
+            build_subject_alt_names(server_default_host, server_additional_hosts, subject.name)
+        ),
+        critical=False,
+    )
     return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
 
 

@@ -32,10 +32,12 @@ class TestProject:
         with pytest.raises(ValueError, match=r".* server already exists"):
             _ = Project("name", "description", [p1, p2])
 
-    def test_single_overseer(self):
+    def test_overseer_participant_ignored(self, caplog):
         p1 = Participant(name="name1", org="org", type="overseer")
-        with pytest.raises(ValueError, match=r".* overseer is removed"):
-            _ = Project("name", "description", [p1])
+        with caplog.at_level("WARNING", logger="nvflare.lighter.entity"):
+            prj = Project("name", "description", [p1])
+        assert any("obsolete" in r.message.lower() for r in caplog.records)
+        assert prj.get_all_participants() == []
 
     def test_get_clients(self):
         p = create_participants(type="client", number=3, org="org", name="name")
@@ -43,6 +45,25 @@ class TestProject:
         c = prj.get_clients()
         assert len(c) == len(p)
         assert all(c[i].name == p[i].name and c[i].org == p[i].org for i in range(len(p)))
+
+    def test_remove_server(self):
+        server = Participant(name="server1", org="org", type="server")
+        client = Participant(name="client1", org="org", type="client")
+        prj = Project("name", "description", [server, client])
+
+        removed = prj.remove_server()
+
+        assert removed is server
+        assert removed.parent is None
+        assert prj.get_server() is None
+        assert prj.get_all_participants("server") == []
+        assert [p.name for p in prj.get_all_participants()] == ["client1"]
+
+    def test_remove_server_when_absent(self):
+        prj = Project("name", "description")
+
+        assert prj.remove_server() is None
+        assert prj.get_all_participants() == []
 
     def test_get_admins(self):
         p = create_participants(
