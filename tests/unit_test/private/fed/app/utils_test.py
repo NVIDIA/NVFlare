@@ -27,8 +27,16 @@ def test_version_check_accepts_supported_python_versions(monkeypatch, version_in
 @pytest.mark.parametrize(
     "version_info, expected_message",
     [
-        ((3, 9, 18), "Python versions 3.9 and below are not supported"),
-        ((3, 15, 0), "Python versions 3.15 and above are not yet supported"),
+        (
+            (3, 9, 18),
+            f"Python versions {utils._format_python_version(utils._HIGHEST_UNSUPPORTED_PYTHON_VERSION)} "
+            "and below are not supported",
+        ),
+        (
+            (3, 15, 0),
+            f"Python versions {utils._format_python_version(utils._LOWEST_UNSUPPORTED_PYTHON_VERSION)} "
+            "and above are not yet supported",
+        ),
     ],
 )
 def test_version_check_rejects_unsupported_python_versions(monkeypatch, version_info, expected_message):
