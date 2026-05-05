@@ -27,9 +27,9 @@ from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
 
-_MIN_PYTHON_VERSION = (3, 9)
+_MIN_PYTHON_VERSION = (3, 10)
 _MAX_PYTHON_VERSION = (3, 14)
-_SUPPORTED_PYTHON_VERSION_RANGE = "3.9 through 3.14"
+_SUPPORTED_PYTHON_VERSION_RANGE = "3.10 through 3.14"
 
 
 def monitor_parent_process(runner: Runner, parent_pid, stop_event: threading.Event):
@@ -92,7 +92,7 @@ def version_check():
         )
     if python_version < _MIN_PYTHON_VERSION:
         raise RuntimeError(
-            f"Python versions 3.8 and below are not supported. "
+            f"Python versions 3.9 and below are not supported. "
             f"Please use Python version {_SUPPORTED_PYTHON_VERSION_RANGE}."
         )
 

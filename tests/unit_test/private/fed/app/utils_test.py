@@ -17,7 +17,7 @@ import pytest
 from nvflare.private.fed.app import utils
 
 
-@pytest.mark.parametrize("version_info", [(3, 9, 0), (3, 13, 0), (3, 14, 0)])
+@pytest.mark.parametrize("version_info", [(3, 10, 0), (3, 13, 0), (3, 14, 0)])
 def test_version_check_accepts_supported_python_versions(monkeypatch, version_info):
     monkeypatch.setattr(utils.sys, "version_info", version_info)
 
@@ -27,7 +27,7 @@ def test_version_check_accepts_supported_python_versions(monkeypatch, version_in
 @pytest.mark.parametrize(
     "version_info, expected_message",
     [
-        ((3, 8, 18), "Python versions 3.8 and below are not supported"),
+        ((3, 9, 18), "Python versions 3.9 and below are not supported"),
         ((3, 15, 0), "Python versions 3.15 and above are not yet supported"),
     ],
 )
