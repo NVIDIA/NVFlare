@@ -102,7 +102,7 @@ launcher_spec: launcher-specific execution configuration, namespaced by launcher
   },
   "launcher_spec": {
     "site-1": {
-      "k8s": { "image": "repo/nvflare:2.7.2", "cpu": "500m", "memory": "2Gi" },
+      "k8s": { "image": "repo/nvflare:2.7.2", "cpu": "500m", "memory": "2Gi", "ephemeral_storage": "4Gi" },
       "docker": { "image": "repo/nvflare:2.7.2", "shm_size": "8g" }
     }
   }
@@ -111,7 +111,7 @@ In this model, num_of_gpus can remain in resource_spec as the scheduler-facing r
 Docker: --gpus=2
 K8s: resources.limits["nvidia.com/gpu"] = 2
 Process: passed as an environment variable or argument
-Launcher-only fields such as image, shm_size, and K8s CPU or memory values live only in launcher_spec.
+Launcher-only fields such as image, shm_size, and K8s CPU, memory, or ephemeral storage values live only in launcher_spec.
 This makes image a first-class launcher field for both Docker and K8s, instead of an implicit value derived from unrelated configuration.
 Pros:
 Separation of concerns is explicit and unambiguous

@@ -221,7 +221,9 @@ Best suited for:
 * ``gpu_ids`` (List[int], optional): List of GPU IDs to assign to clients. If ``None``, uses CPU only.
 * ``auto_stop`` (bool, optional): Whether to automatically stop POC services after job completion.
 * ``use_he`` (bool, optional): Whether to use HE. Defaults to ``False``.
-* ``docker_image`` (str, optional): Docker image to use for POC.
+* ``docker_image`` (str, optional): SP/CP Docker image for Docker POC mode
+  prepared with the deploy Docker preparation path. Jobs submitted in this mode
+  must specify their SJ/CJ Docker image in ``launcher_spec``.
 * ``project_conf_path`` (str, optional): Path to the project configuration file.
 * ``study`` (str, optional): The study context for this execution environment. Jobs will be submitted and monitored within this study. Defaults to ``"default"``. Named studies require ``project_conf_path`` to point to a project with ``api_version: 4`` and ``studies:``. See :ref:`multi_study_guide`.
 

@@ -506,12 +506,15 @@ image-specific Python overrides:
 
 - `launcher_spec[<site>][k8s].num_of_gpus`
 - `launcher_spec[<site>][k8s].python_path`
+- `launcher_spec[<site>][k8s].ephemeral_storage`
 - legacy `resource_spec[<site>][k8s].num_of_gpus`
 - `launcher_spec[<site>][k8s].cpu`
 - `launcher_spec[<site>][k8s].memory`
 
 `K8sJobLauncher` maps `num_of_gpus` to the pod container limit
 `nvidia.com/gpu`.
+`launcher_spec[<site>][k8s].ephemeral_storage` maps to the job workspace
+`emptyDir.sizeLimit` and the pod container `ephemeral-storage` request/limit.
 `launcher_spec[<site>][k8s].python_path` overrides
 `job_launcher.default_python_path` for jobs whose image uses a different Python
 location.
