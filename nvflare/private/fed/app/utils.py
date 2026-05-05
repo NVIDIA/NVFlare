@@ -27,6 +27,10 @@ from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
 
+_MIN_PYTHON_VERSION = (3, 9)
+_MAX_PYTHON_VERSION = (3, 14)
+_SUPPORTED_PYTHON_VERSION_RANGE = "3.9 through 3.14"
+
 
 def monitor_parent_process(runner: Runner, parent_pid, stop_event: threading.Event):
     while True:
@@ -80,13 +84,16 @@ def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None)
 
 
 def version_check():
-    if sys.version_info >= (3, 13):
+    python_version = sys.version_info[:2]
+    if python_version > _MAX_PYTHON_VERSION:
         raise RuntimeError(
-            "Python versions 3.13 and above are not yet supported. Please use Python version between 3.9 and 3.12."
+            f"Python versions 3.15 and above are not yet supported. "
+            f"Please use Python version {_SUPPORTED_PYTHON_VERSION_RANGE}."
         )
-    if sys.version_info < (3, 9):
+    if python_version < _MIN_PYTHON_VERSION:
         raise RuntimeError(
-            "Python versions 3.8 and below are not supported. Please use Python version between 3.9 and 3.12."
+            f"Python versions 3.8 and below are not supported. "
+            f"Please use Python version {_SUPPORTED_PYTHON_VERSION_RANGE}."
         )
 
 
