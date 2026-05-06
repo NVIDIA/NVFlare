@@ -13,6 +13,7 @@
 # limitations under the License.
 import logging
 import os
+import posixpath
 import re
 import time
 from abc import abstractmethod
@@ -27,7 +28,7 @@ except ImportError:
     _DOCKER_AVAILABLE = False
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, JobConstants
+from nvflare.apis.fl_constant import FLContextKey, JobConstants, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
@@ -51,6 +52,11 @@ class DockerStatus:
 
 
 TERMINAL_STATUSES = {DockerStatus.EXITED, DockerStatus.DEAD}
+_WORKSPACE_TMPFS_MODE = 0o555
+_RESERVED_WORKSPACE_CHILD_NAMES = {
+    WorkspaceConstants.STARTUP_FOLDER_NAME,
+    WorkspaceConstants.SITE_FOLDER_NAME,
+}
 
 
 def _sanitize_container_name(name: str) -> str:
@@ -71,6 +77,33 @@ def _exit_code_to_return_code(exit_code: int) -> JobReturnCode:
         return JobReturnCode.ABORTED
     else:
         return JobReturnCode.EXECUTION_ERROR
+
+
+def _safe_workspace_child_path(workspace: str, child_name: str, allow_reserved: bool = False) -> str:
+    """Return a host workspace child path, rejecting paths that escape workspace."""
+    child_name = str(child_name)
+    normalized_child_name = os.path.normpath(child_name)
+    # normpath catches traversal spellings; the separator checks catch already-normalized nested paths.
+    if (
+        not child_name
+        or os.path.isabs(child_name)
+        or normalized_child_name != child_name
+        or normalized_child_name in ("", ".", "..")
+        or os.sep in normalized_child_name
+        or (os.altsep and os.altsep in normalized_child_name)
+    ):
+        raise RuntimeError(f"job workspace path must be a single workspace child: {child_name}")
+    if not allow_reserved and normalized_child_name in _RESERVED_WORKSPACE_CHILD_NAMES:
+        raise RuntimeError(f"job workspace path uses reserved workspace name: {child_name}")
+
+    child_path = os.path.normpath(os.path.join(workspace, child_name))
+    workspace_real = os.path.realpath(workspace)
+    child_real = os.path.realpath(child_path)
+    if os.path.commonpath([workspace_real, child_real]) != workspace_real:
+        raise RuntimeError(f"job workspace path escapes workspace: {child_name}")
+    if os.path.islink(child_path):
+        raise RuntimeError(f"workspace child path must not be a symlink: {child_name}")
+    return child_path
 
 
 class DockerJobHandle(JobHandleSpec):
@@ -235,7 +268,8 @@ class DockerJobLauncher(JobLauncherSpec):
 
     Assumptions:
     - Docker network already exists (created by start_docker.sh or site admin).
-    - Workspace is a host directory bind-mounted into all containers at /var/tmp/nvflare/workspace.
+    - Job containers get an isolated workspace view at /var/tmp/nvflare/workspace:
+      startup/local are read-only; only the current job workspace is read-write.
     - SP/CP container name is known and reachable via Docker DNS on the network.
     - parent_url is derived at runtime from the site name and the port in JOB_PROCESS_ARGS.
     """
@@ -257,10 +291,11 @@ class DockerJobLauncher(JobLauncherSpec):
     ):
         """
         Args:
-            workspace: host path to the NVFlare workspace directory (bind-mounted into job containers
-                       at /var/tmp/nvflare/workspace). If not provided, reads from NVFL_DOCKER_WORKSPACE
-                       environment variable. Must be the HOST path because it is passed directly to the
-                       Docker daemon as a volume bind source.
+            workspace: host path to the NVFlare workspace directory. Job containers receive an isolated
+                       workspace view: startup/local are mounted read-only, and the current job workspace
+                       is mounted read-write at /var/tmp/nvflare/workspace/<job_id>. If not provided,
+                       reads from NVFL_DOCKER_WORKSPACE environment variable. Must be the HOST path
+                       because it is passed directly to the Docker daemon as a volume bind source.
             network: Docker network name. Must already exist.
             python_path: Deprecated alias for default_python_path.
             timeout: max seconds to wait for container to reach RUNNING state (default 30).
@@ -269,8 +304,8 @@ class DockerJobLauncher(JobLauncherSpec):
                                           takes precedence on conflict. Keys use Docker SDK naming
                                           (underscores, not hyphens).
                                           Example: {"shm_size": "8g", "ipc_mode": "host"}
-                                          Note: "volumes", "network", "environment", "command", "name",
-                                          "detach", "user", "working_dir" are controlled by the launcher
+                                          Note: "volumes", "mounts", "network", "environment", "command",
+                                          "name", "detach", "user", "working_dir" are controlled by the launcher
                                           and cannot be overridden here.
             default_job_env: site-level default environment variables injected into every job
                              container launched by this site. Useful for site/runtime-specific
@@ -460,8 +495,19 @@ class DockerJobLauncher(JobLauncherSpec):
         if num_gpus and "device_requests" not in job_container_kwargs:
             merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
 
-        # Mounts: always mount workspace; mount study datasets only when the job declares a study.
-        mounts = [docker.types.Mount(target=self.WORKSPACE_MOUNT, source=workspace, type="bind", read_only=False)]
+        # Give the job an isolated workspace view: startup/local are read-only,
+        # and only this job's workspace is read-write and persistent on the host.
+        job_workspace_name = WorkspaceConstants.WORKSPACE_PREFIX + str(job_id)
+        host_job_workspace = _safe_workspace_child_path(workspace, job_workspace_name)
+        host_startup_dir = _safe_workspace_child_path(
+            workspace, WorkspaceConstants.STARTUP_FOLDER_NAME, allow_reserved=True
+        )
+        host_local_dir = _safe_workspace_child_path(workspace, WorkspaceConstants.SITE_FOLDER_NAME, allow_reserved=True)
+        container_job_workspace = posixpath.join(self.WORKSPACE_MOUNT, job_workspace_name)
+        container_startup_dir = posixpath.join(self.WORKSPACE_MOUNT, WorkspaceConstants.STARTUP_FOLDER_NAME)
+        container_local_dir = posixpath.join(self.WORKSPACE_MOUNT, WorkspaceConstants.SITE_FOLDER_NAME)
+        data_mounts = []
+
         # Read study data map from workspace/local/study_data.yaml.
         # Must use WORKSPACE_MOUNT (container-internal path) for the file read because launch_job
         # runs inside the SP/CP container. The host path (workspace) does not exist in the container
@@ -474,14 +520,6 @@ class DockerJobLauncher(JobLauncherSpec):
             study_data_map = load_study_data_file(study_data_file)
             data_mounts = resolve_study_dataset_mounts(study_data_map, study, study_data_file)
             for dataset_mount in data_mounts:
-                mounts.append(
-                    docker.types.Mount(
-                        target=dataset_mount.mount_path,
-                        source=dataset_mount.source,
-                        type="bind",
-                        read_only=dataset_mount.read_only,
-                    )
-                )
                 self.logger.info(
                     "mounting study '%s' dataset '%s' from %s -> %s",
                     study,
@@ -494,6 +532,37 @@ class DockerJobLauncher(JobLauncherSpec):
 
         docker_client = self._get_docker_client()
         try:
+            mounts = [
+                docker.types.Mount(
+                    target=self.WORKSPACE_MOUNT,
+                    source=None,
+                    type="tmpfs",
+                    read_only=False,
+                    tmpfs_mode=_WORKSPACE_TMPFS_MODE,
+                ),
+                docker.types.Mount(
+                    target=container_startup_dir,
+                    source=host_startup_dir,
+                    type="bind",
+                    read_only=True,
+                ),
+                docker.types.Mount(target=container_local_dir, source=host_local_dir, type="bind", read_only=True),
+                docker.types.Mount(
+                    target=container_job_workspace,
+                    source=host_job_workspace,
+                    type="bind",
+                    read_only=False,
+                ),
+            ]
+            for dataset_mount in data_mounts:
+                mounts.append(
+                    docker.types.Mount(
+                        target=dataset_mount.mount_path,
+                        source=dataset_mount.source,
+                        type="bind",
+                        read_only=dataset_mount.read_only,
+                    )
+                )
             container = docker_client.containers.run(
                 job_image,
                 command=command,
@@ -502,7 +571,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 detach=True,
                 environment=environment if environment else None,
                 mounts=mounts,
-                working_dir=self.WORKSPACE_MOUNT,
+                working_dir=container_job_workspace,
                 # Run as the same user as SP/CP so job-written files are accessible to SP/CP
                 # (e.g. cross_val_results.json written by SJ must be readable/deletable by SP).
                 # Never pass Docker socket to job containers.

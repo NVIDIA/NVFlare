@@ -54,12 +54,6 @@ class DummyLogger:
 
 
 def _get_provisioner(prop_mgr: PropertyManager, root_dir: str, scheme, docker_image=None):
-    overseer_agent = {
-        "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
-        "overseer_exists": False,
-        "args": {"sp_end_point": "server:8002:8003"},
-    }
-
     scheme = prop_mgr.get_project_prop("scheme", scheme)
     builders = [
         WorkspaceBuilder(),
@@ -67,7 +61,6 @@ def _get_provisioner(prop_mgr: PropertyManager, root_dir: str, scheme, docker_im
             config_folder="config",
             scheme=scheme,
             docker_image=docker_image,
-            overseer_agent=overseer_agent,
         ),
         AWSBuilder(),
         AzureBuilder(),

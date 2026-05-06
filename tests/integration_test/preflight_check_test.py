@@ -27,7 +27,7 @@ from tests.integration_test.src import ProvisionSiteLauncher
 from tests.integration_test.src.constants import PREFLIGHT_CHECK_SCRIPT
 
 TEST_CASES = [
-    {"project_yaml": "data/projects/dummy.yml", "admin_name": "super@test.org", "is_dummy_overseer": True},
+    {"project_yaml": "data/projects/dummy.yml", "admin_name": "super@test.org"},
 ]
 
 
@@ -156,7 +156,6 @@ def _run_preflight_check_command(package_path: str, method: str = "subprocess"):
 def setup_system(request):
     test_config = request.param
     project_yaml_path = test_config["project_yaml"]
-    is_dummy_overseer = test_config["is_dummy_overseer"]
     admin_name = test_config["admin_name"]
 
     if not os.path.isfile(project_yaml_path):
@@ -167,22 +166,18 @@ def setup_system(request):
 
     admin_folder_root = os.path.abspath(os.path.join(workspace_root, admin_name))
 
-    return site_launcher, is_dummy_overseer, admin_folder_root
+    return site_launcher, admin_folder_root
 
 
 @pytest.mark.xdist_group(name="preflight_tests_group")
 class TestPreflightCheck:
-    def test_run_check_on_server_after_overseer_start(self, setup_system):
-        site_launcher, is_dummy_overseer, _ = setup_system
+    def test_run_check_on_server(self, setup_system):
+        site_launcher, _ = setup_system
         try:
-            if not is_dummy_overseer:
-                site_launcher.start_overseer()
-            # preflight-check on server
             for server_name, server_props in site_launcher.server_properties.items():
                 output = _run_preflight_check_command(package_path=server_props.root_dir)
                 actual_checks = _parse_preflight_output(output)
 
-                # Get expected checks based on communication scheme
                 expected_checks = {
                     "Check FL port binding": "PASSED",
                     "Check admin port binding": "PASSED",
@@ -198,53 +193,16 @@ class TestPreflightCheck:
             site_launcher.stop_all_sites()
             site_launcher.cleanup()
 
-    def test_run_check_on_server_before_overseer_start(self, setup_system):
-        site_launcher, is_dummy_overseer, _ = setup_system
-        try:
-            # preflight-check on server
-            for server_name, server_props in site_launcher.server_properties.items():
-                output = _run_preflight_check_command(package_path=server_props.root_dir)
-                actual_checks = _parse_preflight_output(output)
-
-                # Get expected checks based on communication scheme
-                expected_checks = {
-                    "Check FL port binding": "PASSED",
-                    "Check admin port binding": "PASSED",
-                    "Check snapshot storage writable": "PASSED",
-                    "Check job storage writable": "PASSED",
-                    "Check dry run": "PASSED",
-                }
-
-                if is_dummy_overseer:
-                    print(f"Server '{server_name}', expecting checks: {list(expected_checks.keys())}")
-                    _verify_checks(actual_checks, expected_checks, f"Server '{server_name}'")
-                else:
-                    # At least one check should not be PASSED (likely the dry run)
-                    passed_count = sum(1 for status in actual_checks.values() if status == "PASSED")
-                    total_count = len(expected_checks)
-                    assert passed_count < total_count, (
-                        f"Server '{server_name}' preflight check expected some failures before overseer start, "
-                        f"but all {passed_count}/{total_count} checks passed. "
-                        f"Actual checks: {actual_checks}"
-                    )
-        finally:
-            site_launcher.stop_all_sites()
-            site_launcher.cleanup()
-
     def test_run_check_on_client(self, setup_system):
-        site_launcher, is_dummy_overseer, _ = setup_system
+        site_launcher, _ = setup_system
         try:
-            if not is_dummy_overseer:
-                site_launcher.start_overseer()
             site_launcher.start_servers()
             time.sleep(SERVER_START_TIME)
 
-            # preflight-check on clients
             for client_name, client_props in site_launcher.client_properties.items():
                 output = _run_preflight_check_command(package_path=client_props.root_dir)
                 actual_checks = _parse_preflight_output(output)
 
-                # Get expected checks based on communication scheme
                 expected_checks = {
                     "Check server available": "PASSED",
                     "Check dry run": "PASSED",
@@ -252,7 +210,6 @@ class TestPreflightCheck:
 
                 print(f"Client '{client_name}', expecting checks: {list(expected_checks.keys())}")
 
-                # Verify checks match expectations based on communication scheme
                 _verify_checks(actual_checks, expected_checks, f"Client '{client_name}'")
         except Exception:
             raise
@@ -261,10 +218,8 @@ class TestPreflightCheck:
             site_launcher.cleanup()
 
     def test_run_check_on_admin_console(self, setup_system):
-        site_launcher, is_dummy_overseer, admin_folder_root = setup_system
+        site_launcher, admin_folder_root = setup_system
         try:
-            if not is_dummy_overseer:
-                site_launcher.start_overseer()
             site_launcher.start_servers()
             time.sleep(SERVER_START_TIME)
 

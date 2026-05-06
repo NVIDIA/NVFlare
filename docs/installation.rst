@@ -10,7 +10,7 @@ from the :ref:`fl_introduction` and have reviewed the :ref:`flare_overview` to u
 
 Prerequisites
 =============
-- Python 3.9+ (tested through Python 3.14, including Python 3.13)
+- Python 3.10+ (tested through Python 3.14, including Python 3.13)
 - pip
 - Git
 
@@ -91,7 +91,7 @@ NVFlare provides several optional dependency groups that you can install based o
 
   .. note::
 
-     ``nvflare[HE]`` currently supports Python 3.9-3.13.
+     ``nvflare[HE]`` currently supports Python 3.10-3.13.
      On Python 3.14, ``tenseal`` is not available yet, so the HE extra is not installed.
 
 * **PSI** - Private Set Intersection support:
@@ -102,7 +102,7 @@ NVFlare provides several optional dependency groups that you can install based o
 
   .. note::
 
-     ``nvflare[PSI]`` currently supports Python 3.9-3.13.
+     ``nvflare[PSI]`` currently supports Python 3.10-3.13.
      On Python 3.14, ``openmined.psi`` is not available yet, so the PSI extra is not installed.
 
 * **PT** - PyTorch support:

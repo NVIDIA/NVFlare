@@ -17,6 +17,7 @@
 import argparse
 import os
 import sys
+import threading
 import time
 
 from nvflare.apis.event_type import EventType
@@ -93,9 +94,34 @@ def main(args):
         PrivacyService.initialize(privacy_manager)
 
         federated_client = deployer.create_fed_client(args)
-        federated_client.start_overseer_agent()
+
+        # Connect to the configured FL server in a background thread so that
+        # cell setup can wait for the client engine which is created below.
+        project_name = federated_client._get_project_name()
+        server = federated_client.servers[project_name]
+        target = server.get("target")
+        scheme = server.get("scheme", "grpc")
+        if not target:
+            raise RuntimeError(
+                f"missing 'target' in server config for project '{project_name}'; "
+                "the startup kit may have been provisioned with an older HA-based template"
+            )
+        connect_error = []
+
+        def _connect():
+            try:
+                federated_client.connect_to_server(project_name, target, scheme)
+            except BaseException as e:
+                connect_error.append(e)
+
+        connect_thread = threading.Thread(target=_connect, daemon=True)
+        connect_thread.start()
 
         while not federated_client.sp_established:
+            if connect_error:
+                raise RuntimeError("failed to connect to server") from connect_error[0]
+            if not connect_thread.is_alive():
+                raise RuntimeError("connect_to_server thread exited before establishing connection")
             time.sleep(1.0)
 
         federated_client.use_gpu = False

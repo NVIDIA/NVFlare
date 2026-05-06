@@ -10,10 +10,10 @@ single-node Kubernetes environments, treated as two Kubernetes clusters:
 * one cluster for the FLARE server;
 * one cluster for a single FLARE client named ``site-1``.
 
-It covers provisioning, editing ``project.yml``, generating Helm charts for the
-server and client, creating the Helm workspace PersistentVolumeClaim (PVC) and
-any job data PVCs, staging the provisioned folders into the workspace PVC, and
-deploying the generated charts.
+It covers provisioning, editing ``project.yml``, using ``nvflare deploy prepare``
+to generate Helm charts for the server and client, creating the Helm workspace
+PersistentVolumeClaim (PVC) and any job data PVCs, staging the prepared folders
+into the workspace PVC, and deploying the generated charts.
 
 The Kubernetes environments are created from the Brev web UI. The exact control
 labels in Brev can change, but the workflow is the same: create an environment,
@@ -334,11 +334,10 @@ Edit ``project.yml`` with these deployment-specific goals:
    valid for that endpoint.
 #. Leave ``admin_port`` unset so it defaults to ``fed_learn_port``. The Brev
    server only needs to expose the ``fed_learn_port`` value.
-#. Add ``HelmChartBuilder`` after ``StaticFileBuilder``.
-#. Configure ``HelmChartBuilder`` only with supported args:
-   ``docker_image``, ``parent_port``, ``workspace_pvc``, and
-   ``workspace_mount_path``.
-#. Use the container image that both clusters can pull.
+#. Use ``nvflare deploy prepare`` after provisioning to generate Kubernetes
+   runtime files from the server and client startup kits.
+#. Use a container image that both clusters can pull in the deploy prepare
+   runtime config.
 
 Example:
 
@@ -374,12 +373,6 @@ Example:
        args:
          config_folder: config
          scheme: tcp
-     - path: nvflare.lighter.impl.helm_chart.HelmChartBuilder
-       args:
-         docker_image: registry.example.com/nvflare:dev
-         parent_port: 8102
-         workspace_pvc: nvflws
-         workspace_mount_path: /var/tmp/nvflare/workspace
      - path: nvflare.lighter.impl.cert.CertBuilder
      - path: nvflare.lighter.impl.signature.SignatureBuilder
 
@@ -389,19 +382,10 @@ name that you control, such as ``server1.example.com``, in ``project.yml`` and
 point that DNS name to the Brev server environment's exposed host after you
 enable port access.
 
-``HelmChartBuilder`` must appear after ``StaticFileBuilder``. During
-provisioning, ``StaticFileBuilder.initialize()`` prepares communication config
-state, ``HelmChartBuilder.build()`` updates it with Kubernetes Service names and
-ports, and ``StaticFileBuilder.finalize()`` writes the final
-``comm_config.json`` files.
-
-The current ``HelmChartBuilder`` does not accept an ``etc_pvc`` argument. The
-generated server and client charts mount only the configured ``workspace_pvc``.
-In this guide, that PVC is ``nvflws`` and it is mounted at
+The generated server and client charts mount only the configured
+``workspace_pvc``. In this guide, that PVC is ``nvflws`` and it is mounted at
 ``/var/tmp/nvflare/workspace``. Create separate data PVCs, such as
-``nvfldata``, only for launched Kubernetes job pods that need study data. The
-PVC creation steps below include ``nvfldata`` for that later job-data example;
-it is not a ``HelmChartBuilder`` argument.
+``nvfldata``, only for launched Kubernetes job pods that need study data.
 
 Run Provisioning
 ================
@@ -425,14 +409,33 @@ Set ``PROD_DIR`` to the generated production folder:
    fi
    echo "$PROD_DIR"
 
-The generated folder should contain ``server1``, ``site-1``, the admin startup
-kit, and one ``helm_chart`` directory under the server and client:
+Prepare the server and client startup kits for Kubernetes:
 
 .. code-block:: shell
 
-   ls "$PROD_DIR"
-   ls "$PROD_DIR/server1/helm_chart"
-   ls "$PROD_DIR/site-1/helm_chart"
+   cat >/tmp/nvflare-k8s.yaml <<'EOF'
+   runtime: k8s
+   parent:
+     docker_image: registry.example.com/nvflare:dev
+     parent_port: 8102
+     workspace_pvc: nvflws
+     workspace_mount_path: /var/tmp/nvflare/workspace
+   job_launcher:
+     config_file_path:
+     default_python_path: /usr/local/bin/python3
+     pending_timeout: 300
+   EOF
+
+   nvflare deploy prepare "$PROD_DIR/server1" --output /tmp/nvflare-prepared/server1 --config /tmp/nvflare-k8s.yaml
+   nvflare deploy prepare "$PROD_DIR/site-1" --output /tmp/nvflare-prepared/site-1 --config /tmp/nvflare-k8s.yaml
+
+The prepared folders should contain one ``helm_chart`` directory under the
+server and client:
+
+.. code-block:: shell
+
+   ls /tmp/nvflare-prepared/server1/helm_chart
+   ls /tmp/nvflare-prepared/site-1/helm_chart
 
 Each participant folder has this structure:
 
@@ -450,12 +453,12 @@ Each participant folder has this structure:
 Copy Startup Kits to Brev Environments
 ======================================
 
-Package the provisioned server and client folders on your local workstation:
+Package the prepared server and client folders on your local workstation:
 
 .. code-block:: shell
 
-   tar -czf /tmp/nvflare-server1.tgz -C "$PROD_DIR" server1
-   tar -czf /tmp/nvflare-site-1.tgz -C "$PROD_DIR" site-1
+   tar -czf /tmp/nvflare-server1.tgz -C /tmp/nvflare-prepared server1
+   tar -czf /tmp/nvflare-site-1.tgz -C /tmp/nvflare-prepared site-1
 
 Use the ``Copy Files`` section of the Brev environment ``Access`` page, or run
 the equivalent ``brev copy`` commands:

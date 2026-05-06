@@ -20,7 +20,6 @@ import sys
 import threading
 
 from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, JobConstants, SiteType, SystemConfigs
-from nvflare.apis.overseer_spec import SP
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import download_workspace, upload_results_safely
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
@@ -122,8 +121,7 @@ def main(args):
         thread = threading.Thread(target=monitor_parent_process, args=(client_app_runner, parent_pid, stop_event))
         thread.start()
 
-        sp = _create_sp(args)
-        client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train, sp, conf.handlers)
+        client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train, conf.handlers)
     except Exception as e:
         if logger:
             logger.error(f"FL client execution exception: {secure_format_exception(e)}")
@@ -174,16 +172,6 @@ def parse_arguments():
     parser.add_argument("--local_rank", type=int, default=0)
     args = parser.parse_args()
     return args
-
-
-def _create_sp(args):
-    sp = SP()
-    target = args.sp_target.split(":")
-    sp.name = target[0]
-    sp.fl_port = target[1]
-    sp.service_session_id = args.ssid
-    sp.primary = True
-    return sp
 
 
 def remove_restart_file(workspace: Workspace):

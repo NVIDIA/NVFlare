@@ -16,6 +16,11 @@
 
 from nvflare.lighter.constants import AdminRole
 
+CA_INFO_FIELD = "ca_info"
+DEFAULT_PROVISION_VERSION = "00"
+PROVISION_VERSION_FIELD = "provision_version"
+ROOTCA_FINGERPRINT_FIELD = "rootCA_fingerprint"
+
 VALID_CERT_TYPES = ("client", "server", "org_admin", "lead", "member")
 ADMIN_CERT_TYPES = (AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER)
 KIT_TYPE_TO_ROLE = {
@@ -23,3 +28,7 @@ KIT_TYPE_TO_ROLE = {
     "lead": AdminRole.LEAD,
     "member": AdminRole.MEMBER,
 }
+
+
+def is_valid_provision_version(value: str) -> bool:
+    return isinstance(value, str) and value.isascii() and len(value) == 2 and value.isdigit()
