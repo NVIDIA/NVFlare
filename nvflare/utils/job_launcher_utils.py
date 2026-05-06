@@ -90,7 +90,6 @@ def get_server_job_args(include_exe_module=True, include_set_options=True):
             JobProcessArgs.SERVICE_HOST,
             JobProcessArgs.SERVICE_PORT,
             JobProcessArgs.SSID,
-            JobProcessArgs.HA_MODE,
         ]
     )
 

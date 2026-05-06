@@ -1174,16 +1174,21 @@ class TestBasic(TestController):
             "nvflare.app_opt.pt.tensor_downloader",
             reason="in-flight tensor download cleanup test requires tensor downloader",
         )
+        from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
         from nvflare.fuel.f3.cellnet.defs import ReturnCode
         from nvflare.fuel.f3.cellnet.utils import make_reply
         from nvflare.fuel.f3.streaming.download_service import ProduceRC
 
         class BlockingDownloadCell:
-            def __init__(self, chunk: bytes):
+            def __init__(self, chunk: bytes, root_dir: str):
                 self.chunk = chunk
+                self.root_dir = root_dir
                 self.call_count = 0
                 self.second_call_started = threading.Event()
                 self.release_second_call = threading.Event()
+
+            def get_fobs_context(self):
+                return {_TENSOR_DISK_OFFLOAD_ROOT_DIR: self.root_dir}
 
             def send_request(self, **kwargs):
                 self.call_count += 1
@@ -1205,12 +1210,12 @@ class TestBasic(TestController):
 
         temp_dir = tmp_path / "nvflare_tensors_inflight"
 
-        def fake_mkdtemp(prefix):
+        def fake_mkdtemp(prefix, dir=None):
             temp_dir.mkdir()
             return str(temp_dir)
 
         monkeypatch.setattr(tensor_downloader.tempfile, "mkdtemp", fake_mkdtemp)
-        cell = BlockingDownloadCell(safetensors_torch.save({"w": torch.tensor([1.0])}))
+        cell = BlockingDownloadCell(safetensors_torch.save({"w": torch.tensor([1.0])}), str(tmp_path))
         result_holder = {}
 
         def run_download():

@@ -31,6 +31,7 @@ class PTModel:
         locator: Optional[ModelLocator] = None,
         allow_numpy_conversion: bool = True,
         initial_ckpt: Optional[str] = None,
+        best_model_filename: Optional[str] = None,
     ):
         """PyTorch model wrapper.
 
@@ -51,9 +52,11 @@ class PTModel:
                 tensors and NumPy arrays. Defaults to True.
             initial_ckpt (str, optional): Absolute path to checkpoint file.
                 May not exist locally (server-side path). Used to load pre-trained weights.
+            best_model_filename (str, optional): Filename for saving the best global model.
         """
         self.model = model
         self.initial_ckpt = initial_ckpt
+        self.best_model_filename = best_model_filename
 
         if persistor:
             validate_object_for_job("persistor", persistor, ModelPersistor)
@@ -122,6 +125,8 @@ class PTModel:
         # Add checkpoint path if provided
         if self.initial_ckpt:
             persistor_kwargs["source_ckpt_file_full_name"] = self.initial_ckpt
+        if self.best_model_filename:
+            persistor_kwargs["best_global_model_file_name"] = self.best_model_filename
 
         return PTFileModelPersistor(**persistor_kwargs)
 
@@ -139,5 +144,7 @@ class PTModel:
         # Add checkpoint path if provided
         if self.initial_ckpt:
             persistor_kwargs["source_ckpt_file_full_name"] = self.initial_ckpt
+        if self.best_model_filename:
+            persistor_kwargs["best_global_model_file_name"] = self.best_model_filename
 
         return PTFileModelPersistor(**persistor_kwargs)

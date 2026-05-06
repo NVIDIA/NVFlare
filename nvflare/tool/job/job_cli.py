@@ -2107,7 +2107,7 @@ def _job_log_result_needs_fallback(result: dict, site: str) -> bool:
     if isinstance(unavailable, dict) and unavailable:
         if site == "all":
             return any(site_name not in logs for site_name in unavailable)
-        return False
+        return site in unavailable
     return not logs
 
 

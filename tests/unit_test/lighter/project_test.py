@@ -32,10 +32,12 @@ class TestProject:
         with pytest.raises(ValueError, match=r".* server already exists"):
             _ = Project("name", "description", [p1, p2])
 
-    def test_single_overseer(self):
+    def test_overseer_participant_ignored(self, caplog):
         p1 = Participant(name="name1", org="org", type="overseer")
-        with pytest.raises(ValueError, match=r".* overseer is removed"):
-            _ = Project("name", "description", [p1])
+        with caplog.at_level("WARNING", logger="nvflare.lighter.entity"):
+            prj = Project("name", "description", [p1])
+        assert any("obsolete" in r.message.lower() for r in caplog.records)
+        assert prj.get_all_participants() == []
 
     def test_get_clients(self):
         p = create_participants(type="client", number=3, org="org", name="name")

@@ -20,7 +20,7 @@ import time
 
 import yaml
 
-from .site_launcher import ServerProperties, SiteLauncher, SiteProperties, kill_process
+from .site_launcher import ServerProperties, SiteLauncher, SiteProperties
 from .utils import (
     cleanup_job_and_snapshot,
     cleanup_path,
@@ -63,8 +63,6 @@ class ProvisionSiteLauncher(SiteLauncher):
                 self.server_properties[name] = ServerProperties(name, script_dir, None, admin_port)
             elif p["type"] == "client":
                 self.client_properties[name] = SiteProperties(name, script_dir, None)
-            elif p["type"] == "overseer":
-                self.overseer_properties = SiteProperties(name, script_dir, None)
             elif p["type"] == "admin":
                 self.admin_user_names.append(name)
 
@@ -88,23 +86,6 @@ class ProvisionSiteLauncher(SiteLauncher):
             )
             cleanup_job_and_snapshot(self._get_workspace_dir(), server_name)
         return os.path.join(WORKSPACE, self.project_yaml["name"], PROD_FOLDER_NAME)
-
-    def start_overseer(self):
-        _start_site(self.overseer_properties)
-
-    def stop_overseer(self):
-        try:
-            # Kill the process
-            if self.overseer_properties:
-                kill_process(self.overseer_properties)
-                process = run_command_in_subprocess("pkill -9 -f gunicorn")
-                process.wait()
-            else:
-                print("No overseer process to stop.")
-        except Exception as e:
-            print(f"Exception in stopping overseer: {e.__str__()}")
-        finally:
-            self.overseer_properties = None
 
     def start_servers(self):
         for k in self.server_properties:

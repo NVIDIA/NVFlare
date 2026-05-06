@@ -83,6 +83,26 @@ class TestPTModelInit:
         except ImportError:
             pytest.skip("PyTorch not installed")
 
+    def test_init_with_best_model_filename(self):
+        """Init with best_model_filename should pass it to the generated persistor."""
+        try:
+            import torch.nn as nn
+
+            from nvflare.app_opt.pt.job_config.model import PTModel
+
+            class SimpleNet(nn.Module):
+                def __init__(self):
+                    super().__init__()
+                    self.fc = nn.Linear(10, 2)
+
+            pt_model = PTModel(model=SimpleNet(), best_model_filename="custom_best.pt")
+            persistor = pt_model._create_persistor_for_module()
+
+            assert pt_model.best_model_filename == "custom_best.pt"
+            assert persistor.best_global_model_file_name == "custom_best.pt"
+        except ImportError:
+            pytest.skip("PyTorch not installed")
+
     def test_init_dict_config_with_ckpt(self):
         """Init with dict config and initial_ckpt should work."""
         try:
@@ -93,6 +113,19 @@ class TestPTModelInit:
 
             assert pt_model.model_class_path == "my_module.Net"
             assert pt_model.initial_ckpt == "/data/pretrained.pt"
+        except ImportError:
+            pytest.skip("PyTorch not installed")
+
+    def test_dict_config_with_best_model_filename(self):
+        """Dict config should pass best_model_filename to the generated persistor."""
+        try:
+            from nvflare.app_opt.pt.job_config.model import PTModel
+
+            model_dict = {"path": "my_module.Net", "args": {}}
+            pt_model = PTModel(model=model_dict, best_model_filename="custom_best.pt")
+            persistor = pt_model._create_persistor_for_dict_config()
+
+            assert persistor.best_global_model_file_name == "custom_best.pt"
         except ImportError:
             pytest.skip("PyTorch not installed")
 

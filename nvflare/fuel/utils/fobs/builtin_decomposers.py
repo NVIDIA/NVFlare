@@ -80,10 +80,6 @@ BUILTIN_TYPES: set[str] = {
     "nvflare.private.admin_defs.Message",
     "nvflare.private.fed.server.run_info.RunInfo",
     "nvflare.private.fed.server.server_state.HotState",
-    "nvflare.private.fed.server.server_state.ColdState",
-    "nvflare.private.fed.server.server_state.Hot2ColdState",
-    "nvflare.private.fed.server.server_state.Cold2HotState",
-    "nvflare.private.fed.server.server_state.ShutdownState",
     # --- Data classes registered in common_decomposers.py ---
     "nvflare.app_common.widgets.event_recorder._CtxPropReq",
     "nvflare.app_common.widgets.event_recorder._EventReq",

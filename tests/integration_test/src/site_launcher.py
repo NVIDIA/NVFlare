@@ -16,7 +16,6 @@ import logging
 import os
 import signal
 from abc import ABC, abstractmethod
-from typing import Optional
 
 from .utils import run_command_in_subprocess
 
@@ -49,7 +48,6 @@ def kill_process(site_prop: SiteProperties):
 class SiteLauncher(ABC):
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.overseer_properties: Optional[SiteProperties] = None
         self.server_properties: dict[str, ServerProperties] = {}
         self.client_properties: dict[str, SiteProperties] = {}
 
@@ -58,19 +56,11 @@ class SiteLauncher(ABC):
         pass
 
     @abstractmethod
-    def start_overseer(self):
-        pass
-
-    @abstractmethod
     def start_server(self, server_id):
         pass
 
     @abstractmethod
     def start_client(self, client_id):
-        pass
-
-    @abstractmethod
-    def stop_overseer(self):
         pass
 
     @abstractmethod
@@ -112,7 +102,6 @@ class SiteLauncher(ABC):
     def stop_all_sites(self):
         self.stop_all_clients()
         self.stop_all_servers()
-        self.stop_overseer()
 
     def get_active_server_id(self, port) -> str:
         active_server_id = None
@@ -122,6 +111,5 @@ class SiteLauncher(ABC):
         return active_server_id
 
     def cleanup(self):
-        self.overseer_properties = None
         self.server_properties.clear()
         self.client_properties.clear()
