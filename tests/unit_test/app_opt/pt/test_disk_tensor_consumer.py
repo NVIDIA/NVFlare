@@ -22,6 +22,7 @@ from safetensors.torch import save as save_tensors
 
 import nvflare.app_opt.pt.lazy_tensor_dict as lazy_tensor_dict
 import nvflare.app_opt.pt.tensor_downloader as tensor_downloader
+from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
 from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict
 from nvflare.app_opt.pt.tensor_downloader import DiskTensorConsumer, _extract_safetensors_keys
 
@@ -172,10 +173,18 @@ class TestDiskTensorConsumer:
         assert consumer.error == "timeout"
 
 
+class _FakeCell:
+    def __init__(self, root_dir):
+        self.root_dir = root_dir
+
+    def get_fobs_context(self):
+        return {_TENSOR_DISK_OFFLOAD_ROOT_DIR: self.root_dir}
+
+
 def test_download_tensors_to_disk_cleans_temp_dir_on_exception(monkeypatch, tmp_path):
     temp_dir = tmp_path / "nvflare_tensors_exception"
 
-    def fake_mkdtemp(prefix):
+    def fake_mkdtemp(prefix, dir=None):
         os.makedirs(temp_dir, exist_ok=False)
         return str(temp_dir)
 
@@ -190,7 +199,7 @@ def test_download_tensors_to_disk_cleans_temp_dir_on_exception(monkeypatch, tmp_
             from_fqcn="server",
             ref_id="ref",
             per_request_timeout=1.0,
-            cell=None,
+            cell=_FakeCell(str(tmp_path)),
         )
 
     assert not temp_dir.exists()
@@ -199,7 +208,7 @@ def test_download_tensors_to_disk_cleans_temp_dir_on_exception(monkeypatch, tmp_
 def test_download_tensors_to_disk_logs_cleanup_warning(monkeypatch, tmp_path, caplog):
     temp_dir = tmp_path / "nvflare_tensors_warn"
 
-    def fake_mkdtemp(prefix):
+    def fake_mkdtemp(prefix, dir=None):
         os.makedirs(temp_dir, exist_ok=False)
         return str(temp_dir)
 
@@ -218,7 +227,7 @@ def test_download_tensors_to_disk_logs_cleanup_warning(monkeypatch, tmp_path, ca
             from_fqcn="server",
             ref_id="ref",
             per_request_timeout=1.0,
-            cell=None,
+            cell=_FakeCell(str(tmp_path)),
         )
 
     assert "failed to cleanup tensor offload temp dir" in caplog.text
@@ -229,7 +238,7 @@ def test_download_tensors_to_disk_second_chance_cleanup_on_consumer_error(monkey
     temp_dir = tmp_path / "nvflare_tensors_consumer_error"
     cleanup_calls = []
 
-    def fake_mkdtemp(prefix):
+    def fake_mkdtemp(prefix, dir=None):
         os.makedirs(temp_dir, exist_ok=False)
         return str(temp_dir)
 
@@ -248,10 +257,40 @@ def test_download_tensors_to_disk_second_chance_cleanup_on_consumer_error(monkey
         from_fqcn="server",
         ref_id="ref",
         per_request_timeout=1.0,
-        cell=None,
+        cell=_FakeCell(str(tmp_path)),
     )
 
     assert err == "download failed"
     assert result is None
     assert cleanup_calls == [str(temp_dir)]
     assert not temp_dir.exists()
+
+
+def test_download_tensors_to_disk_uses_scoped_root_dir(monkeypatch, tmp_path):
+    root_dir = tmp_path / "nvflare_tensor_offload_root"
+    root_dir.mkdir()
+
+    def fake_download_object(**kwargs):
+        kwargs["consumer"].result = kwargs["consumer"].consume_items(
+            [save_tensors({"w": torch.tensor([1.0])})],
+            None,
+        )
+
+    monkeypatch.setattr(tensor_downloader, "download_object", fake_download_object)
+
+    err, lazy_tensors = tensor_downloader.download_tensors_to_disk(
+        from_fqcn="server",
+        ref_id="ref",
+        per_request_timeout=1.0,
+        cell=_FakeCell(str(root_dir)),
+    )
+
+    assert err is None
+    assert lazy_tensors is not None
+    temp_dirs = list(root_dir.iterdir())
+    assert len(temp_dirs) == 1
+    assert temp_dirs[0].name.startswith("nvflare_tensors_")
+
+    shutil.rmtree(root_dir)
+
+    assert not root_dir.exists()
