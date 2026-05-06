@@ -462,6 +462,52 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert (output / "helm_chart" / "templates" / "client-deployment.yaml").exists()
 
 
+@pytest.mark.parametrize("namespace", ["nvflare", "1abc", "2026-prod"])
+def test_prepare_k8s_accepts_valid_namespace(tmp_path, capsys, namespace):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / f"prepared-{namespace}"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "namespace": namespace,
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher = _component(resources, "k8s_launcher")
+    assert launcher["args"]["namespace"] == namespace
+
+
+@pytest.mark.parametrize(
+    "namespace",
+    ["MyNamespace", "namespace_", "-bad", "bad-", "bad.name", "nvflare\n", "", "a" * 64, None, 7],
+)
+def test_prepare_k8s_rejects_invalid_namespace(tmp_path, capsys, namespace):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "namespace": namespace,
+                "parent": {"docker_image": "repo/nvflare:dev"},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert "k8s config.namespace" in err
+    assert not output.exists()
+
+
 def test_prepare_k8s_client_sanitizes_service_name_without_changing_site_identity(tmp_path, capsys):
     kit = _make_client_kit(tmp_path, name="Site_1")
     output = tmp_path / "site-1-k8s"
