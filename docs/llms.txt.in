@@ -1,0 +1,49 @@
+# NVIDIA FLARE
+
+> NVIDIA FLARE is an open-source SDK for federated learning, with tools for simulation, job authoring, deployment, security, and production federated ML workflows.
+
+## Get Started
+
+- [Installation](installation.md): Install NVIDIA FLARE and set up development or runtime environments.
+- [Quick Start](quickstart.md): Run a first federated learning example and learn the basic workflow.
+- [Migration Guide](migration_guide.md): Upgrade between NVIDIA FLARE versions and understand behavior changes.
+
+## User Workflows
+
+- [Client API](user_guide/data_scientist_guide/client_api_usage.md): Use the high-level API for federated training scripts.
+- [Job Recipe API](user_guide/data_scientist_guide/job_recipe.md): Create jobs with pre-built recipes for common federated learning workflows.
+- [Available Recipes](user_guide/data_scientist_guide/available_recipes.md): Browse bundled job recipes and supported patterns.
+- [FLARE API](user_guide/data_scientist_guide/flare_api.md): Use runtime APIs to submit, monitor, and manage jobs.
+- [CLI Tools](user_guide/nvflare_cli/nvflare_cli.md): Use NVFlare command-line tools for local and deployed systems.
+
+## Examples And Tutorials
+
+- [Example Applications And Algorithms](example_applications_algorithms.md): Find example applications, algorithms, and reference implementations.
+- [Tutorials](tutorials.md): Learn from tutorials and notebook-based walkthroughs.
+- [Federated LLM Fine-Tuning](programming_guide/llm_fine_tuning.md): Fine-tune large language models with NVIDIA FLARE.
+- [Federated XGBoost](user_guide/data_scientist_guide/federated_xgboost/federated_xgboost.md): Train XGBoost models in federated settings.
+
+## Deployment And Operations
+
+- [Deployment Overview](user_guide/admin_guide/deployment/overview.md): Plan and run production NVIDIA FLARE deployments.
+- [Provisioning System](programming_guide/provisioning_system.md): Provision participants, startup kits, and deployment assets.
+- [Distributed Provisioning](user_guide/nvflare_cli/distributed_provisioning.md): Use distributed provisioning workflows.
+- [Preflight Check](user_guide/nvflare_cli/preflight_check.md): Validate system readiness before launch.
+- [System Configuration](user_guide/admin_guide/configurations/system_configuration.md): Configure runtime system behavior.
+- [Monitoring](user_guide/admin_guide/monitoring.md): Monitor running federated learning systems.
+
+## Security And Compliance
+
+- [Security Overview](system_architecture/security_overview.md): Understand authentication, authorization, privacy, and auditing.
+- [Identity And Access Control](user_guide/admin_guide/security/identity_security.md): Configure identity and access controls.
+- [Communication Security](user_guide/admin_guide/security/communication_security.md): Secure network communication.
+- [Data Privacy Protection](user_guide/admin_guide/security/data_privacy_protection.md): Protect data with filters and privacy mechanisms.
+- [Differential Privacy](user_guide/admin_guide/security/differential_privacy.md): Apply differential privacy in federated learning.
+- [Confidential Computing](user_guide/confidential_computing/index.md): Deploy with hardware-backed trusted execution environments.
+
+## Developer Reference
+
+- [Developer Guide](developer_guide.md): Understand architecture, controllers, filters, and extension points.
+- [API Reference](apidocs/modules.md): Browse generated Python API documentation.
+- [Glossary](glossary.md): Look up NVIDIA FLARE terms and concepts.
+- [Contributing](contributing.md): Build docs, run tests, and contribute changes.
