@@ -15,11 +15,13 @@
 from typing import Any, Tuple
 
 _ENABLE_TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"
+_TENSOR_DISK_OFFLOAD_ROOT_DIR = "tensor_disk_offload_root_dir"
 
 
 def apply_enable_tensor_disk_offload(
     engine,
     enabled: bool,
+    root_dir: str = None,
 ) -> Tuple[Any, bool]:
     """Apply enable_tensor_disk_offload to cell FOBS context.
 
@@ -38,12 +40,16 @@ def apply_enable_tensor_disk_offload(
         return None, False
 
     previous = cell.get_fobs_context().get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
-    if previous != enabled:
-        cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: enabled})
+    if enabled:
+        if not root_dir:
+            raise ValueError("root_dir must be provided when tensor disk offload is enabled")
+        cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: True, _TENSOR_DISK_OFFLOAD_ROOT_DIR: root_dir})
+    elif previous != enabled:
+        cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: False})
     return previous, True
 
 
-def restore_enable_tensor_disk_offload(engine, previous_value: Any) -> None:
+def restore_enable_tensor_disk_offload(engine, previous_value: Any, root_dir: str = None) -> None:
     """Restore prior enable_tensor_disk_offload value on a cell."""
     # previous_value is None only when apply was not executed because no
     # engine/cell was available; False is a valid prior value and must restore.
@@ -56,6 +62,10 @@ def restore_enable_tensor_disk_offload(engine, previous_value: Any) -> None:
     else:
         cell = engine.get_cell()
     if not cell:
+        return
+
+    if root_dir:
+        cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: previous_value, _TENSOR_DISK_OFFLOAD_ROOT_DIR: None})
         return
 
     current = cell.get_fobs_context().get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
