@@ -163,7 +163,7 @@ def generate_apidocs(*args):
 
 def copy_curated_llms_txt(app, exception):
     """Publish the curated llms.txt after generated Markdown pages are copied."""
-    if exception or not app.builder or app.builder.name not in ("html", "dirhtml"):
+    if exception or not app.builder or app.builder.name != "html":
         return
 
     source_path = Path(app.confdir) / "llms.txt.in"
