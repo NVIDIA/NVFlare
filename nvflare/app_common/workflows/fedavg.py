@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import os
+import shutil
+import tempfile
 import time
 from typing import Any, Dict, Optional, Set, Union
 
@@ -138,16 +140,25 @@ class FedAvg(BaseFedAvg):
         self._params_type = None  # Only store params_type, not full result
 
     def run(self) -> None:
-        previous_disk_offload, disk_offload_applied = apply_enable_tensor_disk_offload(
-            engine=getattr(self, "engine", None),
-            enabled=self.enable_tensor_disk_offload,
-        )
-        if self.enable_tensor_disk_offload and not disk_offload_applied:
-            self.warning(
-                "enable_tensor_disk_offload=True but no active cell is available; "
-                "falling back to in-memory tensor download"
-            )
+        disk_offload_root_dir = None
+        previous_disk_offload = None
         try:
+            disk_offload_root_dir = (
+                tempfile.mkdtemp(prefix=f"nvflare_tensor_offload_{self.fl_ctx.get_job_id('job')}_")
+                if self.enable_tensor_disk_offload
+                else None
+            )
+            previous_disk_offload, disk_offload_applied = apply_enable_tensor_disk_offload(
+                engine=getattr(self, "engine", None),
+                enabled=self.enable_tensor_disk_offload,
+                root_dir=disk_offload_root_dir,
+            )
+            if self.enable_tensor_disk_offload and not disk_offload_applied:
+                self.warning(
+                    "enable_tensor_disk_offload=True but no active cell is available; "
+                    "falling back to in-memory tensor download"
+                )
+
             self.info(center_message("Start FedAvg."))
 
             # Set NUM_ROUNDS in FL context for persistor and other components.
@@ -245,7 +256,10 @@ class FedAvg(BaseFedAvg):
             restore_enable_tensor_disk_offload(
                 engine=getattr(self, "engine", None),
                 previous_value=previous_disk_offload,
+                root_dir=disk_offload_root_dir,
             )
+            if disk_offload_root_dir:
+                shutil.rmtree(disk_offload_root_dir, ignore_errors=True)
 
     def _aggregate_one_result(self, result: FLModel) -> None:
         """Callback: aggregate ONE client result immediately (InTime aggregation)."""
