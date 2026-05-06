@@ -164,6 +164,14 @@ After each batch, rank the ledger with:
 "${PYTHON}" scripts/summarize_results.py results.tsv --status candidate --top "${PARALLEL_CANDIDATES:-4}"
 ```
 
+After finalizing reviewed statuses, run the plateau watchdog before selecting another local sweep:
+
+```bash
+"${PYTHON}" scripts/plateau_watchdog.py results.tsv
+```
+
+If it prints `recommendation=literature`, stop local hyperparameter jittering, run the literature loop, record a `literature` row, and launch the selected source-backed candidates next.
+
 ### What you CAN do
 
 Prefer this mutation order:
@@ -315,7 +323,8 @@ Same-budget campaign loop for the local H100:
    - run a narrower follow-up sweep around the best candidate if results are close;
    - discard the whole axis if all candidates regress or add complexity without gain.
 8. Update the `status` column for reviewed runs in `results.tsv`. Use `scripts/finalize_batch_status.py --last "${PARALLEL_CANDIDATES:-4}"` or edit the TSV carefully: promoted rows must be `keep`, reviewed non-survivors must be `discard`, crashes remain `crash`, and only unresolved active rows may remain `candidate`.
-9. Commit code mutations that survive the run analysis on the active `autoresearch/` branch before launching the next batch. Also commit `results.tsv` at checkpoint boundaries, even when the run only tested runtime hyperparameters.
+9. Run `"${PYTHON}" scripts/plateau_watchdog.py results.tsv`. If it prints `recommendation=literature`, run the literature loop before launching more candidates.
+10. Commit code mutations that survive the run analysis on the active `autoresearch/` branch before launching the next batch. Also commit `results.tsv` at checkpoint boundaries, even when the run only tested runtime hyperparameters.
 
 ### Never stop
 
@@ -328,6 +337,7 @@ On the local H100, keep cycling through same-budget candidate batches:
 - rank the results against the ledger,
 - keep, narrow, or discard according to score and complexity,
 - rewrite reviewed `results.tsv` statuses so completed candidates become `keep` or `discard`,
+- run `scripts/plateau_watchdog.py` and obey `recommendation=literature` before another local sweep,
 - choose the next sweep axis,
 - repeat.
 
@@ -345,6 +355,7 @@ Camyla's public repo (`https://github.com/yifangao112/Camyla`) exposes this as a
 For this harness, adapt the process only at the instruction/artifact level; do not import Camyla code or add new dependencies.
 
 Trigger literature mode when any of these happen:
+- `scripts/plateau_watchdog.py results.tsv` prints `recommendation=literature`, which defaults to 32 scored non-crash candidates without a material improvement or literature reset;
 - two consecutive same-budget candidate batches fail to improve;
 - several crashes share the same root cause;
 - the next sweep axis is unclear;

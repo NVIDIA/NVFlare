@@ -18,10 +18,11 @@
 15. Decide whether to keep, narrow, or revert after the batch finishes. Rank primarily by score; use runtime as a coarse secondary signal and prefer the faster/simpler candidate when scores are within noise.
 16. Finalize reviewed statuses before starting the next batch: promote the selected survivor to `keep`, mark reviewed non-survivors as `discard`, leave crashes as `crash`, and leave only unresolved active rows as `candidate`. Prefer `"${PYTHON}" scripts/finalize_batch_status.py results.tsv --last "${PARALLEL_CANDIDATES:-4}" --keep-best --discard-others`.
 17. If a candidate implements a paper-derived method, include a compact source ref in the `results.tsv` description field and fuller citation details in `templates/mutation_report.md`.
-18. Commit `results.tsv` on the active `autoresearch/` branch after baseline and each completed run/checkpoint. Commit surviving code changes as soon as they are kept; do not carry kept changes uncommitted into the next batch.
-19. Continue with the next same-budget candidate batch until manually interrupted; do not ask whether to keep going after setup and baseline.
-20. If two batches fail to improve or the next axis is unclear, run a literature-grounded proposal loop: start timing with `"${PYTHON}" scripts/log_literature_review.py --start --description "plateau after <rows>: <symptom>"`, search papers, extract challenges, score contract-safe ideas, append the `literature` event with `--finish`, and launch the top compatible candidate batch next.
-21. Summarize the result when interrupted or when reporting a checkpoint.
+18. Run `"${PYTHON}" scripts/plateau_watchdog.py results.tsv` after every finalized batch. If it prints `recommendation=literature`, stop local jitter sweeps and run a literature-grounded proposal loop before launching more candidates.
+19. Commit `results.tsv` on the active `autoresearch/` branch after baseline and each completed run/checkpoint. Commit surviving code changes as soon as they are kept; do not carry kept changes uncommitted into the next batch.
+20. Continue with the next same-budget candidate batch until manually interrupted; do not ask whether to keep going after setup and baseline.
+21. If two batches fail to improve, the watchdog fires, or the next axis is unclear, run the literature loop: start timing with `"${PYTHON}" scripts/log_literature_review.py --start --description "plateau after <rows>: <symptom>"`, search papers, extract challenges, score contract-safe ideas, append the `literature` event with `--finish`, and launch the top compatible candidate batch next.
+22. Summarize the result when interrupted or when reporting a checkpoint.
 
 ## Single-H100 mode
 Run same-budget candidate batches on the one local H100 via `PYTHON=.venv/bin/python bash scripts/run_iteration.sh`, with unique `RUN_LOG` and `--name` values for each concurrent candidate. Default to `PARALLEL_CANDIDATES=4`, and reduce the width if CUDA memory or host contention appears.
