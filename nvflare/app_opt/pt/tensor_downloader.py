@@ -23,6 +23,7 @@ import torch
 from safetensors.torch import load as load_tensors
 from safetensors.torch import save as save_tensors
 
+from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.streaming.cacheable import CacheableObject, ItemConsumer
 from nvflare.fuel.f3.streaming.download_service import download_object
@@ -242,7 +243,10 @@ def download_tensors_to_disk(
 
     Returns: tuple of (error message if any, LazyTensorDict for lazy access).
     """
-    temp_dir = tempfile.mkdtemp(prefix="nvflare_tensors_")
+    root_dir = cell.get_fobs_context().get(_TENSOR_DISK_OFFLOAD_ROOT_DIR)
+    if not root_dir:
+        raise RuntimeError(f"{_TENSOR_DISK_OFFLOAD_ROOT_DIR} is not set in FOBS context")
+    temp_dir = tempfile.mkdtemp(prefix="nvflare_tensors_", dir=root_dir)
 
     consumer = DiskTensorConsumer(temp_dir)
     try:
