@@ -14,6 +14,7 @@
 
 from unittest.mock import MagicMock, patch
 
+import nvflare.app_common.workflows.fedavg as fedavg_module
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.fl_constant import FLMetaKey
@@ -26,6 +27,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.utils.tensor_disk_offload_context import (
+    _TENSOR_DISK_OFFLOAD_ROOT_DIR,
     apply_enable_tensor_disk_offload,
     restore_enable_tensor_disk_offload,
 )
@@ -762,13 +764,16 @@ class TestFedAvgLazyCompatibility:
 class TestFedAvgDownloadToDiskContext:
     def test_set_enable_tensor_disk_offload(self):
         cell = _MockCell(enable_tensor_disk_offload=False)
-        previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True)
+        root_dir = "/tmp/nvflare_tensor_offload_test"
+        previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True, root_dir=root_dir)
         assert previous is False
         assert applied is True
         assert cell.ctx["enable_tensor_disk_offload"] is True
+        assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == root_dir
 
-        restore_enable_tensor_disk_offload(_MockEngine(cell), previous)
+        restore_enable_tensor_disk_offload(_MockEngine(cell), previous, root_dir=root_dir)
         assert cell.ctx["enable_tensor_disk_offload"] is False
+        assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] is None
 
     def test_set_enable_tensor_disk_offload_without_cell(self):
         previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell=None), enabled=True)
@@ -790,6 +795,38 @@ class TestFedAvgDownloadToDiskContext:
 
         controller.run()
         assert cell.ctx["enable_tensor_disk_offload"] is False
+
+    def test_run_cleans_tensor_disk_offload_root_dir(self, tmp_path, monkeypatch):
+        controller = FedAvg(num_clients=1, num_rounds=1, model={"w": 1.0}, enable_tensor_disk_offload=True)
+        cell = _MockCell(enable_tensor_disk_offload=False)
+        controller.engine = _MockEngine(cell)
+        controller.fl_ctx = FLContext()
+        controller.abort_signal = Signal()
+        controller.sample_clients = lambda _: ["site-1"]
+        root_dir = tmp_path / "nvflare_tensor_offload_root"
+
+        def fake_mkdtemp(prefix):
+            root_dir.mkdir()
+            return str(root_dir)
+
+        def fake_send_model(**kwargs):
+            assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == str(root_dir)
+            retained_dir = root_dir / "nvflare_tensors_retained"
+            retained_dir.mkdir()
+            (retained_dir / "chunk_0.safetensors").write_bytes(b"retained")
+
+        monkeypatch.setattr(fedavg_module.tempfile, "mkdtemp", fake_mkdtemp)
+        controller.send_model = fake_send_model
+        controller.get_num_standing_tasks = lambda: 0
+        controller._get_aggregated_result = lambda: FLModel(params={"w": 1.0})
+        controller.update_model = lambda model, aggr_result: model
+        controller.save_model = lambda model: None
+
+        controller.run()
+
+        assert cell.ctx["enable_tensor_disk_offload"] is False
+        assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] is None
+        assert not root_dir.exists()
 
 
 class TestFedAvgWorkflowEvents:
@@ -868,6 +905,69 @@ class TestFedAvgWorkflowEvents:
         assert detail["private"] is True
         assert detail["sticky"] is False
         mock_warning.assert_not_called()
+
+    def test_process_result_clears_training_result_after_accept_events(self):
+        controller = FedAvg(num_clients=1)
+        fl_ctx = FLContext()
+
+        task_data = Shareable()
+        result = FLModelUtils.to_shareable(FLModel(params={"w": 1.0}))
+        task = Task(
+            name=AppConstants.TASK_TRAIN,
+            data=task_data,
+            props={AppConstants.META_DATA: {}},
+        )
+        client_task = ClientTask(client=Client("site-1", "token"), task=task)
+        client_task.result = result
+
+        training_results_seen = []
+
+        def record_training_result(event_type):
+            if event_type == AppEventType.AFTER_CONTRIBUTION_ACCEPT:
+                training_results_seen.append(fl_ctx.get_prop(AppConstants.TRAINING_RESULT))
+
+        with patch.object(controller, "event", side_effect=record_training_result):
+            controller._process_result(client_task, fl_ctx)
+
+        assert training_results_seen == [result]
+        assert fl_ctx.get_prop(AppConstants.TRAINING_RESULT) is None
+        detail = fl_ctx.get_prop_detail(AppConstants.TRAINING_RESULT)
+        assert detail["private"] is True
+        assert detail["sticky"] is False
+
+    def test_process_result_releases_raw_in_memory_training_result(self):
+        import gc
+        import weakref
+
+        import torch
+
+        controller = FedAvg(num_clients=1)
+        fl_ctx = FLContext()
+
+        tensor = torch.ones((1,), dtype=torch.float32)
+        tensor_ref = weakref.ref(tensor)
+        result = FLModelUtils.to_shareable(FLModel(params={"w": tensor}))
+
+        task_data = Shareable()
+        task = Task(
+            name=AppConstants.TASK_TRAIN,
+            data=task_data,
+            props={AppConstants.META_DATA: {}, AppConstants.TASK_PROP_CALLBACK: lambda _: None},
+        )
+        client_task = ClientTask(client=Client("site-1", "token"), task=task)
+        client_task.result = result
+
+        tensor = None
+        result = None
+
+        with patch.object(controller, "event"):
+            controller._process_result(client_task, fl_ctx)
+
+        assert client_task.result is None
+        gc.collect()
+
+        assert fl_ctx.get_prop(AppConstants.TRAINING_RESULT) is None
+        assert tensor_ref() is None
 
     def test_broadcast_model_does_not_fire_round_started(self):
         controller = FedAvg(num_clients=1)
