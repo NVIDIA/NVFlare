@@ -105,6 +105,9 @@ Use ``initial_ckpt`` to specify a path to pre-trained model weights:
      the recipe. It only needs to exist on the **server** when the model is actually loaded during job execution.
    * **PyTorch requires model architecture**: For PyTorch, you must provide ``model`` (class instance or
      dict config) along with ``initial_ckpt``, because PyTorch checkpoints contain only weights, not architecture.
+   * **PyTorch update schema**: The server-side PyTorch model or checkpoint defines the accepted
+     ``state_dict()`` key schema for client updates. A client may return only the subset of keys it trained,
+     but every returned key must already exist in the server schema. New client-only keys are rejected.
    * **TensorFlow/Keras can use checkpoint alone**: Keras ``.h5`` or SavedModel formats contain both architecture
      and weights, so ``initial_ckpt`` can be used without ``model``. If ``model`` is provided, use a subclassed
      Keras class instance (or dict config).
