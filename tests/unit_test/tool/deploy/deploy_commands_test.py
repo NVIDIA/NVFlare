@@ -24,8 +24,8 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from nvflare.tool.deploy.deploy_commands import (
-    GPU_RESOURCE_MANAGER,
     GPU_RESOURCE_CONSUMER,
+    GPU_RESOURCE_MANAGER,
     HELM_RELEASE_NAME_MAX_LENGTH,
     PROCESS_CLIENT_LAUNCHER,
     _k8s_release_name,
