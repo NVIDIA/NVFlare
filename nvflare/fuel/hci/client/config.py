@@ -27,7 +27,7 @@ from .api_spec import AdminConfigKey
 from .event import EventHandler
 
 FL_PACKAGES = ["nvflare"]
-FL_MODULES = ["ha"]
+FL_MODULES = []
 
 
 class FLAdminClientStarterConfigurator(JsonConfigurator):
@@ -62,7 +62,6 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
 
         self.workspace = workspace
         self.admin_config_file_path = config_files
-        self.overseer_agent = None
         self.handlers = []
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):

@@ -823,7 +823,7 @@ nvflare cert request --participant hospital-1.yaml
 nvflare cert approve hospital-1/hospital-1.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 # Step 3 — Site Admin packages and starts
-nvflare package hospital-1.signed.zip --request-dir ./hospital-1 --confirm-rootca
+nvflare package hospital-1.signed.zip --request-dir ./hospital-1 --fingerprint <expected_fingerprint>
 cd workspace/example_project/prod_00/hospital-1 && ./startup/start.sh
 
 # Step 4 — Org Admin creates their admin request and startup kit (same flow)

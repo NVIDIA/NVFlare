@@ -1254,7 +1254,7 @@ and any `NVFLARE_POC_WORKSPACE` environment override.
 | `-c`, `--clients` | str... | No | `[]` | Space-separated client names |
 | `-he`, `--he` | flag | No | — | Enable homomorphic encryption |
 | `-i`, `--project_input` | str | No | `""` | Path to `project.yaml` |
-| `-d`, `--docker_image` | str | No | `None` | Docker image for `docker.sh` generation |
+| `-d`, `--docker_image` | str | No | `None` | SP/CP Docker image for Docker POC mode prepared with the deploy Docker preparation path (`start_docker.sh` + `DockerJobLauncher`) |
 | `-debug`, `--debug` | flag | No | — | Debug mode |
 | `--schema` | flag | No | — | Print command schema and exit |
 

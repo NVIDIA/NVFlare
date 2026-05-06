@@ -10,19 +10,20 @@ Launching NVIDIA FLARE with docker compose
 ######################################################
 
 .. note::
-    Deprecated. This is alternative to simulate the deployment within local env. This should not be used for production
+    Deprecated. This is an alternative way to simulate a deployment in a local
+    environment. This should not be used for production.
 
 For users who would like to get NVIDIA FLARE up and running as easy as possible,
 such as first-time NVIDIA FLARE users or people who need to demonstrate it upon request,
 they can use this docker compose feature.  All they need is a working docker 
 environment.
 
-The provisioning tool of NVIDIA FLARE now includes a new
-builder ``DockerBuilder`` that can create ``compose.yaml`` and other information.  
+The provisioning tool of NVIDIA FLARE includes the ``DockerBuilder`` that can
+create ``compose.yaml`` and other information.
 After provisioning, users can enter the result folder, normally in 
 workspace/example_project/prod_NN, and type ``docker compose build`` 
-and ``docker compose up`` to start overseer, servers and clients 
-in the docker compose manner.
+and ``docker compose up`` to start the server and clients in the docker compose
+manner.
 
 
 Provisioning stage
@@ -62,13 +63,11 @@ After the command, there should a folder with structure similar to the following
     ├── compose.yaml
     ├── nvflare_compose
     ├── nvflare_hc
-    ├── overseer
     ├── server1
-    ├── server2
     ├── site-1
     └── site-2
 
-    8 directories, 1 file
+    6 directories, 1 file
 
 
 The ``compose.yaml`` is the key file for docker compose command and the folder ``nvflare_compose`` 
@@ -109,59 +108,46 @@ you don't have to run that command again.
     => => writing image sha256:53a1463bd170b8bc213899037bbe4403f2d6f0d553cdd470805855f3968d19d4                                                                                                                                        0.0s
     => => naming to docker.io/library/nvflare-service                                                                                                                                                                                  0.0s
 
-After the runtime docker image is ready, you can run ``docker compose up`` to get one overseer, two servers and two sites
-running together.  The ports for overseer and servers are also opened.  The overseer/severs/clients folders in current 
-prod_NN folder are mounted to different running docker instances.  An internal folder will be mounted by servers to store
-shared snapshot information.
+After the runtime docker image is ready, you can run ``docker compose up`` to get one server and two sites
+running together.  The ports for the server are also opened.  The server and client folders in the current
+prod_NN folder are mounted to different running docker instances.
 
 .. code-block:: shell
 
     $ docker compose up
-    [+] Running 5/0
-    ⠿ Container prod_02-site-1-1    Recreated                                                                                                                                                                                          0.1s
-    ⠿ Container prod_02-overseer-1  Recreated                                                                                                                                                                                          0.1s
-    ⠿ Container prod_02-server1-1   Recreated                                                                                                                                                                                          0.1s
-    ⠿ Container prod_02-server2-1   Recreated                                                                                                                                                                                          0.1s
-    ⠿ Container prod_02-site-2-1    Recreated                                                                                                                                                                                          0.1s
-    Attaching to prod_02-overseer-1, prod_02-server1-1, prod_02-server2-1, prod_02-site-1-1, prod_02-site-2-1
-    prod_02-overseer-1  | [2022-09-23 16:00:58 +0000] [9] [INFO] Starting gunicorn 20.1.0
-    prod_02-overseer-1  | [2022-09-23 16:00:58 +0000] [9] [INFO] Listening at: https://0.0.0.0:8443 (9)
-    prod_02-overseer-1  | [2022-09-23 16:00:58 +0000] [9] [INFO] Using worker: nvflare.ha.overseer.worker.ClientAuthWorker
-    prod_02-overseer-1  | [2022-09-23 16:00:58 +0000] [12] [INFO] Booting worker with pid: 12
-    prod_02-server2-1   | 2022-09-23 16:00:59,103 - FederatedServer - INFO - starting secure server at server2:8102
-    prod_02-server2-1   | deployed FL server trainer.
-    prod_02-server2-1   | 2022-09-23 16:00:59,118 - nvflare.fuel.hci.server.hci - INFO - Starting Admin Server server2 on Port 8103
-    prod_02-server2-1   | 2022-09-23 16:00:59,119 - root - INFO - Server started
-    prod_02-server2-1   | 2022-09-23 16:00:59,121 - FederatedServer - INFO - Got the primary sp: server2 fl_port: 8102 SSID: 9ba168f0-6cf5-446b-bfd5-a1243dd195f8. Turning to hot.
-    prod_02-server1-1   | 2022-09-23 16:00:59,332 - FederatedServer - INFO - starting secure server at server1:8002
-    prod_02-server1-1   | deployed FL server trainer.
-    prod_02-server1-1   | 2022-09-23 16:00:59,346 - nvflare.fuel.hci.server.hci - INFO - Starting Admin Server server1 on Port 8003
-    prod_02-server1-1   | 2022-09-23 16:00:59,346 - root - INFO - Server started
-    prod_02-site-2-1    | Waiting for SP....
-    prod_02-site-2-1    | 2022-09-23 16:00:59,399 - FederatedClient - INFO - Got the new primary SP: server2:8102
-    prod_02-site-1-1    | Waiting for SP....
-    prod_02-site-1-1    | 2022-09-23 16:00:59,450 - FederatedClient - INFO - Got the new primary SP: server2:8102
-    prod_02-server2-1   | 2022-09-23 16:01:00,393 - ClientManager - INFO - Client: New client site-2@172.18.0.2 joined. Sent token: 3da72f67-3443-47ac-b059-76b0b314dd08.  Total clients: 1
-    prod_02-site-2-1    | 2022-09-23 16:01:00,394 - FederatedClient - INFO - Successfully registered client:site-2 for project example_project. Token:3da72f67-3443-47ac-b059-76b0b314dd08 SSID:9ba168f0-6cf5-446b-bfd5-a1243dd195f8
-    prod_02-server2-1   | 2022-09-23 16:01:00,439 - ClientManager - INFO - Client: New client site-1@172.18.0.3 joined. Sent token: 5e0b1012-77e6-41a3-8af0-9fa86df8ef2e.  Total clients: 2
-    prod_02-site-1-1    | 2022-09-23 16:01:00,440 - FederatedClient - INFO - Successfully registered client:site-1 for project example_project. Token:5e0b1012-77e6-41a3-8af0-9fa86df8ef2e SSID:9ba168f0-6cf5-446b-bfd5-a1243dd195f8
+    [+] Running 3/0
+    ⠿ Container server1  Recreated
+    ⠿ Container site-1   Recreated
+    ⠿ Container site-2   Recreated
+    Attaching to server1, site-1, site-2
+    server1 | 2022-09-23 16:00:59,332 - FederatedServer - INFO - starting secure server at server1:8002
+    server1 | deployed FL server trainer.
+    server1 | 2022-09-23 16:00:59,346 - nvflare.fuel.hci.server.hci - INFO - Starting Admin Server server1 on Port 8003
+    server1 | 2022-09-23 16:00:59,346 - root - INFO - Server started
+    site-2  | 2022-09-23 16:00:59,399 - FederatedClient - INFO - Got server address: server1:8002
+    site-1  | 2022-09-23 16:00:59,450 - FederatedClient - INFO - Got server address: server1:8002
+    server1 | 2022-09-23 16:01:00,393 - ClientManager - INFO - Client: New client site-2@172.18.0.2 joined. Sent token: 3da72f67-3443-47ac-b059-76b0b314dd08.  Total clients: 1
+    site-2  | 2022-09-23 16:01:00,394 - FederatedClient - INFO - Successfully registered client:site-2 for project example_project. Token:3da72f67-3443-47ac-b059-76b0b314dd08 SSID:9ba168f0-6cf5-446b-bfd5-a1243dd195f8
+    server1 | 2022-09-23 16:01:00,439 - ClientManager - INFO - Client: New client site-1@172.18.0.3 joined. Sent token: 5e0b1012-77e6-41a3-8af0-9fa86df8ef2e.  Total clients: 2
+    site-1  | 2022-09-23 16:01:00,440 - FederatedClient - INFO - Successfully registered client:site-1 for project example_project. Token:5e0b1012-77e6-41a3-8af0-9fa86df8ef2e SSID:9ba168f0-6cf5-446b-bfd5-a1243dd195f8
 
 Login with admin console
 ========================
 You can use admin console to login to this newly created NVIDIA FLARE system after your machine can resolve the IP
-addresses of overseer and servers.  For example, if you are running the docker compose at machine ``desktop1`` with ip 192.168.1.101 and 
-would like to run your admin console at machine ``desktop2``, you will need to edit the /etc/hosts file on desktop2 to include this line:
+address of the server.  For example, if you are running the docker compose at machine ``desktop1`` with ip
+192.168.1.101 and would like to run your admin console at machine ``desktop2``, you will need to edit the
+/etc/hosts file on desktop2 to include this line:
 
 .. code-block::
 
-    192.168.1.101 overseer server1 server2
+    192.168.1.101 server1
 
-After this update, the admin console can find overseer, server1 and server2.  If in your project.yml file, 
-you name them differently, for example myoverseer for the overseer, please change that line to
+After this update, the admin console can find server1.  If in your project.yml file,
+you name the server differently, for example myserver, please change that line to
 
 .. code-block::
 
-    192.168.1.101 myoverseer server1 server2
+    192.168.1.101 myserver
 
 
 Login with admin console will be as usual.  Just run fl_admin.sh in the startup folder of admin console startup.
