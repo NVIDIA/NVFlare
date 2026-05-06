@@ -92,7 +92,9 @@ The runtime config controls site-level Kubernetes settings:
 * ``parent`` values are rendered into the Helm chart. They set the parent image,
   Python executable, workspace PVC, parent service port, parent pod resources,
   and optional parent pod security context. ``parent.python_path`` controls the
-  long-lived SP/CP parent pod command.
+  long-lived SP/CP parent pod command. ``parent.workspace_mount_path`` is also
+  written into the K8s launcher config so spawned SJ/CJ job pods mount their job
+  workspace and startup kit at the same in-container path.
 * ``job_launcher`` values are written into the participant's
   ``local/resources.json.default`` so the parent process can create job pods.
   ``config_file_path`` may be empty for in-cluster configuration, and

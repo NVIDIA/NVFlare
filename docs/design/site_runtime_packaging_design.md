@@ -333,7 +333,9 @@ Supported `parent` keys:
 - `workspace_mount_path`
   - Required: no
   - Default: `/var/tmp/nvflare/workspace`
-  - Description: in-container mount path for the workspace PVC.
+  - Description: in-container mount path for the parent workspace PVC. This is
+    also passed to `K8sJobLauncher` so dynamically launched job pods mount the
+    job workspace and startup kit at the same path.
 
 - `python_path`
   - Required: no

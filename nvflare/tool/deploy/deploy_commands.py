@@ -256,6 +256,7 @@ def _prepare_k8s(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) 
         "study_data_pvc_file_path": f"{workspace_mount_path}/local/{STUDY_DATA_YAML}",
         "namespace": namespace,
         "default_python_path": job_launcher.get("default_python_path", "/usr/local/bin/python"),
+        "workspace_mount_path": workspace_mount_path,
     }
     if job_launcher.get("pending_timeout") is not None:
         launcher_args["pending_timeout"] = job_launcher["pending_timeout"]
