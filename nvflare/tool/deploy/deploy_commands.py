@@ -64,6 +64,7 @@ HELM_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates" / "helm"
 PASSTHROUGH_RESOURCE_MANAGER = (
     "nvflare.app_common.resource_managers.passthrough_resource_manager.PassthroughResourceManager"
 )
+GPU_RESOURCE_MANAGER = "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager"
 DOCKER_CLIENT_LAUNCHER = "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher"
 DOCKER_SERVER_LAUNCHER = "nvflare.app_opt.job_launcher.docker_launcher.ServerDockerJobLauncher"
 K8S_CLIENT_LAUNCHER = "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
@@ -81,6 +82,8 @@ BUILTIN_LAUNCHER_PATHS = {
     PROCESS_CLIENT_LAUNCHER,
     PROCESS_SERVER_LAUNCHER,
 }
+BUILTIN_RESOURCE_MANAGER_PATHS = {GPU_RESOURCE_MANAGER, PASSTHROUGH_RESOURCE_MANAGER}
+BUILTIN_RESOURCE_CONSUMER_PATHS = {GPU_RESOURCE_CONSUMER}
 RESOURCE_CONSUMER_IDS = {"resource_consumer"}
 DOCKER_RESERVED_KWARGS = {
     "volumes",
@@ -495,14 +498,14 @@ def _warn_for_replaced_components(components: list[dict[str, Any]], launcher_id:
     for component in components:
         component_id = component.get("id")
         if component_id in RESOURCE_CONSUMER_IDS and _component_has_custom_config(
-            component, GPU_RESOURCE_CONSUMER, warn_on_path=True
+            component, BUILTIN_RESOURCE_CONSUMER_PATHS
         ):
             _warn(
                 f"deploy prepare removes component '{component_id}' from resources.json.default; "
                 "existing resource consumer configuration will not be used by the prepared runtime."
             )
         elif component_id == "resource_manager" and _component_has_custom_config(
-            component, PASSTHROUGH_RESOURCE_MANAGER, warn_on_path=True
+            component, BUILTIN_RESOURCE_MANAGER_PATHS
         ):
             _warn(
                 "deploy prepare replaces component 'resource_manager' with PassthroughResourceManager; "
@@ -517,13 +520,13 @@ def _warn_for_replaced_components(components: list[dict[str, Any]], launcher_id:
             )
 
 
-def _component_has_custom_config(component: dict[str, Any], replacement_path: str, warn_on_path: bool) -> bool:
+def _component_has_custom_config(component: dict[str, Any], builtin_paths: set[str]) -> bool:
     args = component.get("args")
     # Empty args are the canonical "no arguments" shape in generated resources files.
     if args:
         return True
     path = component.get("path")
-    return warn_on_path and bool(path) and path != replacement_path
+    return bool(path) and path not in builtin_paths
 
 
 def _launcher_replacement_discards_config(component: dict[str, Any], launcher_id: str, launcher_path: str) -> bool:

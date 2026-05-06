@@ -24,9 +24,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from nvflare.tool.deploy.deploy_commands import (
+    GPU_RESOURCE_MANAGER,
     GPU_RESOURCE_CONSUMER,
     HELM_RELEASE_NAME_MAX_LENGTH,
-    PASSTHROUGH_RESOURCE_MANAGER,
     PROCESS_CLIENT_LAUNCHER,
     _k8s_release_name,
     prepare_deployment,
@@ -613,12 +613,12 @@ def test_prepare_warns_when_replacing_custom_resource_and_launcher_config(tmp_pa
     assert "replaces component 'k8s_launcher'" in combined_output
 
 
-def test_prepare_does_not_warn_for_default_resource_consumer_with_empty_args(tmp_path, capsys):
+def test_prepare_does_not_warn_for_default_components_with_empty_args(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
     resources_path = kit / "local" / "resources.json.default"
     resources = json.loads(resources_path.read_text())
     resources["components"] = [
-        {"id": "resource_manager", "path": PASSTHROUGH_RESOURCE_MANAGER, "args": {}},
+        {"id": "resource_manager", "path": GPU_RESOURCE_MANAGER, "args": {}},
         {"id": "resource_consumer", "path": GPU_RESOURCE_CONSUMER, "args": {}},
         {"id": "process_launcher", "path": PROCESS_CLIENT_LAUNCHER, "args": {}},
     ]
