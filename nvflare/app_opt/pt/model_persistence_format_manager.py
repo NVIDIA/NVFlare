@@ -140,9 +140,10 @@ class PTModelPersistenceFormatManager(object):
                 introduce keys that do not already exist in the checkpoint.
 
         Notes:
-            Partial updates are supported: learned weights only need to cover the
-            subset of checkpoint keys that the client actually trained. The
-            original persisted weights for untouched keys are preserved.
+            The persisted checkpoint is the server schema for client updates.
+            Partial updates are supported: learned weights only need to cover a
+            subset of checkpoint keys that the client actually trained. New
+            client keys outside the server schema are rejected.
         """
         err = validate_model_learnable(ml)
         if err:
