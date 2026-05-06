@@ -23,7 +23,14 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from nvflare.tool.deploy.deploy_commands import HELM_RELEASE_NAME_MAX_LENGTH, _k8s_release_name, prepare_deployment
+from nvflare.tool.deploy.deploy_commands import (
+    GPU_RESOURCE_CONSUMER,
+    HELM_RELEASE_NAME_MAX_LENGTH,
+    PASSTHROUGH_RESOURCE_MANAGER,
+    PROCESS_CLIENT_LAUNCHER,
+    _k8s_release_name,
+    prepare_deployment,
+)
 
 
 def _write_json(path, data):
@@ -573,7 +580,12 @@ def test_prepare_warns_when_replacing_custom_resource_and_launcher_config(tmp_pa
         {
             "id": "resource_consumer",
             "path": "custom.AuditResourceConsumer",
-            "args": {"sink": "billing"},
+            "args": {},
+        },
+        {
+            "id": "process_launcher",
+            "path": "custom.ProcessLauncher",
+            "args": {},
         },
         {
             "id": "k8s_launcher",
@@ -597,7 +609,33 @@ def test_prepare_warns_when_replacing_custom_resource_and_launcher_config(tmp_pa
     combined_output = captured.out + captured.err
     assert "replaces component 'resource_manager'" in combined_output
     assert "removes component 'resource_consumer'" in combined_output
+    assert "replaces component 'process_launcher'" in combined_output
     assert "replaces component 'k8s_launcher'" in combined_output
+
+
+def test_prepare_does_not_warn_for_default_resource_consumer_with_empty_args(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    resources_path = kit / "local" / "resources.json.default"
+    resources = json.loads(resources_path.read_text())
+    resources["components"] = [
+        {"id": "resource_manager", "path": PASSTHROUGH_RESOURCE_MANAGER, "args": {}},
+        {"id": "resource_consumer", "path": GPU_RESOURCE_CONSUMER, "args": {}},
+        {"id": "process_launcher", "path": PROCESS_CLIENT_LAUNCHER, "args": {}},
+    ]
+    _write_json(resources_path, resources)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    captured = capsys.readouterr()
+
+    assert "Warning:" not in captured.out + captured.err
 
 
 def test_prepare_k8s_client_sanitizes_service_name_without_changing_site_identity(tmp_path, capsys):

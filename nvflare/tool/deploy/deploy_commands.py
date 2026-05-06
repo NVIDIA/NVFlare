@@ -68,8 +68,19 @@ DOCKER_CLIENT_LAUNCHER = "nvflare.app_opt.job_launcher.docker_launcher.ClientDoc
 DOCKER_SERVER_LAUNCHER = "nvflare.app_opt.job_launcher.docker_launcher.ServerDockerJobLauncher"
 K8S_CLIENT_LAUNCHER = "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
 K8S_SERVER_LAUNCHER = "nvflare.app_opt.job_launcher.k8s_launcher.ServerK8sJobLauncher"
+PROCESS_CLIENT_LAUNCHER = "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher"
+PROCESS_SERVER_LAUNCHER = "nvflare.app_common.job_launcher.server_process_launcher.ServerProcessJobLauncher"
+GPU_RESOURCE_CONSUMER = "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer"
 
 LAUNCHER_IDS = {"process_launcher", "docker_launcher", "k8s_launcher"}
+BUILTIN_LAUNCHER_PATHS = {
+    DOCKER_CLIENT_LAUNCHER,
+    DOCKER_SERVER_LAUNCHER,
+    K8S_CLIENT_LAUNCHER,
+    K8S_SERVER_LAUNCHER,
+    PROCESS_CLIENT_LAUNCHER,
+    PROCESS_SERVER_LAUNCHER,
+}
 RESOURCE_CONSUMER_IDS = {"resource_consumer"}
 DOCKER_RESERVED_KWARGS = {
     "volumes",
@@ -483,7 +494,9 @@ def _patch_resources(kit_dir: Path, launcher_id: str, launcher_path: str, launch
 def _warn_for_replaced_components(components: list[dict[str, Any]], launcher_id: str, launcher_path: str) -> None:
     for component in components:
         component_id = component.get("id")
-        if component_id in RESOURCE_CONSUMER_IDS:
+        if component_id in RESOURCE_CONSUMER_IDS and _component_has_custom_config(
+            component, GPU_RESOURCE_CONSUMER, warn_on_path=True
+        ):
             _warn(
                 f"deploy prepare removes component '{component_id}' from resources.json.default; "
                 "existing resource consumer configuration will not be used by the prepared runtime."
@@ -506,6 +519,7 @@ def _warn_for_replaced_components(components: list[dict[str, Any]], launcher_id:
 
 def _component_has_custom_config(component: dict[str, Any], replacement_path: str, warn_on_path: bool) -> bool:
     args = component.get("args")
+    # Empty args are the canonical "no arguments" shape in generated resources files.
     if args:
         return True
     path = component.get("path")
@@ -515,10 +529,12 @@ def _component_has_custom_config(component: dict[str, Any], replacement_path: st
 def _launcher_replacement_discards_config(component: dict[str, Any], launcher_id: str, launcher_path: str) -> bool:
     if component.get("args"):
         return True
-    if component.get("id") != launcher_id:
-        return False
     path = component.get("path")
-    return bool(path) and path != launcher_path
+    if not path:
+        return False
+    if component.get("id") == launcher_id and path != launcher_path:
+        return True
+    return path not in BUILTIN_LAUNCHER_PATHS
 
 
 def _warn(message: str) -> None:
