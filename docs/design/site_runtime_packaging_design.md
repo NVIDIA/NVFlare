@@ -283,6 +283,7 @@ parent:
   parent_port: 8102
   workspace_pvc: nvflws
   workspace_mount_path: /var/tmp/nvflare/workspace
+  python_path: /usr/local/bin/python3
   resources:
     requests:
       cpu: "2"
@@ -334,6 +335,15 @@ Supported `parent` keys:
   - Default: `/var/tmp/nvflare/workspace`
   - Description: in-container mount path for the workspace PVC.
 
+- `python_path`
+  - Required: no
+  - Default: `job_launcher.default_python_path` when set, otherwise
+    `/usr/local/bin/python3`
+  - Description: Python executable used by the parent server/client pod command
+    in the generated Helm chart. This controls SP/CP parent pods; dynamically
+    launched job pods can still override the job launcher default with
+    `launcher_spec[<site>][k8s].python_path`.
+
 - `resources`
   - Required: no
   - Default: chart defaults
@@ -362,7 +372,9 @@ Supported `job_launcher` keys:
   - Required: no
   - Default: `/usr/local/bin/python`
   - Description: Default Python executable used in job pods. Individual jobs
-    can override it with `launcher_spec[<site>][k8s].python_path`.
+    can override it with `launcher_spec[<site>][k8s].python_path`. This value
+    is also used for the parent pod command when `parent.python_path` is not
+    set.
 
 - `job_pod_security_context`
   - Required: no

@@ -59,6 +59,7 @@ DOCKER_START_SH = "start_docker.sh"
 
 WORKSPACE_MOUNT_PATH = "/var/tmp/nvflare/workspace"
 WORKSPACE_VOLUME_NAME = "workspace"
+K8S_PARENT_PYTHON_PATH = "/usr/local/bin/python3"
 HELM_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates" / "helm"
 
 PASSTHROUGH_RESOURCE_MANAGER = (
@@ -335,6 +336,7 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
                 "parent_port",
                 "workspace_pvc",
                 "workspace_mount_path",
+                "python_path",
                 "resources",
                 "pod_security_context",
             },
@@ -351,6 +353,7 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
         _optional_int(parent, "parent_port", "parent")
         _optional_str(parent, "workspace_pvc", "parent")
         _optional_str(parent, "workspace_mount_path", "parent")
+        _optional_str(parent, "python_path", "parent")
         _optional_mapping(parent, "resources", "parent")
         _optional_mapping(parent, "pod_security_context", "parent")
         _optional_str(job_launcher, "config_file_path", "job_launcher")
@@ -668,10 +671,12 @@ def _docker_parent_command(kit_info: KitInfo) -> str:
 
 def _write_helm_chart(kit_info: KitInfo, config: dict[str, Any]) -> Path:
     parent = config.get("parent") or {}
+    job_launcher = config.get("job_launcher") or {}
     docker_image = parent["docker_image"]
     parent_port = parent.get("parent_port", 8102)
     workspace_pvc = parent.get("workspace_pvc", "nvflws")
     workspace_mount_path = parent.get("workspace_mount_path", WORKSPACE_MOUNT_PATH)
+    parent_python_path = parent.get("python_path") or job_launcher.get("default_python_path") or K8S_PARENT_PYTHON_PATH
     chart_dir = kit_info.kit_dir / HELM_CHART_DIR
     if chart_dir.exists():
         shutil.rmtree(chart_dir)
@@ -686,6 +691,7 @@ def _write_helm_chart(kit_info: KitInfo, config: dict[str, Any]) -> Path:
             parent_port,
             workspace_pvc,
             workspace_mount_path,
+            parent_python_path,
             parent,
         )
         _copy_helm_templates("server", templates_dir)
@@ -697,6 +703,7 @@ def _write_helm_chart(kit_info: KitInfo, config: dict[str, Any]) -> Path:
             parent_port,
             workspace_pvc,
             workspace_mount_path,
+            parent_python_path,
             parent,
         )
         _copy_helm_templates("client", templates_dir)
@@ -710,6 +717,7 @@ def _write_server_helm_chart(
     parent_port: int,
     workspace_pvc: str,
     workspace_mount_path: str,
+    parent_python_path: str,
     parent: dict[str, Any],
 ) -> None:
     repo, tag = _split_image(docker_image)
@@ -750,7 +758,7 @@ def _write_server_helm_chart(
         "hostPortEnabled": False,
         "tcpConfigMapEnabled": False,
         "service": {"type": "ClusterIP", "loadBalancerIP": None, "annotations": {}},
-        "command": ["/usr/local/bin/python3"],
+        "command": [parent_python_path],
         "args": [
             "-u",
             "-m",
@@ -775,6 +783,7 @@ def _write_client_helm_chart(
     parent_port: int,
     workspace_pvc: str,
     workspace_mount_path: str,
+    parent_python_path: str,
     parent: dict[str, Any],
 ) -> None:
     repo, tag = _split_image(docker_image)
@@ -810,7 +819,7 @@ def _write_client_helm_chart(
         "service": {"annotations": {}},
         "securityContext": parent.get("pod_security_context") or {},
         "resources": parent.get("resources") or {"requests": {"cpu": "2", "memory": "8Gi"}},
-        "command": ["/usr/local/bin/python3"],
+        "command": [parent_python_path],
         "args": [
             "-u",
             "-m",

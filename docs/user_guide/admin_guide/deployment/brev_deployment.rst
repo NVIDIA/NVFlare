@@ -420,6 +420,7 @@ Prepare the server and client startup kits for Kubernetes:
      parent_port: 8102
      workspace_pvc: nvflws
      workspace_mount_path: /var/tmp/nvflare/workspace
+     python_path: /usr/local/bin/python3
    job_launcher:
      config_file_path:
      default_python_path: /usr/local/bin/python3
