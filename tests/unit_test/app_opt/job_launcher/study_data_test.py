@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
+
 import pytest
 import yaml
 
@@ -28,6 +30,26 @@ def _write_yaml(path, data):
 
 def test_load_missing_file_returns_empty_mapping(tmp_path):
     assert load_study_data_file(str(tmp_path / "missing.yaml")) == {}
+
+
+def test_load_missing_file_logs_warning_when_logger_supplied(tmp_path, caplog):
+    logger = logging.getLogger("study-data-test")
+    with caplog.at_level(logging.WARNING, logger="study-data-test"):
+        assert load_study_data_file(str(tmp_path / "missing.yaml"), logger=logger) == {}
+
+    assert "was not found" in caplog.text
+    assert "no study data mounts will be configured" in caplog.text
+
+
+def test_load_empty_file_logs_warning_when_logger_supplied(tmp_path, caplog):
+    path = tmp_path / "study_data.yaml"
+    path.write_text("")
+    logger = logging.getLogger("study-data-test")
+
+    with caplog.at_level(logging.WARNING, logger="study-data-test"):
+        assert load_study_data_file(str(path), logger=logger) == {}
+
+    assert "has no study entries" in caplog.text
 
 
 def test_load_unreadable_file_raises_value_error(monkeypatch, tmp_path):
@@ -110,12 +132,31 @@ def test_resolve_returns_empty_when_study_mapping_is_missing():
     assert resolve_study_dataset_mounts({}, "study-a", "study_data.yaml") == []
 
 
+def test_resolve_logs_warning_when_study_mapping_is_missing(caplog):
+    logger = logging.getLogger("study-data-test")
+    study_data = {"other-study": {"training": {"source": "/data/train", "mode": "ro"}}}
+
+    with caplog.at_level(logging.WARNING, logger="study-data-test"):
+        assert resolve_study_dataset_mounts(study_data, "study-a", "study_data.yaml", logger=logger) == []
+
+    assert "has no entry for study 'study-a'" in caplog.text
+
+
 def test_resolve_returns_empty_for_unmapped_invalid_study_name():
     assert resolve_study_dataset_mounts({}, "Study_A", "study_data.yaml") == []
 
 
 def test_resolve_returns_empty_when_study_mapping_is_empty():
     assert resolve_study_dataset_mounts({"study-a": {}}, "study-a", "study_data.yaml") == []
+
+
+def test_resolve_logs_warning_when_study_mapping_is_empty(caplog):
+    logger = logging.getLogger("study-data-test")
+
+    with caplog.at_level(logging.WARNING, logger="study-data-test"):
+        assert resolve_study_dataset_mounts({"study-a": {}}, "study-a", "study_data.yaml", logger=logger) == []
+
+    assert "entry for study 'study-a' has no datasets" in caplog.text
 
 
 def test_resolve_default_study_mapping_when_present():
