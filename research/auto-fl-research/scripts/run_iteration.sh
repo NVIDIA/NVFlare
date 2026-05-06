@@ -4,7 +4,7 @@ set -euo pipefail
 PYTHON=${PYTHON:-python3}
 RESULTS_TSV=${RESULTS_TSV:-results.tsv}
 RUN_LOG=${RUN_LOG:-run.log}
-RUN_TIMEOUT_SECONDS=${RUN_TIMEOUT_SECONDS:-600}
+RUN_TIMEOUT_SECONDS=${RUN_TIMEOUT_SECONDS:-1200}
 RUN_ITERATION_LOG_RESULTS=${RUN_ITERATION_LOG_RESULTS:-1}
 RUN_ITERATION_REQUIRE_SCORE=${RUN_ITERATION_REQUIRE_SCORE:-1}
 DESCRIPTION=""
@@ -58,6 +58,23 @@ fi
 if [[ -z "${TARGET}" ]]; then
   echo "--target is required" >&2
   exit 2
+fi
+
+if [[ "${RUN_ITERATION_LOG_RESULTS}" != "0" ]]; then
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    echo "ERROR: run_iteration.sh with result logging must run inside a git clone" >&2
+    exit 2
+  fi
+
+  CURRENT_BRANCH=$(git branch --show-current)
+  if [[ "${CURRENT_BRANCH}" != autoresearch/* ]]; then
+    echo "ERROR: current branch is '${CURRENT_BRANCH}', not autoresearch/<tag>." >&2
+    echo "Run 'bash scripts/init_run.sh <tag>' before launching campaign experiments." >&2
+    echo "Use --no-log-results only for smoke checks that should not write results.tsv." >&2
+    exit 2
+  fi
+
+  "${PYTHON}" scripts/append_result.py --results="${RESULTS_TSV}" --init-only
 fi
 
 "${PYTHON}" scripts/validate_contract.py client.py

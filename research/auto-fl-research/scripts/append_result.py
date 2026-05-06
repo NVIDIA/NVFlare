@@ -82,15 +82,37 @@ def append_result(path: Path, row):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--results", default="results.tsv")
-    parser.add_argument("--commit", required=True)
-    parser.add_argument("--score", required=True)
-    parser.add_argument("--runtime-seconds", required=True)
-    parser.add_argument("--budget", required=True)
-    parser.add_argument("--status", required=True, choices=["candidate", "crash", "discard", "keep"])
-    parser.add_argument("--target", required=True)
-    parser.add_argument("--description", required=True)
-    parser.add_argument("--artifacts", required=True)
+    parser.add_argument(
+        "--init-only",
+        action="store_true",
+        help="Create or migrate the results.tsv header without appending a row.",
+    )
+    parser.add_argument("--commit")
+    parser.add_argument("--score", default="")
+    parser.add_argument("--runtime-seconds")
+    parser.add_argument("--budget")
+    parser.add_argument("--status", choices=["candidate", "crash", "discard", "keep", "literature"])
+    parser.add_argument("--target")
+    parser.add_argument("--description")
+    parser.add_argument("--artifacts")
     args = parser.parse_args()
+    if args.init_only:
+        path = Path(args.results)
+        if path.parent != Path(""):
+            path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_results_tsv(path)
+        print(f"Ensured {args.results}")
+        return
+
+    missing = [
+        name
+        for name in ["commit", "runtime_seconds", "budget", "status", "target", "description", "artifacts"]
+        if getattr(args, name) is None
+    ]
+    if missing:
+        parser.error("missing required arguments: " + ", ".join(f"--{name.replace('_', '-')}" for name in missing))
+    if args.status != "literature" and args.score == "":
+        parser.error("--score is required unless --status=literature")
 
     append_result(
         Path(args.results),

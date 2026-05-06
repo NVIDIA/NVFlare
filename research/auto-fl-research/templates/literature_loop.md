@@ -9,6 +9,7 @@ Use this worksheet only when progress stalls or the next axis is unclear. Keep e
 - Recent symptoms from `results.tsv`:
 - Confirmed null/worse ideas to avoid:
 - Candidate width: `PARALLEL_CANDIDATES` (default 4 on one local 80 GB H100; lower if memory or host contention appears)
+- Ledger event: start with `scripts/log_literature_review.py --start`; finish with `--finish` before launching the next batch.
 
 ## Search queries
 
