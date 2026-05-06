@@ -591,6 +591,17 @@ class TestK8sJobHandle:
         handle.wait()
         api.read_namespaced_pod.assert_not_called()
 
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time.sleep")
+    def test_wait_returns_without_sleep_when_query_marks_terminal(self, mock_sleep):
+        api = _make_api_instance()
+        api.read_namespaced_pod.side_effect = _FakeApiException(status=404, reason="Not Found")
+        handle = _make_handle(api=api)
+
+        handle.wait()
+
+        assert handle.terminal_state == JobState.TERMINATED
+        mock_sleep.assert_not_called()
+
     def test_wait_persists_succeeded_terminal_state(self):
         api = _make_api_instance()
         resp = Mock()

@@ -335,6 +335,8 @@ class K8sJobHandle(JobHandleSpec):
             if self.terminal_state is not None:
                 return
             job_state = self._query_state()
+            if self.terminal_state is not None:
+                return
             if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
                 self.terminal_state = job_state  # persist so poll() stays accurate
                 self._remove_workspace_job()
