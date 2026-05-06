@@ -509,6 +509,14 @@ class TestK8sJobHandle:
         handle = _make_handle(api=api)
         assert handle._query_phase() == PodPhase.UNKNOWN.value
 
+    def test_query_phase_sets_terminal_state_on_not_found(self):
+        api = _make_api_instance()
+        api.read_namespaced_pod.side_effect = _FakeApiException(status=404, reason="Not Found")
+        handle = _make_handle(api=api)
+
+        assert handle._query_phase() == PodPhase.UNKNOWN.value
+        assert handle.terminal_state == JobState.TERMINATED
+
     # -- _stuck_in_pending ----------------------------------------------------
     def test_stuck_in_pending_returns_true_at_max_count(self):
         # With _stuck_count seeded to max-1, one more PENDING call increments to
@@ -545,6 +553,13 @@ class TestK8sJobHandle:
         handle._stuck_in_pending(PodPhase.PENDING.value)
         assert handle._stuck_count == initial + 1
 
+    def test_stuck_in_pending_counts_unknown_as_not_making_progress(self):
+        api = _make_api_instance()
+        handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=None, pending_timeout=2)
+
+        assert handle._stuck_in_pending(PodPhase.UNKNOWN.value) is False
+        assert handle._stuck_in_pending(PodPhase.UNKNOWN.value) is True
+
     def test_stuck_in_pending_returns_false_when_under_max(self):
         api = _make_api_instance()
         handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=None, pending_timeout=100)
@@ -558,6 +573,7 @@ class TestK8sJobHandle:
         # Drive _stuck_count very high — must not raise and must return False
         handle._stuck_count = 10_000
         assert handle._stuck_in_pending(PodPhase.PENDING.value) is False
+        assert handle._stuck_in_pending(PodPhase.UNKNOWN.value) is False
 
     # -- wait -----------------------------------------------------------------
     def test_wait_returns_immediately_if_terminal_state_set(self):
@@ -663,6 +679,27 @@ class TestK8sJobHandle:
         handle = _make_handle(api=api)
         assert handle.enter_states([JobState.RUNNING]) is False
         assert handle.terminal_state == JobState.SUCCEEDED
+
+    def test_enter_states_returns_false_when_query_marks_terminal(self):
+        api = _make_api_instance()
+        api.read_namespaced_pod.side_effect = _FakeApiException(status=404, reason="Not Found")
+        handle = _make_handle(api=api, timeout=None, pending_timeout=120)
+
+        assert handle.enter_states([JobState.RUNNING]) is False
+        assert handle.terminal_state == JobState.TERMINATED
+        api.delete_namespaced_pod.assert_not_called()
+
+    def test_enter_states_terminates_after_repeated_unknown_phase(self):
+        api = _make_api_instance()
+        resp = Mock()
+        resp.status.phase = PodPhase.UNKNOWN.value
+        api.read_namespaced_pod.return_value = resp
+        handle = _make_handle(api=api, timeout=None, pending_timeout=2)
+
+        assert handle.enter_states([JobState.RUNNING]) is False
+        assert handle.terminal_state == JobState.TERMINATED
+        assert api.read_namespaced_pod.call_count == 2
+        api.delete_namespaced_pod.assert_called_once()
 
     def test_enter_states_raises_on_invalid_state(self):
         handle = _make_handle()
