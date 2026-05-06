@@ -906,6 +906,69 @@ class TestFedAvgWorkflowEvents:
         assert detail["sticky"] is False
         mock_warning.assert_not_called()
 
+    def test_process_result_clears_training_result_after_accept_events(self):
+        controller = FedAvg(num_clients=1)
+        fl_ctx = FLContext()
+
+        task_data = Shareable()
+        result = FLModelUtils.to_shareable(FLModel(params={"w": 1.0}))
+        task = Task(
+            name=AppConstants.TASK_TRAIN,
+            data=task_data,
+            props={AppConstants.META_DATA: {}},
+        )
+        client_task = ClientTask(client=Client("site-1", "token"), task=task)
+        client_task.result = result
+
+        training_results_seen = []
+
+        def record_training_result(event_type):
+            if event_type == AppEventType.AFTER_CONTRIBUTION_ACCEPT:
+                training_results_seen.append(fl_ctx.get_prop(AppConstants.TRAINING_RESULT))
+
+        with patch.object(controller, "event", side_effect=record_training_result):
+            controller._process_result(client_task, fl_ctx)
+
+        assert training_results_seen == [result]
+        assert fl_ctx.get_prop(AppConstants.TRAINING_RESULT) is None
+        detail = fl_ctx.get_prop_detail(AppConstants.TRAINING_RESULT)
+        assert detail["private"] is True
+        assert detail["sticky"] is False
+
+    def test_process_result_releases_raw_in_memory_training_result(self):
+        import gc
+        import weakref
+
+        import torch
+
+        controller = FedAvg(num_clients=1)
+        fl_ctx = FLContext()
+
+        tensor = torch.ones((1,), dtype=torch.float32)
+        tensor_ref = weakref.ref(tensor)
+        result = FLModelUtils.to_shareable(FLModel(params={"w": tensor}))
+
+        task_data = Shareable()
+        task = Task(
+            name=AppConstants.TASK_TRAIN,
+            data=task_data,
+            props={AppConstants.META_DATA: {}, AppConstants.TASK_PROP_CALLBACK: lambda _: None},
+        )
+        client_task = ClientTask(client=Client("site-1", "token"), task=task)
+        client_task.result = result
+
+        tensor = None
+        result = None
+
+        with patch.object(controller, "event"):
+            controller._process_result(client_task, fl_ctx)
+
+        assert client_task.result is None
+        gc.collect()
+
+        assert fl_ctx.get_prop(AppConstants.TRAINING_RESULT) is None
+        assert tensor_ref() is None
+
     def test_broadcast_model_does_not_fire_round_started(self):
         controller = FedAvg(num_clients=1)
         controller.fl_ctx = FLContext()
