@@ -497,17 +497,17 @@ class TestK8sJobHandle:
         api.delete_namespaced_pod.assert_called_once_with(name="job-1", namespace="custom-ns", grace_period_seconds=0)
 
     # -- _query_phase ---------------------------------------------------------
-    def test_query_phase_returns_unknown_on_api_error(self):
+    def test_query_phase_returns_none_on_api_error(self):
         api = _make_api_instance()
         api.read_namespaced_pod.side_effect = _FakeApiException(status=500, reason="Error")
         handle = _make_handle(api=api)
-        assert handle._query_phase() == PodPhase.UNKNOWN.value
+        assert handle._query_phase() is None
 
-    def test_query_phase_returns_unknown_on_generic_exception(self):
+    def test_query_phase_returns_none_on_generic_exception(self):
         api = _make_api_instance()
         api.read_namespaced_pod.side_effect = RuntimeError("connection lost")
         handle = _make_handle(api=api)
-        assert handle._query_phase() == PodPhase.UNKNOWN.value
+        assert handle._query_phase() is None
 
     def test_query_phase_sets_terminal_state_on_not_found(self):
         api = _make_api_instance()
@@ -552,6 +552,14 @@ class TestK8sJobHandle:
         initial = handle._stuck_count
         handle._stuck_in_pending(PodPhase.PENDING.value)
         assert handle._stuck_count == initial + 1
+
+    def test_stuck_in_pending_ignores_unobserved_phase(self):
+        api = _make_api_instance()
+        handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=None, pending_timeout=2)
+        handle._stuck_count = handle._max_stuck_count - 1
+
+        assert handle._stuck_in_pending(None) is False
+        assert handle._stuck_count == handle._max_stuck_count - 1
 
     def test_stuck_in_pending_counts_unknown_as_not_making_progress(self):
         api = _make_api_instance()
@@ -689,7 +697,8 @@ class TestK8sJobHandle:
         assert handle.terminal_state == JobState.TERMINATED
         api.delete_namespaced_pod.assert_not_called()
 
-    def test_enter_states_terminates_after_repeated_unknown_phase(self):
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time.sleep")
+    def test_enter_states_terminates_after_repeated_unknown_phase(self, mock_sleep):
         api = _make_api_instance()
         resp = Mock()
         resp.status.phase = PodPhase.UNKNOWN.value
@@ -701,17 +710,34 @@ class TestK8sJobHandle:
         assert api.read_namespaced_pod.call_count == 2
         api.delete_namespaced_pod.assert_called_once()
 
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time.sleep")
+    def test_enter_states_does_not_count_api_errors_as_pending(self, mock_sleep):
+        api = _make_api_instance()
+        pending_resp = Mock()
+        pending_resp.status.phase = PodPhase.PENDING.value
+        running_resp = Mock()
+        running_resp.status.phase = PodPhase.RUNNING.value
+        api.read_namespaced_pod.side_effect = [
+            pending_resp,
+            _FakeApiException(status=500, reason="Internal"),
+            running_resp,
+        ]
+        handle = _make_handle(api=api, timeout=None, pending_timeout=2)
+
+        assert handle.enter_states([JobState.RUNNING]) is True
+        assert handle._stuck_count == 0
+        assert api.read_namespaced_pod.call_count == 3
+        api.delete_namespaced_pod.assert_not_called()
+
     def test_enter_states_raises_on_invalid_state(self):
         handle = _make_handle()
         with pytest.raises(ValueError, match="expect job_states_to_enter"):
             handle.enter_states(["not_a_state"])
 
     # -- enter_states: wall-clock timeout branch ------------------------------
-    # The pod is placed in UNKNOWN phase (non-pending so stuck detection does
-    # not fire, non-terminal so the terminal-phase branch is skipped) and
-    # time.time is mocked so the elapsed-time check fires on the first
-    # iteration.  This is the branch that existing tests miss because they
-    # use timeout=0 with a PENDING pod, which hits stuck detection instead.
+    # The pod is placed in UNKNOWN phase. Stuck detection does not fire before
+    # the mocked elapsed-time check because the threshold is higher than one
+    # iteration. This covers the wall-clock timeout branch.
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
     def test_enter_states_wall_clock_timeout_returns_false(self, mock_time):

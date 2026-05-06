@@ -306,12 +306,13 @@ class K8sJobHandle(JobHandleSpec):
                 self.logger.info(f"job {self.job_id} pod not found during querying; assuming terminated")
                 self.terminal_state = JobState.TERMINATED
                 self._remove_workspace_job()
+                return PodPhase.UNKNOWN.value
             else:
                 self.logger.warning(f"failed to query pod phase {self.job_id}: {e}")
-            return PodPhase.UNKNOWN.value
+            return None  # no pod phase was observed
         except Exception as e:
             self.logger.warning(f"unexpected error querying pod phase {self.job_id}: {e}")
-            return PodPhase.UNKNOWN.value
+            return None  # no pod phase was observed
         return resp.status.phase
 
     def _query_state(self):
@@ -319,6 +320,8 @@ class K8sJobHandle(JobHandleSpec):
         return POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
 
     def _stuck_in_pending(self, current_phase):
+        if current_phase is None:
+            return False
         if current_phase in (PodPhase.PENDING.value, PodPhase.UNKNOWN.value):
             self._stuck_count += 1
             if self._max_stuck_count is not None and self._stuck_count >= self._max_stuck_count:
