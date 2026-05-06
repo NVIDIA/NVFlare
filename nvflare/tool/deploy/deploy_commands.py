@@ -255,7 +255,7 @@ def _prepare_k8s(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) 
         "config_file_path": job_launcher.get("config_file_path"),
         "study_data_pvc_file_path": f"{workspace_mount_path}/local/{STUDY_DATA_YAML}",
         "namespace": namespace,
-        "default_python_path": job_launcher.get("default_python_path", "/usr/local/bin/python"),
+        "default_python_path": job_launcher.get("default_python_path", K8S_PARENT_PYTHON_PATH),
         "workspace_mount_path": workspace_mount_path,
     }
     if job_launcher.get("pending_timeout") is not None:

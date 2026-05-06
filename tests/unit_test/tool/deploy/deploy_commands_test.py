@@ -23,7 +23,12 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from nvflare.tool.deploy.deploy_commands import HELM_RELEASE_NAME_MAX_LENGTH, _k8s_release_name, prepare_deployment
+from nvflare.tool.deploy.deploy_commands import (
+    HELM_RELEASE_NAME_MAX_LENGTH,
+    K8S_PARENT_PYTHON_PATH,
+    _k8s_release_name,
+    prepare_deployment,
+)
 
 
 def _write_json(path, data):
@@ -348,6 +353,27 @@ def test_prepare_k8s_server_falls_back_to_job_launcher_python_path_for_chart_com
 
     values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
     assert values["command"] == ["/usr/bin/python3"]
+
+
+def test_prepare_k8s_launcher_default_python_path_matches_parent_default(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher = _component(resources, "k8s_launcher")
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert launcher["args"]["default_python_path"] == K8S_PARENT_PYTHON_PATH
+    assert values["command"] == [K8S_PARENT_PYTHON_PATH]
 
 
 def test_prepare_docker_reads_org_from_cert_without_sub_start(tmp_path, capsys):
