@@ -13,8 +13,8 @@ General Usage
 
 .. code-block::
 
-    nvflare preflight_check -p PACKAGE_PATH
-    nvflare preflight_check --package_path PACKAGE_PATH
+    nvflare preflight-check -p PACKAGE_PATH
+    nvflare preflight-check --package_path PACKAGE_PATH
 
 
 This preflight check script should be run on each site's machine. The ``PACKAGE_PATH`` is the path to the folder that contains
@@ -22,6 +22,9 @@ the package to be checked.
 
 After running the script, for the checks that pass, users will see "PASSED". The problem and how
 to fix it is reported for checks that fail.
+
+Exit code ``0`` means all applicable checks passed. Exit code ``1`` means at least one applicable check failed.
+Exit code ``4`` means the package path or package format is invalid.
 
 Below are the scripts to run the preflight check on each type of site and the possible problems that may be reported.
 
@@ -34,7 +37,7 @@ on the server site, a user should run:
 
 .. code-block::
 
-  nvflare preflight_check -p /path_to_NVFlare/NVFlare/workspace/example_project/prod_00/server1
+  nvflare preflight-check -p /path_to_NVFlare/NVFlare/workspace/example_project/prod_00/server1
 
 The problems that may be reported:
 
@@ -59,7 +62,7 @@ So on the client site, a user will run:
 
 .. code-block::
 
-  nvflare preflight_check -p /path_to_NVFlare/NVFlare/workspace/example_project/prod_00/site-1
+  nvflare preflight-check -p /path_to_NVFlare/NVFlare/workspace/example_project/prod_00/site-1
 
 The problems that may be reported:
 
@@ -81,7 +84,7 @@ a user should run:
 
 .. code-block::
 
-  nvflare preflight_check -p /path_to_NVFlare/NVFlare/workspace/example_project/prod_00/admin@nvidia.com
+  nvflare preflight-check -p /path_to_NVFlare/NVFlare/workspace/example_project/prod_00/admin@nvidia.com
 
 The problems that may be reported:
 
