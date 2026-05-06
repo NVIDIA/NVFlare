@@ -174,6 +174,22 @@ def select_observed_milestones(valid: list[ResultRow], max_labels: int) -> list[
     return [(delta, row) for delta, row in milestones if row.index in selected_indices]
 
 
+def select_literature_labels(literature_rows: list[ResultRow], max_labels: int) -> list[ResultRow]:
+    if max_labels <= 0 or not literature_rows:
+        return []
+    if len(literature_rows) <= max_labels:
+        return literature_rows
+
+    latest = literature_rows[-1]
+    longest = sorted(literature_rows, key=lambda row: row.runtime_seconds, reverse=True)
+    selected = {latest.index}
+    for row in longest:
+        if len(selected) >= max_labels:
+            break
+        selected.add(row.index)
+    return [row for row in literature_rows if row.index in selected]
+
+
 def label_placement(
     label_number: int,
     row: ResultRow,
@@ -230,6 +246,7 @@ def plot_progress(
     rows: list[ResultRow],
     output: Path,
     max_labels: int,
+    max_literature_labels: int,
     y_min: float | None,
     full_y_range: bool,
 ):
@@ -245,6 +262,7 @@ def plot_progress(
         ) from exc
 
     valid = [row for row in rows if row.score is not None and row.status != "CRASH"]
+    literature_rows = [row for row in rows if row.status == "LITERATURE"]
     if not valid:
         raise ValueError("No non-crash rows with numeric scores found.")
 
@@ -318,16 +336,27 @@ def plot_progress(
     n_candidate = sum(row.status == "CANDIDATE" for row in rows)
     n_discard = sum(row.status == "DISCARD" for row in rows)
     n_crash = sum(row.status == "CRASH" for row in rows)
-    total_runtime = sum(row.runtime_seconds for row in rows)
-    runtime_rows = [row for row in rows if row.runtime_seconds > 0]
+    n_literature = len(literature_rows)
+    runtime_rows = [row for row in rows if row.runtime_seconds > 0 and row.status != "LITERATURE"]
+    literature_runtime = sum(row.runtime_seconds for row in literature_rows)
+    total_runtime = sum(row.runtime_seconds for row in runtime_rows)
     average_runtime = total_runtime / len(runtime_rows) if runtime_rows else 0.0
     runtime_label = format_runtime(total_runtime)
     average_runtime_label = format_runtime(average_runtime)
+    literature_runtime_label = format_runtime(literature_runtime)
     runtime_title = ""
-    if runtime_label:
+    if runtime_label and n_literature:
+        runtime_title = f", {runtime_label} candidate"
+        if average_runtime_label:
+            runtime_title += f", {average_runtime_label} avg/candidate"
+    elif runtime_label:
         runtime_title = f", {runtime_label} total"
         if average_runtime_label:
             runtime_title += f", {average_runtime_label} avg/candidate"
+    if n_literature:
+        runtime_title += f", {n_literature} lit"
+        if literature_runtime_label:
+            runtime_title += f" ({literature_runtime_label})"
 
     ax.set_xlabel("Experiment #", fontsize=12)
     ax.set_ylabel("Cross-site score (higher is better)", fontsize=12)
@@ -346,11 +375,57 @@ def plot_progress(
         label="Baseline",
     )
     ax.grid(True, alpha=0.2)
-    ax.legend(loc="best", fontsize=9)
 
     scores = [row.score for row in valid if row.score is not None]
     y_limits = default_y_limits(scores, baseline, y_min, full_y_range)
     ax.set_ylim(*y_limits)
+    ax.set_xlim(-0.5, max(n_total - 0.5, max(row.index for row in valid) + 0.5))
+
+    if literature_rows:
+        event_color = "#8e44ad"
+        y_span = max(y_limits[1] - y_limits[0], 1e-9)
+        event_y = y_limits[1] - y_span * 0.035
+        for row in literature_rows:
+            ax.axvline(
+                row.index,
+                color=event_color,
+                linestyle=":",
+                linewidth=1.1,
+                alpha=0.45,
+                zorder=1,
+            )
+        ax.scatter(
+            [row.index for row in literature_rows],
+            [event_y for _ in literature_rows],
+            marker="v",
+            c=event_color,
+            s=50,
+            alpha=0.85,
+            zorder=5,
+            label="Literature review",
+            edgecolors="white",
+            linewidths=0.4,
+        )
+        event_x_limits = ax.get_xlim()
+        event_x_span = max(event_x_limits[1] - event_x_limits[0], 1.0)
+        for row in select_literature_labels(literature_rows, max_literature_labels):
+            runtime = format_runtime(row.runtime_seconds)
+            runtime_suffix = f" {runtime}" if runtime else ""
+            near_right = (row.index - event_x_limits[0]) / event_x_span > 0.88
+            annotation = ax.annotate(
+                f"lit #{row.index}{runtime_suffix}: {compact_label(row.description, 30)}",
+                (row.index, event_y),
+                textcoords="offset points",
+                xytext=((-4, -4) if near_right else (4, -4)),
+                fontsize=7.0,
+                color=event_color,
+                alpha=0.9,
+                rotation=90,
+                ha=("right" if near_right else "left"),
+                va="top",
+                annotation_clip=True,
+            )
+            annotation.set_clip_on(True)
 
     milestone_rows = select_observed_milestones(valid, max_labels)
     x_limits = ax.get_xlim()
@@ -386,9 +461,14 @@ def plot_progress(
         f"Delta: {best_score - baseline:+.6f}",
     ]
     if runtime_label:
-        summary_lines.append(f"Runtime: {runtime_label}")
+        summary_lines.append(f"Candidate runtime: {runtime_label}" if n_literature else f"Runtime: {runtime_label}")
     if average_runtime_label:
         summary_lines.append(f"Avg/candidate: {average_runtime_label}")
+    if n_literature:
+        literature_summary = f"Lit reviews: {n_literature}"
+        if literature_runtime_label:
+            literature_summary += f" ({literature_runtime_label})"
+        summary_lines.append(literature_summary)
     summary_lines.append(f"Best run: #{best_row.index} {truncate(best_row.description, 36)}")
     summary = "\n".join(summary_lines)
     ax.text(
@@ -406,6 +486,7 @@ def plot_progress(
             "alpha": 0.9,
         },
     )
+    ax.legend(loc="best", fontsize=9)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
@@ -418,6 +499,8 @@ def plot_progress(
         total_runtime,
         average_runtime,
         len(runtime_rows),
+        n_literature,
+        literature_runtime,
     )
 
 
@@ -430,6 +513,12 @@ def main():
         type=int,
         default=6,
         help="Maximum running-best jumps to annotate; always includes the final running-best experiment.",
+    )
+    parser.add_argument(
+        "--max-literature-labels",
+        type=int,
+        default=4,
+        help="Maximum literature-review event markers to annotate; all events still draw vertical markers.",
     )
     parser.add_argument(
         "--y-min",
@@ -452,7 +541,16 @@ def main():
         total_runtime,
         average_runtime,
         runtime_candidate_count,
-    ) = plot_progress(rows, Path(args.output), args.max_labels, args.y_min, args.full_y_range)
+        literature_count,
+        literature_runtime,
+    ) = plot_progress(
+        rows,
+        Path(args.output),
+        args.max_labels,
+        args.max_literature_labels,
+        args.y_min,
+        args.full_y_range,
+    )
     print(f"Saved {args.output}")
     print(f"baseline={baseline:.6f}")
     print(f"best={best_score:.6f}")
@@ -463,6 +561,11 @@ def main():
         print(f"avg_runtime_seconds={average_runtime:.0f}")
         print(f"avg_runtime={format_runtime(average_runtime)}")
         print(f"avg_runtime_candidates={runtime_candidate_count}")
+    if literature_count:
+        print(f"literature_reviews={literature_count}")
+        print(f"literature_runtime_seconds={literature_runtime:.0f}")
+        if literature_runtime > 0:
+            print(f"literature_runtime={format_runtime(literature_runtime)}")
     print(f"best_experiment=#{best_row.index} {best_row.description}")
 
 

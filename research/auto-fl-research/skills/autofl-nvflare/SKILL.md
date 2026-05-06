@@ -33,7 +33,7 @@ Preserve these invariants unless the user explicitly asks for a protocol change:
 1. Client-local changes in `client.py`
    - optimizer family
    - scheduler settings
-   - local epochs, batch size, workers
+   - local epochs, fixed local training steps, batch size, workers
    - weight decay
    - gradient clipping
    - label smoothing
@@ -64,20 +64,20 @@ FedProx is compatible as a client-local loss term. FedOpt is compatible only whe
 After making edits:
 1. set and use `PYTHON=.venv/bin/python` by default, unless the human explicitly provides a different `PYTHON` value; treat the selected value as authoritative, verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version; print(sys.executable)"`, and do not search for alternate interpreters with glob or discovery commands such as `ls /usr/bin/python*`, `ls /workspace/.venv*/bin/python*`, or `which python`
 2. do not create virtual environments or install dependencies unless the user explicitly asks; if `.venv/bin/python` is missing, invalid, or not Python 3.12 and no override was provided, tell the user to rerun the README preflight in this directory with `python3.12` instead of guessing
-3. when initializing a campaign, use a descriptive branch tag with the pattern `<node>-<campaign-topic>-YYYYMMDD`, such as `h100-fedavgm-20260430` or `h100-archsearch-20260430`; never use date-only branch names
+3. when initializing a campaign, use a descriptive branch tag with the pattern `<node>-<campaign-topic>-YYYYMMDD`, such as `h100-fedavgm-20260430` or `h100-archsearch-20260430`; run `bash scripts/init_run.sh <tag>` before validation, baseline, or candidates; verify `git branch --show-current` starts with `autoresearch/`; never run experiments on `main`, `upstream/main`, the starter branch, or a shared feature branch; never use date-only branch names
 4. run static checks and syntax validation
 5. run the client contract validator if present
 6. run the smoke test if the prepared environment has `nvflare`
 7. assume one local 80 GB H100; launch up to `PARALLEL_CANDIDATES` same-budget candidates concurrently on that one GPU when memory allows, default to `PARALLEL_CANDIDATES=4`, and reduce the width if candidates hit CUDA OOM or host contention
-8. use the default H100 candidate budget unless told otherwise: 8 clients, 10 rounds, 4 local epochs, training batch size 64, eval batch size 1024, alpha 0.5, seed 0, `model_arch=moderate_cnn`, `max_model_params=5000000`, weighted aggregation, deterministic client training, final global evaluation on site-1, 600-second timeout
+8. use the default H100 candidate budget unless told otherwise: 8 clients, 20 communication rounds, 4 local epochs, `local_train_steps=0`, training batch size 64, eval batch size 1024, alpha 0.5, seed 0, `model_arch=moderate_cnn`, `max_model_params=5000000`, weighted aggregation, deterministic client training, final global evaluation on site-1, 1200-second timeout; local epochs or `local_train_steps` may be swept under that runtime cap, but do not vary both in the same narrow sweep
 9. use unique `RUN_LOG` and job `--name` values for each candidate; if the environment exposes multiple GPUs but this campaign should use the local H100 only, pin each run with `CUDA_VISIBLE_DEVICES=0` instead of spreading candidates across devices
-10. record the outcome in `results.tsv`; successful runs are appended as `candidate`, which means unreviewed, not kept
+10. record the outcome in `results.tsv`; `run_iteration.sh` initializes the header before launching logged runs, and successful runs are appended as `candidate`, which means unreviewed, not kept
 11. after every completed batch, update reviewed `results.tsv` statuses before launching the next batch: promote the selected survivor to `keep`, mark reviewed non-survivors as `discard`, leave crashes as `crash`, and leave only unresolved active rows as `candidate`; prefer `scripts/finalize_batch_status.py --last "${PARALLEL_CANDIDATES:-4}"`
-12. commit that ledger on experiment branches after baseline and completed runs/checkpoints
+12. commit that ledger on the active `autoresearch/` branch after baseline and completed runs/checkpoints, and commit surviving code changes as soon as they are kept rather than carrying them uncommitted into the next batch
 13. if a candidate implements a paper-derived method, include a compact source ref in the `results.tsv` description field and fuller citation details in `templates/mutation_report.md`
 14. rank the completed batch against the ledger before deciding whether to keep, narrow, or revert; rank primarily by score, use runtime as a coarse secondary signal, and prefer the faster/simpler candidate when scores are within noise
 15. after setup and baseline, continue launching same-budget candidate batches until manually interrupted; do not ask whether to keep going
-16. if progress stalls, run the Camyla-inspired literature loop from `program.md`: generate diverse queries, triage primary papers, extract challenge cards, score contract-safe proposals in `templates/literature_loop.md`, and launch the top compatible candidate batch next
+16. after every finalized batch, run `scripts/plateau_watchdog.py results.tsv`; if it prints `recommendation=literature`, stop local jitter sweeps and run the Camyla-inspired literature loop from `program.md`: time it with `scripts/log_literature_review.py --start` / `--finish`, generate diverse queries, triage primary papers, extract challenge cards, score contract-safe proposals in `templates/literature_loop.md`, record the `literature` event row in `results.tsv`, and launch the top compatible candidate batch next
 17. report the mutation hypothesis, changed files, commands run, observed outcome, literature basis, run analysis, and next mutation
 
 ## References
