@@ -18,7 +18,7 @@ The setup of this exercise consists of one **server** and two **clients**.
 
   This exercise differs from :doc:`hello_pt_job_api`, as it uses the ``Learner`` API along with the ``LearnerExecutor``.
   In short, the execution flow is abstracted away into the ``LearnerExecutor``, allowing you to only need to implement the required methods in the ``Learner`` class.
-  This will not be the focus of this guide, however you can learn more at :class:`Learner<nvflare.app_common.abstract.learner_spec.Learner>`
+  For more about those APIs, see :class:`Learner<nvflare.app_common.abstract.learner_spec.Learner>`
   and :class:`LearnerExecutor<nvflare.app_common.executors.learner_executor.LearnerExecutor>`.
 
 

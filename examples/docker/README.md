@@ -29,32 +29,23 @@ This generates a workspace under `workspace/docker_test_project/` relative to th
 
 ## Step 2: Prepare Docker runtime kits
 
-Create a Docker runtime config:
+Prepare the server and site-1 startup kits for Docker mode:
 
 ```bash
-cat > /tmp/nvflare-docker.yaml <<'EOF'
-runtime: docker
-parent:
-  docker_image: nvflare-site:latest
-  network: nvflare-network
-job_launcher:
-  default_python_path: /usr/local/bin/python
-EOF
+nvflare deploy prepare \
+  workspace/docker_test_project/prod_00/server \
+  --config examples/docker/docker.yaml \
+  --output workspace/docker_test_project/prepared/server
+
+nvflare deploy prepare \
+  workspace/docker_test_project/prod_00/site-1 \
+  --config examples/docker/docker.yaml \
+  --output workspace/docker_test_project/prepared/site-1
 ```
 
-Prepare the server and one Docker-mode client:
-
-```bash
-nvflare deploy prepare workspace/docker_test_project/prod_00/server \
-  --output workspace/docker_test_project/docker/server \
-  --config /tmp/nvflare-docker.yaml
-
-nvflare deploy prepare workspace/docker_test_project/prod_00/site-1 \
-  --output workspace/docker_test_project/docker/site-1 \
-  --config /tmp/nvflare-docker.yaml
-```
-
-`start_docker.sh` creates the Docker network if needed.
+The prepared kits include `startup/start_docker.sh`, Docker launcher resources,
+and a `local/study_data.yaml` template. The generated start script creates the
+Docker network if needed.
 
 ## Step 3: Add /etc/hosts entries (if needed)
 
@@ -67,24 +58,28 @@ to `/etc/hosts` so the admin CLI can reach the server container by name:
 
 ## Step 4: Start server and clients
 
-This example runs in **hybrid mode**: site-1 uses the prepared Docker runtime kit,
+This example runs in **hybrid mode**: site-1 uses Docker job launcher (`start_docker.sh`),
 site-2 runs in process mode (`start.sh`). This tests that both modes work together in the
 same federation.
 
-Run each in a separate terminal:
+Run each block in a separate terminal from the repo root.
 
-The first `start_docker.sh` command creates `nvflare-network` if it does not
-already exist, so no separate `docker network create` command is required.
-
+Terminal 1:
 ```bash
 # Server (Docker mode)
-cd workspace/docker_test_project/docker/server
+cd workspace/docker_test_project/prepared/server
 bash startup/start_docker.sh
+```
 
+Terminal 2:
+```bash
 # site-1 (Docker mode — job containers launched per job)
-cd workspace/docker_test_project/docker/site-1
+cd workspace/docker_test_project/prepared/site-1
 bash startup/start_docker.sh
+```
 
+Terminal 3:
+```bash
 # site-2 (process mode — jobs run as subprocesses of CP)
 cd workspace/docker_test_project/prod_00/site-2
 bash startup/start.sh
@@ -108,18 +103,22 @@ Available jobs:
 
 ## Notes
 
-- Job images and Docker resource requirements are specified per-site in `meta.json` under
-  `resource_spec[site][docker]`. Example:
+- Docker launcher settings are specified per-site in `launcher_spec` in
+  `meta.json`. Keep resource requests such as `num_of_gpus` in `resource_spec`,
+  the same way as process-mode jobs. Example:
   ```json
+  "launcher_spec": {
+    "site-1": {"docker": {"image": "nvflare-job:latest", "shm_size": "8g"}}
+  },
   "resource_spec": {
-    "site-1": {"docker": {"image": "nvflare-job:latest", "num_of_gpus": 1, "shm_size": "8g"}}
+    "site-1": {"num_of_gpus": 1}
   }
   ```
   Sites without a `docker` entry (e.g. `site-2` in these examples) run in process mode. Both
   modes can coexist in the same job.
 - Site-level Docker defaults (e.g. `shm_size`, `ipc_mode`) can be set via
-  `default_job_container_kwargs` in `resources.json` — job-level `resource_spec` takes
-  precedence on conflict.
+  `default_job_container_kwargs` in `resources.json` — job-level
+  `launcher_spec[site][docker]` takes precedence on conflict.
 - Some multi-GPU Docker environments may need `NCCL_P2P_DISABLE=1` to avoid NCCL hangs.
   Set this site-wide with `default_job_env` in `resources.json`, for example:
   ```json
