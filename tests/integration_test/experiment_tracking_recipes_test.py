@@ -35,6 +35,7 @@ TODO: Decide if these should be added to an existing test category (e.g., CIFAR 
 or run in a separate recipe test suite (takes ~1-2 minutes).
 """
 
+import importlib.util
 import os
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
@@ -57,6 +58,17 @@ class TestExperimentTrackingRecipes:
         repo_root = os.path.dirname(os.path.dirname(test_dir))
         return os.path.join(repo_root, "examples/advanced/experiment-tracking/tensorboard/client.py")
 
+    @property
+    def client_script_dir(self):
+        return os.path.dirname(self.client_script_path)
+
+    def _make_model(self):
+        model_path = os.path.join(self.client_script_dir, "model.py")
+        spec = importlib.util.spec_from_file_location("_exp_tracking_model", model_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.SimpleNetwork()
+
     def test_tensorboard_tracking_integration(self):
         """Test TensorBoard tracking can be added and job completes."""
         import tempfile
@@ -67,6 +79,7 @@ class TestExperimentTrackingRecipes:
                 name="test_tensorboard",
                 min_clients=2,
                 num_rounds=1,
+                model=self._make_model(),
                 train_script=self.client_script_path,
             )
 
@@ -89,6 +102,7 @@ class TestExperimentTrackingRecipes:
                 name="test_mlflow",
                 min_clients=2,
                 num_rounds=1,
+                model=self._make_model(),
                 train_script=self.client_script_path,
             )
 
