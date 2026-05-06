@@ -45,10 +45,10 @@ The problems that may be reported:
     :header: Checks,Problems,How to fix
     :widths: 15, 20, 25
 
-    Check grpc port binding,Can't bind to address ({grpc_target_address}) for grpc service: {e},Please check the DNS and port.
-    Check admin port binding,Can't bind to address ({admin_host}:{admin_port}) for admin service: {e},Please check the DNS and port.
-    Check snapshot storage writable,Can't write to {self.snapshot_storage_root}: {e}.,Please check the user permission.
-    Check job storage writable,	Can't write to {self.job_storage_root}: {e}.,Please check the user permission.
+    Check FL port binding,Can't bind to address ({host}:{port}): {e},Please check the DNS and port.
+    Check admin port binding,Can't bind to address ({host}:{port}): {e},Please check the DNS and port.
+    Check snapshot storage writable,Can't write to {snapshot_storage_root}: {e}.,Please check the user permission.
+    Check job storage writable,Can't write to {job_storage_root}: {e}.,Please check the user permission.
     Check dry run,Can't start successfully: {error},Please check the error message of dry run.
 
 
@@ -70,8 +70,8 @@ The problems that may be reported:
     :header: Checks,Problems,How to fix
     :widths: 15, 20, 25
 
-    Check GRPC server available,Can't connect to grpc ({server_name}:{grpc_port}) server,Please check if server is up.
-    Check dry run,	Can't start successfully: {error},	Please check the error message of dry run.
+    Check server available,Can't connect to {scheme} server ({host}:{port}),Please check if server is up.
+    Check dry run,Can't start successfully: {error},Please check the error message of dry run.
 
 
 Preflight check for admin consoles 
@@ -92,5 +92,5 @@ The problems that may be reported:
     :header: Checks,Problems,How to fix
     :widths: 15, 20, 25
 
-    Check GRPC server available,Can't connect to grpc ({server_name}:{grpc_port}) server,Please check if server is up.
-    Check dry run,	Can't start successfully: {error},	Please check the error message of dry run.
+    Check server available,Can't connect to {scheme} server ({host}:{port}),Please check if server is up.
+    Check dry run,Can't start successfully: {error},Please check the error message of dry run.

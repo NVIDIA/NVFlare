@@ -83,7 +83,8 @@ def test_feed_vars_raises_on_shape_mismatch():
         feed_vars(model, params)
 
 
-def test_feed_vars_warns_on_unexpected_keys_when_some_match(caplog):
+def test_feed_vars_filters_global_keys_not_in_local_model(caplog):
+    """Local model loading can ignore extra global keys in non-strict mode."""
     model = SimpleNet()
     params = _clone_state_dict(model)
     params["model.fc.weight"] = torch.ones_like(model.state_dict()["fc.weight"])
@@ -97,6 +98,7 @@ def test_feed_vars_warns_on_unexpected_keys_when_some_match(caplog):
 
 
 def test_persistence_manager_accepts_partial_known_updates():
+    """Client updates may contain any subset of the server checkpoint schema."""
     model = SimpleNet()
     manager = PTModelPersistenceFormatManager(_clone_state_dict(model))
     new_weight = torch.full_like(model.state_dict()["fc.weight"], 5.0)
@@ -107,7 +109,8 @@ def test_persistence_manager_accepts_partial_known_updates():
     assert torch.equal(manager.var_dict["fc.bias"], model.state_dict()["fc.bias"])
 
 
-def test_persistence_manager_rejects_unexpected_keys():
+def test_persistence_manager_rejects_client_keys_outside_server_schema():
+    """Client updates may not introduce keys outside the server checkpoint schema."""
     model = SimpleNet()
     manager = PTModelPersistenceFormatManager(_clone_state_dict(model))
     weights = {
