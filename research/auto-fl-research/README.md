@@ -51,11 +51,11 @@ The [autoresearch](https://github.com/karpathy/autoresearch) repo keeps the setu
 
 ## QWBE-style literature proposals
 
-QWBE is currently implemented as an **instruction and artifact workflow**, not as imported [Camyla](https://yifangao112.github.io/camyla-page) code or a separate tree-search scheduler. After each reviewed candidate batch, `program.md` directs the agent to run `scripts/plateau_watchdog.py`. If it prints `recommendation=literature`, the agent must stop local jitter sweeps, use the Camyla-inspired literature loop, and fill `templates/literature_loop.md`.
+QWBE is currently implemented as an **instruction and artifact workflow**, not as imported [Camyla](https://yifangao112.github.io/camyla-page) code or a separate tree-search scheduler. After each reviewed candidate batch, `program.md` directs the agent to run `scripts/plateau_watchdog.py`. If it prints `recommendation=literature`, the agent must stop local jitter sweeps, use the Camyla-inspired literature loop, and fill `templates/literature_loop.md`. If it prints `recommendation=continue`, the agent should keep iterating locally rather than log another literature row for a routine missed batch.
 
 The current flow is:
 
-1. Run `scripts/plateau_watchdog.py results.tsv` after finalizing each batch. Its default hard trigger is 32 scored non-crash candidates without a material improvement or literature reset.
+1. Run `scripts/plateau_watchdog.py results.tsv` after finalizing each batch. Its default hard trigger is 32 scored non-crash candidates without a material improvement or literature reset. Treat this as the normal trigger for literature mode.
 2. Start a literature-review timer with `scripts/log_literature_review.py --start`, then generate source-backed proposal cards from recent `results.tsv` symptoms and relevant papers.
 3. Filter out duplicates, known null/worse ideas, and proposals that violate the current contract.
 4. Score each remaining proposal from 1-5 on expected gain, contract safety, simplicity, evidence, novelty, and runtime cost.
@@ -184,7 +184,7 @@ Set PARALLEL_CANDIDATES=4 unless I override it. Use one local GPU; if multiple G
 
 Once setup and baseline are complete, do not ask whether to keep going or whether this is a good stopping point. Continue the experiment loop until manually interrupted.
 
-After every reviewed batch, run `"${PYTHON}" scripts/plateau_watchdog.py results.tsv` before choosing the next sweep. If it prints `recommendation=literature`, stop local hyperparameter jittering, run the literature loop in `program.md`, log a `literature` row, and launch the selected source-backed candidates next.
+After every reviewed batch, run `"${PYTHON}" scripts/plateau_watchdog.py results.tsv` before choosing the next sweep. If it prints `recommendation=literature`, stop local hyperparameter jittering, run the literature loop in `program.md`, log a `literature` row, and launch the selected source-backed candidates next. If it prints `recommendation=continue`, do not start another literature review for a routine missed batch; keep sweeping a clear allowed local axis unless repeated crashes share one root cause or no non-duplicate safe axis remains.
 
 Commit `results.tsv` locally after the baseline and after each reviewed batch. Commit surviving code changes locally on the active `autoresearch/` branch as soon as they are kept; do not let kept mutations accumulate only in the working tree. Do not require pushing from inside the devcontainer.
 ```
@@ -267,7 +267,7 @@ Then run the plateau watchdog before selecting the next sweep:
 "${PYTHON:-python3}" scripts/plateau_watchdog.py results.tsv
 ```
 
-If it prints `recommendation=literature`, switch to the literature loop before launching more candidates.
+If it prints `recommendation=literature`, switch to the literature loop before launching more candidates. If it prints `recommendation=continue`, keep iterating locally rather than logging another literature row for a normal non-improving batch.
 
 The progress plot reads the `status` column directly. If all successful rows remain `candidate`, the plot will correctly show no kept runs.
 Rows with `status=literature` are shown as vertical markers, with their `runtime_seconds` counted separately from candidate runtime, so long score plateaus can be compared against actual paper-review cycles.
