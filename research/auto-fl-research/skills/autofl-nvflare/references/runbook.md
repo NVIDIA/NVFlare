@@ -21,7 +21,7 @@
 18. Run `"${PYTHON}" scripts/plateau_watchdog.py results.tsv` after every finalized batch. If it prints `recommendation=literature`, stop local jitter sweeps and run a literature-grounded proposal loop before launching more candidates. If it prints `recommendation=continue`, keep iterating locally unless repeated crashes share one root cause or no non-duplicate safe axis remains.
 19. Commit `results.tsv` on the active `autoresearch/` branch after baseline and each completed run/checkpoint. Commit surviving code changes as soon as they are kept; do not carry kept changes uncommitted into the next batch.
 20. Continue with the next same-budget candidate batch until manually interrupted; do not ask whether to keep going after setup and baseline.
-21. When the watchdog fires, or when repeated crashes block useful candidate runs, run the literature loop: start timing with `"${PYTHON}" scripts/log_literature_review.py --start --description "plateau after <rows>: <symptom>"`, search papers, extract challenges, score contract-safe ideas, append the `literature` event with `--finish`, and launch the top compatible candidate batch next.
+21. When the watchdog fires, or when repeated crashes share one root cause and a source-backed fix is needed before more runs are useful, run the literature loop: start timing with `"${PYTHON}" scripts/log_literature_review.py --start --description "plateau after <rows>: <symptom>"`, search papers, extract challenges, score contract-safe ideas, append the `literature` event with `--finish`, and launch the top compatible candidate batch next.
 22. Summarize the result when interrupted or when reporting a checkpoint.
 
 ## Single-H100 mode

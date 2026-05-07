@@ -324,7 +324,7 @@ Same-budget campaign loop for the local H100:
    - run a narrower follow-up sweep around the best candidate if results are close;
    - discard the whole axis if all candidates regress or add complexity without gain.
 8. Update the `status` column for reviewed runs in `results.tsv`. Use `scripts/finalize_batch_status.py --last "${PARALLEL_CANDIDATES:-4}"` or edit the TSV carefully: promoted rows must be `keep`, reviewed non-survivors must be `discard`, crashes remain `crash`, and only unresolved active rows may remain `candidate`.
-9. Run `"${PYTHON}" scripts/plateau_watchdog.py results.tsv`. If it prints `recommendation=literature`, run the literature loop before launching more candidates. If it prints `recommendation=continue`, keep iterating locally unless repeated crashes share one root cause or every remaining allowed axis is a minor duplicate of a logged null result.
+9. Run `"${PYTHON}" scripts/plateau_watchdog.py results.tsv`. If it prints `recommendation=literature`, run the literature loop before launching more candidates. If it prints `recommendation=continue`, keep iterating locally unless repeated crashes share one root cause or no non-duplicate safe axis remains.
 10. Commit code mutations that survive the run analysis on the active `autoresearch/` branch before launching the next batch. Also commit `results.tsv` at checkpoint boundaries, even when the run only tested runtime hyperparameters.
 
 ### Never stop
@@ -360,7 +360,7 @@ The watchdog is the normal trigger for literature mode. Soft stall symptoms shou
 Trigger literature mode when any of these happen:
 - `scripts/plateau_watchdog.py results.tsv` prints `recommendation=literature`, which defaults to 32 scored non-crash candidates without a material improvement or literature reset;
 - several crashes share the same root cause and a source-backed fix is needed before more runs are useful;
-- after checking recent near-misses, `mutation_schema.yaml`, and known null results, all remaining safe ideas are minor duplicates of already-tested settings.
+- after checking recent near-misses, `mutation_schema.yaml`, and known null results, no non-duplicate safe axis remains.
 
 Do not start a new literature loop while the watchdog prints `recommendation=continue` merely because a batch underperformed, a narrow retune missed, or the next local sweep needs routine choice among LR, momentum, weight decay, scheduler, local compute, FedProx, or allowed aggregator knobs.
 
