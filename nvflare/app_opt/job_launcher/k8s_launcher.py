@@ -131,6 +131,15 @@ def site_name_to_rfc1123(site_name: str, max_length: int = 47) -> str:
     return f"{name}-{digest}"
 
 
+def job_pod_name(job_id: str, site_name: str) -> str:
+    """Build a site-scoped Kubernetes pod name for a FL job."""
+
+    site_suffix = site_name_to_rfc1123(site_name, max_length=20)
+    job_prefix_max = 63 - len(site_suffix) - 1
+    job_prefix = job_id[:job_prefix_max].rstrip("-")
+    return f"{job_prefix}-{site_suffix}"
+
+
 def study_dataset_volume_name(study: str, dataset: str) -> str:
     return site_name_to_rfc1123(f"data-{study}-{dataset}", max_length=63)
 
@@ -147,9 +156,11 @@ class K8sJobHandle(JobHandleSpec):
         python_path=DEFAULT_PYTHON_PATH,
         workspace_transfer: WorkspaceTransferManager = None,
         workspace_job_id: str = "",
+        pod_name: str = None,
     ):
         super().__init__()
         self.job_id = job_id
+        self.pod_name = pod_name if pod_name is not None else job_id
         self.timeout = timeout
         self.terminal_state = None
         self.workspace_transfer = workspace_transfer
@@ -271,16 +282,20 @@ class K8sJobHandle(JobHandleSpec):
         from kubernetes.client.rest import ApiException
 
         try:
-            self.api_instance.delete_namespaced_pod(name=self.job_id, namespace=self.namespace, grace_period_seconds=0)
+            self.api_instance.delete_namespaced_pod(
+                name=self.pod_name, namespace=self.namespace, grace_period_seconds=0
+            )
             self.terminal_state = JobState.TERMINATED
         except ApiException as e:
             if getattr(e, "status", None) == 404:
-                self.logger.info(f"job {self.job_id} pod not found during termination; assuming terminated")
+                self.logger.info(
+                    f"job {self.job_id} pod {self.pod_name} not found during termination; assuming terminated"
+                )
             else:
-                self.logger.error(f"failed to terminate job {self.job_id}: {e}")
+                self.logger.error(f"failed to terminate job {self.job_id} pod {self.pod_name}: {e}")
             self.terminal_state = JobState.TERMINATED
         except Exception as e:
-            self.logger.error(f"unexpected error terminating job {self.job_id}: {e}")
+            self.logger.error(f"unexpected error terminating job {self.job_id} pod {self.pod_name}: {e}")
             self.terminal_state = JobState.TERMINATED
         self._remove_workspace_job()
         return None
@@ -300,18 +315,20 @@ class K8sJobHandle(JobHandleSpec):
         from kubernetes.client.rest import ApiException
 
         try:
-            resp = self.api_instance.read_namespaced_pod(name=self.job_id, namespace=self.namespace)
+            resp = self.api_instance.read_namespaced_pod(name=self.pod_name, namespace=self.namespace)
         except ApiException as e:
             if getattr(e, "status", None) == 404:
-                self.logger.info(f"job {self.job_id} pod not found during querying; assuming terminated")
+                self.logger.info(
+                    f"job {self.job_id} pod {self.pod_name} not found during querying; assuming terminated"
+                )
                 self.terminal_state = JobState.TERMINATED
                 self._remove_workspace_job()
                 return PodPhase.UNKNOWN.value
             else:
-                self.logger.warning(f"failed to query pod phase {self.job_id}: {e}")
+                self.logger.warning(f"failed to query pod phase for job {self.job_id} pod {self.pod_name}: {e}")
             return None  # no pod phase was observed
         except Exception as e:
-            self.logger.warning(f"unexpected error querying pod phase {self.job_id}: {e}")
+            self.logger.warning(f"unexpected error querying pod phase for job {self.job_id} pod {self.pod_name}: {e}")
             return None  # no pod phase was observed
         return resp.status.phase
 
@@ -438,6 +455,7 @@ class K8sJobLauncher(JobLauncherSpec):
         if not raw_job_id:
             raise RuntimeError(f"missing {JobConstants.JOB_ID} in job_meta")
         job_id = uuid4_to_rfc1123(raw_job_id)
+        pod_name = job_pod_name(job_id, site_name)
         workspace_obj = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         if workspace_obj is None:
             raise RuntimeError(f"missing {FLContextKey.WORKSPACE_OBJECT} in FLContext")
@@ -531,7 +549,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 )
 
             job_config = {
-                "name": job_id,
+                "name": pod_name,
                 "image": job_image,
                 "container_name": f"container-{job_id}",
                 "command": job_cmd,
@@ -575,6 +593,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 python_path=python_path,
                 workspace_transfer=workspace_transfer,
                 workspace_job_id=raw_job_id,
+                pod_name=pod_name,
             )
             pod_manifest = job_handle.get_manifest()
             self.logger.debug(
