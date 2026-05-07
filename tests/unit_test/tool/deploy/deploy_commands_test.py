@@ -336,7 +336,7 @@ def test_prepare_k8s_server_uses_parent_python_path_for_chart_command(tmp_path, 
     assert values["command"] == ["/opt/conda/bin/python"]
 
 
-def test_prepare_k8s_server_falls_back_to_job_launcher_python_path_for_chart_command(tmp_path, capsys):
+def test_prepare_k8s_server_does_not_use_job_launcher_python_path_for_chart_command(tmp_path, capsys):
     kit = _make_server_kit(tmp_path)
     output = tmp_path / "server-k8s"
 
@@ -352,7 +352,7 @@ def test_prepare_k8s_server_falls_back_to_job_launcher_python_path_for_chart_com
     capsys.readouterr()
 
     values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
-    assert values["command"] == ["/usr/bin/python3"]
+    assert values["command"] == [K8S_PARENT_PYTHON_PATH]
 
 
 def test_prepare_k8s_launcher_default_python_path_matches_parent_default(tmp_path, capsys):
@@ -523,7 +523,7 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert values["persistence"]["workspace"]["volumeName"] == "workspace"
     assert values["persistence"]["workspace"]["mountPath"] == "/workspace"
     assert values["port"] == 9102
-    assert values["command"] == ["/usr/bin/python3"]
+    assert values["command"] == [K8S_PARENT_PYTHON_PATH]
     assert values["securityContext"] == {"runAsUser": 1000}
     assert values["resources"] == {"requests": {"cpu": "1", "memory": "2Gi"}}
     assert (output / "helm_chart" / "templates" / "client-deployment.yaml").exists()

@@ -677,7 +677,7 @@ def _write_helm_chart(kit_info: KitInfo, config: dict[str, Any]) -> Path:
     parent_port = parent.get("parent_port", 8102)
     workspace_pvc = parent.get("workspace_pvc", "nvflws")
     workspace_mount_path = parent.get("workspace_mount_path", WORKSPACE_MOUNT_PATH)
-    parent_python_path = parent.get("python_path") or job_launcher.get("default_python_path") or K8S_PARENT_PYTHON_PATH
+    parent_python_path = parent.get("python_path") or K8S_PARENT_PYTHON_PATH
     chart_dir = kit_info.kit_dir / HELM_CHART_DIR
     if chart_dir.exists():
         shutil.rmtree(chart_dir)
