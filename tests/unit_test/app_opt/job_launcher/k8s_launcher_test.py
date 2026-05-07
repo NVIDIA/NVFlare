@@ -932,8 +932,40 @@ class TestK8sJobLauncherInit:
         assert launcher.study_data_pvc_file_path == "/fake/study_data.yaml"
         assert launcher.timeout == 60
         assert launcher.namespace == "test-ns"
+        assert launcher.workspace_mount_path == WORKSPACE_MOUNT_PATH
         # study_data.yaml is populated lazily
         assert launcher.study_data_pvc_dict is None
+
+    def test_init_stores_custom_workspace_mount_path(self):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        launcher = ClientK8sJobLauncher(
+            config_file_path="/fake/kube/config",
+            study_data_pvc_file_path="/fake/study_data.yaml",
+            workspace_mount_path="/mnt/data/nvflare",
+        )
+
+        assert launcher.workspace_mount_path == "/mnt/data/nvflare"
+
+    def test_init_rejects_empty_workspace_mount_path(self):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        with pytest.raises(ValueError, match="workspace_mount_path"):
+            ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path="/fake/study_data.yaml",
+                workspace_mount_path="",
+            )
+
+    def test_init_rejects_non_string_workspace_mount_path(self):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        with pytest.raises(ValueError, match="workspace_mount_path"):
+            ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path="/fake/study_data.yaml",
+                workspace_mount_path=1,
+            )
 
     def test_init_rejects_empty_ephemeral_storage(self):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
@@ -1059,12 +1091,17 @@ def _make_launch_job_meta(
     return meta
 
 
-def _make_launch_fl_ctx(site_name="site-1", set_items=None, app_custom_folder=""):
+def _make_launch_fl_ctx(
+    site_name="site-1",
+    set_items=None,
+    app_custom_folder="",
+    workspace_arg="/var/tmp/nvflare/workspace",
+):
     fl_ctx = FLContext()
     fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, site_name, private=False, sticky=True)
     job_args = {
         JobProcessArgs.EXE_MODULE: ("-m", _WORKER_MODULE),
-        JobProcessArgs.WORKSPACE: ("-w", "/var/tmp/nvflare/workspace"),
+        JobProcessArgs.WORKSPACE: ("-w", workspace_arg),
         JobProcessArgs.JOB_ID: ("-n", "job-abc"),
     }
     fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args, private=True, sticky=False)
@@ -1093,7 +1130,13 @@ class TestK8sJobLauncherLaunchJob:
     """
 
     def _setup(
-        self, patches, namespace="test-ns", study_data_pvc_dict=None, default_python_path=None, ephemeral_storage=None
+        self,
+        patches,
+        namespace="test-ns",
+        study_data_pvc_dict=None,
+        default_python_path=None,
+        ephemeral_storage=None,
+        workspace_mount_path=None,
     ):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
@@ -1119,6 +1162,8 @@ class TestK8sJobLauncherLaunchJob:
         }
         if ephemeral_storage is not None:
             launcher_kwargs["ephemeral_storage"] = ephemeral_storage
+        if workspace_mount_path is not None:
+            launcher_kwargs["workspace_mount_path"] = workspace_mount_path
         launcher = ClientK8sJobLauncher(**launcher_kwargs)
         return launcher, mock_api
 
@@ -1268,6 +1313,31 @@ class TestK8sJobLauncherLaunchJob:
             assert "secret" in vol_map["startup-kit"]
             # no study in meta means no study-data mounts
             assert len(volumes) == 2
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_uses_custom_workspace_mount_path(self):
+        patches = _make_k8s_launcher_patches()
+        workspace_mount_path = "/mnt/data/nvflare"
+        launcher, mock_api = self._setup(patches, workspace_mount_path=workspace_mount_path)
+        self._prime_running(mock_api)
+        try:
+            app_custom_folder = f"/fake/workspace/{_JOB_UUID}/app_site-1/custom"
+            fl_ctx = _make_launch_fl_ctx(app_custom_folder=app_custom_folder, workspace_arg=workspace_mount_path)
+            launcher.launch_job(_make_launch_job_meta(), fl_ctx)
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            container = manifest["spec"]["containers"][0]
+            mount_map = {m["name"]: m for m in container["volumeMounts"]}
+            env_map = {e["name"]: e["value"] for e in container["env"]}
+
+            assert mount_map["workspace-job"]["mountPath"] == workspace_mount_path
+            assert mount_map["startup-kit"] == {
+                "name": "startup-kit",
+                "mountPath": f"{workspace_mount_path}/startup",
+                "readOnly": True,
+            }
+            assert env_map["PYTHONPATH"] == f"{workspace_mount_path}/{_JOB_UUID}/app_site-1/custom"
+            assert container["args"][container["args"].index("-w") + 1] == workspace_mount_path
         finally:
             _exit_patches(patches)
 

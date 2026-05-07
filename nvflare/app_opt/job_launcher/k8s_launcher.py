@@ -356,6 +356,7 @@ class K8sJobLauncher(JobLauncherSpec):
         security_context: dict = None,
         ephemeral_storage: str = DEFAULT_EPHEMERAL_STORAGE,
         default_python_path: str = None,
+        workspace_mount_path: str = WORKSPACE_MOUNT_PATH,
     ):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -373,6 +374,9 @@ class K8sJobLauncher(JobLauncherSpec):
         if not isinstance(ephemeral_storage, str) or not ephemeral_storage:
             raise ValueError("ephemeral_storage must be a non-empty string")
         self.ephemeral_storage = ephemeral_storage
+        if not isinstance(workspace_mount_path, str) or not workspace_mount_path:
+            raise ValueError("workspace_mount_path must be a non-empty string")
+        self.workspace_mount_path = workspace_mount_path
         self.study_data_pvc_dict = None
         self.core_v1 = None
 
@@ -486,7 +490,7 @@ class K8sJobLauncher(JobLauncherSpec):
             if os.path.commonpath([workspace_root_abs, custom_folder_abs]) != workspace_root_abs:
                 raise RuntimeError(f"custom folder {app_custom_folder} is not under workspace {workspace_root}")
             env["PYTHONPATH"] = os.path.join(
-                WORKSPACE_MOUNT_PATH, os.path.relpath(custom_folder_abs, workspace_root_abs)
+                self.workspace_mount_path, os.path.relpath(custom_folder_abs, workspace_root_abs)
             )
 
         startup_dir = workspace_obj.get_startup_kit_dir()
@@ -508,8 +512,12 @@ class K8sJobLauncher(JobLauncherSpec):
                 {"name": "startup-kit", "secret": {"secretName": startup_secret_name}},
             ]
             volume_mount_list = [
-                {"name": "workspace-job", "mountPath": WORKSPACE_MOUNT_PATH},
-                {"name": "startup-kit", "mountPath": f"{WORKSPACE_MOUNT_PATH}/startup", "readOnly": True},
+                {"name": "workspace-job", "mountPath": self.workspace_mount_path},
+                {
+                    "name": "startup-kit",
+                    "mountPath": os.path.join(self.workspace_mount_path, "startup"),
+                    "readOnly": True,
+                },
             ]
             for dataset_mount in data_mounts:
                 volume_name = study_dataset_volume_name(dataset_mount.study, dataset_mount.dataset)

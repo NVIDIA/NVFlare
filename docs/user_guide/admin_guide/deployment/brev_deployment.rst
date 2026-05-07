@@ -420,6 +420,7 @@ Prepare the server and client startup kits for Kubernetes:
      parent_port: 8102
      workspace_pvc: nvflws
      workspace_mount_path: /var/tmp/nvflare/workspace
+     python_path: /usr/local/bin/python3
    job_launcher:
      config_file_path:
      default_python_path: /usr/local/bin/python3
@@ -562,6 +563,7 @@ Set the server launcher ``args`` for this Brev Helm deployment:
        "study_data_pvc_file_path": "/var/tmp/nvflare/workspace/local/study_data.yaml",
        "namespace": "nvflare",
        "python_path": "/usr/local/bin/python3",
+       "workspace_mount_path": "/var/tmp/nvflare/workspace",
        "pending_timeout": 300,
        "ephemeral_storage": "1Gi"
      }
@@ -581,6 +583,8 @@ The server K8s launcher args mean:
 * ``namespace``: Kubernetes namespace where launched job pods are created. Use
   the same namespace used by the server Helm release, ``nvflare`` in this guide.
 * ``python_path``: Python executable inside the job container image.
+* ``workspace_mount_path``: in-container path where launched job pods mount the
+  transferred job workspace and startup kit.
 * ``pending_timeout``: seconds to wait for a launched job pod to leave
   ``Pending`` before terminating it.
 * ``ephemeral_storage``: temporary workspace size requested for each launched
@@ -735,6 +739,7 @@ Set the client launcher ``args`` for this Brev Helm deployment:
        "study_data_pvc_file_path": "/var/tmp/nvflare/workspace/local/study_data.yaml",
        "namespace": "nvflare",
        "python_path": "/usr/local/bin/python3",
+       "workspace_mount_path": "/var/tmp/nvflare/workspace",
        "pending_timeout": 300,
        "ephemeral_storage": "1Gi"
      }
@@ -754,6 +759,8 @@ The client K8s launcher args mean:
 * ``namespace``: Kubernetes namespace where launched job pods are created. Use
   the same namespace used by the client Helm release, ``nvflare`` in this guide.
 * ``python_path``: Python executable inside the job container image.
+* ``workspace_mount_path``: in-container path where launched job pods mount the
+  transferred job workspace and startup kit.
 * ``pending_timeout``: seconds to wait for a launched job pod to leave
   ``Pending`` before terminating it.
 * ``ephemeral_storage``: temporary workspace size requested for each launched
