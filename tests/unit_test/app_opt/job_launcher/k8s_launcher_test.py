@@ -49,7 +49,7 @@ for _mod_name, _mod_obj in [
     ("kubernetes.client.api", _k8s_api),
     ("kubernetes.client.api.core_v1_api", _k8s_core),
 ]:
-    sys.modules.setdefault(_mod_name, _mod_obj)
+    sys.modules[_mod_name] = _mod_obj
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey
@@ -65,6 +65,7 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     K8sJobHandle,
     PodPhase,
     _job_args_dict,
+    job_pod_name,
     site_name_to_rfc1123,
     study_dataset_volume_name,
     uuid4_to_rfc1123,
@@ -160,6 +161,20 @@ class TestUuid4ToRfc1123:
 class TestSiteNameToRfc1123:
     def test_site_name_collision_gets_distinct_suffixes(self):
         assert site_name_to_rfc1123("site#1") != site_name_to_rfc1123("site1")
+
+
+class TestJobPodName:
+    def test_includes_site_suffix(self):
+        pod_name = job_pod_name("job-123", "site-1")
+        assert pod_name == f"job-123-{site_name_to_rfc1123('site-1', max_length=20)}"
+
+    def test_same_job_id_has_distinct_pods_for_different_sites(self):
+        assert job_pod_name("job-123", "server") != job_pod_name("job-123", "client")
+
+    def test_truncates_to_k8s_label_limit(self):
+        pod_name = job_pod_name("j" + "a" * 100, "site-1")
+        assert len(pod_name) == 63
+        assert not pod_name.endswith("-")
 
 
 # ---------------------------------------------------------------------------
@@ -496,6 +511,16 @@ class TestK8sJobHandle:
         handle.terminate()
         api.delete_namespaced_pod.assert_called_once_with(name="job-1", namespace="custom-ns", grace_period_seconds=0)
 
+    def test_terminate_uses_pod_name_when_supplied(self):
+        api = _make_api_instance()
+        handle = K8sJobHandle("job-1", api, _make_job_config(), pod_name="job-1-site-1")
+        handle.terminate()
+        api.delete_namespaced_pod.assert_called_once_with(
+            name="job-1-site-1", namespace="default", grace_period_seconds=0
+        )
+        assert handle.job_id == "job-1"
+        assert handle.pod_name == "job-1-site-1"
+
     # -- _query_phase ---------------------------------------------------------
     def test_query_phase_returns_unknown_on_api_error(self):
         api = _make_api_instance()
@@ -508,6 +533,15 @@ class TestK8sJobHandle:
         api.read_namespaced_pod.side_effect = RuntimeError("connection lost")
         handle = _make_handle(api=api)
         assert handle._query_phase() == PodPhase.UNKNOWN.value
+
+    def test_query_phase_uses_pod_name_when_supplied(self):
+        api = _make_api_instance()
+        resp = Mock()
+        resp.status.phase = PodPhase.RUNNING.value
+        api.read_namespaced_pod.return_value = resp
+        handle = K8sJobHandle("job-1", api, _make_job_config(), pod_name="job-1-site-1")
+        assert handle._query_phase() == PodPhase.RUNNING.value
+        api.read_namespaced_pod.assert_called_once_with(name="job-1-site-1", namespace="default")
 
     # -- _stuck_in_pending ----------------------------------------------------
     def test_stuck_in_pending_returns_true_at_max_count(self):
@@ -966,6 +1000,7 @@ class TestServerK8sJobLauncherGetModuleArgs:
 _WORKER_MODULE = "nvflare.private.fed.app.client.worker_process"
 _JOB_UUID = "550e8400-e29b-41d4-a716-446655440000"
 _EXPECTED_JOB_ID = uuid4_to_rfc1123(_JOB_UUID)
+_EXPECTED_POD_NAME = job_pod_name(_EXPECTED_JOB_ID, "site-1")
 
 
 def _make_launch_job_meta(
@@ -1067,6 +1102,18 @@ class TestK8sJobLauncherLaunchJob:
         finally:
             _exit_patches(patches)
 
+    def test_handle_preserves_job_id_and_tracks_pod_name(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            assert handle.job_id == _EXPECTED_JOB_ID
+            assert handle.pod_name == _EXPECTED_POD_NAME
+            mock_api.read_namespaced_pod.assert_called_once_with(name=_EXPECTED_POD_NAME, namespace="test-ns")
+        finally:
+            _exit_patches(patches)
+
     def test_terminal_state_is_none_after_clean_launch(self):
         patches = _make_k8s_launcher_patches()
         launcher, mock_api = self._setup(patches)
@@ -1101,14 +1148,14 @@ class TestK8sJobLauncherLaunchJob:
 
     # -- pod manifest: identity fields ----------------------------------------
 
-    def test_pod_manifest_name_is_rfc1123_of_job_id(self):
+    def test_pod_manifest_name_includes_site_to_avoid_namespace_collisions(self):
         patches = _make_k8s_launcher_patches()
         launcher, mock_api = self._setup(patches)
         self._prime_running(mock_api)
         try:
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert manifest["metadata"]["name"] == _EXPECTED_JOB_ID
+            assert manifest["metadata"]["name"] == _EXPECTED_POD_NAME
         finally:
             _exit_patches(patches)
 
