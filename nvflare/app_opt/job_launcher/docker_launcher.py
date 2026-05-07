@@ -517,8 +517,8 @@ class DockerJobLauncher(JobLauncherSpec):
         study_data_file = os.path.join(self.WORKSPACE_MOUNT, self.STUDY_DATA_PATH_FILE)
         study = job_meta.get(JobMetaKey.STUDY.value)
         if should_mount_study_data(study):
-            study_data_map = load_study_data_file(study_data_file)
-            data_mounts = resolve_study_dataset_mounts(study_data_map, study, study_data_file)
+            study_data_map = load_study_data_file(study_data_file, logger=self.logger)
+            data_mounts = resolve_study_dataset_mounts(study_data_map, study, study_data_file, logger=self.logger)
             for dataset_mount in data_mounts:
                 self.logger.info(
                     "mounting study '%s' dataset '%s' from %s -> %s",
