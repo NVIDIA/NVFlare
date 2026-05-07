@@ -168,6 +168,7 @@ parent:
   parent_port: ${PARENT_PORT}
   workspace_pvc: ${WORKSPACE_PVC}
   workspace_mount_path: ${WORKSPACE_MOUNT_PATH}
+  python_path: /usr/local/bin/python3
 job_launcher:
   config_file_path:
   default_python_path: /usr/local/bin/python3
