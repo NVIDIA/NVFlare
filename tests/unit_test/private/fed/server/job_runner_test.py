@@ -13,13 +13,15 @@
 # limitations under the License.
 
 from contextlib import nullcontext
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.fl_constant import FLContextKey, RunProcessKey
+from nvflare.apis.job_def import JobMetaKey, RunStatus
+from nvflare.apis.job_launcher_spec import JobReturnCode
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.server.message_send import ClientReply
@@ -251,6 +253,164 @@ def test_job_complete_process_uses_fresh_context_for_completion_events():
 
     completion_ctx.set_prop.assert_called_once_with(FLContextKey.CURRENT_JOB_ID, "job-1")
     runner.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, completion_ctx)
+    engine.remove_exception_process.assert_called_once_with("job-1")
+    assert "job-1" not in runner.running_jobs
+
+
+def test_update_job_status_maps_aborted_launcher_return_code_to_finished_aborted():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    runner.abort_client_run = MagicMock()
+
+    engine = MagicMock()
+    engine.client_manager.clients = {}
+    engine.exception_run_processes = {
+        "job-1": {
+            RunProcessKey.PARTICIPANTS: {},
+            RunProcessKey.PROCESS_RETURN_CODE: JobReturnCode.ABORTED,
+        }
+    }
+
+    job = MagicMock()
+    job.job_id = "job-1"
+    job_manager = MagicMock()
+    fl_ctx = MagicMock()
+
+    status = runner._update_job_status(engine, job, job_manager, fl_ctx)
+
+    assert status == RunStatus.FINISHED_ABORTED
+    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, fl_ctx)
+    runner.abort_client_run.assert_called_once_with("job-1", [], fl_ctx)
+
+
+@pytest.mark.parametrize(
+    "failure_code",
+    [ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION, JobReturnCode.EXECUTION_ERROR],
+)
+def test_update_job_status_maps_exception_return_code_to_finished_execution_exception(failure_code):
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    runner.abort_client_run = MagicMock()
+
+    engine = MagicMock()
+    engine.client_manager.clients = {}
+    engine.exception_run_processes = {
+        "job-1": {
+            RunProcessKey.PARTICIPANTS: {},
+            RunProcessKey.PROCESS_RETURN_CODE: failure_code,
+        }
+    }
+
+    job = MagicMock()
+    job.job_id = "job-1"
+    job_manager = MagicMock()
+    fl_ctx = MagicMock()
+
+    status = runner._update_job_status(engine, job, job_manager, fl_ctx)
+
+    assert status == RunStatus.FINISHED_EXECUTION_EXCEPTION
+    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
+    runner.abort_client_run.assert_called_once_with("job-1", [], fl_ctx)
+
+
+@pytest.mark.parametrize(
+    "failure_code",
+    [ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION, JobReturnCode.EXECUTION_ERROR],
+)
+def test_update_job_status_exception_return_code_overrides_clean_sj_finish(failure_code):
+    """fail_run sets PROCESS_RETURN_CODE=EXCEPTION before _stop_run aborts the SJ.
+    The SJ's finally clause then sends UPDATE_RUN_STATUS with execution_error=False
+    and PROCESS_FINISHED=True. The EXCEPTION code must still win so list_jobs shows
+    FINISHED:EXECUTION_EXCEPTION rather than FINISHED:COMPLETED.
+    """
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    runner.abort_client_run = MagicMock()
+
+    engine = MagicMock()
+    engine.client_manager.clients = {}
+    engine.exception_run_processes = {
+        "job-1": {
+            RunProcessKey.PARTICIPANTS: {},
+            RunProcessKey.PROCESS_RETURN_CODE: failure_code,
+            RunProcessKey.PROCESS_FINISHED: True,
+            RunProcessKey.PROCESS_EXE_ERROR: False,
+        }
+    }
+
+    job = MagicMock()
+    job.job_id = "job-1"
+    job_manager = MagicMock()
+    fl_ctx = MagicMock()
+
+    status = runner._update_job_status(engine, job, job_manager, fl_ctx)
+
+    assert status == RunStatus.FINISHED_EXECUTION_EXCEPTION
+    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
+
+
+def test_fail_run_records_exception_process_without_setting_aborted_status():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    runner._stop_run = MagicMock()
+
+    engine = MagicMock()
+    engine.run_processes = {"job-1": {RunProcessKey.PARTICIPANTS: {}}}
+    engine.exception_run_processes = {}
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+
+    job = MagicMock()
+    job.job_id = "job-1"
+    runner.running_jobs = {"job-1": job}
+
+    assert runner.fail_run("job-1", ProcessExitCode.EXCEPTION, fl_ctx) == ""
+
+    assert engine.exception_run_processes["job-1"][RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.EXCEPTION
+    runner._stop_run.assert_called_once_with("job-1", fl_ctx)
+    fl_ctx.set_prop.assert_called_once_with(FLContextKey.CURRENT_JOB_ID, "job-1")
+
+
+def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.fire_event = MagicMock()
+    runner.log_debug = MagicMock()
+    runner.log_info = MagicMock()
+    runner.abort_client_run = MagicMock()
+    runner.ask_to_stop = False
+
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.client_manager.clients = {}
+    engine.exception_run_processes = {
+        "job-1": {
+            RunProcessKey.PARTICIPANTS: {},
+            RunProcessKey.PROCESS_RETURN_CODE: JobReturnCode.ABORTED,
+        }
+    }
+
+    job_manager = MagicMock()
+    engine.get_component.return_value = job_manager
+
+    completion_ctx = MagicMock()
+    engine.new_context.return_value = nullcontext(completion_ctx)
+
+    job = MagicMock()
+    job.job_id = "job-1"
+    job.run_aborted = False
+    runner.running_jobs = {"job-1": job}
+
+    def _stop_after_first_pass(_):
+        runner.ask_to_stop = True
+
+    with patch("nvflare.private.fed.server.job_runner.time.sleep", side_effect=_stop_after_first_pass):
+        runner._job_complete_process(engine)
+
+    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, completion_ctx)
+    assert runner.fire_event.call_args_list == [
+        call(EventType.JOB_ABORTED, completion_ctx),
+        call(EventType.JOB_COMPLETED, completion_ctx),
+    ]
     engine.remove_exception_process.assert_called_once_with("job-1")
     assert "job-1" not in runner.running_jobs
 

@@ -163,6 +163,7 @@ class K8sJobHandle(JobHandleSpec):
         self.pod_name = pod_name if pod_name is not None else job_id
         self.timeout = timeout
         self.terminal_state = None
+        self.terminal_return_code = None
         self.workspace_transfer = workspace_transfer
         self.workspace_job_id = workspace_job_id
         self.api_instance = api_instance
@@ -259,7 +260,7 @@ class K8sJobHandle(JobHandleSpec):
             if self.terminal_state is not None:
                 return False
             if self._stuck_in_pending(pod_phase):
-                self.terminate()
+                self._terminate_for_timeout("timed out waiting for pod to leave Pending/Unknown phase")
                 return False
             job_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
             if job_state in job_states_to_enter:
@@ -269,7 +270,7 @@ class K8sJobHandle(JobHandleSpec):
                 self._remove_workspace_job()
                 return False
             elif self.timeout is not None and time.time() - starting_time > self.timeout:
-                self.terminate()
+                self._terminate_for_timeout(f"timed out waiting for pod to enter {job_states_to_enter}")
                 return False
             time.sleep(1)
 
@@ -300,12 +301,22 @@ class K8sJobHandle(JobHandleSpec):
         self._remove_workspace_job()
         return None
 
+    def _terminate_for_timeout(self, reason: str):
+        self.logger.warning(f"job {self.job_id} pod {self.pod_name}: {reason}")
+        self.terminate()
+        self.terminal_return_code = JobReturnCode.EXCEPTION
+
+    def _get_return_code(self, job_state):
+        if self.terminal_return_code is not None:
+            return self.terminal_return_code
+        return JOB_RETURN_CODE_MAPPING.get(job_state)
+
     def poll(self):
         if self.terminal_state is not None:
-            return JOB_RETURN_CODE_MAPPING.get(self.terminal_state)
+            return self._get_return_code(self.terminal_state)
         job_state = self._query_state()
         if self.terminal_state is not None:
-            return JOB_RETURN_CODE_MAPPING.get(self.terminal_state)
+            return self._get_return_code(self.terminal_state)
         if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
             self.terminal_state = job_state
             self._remove_workspace_job()

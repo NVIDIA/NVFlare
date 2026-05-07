@@ -218,8 +218,15 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
                 # if process exit but with Execution exception
                 if return_code and return_code != 0:
                     self.logger.info(f"Job: {job_id} child process exit with return code {return_code}")
-                    run_process_info[RunProcessKey.PROCESS_RETURN_CODE] = return_code
-                    if job_id not in self.exception_run_processes:
+                    if job_id in self.exception_run_processes:
+                        # An external path (e.g. fail_run from a client failure
+                        # report) has already recorded an authoritative return
+                        # code for this run. Don't let the SJ's secondary exit
+                        # code (e.g. ABORTED from the abort signal we sent)
+                        # overwrite that signal.
+                        pass
+                    else:
+                        run_process_info[RunProcessKey.PROCESS_RETURN_CODE] = return_code
                         self.exception_run_processes[job_id] = run_process_info
                 self.run_processes.pop(job_id, None)
         self.engine_info.status = MachineStatus.STOPPED
