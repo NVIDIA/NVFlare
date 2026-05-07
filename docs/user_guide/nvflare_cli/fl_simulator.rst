@@ -11,10 +11,11 @@ The FL Simulator is a lightweight simulator of a running NVFLARE FL deployment,
 and it can allow researchers to test and debug their application without
 provisioning a real project.
 
-The FL jobs run on a server and
-multiple clients in the same process but in a similar way to how it would run
-in a real deployment so researchers can more quickly build out new components
-and jobs that can then be directly used in a real production deployment.
+The FL jobs run on a local simulator-managed server and simulated clients,
+without provisioning a real project or starting long-running server/client
+daemons. Use the simulator for single-machine development, tests, and
+batch-scheduled experiments where one Python command should start, run, and
+exit. Use POC or production modes for the provisioned deployment model.
 
 ***********************
 Command Usage
@@ -846,45 +847,52 @@ application run.
 Processes, Clients, and Events
 ******************************
 
-Specifying number of processes
-==============================
-The simulator ``-t`` option provides the ability to specify how many processes to run the simulator with.
+Specifying Client Worker Processes
+==================================
+The simulator ``-t`` option provides the ability to specify how many simulated
+client worker processes can run concurrently.
 
 .. note::
 
-    The ``-t`` and ``--threads`` option for simulator was originally due to clients running in separate threads.
-    However each client now actually runs in a separate process. This distinction will not affect the user experience.
+    The ``-t`` and ``--threads`` option name is historical. Simulated client
+    execution now uses separate worker processes, and the option controls worker
+    process concurrency.
 
 - N = number of clients (``-n``)
-- T = number of processes (``-t``)
+- T = number of concurrent client worker processes (``-t``)
 
-When running the simulator with fewer processes than clients (T < N)
-the simulator will need to swap-in/out the clients for the processes, resulting in some of the clients running sequentially as processes are available.
-This also will cause the ClientRunner/learner objects to go through setup and teardown in every round.
-Using T < N is only needed when trying to simulate of large number of clients using a single machine with limited resources.
+When running the simulator with fewer worker processes than clients (T < N),
+the simulator swaps clients in and out as worker processes become available.
+This also causes the ClientRunner/learner objects to go through setup and
+teardown in every round. Using T < N is only needed when simulating many clients
+on a single machine with limited resources.
 
-In most cases, run the simulator with the same number of processes as clients (T = N). The simulator will run the number of clients in separate processes at the same time. Each
-client will always be running in memory with no swap-in/out, but it will require more resources available.
+In most cases, run the simulator with the same number of worker processes as
+clients (T = N). Each client stays in memory with no swap-in/out, but this
+requires more available resources.
 
 For the dataset / tensorboard initialization, you could make use of EventType.SWAP_IN and EventType.SWAP_OUT
 in the application.
 
 SWAP_IN and SWAP_OUT events
 ===========================
-During FLARE simulator execution, the client Apps are executed in turn in the same execution thread. Each executing client App will go
-fetch the task from the controller on the server, execute the task, and then submit the task results to the controller. Once finished submitting
-results, the current client App will yield the executing thread to the next client App to execute.
+During FLARE simulator execution, simulated client Apps fetch tasks from the
+controller, execute the tasks, and submit results back to the controller. When
+T < N, multiple simulated clients share a smaller pool of worker processes and
+may be swapped in and out as worker processes become available.
 
-If the client App needs to preserve some states for the next "execution turn" to continue, the client executor can make use of the ``SWAP_OUT``
-event fired by the simulator engine to save the current states. When the client App gets the turn to execute again, use the ``SWAP_IN``
-event to recover the previous saved states.
+If the client App needs to preserve state for the next execution turn, the
+client executor can use the ``SWAP_OUT`` event fired by the simulator engine to
+save the current state. When the client App gets another turn to execute, use
+the ``SWAP_IN`` event to recover the previous saved state.
 
 Multi-GPU and Separate Client Process with Simulator
 ====================================================
-The simulator runs within the same process, and it will make use of a single GPU if it is detected with ``nvidia-smi``.
-If there are multiple GPUs available and you want to make use of them all for the simulator run, you can use the
-``-gpu`` option for this. The ``-gpu`` option provides the list of GPUs for the simulator to run on. The
-clients list will be distributed among the GPUs.
+The simulator uses separate client worker processes and assigns GPUs to those
+workers. If there are multiple GPUs available and you want to make use of them
+all for the simulator run, you can use the ``-gpu`` option for this. The
+``-gpu`` option provides the list of GPUs for the simulator to run on. The
+clients list will be distributed among the GPU groups.
 
 For example:
 
@@ -892,10 +900,12 @@ For example:
 
     -c  c1,c2,c3,c4,c5 -gpu 0,1
 
-The clients c1, c3, and c5 will run on GPU 0 in one process, and clients c2 and c4 will run on GPU 1 in another process.
+The clients c1, c3, and c5 will be assigned to GPU 0, and clients c2 and c4
+will be assigned to GPU 1.
 
-The GPU numbers do not have to be unique. If you use ``-gpu 0,0``, this will run 2 separate client processes on GPU 0, assuming this GPU will have
-enough memory to support the applications.
+The GPU numbers do not have to be unique. If you use ``-gpu 0,0``, this will
+create two client worker slots assigned to GPU 0, assuming this GPU has enough
+memory to support the applications.
 
 .. note::
 
