@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import sys
 from types import ModuleType
 from unittest.mock import MagicMock, patch
@@ -600,7 +601,7 @@ class TestDockerJobLauncherLaunchJob:
             with patch("nvflare.app_opt.job_launcher.docker_launcher.os.path.exists", return_value=True):
                 launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
 
-        mock_load.assert_called_once_with("/var/tmp/nvflare/workspace/local/study_data.yaml")
+        mock_load.assert_called_once_with("/var/tmp/nvflare/workspace/local/study_data.yaml", logger=launcher.logger)
         call_kwargs = dc.containers.run.call_args[1]
         assert call_kwargs["command"] == [
             "/usr/local/bin/python",
@@ -689,7 +690,7 @@ class TestDockerJobLauncherLaunchJob:
         with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value={}) as mock_load:
             launcher.launch_job(_make_job_meta(study="default"), fl_ctx)
 
-        mock_load.assert_called_once_with("/var/tmp/nvflare/workspace/local/study_data.yaml")
+        mock_load.assert_called_once_with("/var/tmp/nvflare/workspace/local/study_data.yaml", logger=launcher.logger)
         mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
         assert set(mounts_by_target) == {
             "/var/tmp/nvflare/workspace",
@@ -720,7 +721,7 @@ class TestDockerJobLauncherLaunchJob:
             "ReadOnly": True,
         }
 
-    def test_launch_omits_data_mount_when_study_mapping_is_missing(self):
+    def test_launch_omits_data_mount_when_study_mapping_is_missing(self, caplog):
         launcher = _make_launcher()
         dc = launcher._docker_client
         container = MagicMock()
@@ -730,8 +731,9 @@ class TestDockerJobLauncherLaunchJob:
         study_data = {"other-study": {"training": {"source": "/data/train", "mode": "ro"}}}
 
         fl_ctx, _ = _make_fl_ctx()
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data):
-            launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+        with caplog.at_level(logging.WARNING):
+            with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data):
+                launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
 
         mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
         assert set(mounts_by_target) == {
@@ -740,6 +742,7 @@ class TestDockerJobLauncherLaunchJob:
             "/var/tmp/nvflare/workspace/local",
             "/var/tmp/nvflare/workspace/job-1",
         }
+        assert "has no entry for study 'study-a'" in caplog.text
 
     def test_launch_no_docker_socket_in_job_container(self):
         """Job containers must never receive the Docker socket."""

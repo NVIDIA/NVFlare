@@ -482,8 +482,10 @@ class K8sJobLauncher(JobLauncherSpec):
         data_mounts = []
         if should_mount_study_data(study):
             if self.study_data_pvc_dict is None:
-                self.study_data_pvc_dict = load_study_data_file(self.study_data_pvc_file_path)
-            data_mounts = resolve_study_dataset_mounts(self.study_data_pvc_dict, study, self.study_data_pvc_file_path)
+                self.study_data_pvc_dict = load_study_data_file(self.study_data_pvc_file_path, logger=self.logger)
+            data_mounts = resolve_study_dataset_mounts(
+                self.study_data_pvc_dict, study, self.study_data_pvc_file_path, logger=self.logger
+            )
         site_resources = (job_meta.get(JobMetaKey.RESOURCE_SPEC.value) or {}).get(site_name) or {}
         flat_gpu_count = (
             0
