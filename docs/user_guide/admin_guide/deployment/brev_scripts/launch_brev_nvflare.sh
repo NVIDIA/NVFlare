@@ -95,6 +95,7 @@ target["args"] = {
     "study_data_pvc_file_path": f"{workspace_mount_path}/local/study_data.yaml",
     "namespace": namespace,
     "python_path": "/usr/local/bin/python3",
+    "workspace_mount_path": workspace_mount_path,
     "pending_timeout": 300,
     "ephemeral_storage": "1Gi",
 }
