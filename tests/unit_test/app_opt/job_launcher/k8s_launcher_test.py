@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import sys
 from types import ModuleType
 from unittest.mock import MagicMock, Mock, patch
@@ -1507,17 +1508,19 @@ class TestK8sJobLauncherLaunchJob:
         finally:
             _exit_patches(patches)
 
-    def test_pod_manifest_omits_data_pvc_when_study_mapping_is_missing(self):
+    def test_pod_manifest_omits_data_pvc_when_study_mapping_is_missing(self, caplog):
         patches = _make_k8s_launcher_patches()
         launcher, mock_api = self._setup(patches, study_data_pvc_dict={"other-study": {}})
         self._prime_running(mock_api)
         try:
-            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+            with caplog.at_level(logging.WARNING):
+                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             vol_names = {v["name"] for v in manifest["spec"]["volumes"]}
             mount_names = {m["name"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
             assert vol_names == {"workspace-job", "startup-kit"}
             assert mount_names == {"workspace-job", "startup-kit"}
+            assert "has no entry for study 'study-a'" in caplog.text
         finally:
             _exit_patches(patches)
 
