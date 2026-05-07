@@ -189,6 +189,61 @@ python devops/multicloud/deploy.py down
 python devops/multicloud/deploy.py --dry-run up       # print commands, don't execute
 ```
 
+## Optional System Monitoring
+
+Multicloud monitoring uses the FLARE connection instead of cross-cloud StatsD
+networking. Clients collect FLARE system lifecycle metrics and stream them to
+the server through CellNet. Only the server sends metrics to `statsd-exporter`
+in the server cluster:
+
+```text
+client SysMetricsCollector
+  -> ConvertToFedEvent
+  -> FLARE/CellNet
+  -> server RemoteMetricsReceiver
+  -> server StatsDReporter
+  -> statsd-exporter -> Prometheus -> Grafana
+```
+
+Enable this in a local config:
+
+```yaml
+monitoring:
+  enabled: true
+```
+
+The runtime image must include the `MONITORING` extra because
+`StatsDReporter` requires the `datadog` package. For example, build a runtime
+image that installs `.[K8S,MONITORING]` before enabling monitoring.
+
+When monitoring is enabled, `deploy.py up` applies
+`devops/multicloud/monitoring-stack.yaml` in the server cluster before starting
+FLARE. The stack runs in a namespace derived from the config name, for example
+`all-clouds` uses `nvflare-all-clouds-monitoring`; `deploy.py down` removes
+that namespace.
+
+Open Grafana with the server cloud kubeconfig. For the default GCP-server
+config:
+
+```bash
+MONITORING_NS=nvflare-all-clouds-monitoring
+kubectl --kubeconfig .tmp/kubeconfigs/gcp.yaml \
+  -n "$MONITORING_NS" port-forward svc/grafana 3000:3000
+```
+
+Log in with `admin` / `admin`, then use the Prometheus datasource in Grafana
+Explore. Useful starter queries:
+
+```promql
+_system_start_count
+_client_register_received_count
+_client_heartbeat_received_count
+_client_heartbeat_time_taken
+{env="all-clouds"}
+```
+
+These are FLARE lifecycle metrics, not CPU or memory metrics.
+
 ## Flags
 
 | Flag | Default | Applies to |

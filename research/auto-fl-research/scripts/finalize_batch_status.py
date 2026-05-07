@@ -20,7 +20,7 @@ import csv
 import math
 from pathlib import Path
 
-ALLOWED_STATUSES = {"candidate", "keep", "discard", "crash"}
+ALLOWED_STATUSES = {"candidate", "keep", "discard", "crash", "literature"}
 
 
 def parse_score(row):
@@ -57,8 +57,10 @@ def write_rows(path, fieldnames, rows):
 def selected_indices(rows, args):
     if args.all_candidates:
         return {index for index, row in enumerate(rows) if row.get("status", "").strip().lower() == "candidate"}
-    start = max(0, len(rows) - args.last)
-    return set(range(start, len(rows)))
+    candidate_indices = [
+        index for index, row in enumerate(rows) if row.get("status", "").strip().lower() == "candidate"
+    ]
+    return set(candidate_indices[-args.last :])
 
 
 def previous_best(rows, selected):
@@ -86,7 +88,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("path", nargs="?", default="results.tsv")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--last", type=int, help="Finalize the last N ledger rows.")
+    group.add_argument("--last", type=int, help="Finalize the last N candidate rows.")
     group.add_argument(
         "--all-candidates",
         action="store_true",

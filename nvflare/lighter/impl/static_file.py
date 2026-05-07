@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import logging
 import os
 import shutil
 
@@ -30,6 +31,8 @@ from nvflare.lighter.constants import (
 from nvflare.lighter.entity import Participant
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
+_logger = logging.getLogger(__name__)
+
 
 class StaticFileBuilder(Builder):
     def __init__(
@@ -39,6 +42,7 @@ class StaticFileBuilder(Builder):
         app_validator="",
         download_job_url="",
         docker_image="",
+        overseer_agent=None,
         **kwargs,
     ):
         """Build all static files from template.
@@ -57,6 +61,9 @@ class StaticFileBuilder(Builder):
             docker_image: when docker_image is set to a docker image name, docker.sh will be generated on
             server/client/admin
         """
+        if overseer_agent is not None:
+            _logger.warning("'overseer_agent' arg in StaticFileBuilder is obsolete and will be ignored.")
+
         if not isinstance(scheme, str):
             raise ValueError(f"invalid scheme: must be str but got {type(scheme)}")
         scheme = scheme.lower().strip()
@@ -114,7 +121,6 @@ class StaticFileBuilder(Builder):
         admin_port = ctx.get(CtxKey.ADMIN_PORT)
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
         target = f"{server.name}:{fed_learn_port}"
-        sp_end_point = f"{server.name}:{fed_learn_port}:{admin_port}"
         conn_sec = self._build_conn_properties(server, ctx)
 
         ctx.build_from_template(
@@ -128,7 +134,6 @@ class StaticFileBuilder(Builder):
                 "admin_port": admin_port,
                 "scheme": self._determine_scheme(server),
                 "conn_sec": conn_sec,
-                "sp_end_point": sp_end_point,
             },
         )
 
@@ -158,7 +163,6 @@ class StaticFileBuilder(Builder):
             dest_dir,
             TemplateSectionKey.START_SERVER_SH,
             ProvFileName.START_SH,
-            replacement={"ha_mode": "false"},
             exe=True,
         )
 
@@ -251,7 +255,7 @@ class StaticFileBuilder(Builder):
         conn_host, conn_port = self._determine_conn_target(client, ctx)
         if conn_port:
             fl_port = conn_port
-        sp_end_point = f"{conn_host}:{fl_port}:{admin_port}"
+        target = f"{conn_host}:{fl_port}"
 
         ctx.build_from_template(
             dest_dir,
@@ -261,10 +265,10 @@ class StaticFileBuilder(Builder):
                 "scheme": self._determine_scheme(client),
                 "name": project.name,
                 "server_identity": server.name,
+                "target": target,
                 "fqsn": client.get_prop(PropKey.FQSN),
                 "is_leaf": is_leaf,
                 "conn_sec": self._build_conn_properties(client, ctx),
-                "sp_end_point": sp_end_point,
             },
         )
 
@@ -479,8 +483,8 @@ class StaticFileBuilder(Builder):
                 port = ct.port
         else:
             # connect_to is not explicitly specified: use the server's name by default
-            # Note: by doing this dynamically, we guarantee the sp_end_point to be correct, even if the
-            # project.yaml does not specify the default server host correctly!
+            # Note: by doing this dynamically, we guarantee the connection target to be correct, even if
+            # the project.yaml does not specify the default server host correctly!
             conn_host = server.get_default_host()
         return conn_host, port
 

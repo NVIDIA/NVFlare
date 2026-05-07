@@ -16,24 +16,22 @@ To set up a new experiment campaign, work with the user to:
    - `test -x "$PYTHON"`
    - `"$PYTHON" -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version; print(sys.executable)"`
 5. Agree on a descriptive run tag derived from the current date at runtime. Use the pattern `<node>-<campaign-topic>-$(date +%Y%m%d)`, for example `h100-fedavgm-$(date +%Y%m%d)`, `h100-archsearch-$(date +%Y%m%d)`, or `h100-baseline-$(date +%Y%m%d)`. Do not use date-only tags such as `h100-$(date +%Y%m%d)`, and do not copy stale example dates from docs.
-6. Create a fresh branch: `autoresearch/<tag>`.
-7. Treat this file as the agent entry point, then inspect only the supporting files needed for the next action:
+6. Before validation, smoke tests, baseline, or any candidate run, initialize the campaign with `bash scripts/init_run.sh <tag>`. This must create or switch to `autoresearch/<tag>` and initialize `results.tsv`.
+7. Verify `git branch --show-current` starts with `autoresearch/`. If it does not, stop before running experiments; do not run campaigns on `main`, `upstream/main`, the starter branch, or a shared feature branch.
+8. Treat this file as the agent entry point, then inspect only the supporting files needed for the next action:
    - `mutation_schema.yaml` for hard mutation bounds
    - `client.py`, `custom_aggregators.py`, and `job.py` for the active code surface
    - `README.md` or `ACKNOWLEDGEMENTS.md` only when user-facing setup or provenance context is needed
-8. Verify the prepared environment is ready:
+9. Verify the prepared environment is ready:
    - `PYTHON=.venv/bin/python make validate`
    - `PYTHON=.venv/bin/python make smoke`
-9. Initialize the run ledger:
-   - `bash scripts/init_run.sh <tag>`
 10. Confirm the setup and start with the baseline.
 
 ## Experimentation
 
-Each experiment should run under a **fixed federated budget**. Keep the following fixed across a comparison campaign unless the human explicitly changes the campaign setup:
+Each experiment should run under a **fixed communication, data, and evaluation budget**. Keep the following fixed across a comparison campaign unless the human explicitly changes the campaign setup:
 - `n_clients`
 - `num_rounds`
-- `aggregation_epochs`
 - `batch_size`
 - `eval_batch_size`
 - `alpha`
@@ -45,10 +43,13 @@ Each experiment should run under a **fixed federated budget**. Keep the followin
 
 Some of these values are technically mutable in `mutation_schema.yaml`, but changing them starts a new comparison budget. Do not compare scores across runs with different values for the fixed budget fields above unless the run is explicitly labeled as a new campaign or subcampaign. Architecture-search scores must be labeled with their `model_arch` and `max_model_params`; do not mix them with optimizer-only `moderate_cnn` results as if they were the same search.
 
+Local compute is mutable within a campaign when each candidate stays within `RUN_TIMEOUT_SECONDS`. The default is epoch-based training with `--aggregation_epochs 4`; the agent may instead use `--local_train_steps <n>` for exact optimizer steps per client per round when that is a better search axis. Do not vary both local-compute modes in the same narrow sweep. Rank primarily by score, then use `runtime_seconds` as the cost/tie-breaker.
+
 Default H100 candidate budget:
 - `--n_clients 8`
-- `--num_rounds 10`
+- `--num_rounds 20`
 - `--aggregation_epochs 4`
+- `--local_train_steps 0`
 - `--batch_size 64`
 - `--alpha 0.5`
 - `--seed 0`
@@ -58,17 +59,17 @@ Default H100 candidate budget:
 - cross-site evaluation enabled
 - final global evaluation on `site-1`
 - `--eval_batch_size 1024`
-- `RUN_TIMEOUT_SECONDS=600`
+- `RUN_TIMEOUT_SECONDS=1200`
 - deterministic PyTorch/DataLoader training enabled
 
-Each candidate targets roughly a 10-minute run on one local H100. The 80 GB H100 can usually support several same-budget candidates concurrently; if runs consistently finish much sooner, increase only one budget axis at a time and label the new subcampaign. If they time out or hit CUDA OOM, reduce candidate parallelism before changing model, parameter-cap, or data contracts.
+Each candidate targets a capped run on one local H100. The 80 GB H100 can usually support several same-budget candidates concurrently; if runs consistently finish much sooner, sweep local compute first with either `aggregation_epochs` or `local_train_steps`. If they time out or hit CUDA OOM, reduce candidate parallelism before changing communication, model, parameter-cap, or data contracts.
 The current CIFAR-10 validation loader is identical on every simulated client, so final scoring evaluates the server/global model on `site-1` by default and keeps the output in NVFlare's `cross_site_val/cross_val_results.json` path. Use `--final_eval_clients all` only for an audit run or after changing validation to be site-specific.
 Training splits are cached by fixed data-budget fields under `/tmp/cifar10_splits/autofl_cifar10_<n>sites_alpha<a>_seed<s>`. Do not make the split path depend on the candidate `--name`; repeated candidates with the same `n_clients`, `alpha`, and `seed` should reuse the same `.npy` indices.
 Client training derives stable per-site RNG seeds from `--seed`, enables PyTorch deterministic algorithms, disables cuDNN benchmarking, and seeds DataLoader shuffling/workers. Treat `--no_deterministic_training` as a separate noisy subcampaign.
 
 ### Initial algorithm calibration
 
-After the first weighted baseline run in a fresh campaign, run an algorithm calibration sequence before open-ended hyperparameter tuning. Keep the same fixed budget and compare the available baseline implementations:
+After the first weighted baseline run in a fresh campaign, run an algorithm calibration sequence before open-ended hyperparameter tuning. Keep the same communication and local-compute budget and compare the available baseline implementations:
 
 | Step | Description | Extra args |
 | --- | --- | --- |
@@ -111,7 +112,7 @@ Default to `PARALLEL_CANDIDATES=4` when the initial instruction does not specify
 
 Prefer **ledger-backed decisions** over ad hoc one-off guesses:
 1. Keep the code state fixed.
-2. Generate a small batch of hyperparameter candidates under the same fixed budget, up to `PARALLEL_CANDIDATES`.
+2. Generate a small batch of hyperparameter candidates under the same communication budget and runtime cap, up to `PARALLEL_CANDIDATES`.
 3. Launch each candidate with a unique `--name`, `RUN_LOG`, and description value.
 4. Wait for the whole batch to finish or time out.
 5. Rank the completed candidates against the ledger by score, inspect crashes with `tail -n 50 <run_log>`, and only then decide the next mutation or sweep.
@@ -122,7 +123,7 @@ Example single-H100 calibration skeleton:
 mkdir -p run_logs
 PYTHON=${PYTHON:-.venv/bin/python}
 PARALLEL_CANDIDATES=${PARALLEL_CANDIDATES:-4}
-COMMON_ARGS="--n_clients 8 --num_rounds 10 --aggregation_epochs 4 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --final_eval_clients site-1"
+COMMON_ARGS="--n_clients 8 --num_rounds 20 --aggregation_epochs 4 --local_train_steps 0 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --final_eval_clients site-1"
 
 launch_algo_candidate() {
   i="$1"
@@ -137,7 +138,7 @@ launch_algo_candidate() {
     7) desc="SCAFFOLD metadata mode"; extra_args="--aggregator scaffold"; name="algo_scaffold" ;;
   esac
   CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" \
-  PYTHON="${PYTHON}" RUN_LOG="run_logs/${name}.log" RUN_TIMEOUT_SECONDS=600 \
+  PYTHON="${PYTHON}" RUN_LOG="run_logs/${name}.log" RUN_TIMEOUT_SECONDS=1200 \
     bash scripts/run_iteration.sh --description "${desc}" --target client.py -- \
     ${COMMON_ARGS} ${extra_args} --name "${name}" &
 }
@@ -156,12 +157,20 @@ wait
 
 Never reuse the same `RUN_LOG` for different candidates.
 Use unique `--name` values so NVFlare result directories and CIFAR split directories do not collide.
-If candidates repeatedly run out of memory on the local H100, reduce `PARALLEL_CANDIDATES` before reducing the fixed budget or starting a clearly labeled smaller-budget subcampaign.
+If candidates repeatedly run out of memory on the local H100, reduce `PARALLEL_CANDIDATES` before reducing the communication budget or starting a clearly labeled smaller-budget subcampaign.
 After each batch, rank the ledger with:
 
 ```bash
 "${PYTHON}" scripts/summarize_results.py results.tsv --status candidate --top "${PARALLEL_CANDIDATES:-4}"
 ```
+
+After finalizing reviewed statuses, run the plateau watchdog before selecting another local sweep:
+
+```bash
+"${PYTHON}" scripts/plateau_watchdog.py results.tsv
+```
+
+If it prints `recommendation=literature`, stop local hyperparameter jittering, run the literature loop, record a `literature` row, and launch the selected source-backed candidates next.
 
 ### What you CAN do
 
@@ -207,7 +216,7 @@ Registered architecture knobs:
 
 ## Goal
 
-The goal is to maximize a **single comparable score** under a fixed federated budget.
+The goal is to maximize a **single comparable score** under a fixed communication/evaluation budget and runtime cap.
 
 Use cross-site evaluation when scoring candidates. The helper script `scripts/extract_score.py` will try to read a comparable metric from:
 
@@ -218,7 +227,7 @@ Use cross-site evaluation when scoring candidates. The helper script `scripts/ex
 The optimized score is the final server/global model, `SRV_FL_global_model.pt`; ignore `SRV_best_FL_global_model.pt` when ranking candidates.
 Higher is better.
 
-For architecture-search campaigns, `--max_model_params` is a hard gate, not a soft preference. Rank candidates primarily by final score under the same fixed budget. Use `runtime_seconds` as a coarse secondary signal: prefer the faster/simpler candidate when scores are within expected noise, and be skeptical of tiny gains that cost much more wall-clock time. Do not collapse score and runtime into a single `score/runtime` scalar; inspect the Pareto tradeoff and rerun finalists before trusting small differences.
+For architecture-search campaigns, `--max_model_params` is a hard gate, not a soft preference. Rank candidates primarily by final score under the same communication/evaluation budget. Use `runtime_seconds` as a coarse secondary signal: prefer the faster/simpler candidate when scores are within expected noise, and be skeptical of tiny gains that cost much more wall-clock time. Do not collapse score and runtime into a single `score/runtime` scalar; inspect the Pareto tradeoff and rerun finalists before trusting small differences.
 
 ### Simplicity criterion
 
@@ -239,17 +248,21 @@ Keep a tracked `results.tsv` file on experiment branches with this header:
 commit	score	runtime_seconds	budget	status	target	description	artifacts
 ```
 
+`scripts/init_run.sh <tag>` creates this header before the baseline. As a guardrail, `scripts/run_iteration.sh` also creates or migrates the header before launching a logged run, then appends the row only after the candidate exits. If `results.tsv` is missing after an experiment command has started, treat that as evidence the agent skipped `run_iteration.sh`, used `--no-log-results`, or is not on the required `autoresearch/` branch.
+
 Where:
 1. `commit` = short git commit hash
 2. `score` = extracted comparable metric, or `0.000000` for failures
 3. `runtime_seconds` = wall-clock seconds spent in the candidate command, including failures
 4. `budget` = short string describing the fixed recipe budget
-5. `status` = `keep`, `discard`, `crash`, or `candidate`
+5. `status` = `keep`, `discard`, `crash`, `candidate`, or `literature`
 6. `target` = main file edited
 7. `description` = short mutation description
 8. `artifacts` = result dir or log path
 
 Use `runtime_seconds` when comparing research cost. A tiny score gain that consumes much more runtime is weaker evidence than a similar gain at the same cost.
+
+`literature` rows are non-scored event markers for the stall-recovery loop. They use a blank `score`, `budget=literature_loop`, `target=templates/literature_loop.md`, a short description of the plateau/search/proposals, and `artifacts=templates/literature_loop.md`. The progress plot draws these rows as vertical markers so long plateaus show whether the agent was doing useful paper synthesis or simply burning candidate runs.
 
 `candidate` is a temporary status for a run that has finished but has not yet gone through review. After every completed run or batch, update the reviewed rows in `results.tsv`: mark the selected survivor as `keep` when it materially improves the score or is comparable with simpler/faster behavior, and mark reviewed non-survivors as `discard`. Do not let stale reviewed rows remain `candidate`; the progress plot uses this status column directly.
 
@@ -267,38 +280,40 @@ If an old campaign already has many stale candidate rows, clean it once with:
 
 If a candidate implements a method or design choice from a research paper, include a compact source reference in the `description` field, for example `fedprox mu=0.01 [src: Li20 FedProx arXiv:1812.06127]`. Keep the TSV single-line and tab-free; use semicolon-separated short refs for multiple sources. Put fuller citations, URLs, and the extracted hypothesis in `templates/mutation_report.md`.
 
-Commit `results.tsv` after the baseline and after each completed run or checkpoint so the experiment branch records its run provenance.
+Commit `results.tsv` after the baseline and after each completed run or checkpoint so the active `autoresearch/` branch records its run provenance.
+Commit surviving code changes on that same branch as soon as they are kept; never launch the next batch with kept code changes still only in the working tree.
 Do not commit bulky runtime artifacts such as `run.log`, `run_logs/`, NVFlare result directories, or generated `progress.png`.
 
 ## The experiment loop
 
 Default single-candidate loop:
 
-1. Look at the git state: current branch and current commit.
+1. Look at the git state: current branch and current commit. Confirm the current branch starts with `autoresearch/`.
 2. Propose one small mutation.
 3. Edit the smallest possible set of files.
 4. Commit the mutation.
 5. Run:
 
    ```bash
-   PYTHON=.venv/bin/python bash scripts/run_iteration.sh --description "..." --target <file> -- <fixed budget args>
+   PYTHON=.venv/bin/python bash scripts/run_iteration.sh --description "..." --target <file> -- <budget args>
    ```
 
    This redirects the full job output to `run.log`.
-   Candidate runs default to `RUN_TIMEOUT_SECONDS=600`; set `RUN_TIMEOUT_SECONDS=0` only when deliberately disabling the guard.
+   With result logging enabled, `run_iteration.sh` refuses to run outside an `autoresearch/` branch and initializes `results.tsv` before the training job starts.
+   Candidate runs default to `RUN_TIMEOUT_SECONDS=1200`; set `RUN_TIMEOUT_SECONDS=0` only when deliberately disabling the guard.
    Use `--no-log-results` only for smoke checks that should not consume the first baseline row.
 
 6. Read the summarized result from the script output.
 7. If the run crashed, inspect `tail -n 50 run.log`, attempt a small fix, and stop after only a few retries.
 8. Record the result in `results.tsv`.
-9. If the score improved materially, or stayed comparable with simpler code, keep the commit.
+9. If the score improved materially, or stayed comparable with simpler code, keep the commit on the active `autoresearch/` branch.
 10. If the score got worse or the change is not worth the added complexity, revert to the previous good commit.
 
 Same-budget campaign loop for the local H100:
 
-1. Look at the git state: current branch and current commit.
-2. Choose one narrow sweep axis, for example LR, momentum, weight decay, scheduler, or FedProx.
-3. Propose a batch of up to `PARALLEL_CANDIDATES` candidates that fit the fixed campaign budget.
+1. Look at the git state: current branch and current commit. Confirm the current branch starts with `autoresearch/`.
+2. Choose one narrow sweep axis, for example LR, momentum, weight decay, scheduler, local compute, or FedProx.
+3. Propose a batch of up to `PARALLEL_CANDIDATES` candidates that fit the communication budget and runtime cap.
 4. Run the candidates concurrently on the same H100 with unique `RUN_LOG` and `--name` values.
 5. Build a short comparison table from `results.tsv`: description, score, status, budget, artifact.
    Prefer `"${PYTHON}" scripts/summarize_results.py results.tsv --status candidate --top "${PARALLEL_CANDIDATES:-4}"`.
@@ -308,7 +323,8 @@ Same-budget campaign loop for the local H100:
    - run a narrower follow-up sweep around the best candidate if results are close;
    - discard the whole axis if all candidates regress or add complexity without gain.
 8. Update the `status` column for reviewed runs in `results.tsv`. Use `scripts/finalize_batch_status.py --last "${PARALLEL_CANDIDATES:-4}"` or edit the TSV carefully: promoted rows must be `keep`, reviewed non-survivors must be `discard`, crashes remain `crash`, and only unresolved active rows may remain `candidate`.
-9. Commit code mutations that survive the run analysis. Also commit `results.tsv` at checkpoint boundaries, even when the run only tested runtime hyperparameters.
+9. Run `"${PYTHON}" scripts/plateau_watchdog.py results.tsv`. If it prints `recommendation=literature`, run the literature loop before launching more candidates.
+10. Commit code mutations that survive the run analysis on the active `autoresearch/` branch before launching the next batch. Also commit `results.tsv` at checkpoint boundaries, even when the run only tested runtime hyperparameters.
 
 ### Never stop
 
@@ -321,13 +337,14 @@ On the local H100, keep cycling through same-budget candidate batches:
 - rank the results against the ledger,
 - keep, narrow, or discard according to score and complexity,
 - rewrite reviewed `results.tsv` statuses so completed candidates become `keep` or `discard`,
+- run `scripts/plateau_watchdog.py` and obey `recommendation=literature` before another local sweep,
 - choose the next sweep axis,
 - repeat.
 
 If you run out of obvious ideas, re-read the in-scope files, inspect recent near-misses in `results.tsv`, combine promising settings, or try a new allowed axis from `mutation_schema.yaml`.
 Stay within the hard invariants and current bounds: do not change the FL protocol, evaluation substrate, dependency set, or registered architecture budget unless a human explicitly authorizes a protocol upgrade or new architecture subcampaign.
 
-With the default 10-minute candidate budget and `PARALLEL_CANDIDATES=4`, throughput can reach roughly 24 candidates per hour, or about 192 candidates across an eight-hour overnight run, if the H100, host CPU, storage, and data loaders sustain four concurrent jobs. Reduce the width when contention hurts reliability or score comparability.
+With the default 20-minute candidate cap and `PARALLEL_CANDIDATES=4`, throughput can reach roughly 12 candidates per hour, or about 96 candidates across an eight-hour overnight run, if the H100, host CPU, storage, and data loaders sustain four concurrent jobs. Reduce the width when contention hurts reliability or score comparability.
 The loop runs until the human interrupts it.
 
 ### Think harder with literature
@@ -338,6 +355,7 @@ Camyla's public repo (`https://github.com/yifangao112/Camyla`) exposes this as a
 For this harness, adapt the process only at the instruction/artifact level; do not import Camyla code or add new dependencies.
 
 Trigger literature mode when any of these happen:
+- `scripts/plateau_watchdog.py results.tsv` prints `recommendation=literature`, which defaults to 32 scored non-crash candidates without a material improvement or literature reset;
 - two consecutive same-budget candidate batches fail to improve;
 - several crashes share the same root cause;
 - the next sweep axis is unclear;
@@ -352,6 +370,20 @@ Before searching, gather the working memory:
 
 Use `templates/literature_loop.md` as a scratch worksheet. Keep it compact enough to read during a long run.
 
+Before searching, start a literature-review timer:
+
+```bash
+"${PYTHON}" scripts/log_literature_review.py --start --description "plateau after <row or batch>: <symptom>"
+```
+
+After proposal scoring and before launching the selected candidate batch, append the review event:
+
+```bash
+"${PYTHON}" scripts/log_literature_review.py --finish --description "literature review: <plateau symptom>; selected <proposal ids or mechanisms>"
+```
+
+If you forgot to start the timer, do not interrupt the campaign; use `--log` with a short description and, if known, `--runtime-seconds`.
+
 Literature mode workflow:
 1. Generate 3 distinct search queries from the observed failure mode, not generic method names. Each query should explore a different angle, such as client drift, server optimization, non-IID local overfitting, control variates, robust aggregation, or short-budget convergence.
 2. Search at least two available sources when possible: arXiv, Semantic Scholar, OpenAlex, PubMed, official project pages, or paper PDFs. If API access is unavailable, browser/web search is acceptable. Prefer primary papers over blog posts.
@@ -361,8 +393,9 @@ Literature mode workflow:
 6. Run duplicate/null filtering before scoring. Reject proposals that are the same core idea as existing kept/null rows or that require forbidden protocol changes, new dependencies, unregistered or over-budget model architectures, evaluation changes, or server-coupled tensors beyond explicit SCAFFOLD metadata mode.
 7. Score each remaining proposal from 1-5 on: expected score gain, contract safety, implementation simplicity, evidence strength, novelty relative to `results.tsv`, and runtime cost. Use total score `2*expected_gain + 2*contract_safety + simplicity + evidence + novelty - runtime_cost`.
 8. Select the next candidate batch QWBE-style from the top proposals. Give the strongest proposal a nearby variant when useful, but keep a distinct second idea in the batch or in reserve if any safe alternative remains.
-9. Launch the selected candidate batch under the same compute budget. Rank after the batch finishes or times out.
-10. Record reflective memory: what paper-derived hypothesis helped, what failed, and which source-backed idea should not be retried. Put full source details in `templates/mutation_report.md`; include short refs in `results.tsv` descriptions, for example `[src: Li20 FedProx arXiv:1812.06127]`.
+9. Record the `literature` event in `results.tsv` before launching the selected candidate batch.
+10. Launch the selected candidate batch under the same compute budget. Rank after the batch finishes or times out.
+11. Record reflective memory: what paper-derived hypothesis helped, what failed, and which source-backed idea should not be retried. Put full source details in `templates/mutation_report.md`; include short refs in candidate `results.tsv` descriptions, for example `[src: Li20 FedProx arXiv:1812.06127]`.
 
 Examples of compatible literature-derived directions:
 - FedProx coefficient sweeps for client drift.

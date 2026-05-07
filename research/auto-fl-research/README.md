@@ -1,6 +1,6 @@
 # Auto-FL-Research with NVFlare
 
-This bundle is a practical starting point for an **autoresearch-style** Auto-FL loop on top of NVFlare.
+This bundle is a practical starting point for an **autoresearch-style** Auto-FL loop on top of NVFlare using agents.
 
 ## Example progress
 
@@ -26,6 +26,8 @@ It is designed to combine:
 - `scripts/init_run.sh` — creates an autoresearch branch and initializes `results.tsv`
 - `scripts/run_iteration.sh` — runs one candidate mutation with log redirection and score extraction
 - `scripts/finalize_batch_status.py` — promotes reviewed candidates to `keep` or demotes them to `discard`
+- `scripts/plateau_watchdog.py` — recommends when a stalled run must switch back to literature review
+- `scripts/log_literature_review.py` — records stall-recovery literature review events in `results.tsv`
 - `scripts/extract_score.py` — extracts a comparable score from cross-site validation JSON
 - `scripts/validate_contract.py` — static contract checks
 - `templates/` — result logging templates
@@ -38,52 +40,37 @@ The [autoresearch](https://github.com/karpathy/autoresearch) repo keeps the setu
 
 - **Primary control plane:** `program.md` is the first file the agent should read.
 - **Bounded edit surface:** mutations should mostly target `client.py`, then `custom_aggregators.py`, then `job.py`; registered, parameter-capped architecture variants may also touch `model.py`.
-- **Fixed evaluation budget:** compare candidates under the same recipe budget (`n_clients`, `num_rounds`, `aggregation_epochs`, `batch_size`, `eval_batch_size`, `alpha`, `seed`, `model_arch`, `max_model_params`).
+- **Fixed communication budget:** compare candidates with the same round/data/evaluation setup while allowing local-compute sweeps (`aggregation_epochs` or `local_train_steps`) under the runtime cap.
 - **Comparable metric extraction:** recommended runs enable cross-site evaluation and extract a single score from `cross_val_results.json`.
 - **Run keep / discard loop:** on one local H100, the agent can launch several same-budget candidates concurrently when the 80 GB memory budget allows, then rank the completed batch against the ledger and keep, narrow, or discard.
 - **Autonomous continuation:** after setup and baseline, the agent keeps running same-budget candidates until manually interrupted.
-- **Literature-grounded recovery:** when progress stalls, the agent should use the Camyla-inspired literature loop in `program.md` to generate diverse paper queries, extract challenge cards, score compatible proposals, fill `templates/literature_loop.md`, and select the next contract-safe idea.
-- **Tracked experiment ledger:** `results.tsv` is committed on experiment branches so the branch carries its run provenance.
+- **Literature-grounded recovery:** when progress stalls, `scripts/plateau_watchdog.py` gives the agent a hard backstop for switching from local sweeps back to the Camyla-inspired literature loop in `program.md`.
+- **Tracked experiment ledger:** `results.tsv` is committed on experiment branches so the branch carries run provenance, including non-scored literature-review events when progress stalls.
 
 > Note: This is not a literal clone of [karpathy/autoresearch](https://github.com/karpathy/autoresearch); it is an NVFlare-specific adaptation of the same operating model.
 
 ## QWBE-style literature proposals
 
-QWBE is currently implemented as an **instruction and artifact workflow**, not as imported [Camyla](https://yifangao112.github.io/camyla-page) code or a separate tree-search scheduler. When progress stalls, `program.md` directs the agent to use the Camyla-inspired literature loop and fill `templates/literature_loop.md`.
+QWBE is currently implemented as an **instruction and artifact workflow**, not as imported [Camyla](https://yifangao112.github.io/camyla-page) code or a separate tree-search scheduler. After each reviewed candidate batch, `program.md` directs the agent to run `scripts/plateau_watchdog.py`. If it prints `recommendation=literature`, the agent must stop local jitter sweeps, use the Camyla-inspired literature loop, and fill `templates/literature_loop.md`.
 
 The current flow is:
 
-1. Generate source-backed proposal cards from recent `results.tsv` symptoms and relevant papers.
-2. Filter out duplicates, known null/worse ideas, and proposals that violate the current contract.
-3. Score each remaining proposal from 1-5 on expected gain, contract safety, simplicity, evidence, novelty, and runtime cost.
-4. Compute:
+1. Run `scripts/plateau_watchdog.py results.tsv` after finalizing each batch. Its default hard trigger is 32 scored non-crash candidates without a material improvement or literature reset.
+2. Start a literature-review timer with `scripts/log_literature_review.py --start`, then generate source-backed proposal cards from recent `results.tsv` symptoms and relevant papers.
+3. Filter out duplicates, known null/worse ideas, and proposals that violate the current contract.
+4. Score each remaining proposal from 1-5 on expected gain, contract safety, simplicity, evidence, novelty, and runtime cost.
+5. Compute:
 
    ```text
    2*expected_gain + 2*contract_safety + simplicity + evidence + novelty - runtime_cost
    ```
 
-5. Rank the next compatible proposals with the scoring rubric and select a small batch of top candidates, up to the current `PARALLEL_CANDIDATES` width.
-6. Launch the selected candidates with the normal `scripts/run_iteration.sh` mechanism, using unique `RUN_LOG` and `--name` values for each concurrent run on the same H100.
-7. Wait for the batch to finish or time out, rank the completed runs, then finalize reviewed ledger rows so completed `candidate` rows become `keep` or `discard`.
+6. Rank the next compatible proposals with the scoring rubric and select a small batch of top candidates, up to the current `PARALLEL_CANDIDATES` width.
+7. Append a `literature` event row with `scripts/log_literature_review.py --finish` so the ledger and plot show how long the review cycle took.
+8. Launch the selected candidates with the normal `scripts/run_iteration.sh` mechanism, using unique `RUN_LOG` and `--name` values for each concurrent run on the same H100.
+9. Wait for the batch to finish or time out, rank the completed runs, then finalize reviewed ledger rows so completed `candidate` rows become `keep` or `discard`.
 
 This keeps the Camyla/QWBE idea inside the existing harness contract: no new dependencies, no evaluation changes, and no server-client protocol changes except explicitly labeled modes such as `--aggregator scaffold`. Architecture changes are allowed only as registered `--model_arch` variants under the active `--max_model_params` budget.
-
-## Assumed usage
-
-This starter is intended to live inside an NVFlare working tree or another repo where `nvflare`, `torch`, and `torchvision` are installed.
-Install the dependencies before handing the repository to an agent; the agent should use that prepared Python environment rather than creating virtual environments or installing packages during the research loop.
-
-A simple layout is:
-
-```text
-NVFlare/
-  examples/
-    advanced/
-      cifar10/
-        pt/
-          autofl_nvflare/
-            <this bundle>
-```
 
 ## Recommended agent runtime
 
@@ -97,38 +84,38 @@ npm install -g @devcontainers/cli
 git clone https://github.com/trailofbits/claude-code-devcontainer ~/.claude-devcontainer
 ~/.claude-devcontainer/install.sh self-install
 
-# From this repository checkout.
-devc .
+# From the NVFlare repository root, install the template without starting it.
+devc template .
 ```
 
-Before starting the container shell, make sure `.devcontainer/devcontainer.json` exposes the H100 to Docker by including `--gpus=all` in `runArgs`. If `runArgs` already exists, append the value and keep the existing entries:
+Before starting the container shell, make sure `.devcontainer/devcontainer.json` exposes the H100 to Docker by including `--gpus=all` in `runArgs`. Do not replace the generated `runArgs` block; append the GPU value and keep existing entries such as `--cap-add=NET_ADMIN` and `--cap-add=NET_RAW`:
 
 ```json
 {
-  "runArgs": ["--gpus=all"]
+  "runArgs": [
+    "--cap-add=NET_ADMIN",
+    "--cap-add=NET_RAW",
+    "--gpus=all"
+  ]
 }
 ```
 
-Then start the container shell:
+Then start the container and open a shell:
 
 ```bash
+devc up
 devc shell
 ```
 
-This workflow assumes the checkout is a writable git clone, not a source archive, and that the agent can create commits and push branches without another credentials handoff. Before an overnight run, verify the container has git identity and SSH access to the fork or working remote:
+This workflow assumes `/workspace` is a writable NVFlare git clone, not a source archive. The agent only needs local git access inside the container: it should create an `autoresearch/` branch and commit `results.tsv` plus kept code changes locally. Pushing the experiment branch is optional and can be done later from outside the devcontainer.
+
+Inside the container, `cd` to `/workspace/research/auto-fl-research`, install this harness' Python requirements once with Python 3.12, export the prepared interpreter, and run preflight before handing control to the agent. Do not use the container's default `python3` if it points to Python 3.13. For Debian/Ubuntu-based devcontainers, install Python 3.12 first if it is missing.
+
+Run the following from `/workspace/research/auto-fl-research`. This directory is the entry point for the harness, and it contains the `Makefile`, `requirements.txt`, `program.md`, and run scripts:
 
 ```bash
-git remote -v
-git config user.name
-git config user.email
-ssh -T git@github.com
-```
+cd /workspace/research/auto-fl-research
 
-If you use a devcontainer, make sure your SSH agent is forwarded into the container or an appropriate GitHub SSH key is available there. Without this, the agent can still run local experiments, but it will stop when it needs to push a branch or commit reporting artifacts.
-
-Inside the container, install this harness' Python requirements once with Python 3.12, export the prepared interpreter, and run preflight before handing control to the agent. Do not use the container's default `python3` if it points to Python 3.13. For Debian/Ubuntu-based devcontainers, install Python 3.12 first if it is missing:
-
-```bash
 if ! command -v python3.12 >/dev/null 2>&1; then
   sudo apt-get update
   sudo apt-get install -y python3.12 python3.12-venv python3.12-dev
@@ -138,12 +125,18 @@ python3.12 --version
 python3.12 -m venv .venv
 . .venv/bin/activate
 python -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
+
+python -m pip install --upgrade pip
+python -m pip uninstall -y nvflare-nightly
 python -m pip install -r requirements.txt
 export PYTHON=.venv/bin/python
 "$PYTHON" -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
+"$PYTHON" -c 'import nvflare; print(nvflare.__version__, nvflare.__file__)'
 make validate
 make smoke
 ```
+
+The harness expects the released PyPI `nvflare` package from `requirements.txt`, not an editable install of the repository checkout. If `pip freeze` shows `nvflare-nightly @ file://...`, remove it with `python -m pip uninstall -y nvflare-nightly` and rerun `python -m pip install -r requirements.txt`.
 
 If `apt-get` cannot find the Python 3.12 packages, update the devcontainer image or add an appropriate Python 3.12 package source before continuing; do not fall back to Python 3.13.
 
@@ -159,9 +152,9 @@ For Claude Code, start the agent from the devcontainer shell with:
 claude --permission-mode auto
 ```
 
-For Codex CLI, install it inside the same devcontainer if needed, start Codex from the repository root, then use `/permissions` to set permissions inside the Codex session to `Auto-review`
+For Codex CLI, install it inside the same devcontainer if needed, start Codex from `/workspace/research/auto-fl-research`, then use `/permissions` to set permissions inside the Codex session to `Auto-review`
 
-Keep the devcontainer boundary meaningful: mount only the repository and deliberate scratch/drop paths, avoid mounting broad host directories or secrets, and remember that the container may still have outbound network access, git identity, and forwarded SSH-agent access depending on how it is configured. For overnight runs, use `tmux` or the devcontainer's persistent shell workflow so the agent can keep running after you disconnect.
+Keep the devcontainer boundary meaningful: mount only the repository and deliberate scratch/drop paths, avoid mounting broad host directories or secrets, and remember that the container may still have outbound network access and git identity depending on how it is configured. For overnight runs, use `tmux` or the devcontainer's persistent shell workflow so the agent can keep running after you disconnect.
 
 ## Recommended agent entrypoint
 
@@ -174,7 +167,7 @@ Then use the autofl-nvflare skill.
 
 Start in this directory and read `program.md` first. Treat it as the complete research control plane and follow its setup, mutation, budget, ledger, literature-loop, and continuation instructions.
 
-Start a fresh autoresearch campaign for the local single GPU node. If no campaign is initialized yet, derive a descriptive run tag at runtime using `<node>-<campaign-topic>-$(date +%Y%m%d)`, initialize the ledger, and establish the baseline first. Do not use date-only names or copy stale example dates.
+Start a fresh autoresearch campaign for the local single GPU node before running validation, smoke tests, the baseline, or any candidate experiment. Derive a descriptive run tag at runtime using `<node>-<campaign-topic>-$(date +%Y%m%d)`, then run `bash scripts/init_run.sh <run-tag>` to create and switch to `autoresearch/<run-tag>` and initialize `results.tsv`. Verify with `git branch --show-current` that you are on that new `autoresearch/` branch. Do not run experiments on `main`, `upstream/main`, or the starter branch, and do not use date-only names or copy stale example dates.
 
 Use the local Python 3.12 environment created by preflight. Set:
 export PYTHON=.venv/bin/python
@@ -182,13 +175,18 @@ Treat that PYTHON value as authoritative. First verify it with `test -x "$PYTHON
 Do not create a virtual environment, install dependencies, or search for alternate Python interpreters unless I explicitly ask you to. If `.venv/bin/python` is missing, invalid, or not Python 3.12, stop and tell me to rerun the README preflight in this directory with `python3.12`.
 
 Use the default H100 candidate budget unless `program.md` says otherwise:
---n_clients 8 --num_rounds 10 --aggregation_epochs 4 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
+--n_clients 8 --num_rounds 20 --aggregation_epochs 4 --local_train_steps 0 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
 
-Use cross-site evaluation and keep RUN_TIMEOUT_SECONDS=600.
+Use cross-site evaluation and keep RUN_TIMEOUT_SECONDS=1200.
+Keep `--num_rounds 20` fixed as the communication budget. You may sweep either `--aggregation_epochs` or `--local_train_steps` as the local-compute budget knob when each candidate stays within RUN_TIMEOUT_SECONDS; do not vary both in the same narrow sweep. `--local_train_steps 0` means epoch-based training with `--aggregation_epochs`; positive values use exact optimizer steps per client per round.
 
 Set PARALLEL_CANDIDATES=4 unless I override it. Use one local GPU; if multiple GPUs are visible, pin candidate runs to CUDA_VISIBLE_DEVICES=0 rather than spreading candidates across devices. Lower the candidate width if CUDA memory, host memory, or I/O contention appears.
 
 Once setup and baseline are complete, do not ask whether to keep going or whether this is a good stopping point. Continue the experiment loop until manually interrupted.
+
+After every reviewed batch, run `"${PYTHON}" scripts/plateau_watchdog.py results.tsv` before choosing the next sweep. If it prints `recommendation=literature`, stop local hyperparameter jittering, run the literature loop in `program.md`, log a `literature` row, and launch the selected source-backed candidates next.
+
+Commit `results.tsv` locally after the baseline and after each reviewed batch. Commit surviving code changes locally on the active `autoresearch/` branch as soon as they are kept; do not let kept mutations accumulate only in the working tree. Do not require pushing from inside the devcontainer.
 ```
 
 ## Scoring recommendation
@@ -206,10 +204,11 @@ Because the current CIFAR-10 validation loader is the same full test set on ever
 The default single-H100 candidate budget is:
 
 ```bash
---n_clients 8 --num_rounds 10 --aggregation_epochs 4 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
+--n_clients 8 --num_rounds 20 --aggregation_epochs 4 --local_train_steps 0 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
 ```
 
-Candidate runs default to a 600-second timeout through `scripts/run_iteration.sh`, and each appended `results.tsv` row includes `runtime_seconds` for experimental cost accounting.
+Candidate runs default to a 1200-second timeout through `scripts/run_iteration.sh`, and each appended `results.tsv` row includes `runtime_seconds` for experimental cost accounting. With result logging enabled, `run_iteration.sh` refuses to run outside an `autoresearch/` branch and initializes the `results.tsv` header before the training job starts; the scored row is appended after the candidate exits.
+The agent may optimize local training work with `--aggregation_epochs` or `--local_train_steps` while keeping `--num_rounds 20` fixed. Compare score first, use `runtime_seconds` as the cost/tie-breaker, and keep the full args in the logged `budget` string.
 Training splits are reused across candidates with the same `n_clients`, `alpha`, and `seed` under `/tmp/cifar10_splits/autofl_cifar10_*`. A lock guards split creation, so candidate `--name` values do not create duplicate data-partition directories.
 Client training is deterministic by default for a fixed `--seed`: each site derives a stable per-site RNG seed, PyTorch deterministic algorithms are enabled, cuDNN benchmarking is disabled, and DataLoader shuffling/workers are seeded. Use `--no_deterministic_training` only for a deliberately faster but noisier subcampaign, and do not compare those scores directly with deterministic runs.
 
@@ -235,7 +234,7 @@ The current harness covers the NVFlare CIFAR-10 simulation benchmark modes that 
 
 SCAFFOLD is an explicit opt-in protocol mode. It still preserves the core model contract (`ParamsType.DIFF`, same model keys, `NUM_STEPS_CURRENT_ROUND`) but it does add SCAFFOLD-specific metadata, so keep SCAFFOLD comparisons labeled separately from strict no-extra-meta baselines.
 
-The first post-baseline calibration should run these algorithm families before broader tuning. Run them in batches of up to `PARALLEL_CANDIDATES` concurrent candidates on the same H100 under the same fixed budget:
+The first post-baseline calibration should run these algorithm families before broader tuning. Run them in batches of up to `PARALLEL_CANDIDATES` concurrent candidates on the same H100 under the same communication and local-compute budget:
 
 | Step | Description | Extra args |
 | --- | --- | --- |
@@ -262,7 +261,16 @@ After reviewing the table, finalize the completed batch status:
 "${PYTHON:-python3}" scripts/finalize_batch_status.py results.tsv --last "${PARALLEL_CANDIDATES:-4}" --keep-best --discard-others
 ```
 
+Then run the plateau watchdog before selecting the next sweep:
+
+```bash
+"${PYTHON:-python3}" scripts/plateau_watchdog.py results.tsv
+```
+
+If it prints `recommendation=literature`, switch to the literature loop before launching more candidates.
+
 The progress plot reads the `status` column directly. If all successful rows remain `candidate`, the plot will correctly show no kept runs.
+Rows with `status=literature` are shown as vertical markers, with their `runtime_seconds` counted separately from candidate runtime, so long score plateaus can be compared against actual paper-review cycles.
 
 To generate an autoresearch-style progress image from the ledger:
 

@@ -69,6 +69,12 @@ from nvflare.tool.cert.cert_commands import (
     handle_cert_sign,
     sign_csr_files,
 )
+from nvflare.tool.cert.cert_constants import (
+    CA_INFO_FIELD,
+    PROVISION_VERSION_FIELD,
+    ROOTCA_FINGERPRINT_FIELD,
+    is_valid_provision_version,
+)
 from nvflare.tool.cert.fingerprint import cert_fingerprint_sha256
 
 # ---------------------------------------------------------------------------
@@ -82,6 +88,7 @@ def _init_args(**kwargs):
         output_dir=None,
         org=None,
         valid_days=3650,
+        deploy_version="00",
         force=False,
         schema=False,
     )
@@ -764,6 +771,23 @@ class TestCertInit:
         assert meta["project"] == "MyProject"
         assert "created_at" in meta
 
+    def test_ca_json_records_default_provision_version_and_rootca_fingerprint(self, tmp_path):
+        _run_init(tmp_path, project="MyProject")
+
+        with open(str(tmp_path / "ca.json")) as f:
+            meta = json.load(f)
+
+        assert meta[PROVISION_VERSION_FIELD] == "00"
+        assert meta[ROOTCA_FINGERPRINT_FIELD] == cert_fingerprint_sha256(load_crt(str(tmp_path / "rootCA.pem")))
+
+    def test_ca_json_records_explicit_provision_version(self, tmp_path):
+        rc = _run_init(tmp_path, project="MyProject", deploy_version="01")
+
+        assert rc == 0
+        with open(str(tmp_path / "ca.json")) as f:
+            meta = json.load(f)
+        assert meta[PROVISION_VERSION_FIELD] == "01"
+
     def test_init_uses_project_profile_name(self, tmp_path):
         profile_path = tmp_path / "project_profile.yaml"
         ca_dir = tmp_path / "ca"
@@ -784,12 +808,12 @@ class TestCertInit:
             _run_init(tmp_path)
         assert exc_info.value.code == 1
 
-    def test_force_overwrites_and_backs_up(self, tmp_path):
+    def test_force_with_new_provision_version_overwrites_and_backs_up(self, tmp_path):
         # First init
         _run_init(tmp_path)
         original_key = (tmp_path / "rootCA.key").read_bytes()
-        # Force re-init
-        rc = _run_init(tmp_path, force=True)
+        # Force re-init with a new deploy version
+        rc = _run_init(tmp_path, force=True, deploy_version="01")
         assert rc == 0
         new_key = (tmp_path / "rootCA.key").read_bytes()
         # A new key pair is generated on force re-init
@@ -797,6 +821,19 @@ class TestCertInit:
         # .bak directory should exist
         bak_dirs = list((tmp_path / ".bak").iterdir())
         assert len(bak_dirs) >= 1
+        with open(str(tmp_path / "ca.json")) as f:
+            meta = json.load(f)
+        assert meta[PROVISION_VERSION_FIELD] == "01"
+
+    def test_force_same_provision_version_rejected(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "txt")
+        _run_init(tmp_path)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_init(tmp_path, force=True)
+
+        assert exc_info.value.code == 4
+        assert "CA_VERSION_ALREADY_EXISTS" in capsys.readouterr().err
 
     def test_rootca_is_valid_ca_cert(self, tmp_path):
         _run_init(tmp_path)
@@ -832,6 +869,43 @@ class TestCertInit:
         assert args_by_name["--profile"]["required"] is True
         assert args_by_name["--output-dir"]["required"] is True
 
+    def test_parser_accepts_deploy_version(self, tmp_path):
+        profile_path = tmp_path / "project_profile.yaml"
+        _write_participant_definition(profile_path, {"name": "TestProject"})
+        parser, _ = _cert_root_parser()
+
+        args = parser.parse_args(
+            [
+                "cert",
+                "init",
+                "--profile",
+                str(profile_path),
+                "-o",
+                str(tmp_path / "ca"),
+                "--deploy-version",
+                "01",
+            ]
+        )
+
+        assert args.deploy_version == "01"
+
+    def test_provision_version_rejects_unicode_digits(self):
+        assert not is_valid_provision_version("０１")
+
+    def test_parser_force_help_mentions_new_version_requirement(self, capsys):
+        parser, _ = _cert_root_parser()
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["cert", "init", "-h"])
+
+        assert exc_info.value.code == 0
+        help_text = capsys.readouterr().out
+        assert "--deploy-version" in help_text
+        assert "differs from the existing CA deploy version" in help_text
+        assert "matches the existing" in help_text
+        assert "ca.json is absent" in help_text
+        assert "existing CA deploy version" in help_text
+
     def test_missing_required_args_show_help_and_missing_flags(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         with pytest.raises(SystemExit) as exc_info:
@@ -857,7 +931,7 @@ class TestCertInit:
         assert "project" in data["data"]
         assert "valid_until" in data["data"]
 
-    def test_force_flag_overwrites_existing_ca(self, tmp_path):
+    def test_force_flag_overwrites_incomplete_existing_ca(self, tmp_path):
         (tmp_path / "rootCA.key").write_bytes(b"old-key")
         rc = handle_cert_init(_init_args(profile=_make_profile(tmp_path), output_dir=str(tmp_path), force=True))
         assert rc == 0
@@ -3379,7 +3453,12 @@ class TestDistributedCertRequestApprove:
         participant_path = tmp_path / "site-3.yaml"
 
         handle_cert_init(
-            _init_args(profile=_make_profile(tmp_path, "example_project"), org="nvidia", output_dir=str(ca_dir))
+            _init_args(
+                profile=_make_profile(tmp_path, "example_project"),
+                org="nvidia",
+                output_dir=str(ca_dir),
+                deploy_version="01",
+            )
         )
         _write_project_profile(profile_path)
         _write_request_participant(participant_path)
@@ -3429,6 +3508,10 @@ class TestDistributedCertRequestApprove:
             "fed_learn_port": 8002,
             "admin_port": 8003,
         }
+        assert signed_json[CA_INFO_FIELD][PROVISION_VERSION_FIELD] == "01"
+        assert signed_json[CA_INFO_FIELD][ROOTCA_FINGERPRINT_FIELD] == cert_fingerprint_sha256(
+            load_crt(str(ca_dir / "rootCA.pem"))
+        )
         assert "request" not in signed_json
         assert "project_name" not in signed_json
         assert "serial_number" not in signed_json
@@ -3450,6 +3533,7 @@ class TestDistributedCertRequestApprove:
         approve_audit = json.loads(approve_audit_path.read_text())
         assert approve_audit["schema_version"] == "1"
         assert approve_audit["request"]["name"] == "site-3"
+        assert approve_audit["approval"][CA_INFO_FIELD] == signed_json[CA_INFO_FIELD]
 
         captured = capsys.readouterr()
         combined = captured.out + captured.err

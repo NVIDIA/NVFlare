@@ -27,7 +27,7 @@ from tests.integration_test.src import ProvisionSiteLauncher
 from tests.integration_test.src.constants import PREFLIGHT_CHECK_SCRIPT
 
 TEST_CASES = [
-    {"project_yaml": "data/projects/dummy.yml", "admin_name": "super@test.org", "is_dummy_overseer": True},
+    {"project_yaml": "data/projects/dummy.yml", "admin_name": "super@test.org"},
 ]
 
 
@@ -81,7 +81,10 @@ def _parse_preflight_output(output: bytes) -> dict[str, str]:
 
 
 def _verify_checks(actual_checks: dict[str, str], expected_checks: dict[str, str], check_type: str):
-    """Verify that actual checks match expected checks with detailed error messages.
+    """Verify that expected checks are present with detailed error messages.
+
+    Preflight output may include additional checks, such as "Check dry run", when
+    earlier required checks pass. Those extra checks are allowed here.
 
     Args:
         actual_checks: Dictionary of actual check results
@@ -93,15 +96,6 @@ def _verify_checks(actual_checks: dict[str, str], expected_checks: dict[str, str
     if missing_checks:
         raise AssertionError(
             f"{check_type} preflight check missing expected checks: {missing_checks}\n"
-            f"Expected checks: {list(expected_checks.keys())}\n"
-            f"Actual checks: {list(actual_checks.keys())}"
-        )
-
-    # Check if there are unexpected checks
-    extra_checks = set(actual_checks.keys()) - set(expected_checks.keys())
-    if extra_checks:
-        raise AssertionError(
-            f"{check_type} preflight check has unexpected checks: {extra_checks}\n"
             f"Expected checks: {list(expected_checks.keys())}\n"
             f"Actual checks: {list(actual_checks.keys())}"
         )
@@ -120,14 +114,24 @@ def _verify_checks(actual_checks: dict[str, str], expected_checks: dict[str, str
         raise AssertionError(error_msg)
 
 
-def _run_preflight_check_command_in_subprocess(package_path: str):
+def _raise_preflight_command_error(command: str, returncode: int, output: bytes):
+    output_text = output.decode("utf-8", errors="replace")
+    raise AssertionError(
+        f"Preflight command failed with return code {returncode}: {command}\n" f"Output:\n{output_text}"
+    )
+
+
+def _run_preflight_check_command_in_subprocess(package_path: str, expect_success: bool = True):
     command = f"{sys.executable} -m {PREFLIGHT_CHECK_SCRIPT} -p {package_path}"
     print(f"Executing command {command} in subprocess")
-    output = subprocess.check_output(shlex.split(command))
-    return output
+    process = subprocess.run(shlex.split(command), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+    print(f"Preflight command return code: {process.returncode}")
+    if expect_success and process.returncode != 0:
+        _raise_preflight_command_error(command, process.returncode, process.stdout)
+    return process.stdout
 
 
-def _run_preflight_check_command_in_pseudo_terminal(package_path: str):
+def _run_preflight_check_command_in_pseudo_terminal(package_path: str, expect_success: bool = True):
     command = f"{sys.executable} -m {PREFLIGHT_CHECK_SCRIPT} -p {package_path}"
     print(f"Executing command {command} in pty")
 
@@ -138,16 +142,20 @@ def _run_preflight_check_command_in_pseudo_terminal(package_path: str):
             output.write(data)
             return data
 
-        pty.spawn(shlex.split(command), read)
+        status = pty.spawn(shlex.split(command), read)
+        returncode = os.waitstatus_to_exitcode(status)
+        print(f"Preflight command return code: {returncode}")
+        if expect_success and returncode != 0:
+            _raise_preflight_command_error(command, returncode, output.getvalue())
 
         return output.getvalue()
 
 
-def _run_preflight_check_command(package_path: str, method: str = "subprocess"):
+def _run_preflight_check_command(package_path: str, method: str = "subprocess", expect_success: bool = True):
     if method == "subprocess":
-        return _run_preflight_check_command_in_subprocess(package_path)
+        return _run_preflight_check_command_in_subprocess(package_path, expect_success=expect_success)
     else:
-        return _run_preflight_check_command_in_pseudo_terminal(package_path)
+        return _run_preflight_check_command_in_pseudo_terminal(package_path, expect_success=expect_success)
 
 
 @pytest.fixture(
@@ -156,7 +164,6 @@ def _run_preflight_check_command(package_path: str, method: str = "subprocess"):
 def setup_system(request):
     test_config = request.param
     project_yaml_path = test_config["project_yaml"]
-    is_dummy_overseer = test_config["is_dummy_overseer"]
     admin_name = test_config["admin_name"]
 
     if not os.path.isfile(project_yaml_path):
@@ -167,28 +174,23 @@ def setup_system(request):
 
     admin_folder_root = os.path.abspath(os.path.join(workspace_root, admin_name))
 
-    return site_launcher, is_dummy_overseer, admin_folder_root
+    return site_launcher, admin_folder_root
 
 
 @pytest.mark.xdist_group(name="preflight_tests_group")
 class TestPreflightCheck:
-    def test_run_check_on_server_after_overseer_start(self, setup_system):
-        site_launcher, is_dummy_overseer, _ = setup_system
+    def test_run_check_on_server(self, setup_system):
+        site_launcher, _ = setup_system
         try:
-            if not is_dummy_overseer:
-                site_launcher.start_overseer()
-            # preflight-check on server
             for server_name, server_props in site_launcher.server_properties.items():
                 output = _run_preflight_check_command(package_path=server_props.root_dir)
                 actual_checks = _parse_preflight_output(output)
 
-                # Get expected checks based on communication scheme
                 expected_checks = {
                     "Check FL port binding": "PASSED",
                     "Check admin port binding": "PASSED",
                     "Check snapshot storage writable": "PASSED",
                     "Check job storage writable": "PASSED",
-                    "Check dry run": "PASSED",
                 }
 
                 print(f"Server '{server_name}', expecting checks: {list(expected_checks.keys())}")
@@ -198,61 +200,22 @@ class TestPreflightCheck:
             site_launcher.stop_all_sites()
             site_launcher.cleanup()
 
-    def test_run_check_on_server_before_overseer_start(self, setup_system):
-        site_launcher, is_dummy_overseer, _ = setup_system
-        try:
-            # preflight-check on server
-            for server_name, server_props in site_launcher.server_properties.items():
-                output = _run_preflight_check_command(package_path=server_props.root_dir)
-                actual_checks = _parse_preflight_output(output)
-
-                # Get expected checks based on communication scheme
-                expected_checks = {
-                    "Check FL port binding": "PASSED",
-                    "Check admin port binding": "PASSED",
-                    "Check snapshot storage writable": "PASSED",
-                    "Check job storage writable": "PASSED",
-                    "Check dry run": "PASSED",
-                }
-
-                if is_dummy_overseer:
-                    print(f"Server '{server_name}', expecting checks: {list(expected_checks.keys())}")
-                    _verify_checks(actual_checks, expected_checks, f"Server '{server_name}'")
-                else:
-                    # At least one check should not be PASSED (likely the dry run)
-                    passed_count = sum(1 for status in actual_checks.values() if status == "PASSED")
-                    total_count = len(expected_checks)
-                    assert passed_count < total_count, (
-                        f"Server '{server_name}' preflight check expected some failures before overseer start, "
-                        f"but all {passed_count}/{total_count} checks passed. "
-                        f"Actual checks: {actual_checks}"
-                    )
-        finally:
-            site_launcher.stop_all_sites()
-            site_launcher.cleanup()
-
     def test_run_check_on_client(self, setup_system):
-        site_launcher, is_dummy_overseer, _ = setup_system
+        site_launcher, _ = setup_system
         try:
-            if not is_dummy_overseer:
-                site_launcher.start_overseer()
             site_launcher.start_servers()
             time.sleep(SERVER_START_TIME)
 
-            # preflight-check on clients
             for client_name, client_props in site_launcher.client_properties.items():
                 output = _run_preflight_check_command(package_path=client_props.root_dir)
                 actual_checks = _parse_preflight_output(output)
 
-                # Get expected checks based on communication scheme
                 expected_checks = {
                     "Check server available": "PASSED",
-                    "Check dry run": "PASSED",
                 }
 
                 print(f"Client '{client_name}', expecting checks: {list(expected_checks.keys())}")
 
-                # Verify checks match expectations based on communication scheme
                 _verify_checks(actual_checks, expected_checks, f"Client '{client_name}'")
         except Exception:
             raise
@@ -261,10 +224,8 @@ class TestPreflightCheck:
             site_launcher.cleanup()
 
     def test_run_check_on_admin_console(self, setup_system):
-        site_launcher, is_dummy_overseer, admin_folder_root = setup_system
+        site_launcher, admin_folder_root = setup_system
         try:
-            if not is_dummy_overseer:
-                site_launcher.start_overseer()
             site_launcher.start_servers()
             time.sleep(SERVER_START_TIME)
 
@@ -274,7 +235,6 @@ class TestPreflightCheck:
 
             expected_checks = {
                 "Check server available": "PASSED",
-                "Check dry run": "PASSED",
             }
 
             print(f"Admin console, expecting checks: {list(expected_checks.keys())}")

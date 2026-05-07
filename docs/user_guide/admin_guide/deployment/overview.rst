@@ -82,8 +82,7 @@ For advanced users, you can customize your provision with additional behavior th
 
     - **Zip**: To create password protected zip archives for the startup kits, see :ref:`distribution_builder`
     - **Docker-compose** *(deprecated)*: Previously used for launching NVIDIA FLARE via docker containers. See :ref:`containerized_deployment` for the current approach.
-    - **Docker**: Provision to launch NVIDIA FLARE system via docker containers. If you just want to use docker files, see :ref:`containerized_deployment`.
-    - **Helm**: To change the provisioning tool to generate an NVIDIA FLARE Helm chart for Kubernetes deployment, see :ref:`helm_chart`.
+    - **Docker/Kubernetes runtime packaging**: Provision normal startup kits first, then run ``nvflare deploy prepare`` for Docker or Kubernetes runtime files. See :ref:`containerized_deployment` and :ref:`helm_chart`.
     - **CUSTOM**: you can build custom builders specific to your needs like in :ref:`distribution_builder`.
 
 Package distribution
@@ -150,8 +149,9 @@ Similarly deployment approach to Google Cloud will be made available in a future
 
 Kubernetes Deployment
 =====================
-As mentioned above, you can run NVIDIA FLARE in the public cloud.  If you prefer to deploy NVIDIA FLARE in Amazon Elastic Kubernetes Service (EKS),
-you can find the deployment guide in :ref:`aws_eks`.
+Use ``nvflare deploy prepare`` after provisioning to generate per-participant
+Helm charts and K8s launcher configuration. See :ref:`helm_chart` for the
+current Kubernetes deployment workflow.
 
 
 .. _starting_fl_servers:
@@ -360,7 +360,3 @@ Administrator side folder and file structure
                 config/
                 models/
                 resources/
-
-
-
-

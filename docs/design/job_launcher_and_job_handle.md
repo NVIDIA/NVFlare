@@ -74,7 +74,6 @@ Abstract base class for launching jobs (`class JobLauncherSpec(FLComponent, ABC)
 | `PARENT_CONN_SEC` | `"parent_conn_sec"` | Client |
 | `SERVICE_HOST` | `"service_host"` | Server |
 | `SERVICE_PORT` | `"service_port"` | Server |
-| `HA_MODE` | `"ha_mode"` | Server |
 | `TARGET` | `"target"` | Client |
 | `SCHEME` | `"scheme"` | Client |
 | `STARTUP_CONFIG_FILE` | `"startup_config_file"` | Server, Client |
@@ -132,7 +131,7 @@ If a job lacks required configuration for the site's launcher (e.g. no image on 
     },
     "site-1": {
       "docker": { "image": "nvflare-pt:2.7", "shm_size": "8g" },
-      "k8s":    { "image": "nvflare-pt:2.7", "cpu": "4", "memory": "16Gi", "num_of_gpus": 1 }
+      "k8s":    { "image": "nvflare-pt:2.7", "cpu": "4", "memory": "16Gi", "num_of_gpus": 1, "ephemeral_storage": "8Gi" }
     }
   }
 }
@@ -358,6 +357,7 @@ Constructor parameters:
 | `namespace` | `"default"` | Kubernetes namespace. |
 | `pending_timeout` | `120` | Stuck-detection threshold (poll iterations) when `timeout` is `None`. |
 | `default_python_path` | `"/usr/local/bin/python"` | Default Python executable in the pod command. Job meta can override with `launcher_spec[site][k8s].python_path`. |
+| `ephemeral_storage` | `"1Gi"` | Default job pod workspace `emptyDir` size and `ephemeral-storage` request/limit. Job meta can override with `launcher_spec[site][k8s].ephemeral_storage`. |
 
 Launch sequence:
 
@@ -366,7 +366,7 @@ Launch sequence:
 | 0 | Lazy init: load kubeconfig and create `CoreV1Api`. |
 | 1 | Sanitize job ID via `uuid4_to_rfc1123`. Extract `site_name`, `job_image` from `get_job_launcher_spec(job_meta, site_name, "k8s")`. Raise if `WORKSPACE_OBJECT` missing. |
 | 2 | Read `JOB_PROCESS_ARGS`; raise if absent or `EXE_MODULE` missing. Resolve dataset PVC mounts from `study_data_pvc_file_path` when the YAML file contains entries for the job study. |
-| 3 | Build `job_config`: name, image, args from `get_module_args()`. Use `launcher_spec[site][k8s].python_path` for the pod command when present, falling back to `default_python_path`. Add K8s `resources.limits` from `launcher_spec` `num_of_gpus`, `cpu`, and `memory` when present; `num_of_gpus` falls back to flat `resource_spec[site]` for backward compatibility. Missing study entries skip data PVC mounts. |
+| 3 | Build `job_config`: name, image, args from `get_module_args()`. Use `launcher_spec[site][k8s].python_path` for the pod command when present, falling back to `default_python_path`. Add the workspace `emptyDir.sizeLimit` and `resources.requests/limits["ephemeral-storage"]` from `launcher_spec[site][k8s].ephemeral_storage` when present, falling back to the launcher default. Add K8s `resources.limits` from `launcher_spec` `num_of_gpus`, `cpu`, and `memory` when present; `num_of_gpus` falls back to flat `resource_spec[site]` for backward compatibility. Missing study entries skip data PVC mounts. |
 | 4 | Create `K8sJobHandle`. |
 | 5 | `core_v1.create_namespaced_pod()`. On any exception: set `terminal_state = TERMINATED`, return handle. |
 | 6 | `job_handle.enter_states([RUNNING])`. On any `BaseException`: `terminate()` then re-raise. |

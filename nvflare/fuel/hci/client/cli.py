@@ -246,7 +246,7 @@ class AdminClient(cmd.Cmd, EventHandler):
 
     def do_help(self, arg):
         if len(arg) <= 0:
-            self.write_string("Client Initiated / Overseer Commands")
+            self.write_string("Client Initiated Commands")
             self._show_commands(self.api.client_cmd_reg)
 
             self.write_string("\nServer Commands")

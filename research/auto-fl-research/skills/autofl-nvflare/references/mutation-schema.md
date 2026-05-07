@@ -21,6 +21,7 @@ Mutate local client behavior and bounded registered model architectures without 
 
 ## Safe arguments
 - `aggregation_epochs`
+- `local_train_steps`
 - `lr`
 - `batch_size`
 - `num_workers`
@@ -32,6 +33,8 @@ Mutate local client behavior and bounded registered model architectures without 
 - `fedproxloss_mu`
 - `model_arch`
 - `max_model_params`
+
+`local_train_steps=0` uses epoch-based training with `aggregation_epochs`. Positive `local_train_steps` values use exact optimizer steps per client per round and should not be varied in the same narrow sweep as `aggregation_epochs`.
 
 ## Forbidden mutations
 - switch DIFF uploads to FULL uploads

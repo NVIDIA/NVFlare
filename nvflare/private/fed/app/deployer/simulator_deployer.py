@@ -50,7 +50,6 @@ class SimulatorDeployer(ServerDeployer):
             args=args,
             secure_train=secure_train,
             snapshot_persistor=self.snapshot_persistor,
-            overseer_agent=self.overseer_agent,
             heart_beat_timeout=heart_beat_timeout,
         )
         services.deploy(args, grpc_args=simulator_server)
@@ -164,7 +163,6 @@ class SimulatorDeployer(ServerDeployer):
             "server_host": None,
             "secure_train": False,
             "enable_byoc": True,
-            "overseer_agent": None,
             "client_components": {},
             "client_handlers": None,
         }

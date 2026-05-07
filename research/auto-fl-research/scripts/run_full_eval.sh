@@ -3,8 +3,9 @@ set -euo pipefail
 
 PYTHON=${PYTHON:-python3}
 N_CLIENTS=${N_CLIENTS:-8}
-NUM_ROUNDS=${NUM_ROUNDS:-10}
+NUM_ROUNDS=${NUM_ROUNDS:-20}
 LOCAL_EPOCHS=${LOCAL_EPOCHS:-4}
+LOCAL_TRAIN_STEPS=${LOCAL_TRAIN_STEPS:-0}
 BATCH_SIZE=${BATCH_SIZE:-64}
 EVAL_BATCH_SIZE=${EVAL_BATCH_SIZE:-1024}
 ALPHA=${ALPHA:-0.5}
@@ -23,6 +24,7 @@ bash scripts/run_iteration.sh \
   -- --n_clients "${N_CLIENTS}" \
      --num_rounds "${NUM_ROUNDS}" \
      --aggregation_epochs "${LOCAL_EPOCHS}" \
+     --local_train_steps "${LOCAL_TRAIN_STEPS}" \
      --batch_size "${BATCH_SIZE}" \
      --eval_batch_size "${EVAL_BATCH_SIZE}" \
      --alpha "${ALPHA}" \

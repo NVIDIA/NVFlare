@@ -25,21 +25,28 @@ fi
 
 BRANCH="autoresearch/${TAG}"
 
-if git rev-parse --git-dir >/dev/null 2>&1; then
-  if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
-    current_branch=$(git branch --show-current)
-    if [[ "${current_branch}" == "${BRANCH}" ]]; then
-      echo "Branch ${BRANCH} already checked out"
-    else
-      git checkout "${BRANCH}"
-      echo "Switched to existing branch ${BRANCH}"
-    fi
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  echo "ERROR: init_run.sh must run inside a git clone so experiments have branch and commit provenance" >&2
+  exit 2
+fi
+
+if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
+  current_branch=$(git branch --show-current)
+  if [[ "${current_branch}" == "${BRANCH}" ]]; then
+    echo "Branch ${BRANCH} already checked out"
   else
-    git checkout -b "${BRANCH}"
-    echo "Created branch ${BRANCH}"
+    git checkout "${BRANCH}"
+    echo "Switched to existing branch ${BRANCH}"
   fi
 else
-  echo "WARNING: not inside a git repo; skipping branch creation"
+  git checkout -b "${BRANCH}"
+  echo "Created branch ${BRANCH}"
+fi
+
+current_branch=$(git branch --show-current)
+if [[ "${current_branch}" != "${BRANCH}" ]]; then
+  echo "ERROR: expected to be on ${BRANCH}, but current branch is ${current_branch}" >&2
+  exit 2
 fi
 
 if [[ ! -f results.tsv ]]; then

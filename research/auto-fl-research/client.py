@@ -61,6 +61,12 @@ def build_parser():
     parser = argparse.ArgumentParser(description="Merged NVFlare CIFAR10 client for Auto-FL")
     parser.add_argument("--train_idx_root", type=str, default="/tmp/cifar10_splits")
     parser.add_argument("--aggregation_epochs", type=int, default=4)
+    parser.add_argument(
+        "--local_train_steps",
+        type=int,
+        default=0,
+        help="Exact optimizer steps per client per round. Use 0 for epoch-based training with --aggregation_epochs.",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
         "--model_arch",
@@ -257,6 +263,10 @@ def _update_scaffold_controls(
 def main(args):
     if args.eval_batch_size <= 0:
         raise ValueError("eval_batch_size must be > 0")
+    if args.aggregation_epochs <= 0:
+        raise ValueError("aggregation_epochs must be > 0")
+    if args.local_train_steps < 0:
+        raise ValueError("local_train_steps must be >= 0")
 
     flare.init()
     site_name = flare.get_site_name()
@@ -311,8 +321,9 @@ def main(args):
 
         if scheduler is None and not args.no_lr_scheduler:
             total_rounds = input_model.total_rounds
+            scheduler_units = args.local_train_steps if args.local_train_steps > 0 else args.aggregation_epochs
             eta_min = args.lr * args.cosine_lr_eta_min_factor
-            t_max = total_rounds * args.aggregation_epochs
+            t_max = total_rounds * scheduler_units
             scheduler = optim.lr_scheduler.CosineAnnealingLR(
                 optimizer,
                 T_max=t_max,
@@ -333,10 +344,10 @@ def main(args):
                 scalar=val_acc_global_model,
                 global_step=current_round,
             )
+            # Cross-site validation expects a metrics-only DXO (DataKind.METRICS).
+            # Sending no params lets FLModelUtils emit DataKind.METRICS instead of WEIGHT_DIFF.
             flare.send(
                 flare.FLModel(
-                    params={},
-                    params_type=ParamsType.DIFF,
                     metrics={"accuracy": val_acc_global_model},
                     meta={"NUM_STEPS_CURRENT_ROUND": 0},
                 )
@@ -374,14 +385,21 @@ def main(args):
                 "check site_idx and data split configuration."
             )
 
-        steps = args.aggregation_epochs * train_batches
+        steps = args.local_train_steps if args.local_train_steps > 0 else args.aggregation_epochs * train_batches
         curr_lr = get_lr_values(optimizer)[0]
 
-        for epoch in range(args.aggregation_epochs):
+        if args.local_train_steps > 0:
             model.train()
             running_loss = 0.0
+            loader_iter = iter(train_loader)
 
-            for batch in train_loader:
+            for step in range(args.local_train_steps):
+                try:
+                    batch = next(loader_iter)
+                except StopIteration:
+                    loader_iter = iter(train_loader)
+                    batch = next(loader_iter)
+
                 inputs, labels = batch[0].to(DEVICE), batch[1].to(DEVICE)
 
                 optimizer.zero_grad(set_to_none=True)
@@ -405,16 +423,20 @@ def main(args):
                     scaffold_steps += 1
                 running_loss += loss.item()
 
-            avg_loss = running_loss / train_batches
-            global_epoch = current_round * args.aggregation_epochs + epoch
+                if scheduler is not None:
+                    scheduler.step()
 
-            summary_writer.add_scalar("global_round", current_round, global_epoch)
-            summary_writer.add_scalar("global_epoch", global_epoch, global_epoch)
-            summary_writer.add_scalar("train_loss", avg_loss, global_epoch)
-            summary_writer.add_scalar("learning_rate", curr_lr, global_epoch)
+            avg_loss = running_loss / args.local_train_steps
+            global_step = current_round * args.local_train_steps + args.local_train_steps - 1
+
+            summary_writer.add_scalar("global_round", current_round, global_step)
+            summary_writer.add_scalar("local_train_steps", args.local_train_steps, global_step)
+            summary_writer.add_scalar("train_loss", avg_loss, global_step)
+            summary_writer.add_scalar("learning_rate", curr_lr, global_step)
 
             print(
-                f"{site_name}: epoch [{epoch + 1}/{args.aggregation_epochs}] " f"loss={avg_loss:.4f} lr={curr_lr:.6f}"
+                f"{site_name}: local steps [{args.local_train_steps}/{args.local_train_steps}] "
+                f"loss={avg_loss:.4f} lr={curr_lr:.6f}"
             )
 
             if args.evaluate_local:
@@ -423,11 +445,61 @@ def main(args):
                 summary_writer.add_scalar(
                     tag="val_acc_local_model",
                     scalar=val_acc_local_model,
-                    global_step=global_epoch,
+                    global_step=global_step,
+                )
+        else:
+            for epoch in range(args.aggregation_epochs):
+                model.train()
+                running_loss = 0.0
+
+                for batch in train_loader:
+                    inputs, labels = batch[0].to(DEVICE), batch[1].to(DEVICE)
+
+                    optimizer.zero_grad(set_to_none=True)
+                    outputs = model(inputs)
+                    loss = criterion(outputs, labels)
+
+                    if criterion_prox is not None:
+                        loss = loss + criterion_prox(model, global_model)
+
+                    loss.backward()
+                    optimizer.step()
+
+                    curr_lr = get_lr_values(optimizer)[0]
+                    if args.scaffold:
+                        _apply_scaffold_correction(
+                            model,
+                            curr_lr,
+                            scaffold_global_controls,
+                            scaffold_local_controls,
+                        )
+                        scaffold_steps += 1
+                    running_loss += loss.item()
+
+                avg_loss = running_loss / train_batches
+                global_epoch = current_round * args.aggregation_epochs + epoch
+
+                summary_writer.add_scalar("global_round", current_round, global_epoch)
+                summary_writer.add_scalar("global_epoch", global_epoch, global_epoch)
+                summary_writer.add_scalar("train_loss", avg_loss, global_epoch)
+                summary_writer.add_scalar("learning_rate", curr_lr, global_epoch)
+
+                print(
+                    f"{site_name}: epoch [{epoch + 1}/{args.aggregation_epochs}] "
+                    f"loss={avg_loss:.4f} lr={curr_lr:.6f}"
                 )
 
-            if scheduler is not None:
-                scheduler.step()
+                if args.evaluate_local:
+                    val_acc_local_model = evaluate(model, valid_loader, DEVICE)
+                    print(f"{site_name}: local validation accuracy={100 * val_acc_local_model:.2f}%")
+                    summary_writer.add_scalar(
+                        tag="val_acc_local_model",
+                        scalar=val_acc_local_model,
+                        global_step=global_epoch,
+                    )
+
+                if scheduler is not None:
+                    scheduler.step()
 
         if args.scaffold:
             scaffold_local_controls, scaffold_ctrl_diff = _update_scaffold_controls(

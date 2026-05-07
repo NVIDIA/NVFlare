@@ -1,481 +1,350 @@
 .. _helm_chart:
 
-################################
+###########################
 Running FLARE in Kubernetes
-################################
+###########################
 
-NVIDIA FLARE can be deployed to Kubernetes clusters for production-scale federated learning.
+NVIDIA FLARE can be deployed to Kubernetes by first provisioning normal startup
+kits and then preparing each kit for the Kubernetes runtime.
 
-.. note::
-
-    **Coming in 2.8.0: Native Kubernetes Support**
-
-    FLARE 2.8.0 will introduce native Kubernetes support with tighter integration,
-    simplified deployment, and native orchestration of FL jobs on K8s.
-
-Current Kubernetes Deployment with Helm Chart
-=============================================
-
-Currently, FLARE can be deployed to Kubernetes using Helm Charts. The provisioning tool includes
-a ``HelmChartBuilder`` that generates a reference Helm Chart for deploying NVIDIA FLARE to
-Kubernetes instances (e.g., microk8s).
-
-.. note::
-
-    The generated Helm Chart is a starting point and serves as a reference. Depending on the Kubernetes cluster,
-    users may need to modify and/or perform additional operations to successfully deploy the chart.
-    
-
-.. note::
-
-    The following document assumes users have microk8s (common bundle in ubuntu server 20.04 and above) running on his local machine.
-    With the helm chart, users are able to start the servers in the k8s cluster after provisioning.
-    The clients and admin console can connect to the servers in the k8s cluster.
-
-
-***************************
-Update on provisioning tool
-***************************
-
-In order to generate the helm chart, add the HelmChartBuilder to the project.yml file.
-
-.. code-block:: yaml
-
-    - path: nvflare.lighter.impl.helm_chart.HelmChartBuilder
-        args:
-        docker_image: localhost:32000/nvfl-min:0.0.1
-
-
-The ``docker_image`` is the actual image used for all pods running in the k8s.  The provisioners have 
-to build it separately and make sure it is available to the k8s cluster.  For microk8s, enabling the docker registry 
-server by running this:
-
-.. code-block:: shell
-
-    microk8s enable registry
-
-This will create a registry server listening to port 32000
-
-********************
-Provisioning results
-********************
-
-Running provision command as usual, either in the new format ``nvflare provision`` or just ``provision``.
-
-After the command, there should a folder with structure similar to the following:
-
-.. code-block:: shell
-
-    $ tree -L 1
-    .
-    ├── admin@nvidia.com
-    ├── compose.yaml
-    ├── nvflare_compose
-    ├── nvflare_hc
-    ├── server1
-    ├── server2
-    ├── site-1
-    └── site-2
-
-    7 directories, 1 file
-
-Note there is a nvflare_hc folder.  This folder is the Helm Chart package.
-
-
-******************
-Preparing microk8s
-******************
-
-Enabling microk8s addons
-========================
-NVIDIA FLARE Helm Chart depends on a few services (aka addons in microk8s) provided by the Kubernetes cluster.  Please
-check if they are enabled.
-
-.. code-block:: shell
-
-    $ microk8s status
-    microk8s is running
-    datastore master nodes: 127.0.0.1:19001
-    datastore standby nodes: none
-    addons:
-    enabled:
-        dns                  # (core) CoreDNS
-        helm3                # (core) Helm 3 - Kubernetes package manager
-        hostpath-storage     # (core) Storage class; allocates storage from host directory
-        ingress              # (core) Ingress controller for external access
-        registry             # (core) Private image registry exposed on localhost:32000
-        storage              # (core) Alias to hostpath-storage add-on, deprecated
-    disabled:
-        community            # (core) The community addons repository
-        dashboard            # (core) The Kubernetes dashboard
-        gpu                  # (core) Automatic enablement of Nvidia CUDA
-        helm                 # (core) Helm 2 - the package manager for Kubernetes
-        host-access          # (core) Allow Pods connecting to Host services smoothly
-        mayastor             # (core) OpenEBS MayaStor
-        metallb              # (core) Loadbalancer for your Kubernetes cluster
-        metrics-server       # (core) K8s Metrics Server for API access to service metrics
-        prometheus           # (core) Prometheus operator for monitoring and logging
-        rbac                 # (core) Role-Based Access Control for authorisation
-
-If any of the enabled services are not enabled in your environment, please enable it.  The following example shows how
-to enable helm3 addon.
-
-.. code-block:: shell
-
-    $ microk8s enable helm3
-    Infer repository core for addon helm3
-    Enabling Helm 3
-    Fetching helm version v3.8.0.
-    % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                    Dload  Upload   Total   Spent    Left  Speed
-    100 12.9M  100 12.9M    0     0  11.5M      0  0:00:01  0:00:01 --:--:-- 11.5M
-    Helm 3 is enabled
-
-
-Allowing network traffic
+Kubernetes Runtime Model
 ========================
 
-We have to change the cluster to allow incoming network traffic, such as those
-from admin consoles and NVIDIA FLARE clients, to enter the cluster.  After the network
-traffic enters the cluster, the cluster also needs to know how to route the traffic
-to the deployed services.
+Kubernetes deployment has two runtime layers:
 
+* A **parent pod** runs the long-lived FLARE server or client process. Helm
+  installs this pod from the per-participant ``helm_chart/`` generated by
+  ``nvflare deploy prepare``. The parent pod mounts the configured workspace PVC
+  at ``parent.workspace_mount_path`` and reads ``startup/`` and ``local/`` from
+  that PVC.
+* A **job pod** is created dynamically by ``ServerK8sJobLauncher`` or
+  ``ClientK8sJobLauncher`` for each submitted job. Job pod image, Python path,
+  CPU, memory, GPU, and ephemeral storage settings come from the job's
+  ``launcher_spec``.
 
-Users have to enable ingress controller and modify some configuration of microk8s cluster.
+The generated Helm chart does not run submitted jobs directly. It installs the
+parent participant process, its Kubernetes Service, its ServiceAccount, and the
+Role/RoleBinding that allow the launcher to create job pods.
 
-Complete the following steps to enable microk8s to open and route
-network traffic to servers.
+Each prepared participant folder contains its own chart:
 
+.. code-block:: text
 
-Edit configmap of ingress to route traffic
-------------------------------------------
+   server-k8s/
+     helm_chart/
+     local/
+     startup/
+     transfer/
 
-.. code-block:: shell
+   site-1-k8s/
+     helm_chart/
+     local/
+     startup/
+     transfer/
 
-    $ microk8s kubectl edit cm nginx-ingress-tcp-microk8s-conf -n ingress
+Install the chart from the prepared folder for the participant that will run in
+that cluster.
 
-Add this section to the configmap
+Prepare Startup Kits
+====================
+
+The provisioning step remains responsible for identity material and FLARE
+configuration:
+
+.. code-block:: bash
+
+   nvflare provision -p project.yml -w workspace
+
+After provisioning, prepare each server or client startup kit with
+``nvflare deploy prepare``:
+
+.. code-block:: bash
+
+   nvflare deploy prepare workspace/<project>/prod_00/server \
+       --output server-k8s \
+       --config k8s.yaml
+
+Example ``k8s.yaml``:
 
 .. code-block:: yaml
 
-    data:
-        "8002": default/server1:8002
-        "8003": default/server1:8003
-        "8102": default/server2:8102
-        "8103": default/server2:8103
+   runtime: k8s
+   namespace: nvflare
+   parent:
+     docker_image: registry.example.com/nvflare:dev
+     parent_port: 8102
+     workspace_pvc: nvflws
+     workspace_mount_path: /var/tmp/nvflare/workspace
+     resources:
+       requests:
+         cpu: "2"
+         memory: 8Gi
+   job_launcher:
+     config_file_path:
+     default_python_path: /usr/local/bin/python3
+     pending_timeout: 300
 
-Edit DaemonSet of ingress to open ports
----------------------------------------
+The runtime config controls site-level Kubernetes settings:
 
-.. code-block:: shell
+* ``namespace`` is where the parent pod and dynamically launched job pods run.
+* ``parent`` values are rendered into the Helm chart. They set the parent image,
+  workspace PVC, parent service port, parent pod resources, and optional parent
+  pod security context.
+* ``job_launcher`` values are written into the participant's
+  ``local/resources.json.default`` so the parent process can create job pods.
+  ``config_file_path`` may be empty for in-cluster configuration, and
+  ``default_python_path`` is used only when a job does not override
+  ``launcher_spec[site][k8s].python_path``.
 
-    $ microk8s kubectl edit ds nginx-ingress-microk8s-controller -n ingress
+Prepare Cluster Storage
+=======================
 
-Add this section at (spec.template.spec.containers[0].ports)
+Create and bind any workspace or study-data PVCs required by your cluster before
+starting the participant.
+
+The workspace PVC is for the parent server or client pod. The generated chart
+mounts ``parent.workspace_pvc`` at ``parent.workspace_mount_path``, but it does
+not upload files to the PVC. Copy the prepared kit's ``startup`` and ``local``
+directories into the root of that workspace PVC before installing the chart.
+
+For example, with a workspace PVC named ``nvflws``:
+
+.. code-block:: bash
+
+   export NAMESPACE=nvflare
+   export PREPARED_KIT=server-k8s
+   export WORKSPACE_PVC=nvflws
+
+   kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+   kubectl -n "$NAMESPACE" apply -f workspace-pvc.yaml
+   kubectl -n "$NAMESPACE" get pvc "$WORKSPACE_PVC"
+
+   kubectl -n "$NAMESPACE" delete pod nvflare-pvc-copy --ignore-not-found=true
+   cat >/tmp/nvflare-pvc-copy.json <<EOF
+   {
+     "spec": {
+       "volumes": [
+         {"name": "ws", "persistentVolumeClaim": {"claimName": "${WORKSPACE_PVC}"}}
+       ],
+       "containers": [
+         {
+           "name": "nvflare-pvc-copy",
+           "image": "busybox:1.36",
+           "command": ["sleep", "600"],
+           "volumeMounts": [{"name": "ws", "mountPath": "/mnt/nvflws"}]
+         }
+       ]
+     }
+   }
+   EOF
+   kubectl -n "$NAMESPACE" run nvflare-pvc-copy \
+       --image=busybox:1.36 \
+       --restart=Never \
+       --overrides="$(cat /tmp/nvflare-pvc-copy.json)"
+   kubectl -n "$NAMESPACE" wait --for=condition=Ready pod/nvflare-pvc-copy --timeout=120s
+   kubectl -n "$NAMESPACE" exec nvflare-pvc-copy -- rm -rf /mnt/nvflws/startup /mnt/nvflws/local
+   kubectl -n "$NAMESPACE" cp "$PREPARED_KIT/startup" nvflare-pvc-copy:/mnt/nvflws/startup
+   kubectl -n "$NAMESPACE" cp "$PREPARED_KIT/local" nvflare-pvc-copy:/mnt/nvflws/local
+   kubectl -n "$NAMESPACE" delete pod nvflare-pvc-copy
+
+The dynamically launched job pod does **not** mount this workspace PVC. Each job
+pod receives its own writable ``emptyDir`` at
+``/var/tmp/nvflare/workspace``. The launcher transfers the needed ``local/`` and
+job workspace content into that ``emptyDir`` when the pod starts and uploads the
+job results back to the parent process when the job exits. The job pod workspace
+size is controlled by ``launcher_spec[site][k8s].ephemeral_storage`` when set,
+or by the launcher default otherwise. The same value is also used for the
+container ``ephemeral-storage`` request and limit.
+
+Study data PVCs are separate from the parent workspace PVC. Configure optional
+study data mappings in ``local/study_data.yaml`` inside the prepared kit, then
+create the matching PVCs in the same namespace before submitting jobs that need
+those mounts:
 
 .. code-block:: yaml
 
-        - containerPort: 8002
-          hostPort: 8002
-          name: server1fl
-          protocol: TCP
-        - containerPort: 8003
-          hostPort: 8003
-          name: server1adm
-          protocol: TCP
-        - containerPort: 8102
-          hostPort: 8102
-          name: server2fl
-          protocol: TCP
-        - containerPort: 8103
-          hostPort: 8103
-          name: server2adm
-          protocol: TCP
+   default:
+     data:
+       source: nvfldata
+       mode: ro
 
+For Kubernetes, each ``source`` value is a PVC claim name. The job pod mounts the
+dataset at ``/data/<study>/<dataset>``, for example
+``/data/default/data``. ``mode`` must be ``ro`` or ``rw``. Missing
+``study_data.yaml`` files or missing entries for a job's study simply mean no
+study-data PVCs are mounted for that job.
 
-*********************
-Installing helm chart
-*********************
+Install The Chart
+=================
 
-To install the helm chart, with microk8s environment, run the following command in the same directory as previous section.
+The prepared kit contains a ``helm_chart`` directory that can be installed with
+Helm:
 
-.. code-block:: shell
+.. code-block:: bash
 
-    $ mkdir -p /tmp/nvflare
-    $ microk8s helm3 install --set workspace=$(pwd) --set svc-persist=/tmp/nvflare nvflare-helm-chart-demo nvflare_hc/
+   helm upgrade --install server server-k8s/helm_chart \
+       --namespace "$NAMESPACE" \
+       --create-namespace
 
-    NAME: nvflare-helm-chart-demo
-    LAST DEPLOYED: Fri Sep 23 12:28:24 2022
-    NAMESPACE: default
-    STATUS: deployed
-    REVISION: 1
-    TEST SUITE: None
+Prepare, stage, and install each server or client kit in the Kubernetes cluster
+where that participant runs. For a scripted Brev example that performs these
+steps end to end, see :ref:`brev_deployment`.
 
-Here the ``nvflare-helm-chart-demo`` is the name we choose for this installed application.  You can choose a different name so
-that it's easy to recognize the deployed application.
+Launcher RBAC
+=============
 
-The ``nvflare_hc/`` is the folder provisioning tool generated, as shown in the previous section.  You can take a look at files in
-that folder and feel free to change them for your own environment.
+The generated chart creates a ServiceAccount and namespace-scoped
+Role/RoleBinding by default. The launcher needs permission to:
 
-.. note::
+* create, delete, get, list, and watch pods;
+* create, get, and update Secrets.
 
-    Here we use the host's /tmp/nvflare as the persist storage space for all pods in microk8s.  Please make sure
-    that directory exists before running the above command
-    
-****************************************
-Verifying NVIDIA FLARE is up and running
-****************************************
+The Secret permission is required because the launcher creates or updates a
+per-site startup-kit Secret for dynamically launched job pods. Job pods mount
+that Secret read-only at ``/var/tmp/nvflare/workspace/startup``. If your cluster
+operator disables ``serviceAccount.create`` or ``rbac.create`` in chart values,
+provide an equivalent ServiceAccount and RoleBinding in the same namespace.
 
-You can use ``kubectl`` to check the status of NVIDIA FLARE application, installed by the chart. For example, in
-microk8s environment, run the following command to see if servers are started.
+Configure Kubernetes Job Pods
+=============================
 
-.. code-block:: shell
+Job pod settings live in the submitted job's ``meta.json`` under
+``launcher_spec``. The ``default`` block applies to all sites and a site-specific
+block overrides it:
 
-    $ microk8s kubectl get pods
-    NAME                        READY   STATUS    RESTARTS       AGE
-    dnsutils                    1/1     Running   74 (13m ago)   62d
-    server1-7675668544-xvfvp    1/1     Running   0              4m50s
-    server2-86bc4fc87f-s9n2s    1/1     Running   0              4m50s
+.. code-block:: json
 
-The ``dnsutils`` is a built-in addon for dns service inside microk8s. You can ignore it.
+   {
+     "launcher_spec": {
+       "default": {
+         "k8s": {
+           "image": "registry.example.com/nvflare-job:latest",
+           "python_path": "/usr/local/bin/python3",
+           "cpu": "2",
+           "memory": "8Gi",
+           "ephemeral_storage": "8Gi"
+         }
+       },
+       "site-1": {
+         "k8s": {
+           "image": "registry.example.com/site-1-job:latest",
+           "num_of_gpus": 1,
+           "cpu_request": "1",
+           "memory_request": "4Gi"
+         }
+       }
+     }
+   }
 
-For more details on the pods inside Kubernetes cluster, you can run the following command.
+Supported ``launcher_spec[site][k8s]`` keys include:
 
-.. code-block:: shell
+* ``image``: container image for the job pod. This is required, either in
+  ``launcher_spec.default.k8s`` or in the site-specific ``k8s`` block.
+* ``python_path``: Python executable inside the job image. If omitted, the
+  launcher uses ``job_launcher.default_python_path`` from the prepared site
+  runtime config.
+* ``num_of_gpus``: GPU count. The launcher writes this as both the
+  ``nvidia.com/gpu`` request and limit.
+* ``cpu`` and ``memory``: container limits. When ``cpu_request`` or
+  ``memory_request`` is omitted, the request matches the corresponding limit.
+* ``cpu_request`` and ``memory_request``: optional requests when the request
+  should be lower than the limit.
+* ``ephemeral_storage``: Kubernetes quantity string for the job workspace
+  ``emptyDir.sizeLimit`` and the container ``ephemeral-storage`` request and
+  limit. If omitted, the launcher uses its configured default.
 
-    $ microk8s kubectl describe pods
-    Name:         dnsutils
-    Namespace:    default
-    Priority:     0
-    Node:         demolaptop/192.168.1.96
-    Start Time:   Fri, 22 Jul 2022 13:36:54 -0700
-    Labels:       <none>
-    Annotations:  cni.projectcalico.org/containerID: 9cfa2cfbb4ef7b11b10c5793965e2a42682dea5d0b05b4454b4232da9ded6a8e
-                cni.projectcalico.org/podIP: 10.1.179.67/32
-                cni.projectcalico.org/podIPs: 10.1.179.67/32
-    Status:       Running
-    IP:           10.1.179.67
-    IPs:
-    IP:  10.1.179.67
-    Containers:
-    dnsutils:
-        Container ID:  containerd://3c31a42f9c5dc10452d2af0a503682cd78e25a4b078877f96a1174d1156a23a5
-        Image:         k8s.gcr.io/e2e-test-images/jessie-dnsutils:1.3
-        Image ID:      k8s.gcr.io/e2e-test-images/jessie-dnsutils@sha256:8b03e4185ecd305bc9b410faac15d486a3b1ef1946196d429245cdd3c7b152eb
-        Port:          <none>
-        Host Port:     <none>
-        Command:
-        sleep
-        3600
-        State:          Running
-        Started:      Fri, 23 Sep 2022 12:19:55 -0700
-        Last State:     Terminated
-        Reason:       Unknown
-        Exit Code:    255
-        Started:      Thu, 18 Aug 2022 11:18:34 -0700
-        Finished:     Fri, 23 Sep 2022 12:19:25 -0700
-        Ready:          True
-        Restart Count:  74
-        Environment:    <none>
-        Mounts:
-        /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-f4sxs (ro)
-    Conditions:
-    Type              Status
-    Initialized       True 
-    Ready             True 
-    ContainersReady   True 
-    PodScheduled      True 
-    Volumes:
-    kube-api-access-f4sxs:
-        Type:                    Projected (a volume that contains injected data from multiple sources)
-        TokenExpirationSeconds:  3607
-        ConfigMapName:           kube-root-ca.crt
-        ConfigMapOptional:       <nil>
-        DownwardAPI:             true
-    QoS Class:                   BestEffort
-    Node-Selectors:              <none>
-    Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
-                                node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
-    Events:                      <none>
+``resource_spec`` remains scheduler-facing. New jobs should place K8s launcher
+settings in ``launcher_spec``. For backward compatibility, the K8s launcher can
+fall back to nested ``resource_spec[site][k8s]`` only when no applicable
+``launcher_spec`` exists, and it can still read a flat
+``resource_spec[site].num_of_gpus`` as a GPU fallback.
 
+Expose FL Traffic
+=================
 
-    Name:         server1-7675668544-xvfvp
-    Namespace:    default
-    Priority:     0
-    Node:         demolaptop/192.168.1.96
-    Start Time:   Fri, 23 Sep 2022 12:28:25 -0700
-    Labels:       pod-template-hash=7675668544
-                system=server1
-    Annotations:  cni.projectcalico.org/containerID: 7493a356143ad0c4e4fdbe781d995c01d52c4caa31e961066d4a8769dfa1d360
-                cni.projectcalico.org/podIP: 10.1.179.94/32
-                cni.projectcalico.org/podIPs: 10.1.179.94/32
-    Status:       Running
-    IP:           10.1.179.94
-    IPs:
-    IP:           10.1.179.94
-    Controlled By:  ReplicaSet/server1-7675668544
-    Containers:
-    server1:
-        Container ID:  containerd://16928775549dbf9cb2d68eea6412e682a170f72b5dbcdbf8c56790c8b9a30fd5
-        Image:         localhost:32000/nvfl-min:0.0.1
-        Image ID:      localhost:32000/nvfl-min@sha256:71658dc82b15e6cd5a2580c78e56011d166a70e1ff098306c93584c82cb63821
-        Ports:         8002/TCP, 8003/TCP
-        Host Ports:    0/TCP, 0/TCP
-        Command:
-        /usr/local/bin/python3
-        Args:
-        -u
-        -m
-        nvflare.private.fed.app.server.server_train
-        -m
-        /workspace/server1
-        -s
-        fed_server.json
-        --set
-        secure_train=true
-        config_folder=config
-        State:          Running
-        Started:      Fri, 23 Sep 2022 12:28:27 -0700
-        Ready:          True
-        Restart Count:  0
-        Environment:    <none>
-        Mounts:
-        /tmp/nvflare from svc-persist (rw)
-        /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-hkhhq (ro)
-        /workspace from workspace (rw)
-    Conditions:
-    Type              Status
-    Initialized       True 
-    Ready             True 
-    ContainersReady   True 
-    PodScheduled      True 
-    Volumes:
-    workspace:
-        Type:          HostPath (bare host directory volume)
-        Path:          /home/nvflare/workspace/nvf_hc_test/demo
-        HostPathType:  Directory
-    svc-persist:
-        Type:          HostPath (bare host directory volume)
-        Path:          /tmp/nvflare
-        HostPathType:  Directory
-    kube-api-access-hkhhq:
-        Type:                    Projected (a volume that contains injected data from multiple sources)
-        TokenExpirationSeconds:  3607
-        ConfigMapName:           kube-root-ca.crt
-        ConfigMapOptional:       <nil>
-        DownwardAPI:             true
-    QoS Class:                   BestEffort
-    Node-Selectors:              <none>
-    Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
-                                node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
-    Events:                      <none>
+The generated server chart creates a Kubernetes Service for the FL server. The
+service defaults to ``ClusterIP``, which is reachable only inside the cluster.
+If clients or admin consoles connect from outside the cluster, expose the FL
+server ports with the mechanism that matches your Kubernetes environment:
 
+* Use a cloud load balancer when available:
 
-    Name:         server2-86bc4fc87f-s9n2s
-    Namespace:    default
-    Priority:     0
-    Node:         demolaptop/192.168.1.96
-    Start Time:   Fri, 23 Sep 2022 12:28:25 -0700
-    Labels:       pod-template-hash=86bc4fc87f
-                system=server2
-    Annotations:  cni.projectcalico.org/containerID: 8ac76a0bfad2e4f0b1de9115f0d46c1a0dbacabb847c6160b1f144e82720fe99
-                cni.projectcalico.org/podIP: 10.1.179.96/32
-                cni.projectcalico.org/podIPs: 10.1.179.96/32
-    Status:       Running
-    IP:           10.1.179.96
-    IPs:
-    IP:           10.1.179.96
-    Controlled By:  ReplicaSet/server2-86bc4fc87f
-    Containers:
-    server2:
-        Container ID:  containerd://c1e530fc6fc320d9b9388d81727440324cc11e0bb61e3b3e76a2362638f89357
-        Image:         localhost:32000/nvfl-min:0.0.1
-        Image ID:      localhost:32000/nvfl-min@sha256:71658dc82b15e6cd5a2580c78e56011d166a70e1ff098306c93584c82cb63821
-        Ports:         8102/TCP, 8103/TCP
-        Host Ports:    0/TCP, 0/TCP
-        Command:
-        /usr/local/bin/python3
-        Args:
-        -u
-        -m
-        nvflare.private.fed.app.server.server_train
-        -m
-        /workspace/server2
-        -s
-        fed_server.json
-        --set
-        secure_train=true
-        config_folder=config
-        State:          Running
-        Started:      Fri, 23 Sep 2022 12:28:28 -0700
-        Ready:          True
-        Restart Count:  0
-        Environment:    <none>
-        Mounts:
-        /tmp/nvflare from svc-persist (rw)
-        /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-6cwbh (ro)
-        /workspace from workspace (rw)
-    Conditions:
-    Type              Status
-    Initialized       True 
-    Ready             True 
-    ContainersReady   True 
-    PodScheduled      True 
-    Volumes:
-    workspace:
-        Type:          HostPath (bare host directory volume)
-        Path:          /home/nvflare/workspace/nvf_hc_test/demo
-        HostPathType:  Directory
-    svc-persist:
-        Type:          HostPath (bare host directory volume)
-        Path:          /tmp/nvflare
-        HostPathType:  Directory
-    kube-api-access-6cwbh:
-        Type:                    Projected (a volume that contains injected data from multiple sources)
-        TokenExpirationSeconds:  3607
-        ConfigMapName:           kube-root-ca.crt
-        ConfigMapOptional:       <nil>
-        DownwardAPI:             true
-    QoS Class:                   BestEffort
-    Node-Selectors:              <none>
-    Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
-                                node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
-    Events:                      <none>
+  .. code-block:: bash
 
+     helm upgrade --install server server-k8s/helm_chart \
+         --namespace "$NAMESPACE" \
+         --set service.type=LoadBalancer
+     kubectl -n "$NAMESPACE" get svc nvflare-server
 
+* For local testing from the same machine, use port forwarding:
 
-************************
-Login with admin console
-************************
+  .. code-block:: bash
 
-Now on another terminal, with nvflare installed and /etc/hosts modified to 
-include the IP of server1 and server2, which is the IP of the 
-machine running the microk8s cluster, run fl_admin.sh of admin@nvidia.com/startup.  
-Login as admin@nvidia.com.
+     kubectl -n "$NAMESPACE" port-forward svc/nvflare-server 8002:8002 8003:8003
 
-For example: /etc/hosts is modified as (if microk8s is running at 192.168.1.123 and clients and admin console is running at slowdesktop machine)
+* For single-node or ingress-based clusters, configure your cluster's TCP
+  routing, firewall rules, or host ports so the FL and admin ports from
+  ``project.yml`` reach the ``nvflare-server`` Service.
 
-.. code-block:: shell
+Make sure the server host name used during provisioning resolves to the exposed
+address. For example, update DNS or ``/etc/hosts`` for the admin console and for
+any remote client sites.
 
-    $ cat /etc/hosts
-    127.0.0.1       localhost
-    127.0.1.1       slowdesktop
-    192.168.1.123 server1 server2
-    # The following lines are desirable for IPv6 capable hosts
-    ::1     ip6-localhost ip6-loopback
-    fe00::0 ip6-localnet
-    ff00::0 ip6-mcastprefix
-    ff02::1 ip6-allnodes
-    ff02::2 ip6-allrouters
+Verify The Deployment
+=====================
 
+After installing the chart, verify that the deployment, pods, services, and PVCs
+are healthy:
 
-***********************
-Uninstalling helm chart
-***********************
+.. code-block:: bash
 
-Users can uninstall the chart by running (note ``nvflare-helm-chart-demo`` is the release name we used when installing the chart)
+   kubectl -n "$NAMESPACE" rollout status deployment/server --timeout=300s
+   kubectl -n "$NAMESPACE" get pods,svc,pvc
+   kubectl -n "$NAMESPACE" logs deploy/server --tail=200
 
-.. code-block:: shell
-    
-    $ microk8s helm3 uninstall nvflare-helm-chart-demo
+If a pod is not ready, inspect the pod and recent events:
 
+.. code-block:: bash
+
+   kubectl -n "$NAMESPACE" describe pod -l app.kubernetes.io/instance=server
+   kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp
+
+Common issues are missing PVCs, the prepared kit not being copied into the
+workspace PVC, an image that the cluster cannot pull, or FL ports that are not
+reachable from clients and admin consoles.
+
+Login With The Admin Console
+============================
+
+Use the admin startup kit produced by ``nvflare provision``. The admin console
+connects to the server host and ports written into the provisioned project, so
+confirm that those names resolve to the exposed Kubernetes endpoint before
+logging in.
+
+.. code-block:: bash
+
+   cd workspace/<project>/prod_00/admin@nvidia.com/startup
+   bash fl_admin.sh
+
+When prompted for ``User Name``, enter the admin identity from ``project.yml``
+such as ``admin@nvidia.com``.
+
+Uninstall
+=========
+
+To stop a participant installed by Helm:
+
+.. code-block:: bash
+
+   helm uninstall server -n "$NAMESPACE"
+
+Delete the namespace only if it is dedicated to this deployment:
+
+.. code-block:: bash
+
+   kubectl delete namespace "$NAMESPACE"
+
+Depending on the storage class reclaim policy, PVC-backed volumes may remain
+after deleting Helm releases or namespaces. Remove retained volumes only after
+confirming that the startup kits, logs, and any study data no longer need to be
+preserved.

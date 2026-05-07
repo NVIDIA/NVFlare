@@ -1,7 +1,7 @@
 # FLARE Distributed Provisioning
 
 Created: 2026-03-27
-Updated: 2026-04-28
+Updated: 2026-05-01
 
 ---
 
@@ -90,9 +90,20 @@ The resulting startup kits are structurally identical to those produced by
   support for local/demo workflows.
 
 - **Root CA trust is explicit.**
-  Interactive packaging can use `--confirm-rootca`. Automation can use
-  `--expected-rootca-fingerprint` (short form: `--fingerprint`). If neither is
-  provided, packaging warns that the root CA fingerprint was not verified out-of-band.
+  Packaging can use `--fingerprint <rootca_fingerprint_sha256>` to verify the root
+  CA fingerprint shared out-of-band. The longer spelling
+  `--expected-fingerprint` is also accepted. If neither is provided, packaging
+  warns that the root CA fingerprint was not verified out-of-band.
+
+- **Deploy version is CA-owned metadata, not a package counter.**
+  `nvflare cert init --deploy-version <NN>` records internal `provision_version`
+  metadata; the default is `00`. Operators normally ignore it. Use `01`, `02`,
+  etc. only when intentionally creating a new deployment CA/generation. Approval
+  signs `ca_info` into `signed.json`, including `provision_version` and
+  `rootCA_fingerprint`. `nvflare package` writes startup kits under `prod_<NN>`,
+  so deploy version `00` maps to `prod_00` and multiple participants approved
+  by the same CA/deploy version are packaged into that directory. A root CA
+  fingerprint mismatch is a hard error.
 
 - **Custom startup-kit builders are supported.**
   Participant definition files may include a `builders:` section. Packaging honors
@@ -110,16 +121,20 @@ Data Flow section uses a concrete hospital federation example.
 |------|-----|--------|
 | 0 | Server Admin | Provide the FL server endpoint (`server.host`, `server.fed_learn_port`, `server.admin_port`) to the Project Admin *(one-time per federation, before approvals)* |
 | 1 | Project Admin | Create `project_profile.yaml` with `name`, `scheme`, `connection_security`, and `server` endpoint info *(one-time per federation)* |
-| 1a | Project Admin | `nvflare cert init --profile project_profile.yaml -o ./ca` *(one-time per federation)* |
+| 1a | Project Admin | `nvflare cert init --profile project_profile.yaml -o ./ca --deploy-version 00` *(one-time per federation; `00` is the default)* |
 | 2 | Requester | Create participant definition file (e.g. `hospital-a.yaml`) with participant identity fields |
 | 3 | Requester | `nvflare cert request --participant hospital-a.yaml` |
 | 4 | Requester | Send generated `hospital-a/hospital-a.request.zip` to Project Admin |
 | 5 | Project Admin | `nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml` |
 | 6 | Project Admin | Return generated `hospital-a.signed.zip` and share `rootca_fingerprint_sha256` out-of-band |
-| 7 | Requester | `nvflare package hospital-a.signed.zip --confirm-rootca` |
+| 7 | Requester | `nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>` |
 | 8 | Requester | `cd workspace/example_project/prod_00/hospital-a && ./startup/start.sh` |
 
 Step 1 and 1a are done once. Each new participant repeats steps 2-8 independently.
+The deploy version selected at `cert init` controls the package output directory. With
+the default `00`, all participants approved by that CA are packaged into
+`workspace/example_project/prod_00/<name>/` unless the Project Admin initializes a new CA
+with a different deploy version.
 
 Remote examples assume the generated zip is copied into the receiver's current working
 directory before running the next command. Local automation examples use the generated
@@ -139,7 +154,7 @@ nvflare cert approve alice@hospital-alpha.org.request.zip --ca-dir ./ca --profil
 # → returns alice@hospital-alpha.org.signed.zip to requester
 
 # Requester (alice's machine)
-nvflare package alice@hospital-alpha.org.signed.zip --confirm-rootca
+nvflare package alice@hospital-alpha.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
 ```
 
 The certificate role (`org_admin`, `lead`, or `member`) is declared in the participant
@@ -152,10 +167,10 @@ Local automation uses the same zip artifacts:
 
 ```bash
 # create project_profile.yaml and participant definition files
-nvflare cert init --profile project_profile.yaml -o ./ca
+nvflare cert init --profile project_profile.yaml -o ./ca --deploy-version 00
 nvflare cert request --participant site-3.yaml
 nvflare cert approve site-3/site-3.request.zip --ca-dir ./ca --profile project_profile.yaml
-nvflare package site-3/site-3.signed.zip --confirm-rootca
+nvflare package site-3/site-3.signed.zip --fingerprint <rootca_fingerprint_sha256>
 ```
 
 This is useful for tests and scripted local deployments. It exercises the same request,
@@ -177,10 +192,15 @@ nvflare cert approve site-1/site-1.request.zip --ca-dir ./ca --profile project_p
 nvflare cert approve site-2/site-2.request.zip --ca-dir ./ca --profile project_profile.yaml
 nvflare cert approve admin@nvidia.com/admin@nvidia.com.request.zip --ca-dir ./ca --profile project_profile.yaml
 
-nvflare package site-1/site-1.signed.zip --confirm-rootca
-nvflare package site-2/site-2.signed.zip --confirm-rootca
-nvflare package admin@nvidia.com/admin@nvidia.com.signed.zip --confirm-rootca
+nvflare package site-1/site-1.signed.zip --fingerprint <rootca_fingerprint_sha256>
+nvflare package site-2/site-2.signed.zip --fingerprint <rootca_fingerprint_sha256>
+nvflare package admin@nvidia.com/admin@nvidia.com.signed.zip --fingerprint <rootca_fingerprint_sha256>
 ```
+
+If these approvals use the same CA initialized with deploy version `00`, all three package
+commands write to `workspace/<project>/prod_00/<name>/`. Packaging does not increment a
+directory counter for each participant. A new `prod_01` is created only when the Project
+Admin initializes a CA with `--deploy-version 01` and approves requests with that CA.
 
 A future bulk command may read a participant definition file and produce multiple request
 zips, but it should still preserve the same artifact boundary: request zip goes to Project
@@ -475,7 +495,7 @@ server:
 ```
 
 ```bash
-nvflare cert init --profile project_profile.yaml -o ./ca
+nvflare cert init --profile project_profile.yaml -o ./ca --deploy-version 00
 ```
 
 Project Admin machine writes:
@@ -491,7 +511,8 @@ Data flow:
 
 - `rootCA.key` stays only with the Project Admin.
 - `rootCA.pem` is copied into signed responses.
-- `ca.json` records CA metadata used by signing.
+- `ca.json` records CA metadata used by signing, including `provision_version: "00"`
+  and the root CA certificate fingerprint.
 - `project_profile.yaml` stays exclusively with the Project Admin; `scheme`, the project
   default `connection_security`, and the server endpoint reach participants only through
   the signed zip.
@@ -624,6 +645,8 @@ The command validates:
 - Hashes in `request.json` match the CSR and metadata files.
 - CSR subject fields match `request.json` and `site.yaml`.
 - The request project matches the CA metadata and root CA subject.
+- The CA metadata includes a `provision_version` and `rootCA_fingerprint` for the CA
+  used to sign this request.
 - `project` in `request.json` exactly matches `name` in `project_profile.yaml` —
   fails with error code `PROJECT_PROFILE_MISMATCH` if mismatched.
 - Requested `kind` and certificate role map to an allowed certificate type.
@@ -662,6 +685,7 @@ kind: site
 cert_role: null
 cert_type: client
 project: hospital_federation
+provision_version: "00"
 csr_sha256: ...
 signed_zip: hospital-a.signed.zip
 rootca_fingerprint_sha256: SHA256:...
@@ -684,7 +708,7 @@ chain back to the root CA and by the hashes in `signed.json`.
 The signed zip contains:
 
 ```text
-signed.json        # approval metadata: scheme, default_connection_security, endpoint, hashes
+signed.json        # signed approval metadata, including ca_info, endpoint, hashes
 signed.json.sig    # Project Admin CA signature over signed.json
 site.yaml          # sanitized approval metadata copied from the request
 hospital-a.crt     # signed participant certificate
@@ -697,6 +721,17 @@ No private key is included. `project_profile.yaml` is never distributed — its
 without needing the profile file.
 `nvflare package` verifies `signed.json.sig` with `rootCA.pem` before trusting any
 fields in `signed.json`.
+The signed `ca_info` binds the approval to the CA fingerprint and deploy
+version metadata:
+
+```json
+{
+  "ca_info": {
+    "provision_version": "00",
+    "rootCA_fingerprint": "SHA256:AA:BB:..."
+  }
+}
+```
 
 The Project Admin also shares the `rootca_fingerprint_sha256` value from the
 `cert approve` output through a separate trusted channel (email, ticket, verbal
@@ -717,26 +752,33 @@ the signed zip transfer path. The signed zip already contains `rootCA.pem`, so
 `nvflare package` can always compute and display the same fingerprint, but that
 does not independently prove who sent the zip.
 
-`nvflare package` therefore supports two explicit verification modes:
+`nvflare package` therefore supports explicit fingerprint verification:
 
-- `--expected-rootca-fingerprint <fingerprint>` is the automation path. The
-  command fails if the signed zip's `rootCA.pem` fingerprint does not match the
-  expected value.
-- `--confirm-rootca` is the interactive path. The command prints the signed
-  zip's `rootCA.pem` fingerprint and asks the requester to confirm they compared
-  it with the Project Admin's out-of-band value.
+- `--fingerprint <rootca_fingerprint_sha256>` is the preferred public spelling.
+- `--expected-fingerprint <rootca_fingerprint_sha256>` is the longer spelling.
+- The command fails if the signed zip's `rootCA.pem` fingerprint does not match
+  the expected value.
 
 If neither option is supplied, `nvflare package` still validates signed zip
 structure, hashes, identity metadata, certificate chain, and local private-key
 match, then includes `rootca_fingerprint_sha256` in the output. It does not
 prompt by default because the CLI has no independent value to compare against.
 
+The signed `ca_info.rootCA_fingerprint` must also match the actual `rootCA.pem` in the
+signed zip and any existing `prod_<NN>` package root. A mismatch is a hard
+error, not a prompt and not a reason to create another package directory. This internal
+check prevents mixing startup kits from different CAs in the same deploy version, but
+it does not replace out-of-band fingerprint verification because the signed zip still
+brings its own root CA.
+For older signed zips without `ca_info`, package defaults to deploy version `00` and
+uses the fingerprint computed from the included `rootCA.pem` for workspace consistency.
+
 ### Step 5: Requester Packages the Startup Kit
 
 On the requester machine:
 
 ```bash
-nvflare package hospital-a.signed.zip --confirm-rootca
+nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
 ```
 
 Connection info — scheme, security, and server address — comes from `signed.json`. The full
@@ -769,6 +811,8 @@ The command validates:
 - The signed zip metadata matches the local request metadata by `request_id`.
 - The local private key matches the public key in the signed certificate.
 - The certificate chains to `rootCA.pem`.
+- The signed `ca_info.rootCA_fingerprint` matches the `rootCA.pem` included in the signed
+  zip.
 - Certificate CN, organization, project, and certificate type match the approved metadata.
 - Identity fields in the local participant definition match the approved metadata.
 - Signed endpoint fields from `signed.json` are used as the authority for generated startup
@@ -790,6 +834,7 @@ The command validates:
 authoritative for all participants.
 
 Server host and port for startup kits come from the signed `server` block in `signed.json`.
+The package destination comes from signed `ca_info.provision_version`.
 
 `package` may materialize returned approval files into the request folder:
 
@@ -810,7 +855,7 @@ hospital-a/
 Then it writes the startup kit:
 
 ```text
-workspace/hospital_federation/prod_NN/hospital-a/
+workspace/hospital_federation/prod_00/hospital-a/
   startup/
     start.sh
     fed_client.json
@@ -821,10 +866,19 @@ workspace/hospital_federation/prod_NN/hospital-a/
   transfer/
 ```
 
+More generally, the output root is:
+
+```text
+<workspace>/<project>/prod_<provision_version>/<name>/
+```
+
+For the default `provision_version` of `00`, multiple participants approved by the same
+CA are added side by side under `prod_00`.
+
 For a server startup kit:
 
 ```text
-workspace/hospital_federation/prod_NN/server1.hospital-central.org/
+workspace/hospital_federation/prod_00/server1.hospital-central.org/
   startup/
     start.sh
     fed_server.json      # server config: scheme, host, fed_learn_port, admin_port, host_names
@@ -838,7 +892,7 @@ workspace/hospital_federation/prod_NN/server1.hospital-central.org/
 For a user startup kit:
 
 ```text
-workspace/hospital_federation/prod_NN/alice@hospital-alpha.org/
+workspace/hospital_federation/prod_00/alice@hospital-alpha.org/
   startup/
     fl_admin.sh
     fed_admin.json
@@ -994,6 +1048,7 @@ Example `hospital-a.signed.zip`:
 
 ```text
 signed.json
+signed.json.sig    # Project Admin CA signature over signed.json
 site.yaml
 hospital-a.crt      # signed participant certificate
 rootCA.pem          # project root CA certificate
@@ -1001,8 +1056,9 @@ rootCA.pem          # project root CA certificate
 
 `signed.json` contains enough information for `nvflare package` to match the approval
 to the local request. The Project Admin injects `scheme`, `default_connection_security`,
-and `server` endpoint info from `project_profile.yaml` into `signed.json`. The Project
-Admin does not validate or resolve local package-time fields.
+`server` endpoint info from `project_profile.yaml`, and signed `ca_info` from the CA
+metadata into `signed.json`. The Project Admin does not validate or resolve local
+package-time fields.
 
 ```json
 {
@@ -1016,6 +1072,10 @@ Admin does not validate or resolve local package-time fields.
   "kind": "site",
   "cert_type": "client",
   "cert_role": null,
+  "ca_info": {
+    "provision_version": "00",
+    "rootCA_fingerprint": "SHA256:AA:BB:..."
+  },
   "scheme": "grpc",
   "default_connection_security": "tls",
   "server": {
@@ -1040,6 +1100,10 @@ Admin does not validate or resolve local package-time fields.
 ```
 
 Field sources:
+- `ca_info.provision_version` — from `ca.json`; controls the output directory
+  `prod_<provision_version>` used by `nvflare package`
+- `ca_info.rootCA_fingerprint` — from `ca.json`; must match `rootCA.pem` in the signed
+  zip and any existing `prod_<provision_version>` package root
 - `scheme` — from project admin's `project_profile.yaml`; authoritative for all participants
 - `default_connection_security` — from project admin's `project_profile.yaml`; used as
   fallback by `nvflare package` if the participant definition provides no override (server only;
@@ -1219,10 +1283,10 @@ the presence of valid startup integrity metadata in the startup kit.
 
 | Command | Purpose |
 |---------|---------|
-| `nvflare cert init ...` | Project Admin initializes the CA (one-time per federation). |
+| `nvflare cert init ... [--deploy-version 00]` | Project Admin initializes the CA (one-time per federation). Normally ignore `--deploy-version`; `00` maps to `prod_00`, and `01`, `02`, etc. are for intentional new deployment CA/generations. |
 | `nvflare cert request -p/--participant <path>` | Create local key, CSR, metadata, and request zip from a participant definition file. |
 | `nvflare cert approve <request.zip> --ca-dir <dir> --profile <project_profile.yaml>` | Project Admin signs a request zip and creates a signed zip. Validates project name against profile. |
-| `nvflare package <signed.zip> [-w <workspace>] [--request-dir <dir>] [--expected-rootca-fingerprint <fp> | --confirm-rootca]` | Requester combines signed approval with local private key and creates startup kit. Connection info comes from the signed zip; local participant definitions provide identity and package-time fields. |
+| `nvflare package <signed.zip> [-w <workspace>] [--request-dir <dir>] [--fingerprint <rootca_fingerprint_sha256>]` | Requester combines signed approval with local private key and creates startup kit. Connection info comes from the signed zip; local participant definitions provide identity and package-time fields. |
 
 The implementation should reuse existing CSR generation, certificate signing, and package
 builder logic behind these commands. Public help and customer docs should expose this final
@@ -1345,7 +1409,7 @@ re-provisioning of existing sites is required.
 ### `nvflare cert init` - Project Admin, once per federation
 
 ```bash
-nvflare cert init --profile <project_profile.yaml> -o <ca-dir>
+nvflare cert init --profile <project_profile.yaml> -o <ca-dir> [--deploy-version <NN>]
 ```
 
 Produces:
@@ -1353,13 +1417,21 @@ Produces:
 ```text
 <ca-dir>/rootCA.key
 <ca-dir>/rootCA.pem
-<ca-dir>/ca.json
+<ca-dir>/ca.json        # includes provision_version and rootCA_fingerprint
 ```
 
 `rootCA.key` must stay with the Project Admin. `cert init` reads the explicit
 project profile path and uses only the profile `name` as the root CA subject.
 It does not discover or search for profile files automatically. `cert approve`
 validates the profile `scheme` and `connection_security` fields later.
+`--deploy-version` sets the internal `provision_version` recorded in `ca.json`;
+the default is `00`. Normally ignore it. The same CA and deploy version package
+multiple participants into the same `prod_00` directory. Use a new deploy
+version such as `01` only when intentionally creating a new deployment
+CA/generation.
+If a CA directory already has metadata for a deploy version, `cert init --force`
+with the same value is rejected; deploy version `00` maps to `prod_00`, so
+reusing it with a new root CA would risk mixing incompatible startup kits.
 
 ### `nvflare cert request` - Requester
 
@@ -1440,9 +1512,10 @@ rootCA.pem      # project root CA certificate
 ```
 
 It does not include the private key. `signed.json` includes `scheme`,
-`default_connection_security`, and the signed server endpoint injected from
-`project_profile.yaml`. `nvflare package` verifies `signed.json.sig` before
-using those fields.
+`default_connection_security`, the signed server endpoint injected from
+`project_profile.yaml`, and signed `ca_info` containing `provision_version` and
+`rootCA_fingerprint`. `nvflare package` verifies `signed.json.sig` before using
+those fields.
 
 The command output includes `rootca_fingerprint_sha256`; the Project Admin
 shares this value through a trusted out-of-band channel.
@@ -1450,15 +1523,15 @@ shares this value through a trusted out-of-band channel.
 ### `nvflare package` - Requester
 
 ```bash
-nvflare package <signed-zip> [-w <workspace>] [--request-dir <dir>] [--expected-rootca-fingerprint <fingerprint> | --confirm-rootca]
+nvflare package <signed-zip> [-w <workspace>] [--request-dir <dir>] [--fingerprint <rootca_fingerprint_sha256>]
 ```
 
 Examples:
 
 ```bash
-nvflare package hospital-a.signed.zip --confirm-rootca
-nvflare package hospital-a.signed.zip --expected-rootca-fingerprint SHA256:AA:BB:...
-nvflare package server1.hospital-central.org.signed.zip --confirm-rootca
+nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
+nvflare package hospital-a.signed.zip --request-dir ./hospital-a --fingerprint <rootca_fingerprint_sha256>
+nvflare package server1.hospital-central.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
 ```
 
 Connection info comes from `signed.json`: `scheme`, `default_connection_security`, and the
@@ -1473,12 +1546,16 @@ certificates must be requested and approved again.
 certificate and metadata, and writes:
 
 ```text
-<workspace>/<project>/prod_NN/<name>/
+<workspace>/<project>/prod_<NN>/<name>/
 ```
 
 `package` is selected-participant provisioning: only the signed participant is built.
 It does not require the requester to provide the full federation `project.yml`, and it
 must not re-provision other participants.
+If `prod_<NN>` already exists, package verifies that its root CA matches the
+signed `ca_info.rootCA_fingerprint` before adding another participant. A
+mismatch is a hard error. Deploy version `00` maps to `prod_00`, `01` maps to
+`prod_01`, and so on.
 
 ---
 

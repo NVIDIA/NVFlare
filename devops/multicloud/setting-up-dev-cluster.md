@@ -28,6 +28,18 @@ Edit `$CONFIG`:
 - Do not add project names, cluster names, subscription IDs, or account IDs to the YAML.
 - Do not add kubeconfig paths to the YAML; deploy reads `.tmp/kubeconfigs/<cloud>.yaml`.
 
+Optional: enable FLARE system monitoring in the temporary config:
+
+```yaml
+monitoring:
+  enabled: true
+```
+
+If monitoring is enabled, use a runtime image that includes `datadog`, for
+example an image built with `.[K8S,MONITORING]`. The default `docker/Dockerfile`
+installs only `.[K8S]`, so either use a custom Dockerfile for monitoring runs or
+set the config image fields to an already-built monitoring-capable image.
+
 To select clouds, edit `participants:`. The config must have exactly one server.
 For a GCP-only smoke setup:
 
@@ -87,6 +99,13 @@ python devops/multicloud/build_and_push.py --config "$CONFIG"
 
 This reads the image tags from `$CONFIG`, authenticates to recognized registries, builds `docker/Dockerfile` once, tags the same image for every used cloud, and pushes all tags.
 
+If monitoring is enabled and the config points to images that still need to be
+built, pass a Dockerfile that installs `.[K8S,MONITORING]`:
+
+```bash
+python devops/multicloud/build_and_push.py --config "$CONFIG" --dockerfile /path/to/Dockerfile.monitoring
+```
+
 Use dry-run first when changing the config:
 
 ```bash
@@ -133,6 +152,7 @@ Expected behavior:
 - The deterministic cloud IP name comes from the config `name`.
 - One namespace and Helm release are created per participant.
 - Job pods are created only after a job is submitted.
+- If `monitoring.enabled` is true, the monitoring stack is deployed in the server cluster.
 
 ## Validate
 
@@ -149,6 +169,19 @@ JOB=/tmp/nvflare/jobs/job_config/hello-numpy
 ```
 
 Use `nvflare job list` and `nvflare job monitor` to confirm the job completes.
+
+If monitoring is enabled, open Grafana from the server cluster. This default
+runbook uses a GCP server; use the server cloud kubeconfig if you changed the
+server cloud:
+
+```bash
+MONITORING_NS=nvflare-all-clouds-${RUN_ID}-monitoring
+kubectl --kubeconfig .tmp/kubeconfigs/gcp.yaml \
+  -n "$MONITORING_NS" port-forward svc/grafana 3000:3000
+```
+
+Log in with `admin` / `admin` and query the Prometheus datasource for FLARE
+system metrics such as `_system_start_count`.
 
 ## Tear Down
 

@@ -22,9 +22,9 @@ from pathlib import Path
 
 def parse_score(row):
     try:
-        return float(row.get("score", "0") or 0.0)
-    except ValueError:
-        return 0.0
+        return float(row.get("score", ""))
+    except (TypeError, ValueError):
+        return None
 
 
 def parse_runtime(row):
@@ -47,7 +47,10 @@ def format_runtime(seconds):
 def rank_key(row):
     runtime = parse_runtime(row)
     runtime_tiebreak = runtime if runtime > 0 else float("inf")
-    return (-parse_score(row), runtime_tiebreak)
+    score = parse_score(row)
+    if score is None:
+        return (1, 0.0, runtime_tiebreak)
+    return (0, -score, runtime_tiebreak)
 
 
 def main():
@@ -84,10 +87,11 @@ def main():
     print("| rank | score | runtime | status | target | description | artifacts |")
     print("| ---: | ---: | ---: | --- | --- | --- | --- |")
     for rank, row in enumerate(rows, start=1):
+        score = parse_score(row)
         print(
-            "| {rank} | {score:.6f} | {runtime} | {status} | {target} | {description} | {artifacts} |".format(
+            "| {rank} | {score} | {runtime} | {status} | {target} | {description} | {artifacts} |".format(
                 rank=rank,
-                score=parse_score(row),
+                score=f"{score:.6f}" if score is not None else "",
                 runtime=format_runtime(parse_runtime(row)),
                 status=row.get("status", ""),
                 target=row.get("target", ""),
