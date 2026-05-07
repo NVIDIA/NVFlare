@@ -253,7 +253,11 @@ class K8sJobHandle(JobHandleSpec):
         if not all([isinstance(js, JobState) for js in job_states_to_enter]):
             raise ValueError(f"expect job_states_to_enter with valid values, but get {job_states_to_enter}")
         while True:
+            if self.terminal_state is not None:
+                return False
             pod_phase = self._query_phase()
+            if self.terminal_state is not None:
+                return False
             if self._stuck_in_pending(pod_phase):
                 self.terminate()
                 return False
@@ -319,12 +323,13 @@ class K8sJobHandle(JobHandleSpec):
                 )
                 self.terminal_state = JobState.TERMINATED
                 self._remove_workspace_job()
+                return PodPhase.UNKNOWN.value
             else:
                 self.logger.warning(f"failed to query pod phase for job {self.job_id} pod {self.pod_name}: {e}")
-            return PodPhase.UNKNOWN.value
+            return None  # no pod phase was observed
         except Exception as e:
             self.logger.warning(f"unexpected error querying pod phase for job {self.job_id} pod {self.pod_name}: {e}")
-            return PodPhase.UNKNOWN.value
+            return None  # no pod phase was observed
         return resp.status.phase
 
     def _query_state(self):
@@ -332,7 +337,9 @@ class K8sJobHandle(JobHandleSpec):
         return POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
 
     def _stuck_in_pending(self, current_phase):
-        if current_phase == PodPhase.PENDING.value:
+        if current_phase is None:
+            return False
+        if current_phase in (PodPhase.PENDING.value, PodPhase.UNKNOWN.value):
             self._stuck_count += 1
             if self._max_stuck_count is not None and self._stuck_count >= self._max_stuck_count:
                 return True
@@ -345,6 +352,8 @@ class K8sJobHandle(JobHandleSpec):
             if self.terminal_state is not None:
                 return
             job_state = self._query_state()
+            if self.terminal_state is not None:
+                return
             if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
                 self.terminal_state = job_state  # persist so poll() stays accurate
                 self._remove_workspace_job()
