@@ -320,6 +320,27 @@ def validate_auth_headers(message: CellMessage, token_verifier: TokenVerifier, l
         logger.debug(f"skip special message {topic=} {channel=}")
         return None
 
+    # Cellnet protocol-level goodbye is broadcast by Cell.stop() with an empty
+    # Message() that carries no FL-level auth headers. Only bypass auth when the
+    # message is for the immediate (direct-neighbor) recipient, i.e. TO_CELL ==
+    # DESTINATION. If it would be forwarded onward (TO_CELL != DESTINATION), a
+    # remote unauthenticated peer could craft a bye with DESTINATION pointing
+    # at a downstream cell whose _peer_goodbye would then drop the immediate
+    # endpoint (the server/relay) from its agents dict — fall through to the
+    # normal auth check in that case. The explicit ``to_cell is not None``
+    # check rejects crafted messages that omit both headers (None == None
+    # would otherwise pass).
+    to_cell = message.get_header(MessageHeaderKey.TO_CELL)
+    destination = message.get_header(MessageHeaderKey.DESTINATION)
+    if (
+        topic == CellChannelTopic.Bye
+        and channel == CellChannel.CELLNET
+        and to_cell is not None
+        and to_cell == destination
+    ):
+        logger.debug(f"skip direct-neighbor cellnet bye {topic=} {channel=}")
+        return None
+
     client_name = message.get_header(CellMessageHeaderKeys.CLIENT_NAME)
     err_text = f"unauthenticated msg ({channel=} {topic=}) received from {origin}"
     if not client_name:
