@@ -356,7 +356,7 @@ Constructor parameters:
 | `timeout` | `None` | Wall-clock seconds for `enter_states([RUNNING])`; also `_max_stuck_count`. |
 | `namespace` | `"default"` | Kubernetes namespace. |
 | `pending_timeout` | `120` | Stuck-detection threshold (poll iterations) when `timeout` is `None`. |
-| `default_python_path` | `"/usr/local/bin/python"` | Default Python executable in the pod command. Job meta can override with `launcher_spec[site][k8s].python_path`. |
+| `default_python_path` | `"/usr/local/bin/python3"` | Default Python executable in the pod command. Job meta can override with `launcher_spec[site][k8s].python_path`. |
 | `workspace_mount_path` | `"/var/tmp/nvflare/workspace"` | In-container path where job pods mount the transferred job workspace and startup kit. `nvflare deploy prepare` sets this from `parent.workspace_mount_path`. |
 | `ephemeral_storage` | `"1Gi"` | Default job pod workspace `emptyDir` size and `ephemeral-storage` request/limit. Job meta can override with `launcher_spec[site][k8s].ephemeral_storage`. |
 

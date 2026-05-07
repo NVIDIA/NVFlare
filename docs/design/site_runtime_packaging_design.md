@@ -293,7 +293,7 @@ parent:
 job_launcher:
   config_file_path: null
   pending_timeout: null
-  default_python_path: /usr/local/bin/python
+  default_python_path: /usr/local/bin/python3
   job_pod_security_context: {}
 ```
 
@@ -371,7 +371,7 @@ Supported `job_launcher` keys:
 
 - `default_python_path`
   - Required: no
-  - Default: `/usr/local/bin/python`
+  - Default: `/usr/local/bin/python3`
   - Description: Default Python executable used in job pods. Individual jobs
     can override it with `launcher_spec[<site>][k8s].python_path`. This value
     does not control the SP/CP parent pod command; use `parent.python_path` for
