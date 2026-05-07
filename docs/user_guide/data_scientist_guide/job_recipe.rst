@@ -166,7 +166,7 @@ Execution Environments
 
 A **Job Recipe** defines *what* to run in a federated learning setting, but it also needs to know *where* to run. NVFlare provides several **execution environments** that allow the same recipe to be executed in different contexts:
 
-* **Simulation (** ``SimEnv`` **)** – For local testing and experimentation on a single machine
+* **Simulation (** ``SimEnv`` **)** – For local testing and experimentation on a single machine or in one batch job
 * **Proof-of-Concept (** ``PocEnv`` **)** – For small-scale, multi-process setups that mimic real-world deployment on a single machine
 * **Production (** ``ProdEnv`` **)** – For full-scale distributed deployments across multiple organizations and sites
 
@@ -175,17 +175,22 @@ This separation enables users to **prototype once and deploy anywhere** without 
 SimEnv – Simulation Environment
 -------------------------------
 
-Runs all clients and the server as **threads** within a single process. This is lightweight and easy to set up with no networking required. Best suited for:
+Runs the job with the local FL simulator backend: no provisioned project or
+long-running server/client daemons. Simulated clients use local worker
+processes; ``num_threads`` is the historical name for the worker-process
+concurrency. Best suited for:
 
 * Quick experiments
 * Debugging scripts and models
 * Educational use cases
+* Batch-scheduled experiments where one submitted job should run the complete
+  federated workflow and then exit
 
 **Arguments:**
 
 * ``num_clients`` (int): Number of simulated clients
 * ``clients``: A list of client names (length needs to match ``num_clients`` if both are provided)
-* ``num_threads``: Number of threads to use to run simulated clients
+* ``num_threads``: Number of concurrent simulated client worker processes
 * ``gpu_config`` (str): List of GPU device IDs, comma separated
 * ``log_config`` (str): Log config mode (``'concise'``, ``'full'``, ``'verbose'``), filepath, or level
 

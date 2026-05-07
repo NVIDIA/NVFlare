@@ -10,6 +10,13 @@ An :class:`Executor<nvflare.apis.executor.Executor>` is an FLComponent for FL cl
 wherein the ``execute`` method receives and returns a Shareable object given a task name,
 ``FLContext``, and ``abort_signal``.
 
+.. note::
+
+   The Executor API is the low-level client task API. Most new ML training
+   examples should start with the :ref:`client_api` and :ref:`job_recipe`, and
+   use Executor directly only when they need a custom task contract or framework
+   integration.
+
 .. literalinclude:: ../../../nvflare/apis/executor.py
     :language: python
     :lines: 24-
