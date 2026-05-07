@@ -231,7 +231,6 @@ clouds:
         docker_image: repo/image:tag
     pvc_config:
       nvflws: {sc: standard-rwo, access: ReadWriteOnce, size: 1Gi}
-      nvfldata: {sc: standard-rwo, access: ReadWriteOnce, size: 1Gi}
     study_data:
       default:
         data: {pvc: nvfldata, mode: ro}
@@ -243,6 +242,9 @@ participants:
         config = DEPLOY_MODULE.load_config(config_path)
 
         assert config.participants[0].study_data == {"default": {"data": {"source": "nvfldata", "mode": "ro"}}}
+        state = DEPLOY_MODULE.deployment_state(config)
+        assert state["participants"]["gcp-server"]["pvc_names"] == ["nvflws"]
+        assert state["participants"]["gcp-server"]["cleanup_pvc_names"] == ["nvflws", "nvfldata"]
 
     @pytest.mark.parametrize("entry", [{"mode": "ro"}, {"pvc": "nvfldata"}])
     def test_rejects_study_data_without_pvc_or_mode(self, tmp_path, entry):
@@ -295,6 +297,87 @@ participants:
         assert config.monitoring.statsd_port == 9125
         assert config.monitoring.env == "all-clouds"
 
+    def test_render_project_keeps_project_participants_and_templates_server_ip(self, tmp_path):
+        project_path = tmp_path / "project.yml"
+        project_path.write_text(
+            """
+api_version: 3
+name: explicit-project
+participants:
+  - name: site-server
+    type: server
+    org: nvidia
+    default_host: __SERVER_IP__
+    fed_learn_port: 8002
+    admin_port: 8003
+  - name: site-client
+    type: client
+    org: nvidia
+  - name: admin@nvidia.com
+    type: admin
+    org: nvidia
+    role: project_admin
+builders: []
+"""
+        )
+        config_path = tmp_path / "deploy.yaml"
+        config_path.write_text(
+            """
+name: explicit-project
+project_file: project.yml
+clouds:
+  gcp:
+    prepare:
+      runtime: k8s
+      parent:
+        docker_image: repo/image:tag
+participants:
+  - {name: site-server, cloud: gcp, namespace: nvflare-server, role: server}
+  - {name: site-client, cloud: gcp, namespace: nvflare-client, role: client}
+"""
+        )
+
+        config = DEPLOY_MODULE.load_config(config_path)
+        rendered = yaml.safe_load(DEPLOY_MODULE.render_project("10.1.2.3", config))
+
+        assert config.project_file == project_path
+        assert [p["name"] for p in rendered["participants"]] == ["site-server", "site-client", "admin@nvidia.com"]
+        assert rendered["participants"][0]["default_host"] == "10.1.2.3"
+
+    def test_render_project_rejects_participant_mismatch(self, tmp_path):
+        project_path = tmp_path / "project.yml"
+        project_path.write_text(
+            """
+api_version: 3
+name: explicit-project
+participants:
+  - {name: site-server, type: server, org: nvidia, default_host: __SERVER_IP__}
+  - {name: other-client, type: client, org: nvidia}
+  - {name: admin@nvidia.com, type: admin, org: nvidia, role: project_admin}
+builders: []
+"""
+        )
+        config_path = tmp_path / "deploy.yaml"
+        config_path.write_text(
+            """
+name: explicit-project
+project_file: project.yml
+clouds:
+  gcp:
+    prepare:
+      runtime: k8s
+      parent:
+        docker_image: repo/image:tag
+participants:
+  - {name: site-server, cloud: gcp, namespace: nvflare-server, role: server}
+  - {name: site-client, cloud: gcp, namespace: nvflare-client, role: client}
+"""
+        )
+        config = DEPLOY_MODULE.load_config(config_path)
+
+        with pytest.raises(ValueError, match="deploy.py no longer generates participants"):
+            DEPLOY_MODULE.render_project("10.1.2.3", config)
+
 
 class TestMonitoringStack:
     def test_dry_run_applies_monitoring_stack(self, monkeypatch, capsys):
@@ -331,6 +414,42 @@ class TestMonitoringStack:
         assert "apply -f -" in output
         assert "name: nvflare-all-clouds-monitoring" in output
 
+    def test_teardown_monitoring_uses_provider_not_cloud_alias(self, monkeypatch):
+        config = DEPLOY_MODULE.DeployConfig(
+            name="alias-cloud",
+            participants=[
+                DEPLOY_MODULE.Participant(
+                    name="site-server",
+                    namespace="nvflare",
+                    kubeconfig="/tmp/kubeconfig",
+                    role="server",
+                    cloud="local-cluster",
+                    provider="kubernetes",
+                    prepare={},
+                )
+            ],
+            server_cloud="local-cluster",
+            server_provider="kubernetes",
+            gcp_project=None,
+            gcp_region=None,
+            aws_region=None,
+            aws_eks_cluster_name=None,
+            azure_resource_group=None,
+            azure_location=None,
+            monitoring=DEPLOY_MODULE.MonitoringConfig(enabled=True, namespace="nvflare-monitoring"),
+        )
+        auth_checks = []
+        run_calls = []
+
+        monkeypatch.setattr(DEPLOY_MODULE, "check_auth_for", lambda provider: auth_checks.append(provider))
+        monkeypatch.setattr(
+            DEPLOY_MODULE, "run", lambda cmd, **kwargs: run_calls.append((cmd, kwargs)) or DEPLOY_MODULE.FakeProc(0)
+        )
+
+        assert DEPLOY_MODULE.teardown_monitoring_stack(config)
+        assert auth_checks == ["kubernetes"]
+        assert run_calls[0][0][:5] == ["kubectl", "--kubeconfig", "/tmp/kubeconfig", "delete", "ns"]
+
 
 class TestDryRunGoldenOutput:
     @pytest.mark.parametrize(
@@ -355,6 +474,71 @@ class TestDryRunGoldenOutput:
         )
 
         assert capsys.readouterr().out == (DRY_RUN_GOLD_DIR / f"{config_name}.{command}.txt").read_text()
+
+
+class TestStatus:
+    def test_kubernetes_status_shows_service_address_not_ip_name(self, monkeypatch, tmp_path, capsys):
+        config_path = tmp_path / "local-cluster.yaml"
+        config_path.write_text(
+            """
+name: local-cluster
+server_cloud: local-cluster
+clouds:
+  local-cluster:
+    provider: kubernetes
+    kubeconfig: /tmp/kubeconfig
+    prepare:
+      runtime: k8s
+      parent:
+        docker_image: repo/image:tag
+    server:
+      service_type: ClusterIP
+participants:
+  - {name: local-server, cloud: local-cluster, namespace: nvflare, role: server}
+"""
+        )
+
+        monkeypatch.setattr(DEPLOY_MODULE, "run_quiet", lambda cmd: DEPLOY_MODULE.FakeProc(0, stdout="pod-row\n"))
+
+        DEPLOY_MODULE.cmd_status(SimpleNamespace(config=str(config_path)))
+
+        out = capsys.readouterr().out
+        assert "Server address:   nvflare-server.nvflare.svc.cluster.local" in out
+        assert "IP name:" not in out
+
+
+class TestKubernetesAdminEndpoint:
+    def test_kubernetes_clusterip_defaults_admin_endpoint_to_local_port_forward(self):
+        provider = DEPLOY_MODULE.get_provider("kubernetes")
+        config = SimpleNamespace(
+            server_cloud="local-cluster",
+            cloud_configs={"local-cluster": {"server": {"service_type": "ClusterIP"}}},
+            participants=[
+                DEPLOY_MODULE.Participant(
+                    name="local-server",
+                    namespace="nvflare",
+                    kubeconfig="/tmp/kubeconfig",
+                    role="server",
+                    cloud="local-cluster",
+                    prepare={"runtime": "k8s", "parent": {"docker_image": "repo/image:tag"}},
+                )
+            ],
+        )
+
+        assert provider.admin_endpoint(config=config, server_ip="nvflare-server.nvflare.svc.cluster.local") == (
+            "localhost",
+            18003,
+        )
+
+    def test_configure_admin_endpoint_rewrites_admin_startup(self, tmp_path):
+        startup_dir = tmp_path / "prod_00" / "admin@nvidia.com" / "startup"
+        startup_dir.mkdir(parents=True)
+        fed_admin = startup_dir / "fed_admin.json"
+        fed_admin.write_text(json.dumps({"admin": {"host": "nvflare-server.nvflare.svc.cluster.local", "port": 8003}}))
+
+        DEPLOY_MODULE.configure_admin_endpoint(tmp_path / "prod_00", host="localhost", port=18003)
+
+        assert json.loads(fed_admin.read_text())["admin"] == {"host": "localhost", "port": 18003}
 
 
 class TestHelmDeployFlow:
@@ -420,6 +604,50 @@ class TestHelmDeployFlow:
 
 
 class TestTeardownFlow:
+    def test_teardown_deletes_pods_using_configured_pvcs_before_pvcs(self, monkeypatch):
+        calls = []
+        pod_list = {
+            "items": [
+                {
+                    "metadata": {"name": "job-pod"},
+                    "spec": {"volumes": [{"persistentVolumeClaim": {"claimName": "client-study-data"}}]},
+                },
+                {
+                    "metadata": {"name": "other-pod"},
+                    "spec": {"volumes": [{"persistentVolumeClaim": {"claimName": "other-data"}}]},
+                },
+            ]
+        }
+
+        def _run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            if cmd[:7] == ["kubectl", "--kubeconfig", "/tmp/kubeconfig", "-n", "nvflare", "get", "pods"]:
+                return DEPLOY_MODULE.FakeProc(0, stdout=json.dumps(pod_list))
+            return DEPLOY_MODULE.FakeProc(0)
+
+        monkeypatch.setattr(DEPLOY_MODULE, "check_auth_for", lambda provider: None)
+        monkeypatch.setattr(DEPLOY_MODULE, "run", _run)
+
+        assert DEPLOY_MODULE.teardown_participant(
+            "local-client-1",
+            {
+                "kubeconfig": "/tmp/kubeconfig",
+                "namespace": "nvflare",
+                "provider": "kubernetes",
+                "role": "client",
+                "delete_namespace": False,
+                "pvc_names": ["client-ws"],
+                "cleanup_pvc_names": ["client-ws", "client-study-data"],
+            },
+        )
+
+        commands = [cmd for cmd, _kwargs in calls]
+        delete_pod_index = next(i for i, cmd in enumerate(commands) if cmd[5:8] == ["delete", "pod", "job-pod"])
+        delete_pvc_index = next(i for i, cmd in enumerate(commands) if cmd[5:8] == ["delete", "pvc", "client-ws"])
+        assert delete_pod_index < delete_pvc_index
+        assert not any(cmd[5:8] == ["delete", "pod", "other-pod"] for cmd in commands)
+        assert not any(cmd[5:8] == ["delete", "pvc", "client-study-data"] for cmd in commands)
+
     def test_cmd_down_attempts_server_after_client_failure(self, monkeypatch):
         config = DEPLOY_MODULE.DeployConfig(
             name="test-cluster",

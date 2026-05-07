@@ -1,6 +1,6 @@
 api_version: 3
-name: nvflare_multicloud
-description: NVFlare multicloud end-to-end test project
+name: gcp-server
+description: NVFlare multicloud dry-run test project
 
 participants:
   - name: gcp-server
@@ -13,9 +13,6 @@ participants:
     type: client
     org: nvidia
   - name: aws-client-2
-    type: client
-    org: nvidia
-  - name: azure-client-3
     type: client
     org: nvidia
   - name: admin@nvidia.com

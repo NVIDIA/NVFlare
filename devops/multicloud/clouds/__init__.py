@@ -1,13 +1,15 @@
 from .aws import AwsProvider
 from .azure import AzureProvider
 from .gcp import GcpProvider
+from .kubernetes import KubernetesProvider
 
-CLOUD_ORDER = ("gcp", "aws", "azure")
+CLOUD_ORDER = ("gcp", "aws", "azure", "kubernetes")
 
 PROVIDERS = {
     "gcp": GcpProvider(),
     "aws": AwsProvider(),
     "azure": AzureProvider(),
+    "kubernetes": KubernetesProvider(),
 }
 
 

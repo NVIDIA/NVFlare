@@ -15,7 +15,10 @@ this example.
 Shipped config:
 - `all-clouds.yaml` — GCP server with GCP, AWS, and Azure clients
 
-Cluster topology is defined in the YAML (`clouds:` + `participants:`).
+Cluster topology is defined by the NVFlare project YAML plus the deploy YAML.
+The project YAML owns the FLARE participant list. The deploy YAML maps those
+same participant names to clouds, namespaces, runtime images, PVCs, and Helm
+settings.
 The deploy tool reads kubeconfigs from `.tmp/kubeconfigs/<cloud>.yaml`.
 `fetch_kubeconfigs.py` discovers clusters from the active cloud CLI contexts
 and supports environment variable overrides when discovery is ambiguous.
@@ -26,8 +29,10 @@ Cloud-specific behavior lives in provider modules under
 
 ## Topology Selection
 
-The `participants:` section is the primary control for what is deployed. The
-default `all-clouds.yaml` topology creates one server and three clients:
+The project YAML participant list and the deploy YAML `participants:` section
+must agree. `deploy.py` validates this before provisioning and does not generate
+or rewrite project participants. The default `all-clouds.yaml` topology uses
+`project.yml` and creates one server and three clients:
 
 ```yaml
 participants:
@@ -37,10 +42,12 @@ participants:
   - { name: azure-client-3, cloud: azure, namespace: nvflare-client-3, role: client }
 ```
 
-Edit that list to choose a smaller topology. For example, to deploy only on
-GCP, keep the GCP server and GCP client entries and remove the AWS/Azure client
-entries. To deploy two clouds, keep only participants for those clouds. Exactly
-one participant must have `role: server`; all other participants are clients.
+Edit both the project YAML and the deploy YAML to choose a different topology.
+For example, to deploy only on GCP, keep the GCP server and GCP client entries
+in both files and remove the AWS/Azure client entries. To keep a separate
+project YAML for an experiment, add `project_file: path/to/project.yml` to the
+deploy YAML. Exactly one participant must be a server; all other deploy
+participants are clients.
 
 `fetch_kubeconfigs.py`, `build_and_push.py`, and `deploy.py` operate on the
 clouds referenced by `participants:`.

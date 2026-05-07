@@ -200,6 +200,43 @@ participants:
     ]
 
 
+def test_load_participants_includes_study_data_pvcs(tmp_path):
+    config = tmp_path / "all-clouds.yaml"
+    config.write_text(
+        """
+clouds:
+  gcp:
+    study_data:
+      study1:
+        data: { pvc: client-study-data, mode: ro }
+participants:
+  - name: gcp-client
+    cloud: gcp
+    namespace: nvflare-client
+    role: client
+    pvc_config:
+      nvflws: { sc: standard-rwo, access: ReadWriteOnce, size: 1Gi }
+"""
+    )
+
+    participants = K8SVIEW.load_participants(config)
+
+    assert participants[0].pvc_names == ("nvflws", "client-study-data")
+
+
+def test_job_info_displays_raw_uuid_for_digit_prefixed_k8s_pod_name():
+    target = K8SVIEW.NamespaceTarget(
+        name="local-cluster/nvflare",
+        cloud="local-cluster",
+        namespace="nvflare",
+        kubeconfig="/tmp/kubeconfig",
+        job_site_suffixes=(("server", K8SVIEW.site_name_to_rfc1123("server", max_length=20)),),
+    )
+    pod = _pod("j0c772668-d240-4fc2-ad62-cb7406aaad77-server-b3eacd33", namespace="nvflare")
+
+    assert K8SVIEW._job_info_from_pod(target, pod) == ("0c772668-d240-4fc2-ad62-cb7406aaad77", "server")
+
+
 def test_build_site_rows_summarizes_job_pods_and_ips_without_listing_jobs():
     cluster = K8SVIEW.Cluster(name="gcp", cloud="gcp", kubeconfig="/tmp/gcp.yaml")
     snapshot = K8SVIEW.ClusterSnapshot(

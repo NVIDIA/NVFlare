@@ -6,7 +6,8 @@ Use this file when prompted to create an NVFlare multicloud dev cluster. Keep al
 
 - The target config shape is `devops/multicloud/all-clouds.yaml`.
 - The default topology is GCP server plus GCP, AWS, and Azure clients.
-- The `participants:` section controls which clouds and sites are deployed.
+- The project YAML controls FLARE participants; the deploy YAML maps those
+  participant names to clouds and namespaces.
 - Real image tags are required for `clouds.<cloud>.prepare.parent.docker_image`.
 - Kubeconfig discovery uses active cloud CLI contexts plus env overrides, not local YAML override files.
 
@@ -17,12 +18,14 @@ RUN_ID=$(date +%Y%m%d-%H%M%S)
 CONFIG=.tmp/multicloud/${RUN_ID}/all-clouds.yaml
 mkdir -p "$(dirname "$CONFIG")"
 cp devops/multicloud/all-clouds.yaml "$CONFIG"
+cp devops/multicloud/project.yml "$(dirname "$CONFIG")/project.yml"
 ```
 
 Edit `$CONFIG`:
 
 - Set top-level `name` to a unique value, for example `all-clouds-${RUN_ID}`.
-- Set each participant `name` to a unique value if multiple dev clusters may coexist.
+- Add `project_file: project.yml`.
+- Set each participant `name` in both `$CONFIG` and the copied project YAML to a unique value if multiple dev clusters may coexist.
 - Set each participant `namespace` to a unique value if multiple dev clusters may coexist.
 - Replace all placeholder `clouds.<cloud>.prepare.parent.docker_image` values with real registry tags.
 - Do not add project names, cluster names, subscription IDs, or account IDs to the YAML.
@@ -40,8 +43,8 @@ example an image built with `.[K8S,MONITORING]`. The default `docker/Dockerfile`
 installs only `.[K8S]`, so either use a custom Dockerfile for monitoring runs or
 set the config image fields to an already-built monitoring-capable image.
 
-To select clouds, edit `participants:`. The config must have exactly one server.
-For a GCP-only smoke setup:
+To select clouds, edit `participants:` in both `$CONFIG` and the copied project
+YAML. The config must have exactly one server. For a GCP-only smoke setup:
 
 ```yaml
 participants:

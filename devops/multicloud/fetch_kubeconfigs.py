@@ -25,7 +25,6 @@ from pathlib import Path
 
 import yaml
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent.parent
 DEFAULT_CONFIG = SCRIPT_DIR / "all-clouds.yaml"
@@ -115,6 +114,13 @@ def used_clouds(config: dict) -> list[str]:
         if cloud and cloud not in clouds:
             clouds.append(cloud)
     return clouds
+
+
+def configured_kubeconfig(cloud_config: dict, *, config_dir: Path) -> Path | None:
+    kubeconfig = cloud_config.get("kubeconfig")
+    if not kubeconfig:
+        return None
+    return resolve_path(Path(kubeconfig), base=config_dir)
 
 
 def kubeconfig_path(cloud: str, out_dir: Path) -> Path:
@@ -271,6 +277,13 @@ def main() -> int:
         cloud_config = clouds_config.get(cloud)
         if not isinstance(cloud_config, dict):
             fail(f"cloud '{cloud}' is used by participants but is not configured")
+
+        configured = configured_kubeconfig(cloud_config, config_dir=config_path.parent)
+        if configured:
+            if not args.dry_run and not configured.is_file():
+                fail(f"configured kubeconfig does not exist for cloud '{cloud}': {configured}")
+            print(f"Using configured kubeconfig for {cloud}: {configured}")
+            continue
 
         kubeconfig = kubeconfig_path(cloud, out_dir)
         run(["mkdir", "-p", str(kubeconfig.parent)], dry_run=args.dry_run)

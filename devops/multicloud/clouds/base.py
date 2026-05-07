@@ -19,8 +19,17 @@ class CloudProvider:
     def release_ip(self, *, run, ip_name, state):
         raise NotImplementedError
 
+    def server_service_type(self, *, state):
+        return "LoadBalancer"
+
     def server_service_helm_args(self, *, server_ip, state):
         raise NotImplementedError
+
+    def status_endpoint(self, *, state, config):
+        return "IP name", state.get("ip_name", "N/A")
+
+    def admin_endpoint(self, *, config, server_ip):
+        return None
 
 
 def service_annotation_args(annotations: dict[str, str]) -> list[str]:

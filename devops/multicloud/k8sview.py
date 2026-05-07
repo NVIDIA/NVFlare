@@ -27,12 +27,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import sys
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -84,12 +85,42 @@ STATUS_COLORS = {
 }
 
 
+def site_name_to_rfc1123(site_name: str, max_length: int = 47) -> str:
+    digest = hashlib.sha256(site_name.encode("utf-8")).hexdigest()[:8]
+    name = site_name.lower()
+    name = re.sub(r"[^a-z0-9-]", "", name).strip("-")
+    if not name:
+        name = "site"
+    if name[0].isdigit():
+        name = "s" + name
+    head_max = max_length - len(digest) - 1
+    name = name[:head_max].rstrip("-") or "site"
+    return f"{name}-{digest}"
+
+
+def display_job_id(job_prefix: str) -> str:
+    if re.fullmatch(r"j[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", job_prefix):
+        return job_prefix[1:]
+    return job_prefix
+
+
 @dataclass
 class Participant:
     name: str
     cloud: str
     namespace: str
     kubeconfig: str
+    pvc_names: tuple[str, ...] = ()
+    role: str = field(default="", compare=False)
+
+
+@dataclass
+class NamespaceTarget:
+    name: str
+    cloud: str
+    namespace: str
+    kubeconfig: str
+    job_site_suffixes: tuple[tuple[str, str], ...]
 
 
 @dataclass(frozen=True)
@@ -151,12 +182,35 @@ def load_participants(config_path: Path) -> list[Participant]:
     for e in entries:
         cloud_cfg = clouds.get(e["cloud"], {}) or {}
         merged = {**cloud_cfg, **e}
-        kc = resolve_kubeconfig(e["cloud"])
-        out.append(Participant(merged["name"], e["cloud"], merged["namespace"], str(kc)))
+        kc = resolve_kubeconfig(e["cloud"], cloud_cfg, config_dir=config_path.parent)
+        pvc_names = _participant_pvc_names(merged)
+        out.append(
+            Participant(merged["name"], e["cloud"], merged["namespace"], str(kc), pvc_names, merged.get("role", ""))
+        )
     return out
 
 
-def resolve_kubeconfig(cloud: str) -> Path:
+def _participant_pvc_names(config: dict) -> tuple[str, ...]:
+    names = list((config.get("pvc_config") or {}).keys())
+    for datasets in (config.get("study_data") or {}).values():
+        for dataset in (datasets or {}).values():
+            pvc = (dataset or {}).get("pvc") or (dataset or {}).get("source")
+            if pvc:
+                names.append(pvc)
+    return tuple(dict.fromkeys(names))
+
+
+def resolve_path(path: str | Path, *, base: Path) -> Path:
+    path = Path(path).expanduser()
+    if not path.is_absolute():
+        path = base / path
+    return path.resolve()
+
+
+def resolve_kubeconfig(cloud: str, cloud_config: dict | None = None, *, config_dir: Path | None = None) -> Path:
+    kubeconfig = (cloud_config or {}).get("kubeconfig")
+    if kubeconfig:
+        return resolve_path(kubeconfig, base=config_dir or Path.cwd())
     return (DEFAULT_KUBECONFIG_DIR / f"{cloud}.yaml").resolve()
 
 
@@ -237,16 +291,74 @@ def _call(p: Participant, cache: ApiCache, method_name: str, **kwargs):
         return PodFetchError(f"{type(e).__name__}: {e}")
 
 
+def _participant_label_selector(p: Participant) -> str:
+    return f"app.kubernetes.io/name={p.name}"
+
+
+def unique_namespace_targets(participants: list[Participant]) -> list[NamespaceTarget]:
+    targets = {}
+    for p in participants:
+        key = (p.cloud, p.namespace, p.kubeconfig)
+        target = targets.get(key)
+        if target is None:
+            target = {
+                "name": f"{p.cloud}/{p.namespace}",
+                "cloud": p.cloud,
+                "namespace": p.namespace,
+                "kubeconfig": p.kubeconfig,
+                "job_site_suffixes": [],
+            }
+            targets[key] = target
+        site_names = [p.name]
+        if p.role == "server":
+            site_names.append("server")
+        for site_name in site_names:
+            target["job_site_suffixes"].append((site_name, site_name_to_rfc1123(site_name, max_length=20)))
+    return [
+        NamespaceTarget(
+            name=t["name"],
+            cloud=t["cloud"],
+            namespace=t["namespace"],
+            kubeconfig=t["kubeconfig"],
+            job_site_suffixes=tuple(t["job_site_suffixes"]),
+        )
+        for t in targets.values()
+    ]
+
+
+def _filter_participant_pvcs(p: Participant, result):
+    if isinstance(result, PodFetchError) or not p.pvc_names:
+        return result
+    allowed = set(p.pvc_names)
+    return [pvc for pvc in result if pvc.metadata.name in allowed]
+
+
 def fetch_pods(p: Participant, cache: ApiCache):
-    return _call(p, cache, "list_namespaced_pod")
+    return _call(p, cache, "list_namespaced_pod", label_selector=_participant_label_selector(p))
+
+
+def _job_info_from_pod(p: NamespaceTarget, pod) -> tuple[str, str] | None:
+    pod_name = pod.metadata.name
+    for site_name, site_suffix in p.job_site_suffixes:
+        suffix = f"-{site_suffix}"
+        if pod_name.endswith(suffix):
+            return display_job_id(pod_name[: -len(suffix)] or "-"), site_name
+    return None
+
+
+def fetch_job_pods(p: NamespaceTarget, cache: ApiCache):
+    result = _call(p, cache, "list_namespaced_pod")
+    if isinstance(result, PodFetchError):
+        return result
+    return [pod for pod in result if _job_info_from_pod(p, pod)]
 
 
 def fetch_pvcs(p: Participant, cache: ApiCache):
-    return _call(p, cache, "list_namespaced_persistent_volume_claim")
+    return _filter_participant_pvcs(p, _call(p, cache, "list_namespaced_persistent_volume_claim"))
 
 
 def fetch_services(p: Participant, cache: ApiCache):
-    return _call(p, cache, "list_namespaced_service")
+    return _call(p, cache, "list_namespaced_service", label_selector=_participant_label_selector(p))
 
 
 def fetch_events(p: Participant, cache: ApiCache):
@@ -424,7 +536,13 @@ def status_text(status: str) -> Text:
 # ---------------------------------------------------------------------------
 def build_pod_table(snapshots: list[tuple[Participant, object]]) -> Table:
     total_pods = sum(len(r) for _, r in snapshots if isinstance(r, list))
-    table = Table(caption=f"{total_pods} pods", caption_style="dim", expand=True, title="Pods", title_style="bold")
+    table = Table(
+        caption=f"{total_pods} pods",
+        caption_style="dim",
+        expand=True,
+        title="Participant Pods",
+        title_style="bold",
+    )
     for col, style, width in [
         ("CLOUD", "cyan", None),
         ("PARTICIPANT", "cyan", None),
@@ -461,6 +579,77 @@ def build_pod_table(snapshots: list[tuple[Participant, object]]) -> Table:
                 p.name,
                 p.namespace,
                 pod.metadata.name,
+                ready_fraction(pod),
+                status_text(derive_status(pod)),
+                str(restart_count(pod)),
+                age_str(pod),
+                pod.spec.node_name or "—",
+            )
+    return table
+
+
+def _pod_gpu_resources(pod) -> str:
+    values = []
+    for container in pod.spec.containers or []:
+        resources = container.resources
+        if not resources:
+            continue
+        requests = resources.requests or {}
+        limits = resources.limits or {}
+        gpu = requests.get("nvidia.com/gpu") or limits.get("nvidia.com/gpu")
+        if gpu:
+            values.append(str(gpu))
+    return _ip_join(values)
+
+
+def build_job_pod_table(snapshots: list[tuple[NamespaceTarget, object]]) -> Table:
+    total_pods = sum(len(r) for _, r in snapshots if isinstance(r, list))
+    table = Table(caption=f"{total_pods} pods", caption_style="dim", expand=True, title="Job Pods", title_style="bold")
+    for col, style, width in [
+        ("CLOUD", "cyan", None),
+        ("NS", "cyan", None),
+        ("JOB", "white", None),
+        ("SITE", "cyan", None),
+        ("POD", "white", None),
+        ("GPU", None, 5),
+        ("READY", None, 6),
+        ("STATUS", None, None),
+        ("RESTARTS", None, 8),
+        ("AGE", None, 6),
+        ("NODE", "dim", None),
+    ]:
+        table.add_column(col, style=style, width=width, no_wrap=(col != "NODE"))
+
+    for p, result in snapshots:
+        if isinstance(result, PodFetchError):
+            table.add_row(
+                p.cloud,
+                p.namespace,
+                "—",
+                "—",
+                "—",
+                "—",
+                "—",
+                Text(f"ERROR: {result.msg}", style="red"),
+                "—",
+                "—",
+                "—",
+            )
+            continue
+        if not result:
+            table.add_row(p.cloud, p.namespace, Text("(no job pods)", style="dim"), "", "", "", "", "", "", "", "")
+            continue
+        for pod in sorted(
+            result, key=lambda x: (str(_ensure_aware_utc(x.metadata.creation_timestamp)), x.metadata.name)
+        ):
+            job_id, site_name = _job_info_from_pod(p, pod) or ("-", "-")
+            table.add_row(
+                p.cloud,
+                p.namespace,
+                job_id,
+                site_name,
+                pod.metadata.name,
+                _pod_gpu_resources(pod),
                 ready_fraction(pod),
                 status_text(derive_status(pod)),
                 str(restart_count(pod)),
@@ -547,6 +736,7 @@ def build_summary(
     svc_snaps: list[tuple[Participant, object]],
     config_path: Path,
     interval: float,
+    job_pod_snaps: list[tuple[Participant, object]] | None = None,
 ) -> Text:
     pod_counts: Counter = Counter()
     pod_errors = 0
@@ -580,6 +770,16 @@ def build_summary(
         f"Pods: {_fmt(pod_counts)}" + (f"  [red]{pod_errors} fetch errors[/]" if pod_errors else ""),
         f"PVCs: {_fmt(pvc_counts)}",
     ]
+    if job_pod_snaps is not None:
+        job_counts: Counter = Counter()
+        job_errors = 0
+        for _, r in job_pod_snaps:
+            if isinstance(r, PodFetchError):
+                job_errors += 1
+                continue
+            for pod in r or []:
+                job_counts[derive_status(pod)] += 1
+        lines.append(f"Job pods: {_fmt(job_counts)}" + (f"  [red]{job_errors} fetch errors[/]" if job_errors else ""))
     eps = _lb_endpoints(svc_snaps)
     if eps:
         for name, ep, state in eps:
@@ -1152,6 +1352,7 @@ def main():
     )
     parser.add_argument("--interval", type=float, default=2.0, help="Refresh interval in seconds")
     parser.add_argument("--events-window", type=float, default=300.0, help="Show Warning events newer than N seconds")
+    parser.add_argument("--once", action="store_true", help="Render one snapshot and exit")
     args = parser.parse_args()
 
     cache = ApiCache()
@@ -1161,22 +1362,39 @@ def main():
     if args.config:
         config_path = Path(args.config).resolve()
         participants = load_participants(config_path)
+        namespace_targets = unique_namespace_targets(participants)
+
+        def _focused_view() -> Group:
+            pod_snap = gather(participants, cache, fetch_pods)
+            pod_snap, _ = prune_pod_snapshots(pod_snap, cache)
+            job_pod_snap = gather(namespace_targets, cache, fetch_job_pods)
+            job_pod_snap, _ = prune_pod_snapshots(job_pod_snap, cache)
+            pvc_snap = gather(participants, cache, fetch_pvcs)
+            svc_snap = gather(participants, cache, fetch_services)
+            evt_snap = gather(participants, cache, fetch_events)
+            return Group(
+                build_summary(
+                    pod_snap,
+                    pvc_snap,
+                    svc_snap,
+                    config_path,
+                    args.interval,
+                    job_pod_snaps=job_pod_snap,
+                ),
+                build_pod_table(pod_snap),
+                build_job_pod_table(job_pod_snap),
+                build_pvc_table(pvc_snap),
+                build_events_table(evt_snap, args.events_window),
+            )
+
+        if args.once:
+            console.print(_focused_view())
+            return
+
         with Live(console=console, refresh_per_second=4, screen=False) as live:
             try:
                 while True:
-                    pod_snap = gather(participants, cache, fetch_pods)
-                    pod_snap, _ = prune_pod_snapshots(pod_snap, cache)
-                    pvc_snap = gather(participants, cache, fetch_pvcs)
-                    svc_snap = gather(participants, cache, fetch_services)
-                    evt_snap = gather(participants, cache, fetch_events)
-                    live.update(
-                        Group(
-                            build_summary(pod_snap, pvc_snap, svc_snap, config_path, args.interval),
-                            build_pod_table(pod_snap),
-                            build_pvc_table(pvc_snap),
-                            build_events_table(evt_snap, args.events_window),
-                        )
-                    )
+                    live.update(_focused_view())
                     time.sleep(args.interval)
             except KeyboardInterrupt:
                 pass
@@ -1184,6 +1402,12 @@ def main():
 
     kubeconfig_dir = Path(args.kubeconfig_dir).resolve()
     clusters = load_clusters(kubeconfig_dir)
+    if args.once:
+        snapshots, prune_stats = gather_cluster_snapshots(clusters, cache)
+        rows = build_site_rows(snapshots)
+        console.print(build_all_cloud_view(snapshots, prune_stats, kubeconfig_dir, args.interval, rows))
+        return
+
     with Live(console=console, refresh_per_second=4, screen=False) as live:
         try:
             while True:

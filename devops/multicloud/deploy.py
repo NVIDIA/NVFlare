@@ -25,20 +25,20 @@ from __future__ import annotations
 
 import argparse
 import copy
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
+import os
 import re
 import shlex
 import shutil
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
-
 from clouds import CLOUD_ORDER, get_provider
 
 DRY_RUN = False
@@ -110,7 +110,8 @@ class Participant:
     kubeconfig: str
     role: str  # "server" or "client"
     cloud: str
-    prepare: dict
+    provider: str = ""
+    prepare: dict = field(default_factory=dict)
     helm_overrides: list = field(default_factory=list)
     pvc_config: dict = field(default_factory=dict)
     pod_annotations: dict = field(default_factory=dict)
@@ -118,6 +119,8 @@ class Participant:
     # Kubernetes imagePullPolicy override. `None` keeps whatever the helm chart
     # defaults to (typically IfNotPresent). Set to "Always" on mutable dev tags.
     pull_policy: str | None = None
+    create_namespace: bool = True
+    delete_namespace: bool = True
 
 
 @dataclass
@@ -131,6 +134,9 @@ class DeployConfig:
     aws_eks_cluster_name: str | None
     azure_resource_group: str | None
     azure_location: str | None
+    project_file: Path = PROJECT_TEMPLATE
+    server_provider: str = ""
+    cloud_configs: dict = field(default_factory=dict)
     monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
 
 
@@ -218,14 +224,57 @@ def _normalize_study_data(study_data: dict | None) -> dict:
     return result
 
 
-def _kubeconfig_path(cloud: str) -> Path:
+def _namespace_options(config_path: Path, cloud: str, cloud_cfg: dict, entry: dict) -> tuple[bool, bool]:
+    namespace_cfg = cloud_cfg.get("namespace")
+    if namespace_cfg is None:
+        namespace_cfg = {}
+    if not isinstance(namespace_cfg, dict):
+        raise ValueError(f"{config_path}: clouds.{cloud}.namespace must be a YAML mapping when set")
+
+    configured_name = namespace_cfg.get("name")
+    if configured_name and configured_name != entry["namespace"]:
+        raise ValueError(
+            f"{config_path}: participant {entry['name']} namespace {entry['namespace']!r} does not match "
+            f"clouds.{cloud}.namespace.name {configured_name!r}"
+        )
+
+    create_namespace = bool(namespace_cfg.get("create", True))
+    delete_namespace = bool(namespace_cfg.get("delete_on_down", True))
+    return create_namespace, delete_namespace
+
+
+def _resolve_path(path: str | Path, *, base: Path) -> Path:
+    path = Path(path).expanduser()
+    if not path.is_absolute():
+        path = base / path
+    return path.resolve()
+
+
+def _kubeconfig_path(cloud: str, cloud_config: dict | None = None, *, config_dir: Path | None = None) -> Path:
+    kubeconfig = (cloud_config or {}).get("kubeconfig")
+    if kubeconfig:
+        return _resolve_path(kubeconfig, base=config_dir or Path.cwd())
     return (DEFAULT_KUBECONFIG_DIR / f"{cloud}.yaml").resolve()
+
+
+def _provider_name(cloud: str, cloud_cfg: dict | None = None) -> str:
+    return (cloud_cfg or {}).get("provider") or cloud
+
+
+def _cloud_provider_or_none(provider_name: str):
+    try:
+        return get_provider(provider_name)
+    except ValueError:
+        return None
 
 
 def load_config(config_path: Path) -> DeployConfig:
     config_path = config_path.resolve()
     raw = yaml.safe_load(config_path.read_text())
     name = raw.get("name") or config_path.stem
+    project_file = _resolve_path(raw.get("project_file") or PROJECT_TEMPLATE, base=config_path.parent)
+    if not project_file.is_file():
+        raise ValueError(f"{config_path}: project_file not found: {project_file}")
     monitoring = load_monitoring_config(raw, config_name=name, config_path=config_path)
     clouds = raw.get("clouds") or {}
     if not clouds:
@@ -236,9 +285,10 @@ def load_config(config_path: Path) -> DeployConfig:
 
     cloud_derived: dict[str, dict] = {}
     for cloud_name, cloud_cfg in clouds.items():
-        kc_path = _kubeconfig_path(cloud_name)
-        if kc_path.exists():
-            cloud_derived[cloud_name] = get_provider(cloud_name).parse_kubeconfig(kc_path)
+        kc_path = _kubeconfig_path(cloud_name, cloud_cfg, config_dir=config_path.parent)
+        provider = _cloud_provider_or_none(_provider_name(cloud_name, cloud_cfg))
+        if kc_path.exists() and provider:
+            cloud_derived[cloud_name] = provider.parse_kubeconfig(kc_path)
 
     participants: list[Participant] = []
     servers: list[str] = []
@@ -256,15 +306,19 @@ def load_config(config_path: Path) -> DeployConfig:
             servers.append(entry["name"])
 
         cloud_cfg = clouds[cloud] or {}
+        provider_name = _provider_name(cloud, cloud_cfg)
+        if not _cloud_provider_or_none(provider_name):
+            raise ValueError(f"{config_path}: cloud {cloud!r} uses unknown provider {provider_name!r}")
         merged = {**cloud_cfg, **entry}
         prepare = copy.deepcopy(entry.get("prepare") or cloud_cfg.get("prepare") or {})
         if not prepare:
             raise ValueError(f"{config_path}: participant {entry['name']} has no prepare config")
         if prepare.get("runtime") != K8S_RUNTIME:
             raise ValueError(f"{config_path}: participant {entry['name']} prepare.runtime must be '{K8S_RUNTIME}'")
-        kc_path = _kubeconfig_path(cloud)
+        kc_path = _kubeconfig_path(cloud, cloud_cfg, config_dir=config_path.parent)
         pvc_config = merged.get("pvc_config") or {}
         study_data = _normalize_study_data(merged.get("study_data"))
+        create_namespace, delete_namespace = _namespace_options(config_path, cloud, cloud_cfg, entry)
 
         participants.append(
             Participant(
@@ -273,26 +327,32 @@ def load_config(config_path: Path) -> DeployConfig:
                 kubeconfig=str(kc_path),
                 role=role,
                 cloud=cloud,
+                provider=provider_name,
                 prepare=prepare,
                 helm_overrides=list(merged.get("helm_overrides") or []),
                 pvc_config=pvc_config,
                 pod_annotations=merged.get("pod_annotations") or {},
                 study_data=study_data,
                 pull_policy=merged.get("pull_policy"),
+                create_namespace=create_namespace,
+                delete_namespace=delete_namespace,
             )
         )
 
     if len(servers) != 1:
         raise ValueError(f"{config_path}: expected exactly one server participant, found {len(servers)}: {servers}")
     server_cloud = next(p.cloud for p in participants if p.role == "server")
+    server_provider = next(p.provider for p in participants if p.role == "server")
 
     gcp = cloud_derived.get("gcp", {})
     aws = cloud_derived.get("aws", {})
     azure = clouds.get("azure") or {}
     return DeployConfig(
         name=name,
+        project_file=project_file,
         participants=participants,
         server_cloud=server_cloud,
+        server_provider=server_provider,
         monitoring=monitoring,
         gcp_project=gcp.get("project"),
         gcp_region=gcp.get("region"),
@@ -300,6 +360,7 @@ def load_config(config_path: Path) -> DeployConfig:
         aws_eks_cluster_name=aws.get("eks_cluster_name"),
         azure_resource_group=azure.get("resource_group"),
         azure_location=azure.get("location"),
+        cloud_configs=clouds,
     )
 
 
@@ -377,21 +438,25 @@ def helm(kubeconfig: str, *args) -> subprocess.CompletedProcess:
     return run(["helm", "--kubeconfig", kubeconfig] + list(args))
 
 
-def check_auth(clouds_used: set):
+def check_auth(providers_used: set):
     print("Checking cloud auth ...")
-    for cloud in CLOUD_ORDER:
-        if cloud not in clouds_used:
+    for provider_name in CLOUD_ORDER:
+        if provider_name not in providers_used:
             continue
-        provider = get_provider(cloud)
+        provider = get_provider(provider_name)
+        if not provider.auth_check_cmd:
+            continue
         r = run_quiet(provider.auth_check_cmd)
         if r.returncode != 0:
             sys.exit(provider.auth_failed_message)
     print("  Auth OK")
 
 
-def check_auth_for(cloud: str):
+def check_auth_for(provider_name: str):
     """Re-check auth before cloud-specific operations."""
-    provider = get_provider(cloud)
+    provider = get_provider(provider_name)
+    if not provider.auth_check_cmd:
+        return
     r = run_quiet(provider.auth_check_cmd)
     if r.returncode != 0:
         sys.exit(provider.auth_expired_message)
@@ -409,7 +474,26 @@ def _safe_resource_name(name: str) -> str:
 
 
 def _participant_state(p: Participant) -> dict:
-    return {"kubeconfig": p.kubeconfig, "namespace": p.namespace, "cloud": p.cloud, "role": p.role}
+    return {
+        "kubeconfig": p.kubeconfig,
+        "namespace": p.namespace,
+        "cloud": p.cloud,
+        "provider": p.provider,
+        "role": p.role,
+        "delete_namespace": p.delete_namespace,
+        "pvc_names": list(p.pvc_config),
+        "cleanup_pvc_names": _participant_cleanup_pvc_names(p),
+    }
+
+
+def _participant_cleanup_pvc_names(p: Participant) -> list[str]:
+    names = list(p.pvc_config)
+    for datasets in (p.study_data or {}).values():
+        for dataset in (datasets or {}).values():
+            source = (dataset or {}).get("source")
+            if source:
+                names.append(source)
+    return list(dict.fromkeys(names))
 
 
 def deployment_state(config: DeployConfig, *, gcp_project: str | None = None) -> dict:
@@ -420,9 +504,10 @@ def deployment_state(config: DeployConfig, *, gcp_project: str | None = None) ->
         "gcp_region": config.gcp_region or "us-central1",
         "aws_region": config.aws_region,
         "server_cloud": config.server_cloud,
+        "server_provider": config.server_provider,
         "azure_resource_group": config.azure_resource_group,
         "azure_location": config.azure_location,
-        "azure_pip_name": ip_name if config.server_cloud == "azure" else None,
+        "azure_pip_name": ip_name if config.server_provider == "azure" else None,
         "participants": {p.name: _participant_state(p) for p in config.participants},
     }
 
@@ -436,10 +521,59 @@ def helm_release_exists(kubeconfig: str, name: str, ns: str) -> bool:
 
 
 def nvflare_cmd() -> str:
+    override = os.environ.get("NVFLARE_CMD")
+    if override:
+        return override
     if DRY_RUN:
         return "nvflare"
     nvflare = REPO_ROOT / ".venv" / "bin" / "nvflare"
     return str(nvflare) if nvflare.exists() else "nvflare"
+
+
+def _project_deploy_participants(project: dict, project_file: Path) -> dict[str, str]:
+    participants = project.get("participants")
+    if not isinstance(participants, list):
+        raise ValueError(f"{project_file}: project participants must be a YAML list")
+
+    result = {}
+    for entry in participants:
+        if not isinstance(entry, dict):
+            raise ValueError(f"{project_file}: project participant must be a YAML mapping: {entry}")
+        participant_type = entry.get("type")
+        if participant_type not in VALID_ROLES:
+            continue
+        name = entry.get("name")
+        if not name:
+            raise ValueError(f"{project_file}: project {participant_type} participant is missing name")
+        if name in result:
+            raise ValueError(f"{project_file}: duplicate project participant name: {name}")
+        result[name] = participant_type
+    return result
+
+
+def _validate_project_participants(project: dict, config: DeployConfig) -> None:
+    expected = {p.name: p.role for p in config.participants}
+    actual = _project_deploy_participants(project, config.project_file)
+    if actual == expected:
+        return
+
+    expected_items = ", ".join(f"{name}:{role}" for name, role in sorted(expected.items()))
+    actual_items = ", ".join(f"{name}:{role}" for name, role in sorted(actual.items()))
+    raise ValueError(
+        f"{config.project_file}: project participants do not match {config.name} participants. "
+        f"deploy.py no longer generates participants; update the project YAML instead. "
+        f"project=[{actual_items}] config=[{expected_items}]"
+    )
+
+
+def render_project(server_ip: str, config: DeployConfig) -> str:
+    project_text = config.project_file.read_text()
+    project_text = project_text.replace("__SERVER_IP__", server_ip)
+    project = yaml.safe_load(project_text)
+    if not isinstance(project, dict):
+        raise ValueError(f"{config.project_file}: project file must be a YAML mapping")
+    _validate_project_participants(project, config)
+    return project_text
 
 
 # ---------------------------------------------------------------------------
@@ -447,6 +581,7 @@ def nvflare_cmd() -> str:
 # ---------------------------------------------------------------------------
 def provision(server_ip: str, config: DeployConfig) -> Path:
     print("Provisioning ...")
+    project_text = render_project(server_ip, config)
     if DRY_RUN:
         project_file = WORK_DIR / "project.yml"
         provision_dir = WORK_DIR / "provision"
@@ -454,24 +589,8 @@ def provision(server_ip: str, config: DeployConfig) -> Path:
         return Path("<prod_dir>")
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
-    project_text = PROJECT_TEMPLATE.read_text()
-    project_text = project_text.replace("__SERVER_IP__", server_ip)
-    project = yaml.safe_load(project_text)
-
-    template_server = next(e for e in project["participants"] if e.get("type") == "server")
-    template_admin = next(e for e in project["participants"] if e.get("type") == "admin")
-
-    new_participants = []
-    for p in config.participants:
-        if p.role == "server":
-            new_participants.append({**template_server, "name": p.name})
-        else:
-            new_participants.append({"name": p.name, "type": "client", "org": "nvidia"})
-    new_participants.append(template_admin)
-    project["participants"] = new_participants
-
     project_file = WORK_DIR / "project.yml"
-    project_file.write_text(yaml.dump(project, default_flow_style=False, sort_keys=False))
+    project_file.write_text(project_text)
 
     provision_dir = WORK_DIR / "provision"
     if provision_dir.exists():
@@ -483,6 +602,19 @@ def provision(server_ip: str, config: DeployConfig) -> Path:
     if not prod_dirs:
         sys.exit("Provisioning produced no output")
     return prod_dirs[-1]
+
+
+def configure_admin_endpoint(prod_dir: Path, host: str, port: int):
+    fed_admin_path = prod_dir / "admin@nvidia.com" / "startup" / "fed_admin.json"
+    if DRY_RUN:
+        print(f"  Would set admin endpoint in {_mask(str(fed_admin_path))} to {host}:{port}")
+        return
+    data = json.loads(fed_admin_path.read_text())
+    data.setdefault("admin", {})
+    data["admin"]["host"] = host
+    data["admin"]["port"] = port
+    fed_admin_path.write_text(json.dumps(data, indent=2) + "\n")
+    print(f"Configured local admin endpoint {host}:{port}")
 
 
 def _write_yaml_file(path: Path, data: dict):
@@ -528,9 +660,9 @@ def teardown_monitoring_stack(config: DeployConfig) -> bool:
     server = next(p for p in config.participants if p.role == "server")
     print(f"Tearing down monitoring stack ({monitoring.namespace}) ...")
     try:
-        check_auth_for(server.cloud)
+        check_auth_for(server.provider)
     except SystemExit:
-        print(f"  Auth failed for {server.cloud} — skipping")
+        print(f"  Auth failed for {server.provider} — skipping")
         return False
     r = run(
         [
@@ -670,12 +802,18 @@ def deploy_participant(
     print(f"Deploying {p.name} → {p.namespace}")
     print(f"{'=' * 60}")
 
-    check_auth_for(p.cloud)
+    check_auth_for(p.provider)
 
     # 1. Namespace
     if not namespace_exists(p.kubeconfig, p.namespace):
-        print(f"  Creating namespace {p.namespace}")
-        kubectl(p.kubeconfig, "create", "ns", p.namespace)
+        if not p.create_namespace:
+            if DRY_RUN:
+                print(f"  Namespace {p.namespace} must already exist")
+            else:
+                raise RuntimeError(f"Namespace {p.namespace} does not exist and create_namespace is disabled")
+        else:
+            print(f"  Creating namespace {p.namespace}")
+            kubectl(p.kubeconfig, "create", "ns", p.namespace)
     else:
         print(f"  Namespace {p.namespace} exists")
 
@@ -758,8 +896,11 @@ def deploy_participant(
     helm_args += p.helm_overrides
 
     if p.role == "server" and server_ip:
-        helm_args += ["--set", "service.type=LoadBalancer"]
-        helm_args += get_provider(p.cloud).server_service_helm_args(server_ip=server_ip, state=state or {})
+        provider = get_provider(p.provider)
+        service_type = provider.server_service_type(state=state or {})
+        if service_type:
+            helm_args += ["--set", f"service.type={service_type}"]
+        helm_args += provider.server_service_helm_args(server_ip=server_ip, state=state or {})
 
     for k, v in p.pod_annotations.items():
         escaped = k.replace(".", r"\.").replace("/", r"\/")
@@ -826,14 +967,14 @@ def deploy_participants(participants: list[Participant], kit_dirs: dict[str, Pat
 def cmd_up(args):
     config = load_config(Path(args.config))
     participants = config.participants
-    clouds_used = {p.cloud for p in participants}
-    check_auth(clouds_used)
+    providers_used = {p.provider for p in participants}
+    check_auth(providers_used)
 
-    server_provider = get_provider(config.server_cloud)
-    server_provider.validate_server_config(config)
+    server_provider_impl = get_provider(config.server_provider)
+    server_provider_impl.validate_server_config(config)
 
     gcp_project = None
-    if "gcp" in clouds_used:
+    if "gcp" in providers_used:
         gcp_project = (
             config.gcp_project or run(["gcloud", "config", "get-value", "project"], capture=True).stdout.strip()
         )
@@ -841,10 +982,11 @@ def cmd_up(args):
     aws_region = config.aws_region
 
     state = deployment_state(config, gcp_project=gcp_project)
-    server_ip, ip_name = server_provider.reserve_ip(
+    server_ip, ip_name = server_provider_impl.reserve_ip(
         run=run,
         ip_tag=state["ip_name"],
         state=state,
+        config=config,
         gcp_project=gcp_project,
         gcp_region=gcp_region,
         aws_region=aws_region,
@@ -852,12 +994,17 @@ def cmd_up(args):
         azure_location=config.azure_location,
     )
 
-    server_provider.prepare_server_state(run=run, state=state, config=config, ip_name=ip_name, aws_region=aws_region)
+    server_provider_impl.prepare_server_state(
+        run=run, state=state, config=config, ip_name=ip_name, aws_region=aws_region
+    )
     state["server_ip"] = server_ip
 
     deploy_monitoring_stack(config)
 
     prod_dir = provision(server_ip, config)
+    admin_endpoint = server_provider_impl.admin_endpoint(config=config, server_ip=server_ip)
+    if admin_endpoint:
+        configure_admin_endpoint(prod_dir, host=admin_endpoint[0], port=admin_endpoint[1])
     kit_dirs = prepare_runtime_kits(prod_dir, participants, monitoring=config.monitoring)
 
     deploy_participants(participants, kit_dirs, server_ip=server_ip, state=state)
@@ -869,16 +1016,78 @@ def cmd_up(args):
     print(f"{'=' * 60}")
 
 
+def _pods_using_pvcs(kubeconfig: str, ns: str, pvc_names: list[str]) -> list[str]:
+    # Reused namespaces cannot be removed wholesale during teardown. Find any
+    # leftover pods that still mount deployment-owned PVCs so the PVC cleanup
+    # below does not hang on active volume attachments.
+    if not pvc_names:
+        return []
+    r = run(["kubectl", "--kubeconfig", kubeconfig, "-n", ns, "get", "pods", "-o", "json"], check=False, capture=True)
+    if r.returncode != 0:
+        detail = f": {r.stderr.strip()}" if r.stderr else ""
+        print(f"  Warning: failed to list pods before PVC cleanup{detail}")
+        return []
+    try:
+        data = json.loads(r.stdout or "{}")
+    except json.JSONDecodeError as e:
+        print(f"  Warning: failed to parse pod list before PVC cleanup: {e}")
+        return []
+
+    pvc_set = set(pvc_names)
+    pod_names = []
+    for item in data.get("items") or []:
+        name = (item.get("metadata") or {}).get("name")
+        if not name:
+            continue
+        volumes = (item.get("spec") or {}).get("volumes") or []
+        if any((volume.get("persistentVolumeClaim") or {}).get("claimName") in pvc_set for volume in volumes):
+            pod_names.append(name)
+    return sorted(set(pod_names))
+
+
+def delete_pods_using_pvcs(kubeconfig: str, ns: str, pvc_names: list[str]):
+    pod_names = _pods_using_pvcs(kubeconfig, ns, pvc_names)
+    for pod_name in pod_names:
+        run(
+            [
+                "kubectl",
+                "--kubeconfig",
+                kubeconfig,
+                "-n",
+                ns,
+                "delete",
+                "pod",
+                pod_name,
+                "--ignore-not-found",
+                "--timeout=60s",
+            ],
+            check=False,
+        )
+
+
 def teardown_participant(name: str, info: dict) -> bool:
-    kc, ns, cloud = info["kubeconfig"], info["namespace"], info.get("cloud", "")
+    kc, ns = info["kubeconfig"], info["namespace"]
+    provider_name = info.get("provider") or info.get("cloud", "")
     print(f"Tearing down {name} ({ns}) ...")
     try:
-        check_auth_for(cloud)
+        check_auth_for(provider_name)
     except SystemExit:
         print(f"  Auth failed for {kc} — skipping")
         return False
 
     run(["helm", "--kubeconfig", kc, "uninstall", name, "-n", ns], check=False)
+    if not info.get("delete_namespace", True):
+        # In shared namespaces, delete only this participant's Helm release,
+        # transient pods using its PVCs, and its workspace PVCs. Study-data PVCs
+        # can appear in cleanup_pvc_names to unblock pods, but are not deleted.
+        delete_pods_using_pvcs(kc, ns, info.get("cleanup_pvc_names") or info.get("pvc_names") or [])
+        for pvc_name in info.get("pvc_names") or []:
+            run(
+                ["kubectl", "--kubeconfig", kc, "-n", ns, "delete", "pvc", pvc_name, "--ignore-not-found"],
+                check=False,
+            )
+        return True
+
     r = run(["kubectl", "--kubeconfig", kc, "delete", "ns", ns, "--ignore-not-found", "--timeout=120s"], check=False)
     if r.returncode != 0:
         return False
@@ -928,19 +1137,37 @@ def cmd_down(args):
         print("Partial teardown. Re-run down with the same config after fixing the failure.")
         sys.exit(1)
 
-    get_provider(state.get("server_cloud", "gcp")).release_ip(run=run, ip_name=state["ip_name"], state=state)
+    get_provider(state.get("server_provider") or state.get("server_cloud", "gcp")).release_ip(
+        run=run, ip_name=state["ip_name"], state=state
+    )
     print("Destroyed.")
 
 
 def cmd_status(args):
     config = load_config(Path(args.config))
     state = deployment_state(config)
+    status_label, status_value = get_provider(config.server_provider or config.server_cloud).status_endpoint(
+        state=state, config=config
+    )
 
-    print(f"IP name:   {state.get('ip_name', 'N/A')}")
+    print(f"{status_label}:   {status_value}")
     for name, info in state.get("participants", {}).items():
         kc, ns = info["kubeconfig"], info["namespace"]
         print(f"\n{name} ({ns}):")
-        r = run_quiet(["kubectl", "--kubeconfig", kc, "-n", ns, "get", "pods", "--no-headers"])
+        r = run_quiet(
+            [
+                "kubectl",
+                "--kubeconfig",
+                kc,
+                "-n",
+                ns,
+                "get",
+                "pods",
+                "-l",
+                f"app.kubernetes.io/name={name}",
+                "--no-headers",
+            ]
+        )
         if r.returncode == 0 and r.stdout.strip():
             for line in r.stdout.strip().split("\n"):
                 print(f"  {line}")

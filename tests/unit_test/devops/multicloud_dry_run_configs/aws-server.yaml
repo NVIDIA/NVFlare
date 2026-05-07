@@ -1,4 +1,5 @@
 name: aws-server
+project_file: aws-server-project.yml
 
 clouds:
   gcp:
