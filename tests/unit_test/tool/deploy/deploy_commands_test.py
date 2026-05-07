@@ -28,6 +28,7 @@ from nvflare.tool.deploy.deploy_commands import (
     GPU_RESOURCE_MANAGER,
     HELM_RELEASE_NAME_MAX_LENGTH,
     PROCESS_CLIENT_LAUNCHER,
+    K8S_PARENT_PYTHON_PATH,
     _k8s_release_name,
     prepare_deployment,
 )
@@ -358,6 +359,7 @@ def test_prepare_k8s_server_exposes_admin_port_only_when_distinct(tmp_path, caps
     values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
     assert values["fedLearnPort"] == 8002
     assert values["adminPort"] == expected_admin_port
+    assert values["command"] == ["/usr/local/bin/python3"]
 
     tcp_services = (output / "helm_chart" / "templates" / "server-tcp-services.yaml").read_text()
     assert ".Values.fedLearnPort" in tcp_services
@@ -415,6 +417,63 @@ def test_prepare_server_warns_when_snapshot_persistor_shape_is_unexpected(tmp_pa
     assert "args" not in resources["snapshot_persistor"]["args"]["storage"]
     assert _component(resources, "job_manager")["args"]["uri_root"] == "/var/tmp/nvflare/workspace/jobs-storage"
 
+def test_prepare_k8s_server_uses_parent_python_path_for_chart_command(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev", "python_path": "/opt/conda/bin/python"},
+            "job_launcher": {"default_python_path": "/usr/bin/python3"},
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["command"] == ["/opt/conda/bin/python"]
+
+
+def test_prepare_k8s_server_does_not_use_job_launcher_python_path_for_chart_command(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+            "job_launcher": {"default_python_path": "/usr/bin/python3"},
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["command"] == [K8S_PARENT_PYTHON_PATH]
+
+
+def test_prepare_k8s_launcher_default_python_path_matches_parent_default(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher = _component(resources, "k8s_launcher")
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert launcher["args"]["default_python_path"] == K8S_PARENT_PYTHON_PATH
+    assert values["command"] == [K8S_PARENT_PYTHON_PATH]
 
 def test_prepare_docker_reads_org_from_cert_without_sub_start(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
@@ -524,7 +583,7 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
             "job_launcher": {
                 "config_file_path": None,
                 "pending_timeout": 7,
-                "default_python_path": "/usr/bin/python",
+                "default_python_path": "/usr/bin/python3",
                 "job_pod_security_context": {"runAsNonRoot": True},
             },
         },
@@ -537,7 +596,8 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert launcher["path"] == "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
     assert launcher["args"]["namespace"] == "flare"
     assert launcher["args"]["study_data_pvc_file_path"] == "/workspace/local/study_data.yaml"
-    assert launcher["args"]["default_python_path"] == "/usr/bin/python"
+    assert launcher["args"]["workspace_mount_path"] == "/workspace"
+    assert launcher["args"]["default_python_path"] == "/usr/bin/python3"
     assert launcher["args"]["pending_timeout"] == 7
     assert launcher["args"]["security_context"] == {"runAsNonRoot": True}
 
@@ -562,6 +622,7 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert values["persistence"]["workspace"]["volumeName"] == "workspace"
     assert values["persistence"]["workspace"]["mountPath"] == "/workspace"
     assert values["port"] == 9102
+    assert values["command"] == [K8S_PARENT_PYTHON_PATH]
     assert values["securityContext"] == {"runAsUser": 1000}
     assert values["resources"] == {"requests": {"cpu": "1", "memory": "2Gi"}}
     assert (output / "helm_chart" / "templates" / "client-deployment.yaml").exists()
@@ -793,6 +854,10 @@ def test_prepare_rejects_admin_kit_without_writing_output(tmp_path, capsys):
         (
             {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev", "workspace_mount_path": []}},
             "parent.workspace_mount_path",
+        ),
+        (
+            {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev", "python_path": 7}},
+            "parent.python_path",
         ),
         (
             {

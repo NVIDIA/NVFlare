@@ -356,7 +356,8 @@ Constructor parameters:
 | `timeout` | `None` | Wall-clock seconds for `enter_states([RUNNING])`; also `_max_stuck_count`. |
 | `namespace` | `"default"` | Kubernetes namespace. |
 | `pending_timeout` | `120` | Stuck-detection threshold (poll iterations) when `timeout` is `None`. |
-| `default_python_path` | `"/usr/local/bin/python"` | Default Python executable in the pod command. Job meta can override with `launcher_spec[site][k8s].python_path`. |
+| `default_python_path` | `"/usr/local/bin/python3"` | Default Python executable in the pod command. Job meta can override with `launcher_spec[site][k8s].python_path`. |
+| `workspace_mount_path` | `"/var/tmp/nvflare/workspace"` | In-container path where job pods mount the transferred job workspace and startup kit. `nvflare deploy prepare` sets this from `parent.workspace_mount_path`. |
 | `ephemeral_storage` | `"1Gi"` | Default job pod workspace `emptyDir` size and `ephemeral-storage` request/limit. Job meta can override with `launcher_spec[site][k8s].ephemeral_storage`. |
 
 Launch sequence:
@@ -366,7 +367,7 @@ Launch sequence:
 | 0 | Lazy init: load kubeconfig and create `CoreV1Api`. |
 | 1 | Sanitize job ID via `uuid4_to_rfc1123`. Extract `site_name`, `job_image` from `get_job_launcher_spec(job_meta, site_name, "k8s")`. Raise if `WORKSPACE_OBJECT` missing. |
 | 2 | Read `JOB_PROCESS_ARGS`; raise if absent or `EXE_MODULE` missing. Resolve dataset PVC mounts from `study_data_pvc_file_path` when the YAML file contains entries for the job study. |
-| 3 | Build `job_config`: name, image, args from `get_module_args()`. Use `launcher_spec[site][k8s].python_path` for the pod command when present, falling back to `default_python_path`. Add the workspace `emptyDir.sizeLimit` and `resources.requests/limits["ephemeral-storage"]` from `launcher_spec[site][k8s].ephemeral_storage` when present, falling back to the launcher default. Add K8s `resources.limits` from `launcher_spec` `num_of_gpus`, `cpu`, and `memory` when present; `num_of_gpus` falls back to flat `resource_spec[site]` for backward compatibility. Missing study entries skip data PVC mounts. |
+| 3 | Build `job_config`: name, image, args from `get_module_args()`. Use `launcher_spec[site][k8s].python_path` for the pod command when present, falling back to `default_python_path`. Mount the job workspace at `workspace_mount_path`, mount the startup-kit Secret at `<workspace_mount_path>/startup`, and set custom-code `PYTHONPATH` under `workspace_mount_path`. Add the workspace `emptyDir.sizeLimit` and `resources.requests/limits["ephemeral-storage"]` from `launcher_spec[site][k8s].ephemeral_storage` when present, falling back to the launcher default. Add K8s `resources.limits` from `launcher_spec` `num_of_gpus`, `cpu`, and `memory` when present; `num_of_gpus` falls back to flat `resource_spec[site]` for backward compatibility. Missing study entries skip data PVC mounts. |
 | 4 | Create `K8sJobHandle`. |
 | 5 | `core_v1.create_namespaced_pod()`. On any exception: set `terminal_state = TERMINATED`, return handle. |
 | 6 | `job_handle.enter_states([RUNNING])`. On any `BaseException`: `terminate()` then re-raise. |
@@ -536,6 +537,7 @@ See [docker_job_launcher_design.md](docker_job_launcher_design.md) for the full 
     "config_file_path": "/path/to/kubeconfig",
     "workspace_pvc": "nvflare-workspace-pvc",
     "study_data_pvc_file_path": "/path/to/study_data.yaml",
+    "workspace_mount_path": "/var/tmp/nvflare/workspace",
     "timeout": 120,
     "namespace": "nvflare"
   }
