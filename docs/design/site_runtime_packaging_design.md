@@ -339,8 +339,7 @@ Supported `parent` keys:
 
 - `python_path`
   - Required: no
-  - Default: `job_launcher.default_python_path` when set, otherwise
-    `/usr/local/bin/python3`
+  - Default: `/usr/local/bin/python3`
   - Description: Python executable used by the parent server/client pod command
     in the generated Helm chart. This controls SP/CP parent pods; dynamically
     launched job pods can still override the job launcher default with
@@ -375,8 +374,8 @@ Supported `job_launcher` keys:
   - Default: `/usr/local/bin/python`
   - Description: Default Python executable used in job pods. Individual jobs
     can override it with `launcher_spec[<site>][k8s].python_path`. This value
-    is also used for the parent pod command when `parent.python_path` is not
-    set.
+    does not control the SP/CP parent pod command; use `parent.python_path` for
+    that command.
 
 - `job_pod_security_context`
   - Required: no

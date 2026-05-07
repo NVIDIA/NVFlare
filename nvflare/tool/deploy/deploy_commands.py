@@ -672,7 +672,6 @@ def _docker_parent_command(kit_info: KitInfo) -> str:
 
 def _write_helm_chart(kit_info: KitInfo, config: dict[str, Any]) -> Path:
     parent = config.get("parent") or {}
-    job_launcher = config.get("job_launcher") or {}
     docker_image = parent["docker_image"]
     parent_port = parent.get("parent_port", 8102)
     workspace_pvc = parent.get("workspace_pvc", "nvflws")

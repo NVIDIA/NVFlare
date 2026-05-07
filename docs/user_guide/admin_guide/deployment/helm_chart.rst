@@ -17,7 +17,7 @@ Kubernetes deployment has two runtime layers:
   ``nvflare deploy prepare``. The parent pod mounts the configured workspace PVC
   at ``parent.workspace_mount_path`` and reads ``startup/`` and ``local/`` from
   that PVC. Its Python executable is set by ``parent.python_path`` or, when
-  omitted, ``job_launcher.default_python_path``.
+  omitted, defaults to ``/usr/local/bin/python3``.
 * A **job pod** is created dynamically by ``ServerK8sJobLauncher`` or
   ``ClientK8sJobLauncher`` for each submitted job. Job pod image, Python path,
   CPU, memory, GPU, and ephemeral storage settings come from the job's
@@ -99,8 +99,8 @@ The runtime config controls site-level Kubernetes settings:
   ``local/resources.json.default`` so the parent process can create job pods.
   ``config_file_path`` may be empty for in-cluster configuration, and
   ``default_python_path`` controls SJ/CJ job pods when a job does not override
-  ``launcher_spec[site][k8s].python_path``. It also provides the SP/CP parent
-  pod Python path when ``parent.python_path`` is not set.
+  ``launcher_spec[site][k8s].python_path``. It does not control the SP/CP parent
+  pod Python path; use ``parent.python_path`` for that command.
 
 Prepare Cluster Storage
 =======================
