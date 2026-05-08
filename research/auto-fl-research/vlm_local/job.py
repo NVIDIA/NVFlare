@@ -82,6 +82,9 @@ def define_parser():
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--weight_decay", type=float, default=0.0)
     parser.add_argument("--fedproxloss_mu", type=float, default=0.0)
+    parser.add_argument("--feddyn_alpha", type=float, default=0.0)
+    parser.add_argument("--sam_rho", type=float, default=0.0)
+    parser.add_argument("--sam_eps", type=float, default=1e-12)
     parser.add_argument("--evaluate_local", action="store_true")
     parser.add_argument("--eval_global_every_round", action="store_true")
     parser.add_argument("--no_deterministic_training", action="store_true")
@@ -213,6 +216,12 @@ def build_train_args(args):
         args.weight_decay,
         "--fedproxloss_mu",
         args.fedproxloss_mu,
+        "--feddyn_alpha",
+        args.feddyn_alpha,
+        "--sam_rho",
+        args.sam_rho,
+        "--sam_eps",
+        args.sam_eps,
         "--max_samples_per_site",
         args.max_samples_per_site,
         "--max_eval_samples",
@@ -276,6 +285,12 @@ def main():
         raise ValueError("local_train_steps must be >= 0")
     if args.site_local_steps_spec and args.local_train_steps <= 0:
         raise ValueError("--site_local_steps_spec requires --local_train_steps > 0")
+    if args.feddyn_alpha < 0.0:
+        raise ValueError("feddyn_alpha must be >= 0")
+    if args.sam_rho < 0.0:
+        raise ValueError("sam_rho must be >= 0")
+    if args.sam_eps <= 0.0:
+        raise ValueError("sam_eps must be > 0")
     if args.model_arch != "qwen3vl_lora_adapter":
         raise ValueError("med-vlm requires --model_arch qwen3vl_lora_adapter")
 

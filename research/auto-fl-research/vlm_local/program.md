@@ -257,6 +257,8 @@ Safe VLM-profile search axes include:
   single-GPU memory budget
 - `weight_decay`
 - FedProx via `--fedproxloss_mu`
+- client-local FedDyn-style regularization via `--feddyn_alpha`
+- sharpness-aware minimization via `--sam_rho` and `--sam_eps`
 - LoRA trainable module subsets with `--train_lora_modules`
 - `max_pixels`, `min_pixels`, and `max_new_tokens` when the campaign explicitly
   treats them as local runtime and quality knobs

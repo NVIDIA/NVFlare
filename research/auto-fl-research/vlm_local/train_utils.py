@@ -115,16 +115,7 @@ def evaluate_vlm_generative(
                     f1_sum += f1
                     n_seen += 1
                     if audit_samples > 0 and n_seen <= audit_samples:
-                        question = str(example.get("question", ""))
-                        gt_primary = str(example.get("gt_primary", ""))
-                        print(
-                            f"{audit_prefix}: sample={n_seen} "
-                            f"gen_tokens={len(trimmed_ids)} token_f1={f1:.4f}"
-                        )
-                        print(
-                            f"{audit_prefix}: redacted_text_lengths="
-                            f"question:{len(question)} gt_primary:{len(gt_primary)} prediction:{len(pred)}"
-                        )
+                        print("Prediction audit sample processed; details redacted.")
     finally:
         processor.tokenizer.padding_side = prior_padding_side
 

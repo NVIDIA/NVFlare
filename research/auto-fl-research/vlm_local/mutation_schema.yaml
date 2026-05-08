@@ -45,6 +45,14 @@ mutable_args:
   num_workers: {type: int, min: 0, max: 8}
   weight_decay: {type: float, min: 0.0, max: 0.001, log_scale: true}
   fedproxloss_mu: {type: float, min: 0.0, max: 1.0, log_scale: true}
+  feddyn_alpha:
+    type: float
+    min: 0.0
+    max: 0.001
+    log_scale: true
+    note: "Client-local dynamic regularization coefficient; preserves adapter DIFF uploads and does not add server-client metadata."
+  sam_rho: {type: float, min: 0.0, max: 0.2}
+  sam_eps: {type: float, min: 0.000000000001, max: 0.000001, log_scale: true}
   train_lora_modules:
     type: str
     note: "Comma-separated subset of q_proj,k_proj,v_proj,o_proj to train locally, or all."
@@ -165,6 +173,8 @@ literature_review:
     - client_drift
     - robust_aggregation
     - fedprox_regularization
+    - feddyn_local_regularization
+    - sharpness_aware_minimization
     - fedopt_server_optimization
     - adaptive_aggregation
     - optimizer_and_scheduler_tuning
