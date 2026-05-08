@@ -218,6 +218,16 @@ class _LogTailProducer(BaseChunkProducer):
         self.file = None
         self.inode = None
         self._draining = False  # True while doing the post-stop drain retry
+        # Bootstrap-tolerance bookkeeping: at job startup the receiver may not
+        # have registered its handler yet when the first chunk arrives, in
+        # which case the server replies EXECUTION_EXCEPTION and (without this
+        # tolerance) the stream tears down with a misleading ERROR log line
+        # and no further bytes are streamed. Until we see the first OK reply
+        # we treat an EXECUTION_EXCEPTION as a transient miss, roll the file
+        # offset back, and let produce() re-emit the same bytes.
+        self._first_ok_received = False
+        self._last_data_offset = None
+        self._last_was_data = False
         self._open_file()
 
     def _open_file(self):
@@ -267,10 +277,18 @@ class _LogTailProducer(BaseChunkProducer):
 
             # Read the next chunk from the current position.
             if self.file:
+                # Record the pre-read offset so process_replies() can roll back
+                # if the first send hits a bootstrap miss on the receiver.
+                if not self._first_ok_received:
+                    try:
+                        self._last_data_offset = self.file.tell()
+                    except OSError:
+                        self._last_data_offset = None
                 chunk = self.file.read(self.chunk_size)
                 if chunk:
                     self._draining = False  # new data arrived — reset drain state
                     self._last_send_time = time.time()
+                    self._last_was_data = True
                     result = Shareable()
                     result[KEY_DATA] = chunk
                     result[KEY_DATA_SIZE] = len(chunk)
@@ -300,6 +318,7 @@ class _LogTailProducer(BaseChunkProducer):
             # This lets the receiver distinguish "no new logs yet" from "sender died".
             if time.time() - self._last_send_time >= self._liveness_interval:
                 self._last_send_time = time.time()
+                self._last_was_data = False
                 hb = Shareable()
                 hb[KEY_HEARTBEAT] = True
                 hb[KEY_DATA] = None
@@ -320,6 +339,37 @@ class _LogTailProducer(BaseChunkProducer):
         if self.file:
             self.file.close()
             self.file = None
+
+    def process_replies(self, replies, stream_ctx, fl_ctx):
+        # Tolerate exactly one bootstrap miss at job startup. The receiver
+        # registers its handler on START_RUN in the server's job subprocess;
+        # if the client's first chunk arrives before that handler is wired
+        # up, the server replies EXECUTION_EXCEPTION. Without this guard the
+        # base class logs an ERROR and tears the stream down for the rest of
+        # the job. Instead, until we see the first OK reply, treat a uniform
+        # EXECUTION_EXCEPTION as transient: roll the file offset back so the
+        # bytes are re-emitted on the next produce(), log at debug, and keep
+        # the stream alive. After the first OK reply, fall through to the
+        # base behavior so genuine receiver failures are still surfaced.
+        if not self._first_ok_received and replies:
+            transient = all(
+                reply.get_return_code(ReturnCode.OK) == ReturnCode.EXECUTION_EXCEPTION for reply in replies.values()
+            )
+            if transient:
+                if self._last_was_data and self.file is not None and self._last_data_offset is not None:
+                    try:
+                        self.file.seek(self._last_data_offset)
+                    except OSError as e:
+                        self.logger.warning(f"could not seek back after bootstrap miss: {e}")
+                self.logger.debug(
+                    f"transient bootstrap miss on first chunk to {list(replies)}; rolling back and retrying"
+                )
+                return None  # keep producing — receiver should be ready by next send
+
+        if any(reply.get_return_code(ReturnCode.OK) == ReturnCode.OK for reply in replies.values()):
+            self._first_ok_received = True
+
+        return super().process_replies(replies, stream_ctx, fl_ctx)
 
 
 class LogStreamer(StreamerBase):
