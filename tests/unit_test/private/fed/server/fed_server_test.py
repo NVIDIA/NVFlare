@@ -12,15 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from nvflare.apis.fl_constant import RunProcessKey
+from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
-from nvflare.private.defs import CellMessageHeaderKeys, ClientRegMsgKey, new_cell_message
+from nvflare.private.defs import CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState
 
@@ -253,6 +256,83 @@ class TestFederatedServer:
             assert result.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
             assert "disabled" in result.get_header(MessageHeaderKey.ERROR)
             assert "token" not in server.client_manager.clients
+
+    @pytest.mark.parametrize("failure_code", [JobReturnCode.ABORTED, ProcessExitCode.UNSAFE_COMPONENT])
+    def test_process_job_failure_stops_run_for_reported_abort_client_failures(self, failure_code):
+        with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
+            server = FederatedServer(
+                project_name="project_name",
+                min_num_clients=1,
+                max_num_clients=10,
+                cmd_modules=None,
+                heart_beat_timeout=600,
+                args=MagicMock(),
+                secure_train=False,
+                snapshot_persistor=MagicMock(),
+            )
+
+            server.client_manager.is_from_authorized_client = MagicMock(return_value=True)
+            fl_ctx = MagicMock()
+            server.engine.new_context.return_value = nullcontext(fl_ctx)
+            server.engine.job_runner.stop_run = MagicMock()
+            server.engine.job_runner.fail_run = MagicMock()
+
+            request = new_cell_message(
+                {
+                    CellMessageHeaderKeys.TOKEN: "token-1",
+                    MessageHeaderKey.ORIGIN: "site-1",
+                },
+                {
+                    JobFailureMsgKey.JOB_ID: "job-1",
+                    JobFailureMsgKey.CODE: failure_code,
+                    JobFailureMsgKey.REASON: "fatal client failure",
+                },
+            )
+
+            server.process_job_failure(request)
+
+            server.engine.job_runner.stop_run.assert_called_once_with("job-1", fl_ctx)
+            server.engine.job_runner.fail_run.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "failure_code",
+        [ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION, JobReturnCode.EXECUTION_ERROR],
+    )
+    def test_process_job_failure_fails_run_for_reported_exception_client_failures(self, failure_code):
+        with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
+            server = FederatedServer(
+                project_name="project_name",
+                min_num_clients=1,
+                max_num_clients=10,
+                cmd_modules=None,
+                heart_beat_timeout=600,
+                args=MagicMock(),
+                secure_train=False,
+                snapshot_persistor=MagicMock(),
+            )
+
+            server.client_manager.is_from_authorized_client = MagicMock(return_value=True)
+            fl_ctx = MagicMock()
+            server.engine.new_context.return_value = nullcontext(fl_ctx)
+            server.engine.job_runner.stop_run = MagicMock()
+            server.engine.job_runner.fail_run = MagicMock()
+
+            request = new_cell_message(
+                {
+                    CellMessageHeaderKeys.TOKEN: "token-1",
+                    MessageHeaderKey.ORIGIN: "site-1",
+                },
+                {
+                    JobFailureMsgKey.JOB_ID: "job-1",
+                    JobFailureMsgKey.CODE: failure_code,
+                    JobFailureMsgKey.REASON: "fatal client failure",
+                },
+            )
+
+            server.process_job_failure(request)
+
+            server.engine.job_runner.fail_run.assert_called_once_with("job-1", ProcessExitCode.EXCEPTION, fl_ctx)
+            server.engine.job_runner.stop_run.assert_not_called()
 
 
 class TestGetValidatedSiteConfig:

@@ -11,7 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import threading
+from unittest.mock import MagicMock, patch
 
+from nvflare.apis.fl_constant import RunProcessKey
+from nvflare.apis.job_launcher_spec import JobReturnCode
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.private.fed.server.server_engine import ServerEngine
 
 
@@ -116,3 +121,56 @@ def test_enable_clients_single_error_still_raises():
         assert str(e) == "persist failed"
     else:
         raise AssertionError("expected RuntimeError")
+
+
+def _make_wait_engine(run_process_info, exception_run_processes):
+    engine = ServerEngine.__new__(ServerEngine)
+    engine.lock = threading.Lock()
+    engine.run_processes = {"job-1": run_process_info}
+    engine.exception_run_processes = exception_run_processes
+    engine.engine_info = MagicMock()
+    engine.logger = MagicMock()
+    return engine
+
+
+def test_wait_for_complete_preserves_exception_return_code_set_by_fail_run():
+    """If fail_run already added the run to exception_run_processes with rc=EXCEPTION,
+    a non-zero SJ exit code from the subsequent abort must not overwrite it. Otherwise
+    list_jobs would show FINISHED:ABORTED instead of FINISHED:EXECUTION_EXCEPTION.
+    """
+    run_process_info = {
+        RunProcessKey.PARTICIPANTS: {},
+        RunProcessKey.PROCESS_RETURN_CODE: ProcessExitCode.EXCEPTION,
+    }
+    exception_run_processes = {"job-1": run_process_info}
+    engine = _make_wait_engine(run_process_info, exception_run_processes)
+    process = MagicMock()
+
+    with patch(
+        "nvflare.private.fed.server.server_engine.get_return_code",
+        return_value=JobReturnCode.ABORTED,
+    ):
+        engine.wait_for_complete(workspace="/tmp", job_id="job-1", process=process)
+
+    assert run_process_info[RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.EXCEPTION
+    assert "job-1" not in engine.run_processes
+
+
+def test_wait_for_complete_records_nonzero_return_code_for_first_failure():
+    """When no external path has marked the run as failed, wait_for_complete should
+    still record the SJ's non-zero exit code in exception_run_processes.
+    """
+    run_process_info = {RunProcessKey.PARTICIPANTS: {}}
+    exception_run_processes = {}
+    engine = _make_wait_engine(run_process_info, exception_run_processes)
+    process = MagicMock()
+
+    with patch(
+        "nvflare.private.fed.server.server_engine.get_return_code",
+        return_value=ProcessExitCode.EXCEPTION,
+    ):
+        engine.wait_for_complete(workspace="/tmp", job_id="job-1", process=process)
+
+    assert exception_run_processes["job-1"] is run_process_info
+    assert run_process_info[RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.EXCEPTION
+    assert "job-1" not in engine.run_processes
