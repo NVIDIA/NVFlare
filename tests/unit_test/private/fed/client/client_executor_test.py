@@ -22,8 +22,7 @@ from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey
-from nvflare.private.fed.client.client_executor import JobExecutor, REPORTABLE_JOB_FAILURES
-
+from nvflare.private.fed.client.client_executor import REPORTABLE_JOB_FAILURES, JobExecutor
 
 EXPECTED_REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: "exception",

@@ -35,7 +35,6 @@ from nvflare.security.logging import secure_format_exception, secure_log_traceba
 
 from .client_status import ClientStatus, get_status_message
 
-
 REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: PROCESS_EXIT_REASON[ProcessExitCode.EXCEPTION],
     ProcessExitCode.UNSAFE_COMPONENT: PROCESS_EXIT_REASON[ProcessExitCode.UNSAFE_COMPONENT],
