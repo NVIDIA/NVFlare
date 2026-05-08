@@ -297,9 +297,11 @@ Job Lifecycle States
    * - ``FINISHED_COMPLETED``
      - Job completed successfully
    * - ``FINISHED_ABORTED``
-     - Job aborted by admin or error
+     - Job aborted by admin request or by a failure classified as an abort
    * - ``FINISHED_EXECUTION_EXCEPTION``
-     - Job failed due to exception
+     - Job failed due to an execution exception, such as a launcher startup
+       failure or a Kubernetes job pod stuck in ``Pending``/``Unknown`` beyond
+       ``pending_timeout``
 
 
 JobRunner Architecture

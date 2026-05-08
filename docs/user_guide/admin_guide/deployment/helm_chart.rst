@@ -101,6 +101,11 @@ The runtime config controls site-level Kubernetes settings:
   ``default_python_path`` controls SJ/CJ job pods when a job does not override
   ``launcher_spec[site][k8s].python_path``. It does not control the SP/CP parent
   pod Python path; use ``parent.python_path`` for that command.
+  ``pending_timeout`` controls how long a dynamically launched job pod can stay
+  in ``Pending`` or ``Unknown`` before the launcher deletes it and reports the
+  run as an execution exception. The admin ``list_jobs`` command then shows
+  ``FINISHED:EXECUTION_EXCEPTION`` instead of treating the timeout as a user
+  abort.
 
 Prepare Cluster Storage
 =======================
@@ -318,6 +323,13 @@ If a pod is not ready, inspect the pod and recent events:
 Common issues are missing PVCs, the prepared kit not being copied into the
 workspace PVC, an image that the cluster cannot pull, or FL ports that are not
 reachable from clients and admin consoles.
+
+When a submitted job cannot start because an SJ or CJ job pod remains
+``Pending`` or ``Unknown`` longer than ``job_launcher.pending_timeout``, NVFLARE
+deletes the stuck pod and marks the job as ``FINISHED:EXECUTION_EXCEPTION``.
+Use ``kubectl describe pod`` and ``kubectl get events`` in the participant's
+namespace to check common cluster causes such as insufficient CPU, memory, GPU,
+ephemeral storage, unsatisfied PVCs, or image pull failures.
 
 Login With The Admin Console
 ============================
