@@ -46,7 +46,12 @@ if __name__ == "__main__":
             persistor=PTFileModelPersistor(model=Net()),
             shareable_generator=SimpleModelShareableGenerator(),
         ),
-        cse_config=CrossSiteEvalConfig(eval_task_timeout=300),
+        cse_config=CrossSiteEvalConfig(
+            # Default 10s is too short for clients that need to (re)load CIFAR-10
+            # before responding to cse_start, same race as swarm_start above.
+            start_task_timeout=300,
+            eval_task_timeout=300,
+        ),
     )
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
