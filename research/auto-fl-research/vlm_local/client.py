@@ -789,7 +789,7 @@ def main(args):
     )
     print(f"{site_name}: loading local Qwen3-VL runtime")
     vlm_processor, vlm_model = _build_vlm_runtime(args)
-    print(f"Creating VLM datasets for site={site_name}")
+    print("Creating VLM datasets for configured site")
     train_dataset, valid_dataset, dataset_name = create_vlm_datasets(
         site_name,
         vlm_repo_root=args.vlm_repo_root,
@@ -800,7 +800,7 @@ def main(args):
         max_eval_samples=args.max_eval_samples,
         reserve_validation_from_train=args.reserve_validation_from_train,
     )
-    print(f"{site_name}: dataset={dataset_name} train={len(train_dataset)} valid={len(valid_dataset)}")
+    print("VLM datasets loaded for configured site")
     train_collate_fn = create_vlm_train_collator(vlm_processor, vlm_repo_root=args.vlm_repo_root)
     train_loader, valid_loader = _create_seeded_data_loaders(
         train_dataset,
