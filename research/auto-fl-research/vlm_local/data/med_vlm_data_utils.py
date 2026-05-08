@@ -62,7 +62,8 @@ def _load_image(image_obj: Any) -> Image.Image:
     if isinstance(image_obj, Image.Image):
         return image_obj.convert("RGB")
     if isinstance(image_obj, (str, Path)):
-        return Image.open(image_obj).convert("RGB")
+        with Image.open(image_obj) as image:
+            return image.convert("RGB")
     if hasattr(image_obj, "convert"):
         return image_obj.convert("RGB")
     raise TypeError(f"Unsupported image object type: {type(image_obj)!r}")

@@ -64,7 +64,7 @@ def build_parser():
     parser = argparse.ArgumentParser(description="NVFlare Auto-FL client for 3-site medical VLM adapter FL")
     parser.add_argument("--task", choices=["med-vlm"], default="med-vlm")
     parser.add_argument("--vlm_repo_root", type=str, default=os.environ.get("VLM_BENCHMARK_ROOT", DEFAULT_VLM_REPO_ROOT))
-    parser.add_argument("--model_name_or_path", type=str, default="Qwen/Qwen3-VL-8B-Instruct")
+    parser.add_argument("--model_name_or_path", type=str, default="Qwen/Qwen3-VL-2B-Instruct")
     parser.add_argument("--hf_cache_dir", type=str, default=os.environ.get("HF_HOME"))
     parser.add_argument("--site_datasets", type=str, default=DEFAULT_SITE_DATASETS)
     parser.add_argument("--max_samples_per_site", type=int, default=-1)
@@ -395,7 +395,11 @@ def _build_vlm_runtime(args):
     from peft import LoraConfig, get_peft_model
     from transformers import AutoModelForImageTextToText, AutoProcessor
 
-    processor = AutoProcessor.from_pretrained(args.model_name_or_path)
+    pretrained_kwargs = {}
+    if args.hf_cache_dir:
+        pretrained_kwargs["cache_dir"] = args.hf_cache_dir
+
+    processor = AutoProcessor.from_pretrained(args.model_name_or_path, **pretrained_kwargs)
     if processor.tokenizer.pad_token_id is None:
         processor.tokenizer.pad_token = processor.tokenizer.eos_token
     if hasattr(processor, "image_processor"):
@@ -404,8 +408,9 @@ def _build_vlm_runtime(args):
 
     model = AutoModelForImageTextToText.from_pretrained(
         args.model_name_or_path,
-        dtype=_resolve_vlm_dtype(args),
+        torch_dtype=_resolve_vlm_dtype(args),
         attn_implementation=_resolve_attn(args.attn_implementation),
+        **pretrained_kwargs,
     )
     for param in model.parameters():
         param.requires_grad = False
@@ -782,7 +787,7 @@ def main(args):
         f"{site_name}: model_arch={args.model_arch} "
         f"params={count_parameters(model):,} max_model_params={args.max_model_params:,}"
     )
-    print(f"{site_name}: loading local Qwen3-VL runtime from {args.model_name_or_path}")
+    print(f"{site_name}: loading local Qwen3-VL runtime")
     vlm_processor, vlm_model = _build_vlm_runtime(args)
     print(f"Creating VLM datasets for site={site_name}")
     train_dataset, valid_dataset, dataset_name = create_vlm_datasets(
@@ -840,7 +845,7 @@ def main(args):
             # Sending no params lets FLModelUtils emit DataKind.METRICS instead of WEIGHT_DIFF.
             flare.send(
                 flare.FLModel(
-                    metrics={"token_f1": val_score_global_model, "accuracy": val_score_global_model},
+                    metrics={"token_f1": val_score_global_model},
                     meta={"NUM_STEPS_CURRENT_ROUND": 0},
                 )
             )
@@ -867,7 +872,6 @@ def main(args):
                 device=DEVICE,
             )
             metrics["token_f1"] = val_score_global_model
-            metrics["accuracy"] = val_score_global_model
             print(f"{site_name}: global validation token_f1={val_score_global_model:.4f}")
             summary_writer.add_scalar(
                 tag="val_score_global_model",

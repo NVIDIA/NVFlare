@@ -21,7 +21,7 @@ def _token_f1_score(pred: str, gt_answers: list[str]) -> float:
         from src.common import token_f1_score
 
         return token_f1_score(pred, gt_answers)
-    except Exception:
+    except ImportError:
         pred_tokens = pred.strip().lower().split()
         if not pred_tokens:
             return 0.0
@@ -73,7 +73,9 @@ def evaluate_vlm_generative(
         raise ValueError("evaluate_vlm_generative() called with an empty dataset.")
 
     model.eval()
-    pad_id = processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id
+    pad_id = processor.tokenizer.pad_token_id
+    if pad_id is None:
+        pad_id = processor.tokenizer.eos_token_id
     prior_padding_side = processor.tokenizer.padding_side
     processor.tokenizer.padding_side = "left"
 
@@ -113,14 +115,16 @@ def evaluate_vlm_generative(
                     f1_sum += f1
                     n_seen += 1
                     if audit_samples > 0 and n_seen <= audit_samples:
+                        question = str(example.get("question", ""))
+                        gt_primary = str(example.get("gt_primary", ""))
                         print(
                             f"{audit_prefix}: sample={n_seen} "
-                            f"dataset={example.get('dataset_name', '')} "
                             f"gen_tokens={len(trimmed_ids)} token_f1={f1:.4f}"
                         )
-                        print(f"{audit_prefix}: question={example.get('question', '')}")
-                        print(f"{audit_prefix}: gt_primary={example.get('gt_primary', '')}")
-                        print(f"{audit_prefix}: prediction={pred!r}")
+                        print(
+                            f"{audit_prefix}: redacted_text_lengths="
+                            f"question:{len(question)} gt_primary:{len(gt_primary)} prediction:{len(pred)}"
+                        )
     finally:
         processor.tokenizer.padding_side = prior_padding_side
 

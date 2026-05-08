@@ -26,8 +26,8 @@ This profile only keeps files that differ from the parent default:
 From the parent `auto-fl-research` directory:
 
 ```bash
-PYTHON="$PYTHON" scripts/validate_contract.py vlm_local/client.py
-PYTHON="$PYTHON" scripts/pycompile_sources.py vlm_local
+"${PYTHON:-python3}" scripts/validate_contract.py vlm_local/client.py
+"${PYTHON:-python3}" scripts/pycompile_sources.py vlm_local
 ```
 
 ## Run
@@ -38,6 +38,11 @@ From the parent `auto-fl-research` directory, use the shared runner with the VLM
 export PYTHON=vlm_local/.venv/bin/python
 export CLIENT_CONTRACT_PATH=vlm_local/client.py
 export JOB_SCRIPT=vlm_local/job.py
+export HF_HOME=/workspace/.hf_cache
+
+MODEL_REPO=/workspace/.hf_cache/hub/models--Qwen--Qwen3-VL-2B-Instruct
+MODEL_REF=$(cat "$MODEL_REPO/refs/main")
+export MODEL_PATH="$MODEL_REPO/snapshots/$MODEL_REF"
 
 bash scripts/init_run.sh localgpu-medvlm-$(date +%Y%m%d)
 

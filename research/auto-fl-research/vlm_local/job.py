@@ -60,7 +60,7 @@ def define_parser():
 
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--vlm_repo_root", type=str, default=os.environ.get("VLM_BENCHMARK_ROOT", DEFAULT_VLM_REPO_ROOT))
-    parser.add_argument("--model_name_or_path", type=str, default="Qwen/Qwen3-VL-8B-Instruct")
+    parser.add_argument("--model_name_or_path", type=str, default="Qwen/Qwen3-VL-2B-Instruct")
     parser.add_argument("--hf_cache_dir", type=str, default=os.environ.get("HF_HOME"))
     parser.add_argument("--site_datasets", type=str, default=DEFAULT_SITE_DATASETS)
     parser.add_argument("--max_samples_per_site", type=int, default=-1)
