@@ -87,6 +87,10 @@ Pay attention to the following:
 Additional optional configuration parameters:
 
     - stats_pool_config: configure statistics pool saving for post-job analysis
+    - launcher_spec: launcher-specific job execution settings such as Docker
+      or Kubernetes job image, Python executable, and container options. Keep
+      resource requests such as ``num_of_gpus`` in ``resource_spec``. See
+      :ref:`launcher_spec`.
 
 The system also keeps additional information about the job such as:
 
@@ -102,6 +106,52 @@ For a job to be runnable, the system must have sufficient resources: all relevan
 support the job's specified resource requirements. Since resource is a generic concept - anything could be regarded
 as a resource - NVIDIA FLARE 2.1.0 itself does not define any specific resources. Instead, NVIDIA FLARE provides a general
 framework for resource definition and interpretation.
+
+.. _launcher_spec:
+
+Launcher-Specific Execution Settings
+====================================
+
+Docker and Kubernetes launchers read job runtime settings from
+``launcher_spec`` in ``meta.json``. Launcher selection is site policy, configured
+in the site's prepared startup kit. A job can carry settings for multiple
+launcher modes without choosing which mode a site uses.
+
+.. code-block:: json
+
+    {
+        "launcher_spec": {
+            "default": {
+                "docker": {
+                    "image": "registry.example.com/nvflare-job:2.8"
+                },
+                "k8s": {
+                    "image": "registry.example.com/nvflare-job:2.8",
+                    "cpu": "2",
+                    "memory": "8Gi"
+                }
+            },
+            "site-1": {
+                "docker": {
+                    "shm_size": "8g"
+                },
+                "k8s": {
+                    "ephemeral_storage": "8Gi"
+                }
+            }
+        },
+        "resource_spec": {
+            "site-1": {
+                "num_of_gpus": 1
+            }
+        }
+    }
+
+Use ``launcher_spec["default"][mode]`` for shared settings and
+``launcher_spec[site][mode]`` for site-specific overrides. Keep
+``resource_spec`` for scheduler-facing resource requirements such as
+``num_of_gpus``. Docker and Kubernetes launchers use those resource requests
+when they need to request GPUs for a launched container or pod.
 
 .. _deploy_map:
 
