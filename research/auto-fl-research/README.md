@@ -34,6 +34,145 @@ It is designed to combine:
 - `skills/autofl-nvflare-report/` — post-run reporting skill for stopped experiment branches
 - `ACKNOWLEDGEMENTS.md` — provenance and attribution notes
 
+## Local Single-GPU VLM Profile
+
+The default files in this directory are the compact CIFAR-10 Auto-FL profile.
+For the local medical VLM task, use the thin profile in:
+
+```text
+vlm_local/
+```
+
+`vlm_local/` is not a second copy of the harness. It contains only the files
+that differ from the parent CIFAR-10/H100 starter, while shared scripts,
+templates, logging, plotting, reporting, and mature aggregators stay in this
+parent directory. It is included to show how the same Auto-FL concept can be
+adapted to other scenarios with a different task and running environment
+without duplicating the harness. Start from the VLM profile when the campaign
+target is a 3-site medical VLM workload on a local machine with one visible
+GPU.
+
+The VLM-specific pieces are:
+
+- `program.md` — the VLM task contract, local single-GPU assumptions, fixed
+  budget, and edit surface.
+- `client.py` — the NVFlare Client API loop. It loads the local VLM runtime,
+  receives the global adapter state, trains one site locally, computes DIFFs,
+  and sends only adapter updates.
+- `job.py` — the Recipe API entry point. It defines the sites, VLM arguments,
+  final evaluation clients, cross-site validation, simulator workspace, and the
+  parent aggregation hook.
+- `model.py` — the server-side model state. For VLM/LLM tasks this should be an
+  adapter-only state, not the full base model.
+- `train_utils.py` — DIFF helpers and the task metric. The VLM profile uses
+  token-level VQA scoring instead of CIFAR accuracy.
+- `data/` — site data mapping and loaders. The VLM profile maps
+  `site-1=vqa-rad`, `site-2=slake`, and `site-3=path-vqa`.
+- `mutation_schema.yaml` — the bounded mutation surface for the task and local
+  machine budget.
+- `requirements.txt` — the Python dependencies for this task profile, including
+  the VLM/Hugging Face stack.
+
+Use shared parent files for `scripts/`, `templates/`, `custom_aggregators.py`,
+and reporting. Run shared commands from the parent directory with the profile
+paths set:
+
+```bash
+cd /workspace/research/auto-fl-research
+export CLIENT_CONTRACT_PATH=vlm_local/client.py
+export JOB_SCRIPT=vlm_local/job.py
+```
+
+Validate the profile with the parent utilities:
+
+```bash
+"${PYTHON:-python3}" scripts/validate_contract.py "$CLIENT_CONTRACT_PATH"
+"${PYTHON:-python3}" scripts/pycompile_sources.py vlm_local
+```
+
+The local-machine constraint is part of the profile contract. Keep one GPU as
+the assumed execution target unless the profile is explicitly rewritten for a
+multi-GPU environment. For local single-GPU runs:
+
+- Set `CUDA_VISIBLE_DEVICES=0` when multiple GPUs are visible but the campaign
+  should stay comparable to a one-GPU baseline.
+- Keep `PARALLEL_CANDIDATES` low enough that concurrent runs do not contend for
+  GPU memory. For VLM workloads this usually means `1` unless the profile
+  documents otherwise.
+- Keep `RUN_TIMEOUT_SECONDS`, `batch_size`, `grad_accum`, `max_pixels`,
+  `max_eval_samples`, and `max_samples_per_site` in the documented budget so
+  candidates are comparable.
+- Put machine-specific paths in environment variables such as
+  `VLM_BENCHMARK_ROOT`, `HF_HOME`, and the simulator workspace root. Avoid
+  hard-coding local paths in `client.py` or `job.py`.
+- Use adapter-only exchange for large VLMs so NVFlare does not move full base
+  model weights every round.
+
+## Adapting the VLM Profile
+
+For a new VLM task or environment, make a new task profile directory by
+composing only the files that must differ from the parent harness. Do not copy
+parent `scripts/`, `templates/`, or reporting utilities unless the shared
+version cannot support the new profile through path/env overrides. The profile
+files must agree on the task, metric, model state, and environment assumptions.
+
+1. Define the task contract in `program.md`, `README.md`, and
+   `mutation_schema.yaml`.
+   Record the fixed comparison budget: sites, rounds, local training budget,
+   data limits, seed, metric, timeout, model/adapter budget, and final
+   evaluation clients.
+
+2. Replace the data layer in `data/`.
+   Implement deterministic site mapping and train/eval splits. Document any
+   dataset root variables, cache directories, gated data access, and expected
+   on-disk layout.
+
+3. Update `client.py`.
+   Keep the NVFlare loop intact: `flare.init()`, receive global model, strict
+   `load_state_dict`, local train/eval, `compute_model_diff`, set
+   `NUM_STEPS_CURRENT_ROUND`, and send `ParamsType.DIFF`. Add only the
+   task-specific VLM loader, collator, optimizer, and evaluation logic around
+   that contract.
+
+4. Update `model.py`.
+   Register the server state exchanged by NVFlare. For a large VLM, expose only
+   LoRA/adapters or another bounded trainable state. Add budget checks so an
+   agent cannot silently switch to full-model exchange.
+
+5. Update `job.py`.
+   Match the client arguments, site names, GPU assumptions, simulator workspace,
+   cross-site validation, final evaluation clients, and parent aggregator
+   imports. Add a profile-local aggregator only when the campaign needs behavior
+   that should not live in the shared parent `custom_aggregators.py`.
+
+6. Update `train_utils.py` and `scripts/extract_score.py`.
+   Make the final score path stable before running candidate comparisons. For
+   VQA-style tasks, prefer a single token-F1 or exact-match definition and use
+   the same server/global model key for every run.
+
+7. Update `requirements.txt`.
+   Include the exact VLM dependencies and auth expectations, such as
+   `transformers`, `datasets`, `peft`, `qwen-vl-utils`, `HF_TOKEN`, and
+   `HF_HOME`. Keep these dependencies local to the task profile.
+
+8. Validate before handing the profile to an agent:
+
+   ```bash
+   "${PYTHON:-python3}" scripts/validate_contract.py <profile>/client.py
+   "${PYTHON:-python3}" scripts/pycompile_sources.py <profile>
+   ```
+
+   For a heavy VLM task, first run a no-ledger smoke through the parent
+   `scripts/run_iteration.sh` with `CLIENT_CONTRACT_PATH` and `JOB_SCRIPT` set
+   to the profile files. Start the autoresearch branch and baseline run only
+   after the smoke path is stable.
+
+The sections below describe the parent CIFAR-10/H100 harness unless a profile
+overrides them. When running `vlm_local/`, treat `vlm_local/program.md` and
+`vlm_local/mutation_schema.yaml` as authoritative for task, budget, GPU width,
+candidate parallelism, and metric definitions while continuing to use the
+shared parent runner, ledger, literature-loop, and reporting utilities.
+
 ## How this uses the autoresearch approach properly
 
 The [autoresearch](https://github.com/karpathy/autoresearch) repo keeps the setup intentionally small and treats `program.md` as the agent-facing control plane. The core repo only has a few files that matter, with one main editable target and a fixed evaluation harness. This starter follows that spirit, but adapts it to NVFlare:
