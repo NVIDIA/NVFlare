@@ -69,6 +69,16 @@ def _load_image(image_obj: Any) -> Image.Image:
     raise TypeError(f"Unsupported image object type: {type(image_obj)!r}")
 
 
+def _extract_answers(example: dict[str, Any]) -> list[str]:
+    answers = []
+    for answer_obj in example.get("answers") or []:
+        value = answer_obj.get("answer") if isinstance(answer_obj, dict) else answer_obj
+        text = str(value or "").strip()
+        if text:
+            answers.append(text)
+    return answers
+
+
 class MedicalVQAValidationDataset(Dataset):
     def __init__(
         self,
@@ -93,14 +103,16 @@ class MedicalVQAValidationDataset(Dataset):
         self.samples: list[dict[str, Any]] = []
         for i in range(len(ds)):
             ex = ds[i]
-            answers = [a["answer"] for a in ex["answers"]]
+            answers = _extract_answers(ex)
             self.samples.append(
                 {
                     "dataset_name": dataset_name,
                     "image": _load_image(ex["image"]),
                     "question": ex["question"].strip(),
                     "answers": answers,
-                    "gt_primary": str(ex.get("multiple_choice_answer") or answers[0]).strip(),
+                    "gt_primary": str(
+                        ex.get("multiple_choice_answer") or (answers[0] if answers else "")
+                    ).strip(),
                     "prompt_prefix": cfg.get("prompt_prefix", "").strip(),
                     "system_message": cfg.get("system_message", "").strip(),
                 }
