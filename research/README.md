@@ -4,10 +4,6 @@
 
 NVIDIA FLARE has been used in several research studies. In this directory, you can find their reference implementations.
 
-For agent-assisted Auto-FL experiments, see the [Auto-FL NVFlare starter bundle](./auto-fl-research/README.md),
-which provides an autoresearch-style control plane, CIFAR-10 simulation harness, and bounded mutation workflow for
-NVFlare-based federated learning research loops.
-
 ## Research Implementations
 
 1. [Privacy-Preserving Federated Fraud Detection in Payment Transactions with NVIDIA FLARE](./fsi-fraud-detection/README.md) ([arXiv 2026](https://arxiv.org/abs/2603.13617))
