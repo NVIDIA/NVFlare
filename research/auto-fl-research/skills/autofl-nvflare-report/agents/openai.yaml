@@ -1,4 +1,0 @@
-interface:
-  display_name: "Auto-FL NVFlare Report"
-  short_description: "Summarize stopped Auto-FL campaigns"
-  default_prompt: "Use the autofl-nvflare-report skill to summarize the stopped autoresearch experiment, include pasted agent model/effort/cost context if provided, generate the markdown report, refresh progress.png, and commit both artifacts to the current branch."
