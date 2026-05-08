@@ -58,14 +58,122 @@ TEST_CASES = [
 ]
 
 
+@pytest.fixture(autouse=True)
+def clear_cuda_visible_devices(monkeypatch):
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+
+
 @pytest.fixture(scope="class", autouse=True)
 def mock_get_host_gpu_ids():
-    with patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_ids") as _fixture:
-        _fixture.return_value = [0, 1, 2, 3]
-        yield _fixture
+    with (
+        patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_ids") as ids_fixture,
+        patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_memory_total") as mem_fixture,
+    ):
+        ids_fixture.return_value = [0, 1, 2, 3]
+        mem_fixture.return_value = [32768, 32768, 32768, 32768]
+        yield ids_fixture
 
 
 class TestGPUResourceManager:
+    def test_init_respects_cuda_visible_devices_for_memory_check(self, monkeypatch):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+        with (
+            patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_ids") as mock_ids,
+            patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_memory_total") as mock_mem,
+        ):
+            mock_ids.return_value = [0, 1, 2, 3, 4]
+            mock_mem.return_value = [81920, 81920, 81920, 4096, 81920]
+
+            gpu_resource_manager = GPUResourceManager(num_of_gpus=1, mem_per_gpu_in_GiB=16)
+
+        assert list(gpu_resource_manager.resources) == [0]
+
+    def test_init_uses_visible_gpu_ids_as_managed_resources(self, monkeypatch):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "4")
+        with (
+            patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_ids") as mock_ids,
+            patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_memory_total") as mock_mem,
+        ):
+            mock_ids.return_value = [0, 1, 2, 3, 4]
+            mock_mem.return_value = [81920, 81920, 81920, 4096, 81920]
+
+            gpu_resource_manager = GPUResourceManager(num_of_gpus=1, mem_per_gpu_in_GiB=16)
+
+        assert list(gpu_resource_manager.resources) == [4]
+
+    def test_init_checks_selected_visible_gpu_memory(self, monkeypatch):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "3")
+        with (
+            patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_ids") as mock_ids,
+            patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_memory_total") as mock_mem,
+        ):
+            mock_ids.return_value = [0, 1, 2, 3, 4]
+            mock_mem.return_value = [81920, 81920, 81920, 4096, 81920]
+
+            with pytest.raises(ValueError, match="4096"):
+                GPUResourceManager(num_of_gpus=1, mem_per_gpu_in_GiB=16)
+
+    def test_init_reports_selected_gpu_id_for_insufficient_memory(self, monkeypatch):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "3")
+        with (
+            patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_ids") as mock_ids,
+            patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_memory_total") as mock_mem,
+        ):
+            mock_ids.return_value = [0, 1, 2, 3, 4]
+            mock_mem.return_value = [81920, 81920, 81920, 4096, 81920]
+
+            with pytest.raises(ValueError, match="GPU ID 3"):
+                GPUResourceManager(num_of_gpus=1, mem_per_gpu_in_GiB=16)
+
+    def test_init_raises_when_selected_gpu_memory_is_missing(self, monkeypatch):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "3")
+        with (
+            patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_ids") as mock_ids,
+            patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_memory_total") as mock_mem,
+        ):
+            mock_ids.return_value = [0, 1, 2, 3]
+            mock_mem.return_value = [32768, 32768, 32768]
+
+            with pytest.raises(RuntimeError, match="GPU ID 3"):
+                GPUResourceManager(num_of_gpus=1, mem_per_gpu_in_GiB=16)
+
+    def test_init_checks_visible_gpu_count(self, monkeypatch):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+        with (
+            patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_ids") as mock_ids,
+            patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_memory_total") as mock_mem,
+        ):
+            mock_ids.return_value = [0, 1, 2, 3]
+            mock_mem.return_value = [32768, 32768, 32768, 32768]
+
+            with pytest.raises(ValueError, match="exceeds available GPUs: 1"):
+                GPUResourceManager(num_of_gpus=2, mem_per_gpu_in_GiB=16)
+
+    def test_init_stops_at_invalid_cuda_visible_device_index(self, monkeypatch):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,2,-1,1")
+        with (
+            patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_ids") as mock_ids,
+            patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_memory_total") as mock_mem,
+        ):
+            mock_ids.return_value = [0, 1, 2, 3]
+            mock_mem.return_value = [32768, 32768, 32768, 32768]
+
+            gpu_resource_manager = GPUResourceManager(num_of_gpus=2, mem_per_gpu_in_GiB=16)
+
+        assert list(gpu_resource_manager.resources) == [0, 2]
+
+    def test_init_empty_cuda_visible_devices_has_no_available_gpus(self, monkeypatch):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+        with (
+            patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_ids") as mock_ids,
+            patch("nvflare.app_common.resource_managers.gpu_resource_manager.get_host_gpu_memory_total") as mock_mem,
+        ):
+            mock_ids.return_value = [0, 1, 2, 3]
+            mock_mem.return_value = [32768, 32768, 32768, 32768]
+
+            with pytest.raises(ValueError, match="exceeds available GPUs: 0"):
+                GPUResourceManager(num_of_gpus=1, mem_per_gpu_in_GiB=16)
+
     @pytest.mark.parametrize(
         "gpus, gpu_mem, resource_requirement, expected_check_result, expected_reserved_resources", CHECK_TEST_CASES
     )
