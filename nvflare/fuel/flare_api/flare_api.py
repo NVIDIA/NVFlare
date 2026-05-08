@@ -1323,13 +1323,16 @@ class Session(SessionSpec):
         return self._get_dict_data(reply)
 
     def remove_client(self, client_name: str) -> None:
-        """Remove a client from the system.
+        """Release a connected client's active token.
 
         Args:
-            client_name (str): name of the client to remove
+            client_name (str): name of the client whose active token should be released
 
         Returns: None
 
+        Note:
+            This does not stop the client, revoke credentials, or prevent reconnect.
+            Use disable_client to prevent a client from reconnecting.
         """
         if not client_name or not isinstance(client_name, str):
             raise ValueError("client_name must be a non-empty str")

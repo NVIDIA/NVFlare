@@ -188,13 +188,13 @@ class ClientManager:
         return client
 
     def remove_client(self, token):
-        """Remove a registered client.
+        """Remove a registered client's active token entry.
 
         Args:
             token: client token
 
         Returns:
-            The removed Client object
+            The removed Client object, if the token was active
         """
         with self.lock:
             client = self.clients.pop(token, None)
