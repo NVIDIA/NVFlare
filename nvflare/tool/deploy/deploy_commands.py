@@ -93,6 +93,8 @@ STUDY_DATA_TEMPLATE = """# Study data mapping used by Docker and Kubernetes job 
 """
 
 K8S_NAME_PATTERN = re.compile(r"^[a-z]([-a-z0-9]*[a-z0-9])?$")
+K8S_NAMESPACE_PATTERN = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+K8S_NAMESPACE_MAX_LENGTH = 63
 K8S_SERVICE_NAME_MAX_LENGTH = 63
 HELM_RELEASE_NAME_MAX_LENGTH = 53
 
@@ -347,7 +349,7 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
         )
         _required_str(parent, "docker_image", "parent")
         if "namespace" in config:
-            _required_str(config, "namespace", "k8s config")
+            _validate_k8s_namespace(config, "namespace", "k8s config")
         _optional_int(parent, "parent_port", "parent")
         _optional_str(parent, "workspace_pvc", "parent")
         _optional_str(parent, "workspace_mount_path", "parent")
@@ -902,6 +904,20 @@ def _validate_allowed_keys(data: dict[str, Any], allowed: set[str], where: str) 
 def _required_str(data: dict[str, Any], key: str, where: str) -> None:
     if not isinstance(data.get(key), str) or not data.get(key):
         _fail("INVALID_CONFIG", f"{where}.{key} must be a non-empty string.", "Fix the runtime config.")
+
+
+def _validate_k8s_namespace(data: dict[str, Any], key: str, where: str) -> None:
+    namespace = data.get(key)
+    if not isinstance(namespace, str) or not namespace:
+        _fail("INVALID_CONFIG", f"{where}.{key} must be a non-empty string.", "Fix the runtime config.")
+        return
+    if len(namespace) > K8S_NAMESPACE_MAX_LENGTH or not K8S_NAMESPACE_PATTERN.fullmatch(namespace):
+        _fail(
+            "INVALID_CONFIG",
+            f"{where}.{key} must be a valid Kubernetes namespace (DNS-1123 label): {namespace!r}.",
+            "Use lower case alphanumeric characters or '-', start and end with an alphanumeric character, "
+            f"and keep length <= {K8S_NAMESPACE_MAX_LENGTH}.",
+        )
 
 
 def _optional_str(data: dict[str, Any], key: str, where: str) -> str | None:
