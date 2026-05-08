@@ -16,6 +16,7 @@ import argparse
 import os
 
 from nvflare.tool.package_checker import ClientPackageChecker, NVFlareConsolePackageChecker, ServerPackageChecker
+from nvflare.tool.package_checker.package_checker import CheckStatus
 
 _preflight_parser = None
 
@@ -69,13 +70,13 @@ def check_packages(args):
 
     for p in package_checkers:
         p.init(package_path=package_path)
-        ret_code = 0
+        check_status = CheckStatus.PASS
         if p.should_be_checked():
-            ret_code = p.check()
+            check_status = p.check()
         p.print_report()
 
         component_name = p.__class__.__name__.replace("PackageChecker", "").lower()
-        status = "pass" if ret_code == 0 else "fail"
+        status = "fail" if check_status in [CheckStatus.FAIL, CheckStatus.FAIL_WITH_CLEANUP] else "pass"
         if status == "fail":
             overall_pass = False
         check_result = {"component": component_name, "status": status}
@@ -84,9 +85,9 @@ def check_packages(args):
             check_result["details"] = details
         checks.append(check_result)
 
-        if ret_code == 1:
+        if check_status == CheckStatus.PASS_WITH_CLEANUP:
             p.stop_dry_run(force=False)
-        elif ret_code == 2:
+        elif check_status == CheckStatus.FAIL_WITH_CLEANUP:
             p.stop_dry_run(force=True)
 
     overall = "pass" if overall_pass else "fail"

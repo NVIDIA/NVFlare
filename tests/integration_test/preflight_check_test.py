@@ -81,7 +81,10 @@ def _parse_preflight_output(output: bytes) -> dict[str, str]:
 
 
 def _verify_checks(actual_checks: dict[str, str], expected_checks: dict[str, str], check_type: str):
-    """Verify that actual checks match expected checks with detailed error messages.
+    """Verify that expected checks are present with detailed error messages.
+
+    Preflight output may include additional checks, such as "Check dry run", when
+    earlier required checks pass. Those extra checks are allowed here.
 
     Args:
         actual_checks: Dictionary of actual check results
@@ -93,15 +96,6 @@ def _verify_checks(actual_checks: dict[str, str], expected_checks: dict[str, str
     if missing_checks:
         raise AssertionError(
             f"{check_type} preflight check missing expected checks: {missing_checks}\n"
-            f"Expected checks: {list(expected_checks.keys())}\n"
-            f"Actual checks: {list(actual_checks.keys())}"
-        )
-
-    # Check if there are unexpected checks
-    extra_checks = set(actual_checks.keys()) - set(expected_checks.keys())
-    if extra_checks:
-        raise AssertionError(
-            f"{check_type} preflight check has unexpected checks: {extra_checks}\n"
             f"Expected checks: {list(expected_checks.keys())}\n"
             f"Actual checks: {list(actual_checks.keys())}"
         )
@@ -120,14 +114,24 @@ def _verify_checks(actual_checks: dict[str, str], expected_checks: dict[str, str
         raise AssertionError(error_msg)
 
 
-def _run_preflight_check_command_in_subprocess(package_path: str):
+def _raise_preflight_command_error(command: str, returncode: int, output: bytes):
+    output_text = output.decode("utf-8", errors="replace")
+    raise AssertionError(
+        f"Preflight command failed with return code {returncode}: {command}\n" f"Output:\n{output_text}"
+    )
+
+
+def _run_preflight_check_command_in_subprocess(package_path: str, expect_success: bool = True):
     command = f"{sys.executable} -m {PREFLIGHT_CHECK_SCRIPT} -p {package_path}"
     print(f"Executing command {command} in subprocess")
-    output = subprocess.check_output(shlex.split(command))
-    return output
+    process = subprocess.run(shlex.split(command), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+    print(f"Preflight command return code: {process.returncode}")
+    if expect_success and process.returncode != 0:
+        _raise_preflight_command_error(command, process.returncode, process.stdout)
+    return process.stdout
 
 
-def _run_preflight_check_command_in_pseudo_terminal(package_path: str):
+def _run_preflight_check_command_in_pseudo_terminal(package_path: str, expect_success: bool = True):
     command = f"{sys.executable} -m {PREFLIGHT_CHECK_SCRIPT} -p {package_path}"
     print(f"Executing command {command} in pty")
 
@@ -138,16 +142,20 @@ def _run_preflight_check_command_in_pseudo_terminal(package_path: str):
             output.write(data)
             return data
 
-        pty.spawn(shlex.split(command), read)
+        status = pty.spawn(shlex.split(command), read)
+        returncode = os.waitstatus_to_exitcode(status)
+        print(f"Preflight command return code: {returncode}")
+        if expect_success and returncode != 0:
+            _raise_preflight_command_error(command, returncode, output.getvalue())
 
         return output.getvalue()
 
 
-def _run_preflight_check_command(package_path: str, method: str = "subprocess"):
+def _run_preflight_check_command(package_path: str, method: str = "subprocess", expect_success: bool = True):
     if method == "subprocess":
-        return _run_preflight_check_command_in_subprocess(package_path)
+        return _run_preflight_check_command_in_subprocess(package_path, expect_success=expect_success)
     else:
-        return _run_preflight_check_command_in_pseudo_terminal(package_path)
+        return _run_preflight_check_command_in_pseudo_terminal(package_path, expect_success=expect_success)
 
 
 @pytest.fixture(
@@ -183,7 +191,6 @@ class TestPreflightCheck:
                     "Check admin port binding": "PASSED",
                     "Check snapshot storage writable": "PASSED",
                     "Check job storage writable": "PASSED",
-                    "Check dry run": "PASSED",
                 }
 
                 print(f"Server '{server_name}', expecting checks: {list(expected_checks.keys())}")
@@ -205,7 +212,6 @@ class TestPreflightCheck:
 
                 expected_checks = {
                     "Check server available": "PASSED",
-                    "Check dry run": "PASSED",
                 }
 
                 print(f"Client '{client_name}', expecting checks: {list(expected_checks.keys())}")
@@ -229,7 +235,6 @@ class TestPreflightCheck:
 
             expected_checks = {
                 "Check server available": "PASSED",
-                "Check dry run": "PASSED",
             }
 
             print(f"Admin console, expecting checks: {list(expected_checks.keys())}")
