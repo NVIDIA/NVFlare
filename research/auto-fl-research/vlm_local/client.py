@@ -185,12 +185,6 @@ def build_parser():
     parser.add_argument("--gradient_checkpointing", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--attn_implementation", choices=["flash_attention_2", "sdpa", "eager"], default="sdpa")
     parser.add_argument("--max_new_tokens", type=int, default=32)
-    parser.add_argument(
-        "--prediction_audit_samples",
-        type=int,
-        default=0,
-        help="Print the first N generative validation predictions per client. Default 0 disables audit logging.",
-    )
     return parser
 
 
@@ -385,10 +379,7 @@ def _apply_train_lora_module_filter(vlm_model, train_lora_modules):
             frozen += param.numel()
     if matched == 0:
         raise ValueError("No Qwen LoRA module parameters matched the train_lora_modules filter.")
-    print(
-        "Trainable LoRA module filter: "
-        f"modules={','.join(train_lora_modules)} trainable={trainable:,} frozen={frozen:,}"
-    )
+    print("Applied trainable LoRA module filter.")
 
 
 def _build_vlm_runtime(args):
@@ -694,17 +685,7 @@ def _train_vlm_one_round(args, vlm_model, train_loader, optimizer, global_adapte
         denom = max(1, micro_steps)
 
     avg_loss = running_loss / denom
-    sam_text = ""
-    if sam_enabled:
-        mean_grad_norm = sum(sam_grad_norms) / max(1, len(sam_grad_norms))
-        sam_text = f" sam_rho={args.sam_rho:.4g} sam_grad_norm={mean_grad_norm:.4f}"
-    feddyn_text = ""
-    if args.feddyn_alpha > 0.0:
-        feddyn_text = f" feddyn_alpha={args.feddyn_alpha:.4g}"
-    print(
-        f"VLM round {current_round}: optimizer_steps={optimizer_steps} "
-        f"micro_steps={micro_steps} loss={avg_loss:.4f}{sam_text}{feddyn_text}"
-    )
+    print("Completed local VLM training round.")
     return optimizer_steps, avg_loss
 
 
@@ -738,10 +719,7 @@ def main(args):
     )
     for name, value in adapter_shape.items():
         setattr(args, name, value)
-    print(
-        "Using Qwen3-VL adapter shape: "
-        + ", ".join(f"{name}={value}" for name, value in adapter_shape.items())
-    )
+    print("Resolved Qwen3-VL adapter shape.")
 
     flare.init()
     site_name = flare.get_site_name()
@@ -749,10 +727,7 @@ def main(args):
     if site_steps_by_site:
         original_steps = args.local_train_steps
         args.local_train_steps = site_steps_by_site.get(site_name, original_steps)
-        print(
-            f"{site_name}: site_local_steps={args.local_train_steps} "
-            f"(default_local_train_steps={original_steps})"
-        )
+        print("Applied site-specific local-step override.")
     base_lr = args.lr
     lr_scale_by_site = _parse_site_float_spec(args.site_lr_scale_spec, "--site_lr_scale_spec")
     lr_scale_end_by_site = _parse_site_float_spec(args.site_lr_scale_end_spec, "--site_lr_scale_end_spec")
@@ -760,21 +735,14 @@ def main(args):
     site_lr_end_scale = lr_scale_end_by_site.get(site_name, site_lr_start_scale)
     site_lr_decay_enabled = bool(lr_scale_end_by_site) and args.site_lr_scale_decay_rounds > 0
     if site_lr_decay_enabled:
-        print(
-            f"{site_name}: site_lr_scale_start={site_lr_start_scale:.6g} "
-            f"site_lr_scale_end={site_lr_end_scale:.6g} "
-            f"decay_rounds={args.site_lr_scale_decay_rounds} base_lr={base_lr:.8g}"
-        )
+        print("Configured site-specific LR decay.")
     elif lr_scale_by_site:
         args.lr = base_lr * site_lr_start_scale
-        print(
-            f"{site_name}: site_lr_scale={site_lr_start_scale:.6g} "
-            f"base_lr={base_lr:.8g} effective_lr={args.lr:.8g}"
-        )
+        print("Applied site-specific LR scale.")
     site_seed = _site_seed(args.seed, site_name)
     deterministic_training = not args.no_deterministic_training
     _seed_everything(site_seed, deterministic=deterministic_training)
-    print(f"{site_name}: seed={site_seed} " f"(base_seed={args.seed}, deterministic_training={deterministic_training})")
+    print("Initialized deterministic training state.")
 
     model = build_model(
         model_arch=args.model_arch,
@@ -783,14 +751,11 @@ def main(args):
         lora_r=args.lora_r,
         **adapter_shape,
     )
-    print(
-        f"{site_name}: model_arch={args.model_arch} "
-        f"params={count_parameters(model):,} max_model_params={args.max_model_params:,}"
-    )
-    print(f"{site_name}: loading local Qwen3-VL runtime")
+    print("Built adapter state model.")
+    print("Loading local Qwen3-VL runtime.")
     vlm_processor, vlm_model = _build_vlm_runtime(args)
     print("Creating VLM datasets for configured site")
-    train_dataset, valid_dataset, dataset_name = create_vlm_datasets(
+    train_dataset, valid_dataset, _dataset_name = create_vlm_datasets(
         site_name,
         vlm_repo_root=args.vlm_repo_root,
         site_datasets=args.site_datasets,
@@ -818,24 +783,22 @@ def main(args):
     while flare.is_running():
         input_model = flare.receive()
         current_round = input_model.current_round
-        print(f"\n[site={site_name}] round={current_round}\n")
+        print("Starting FL round.")
 
         model.load_state_dict(input_model.params, strict=True)
         _load_adapter_state_into_vlm(model, vlm_model)
 
         if flare.is_evaluate():
-            print(f"{site_name}: cross-site evaluation task")
+            print("Starting cross-site evaluation task.")
             val_score_global_model = evaluate_vlm_generative(
                 vlm_model,
                 vlm_processor,
                 valid_dataset,
                 batch_size=args.eval_batch_size,
                 max_new_tokens=args.max_new_tokens,
-                audit_samples=args.prediction_audit_samples,
-                audit_prefix=f"{site_name}: prediction_audit",
                 device=DEVICE,
             )
-            print(f"{site_name}: global validation token_f1={val_score_global_model:.4f}")
+            print("Completed global validation.")
             summary_writer.add_scalar(
                 tag="val_score_global_model",
                 scalar=val_score_global_model,
@@ -858,10 +821,7 @@ def main(args):
         metrics = {}
         if args.feddyn_alpha > 0.0 and not _vlm_feddyn_state_matches(feddyn_state, vlm_model):
             feddyn_state = _zero_vlm_feddyn_state(vlm_model)
-            print(
-                f"{site_name}: initialized FedDyn-local state "
-                f"params={len(feddyn_state)} alpha={args.feddyn_alpha:.4g}"
-            )
+            print("Initialized FedDyn-local state.")
         if args.eval_global_every_round:
             val_score_global_model = evaluate_vlm_generative(
                 vlm_model,
@@ -872,7 +832,7 @@ def main(args):
                 device=DEVICE,
             )
             metrics["token_f1"] = val_score_global_model
-            print(f"{site_name}: global validation token_f1={val_score_global_model:.4f}")
+            print("Completed global validation.")
             summary_writer.add_scalar(
                 tag="val_score_global_model",
                 scalar=val_score_global_model,
@@ -882,8 +842,7 @@ def main(args):
         train_batches = len(train_loader)
         if train_batches == 0:
             raise ValueError(
-                f"{site_name}: training data_loader is empty for round {current_round}; "
-                "check site_idx and data split configuration."
+                "training data_loader is empty; check site index and data split configuration."
             )
 
         if site_lr_decay_enabled:
@@ -894,10 +853,7 @@ def main(args):
                 args.site_lr_scale_decay_rounds,
             )
             args.lr = base_lr * lr_scale
-            print(
-                f"{site_name}: round={current_round} site_lr_scale={lr_scale:.6g} "
-                f"base_lr={base_lr:.8g} effective_lr={args.lr:.8g}"
-            )
+            print("Applied round LR schedule.")
         optimizer = _make_vlm_optimizer(args, vlm_model)
         steps, avg_loss = _train_vlm_one_round(
             args,
@@ -916,10 +872,7 @@ def main(args):
                 feddyn_state,
                 args.feddyn_alpha,
             )
-            print(
-                f"{site_name}: feddyn_state_norm={feddyn_state_norm:.6f} "
-                f"feddyn_drift_norm={feddyn_drift_norm:.6f}"
-            )
+            print("Updated FedDyn-local state.")
             metrics["feddyn_state_norm"] = feddyn_state_norm
             metrics["feddyn_drift_norm"] = feddyn_drift_norm
         curr_lr = get_lr_values(optimizer)[0]
@@ -939,17 +892,17 @@ def main(args):
                 max_new_tokens=args.max_new_tokens,
                 device=DEVICE,
             )
-            print(f"{site_name}: local validation token_f1={val_score_local_model:.4f}")
+            print("Completed local validation.")
             summary_writer.add_scalar(
                 tag="val_score_local_model",
                 scalar=val_score_local_model,
                 global_step=current_round,
             )
 
-        print(f"{site_name}: finished training for round {current_round}")
+        print("Finished FL training round.")
 
         if args.save_local_ckpt:
-            ckpt_path = f"./model_{site_name}_round{current_round}.pt"
+            ckpt_path = f"./model_round{current_round}.pt"
             torch.save(model.cpu().state_dict(), ckpt_path)
 
         model_diff, diff_norm = compute_model_diff(model, global_model)

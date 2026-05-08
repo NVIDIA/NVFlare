@@ -104,7 +104,6 @@ def define_parser():
     parser.add_argument("--gradient_checkpointing", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--attn_implementation", choices=["flash_attention_2", "sdpa", "eager"], default="sdpa")
     parser.add_argument("--max_new_tokens", type=int, default=32)
-    parser.add_argument("--prediction_audit_samples", type=int, default=0)
     return parser.parse_args()
 
 
@@ -250,8 +249,6 @@ def build_train_args(args):
         args.attn_implementation,
         "--max_new_tokens",
         args.max_new_tokens,
-        "--prediction_audit_samples",
-        args.prediction_audit_samples,
     ]
     if args.site_lr_scale_spec:
         train_args.extend(["--site_lr_scale_spec", args.site_lr_scale_spec])
@@ -307,7 +304,7 @@ def main():
     )
     for name, value in adapter_shape.items():
         setattr(args, name, value)
-    print("Using Qwen3-VL adapter shape: " + ", ".join(f"{k}={v}" for k, v in adapter_shape.items()))
+    print("Resolved Qwen3-VL adapter shape.")
 
     seed_model = build_model(
         model_arch=args.model_arch,
@@ -348,9 +345,9 @@ def main():
     write_result_dir_sidecar(result_dir)
 
     print()
-    print("Job Status:", run.get_status())
-    print("Results:", result_dir)
-    print(f"tensorboard --logdir={result_dir}")
+    print("Job finished.")
+    print("Job results were written to the configured result directory.")
+    print("TensorBoard logs are available in the job result directory.")
     print()
 
 

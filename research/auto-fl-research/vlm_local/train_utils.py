@@ -63,8 +63,6 @@ def evaluate_vlm_generative(
     *,
     batch_size: int,
     max_new_tokens: int,
-    audit_samples: int = 0,
-    audit_prefix: str = "vlm_eval",
     device=None,
 ):
     if device is None:
@@ -114,8 +112,6 @@ def evaluate_vlm_generative(
                     f1 = _token_f1_score(pred, example["answers"])
                     f1_sum += f1
                     n_seen += 1
-                    if audit_samples > 0 and n_seen <= audit_samples:
-                        print("Prediction audit sample processed; details redacted.")
     finally:
         processor.tokenizer.padding_side = prior_padding_side
 

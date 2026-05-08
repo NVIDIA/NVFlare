@@ -458,7 +458,7 @@ Compatible literature-derived directions include:
 - robust weighted aggregation that preserves DIFF parameter keys
 - bounded adapter module selection or adapter-rank subcampaigns
 - optimizer, weight decay, gradient clipping, or image-token budget changes
-- prompt-preserving evaluation and prediction-audit diagnostics
+- prompt-preserving evaluation with aggregate metrics only
 
 Incompatible directions without human approval include:
 
@@ -466,6 +466,7 @@ Incompatible directions without human approval include:
 - adding datasets to the comparison budget
 - exchanging full VLM weights
 - adding new server-client protocol tensors
+- logging prompts, answers, predictions, dataset names, site names, or sample-level validation details
 - importing a new research framework or scheduler dependency
 - copying parent scripts/templates into this profile
 
