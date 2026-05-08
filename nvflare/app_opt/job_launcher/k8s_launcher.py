@@ -320,7 +320,7 @@ class K8sJobHandle(JobHandleSpec):
         if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
             self.terminal_state = job_state
             self._remove_workspace_job()
-        return JOB_RETURN_CODE_MAPPING.get(job_state, JobReturnCode.UNKNOWN)
+        return self._get_return_code(job_state)
 
     def _query_phase(self):
         from kubernetes.client.rest import ApiException

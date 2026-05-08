@@ -355,6 +355,7 @@ def test_fail_run_records_exception_process_without_setting_aborted_status():
     runner._stop_run = MagicMock()
 
     engine = MagicMock()
+    engine.lock = MagicMock()
     engine.run_processes = {"job-1": {RunProcessKey.PARTICIPANTS: {}}}
     engine.exception_run_processes = {}
     fl_ctx = MagicMock()
@@ -366,9 +367,39 @@ def test_fail_run_records_exception_process_without_setting_aborted_status():
 
     assert runner.fail_run("job-1", ProcessExitCode.EXCEPTION, fl_ctx) == ""
 
+    engine.lock.__enter__.assert_called_once()
     assert engine.exception_run_processes["job-1"][RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.EXCEPTION
     runner._stop_run.assert_called_once_with("job-1", fl_ctx)
     fl_ctx.set_prop.assert_called_once_with(FLContextKey.CURRENT_JOB_ID, "job-1")
+
+
+def test_fail_run_preserves_existing_exception_process_entry_under_engine_lock():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    runner._stop_run = MagicMock()
+
+    live_run_process = {RunProcessKey.PARTICIPANTS: {"token-1": MagicMock()}}
+    existing_exception_process = {
+        RunProcessKey.PARTICIPANTS: {},
+        RunProcessKey.PROCESS_RETURN_CODE: JobReturnCode.ABORTED,
+    }
+    engine = MagicMock()
+    engine.lock = MagicMock()
+    engine.run_processes = {"job-1": live_run_process}
+    engine.exception_run_processes = {"job-1": existing_exception_process}
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+
+    job = MagicMock()
+    job.job_id = "job-1"
+    runner.running_jobs = {"job-1": job}
+
+    assert runner.fail_run("job-1", ProcessExitCode.EXCEPTION, fl_ctx) == ""
+
+    engine.lock.__enter__.assert_called_once()
+    assert engine.exception_run_processes["job-1"] is existing_exception_process
+    assert existing_exception_process[RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.EXCEPTION
+    assert live_run_process.get(RunProcessKey.PROCESS_RETURN_CODE) is None
 
 
 def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code():

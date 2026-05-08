@@ -689,6 +689,17 @@ class TestK8sJobHandle:
 
         assert handle.poll() == JobReturnCode.ABORTED
 
+    def test_poll_honors_preserved_return_code_when_observed_state_becomes_terminal(self):
+        api = _make_api_instance()
+        resp = Mock()
+        resp.status.phase = PodPhase.FAILED.value
+        api.read_namespaced_pod.return_value = resp
+        handle = _make_handle(api=api)
+        handle.terminal_return_code = JobReturnCode.EXCEPTION
+
+        assert handle.poll() == JobReturnCode.EXCEPTION
+        assert handle.terminal_state == JobState.TERMINATED
+
     # -- enter_states ---------------------------------------------------------
     def test_enter_states_returns_true_when_state_matches(self):
         api = _make_api_instance()

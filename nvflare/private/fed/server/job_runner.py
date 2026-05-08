@@ -670,9 +670,16 @@ class JobRunner(FLComponent):
 
     def fail_run(self, job_id: str, process_return_code: int, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
-        run_process = engine.run_processes.get(job_id, {RunProcessKey.PARTICIPANTS: {}})
-        run_process[RunProcessKey.PROCESS_RETURN_CODE] = process_return_code
-        engine.exception_run_processes[job_id] = run_process
+        with engine.lock:
+            # Keep this synchronized with ServerEngine.wait_for_complete(), which
+            # may record the SJ's own exit code at the same time.
+            run_process = engine.exception_run_processes.get(job_id)
+            if run_process is None:
+                run_process = engine.run_processes.get(job_id)
+            if run_process is None:
+                run_process = {RunProcessKey.PARTICIPANTS: {}}
+            run_process[RunProcessKey.PROCESS_RETURN_CODE] = process_return_code
+            engine.exception_run_processes[job_id] = run_process
         self._stop_run(job_id, fl_ctx)
 
         job = self.running_jobs.get(job_id)
