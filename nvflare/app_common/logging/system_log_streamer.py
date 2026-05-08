@@ -16,7 +16,14 @@ import os
 import threading
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, JobConstants, ProcessType, StreamCtxKey, WorkspaceConstants
+from nvflare.apis.fl_constant import (
+    FLContextKey,
+    JobConstants,
+    ProcessType,
+    ReservedKey,
+    StreamCtxKey,
+    WorkspaceConstants,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
@@ -232,8 +239,21 @@ class SystemLogStreamer(Widget):
 
         # The event FLContext can be reused after the handler returns, so hand
         # the background uploader its own fresh context.
+        #
+        # CLIENT_PARENT serves multiple jobs over its lifetime, so the parent
+        # engine's ctx_manager does NOT carry per-job RUN_NUM / IDENTITY_NAME
+        # as sticky props. Without explicitly seeding them here, the fresh
+        # context produced by engine.new_context() arrives at the receiver
+        # with empty peer_ctx.get_job_id(), and JobLogReceiver routes the
+        # uploaded error log under the literal "unknown" job_id — which then
+        # fails with `StorageException: path .../jobs-storage/unknown is not
+        # a valid directory`. Seeding these reserved keys preserves the
+        # receiver's existing peer-context-as-trust-source security model.
         engine = fl_ctx.get_engine()
         stream_fl_ctx = engine.new_context() if engine else fl_ctx
+        if stream_fl_ctx is not fl_ctx:
+            stream_fl_ctx.put(key=ReservedKey.RUN_NUM, value=job_id, private=True, sticky=False)
+            stream_fl_ctx.put(key=ReservedKey.IDENTITY_NAME, value=client_name, private=True, sticky=False)
         threading.Thread(
             target=self._stream_completed_log,
             args=(stream_fl_ctx, log_path, client_name, job_id),

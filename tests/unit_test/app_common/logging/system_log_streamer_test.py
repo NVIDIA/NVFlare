@@ -97,6 +97,39 @@ def test_system_log_streamer_uploads_completed_error_log_snapshot(tmp_path):
     assert kwargs["stop_event"].is_set()
 
 
+def test_completed_upload_seeds_run_num_and_identity_on_fresh_context(tmp_path):
+    """Regression for FLARE-2921: CLIENT_PARENT's engine.new_context() returns a
+    fresh context with no per-job RUN_NUM / IDENTITY_NAME, so without explicit
+    seeding the receiver gets back peer_ctx.get_job_id()=='' and routes the
+    upload under the literal 'unknown' job id (StorageException). Verify that
+    the upload thread's context carries the real job_id and client_name."""
+    os.makedirs(tmp_path / "startup", exist_ok=True)
+    os.makedirs(tmp_path / "local", exist_ok=True)
+    workspace = Workspace(root_dir=str(tmp_path), site_name="site-1")
+    error_log_path = workspace.get_app_error_log_file_path("job-1")
+    os.makedirs(os.path.dirname(error_log_path), exist_ok=True)
+    with open(error_log_path, "w") as f:
+        f.write("boom\n")
+
+    fl_ctx = _make_fl_ctx(tmp_path)
+    stream_fl_ctx = fl_ctx.get_engine().new_context.return_value
+    # Sanity: the fresh context starts with no job_id / identity_name, mirroring
+    # the production CLIENT_PARENT engine.new_context() behavior.
+    assert stream_fl_ctx.get_job_id(default="") == ""
+    assert stream_fl_ctx.get_identity_name(default="") == ""
+
+    streamer = SystemLogStreamer(log_file_name=WorkspaceConstants.ERROR_LOG_FILE_NAME)
+    with (
+        _allow_streaming(True),
+        patch("nvflare.app_common.logging.system_log_streamer.threading.Thread", _ImmediateThread),
+        patch("nvflare.app_common.logging.system_log_streamer.LogStreamer.stream_log"),
+    ):
+        streamer._on_job_completed(EventType.JOB_COMPLETED, fl_ctx)
+
+    assert stream_fl_ctx.get_job_id() == "job-1"
+    assert stream_fl_ctx.get_identity_name() == "site-1"
+
+
 def test_system_log_streamer_skips_completed_upload_for_non_error_logs(tmp_path):
     fl_ctx = _make_fl_ctx(tmp_path)
     streamer = SystemLogStreamer(log_file_name=WorkspaceConstants.LOG_FILE_NAME)
