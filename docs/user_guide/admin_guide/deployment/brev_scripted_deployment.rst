@@ -34,9 +34,11 @@ What the Scripts Do
 * verifies that ``nvflare deploy prepare`` configured the Kubernetes launcher
   (the expected ``ServerK8sJobLauncher`` or ``ClientK8sJobLauncher`` component
   with the same ``namespace`` you launch into);
+* reads ``persistence.workspace.claimName`` from the prepared chart and rejects
+  any conflicting launch-time ``WORKSPACE_PVC``;
 * creates the ``nvflare`` namespace and the workspace/data PVCs;
-* copies the prepared participant folder contents into the workspace PVC root
-  so the chart finds ``startup/`` and ``local/`` at ``workspace_mount_path``;
+* copies the prepared ``startup/`` and ``local/`` directories into the
+  workspace PVC root so the chart finds them at ``workspace_mount_path``;
 * runs a DNS lookup for ``SERVER_HOST`` from a temporary in-namespace pod for
   client participants;
 * installs or upgrades the generated Helm chart;
@@ -136,10 +138,11 @@ Site 2:
    brev shell "${SITE_2_BREV:-site-2}"
    IMAGE="$IMAGE" SERVER_HOST="$SERVER_HOST" bash /home/ubuntu/launch_brev_nvflare.sh site-2
 
-The launch script verifies the prepared Kubernetes launcher config, creates the
-namespace and PVCs, stages the prepared participant folder contents into the
-workspace PVC root (so the chart finds ``startup/`` and ``local/`` at
-``workspace_mount_path``), installs the Helm chart, and prints recent pod logs.
+The launch script verifies the prepared Kubernetes launcher config and the
+prepared chart's workspace PVC name, creates the namespace and PVCs, stages
+``startup/`` and ``local/`` into the workspace PVC root so the chart finds them
+at ``workspace_mount_path``, installs the Helm chart, and prints recent pod
+logs.
 
 Useful Overrides
 ================
@@ -153,17 +156,23 @@ prepared resources and ``helm_chart/``. Set them when running
 the prepare script first so the prepared kit matches the launch environment.
 
 * ``NAMESPACE``: Kubernetes namespace, default ``nvflare``. Use the same value
-  when running both scripts.
-* ``WORKSPACE_PVC``: workspace PVC name, default ``nvflws``. The prepare script
-  writes this into the Helm chart's workspace claim name, and the launch script
-  creates and stages this PVC. If you change it, rerun the prepare script before
-  launch so the chart and staged PVC name stay consistent.
-* ``DATA_PVC``: optional job data PVC name, default ``nvfldata``.
+  when running both scripts. The launch script reads the prepared
+  ``resources.json.default`` and refuses to launch if the launch-time
+  ``NAMESPACE`` disagrees with the prepared launcher.
+* ``DATA_PVC``: optional job data PVC name, default ``nvfldata``. Used only at
+  launch time to create an additional PVC for study data.
 * ``CLEAN_WORKSPACE_PVC=true``: clear old workspace PVC contents before staging
   a new kit.
 
 Prepare-only overrides:
 
+* ``WORKSPACE_PVC``: workspace PVC name, default ``nvflws``. The prepare
+  script writes this into the generated Helm chart's
+  ``persistence.workspace.claimName``. The launch script reads that value
+  from the prepared chart and uses it for PVC creation and staging. If you
+  also set ``WORKSPACE_PVC`` at launch and it disagrees with the prepared
+  chart, the launch script fails so the chart, PVC, and staged content stay
+  consistent.
 * ``PARENT_PORT``: in-cluster parent service port written by
   ``nvflare deploy prepare``, default ``8102``. The launch script reads the
   prepared Helm chart and launcher config; it does not read this variable.

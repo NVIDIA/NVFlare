@@ -20,10 +20,15 @@ Defaults:
   ARCHIVE=~/nvflare-<participant-name>.tgz
   WORK_DIR=~/nvflare
   NAMESPACE=nvflare
-  WORKSPACE_PVC=nvflws
   DATA_PVC=nvfldata
   WORKSPACE_STORAGE=10Gi
   DATA_STORAGE=50Gi
+
+The workspace PVC name is read from the prepared Helm chart's
+persistence.workspace.claimName and used for PVC creation and staging. Set
+WORKSPACE_PVC at prepare time (prepare_brev_startup_kits.sh). If WORKSPACE_PVC
+is also set at launch and disagrees with the prepared chart, this script
+fails so the chart, PVC, and staged content stay consistent.
 EOF
 }
 
@@ -93,6 +98,59 @@ if not args.get("workspace_mount_path"):
     raise SystemExit("k8s_launcher args missing workspace_mount_path")
 
 print(f"Verified {resources_file} contains {expected_path} for namespace {namespace}")
+PY
+}
+
+read_prepared_workspace_pvc() {
+  local values_file="${PARTICIPANT_DIR}/helm_chart/values.yaml"
+  [[ -f "${values_file}" ]] || fail "Prepared chart values not found: ${values_file}"
+
+  python3 - "${values_file}" "${WORKSPACE_PVC:-}" <<'PY'
+import re
+import sys
+
+values_file, user_value = sys.argv[1], sys.argv[2]
+with open(values_file, "r", encoding="utf-8") as f:
+    lines = f.readlines()
+
+# Walk yaml.safe_dump output (deterministic 2-space indent, no flow style)
+# emitted by nvflare deploy prepare.
+in_persistence = in_workspace = False
+claim = None
+for raw in lines:
+    line = raw.rstrip("\n")
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        continue
+    if not line.startswith(" "):
+        in_persistence = stripped.startswith("persistence:")
+        in_workspace = False
+        continue
+    if in_persistence and line.startswith("  ") and not line.startswith("   "):
+        in_workspace = stripped.startswith("workspace:")
+        continue
+    if in_persistence and in_workspace and line.startswith("    "):
+        match = re.match(r"\s*claimName:\s*(\S+)", line)
+        if match:
+            claim = match.group(1).strip("\"'")
+            break
+
+if not claim:
+    raise SystemExit(
+        f"persistence.workspace.claimName not found in {values_file}. "
+        "Rerun nvflare deploy prepare and copy the prepared archive."
+    )
+
+if user_value and user_value != claim:
+    raise SystemExit(
+        f"WORKSPACE_PVC={user_value!r} does not match prepared chart "
+        f"persistence.workspace.claimName={claim!r}. The chart was prepared "
+        f"with claimName={claim}; rerun prepare_brev_startup_kits.sh with "
+        f"WORKSPACE_PVC={user_value} to rebuild the chart, or unset "
+        "WORKSPACE_PVC at launch to use the prepared value."
+    )
+
+print(claim)
 PY
 }
 
@@ -252,7 +310,6 @@ PARTICIPANT="${1:-${PARTICIPANT:-}}"
 }
 
 NAMESPACE="${NAMESPACE:-nvflare}"
-WORKSPACE_PVC="${WORKSPACE_PVC:-nvflws}"
 DATA_PVC="${DATA_PVC:-nvfldata}"
 WORKSPACE_STORAGE="${WORKSPACE_STORAGE:-10Gi}"
 DATA_STORAGE="${DATA_STORAGE:-50Gi}"
@@ -279,6 +336,8 @@ PARTICIPANT_DIR="${WORK_DIR}/${PARTICIPANT}"
 [[ -d "${PARTICIPANT_DIR}/local" ]] || fail "local directory not found: ${PARTICIPANT_DIR}/local"
 ROLE="$(detect_role)"
 verify_prepared_launcher
+WORKSPACE_PVC="$(read_prepared_workspace_pvc)"
+echo "Using prepared workspace PVC: ${WORKSPACE_PVC}"
 
 PVC_FILE="${WORK_DIR}/nvflare-pvcs.yaml"
 COPY_POD_FILE="${WORK_DIR}/copy-to-pvcs.yaml"
