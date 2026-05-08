@@ -32,7 +32,7 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.x509.oid import NameOID
 
-from nvflare.tool.cli_output import output_error_message, output_ok
+from nvflare.tool.cli_output import output_error_message, output_ok, print_human
 
 RUNTIME_DOCKER = "docker"
 RUNTIME_K8S = "k8s"
@@ -64,12 +64,26 @@ HELM_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates" / "helm"
 PASSTHROUGH_RESOURCE_MANAGER = (
     "nvflare.app_common.resource_managers.passthrough_resource_manager.PassthroughResourceManager"
 )
+GPU_RESOURCE_MANAGER = "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager"
 DOCKER_CLIENT_LAUNCHER = "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher"
 DOCKER_SERVER_LAUNCHER = "nvflare.app_opt.job_launcher.docker_launcher.ServerDockerJobLauncher"
 K8S_CLIENT_LAUNCHER = "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
 K8S_SERVER_LAUNCHER = "nvflare.app_opt.job_launcher.k8s_launcher.ServerK8sJobLauncher"
+PROCESS_CLIENT_LAUNCHER = "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher"
+PROCESS_SERVER_LAUNCHER = "nvflare.app_common.job_launcher.server_process_launcher.ServerProcessJobLauncher"
+GPU_RESOURCE_CONSUMER = "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer"
 
 LAUNCHER_IDS = {"process_launcher", "docker_launcher", "k8s_launcher"}
+BUILTIN_LAUNCHER_PATHS = {
+    DOCKER_CLIENT_LAUNCHER,
+    DOCKER_SERVER_LAUNCHER,
+    K8S_CLIENT_LAUNCHER,
+    K8S_SERVER_LAUNCHER,
+    PROCESS_CLIENT_LAUNCHER,
+    PROCESS_SERVER_LAUNCHER,
+}
+BUILTIN_RESOURCE_MANAGER_PATHS = {GPU_RESOURCE_MANAGER, PASSTHROUGH_RESOURCE_MANAGER}
+BUILTIN_RESOURCE_CONSUMER_PATHS = {GPU_RESOURCE_CONSUMER}
 RESOURCE_CONSUMER_IDS = {"resource_consumer"}
 DOCKER_RESERVED_KWARGS = {
     "volumes",
@@ -227,6 +241,8 @@ def _prepare_docker(kit_info: KitInfo, final_output: Path, config: dict[str, Any
         "default_job_env": job_launcher.get("default_job_env") or {},
     }
     _patch_resources(kit_info.kit_dir, "docker_launcher", launcher_path, launcher_args)
+    if kit_info.role == ROLE_SERVER:
+        _relocate_server_storage_to_workspace(kit_info.kit_dir, WORKSPACE_MOUNT_PATH)
     _patch_comm_config_for_docker(kit_info.kit_dir)
     _ensure_study_data_template(kit_info.kit_dir)
     _remove_start_scripts(kit_info.kit_dir, keep={DOCKER_START_SH})
@@ -464,6 +480,7 @@ def _patch_resources(kit_dir: Path, launcher_id: str, launcher_path: str, launch
     if not isinstance(components, list):
         _fail("INVALID_KIT", "resources.json.default components must be a list.", "Fix the startup kit resources file.")
 
+    _warn_for_replaced_components(components, launcher_id, launcher_path)
     components[:] = [
         c for c in components if c.get("id") not in LAUNCHER_IDS and c.get("id") not in RESOURCE_CONSUMER_IDS
     ]
@@ -477,6 +494,56 @@ def _patch_resources(kit_dir: Path, launcher_id: str, launcher_path: str, launch
     )
     components.append({"id": launcher_id, "path": launcher_path, "args": launcher_args})
     _write_resources(local_dir, resources)
+
+
+def _warn_for_replaced_components(components: list[dict[str, Any]], launcher_id: str, launcher_path: str) -> None:
+    for component in components:
+        component_id = component.get("id")
+        if component_id in RESOURCE_CONSUMER_IDS and _component_has_custom_config(
+            component, BUILTIN_RESOURCE_CONSUMER_PATHS
+        ):
+            _warn(
+                f"deploy prepare removes component '{component_id}' from resources.json.default; "
+                "existing resource consumer configuration will not be used by the prepared runtime."
+            )
+        elif component_id == "resource_manager" and _component_has_custom_config(
+            component, BUILTIN_RESOURCE_MANAGER_PATHS
+        ):
+            _warn(
+                "deploy prepare replaces component 'resource_manager' with PassthroughResourceManager; "
+                "existing resource manager path/args will not be used by the prepared runtime."
+            )
+        elif component_id in LAUNCHER_IDS and _launcher_replacement_discards_config(
+            component, launcher_id, launcher_path
+        ):
+            _warn(
+                f"deploy prepare replaces component '{component_id}' with generated '{launcher_id}' configuration; "
+                "existing launcher path/args will not be used by the prepared runtime."
+            )
+
+
+def _component_has_custom_config(component: dict[str, Any], builtin_paths: set[str]) -> bool:
+    args = component.get("args")
+    # Empty args are the canonical "no arguments" shape in generated resources files.
+    if args:
+        return True
+    path = component.get("path")
+    return bool(path) and path not in builtin_paths
+
+
+def _launcher_replacement_discards_config(component: dict[str, Any], launcher_id: str, launcher_path: str) -> bool:
+    if component.get("args"):
+        return True
+    path = component.get("path")
+    if not path:
+        return False
+    if component.get("id") == launcher_id and path != launcher_path:
+        return True
+    return path not in BUILTIN_LAUNCHER_PATHS
+
+
+def _warn(message: str) -> None:
+    print_human(f"Warning: {message}")
 
 
 def _write_resources(local_dir: Path, resources: dict[str, Any]) -> None:
@@ -865,12 +932,17 @@ def _helm_src(role: str, filename: str) -> Path:
 def _relocate_server_storage_to_workspace(kit_dir: Path, workspace_mount_path: str) -> None:
     local_dir = kit_dir / "local"
     resources = _load_json_file(local_dir / RESOURCES_JSON_DEFAULT, RESOURCES_JSON_DEFAULT)
-    try:
-        resources["snapshot_persistor"]["args"]["storage"]["args"][
-            "root_dir"
-        ] = f"{workspace_mount_path}/snapshot-storage"
-    except KeyError:
-        pass
+    if "snapshot_persistor" in resources:
+        try:
+            resources["snapshot_persistor"]["args"]["storage"]["args"][
+                "root_dir"
+            ] = f"{workspace_mount_path}/snapshot-storage"
+        except (KeyError, TypeError):
+            _warn(
+                "snapshot_persistor is present, but deploy prepare could not relocate snapshot storage to the "
+                f"workspace at {workspace_mount_path}/snapshot-storage. Expected nested key: "
+                "snapshot_persistor.args.storage.args.root_dir."
+            )
     for component in resources.get("components", []):
         if component.get("id") == "job_manager":
             component.setdefault("args", {})["uri_root"] = f"{workspace_mount_path}/jobs-storage"

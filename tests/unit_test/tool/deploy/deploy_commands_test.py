@@ -23,7 +23,14 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from nvflare.tool.deploy.deploy_commands import HELM_RELEASE_NAME_MAX_LENGTH, _k8s_release_name, prepare_deployment
+from nvflare.tool.deploy.deploy_commands import (
+    GPU_RESOURCE_CONSUMER,
+    GPU_RESOURCE_MANAGER,
+    HELM_RELEASE_NAME_MAX_LENGTH,
+    PROCESS_CLIENT_LAUNCHER,
+    _k8s_release_name,
+    prepare_deployment,
+)
 
 
 def _write_json(path, data):
@@ -175,6 +182,28 @@ def _component(resources, component_id):
     return next(c for c in resources["components"] if c["id"] == component_id)
 
 
+def _add_server_storage(resources_path, snapshot_persistor=None):
+    resources = json.loads(resources_path.read_text())
+    resources["snapshot_persistor"] = snapshot_persistor or {
+        "path": "nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor",
+        "args": {
+            "uri_root": "/",
+            "storage": {
+                "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
+                "args": {"root_dir": "/tmp/nvflare/snapshot-storage", "uri_root": "/"},
+            },
+        },
+    }
+    resources["components"].append(
+        {
+            "id": "job_manager",
+            "path": "nvflare.apis.impl.job_def_manager.SimpleJobDefManager",
+            "args": {"uri_root": "/tmp/nvflare/jobs-storage", "job_store_id": "job_store"},
+        }
+    )
+    _write_json(resources_path, resources)
+
+
 def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
     output = tmp_path / "site-1-docker"
@@ -281,6 +310,30 @@ def test_prepare_docker_server_adds_logical_server_network_alias(tmp_path, capsy
     assert "--network-alias server" in script
 
 
+def test_prepare_docker_server_relocates_storage_to_mounted_workspace(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path)
+    _add_server_storage(kit / "local" / "resources.json.default")
+    output = tmp_path / "server-docker"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    captured = capsys.readouterr()
+
+    assert "snapshot_persistor is present" not in captured.out + captured.err
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    assert (
+        resources["snapshot_persistor"]["args"]["storage"]["args"]["root_dir"]
+        == "/var/tmp/nvflare/workspace/snapshot-storage"
+    )
+    assert _component(resources, "job_manager")["args"]["uri_root"] == "/var/tmp/nvflare/workspace/jobs-storage"
+
+
 @pytest.mark.parametrize(
     "admin_port, expected_admin_port",
     [
@@ -309,6 +362,58 @@ def test_prepare_k8s_server_exposes_admin_port_only_when_distinct(tmp_path, caps
     tcp_services = (output / "helm_chart" / "templates" / "server-tcp-services.yaml").read_text()
     assert ".Values.fedLearnPort" in tcp_services
     assert ".Values.adminPort" in tcp_services
+
+
+@pytest.mark.parametrize("runtime", ["docker", "k8s"])
+def test_prepare_server_without_snapshot_persistor_is_silent(tmp_path, capsys, runtime):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / f"server-{runtime}"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": runtime,
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    captured = capsys.readouterr()
+
+    assert "snapshot_persistor is present" not in captured.out + captured.err
+
+
+@pytest.mark.parametrize("runtime", ["docker", "k8s"])
+def test_prepare_server_warns_when_snapshot_persistor_shape_is_unexpected(tmp_path, capsys, runtime):
+    kit = _make_server_kit(tmp_path)
+    _add_server_storage(
+        kit / "local" / "resources.json.default",
+        snapshot_persistor={
+            "path": "custom.SnapshotPersistor",
+            "args": {
+                "storage": {
+                    "path": "custom.Storage",
+                }
+            },
+        },
+    )
+    output = tmp_path / f"server-{runtime}"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": runtime,
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    captured = capsys.readouterr()
+
+    combined_output = captured.out + captured.err
+    assert "snapshot_persistor is present" in combined_output
+    assert "snapshot_persistor.args.storage.args.root_dir" in combined_output
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    assert "args" not in resources["snapshot_persistor"]["args"]["storage"]
+    assert _component(resources, "job_manager")["args"]["uri_root"] == "/var/tmp/nvflare/workspace/jobs-storage"
 
 
 def test_prepare_docker_reads_org_from_cert_without_sub_start(tmp_path, capsys):
@@ -506,6 +611,77 @@ def test_prepare_k8s_rejects_invalid_namespace(tmp_path, capsys, namespace):
     assert "INVALID_CONFIG" in err
     assert "k8s config.namespace" in err
     assert not output.exists()
+
+
+def test_prepare_warns_when_replacing_custom_resource_and_launcher_config(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    resources_path = kit / "local" / "resources.json.default"
+    resources = json.loads(resources_path.read_text())
+    resources["components"] = [
+        {
+            "id": "resource_manager",
+            "path": "nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager",
+            "args": {"resources": [{"gpu": 1}]},
+        },
+        {
+            "id": "resource_consumer",
+            "path": "custom.AuditResourceConsumer",
+            "args": {},
+        },
+        {
+            "id": "process_launcher",
+            "path": "custom.ProcessLauncher",
+            "args": {},
+        },
+        {
+            "id": "k8s_launcher",
+            "path": "custom.K8sLauncher",
+            "args": {"timeout": 99},
+        },
+    ]
+    _write_json(resources_path, resources)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    captured = capsys.readouterr()
+
+    combined_output = captured.out + captured.err
+    assert "replaces component 'resource_manager'" in combined_output
+    assert "removes component 'resource_consumer'" in combined_output
+    assert "replaces component 'process_launcher'" in combined_output
+    assert "replaces component 'k8s_launcher'" in combined_output
+
+
+def test_prepare_does_not_warn_for_default_components_with_empty_args(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    resources_path = kit / "local" / "resources.json.default"
+    resources = json.loads(resources_path.read_text())
+    resources["components"] = [
+        {"id": "resource_manager", "path": GPU_RESOURCE_MANAGER, "args": {}},
+        {"id": "resource_consumer", "path": GPU_RESOURCE_CONSUMER, "args": {}},
+        {"id": "process_launcher", "path": PROCESS_CLIENT_LAUNCHER, "args": {}},
+    ]
+    _write_json(resources_path, resources)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    captured = capsys.readouterr()
+
+    assert "Warning:" not in captured.out + captured.err
 
 
 def test_prepare_k8s_client_sanitizes_service_name_without_changing_site_identity(tmp_path, capsys):
