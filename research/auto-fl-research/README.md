@@ -263,8 +263,9 @@ To generate an autoresearch-style progress image from the ledger:
 The default task profile in this directory is the compact CIFAR-10/H100
 Auto-FL profile. To adapt the concept to a new dataset, task, model family, or
 running environment, create a task folder that contains the task contract and
-the code needed to run that contract. Keep shared `scripts/`, `templates/`,
-reporting utilities, plotting, and logging helpers in the parent directory.
+the code needed to run that contract. Keep `program.md`, `scripts/`,
+`templates/`, reporting utilities, plotting, and logging helpers shared at this
+directory level.
 
 Humans select a non-default profile by naming the profile path or task name in
 the initial prompt so the agent reads `program.md` first and the requested task
@@ -300,7 +301,7 @@ At minimum, a new task should define:
 The shared runner defaults are `TASK_DIR=tasks/cifar10`,
 `JOB_SCRIPT=$TASK_DIR/job.py`, and `CLIENT_CONTRACT_PATH=$TASK_DIR/client.py`.
 New tasks should work through those defaults where possible instead of copying
-the parent `scripts/` directory.
+the shared `scripts/` directory.
 
 The important invariant is comparability: every candidate in a campaign should
 use the same sites, rounds, data limits, seed policy, model-exchange state,

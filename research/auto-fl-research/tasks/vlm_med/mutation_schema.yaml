@@ -1,7 +1,8 @@
 target: client.py, job.py, model.py, train_utils.py, med_vlm_data_utils.py, custom_aggregators.py
-goal: keep only VLM task/environment differences from the parent starter
+goal: keep VLM task/environment specifics in this task folder while following the global program.md workflow
 
-shared_parent_files:
+shared_global_files:
+  - program.md
   - scripts/
   - templates/
   - result ledger helpers
@@ -70,7 +71,6 @@ comparison_budget_args:
   local_default_candidate_budget:
     n_clients: 3
     num_rounds: 20
-    aggregation_epochs: 1
     local_train_steps: 4
     batch_size: 8
     grad_accum: 1
@@ -132,7 +132,7 @@ local_sweep:
   per_run_artifacts:
     - RUN_LOG
     - job --name
-    - AUTOFL_RESULT_DIR_FILE when using the parent run_iteration.sh
+    - AUTOFL_RESULT_DIR_FILE when using scripts/run_iteration.sh
   batch_decision_rule: >
     Wait for launched candidates to finish or time out, then rank completed
     rows against results.tsv before keeping, narrowing, or discarding the sweep
@@ -141,18 +141,19 @@ local_sweep:
 literature_review:
   trigger_after_non_improving_batches: 2
   ledger_event_status: literature
-  uses_parent_artifacts:
-    - ../templates/literature_loop.md
-    - ../templates/mutation_report.md
-    - ../scripts/log_literature_review.py
-    - ../scripts/plateau_watchdog.py
+  uses_shared_artifacts:
+    - program.md
+    - templates/literature_loop.md
+    - templates/mutation_report.md
+    - scripts/log_literature_review.py
+    - scripts/plateau_watchdog.py
   ledger_source_rule: >
     Record each literature-review cycle as a non-scored results.tsv row with
-    status=literature using the parent ledger scripts. When a candidate
+    status=literature using the shared ledger scripts. When a candidate
     implements a method or design choice from a research paper, include a
     compact source reference in the results.tsv description field, such as
     [src: Li20 FedProx arXiv:1812.06127]. Put fuller citations and the
-    hypothesis in the parent templates/mutation_report.md or campaign notes.
+    hypothesis in templates/mutation_report.md or campaign notes.
   pipeline:
     - literature_search
     - challenge_extraction
@@ -188,7 +189,7 @@ literature_review:
     - evaluation_change
     - prompt_format_change
     - full_model_weight_exchange
-    - duplicate_parent_scripts_or_templates
+    - duplicate_shared_scripts_or_templates
 
 preferred_targets:
   - client.py
@@ -199,7 +200,7 @@ preferred_targets:
   - custom_aggregators.py
 
 forbidden_mutations:
-  - duplicate parent scripts or templates inside vlm_exp
+  - duplicate shared scripts or templates inside tasks/vlm_med
   - switch ParamsType.DIFF to FULL
   - remove NUM_STEPS_CURRENT_ROUND
   - rewrite flare task loop
@@ -210,6 +211,6 @@ required_loop:
   - establish baseline first
   - keep the recipe budget fixed within a campaign
   - redirect full output to RUN_LOG
-  - record every run in results.tsv with the parent scripts
+  - record every run in results.tsv with the shared scripts
   - keep or revert after comparing score and complexity
   - run literature review after sustained non-improvement instead of local jitter

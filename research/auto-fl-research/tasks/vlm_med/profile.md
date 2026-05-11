@@ -230,7 +230,7 @@ Preferred mutation order:
    loading.
 6. `custom_aggregators.py` - task-local aggregation experiments.
 
-Do not duplicate parent `scripts/`, `templates/`, ledger helpers, reporting
+Do not duplicate shared `scripts/`, `templates/`, ledger helpers, reporting
 helpers, or plotting utilities for the VLM profile. Prefer `TASK_DIR`,
 `JOB_SCRIPT`, and `CLIENT_CONTRACT_PATH` overrides when shared tooling can
 support the profile.
