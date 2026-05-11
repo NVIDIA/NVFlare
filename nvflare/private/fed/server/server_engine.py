@@ -380,7 +380,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         if job_handle is not None:
             try:
                 job_handle.terminate()
-                self.logger.info(f"job {job_id}: terminated job handle after abort cleanup")
+                self.logger.debug(f"job {job_id}: terminated job handle after abort cleanup")
             except Exception as e:
                 self.logger.error(f"job {job_id}: failed to terminate job handle: {secure_format_exception(e)}")
         with self.lock:
