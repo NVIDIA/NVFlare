@@ -59,6 +59,14 @@ def _to_meta_numpy(value, reference):
     return result.astype(ref_array.dtype, copy=False)
 
 
+def _raise_empty_aggregation(aggregator_name: str, client_weights):
+    raise ValueError(
+        f"{aggregator_name} cannot aggregate because total client weight is zero; "
+        f"received client weights={list(client_weights)}. Check NUM_STEPS_CURRENT_ROUND "
+        "and client training output before continuing."
+    )
+
+
 class WeightedAggregator(ModelAggregator):
     def __init__(self):
         super().__init__()
@@ -85,8 +93,7 @@ class WeightedAggregator(ModelAggregator):
 
     def aggregate_model(self) -> FLModel:
         if self.total_weight == 0:
-            self.error("Total weight is zero, cannot aggregate")
-            return FLModel(params={})
+            _raise_empty_aggregation(type(self).__name__, self.client_weights)
 
         aggregated_params = {key: val / self.total_weight for key, val in self.weighted_sum.items()}
         return FLModel(params=aggregated_params, params_type=self.params_type)
@@ -165,8 +172,7 @@ class FedOptAggregator(ModelAggregator):
 
     def aggregate_model(self) -> FLModel:
         if self.total_weight == 0:
-            self.error("Total weight is zero, cannot aggregate")
-            return FLModel(params={})
+            _raise_empty_aggregation(type(self).__name__, self.client_weights)
 
         mean_diff = {key: val / self.total_weight for key, val in self.weighted_sum.items()}
         if self.optimizer == "sgdm":
@@ -293,8 +299,7 @@ class ScaffoldAggregator(ModelAggregator):
 
     def aggregate_model(self) -> FLModel:
         if self.total_weight == 0:
-            self.error("Total weight is zero, cannot aggregate")
-            return FLModel(params={})
+            _raise_empty_aggregation(type(self).__name__, self.client_weights)
 
         aggregated_params = {
             key: _to_output_type(val / self.total_weight, self.references[key])
@@ -342,8 +347,10 @@ class MedianAggregator(ModelAggregator):
 
     def aggregate_model(self) -> FLModel:
         if not self.client_models:
-            self.error("No client models to aggregate")
-            return FLModel(params={})
+            raise ValueError(
+                "MedianAggregator cannot aggregate because no client models were accepted. "
+                "Check client training output before continuing."
+            )
 
         aggregated_params = {}
         param_keys = self.client_models[0].keys()
