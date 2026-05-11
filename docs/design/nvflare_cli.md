@@ -223,7 +223,7 @@ Only commands that serve common end-user or admin tasks are exposed. Diagnostic,
 | `report_resources` | Admin | Yes -> `nvflare system resources` |
 | `shutdown` | Admin | Yes -> `nvflare system shutdown` |
 | `restart` | Admin | Yes -> `nvflare system restart` |
-| `remove_client` | Admin | No — legacy interactive-console registry cleanup only |
+| `remove_client` | Admin | No — legacy hidden interactive-console token cleanup only; client may register again |
 | `disable_client` | Admin | Yes -> `nvflare system disable-client`; persists a server-side disabled flag and rejects reconnect/heartbeat |
 | `enable_client` | Admin | Yes -> `nvflare system enable-client`; clears the server-side disabled flag |
 | `sys_info` | Both | Yes -> `nvflare system version` |
@@ -1889,8 +1889,9 @@ instead of `--timeout 0` for fire-and-forget operation. `restart all --wait`
 waits for the server restart and for previously connected clients to reconnect.
 
 `remove-client` is not exposed as a supported `nvflare system` CLI command. The legacy
-interactive-console `remove_client` operation removes only the current active registry
-entry; it does not stop the client process, revoke credentials, or prevent reconnect.
+interactive-console `remove_client` command is hidden from normal help and removes only
+the current active token entry so the client may register again. It does not stop the
+client process, revoke credentials, or prevent reconnect.
 `disable-client` is the durable operational control: it persists a disabled flag, removes
 any active registry entry, and rejects subsequent registration or heartbeat from the same
 client name until `enable-client` clears the flag. This is not certificate revocation.
@@ -2004,7 +2005,7 @@ Already exposed:
 - `download_job`
 - `shutdown(target_type, client_names=None)` — `target_type` in `server|client|all`; closes session when server/all
 - `restart(target_type, client_names=None)` — `target_type` in `server|client|all`
-- `remove_client(client_name)` — removes a single connected client from the active registry
+- `remove_client(client_name)` — legacy helper that releases a connected client's active token
 - `disable_client(client_name)` — disables a client from reconnecting until enabled
 - `enable_client(client_name)` — enables a disabled client to reconnect
 - `check_status`
