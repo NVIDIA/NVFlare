@@ -43,8 +43,8 @@ To start a campaign:
    not, stop before running experiments; do not run campaigns on `main`,
    `upstream/main`, starter branches, or shared feature branches.
 8. Inspect only the supporting files needed for the next action. Use the task
-   profile and `mutation_schema.yaml` for hard bounds, and read code files only
-   when they are relevant to the chosen mutation or failure.
+   profile and its task-local `mutation_schema.yaml` for hard bounds, and read
+   code files only when they are relevant to the chosen mutation or failure.
 9. Run the validation and smoke checks named by the task profile.
 10. Establish the baseline before mutating code or sweeping hyperparameters.
 
@@ -66,9 +66,10 @@ Common fixed fields include:
 - final evaluation clients
 - primary metric and score extraction path
 
-Some fixed fields may be technically mutable in `mutation_schema.yaml`, but
-changing one starts a new labeled budget or subcampaign. Do not compare scores
-across different budgets as if they were the same experiment.
+Some fixed fields may be technically mutable in the active task's
+`mutation_schema.yaml`, but changing one starts a new labeled budget or
+subcampaign. Do not compare scores across different budgets as if they were the
+same experiment.
 
 Local compute may be mutable when the task profile allows it and each candidate
 stays within `RUN_TIMEOUT_SECONDS`. Vary only one local-compute mode in a narrow
@@ -140,8 +141,8 @@ Generally unsafe without human approval:
 - new dependencies
 - server-coupled metadata outside an explicitly supported protocol mode
 
-Use `mutation_schema.yaml` only when this file or the task profile directs you
-to hard bounds, or when choosing a mutation axis.
+Use the active task's `mutation_schema.yaml` only when this file or the task
+profile directs you to hard bounds, or when choosing a mutation axis.
 
 ## Logging Results
 
@@ -268,8 +269,8 @@ Cycle through:
 - repeat
 
 If local ideas run out, inspect recent near-misses in `results.tsv`, reread the
-task profile and `mutation_schema.yaml`, combine compatible kept settings, or
-switch to the literature loop. Stay within the hard invariants and active
+task profile and its `mutation_schema.yaml`, combine compatible kept settings,
+or switch to the literature loop. Stay within the hard invariants and active
 budget.
 
 ## Literature Loop
@@ -294,8 +295,9 @@ Trigger literature mode when:
 
 - `scripts/plateau_watchdog.py results.tsv` prints `recommendation=literature`;
 - several crashes share the same root cause and a source-backed fix is needed;
-- after checking recent near-misses, the task profile, `mutation_schema.yaml`,
-  and known null results, no non-duplicate safe axis remains.
+- after checking recent near-misses, the task profile, the active task's
+  `mutation_schema.yaml`, and known null results, no non-duplicate safe axis
+  remains.
 
 Do not start a new literature loop while the watchdog prints
 `recommendation=continue` merely because one batch underperformed or the next
@@ -307,7 +309,7 @@ Before searching, gather working memory:
 - the last 20 scored rows and any repeated crashes
 - confirmed null or worse axes
 - active task profile and fixed budget
-- available mutation surface from `mutation_schema.yaml`
+- available mutation surface from the active task's `mutation_schema.yaml`
 - current candidate width and any accelerator pinning
 
 Use `templates/literature_loop.md` as a compact worksheet.

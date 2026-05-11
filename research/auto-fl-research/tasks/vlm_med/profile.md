@@ -8,11 +8,10 @@ single-GPU assumptions, Qwen3-VL adapter budget, score definition, and
 VLM-specific mutation surface. The general experiment loop, ledger rules,
 literature workflow, and output discipline remain in `program.md`.
 
-This profile assumes the active repo-root task files (`client.py`, `job.py`,
-`model.py`, `train_utils.py`, and `data/med_vlm_data_utils.py`) are the medical
-VLM implementation. If the VLM implementation is kept in a separate subfolder,
-restore profile-path runner support as a separate change before running logged
-VLM campaigns.
+This profile owns its implementation files under `tasks/vlm_med/`, including
+`client.py`, `job.py`, `model.py`, `train_utils.py`,
+`med_vlm_data_utils.py`, `custom_aggregators.py`, `mutation_schema.yaml`, and
+`requirements.txt`.
 
 ## Setup
 
@@ -63,13 +62,14 @@ To set up a medical VLM campaign, work with the user to:
    `upstream/main`, the starter branch, or a shared feature branch.
 10. After reading `program.md`, treat this file as the active task profile, then
     inspect only the supporting files needed for the next action:
-    - `mutation_schema.yaml` for hard mutation bounds
-    - `client.py`, `job.py`, `model.py`, `train_utils.py`, and
-      `data/med_vlm_data_utils.py` for the active VLM code surface
+    - `tasks/vlm_med/mutation_schema.yaml` for hard mutation bounds
+    - `tasks/vlm_med/client.py`, `tasks/vlm_med/job.py`,
+      `tasks/vlm_med/model.py`, `tasks/vlm_med/train_utils.py`, and
+      `tasks/vlm_med/med_vlm_data_utils.py` for the active VLM code surface
     - `README.md` or `ACKNOWLEDGEMENTS.md` only when user-facing setup or
       provenance context is needed
 11. Verify the prepared environment is ready:
-    - `PYTHON=/workspace/vlm_env/bin/python make validate`
+    - `PYTHON=/workspace/vlm_env/bin/python TASK_DIR=tasks/vlm_med make validate`
     - run a no-ledger VLM smoke with the fixed task args below and
       `--num_rounds 1 --local_train_steps 1 --max_samples_per_site 2 --max_eval_samples 2`
 12. Confirm the setup and start with the baseline.
@@ -226,14 +226,14 @@ Preferred mutation order:
 3. `model.py` - Qwen3-VL adapter-state shape, registered architecture variants,
    and parameter-budget checks.
 4. `train_utils.py` - prompt-preserving aggregate VLM evaluation helpers.
-5. `data/med_vlm_data_utils.py` - deterministic site mapping and VLM data
+5. `med_vlm_data_utils.py` - deterministic site mapping and VLM data
    loading.
-6. `custom_aggregators.py` - shared aggregation experiments when the behavior
-   is mature enough to belong in the parent harness.
+6. `custom_aggregators.py` - task-local aggregation experiments.
 
 Do not duplicate parent `scripts/`, `templates/`, ledger helpers, reporting
-helpers, or mature aggregator files for the VLM profile. Prefer path or
-environment overrides when shared tooling can support the profile.
+helpers, or plotting utilities for the VLM profile. Prefer `TASK_DIR`,
+`JOB_SCRIPT`, and `CLIENT_CONTRACT_PATH` overrides when shared tooling can
+support the profile.
 
 ## What You Can Do
 

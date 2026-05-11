@@ -1,6 +1,6 @@
 ---
 name: autofl-nvflare
-description: Help coding agents work on an NVFlare-based Auto-FL harness that follows an autoresearch-style loop. Use when the user wants to create, edit, debug, or extend program.md, task profiles such as tasks/cifar10/profile.md, job.py, client.py, custom_aggregators.py, model.py, mutation policies, results.tsv logging, or coding-agent prompts for a bounded federated-learning research loop. This skill is specifically for NVFlare harness work where the Client API loop, DIFF upload contract, and NUM_STEPS_CURRENT_ROUND metadata must stay intact unless the user explicitly asks for a protocol upgrade.
+description: Help coding agents work on an NVFlare-based Auto-FL harness that follows an autoresearch-style loop. Use when the user wants to create, edit, debug, or extend program.md, task folders such as tasks/cifar10/ and tasks/vlm_med/, task-local job.py, client.py, custom_aggregators.py, model.py, mutation policies, results.tsv logging, or coding-agent prompts for a bounded federated-learning research loop. This skill is specifically for NVFlare harness work where the Client API loop, DIFF upload contract, and NUM_STEPS_CURRENT_ROUND metadata must stay intact unless the user explicitly asks for a protocol upgrade.
 ---
 
 # autofl-nvflare
@@ -11,7 +11,7 @@ Use this skill to keep edits to the Auto-FL NVFlare starter coherent, safe, and 
 
 When the target repo includes `program.md`, read it first and treat it as the general control plane. Then read the active task profile; use `tasks/cifar10/profile.md` when the human does not specify another profile.
 
-Use `mutation_schema.yaml` for bounded mutation details only when `program.md` or the active task profile points you there, or when choosing a mutation axis. Use `AGENTS.md` / `CLAUDE.md` only as thin local guardrails.
+Use the active task's `mutation_schema.yaml` for bounded mutation details only when `program.md` or the active task profile points you there, or when choosing a mutation axis. Use `AGENTS.md` / `CLAUDE.md` only as thin local guardrails.
 
 ## Core rules
 
@@ -30,7 +30,7 @@ Preserve these invariants unless the user explicitly asks for a protocol change:
 
 ## Preferred mutation order
 
-1. Client-local changes in `client.py`
+1. Client-local changes in the active task's `client.py`
    - optimizer family
    - scheduler settings
    - local epochs, fixed local training steps, batch size, workers
@@ -39,19 +39,19 @@ Preserve these invariants unless the user explicitly asks for a protocol change:
    - label smoothing
    - FedProx local loss
    - extra scalar metrics
-2. Aggregation changes in `custom_aggregators.py`
+2. Aggregation changes in the active task's `custom_aggregators.py`
    - weighted aggregation refinements
    - FedAvg/FedOpt-style DIFF aggregation that stays inside the existing FLModel contract
    - explicit SCAFFOLD control-variate metadata when the user has opted into that protocol mode
    - clipping / robust aggregation
    - median or trimmed-mean style logic
-3. Recipe changes in `job.py`
+3. Recipe changes in the active task's `job.py`
    - rounds
    - clients
    - `cross_site_eval`
    - `launch_external_process`
    - `client_memory_gc_rounds`
-4. Registered architecture changes in `model.py`
+4. Registered architecture changes in the active task's `model.py`
    - named `model_arch` variants
    - parameter-count checks through `max_model_params`
    - no new dependencies

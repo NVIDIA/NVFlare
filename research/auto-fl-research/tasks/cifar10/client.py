@@ -28,8 +28,14 @@ import copy
 import os
 import random
 import re
+import sys
+from pathlib import Path
 
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(1, str(REPO_ROOT))
 
 import numpy as np  # noqa: E402
 import torch  # noqa: E402

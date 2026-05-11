@@ -25,7 +25,7 @@
 22. Summarize the result when interrupted or when reporting a checkpoint.
 
 ## Single-H100 mode
-Run same-budget candidate batches on the one local H100 via `PYTHON=.venv/bin/python bash scripts/run_iteration.sh`, with unique `RUN_LOG` and `--name` values for each concurrent candidate. Default to `PARALLEL_CANDIDATES=4`, and reduce the width if CUDA memory or host contention appears.
+Run same-budget candidate batches on the one local H100 via `PYTHON=.venv/bin/python TASK_DIR=tasks/cifar10 bash scripts/run_iteration.sh`, with unique `RUN_LOG` and `--name` values for each concurrent candidate. Default to `PARALLEL_CANDIDATES=4`, and reduce the width if CUDA memory or host contention appears.
 
 ## Report format
 - Hypothesis

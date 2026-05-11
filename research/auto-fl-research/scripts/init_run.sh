@@ -59,4 +59,4 @@ fi
 echo "Run initialized. Next steps:"
 echo "  make validate"
 echo "  make smoke"
-echo "  bash scripts/run_iteration.sh --description \"baseline\" --target client.py -- <budget args>"
+echo "  TASK_DIR=tasks/cifar10 bash scripts/run_iteration.sh --description \"baseline\" --target tasks/cifar10/client.py -- <budget args>"

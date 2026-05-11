@@ -6,7 +6,7 @@ Start with `program.md`. It is the general research-org entry point for the agen
 Then read the active task profile. If the human does not specify one, use
 `tasks/cifar10/profile.md`.
 
-Use `mutation_schema.yaml` only when `program.md` or the active task profile directs you to the hard mutation bounds, or when choosing a mutation axis. If anything here conflicts with `program.md`, follow `program.md` unless a human explicitly overrides it. If a task profile conflicts with generic `program.md` text on task budget, environment, metric, or edit surface, follow the task profile.
+Use the active task's `mutation_schema.yaml` only when `program.md` or the active task profile directs you to the hard mutation bounds, or when choosing a mutation axis. If anything here conflicts with `program.md`, follow `program.md` unless a human explicitly overrides it. If a task profile conflicts with generic `program.md` text on task budget, environment, metric, or edit surface, follow the task profile.
 
 ## Mission
 
@@ -15,13 +15,13 @@ Improve this Auto-FL NVFlare harness without breaking the federated contract.
 ## Files you may edit
 
 Preferred mutation files:
-- `client.py`
-- `custom_aggregators.py`
-- `job.py`
-- `model.py` for registered architecture variants under the active parameter cap
+- task-local `client.py`
+- task-local `custom_aggregators.py`
+- task-local `job.py`
+- task-local `model.py` for registered architecture variants under the active parameter cap
 
 Do not change unless explicitly requested:
-- `data/*`
+- shared `data/*` or task-local data bridge files
 
 ## Hard invariants
 
