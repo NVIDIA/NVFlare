@@ -11,13 +11,15 @@ effort level: max.
 
 It is designed to combine:
 - NVFlare's **Client API + Recipe API** patterns for `client.py`, `FedAvgRecipe`, `SimEnv`, TensorBoard tracking, and optional cross-site evaluation;
-- the CIFAR-10 simulation path for **diff-based uploads** and **custom aggregators**; and
-- the **`program.md`-centered control-plane** style popularized by [karpathy/autoresearch](https://github.com/karpathy/autoresearch), where the human primarily evolves the research instructions and the agent iterates on a bounded code surface.
+- task-specific training profiles that preserve **diff-based uploads** and comparable cross-site scoring; and
+- the **`program.md` control-plane plus task profile** style popularized by [karpathy/autoresearch](https://github.com/karpathy/autoresearch), where the human primarily evolves the research instructions and the agent iterates on a bounded code surface.
 
 ## What is included
 
-- `program.md` — the main agent control plane
-- `AGENTS.md`, `CLAUDE.md` — thin repository guardrails that point back to `program.md`
+- `program.md` — the general agent control plane
+- `cifar10.md` — the default CIFAR-10/H100 task profile
+- `vlm_med.md` — a medical VLM task profile for Qwen3-VL adapter FL campaigns
+- `AGENTS.md`, `CLAUDE.md` — thin repository guardrails that point back to `program.md` and the active task profile
 - `job.py` — merged NVFlare baseline recipe
 - `client.py` — merged client with DIFF updates and `flare.is_evaluate()` support
 - `custom_aggregators.py` — FedAvg, FedOpt-style, SCAFFOLD, and median aggregators
@@ -38,10 +40,10 @@ It is designed to combine:
 
 The [autoresearch](https://github.com/karpathy/autoresearch) repo keeps the setup intentionally small and treats `program.md` as the agent-facing control plane. The core repo only has a few files that matter, with one main editable target and a fixed evaluation harness. This starter follows that spirit, but adapts it to NVFlare:
 
-- **Primary control plane:** `program.md` is the first file the agent should read.
-- **Bounded edit surface:** mutations should mostly target `client.py`, then `custom_aggregators.py`, then `job.py`; registered, parameter-capped architecture variants may also touch `model.py`.
-- **Fixed communication budget:** compare candidates with the same round/data/evaluation setup while allowing local-compute sweeps (`aggregation_epochs` or `local_train_steps`) under the runtime cap.
-- **Comparable metric extraction:** recommended runs enable cross-site evaluation and extract a single score from `cross_val_results.json`.
+- **Primary control plane:** `program.md` is the first file the agent should read; the active task profile, such as `cifar10.md` or `vlm_med.md`, is read immediately afterward.
+- **Bounded edit surface:** mutations should follow the active task profile. For the default CIFAR-10 profile this mostly means `client.py`, then `custom_aggregators.py`, then `job.py`; registered, parameter-capped variants may also touch `model.py`.
+- **Fixed communication budget:** compare candidates with the same round/data/evaluation setup while allowing task-profile-approved local-compute sweeps under the runtime cap.
+- **Comparable metric extraction:** recommended runs enable cross-site evaluation and extract one task-defined score from `cross_val_results.json`.
 - **Run keep / discard loop:** on one local H100, the agent can launch several same-budget candidates concurrently when the 80 GB memory budget allows, then rank the completed batch against the ledger and keep, narrow, or discard.
 - **Autonomous continuation:** after setup and baseline, the agent keeps running same-budget candidates until manually interrupted.
 - **Literature-grounded recovery:** when progress stalls, `scripts/plateau_watchdog.py` gives the agent a hard backstop for switching from local sweeps back to the Camyla-inspired literature loop in `program.md`.
@@ -70,7 +72,7 @@ The current flow is:
 8. Launch the selected candidates with the normal `scripts/run_iteration.sh` mechanism, using unique `RUN_LOG` and `--name` values for each concurrent run on the same H100.
 9. Wait for the batch to finish or time out, rank the completed runs, then finalize reviewed ledger rows so completed `candidate` rows become `keep` or `discard`.
 
-This keeps the Camyla/QWBE idea inside the existing harness contract: no new dependencies, no evaluation changes, and no server-client protocol changes except explicitly labeled modes such as `--aggregator scaffold`. Architecture changes are allowed only as registered `--model_arch` variants under the active `--max_model_params` budget.
+This keeps the Camyla/QWBE idea inside the existing harness contract: no new dependencies, no evaluation changes, and no server-client protocol changes except explicitly labeled modes such as `--aggregator scaffold`. Architecture or adapter changes are allowed only as registered variants under the active task profile's parameter budget.
 
 ## Recommended agent runtime
 
@@ -111,7 +113,7 @@ This workflow assumes `/workspace` is a writable NVFlare git clone, not a source
 
 Inside the container, `cd` to `/workspace/research/auto-fl-research`, install this harness' Python requirements once with Python 3.12, export the prepared interpreter, and run preflight before handing control to the agent. Do not use the container's default `python3` if it points to Python 3.13. For Debian/Ubuntu-based devcontainers, install Python 3.12 first if it is missing.
 
-Run the following from `/workspace/research/auto-fl-research`. This directory is the entry point for the harness, and it contains the `Makefile`, `requirements.txt`, `program.md`, and run scripts:
+Run the following from `/workspace/research/auto-fl-research`. This directory is the entry point for the harness, and it contains the `Makefile`, `requirements.txt`, `program.md`, `cifar10.md`, and run scripts:
 
 ```bash
 cd /workspace/research/auto-fl-research
@@ -165,7 +167,7 @@ Make the bundled local `autofl-nvflare` skill available first if your runtime ha
 
 Then use the autofl-nvflare skill.
 
-Start in this directory and read `program.md` first. Treat it as the complete research control plane and follow its setup, mutation, budget, ledger, literature-loop, and continuation instructions.
+Start in this directory and read `program.md` first, then read `cifar10.md` for the default task profile. Treat `program.md` as the general research control plane and `cifar10.md` as the CIFAR-10/H100 source for environment, mutation, budget, and scoring details.
 
 Start a fresh autoresearch campaign for the local single GPU node before running validation, smoke tests, the baseline, or any candidate experiment. Derive a descriptive run tag at runtime using `<node>-<campaign-topic>-$(date +%Y%m%d)`, then run `bash scripts/init_run.sh <run-tag>` to create and switch to `autoresearch/<run-tag>` and initialize `results.tsv`. Verify with `git branch --show-current` that you are on that new `autoresearch/` branch. Do not run experiments on `main`, `upstream/main`, or the starter branch, and do not use date-only names or copy stale example dates.
 
@@ -174,7 +176,7 @@ export PYTHON=.venv/bin/python
 Treat that PYTHON value as authoritative. First verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version; print(sys.executable)"`, then use that exact interpreter for validation, smoke tests, candidate runs, plotting, summaries, and reports.
 Do not create a virtual environment, install dependencies, or search for alternate Python interpreters unless I explicitly ask you to. If `.venv/bin/python` is missing, invalid, or not Python 3.12, stop and tell me to rerun the README preflight in this directory with `python3.12`.
 
-Use the default H100 candidate budget unless `program.md` says otherwise:
+Use the default H100 candidate budget unless `cifar10.md` says otherwise:
 --n_clients 8 --num_rounds 20 --aggregation_epochs 4 --local_train_steps 0 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
 
 Use cross-site evaluation and keep RUN_TIMEOUT_SECONDS=1200.
@@ -189,7 +191,7 @@ After every reviewed batch, run `"${PYTHON}" scripts/plateau_watchdog.py results
 Commit `results.tsv` locally after the baseline and after each reviewed batch. Commit surviving code changes locally on the active `autoresearch/` branch as soon as they are kept; do not let kept mutations accumulate only in the working tree. Do not require pushing from inside the devcontainer.
 ```
 
-## Scoring recommendation
+## Default CIFAR-10 Scoring Recommendation
 
 For automatic comparison, use **cross-site evaluation** and compare the server global model score extracted from:
 
@@ -280,22 +282,34 @@ To generate an autoresearch-style progress image from the ledger:
 
 ## How to adapt Auto-FL to new datasets and tasks
 
-The default files in this directory are the compact CIFAR-10/H100 Auto-FL
-profile. To adapt the concept to a new dataset, task, model family, or running
-environment, create a thin task profile that contains only the files whose
-contracts must differ from the parent harness. Keep shared `scripts/`,
-`templates/`, reporting utilities, plotting, logging, and mature aggregators in
-the parent directory unless a path or environment override cannot support the
-new profile.
+The default task profile in this directory is the compact CIFAR-10/H100
+Auto-FL profile. To adapt the concept to a new dataset, task, model family, or
+running environment, create a thin task profile that contains only the contract
+details that differ from the general `program.md` control plane. Keep shared
+`scripts/`, `templates/`, reporting utilities, plotting, logging, and mature
+aggregators in the parent directory unless a path or environment override cannot
+support the new profile.
+
+The practical starting point is a working non-FL training scheme for the task.
+Once the dataset loading, model construction, local training step, and
+evaluation metric are implemented, adapt that scheme into the NVFlare
+Client API + Recipe API shape. NVIDIA FLARE's
+[`examples/advanced/qwen3-vl`](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/qwen3-vl)
+is the kind of pattern to follow for a VLM task: keep the task-specific
+training/evaluation logic in the client-side code, define the job wiring in
+`job.py`, expose the exchanged model or adapter state in `model.py`, and then
+let the task profile define the fixed comparison budget.
 
 At minimum, a task profile should define:
 
-- `program.md` and `mutation_schema.yaml` for the task contract, fixed
-  comparison budget, allowed mutation surface, metric, and environment
-  assumptions.
-- Task-specific `client.py`, `job.py`, `model.py`, `train_utils.py`, and `data/`
-  files when the dataset, training loop, model state, or score extraction differs
-  from the parent profile.
+- a profile file such as `cifar10.md` or `vlm_med.md` for the task contract,
+  fixed comparison budget, metric, environment assumptions, and preferred edit
+  surface.
+- `mutation_schema.yaml` entries for bounded mutation axes that the agent may
+  choose during a campaign.
+- Task-specific `client.py`, `job.py`, `model.py`, `train_utils.py`, and
+  `data/` files when the dataset, training loop, model state, or score
+  extraction differs from the default profile.
 - `requirements.txt` only for dependencies that are specific to the new task
   profile.
 

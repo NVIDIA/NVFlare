@@ -1,6 +1,6 @@
 ---
 name: autofl-nvflare
-description: Help coding agents work on an NVFlare-based Auto-FL harness that follows an autoresearch-style loop. Use when the user wants to create, edit, debug, or extend program.md, job.py, client.py, custom_aggregators.py, model.py, mutation policies, results.tsv logging, or coding-agent prompts for a bounded federated-learning research loop. This skill is specifically for NVFlare harness work where the Client API loop, DIFF upload contract, and NUM_STEPS_CURRENT_ROUND metadata must stay intact unless the user explicitly asks for a protocol upgrade.
+description: Help coding agents work on an NVFlare-based Auto-FL harness that follows an autoresearch-style loop. Use when the user wants to create, edit, debug, or extend program.md, task profiles such as cifar10.md, job.py, client.py, custom_aggregators.py, model.py, mutation policies, results.tsv logging, or coding-agent prompts for a bounded federated-learning research loop. This skill is specifically for NVFlare harness work where the Client API loop, DIFF upload contract, and NUM_STEPS_CURRENT_ROUND metadata must stay intact unless the user explicitly asks for a protocol upgrade.
 ---
 
 # autofl-nvflare
@@ -9,9 +9,9 @@ Use this skill to keep edits to the Auto-FL NVFlare starter coherent, safe, and 
 
 ## Entry point
 
-When the target repo includes `program.md`, read it first and treat it as the single control plane.
+When the target repo includes `program.md`, read it first and treat it as the general control plane. Then read the active task profile; use `cifar10.md` when the human does not specify another profile.
 
-Use `mutation_schema.yaml` for bounded mutation details only when `program.md` points you there or when choosing a mutation axis. Use `AGENTS.md` / `CLAUDE.md` only as thin local guardrails.
+Use `mutation_schema.yaml` for bounded mutation details only when `program.md` or the active task profile points you there, or when choosing a mutation axis. Use `AGENTS.md` / `CLAUDE.md` only as thin local guardrails.
 
 ## Core rules
 

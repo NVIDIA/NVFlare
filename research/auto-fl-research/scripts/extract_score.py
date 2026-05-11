@@ -23,7 +23,7 @@ import math
 from pathlib import Path
 
 PRIMARY_MODEL_KEY = "SRV_FL_global_model.pt"
-METRIC_KEYS = ["token_f1", "accuracy", "val_accuracy", "test_accuracy"]
+METRIC_KEYS = ["accuracy", "val_accuracy", "test_accuracy"]
 
 
 def find_json(result_root: Path) -> Path:
