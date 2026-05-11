@@ -18,6 +18,12 @@ NAME=${NAME:-autofl_full_eval}
 DESCRIPTION=${DESCRIPTION:-full_eval}
 TARGET=${TARGET:-${CLIENT_CONTRACT_PATH}}
 
+if [[ "${TASK_DIR}" != "tasks/cifar10" ]]; then
+  echo "ERROR: scripts/run_full_eval.sh has a built-in full-eval budget only for TASK_DIR=tasks/cifar10." >&2
+  echo "Use scripts/run_iteration.sh with the active task profile's budget, or add a task-specific full-eval wrapper." >&2
+  exit 2
+fi
+
 "${PYTHON}" scripts/validate_contract.py "${CLIENT_CONTRACT_PATH}"
 
 bash scripts/run_iteration.sh \

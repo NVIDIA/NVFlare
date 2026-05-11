@@ -22,7 +22,6 @@ if str(REPO_ROOT) not in sys.path:
 from custom_aggregators import WeightedAggregator
 from med_vlm_data_utils import DEFAULT_SITE_DATASETS, DEFAULT_VLM_REPO_ROOT, parse_site_datasets
 from model import (
-    DEFAULT_MAX_MODEL_PARAMS,
     DEFAULT_MODEL_ARCH,
     QWEN3VL_ADAPTER_SHAPE_FIELDS,
     available_model_architectures,
@@ -43,7 +42,7 @@ def define_parser():
     parser = argparse.ArgumentParser(description="Local medical VLM Auto-FL starter")
     parser.add_argument("--task", choices=["med-vlm"], default="med-vlm")
     parser.add_argument("--n_clients", type=int, default=3)
-    parser.add_argument("--num_rounds", type=int, default=10)
+    parser.add_argument("--num_rounds", type=int, default=20)
     parser.add_argument("--train_script", type=str, default="client.py")
     parser.add_argument("--key_metric", type=str, default="token_f1")
     parser.add_argument("--name", type=str, default=None)
@@ -63,20 +62,20 @@ def define_parser():
     parser.add_argument("--model_name_or_path", type=str, default="Qwen/Qwen3-VL-2B-Instruct")
     parser.add_argument("--hf_cache_dir", type=str, default=os.environ.get("HF_HOME"))
     parser.add_argument("--site_datasets", type=str, default=DEFAULT_SITE_DATASETS)
-    parser.add_argument("--max_samples_per_site", type=int, default=-1)
-    parser.add_argument("--max_eval_samples", type=int, default=-1)
+    parser.add_argument("--max_samples_per_site", type=int, default=512)
+    parser.add_argument("--max_eval_samples", type=int, default=512)
     parser.add_argument("--reserve_validation_from_train", action=argparse.BooleanOptionalAction, default=True)
 
     parser.add_argument("--model_arch", type=str, default=DEFAULT_MODEL_ARCH, choices=available_model_architectures())
-    parser.add_argument("--max_model_params", type=int, default=DEFAULT_MAX_MODEL_PARAMS)
+    parser.add_argument("--max_model_params", type=int, default=8_000_000)
     parser.add_argument("--aggregation_epochs", type=int, default=1)
-    parser.add_argument("--local_train_steps", type=int, default=0)
+    parser.add_argument("--local_train_steps", type=int, default=4)
     parser.add_argument("--site_local_steps_spec", type=str, default="")
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--site_lr_scale_spec", type=str, default="")
     parser.add_argument("--site_lr_scale_end_spec", type=str, default="")
     parser.add_argument("--site_lr_scale_decay_rounds", type=int, default=0)
-    parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--grad_accum", type=int, default=1)
     parser.add_argument("--eval_batch_size", type=int, default=1)
     parser.add_argument("--num_workers", type=int, default=0)
@@ -92,8 +91,8 @@ def define_parser():
 
     parser.add_argument("--max_pixels", type=int, default=50176)
     parser.add_argument("--min_pixels", type=int, default=784)
-    parser.add_argument("--lora_r", type=int, default=32)
-    parser.add_argument("--lora_alpha", type=int, default=64)
+    parser.add_argument("--lora_r", type=int, default=16)
+    parser.add_argument("--lora_alpha", type=int, default=32)
     parser.add_argument("--lora_dropout", type=float, default=0.05)
     parser.add_argument("--train_lora_modules", type=str, default="q_proj,k_proj,v_proj,o_proj")
     parser.add_argument("--adapter_num_hidden_layers", type=int, default=0)

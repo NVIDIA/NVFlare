@@ -56,7 +56,10 @@ else
   echo "results.tsv already exists; leaving it unchanged"
 fi
 
+TASK_DIR=${TASK_DIR:-tasks/cifar10}
+CLIENT_CONTRACT_PATH=${CLIENT_CONTRACT_PATH:-${TASK_DIR}/client.py}
+
 echo "Run initialized. Next steps:"
-echo "  make validate"
-echo "  make smoke"
-echo "  TASK_DIR=tasks/cifar10 bash scripts/run_iteration.sh --description \"baseline\" --target tasks/cifar10/client.py -- <budget args>"
+echo "  TASK_DIR=${TASK_DIR} make validate"
+echo "  TASK_DIR=${TASK_DIR} make smoke"
+echo "  TASK_DIR=${TASK_DIR} bash scripts/run_iteration.sh --description \"baseline\" --target ${CLIENT_CONTRACT_PATH} -- <budget args>"

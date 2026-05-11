@@ -40,7 +40,6 @@ from med_vlm_data_utils import (  # noqa: E402
     create_vlm_train_collator,
 )
 from model import (  # noqa: E402
-    DEFAULT_MAX_MODEL_PARAMS,
     DEFAULT_MODEL_ARCH,
     QWEN3VL_ADAPTER_SHAPE_FIELDS,
     adapter_state_to_peft_state,
@@ -67,14 +66,14 @@ def build_parser():
     parser.add_argument("--model_name_or_path", type=str, default="Qwen/Qwen3-VL-2B-Instruct")
     parser.add_argument("--hf_cache_dir", type=str, default=os.environ.get("HF_HOME"))
     parser.add_argument("--site_datasets", type=str, default=DEFAULT_SITE_DATASETS)
-    parser.add_argument("--max_samples_per_site", type=int, default=-1)
-    parser.add_argument("--max_eval_samples", type=int, default=-1)
+    parser.add_argument("--max_samples_per_site", type=int, default=512)
+    parser.add_argument("--max_eval_samples", type=int, default=512)
     parser.add_argument("--reserve_validation_from_train", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--aggregation_epochs", type=int, default=4)
+    parser.add_argument("--aggregation_epochs", type=int, default=1)
     parser.add_argument(
         "--local_train_steps",
         type=int,
-        default=0,
+        default=4,
         help="Exact optimizer steps per client per round. Use 0 for epoch-based training with --aggregation_epochs.",
     )
     parser.add_argument(
@@ -97,7 +96,7 @@ def build_parser():
     parser.add_argument(
         "--max_model_params",
         type=int,
-        default=DEFAULT_MAX_MODEL_PARAMS,
+        default=8_000_000,
         help="Maximum allowed model parameters for architecture-search campaigns. Use 0 to disable.",
     )
     parser.add_argument("--lr", type=float, default=2e-5)
@@ -122,7 +121,7 @@ def build_parser():
         default=0,
         help="Number of rounds for med-vlm per-site LR scale decay. 0 disables decay.",
     )
-    parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--grad_accum", type=int, default=1)
     parser.add_argument("--eval_batch_size", type=int, default=1)
     parser.add_argument("--num_workers", type=int, default=0)
@@ -168,8 +167,8 @@ def build_parser():
     )
     parser.add_argument("--max_pixels", type=int, default=50176)
     parser.add_argument("--min_pixels", type=int, default=784)
-    parser.add_argument("--lora_r", type=int, default=32)
-    parser.add_argument("--lora_alpha", type=int, default=64)
+    parser.add_argument("--lora_r", type=int, default=16)
+    parser.add_argument("--lora_alpha", type=int, default=32)
     parser.add_argument("--lora_dropout", type=float, default=0.05)
     parser.add_argument(
         "--train_lora_modules",

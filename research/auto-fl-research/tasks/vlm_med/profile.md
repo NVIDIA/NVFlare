@@ -70,8 +70,21 @@ To set up a medical VLM campaign, work with the user to:
       provenance context is needed
 11. Verify the prepared environment is ready:
     - `PYTHON=/workspace/vlm_env/bin/python TASK_DIR=tasks/vlm_med make validate`
-    - run a no-ledger VLM smoke with the fixed task args below and
-      `--num_rounds 1 --local_train_steps 1 --max_samples_per_site 2 --max_eval_samples 2`
+    - run a no-ledger VLM smoke with the fixed task args below, reduced to
+      `--num_rounds 1 --local_train_steps 1 --batch_size 1 --max_samples_per_site 2 --max_eval_samples 2`:
+
+      ```bash
+      PYTHON=/workspace/vlm_env/bin/python TASK_DIR=tasks/vlm_med \
+      SMOKE_ARGS="--task med-vlm --n_clients 3 --num_rounds 1 \
+      --local_train_steps 1 --batch_size 1 --grad_accum 1 --eval_batch_size 1 \
+      --max_samples_per_site 2 --max_eval_samples 2 \
+      --site_datasets vqa-rad,slake,path-vqa --seed 0 \
+      --model_name_or_path ${MODEL_PATH} --hf_cache_dir /workspace/.hf_cache \
+      --model_arch qwen3vl_lora_adapter --max_model_params 8000000 \
+      --lora_r 16 --lora_alpha 32 --lora_dropout 0.05 \
+      --aggregator weighted --final_eval_clients all --name smoke_medvlm" \
+      make smoke
+      ```
 12. Confirm the setup and start with the baseline.
 
 ## Task
@@ -299,10 +312,8 @@ averaged over the configured final cross-site evaluation clients. Higher is
 better. Rank `SRV_FL_global_model.pt`; do not switch to
 `SRV_best_FL_global_model.pt` mid-campaign.
 
-Logged VLM campaigns require `scripts/extract_score.py` to extract `token_f1`
-from the cross-site validation JSON. If the shared extractor only supports
-accuracy keys, update score extraction in a separate scoped change before
-running this profile.
+The shared `scripts/extract_score.py` extractor supports task metrics including
+`accuracy` and `token_f1`; this profile's comparable metric is `token_f1`.
 
 The default final evaluation clients are `all`, giving one aggregate over
 VQA-RAD, SLAKE, and PathVQA validation slices. A task/data/evaluation

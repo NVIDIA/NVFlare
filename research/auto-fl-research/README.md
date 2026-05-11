@@ -40,7 +40,7 @@ The [autoresearch](https://github.com/karpathy/autoresearch) repo keeps the setu
 - **Bounded edit surface:** mutations should follow the active task profile. For the default CIFAR-10 profile this mostly means `tasks/cifar10/client.py`, then `tasks/cifar10/custom_aggregators.py`, then `tasks/cifar10/job.py`; registered, parameter-capped variants may also touch `tasks/cifar10/model.py`.
 - **Fixed communication budget:** compare candidates with the same round/data/evaluation setup while allowing task-profile-approved local-compute sweeps under the runtime cap.
 - **Comparable metric extraction:** recommended runs enable cross-site evaluation and extract one task-defined score from `cross_val_results.json`.
-- **Run keep / discard loop:** on one local H100, the agent can launch several same-budget candidates concurrently when the 80 GB memory budget allows, then rank the completed batch against the ledger and keep, narrow, or discard.
+- **Run keep / discard loop:** the agent follows the active task profile's local hardware and candidate-width rules, then ranks completed candidates against the ledger and keeps, narrows, or discards.
 - **Autonomous continuation:** after setup and baseline, the agent keeps running same-budget candidates until manually interrupted.
 - **Literature-grounded recovery:** when progress stalls, `scripts/plateau_watchdog.py` gives the agent a hard backstop for switching from local sweeps back to the Camyla-inspired literature loop in `program.md`.
 - **Tracked experiment ledger:** `results.tsv` is committed on experiment branches so the branch carries run provenance, including non-scored literature-review events when progress stalls.
@@ -65,7 +65,7 @@ The current flow is:
 
 6. Rank the next compatible proposals with the scoring rubric and select a small batch of top candidates, up to the current `PARALLEL_CANDIDATES` width.
 7. Append a `literature` event row with `scripts/log_literature_review.py --finish` so the ledger and plot show how long the review cycle took.
-8. Launch the selected candidates with the normal `scripts/run_iteration.sh` mechanism, using unique `RUN_LOG` and `--name` values for each concurrent run on the same H100.
+8. Launch the selected candidates with the normal `scripts/run_iteration.sh` mechanism, using unique `RUN_LOG` and `--name` values for each concurrent run under the active task profile's hardware rules.
 9. Wait for the batch to finish or time out, rank the completed runs, then finalize reviewed ledger rows so completed `candidate` rows become `keep` or `discard`.
 
 This keeps the Camyla/QWBE idea inside the existing harness contract: no new dependencies, no evaluation changes, and no server-client protocol changes except explicitly labeled modes such as `--aggregator scaffold`. Architecture or adapter changes are allowed only as registered variants under the active task profile's parameter budget.
@@ -301,7 +301,9 @@ At minimum, a new task should define:
 The shared runner defaults are `TASK_DIR=tasks/cifar10`,
 `JOB_SCRIPT=$TASK_DIR/job.py`, and `CLIENT_CONTRACT_PATH=$TASK_DIR/client.py`.
 New tasks should work through those defaults where possible instead of copying
-the shared `scripts/` directory.
+the shared `scripts/` directory. The `make full` helper is a CIFAR-10 full-eval
+wrapper; use `scripts/run_iteration.sh` or a task-specific wrapper for other
+profiles.
 
 The important invariant is comparability: every candidate in a campaign should
 use the same sites, rounds, data limits, seed policy, model-exchange state,

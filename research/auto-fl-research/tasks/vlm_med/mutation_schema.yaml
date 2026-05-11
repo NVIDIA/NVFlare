@@ -1,4 +1,4 @@
-target: client.py, job.py, model.py, train_utils.py, med_vlm_data_utils.py, custom_aggregators.py
+target: task-local client.py, job.py, model.py, train_utils.py, med_vlm_data_utils.py, custom_aggregators.py
 goal: keep VLM task/environment specifics in this task folder while following the global program.md workflow
 
 shared_global_files:
@@ -79,6 +79,8 @@ comparison_budget_args:
     max_eval_samples: 512
     site_datasets: vqa-rad,slake,path-vqa
     seed: 0
+    model_name_or_path: MODEL_PATH
+    hf_cache_dir: /workspace/.hf_cache
     model_arch: qwen3vl_lora_adapter
     max_model_params: 8000000
     lora_r: 16
@@ -98,6 +100,7 @@ comparison_budget_args:
     - max_eval_samples
     - site_datasets
     - seed
+    - model_name_or_path
     - model_arch
     - max_model_params
     - lora_r

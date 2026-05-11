@@ -1,4 +1,4 @@
-target: client.py, custom_aggregators.py, job.py, model.py
+target: task-local client.py, custom_aggregators.py, job.py, model.py
 goal: mutate local client behavior and bounded registered model architectures without changing the federated protocol; scaffold metadata is allowed only when explicitly selected
 
 fixed_invariants:

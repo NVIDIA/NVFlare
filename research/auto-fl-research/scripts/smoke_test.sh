@@ -5,7 +5,7 @@ PYTHON=${PYTHON:-python3}
 TASK_DIR=${TASK_DIR:-tasks/cifar10}
 CLIENT_CONTRACT_PATH=${CLIENT_CONTRACT_PATH:-${TASK_DIR}/client.py}
 PYTHONPYCACHEPREFIX=${PYTHONPYCACHEPREFIX:-/tmp/auto-fl-pycache}
-export PYTHONPYCACHEPREFIX
+export PYTHONPYCACHEPREFIX TASK_DIR
 
 "${PYTHON}" scripts/validate_contract.py "${CLIENT_CONTRACT_PATH}"
 "${PYTHON}" scripts/pycompile_sources.py .
@@ -22,12 +22,14 @@ if [[ -z "${SMOKE_ARGS_TEXT}" ]]; then
 fi
 
 if "${PYTHON}" - <<'PY'
-import importlib.util, sys
+import importlib.util
+import os
+import sys
 
+task_dir = os.environ.get('TASK_DIR', 'tasks/cifar10')
 mods = [
     'numpy',
     'torch',
-    'torchvision',
     'nvflare',
     'nvflare.app_common.abstract.fl_model',
     'nvflare.app_common.aggregators.model_aggregator',
@@ -36,6 +38,22 @@ mods = [
     'nvflare.recipe',
     'nvflare.recipe.utils',
 ]
+if task_dir == 'tasks/cifar10':
+    mods.append('torchvision')
+elif task_dir == 'tasks/vlm_med':
+    mods.extend([
+        'accelerate',
+        'datasets',
+        'huggingface_hub',
+        'peft',
+        'PIL',
+        'qwen_vl_utils',
+        'safetensors',
+        'sentencepiece',
+        'tokenizers',
+        'transformers',
+    ])
+
 missing = []
 for mod in mods:
     try:
@@ -50,7 +68,7 @@ for mod in mods:
 if missing:
     print('missing or incompatible:', ', '.join(missing))
     sys.exit(1)
-print('all required runtime modules present')
+print(f'all required runtime modules present for {task_dir}')
 PY
 then
   read -r -a SMOKE_ARGS_ARRAY <<< "${SMOKE_ARGS_TEXT}"

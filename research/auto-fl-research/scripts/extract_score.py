@@ -23,7 +23,7 @@ import math
 from pathlib import Path
 
 PRIMARY_MODEL_KEY = "SRV_FL_global_model.pt"
-METRIC_KEYS = ["accuracy", "val_accuracy", "test_accuracy"]
+METRIC_KEYS = ["accuracy", "val_accuracy", "test_accuracy", "token_f1"]
 
 
 def find_json(result_root: Path) -> Path:
@@ -49,7 +49,10 @@ def extract_score(data) -> float:
                 continue
 
     if not scores:
-        raise ValueError(f"No comparable metric found for {PRIMARY_MODEL_KEY} in cross-site validation JSON")
+        raise ValueError(
+            f"No comparable metric ({', '.join(METRIC_KEYS)}) found for "
+            f"{PRIMARY_MODEL_KEY} in cross-site validation JSON"
+        )
 
     return float(sum(scores) / len(scores))
 
