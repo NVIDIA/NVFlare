@@ -191,6 +191,21 @@ After every reviewed batch, run `"${PYTHON}" scripts/plateau_watchdog.py results
 Commit `results.tsv` locally after the baseline and after each reviewed batch. Commit surviving code changes locally on the active `autoresearch/` branch as soon as they are kept; do not let kept mutations accumulate only in the working tree. Do not require pushing from inside the devcontainer.
 ```
 
+To override the default task profile, say so explicitly in the first prompt.
+Examples:
+
+```text
+Start in this directory and read `program.md` first, then use `vlm_med.md` as the active task profile instead of the default `cifar10.md`.
+```
+
+```text
+Use the medical VLM profile for this campaign. Read `program.md`, then `vlm_med.md`, and follow `vlm_med.md` for environment, budget, metric, and mutation-surface details.
+```
+
+```text
+Create a new task profile named `my_task.md` for this dataset. Keep `program.md` as the general loop and put only the task-specific budget, metric, environment, and edit-surface rules in `my_task.md`.
+```
+
 ## Default CIFAR-10 Scoring Recommendation
 
 For automatic comparison, use **cross-site evaluation** and compare the server global model score extracted from:
@@ -289,6 +304,10 @@ details that differ from the general `program.md` control plane. Keep shared
 `scripts/`, `templates/`, reporting utilities, plotting, logging, and mature
 aggregators in the parent directory unless a path or environment override cannot
 support the new profile.
+
+Humans select a non-default profile by naming it in the prompt, for example:
+"use `vlm_med.md` as the active task profile", "use the medical VLM profile
+instead of `cifar10.md`", or "create and use `my_task.md` for this campaign".
 
 The practical starting point is a working non-FL training scheme for the task.
 Once the dataset loading, model construction, local training step, and

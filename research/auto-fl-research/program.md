@@ -20,6 +20,12 @@ To start a campaign:
 2. Read this file first, then read the task profile. The task profile owns the
    dataset, model family, runtime environment, metric, budget, and preferred edit
    surface for that campaign.
+   Examples of human profile-selection prompts:
+   - "Use `vlm_med.md` as the active task profile for this campaign."
+   - "Use the medical VLM profile instead of the default `cifar10.md`."
+   - "Create and use `my_task.md` as the task profile; follow `program.md` for
+     the general loop."
+   - "Default to `cifar10.md` for this run."
 3. Use the interpreter and dependency instructions from the task profile. Do not
    create virtual environments, install dependencies, or search for alternate
    interpreters unless the human explicitly asks.
