@@ -31,7 +31,13 @@ if __name__ == "__main__":
     job.to_clients(TBAnalyticsReceiver(events=["analytix_log_stats"]))
 
     job.add_cyclic(
-        server_config=CyclicServerConfig(num_rounds=num_rounds, max_status_report_interval=300),
+        server_config=CyclicServerConfig(
+            num_rounds=num_rounds,
+            # Default 10s is too short for clients that initialize CIFAR-10 dataset
+            # and the PyTorch model after responding to cyclic_config.
+            start_task_timeout=300,
+            max_status_report_interval=300,
+        ),
         client_config=CyclicClientConfig(
             executor=ScriptRunner(script=train_script),
             persistor=PTFileModelPersistor(model=Net()),
