@@ -133,7 +133,9 @@ If a job package is intended to be portable across deployments and carries both 
 
 ### Workspace / Storage
 - SP/CP containers receive a read-write bind mount of the host workspace directory.
-- SJ/CJ containers receive an empty tmpfs workspace root at `/var/tmp/nvflare/workspace` with `0555` permissions, read-only bind mounts for `startup/` and `local/`, and a read-write bind mount of only the current job directory at `/var/tmp/nvflare/workspace/<job_id>`.
+- SJ/CJ containers receive an empty tmpfs workspace root at `/var/tmp/nvflare/workspace` with `1777`
+  permissions, read-only bind mounts for `startup/` and `local/`, and a read-write bind mount of only the
+  current job directory at `/var/tmp/nvflare/workspace/<job_id>`.
 - The container-internal workspace mount point is always `/var/tmp/nvflare/workspace` (hardcoded).
 - Docker mode does not need workspace transfer: the job sees startup/local files and its own extracted app directly through bind mounts, while Docker prevents it from reading or writing other job directories through the workspace.
 - SJ/CJ containers use the current job workspace as their process working directory, so relative job outputs persist on the host.
@@ -180,7 +182,7 @@ SP/CP container (site admin grants via start_docker.sh)
 
 SJ/CJ container (DockerJobLauncher controls)
   ├── NO Docker socket                        ← cannot create further containers
-  ├── empty tmpfs workspace root at /var/tmp/nvflare/workspace (0555 mode)
+  ├── empty tmpfs workspace root at /var/tmp/nvflare/workspace (1777 mode)
   ├── startup bind mount at /var/tmp/nvflare/workspace/startup (read-only)
   ├── local bind mount at /var/tmp/nvflare/workspace/local (read-only)
   ├── job workspace bind mount at /var/tmp/nvflare/workspace/<job_id> (read-write)
@@ -404,6 +406,11 @@ By default, NVFlare stores job zips, results, and snapshots under `/tmp/nvflare/
 ```
 
 These paths resolve to `workspace/jobs-storage/` and `workspace/snapshot-storage/` on the host — both inside the bind mount and therefore persistent across container restarts.
+
+For SJ containers launched by `DockerJobLauncher`, the same paths exist under the isolated tmpfs workspace root.
+They are writable so server-job startup can initialize, but they are ephemeral and are not connected to the parent
+server's host-backed storage. The tmpfs uses sticky `1777` permissions so the non-root job-container user can
+initialize these directories even when Docker owns the tmpfs root as root.
 
 ### Step 3 — Start SP/CP in Docker mode
 
