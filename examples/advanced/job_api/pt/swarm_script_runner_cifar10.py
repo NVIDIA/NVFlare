@@ -34,14 +34,24 @@ if __name__ == "__main__":
 
     aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
     job.add_swarm(
-        server_config=SwarmServerConfig(num_rounds=num_rounds),
+        server_config=SwarmServerConfig(
+            num_rounds=num_rounds,
+            # Default 10s is too short for clients that initialize CIFAR-10 dataset
+            # and the PyTorch model after responding to swarm_config.
+            start_task_timeout=300,
+        ),
         client_config=SwarmClientConfig(
             executor=ScriptRunner(script=train_script),
             aggregator=aggregator,
             persistor=PTFileModelPersistor(model=Net()),
             shareable_generator=SimpleModelShareableGenerator(),
         ),
-        cse_config=CrossSiteEvalConfig(eval_task_timeout=300),
+        cse_config=CrossSiteEvalConfig(
+            # Default 10s is too short for clients that need to (re)load CIFAR-10
+            # before responding to cse_start, same race as swarm_start above.
+            start_task_timeout=300,
+            eval_task_timeout=300,
+        ),
     )
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
