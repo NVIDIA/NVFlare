@@ -18,7 +18,7 @@ into the workspace PVC, and deploying the generated charts.
 The Kubernetes environments are created from the Brev web UI. The exact control
 labels in Brev can change, but the workflow is the same: create an environment,
 select compute, switch the software configuration to ``Single-node Kubernetes``,
-open a Brev shell, copy the startup kits to the environment, then deploy with
+open a Brev shell, copy the prepared kits to the environment, then deploy with
 ``kubectl`` and ``helm`` inside each Brev environment.
 
 Brev System Overview
@@ -34,7 +34,7 @@ The Brev console is used to create environments, choose hardware, select
 ``Single-node Kubernetes``, and expose the FLARE server port. The Brev CLI is
 used from the local workstation to copy files and open shells:
 
-* ``brev copy`` uploads each provisioned startup kit archive.
+* ``brev copy`` uploads each prepared participant archive.
 * ``brev shell`` opens a shell inside a Brev environment.
 * ``brev exec`` can run non-interactive commands after the environment is ready.
 
@@ -73,14 +73,15 @@ References:
 * `NVIDIA Brev console documentation <https://docs.nvidia.com/brev/guides/console-reference>`__
 * `Brev connectivity documentation <https://docs.nvidia.com/brev/cli/connectivity>`__
 * :ref:`helm_chart`
+* :ref:`deploy_prepare_command`
 
 Scripted Three-Environment Variant
 ==================================
 
 If you already have three Brev single-node Kubernetes environments named
 ``server``, ``site-1``, and ``site-2``, the helper scripts below automate the
-same provisioning, copy, PVC staging, launcher patching, and Helm install flow
-for a server plus two clients:
+same provisioning, deploy prepare, copy, PVC staging, and Helm install flow for
+a server plus two clients:
 
 * :download:`prepare_brev_startup_kits.sh <brev_scripts/prepare_brev_startup_kits.sh>`
 * :download:`launch_brev_nvflare.sh <brev_scripts/launch_brev_nvflare.sh>`
@@ -415,6 +416,7 @@ Prepare the server and client startup kits for Kubernetes:
 
    cat >/tmp/nvflare-k8s.yaml <<'EOF'
    runtime: k8s
+   namespace: nvflare
    parent:
      docker_image: registry.example.com/nvflare:dev
      parent_port: 8102
@@ -429,6 +431,13 @@ Prepare the server and client startup kits for Kubernetes:
 
    nvflare deploy prepare "$PROD_DIR/server1" --output /tmp/nvflare-prepared/server1 --config /tmp/nvflare-k8s.yaml
    nvflare deploy prepare "$PROD_DIR/site-1" --output /tmp/nvflare-prepared/site-1 --config /tmp/nvflare-k8s.yaml
+
+The example above only sets the keys this guide needs. ``parent`` also accepts
+optional ``resources`` (parent pod CPU/memory requests and limits) and
+``pod_security_context``, and ``job_launcher`` accepts optional
+``job_pod_security_context``. See :ref:`deploy_prepare_command` for the full
+runtime config schema and :ref:`helm_chart` for how the prepared chart is
+installed.
 
 The prepared folders should contain one ``helm_chart`` directory under the
 server and client:
@@ -451,8 +460,28 @@ Each participant folder has this structure:
      startup/
      transfer/
 
-Copy Startup Kits to Brev Environments
-======================================
+During this step, ``nvflare deploy prepare`` updates
+``local/resources.json.default`` to use the Kubernetes launcher, removes any
+active ``local/resources.json`` override, updates runtime communication to use
+the generated Kubernetes Service, creates a ``local/study_data.yaml`` template
+when needed, removes the legacy ``startup/start.sh``, ``startup/sub_start.sh``,
+and ``startup/stop_fl.sh`` scripts (the parent process is launched by the Helm
+chart instead), and generates ``helm_chart/``. For server kits, it also
+relocates the default ``job_manager`` and ``snapshot_persistor`` storage paths
+under ``parent.workspace_mount_path``
+(``/var/tmp/nvflare/workspace/jobs-storage`` and
+``/var/tmp/nvflare/workspace/snapshot-storage``) so server job history and
+snapshots persist on the workspace PVC. Do not edit the launcher in
+``resources.json.default`` by hand after this step; change
+``/tmp/nvflare-k8s.yaml`` and rerun ``nvflare deploy prepare`` instead.
+
+If the input kit already configures a custom ``resource_manager``,
+``resource_consumer``, or job launcher, ``nvflare deploy prepare`` prints a
+warning and replaces those components with the runtime configuration shown
+above.
+
+Copy Prepared Kits to Brev Environments
+=======================================
 
 Package the prepared server and client folders on your local workstation:
 
@@ -471,7 +500,8 @@ the equivalent ``brev copy`` commands:
 
 The archive contains the generated ``startup/``, ``local/``, and
 ``helm_chart/`` folders. The Helm chart is run from the Brev environment after
-the archive is extracted.
+the archive is extracted. Only ``startup/`` and ``local/`` need to be staged in
+the workspace PVC.
 
 Deploy the Server Environment
 =============================
@@ -533,66 +563,18 @@ Kubernetes job pods that need study data:
 If your Brev Kubernetes environment does not have a default storage class, add
 ``storageClassName: <storage-class-name>`` under each PVC ``spec``.
 
-Patch the server launcher before copying the server folder into the workspace
-PVC. If ``local/resources.json`` exists, edit that file. Otherwise, edit
-``local/resources.json.default``. The generated startup kit normally uses
-``ServerProcessJobLauncher``. For Kubernetes job pods, replace it with
-``ServerK8sJobLauncher``.
+The server folder is already prepared for Kubernetes. Its
+``local/resources.json.default`` contains ``ServerK8sJobLauncher`` with
+``namespace: nvflare``, ``default_python_path: /usr/local/bin/python3``,
+``pending_timeout: 300``, and ``workspace_mount_path:
+/var/tmp/nvflare/workspace`` from ``/tmp/nvflare-k8s.yaml``. The same namespace
+must be used for the Helm release because the launcher creates dynamic job pods
+in that namespace.
 
-Replace this server launcher path:
-
-.. code-block:: text
-
-   nvflare.app_common.job_launcher.server_process_launcher.ServerProcessJobLauncher
-
-with this Kubernetes launcher path:
-
-.. code-block:: text
-
-   nvflare.app_opt.job_launcher.k8s_launcher.ServerK8sJobLauncher
-
-Set the server launcher ``args`` for this Brev Helm deployment:
-
-.. code-block:: json
-
-   {
-     "id": "k8s_launcher",
-     "path": "nvflare.app_opt.job_launcher.k8s_launcher.ServerK8sJobLauncher",
-     "args": {
-       "config_file_path": null,
-       "study_data_pvc_file_path": "/var/tmp/nvflare/workspace/local/study_data.yaml",
-       "namespace": "nvflare",
-       "python_path": "/usr/local/bin/python3",
-       "workspace_mount_path": "/var/tmp/nvflare/workspace",
-       "pending_timeout": 300,
-       "ephemeral_storage": "1Gi"
-     }
-   }
-
-Replace the launcher component ``id`` with ``k8s_launcher`` when you update the
-``path`` and ``args`` values.
-
-The server K8s launcher args mean:
-
-* ``config_file_path``: use ``null`` when the FL server pod launches job pods
-  in the same Brev Kubernetes cluster. The launcher uses in-cluster Kubernetes
-  credentials from the Helm-created service account.
-* ``study_data_pvc_file_path``: path inside the FL server pod to the study data
-  mapping file. This guide copies ``local/`` into
-  ``/var/tmp/nvflare/workspace/local`` through the ``nvflws`` PVC.
-* ``namespace``: Kubernetes namespace where launched job pods are created. Use
-  the same namespace used by the server Helm release, ``nvflare`` in this guide.
-* ``python_path``: Python executable inside the job container image.
-* ``workspace_mount_path``: in-container path where launched job pods mount the
-  transferred job workspace and startup kit.
-* ``pending_timeout``: seconds to wait for a launched job pod to leave
-  ``Pending`` before terminating it.
-* ``ephemeral_storage``: temporary workspace size requested for each launched
-  job pod.
-
-Copy the server startup kit contents into the ``nvflws`` PVC. The chart starts
-the server with ``-m /var/tmp/nvflare/workspace``, so the PVC root must contain
-``startup/`` and ``local/`` directly.
+Copy the prepared server ``startup/`` and ``local/`` directories into the
+``nvflws`` PVC. The chart starts the server with
+``-m /var/tmp/nvflare/workspace``, so the PVC root must contain ``startup/``
+and ``local/`` directly.
 
 .. code-block:: shell
 
@@ -623,14 +605,16 @@ the server with ``-m /var/tmp/nvflare/workspace``, so the PVC root must contain
    kubectl -n "$NAMESPACE" apply -f ~/nvflare/copy-to-pvcs.yaml
    kubectl -n "$NAMESPACE" wait \
      --for=condition=Ready pod/nvflare-pvc-copy --timeout=120s
-   kubectl -n "$NAMESPACE" cp ~/nvflare/server1/. nvflare-pvc-copy:/mnt/nvflws/
+   kubectl -n "$NAMESPACE" exec nvflare-pvc-copy -- \
+     rm -rf /mnt/nvflws/startup /mnt/nvflws/local
+   kubectl -n "$NAMESPACE" cp ~/nvflare/server1/startup nvflare-pvc-copy:/mnt/nvflws/startup
+   kubectl -n "$NAMESPACE" cp ~/nvflare/server1/local nvflare-pvc-copy:/mnt/nvflws/local
    kubectl -n "$NAMESPACE" exec nvflare-pvc-copy -- \
      ls -la /mnt/nvflws/startup /mnt/nvflws/local
    kubectl -n "$NAMESPACE" delete pod nvflare-pvc-copy
 
-The trailing ``/.`` in ``~/nvflare/server1/.`` is intentional. It copies the
-contents of the server folder into the PVC root. If the PVC root only contains a
-nested ``server1/`` directory, the server pod will not find
+Copy ``startup/`` and ``local/`` directly into the PVC root. If the PVC root
+only contains a nested ``server1/`` directory, the server pod will not find
 ``/var/tmp/nvflare/workspace/startup`` and
 ``/var/tmp/nvflare/workspace/local``.
 
@@ -709,64 +693,13 @@ Kubernetes job pods that need study data:
    kubectl -n "$NAMESPACE" apply -f ~/nvflare/nvflare-pvcs.yaml
    kubectl -n "$NAMESPACE" get pvc
 
-Patch the client launcher before copying the ``site-1`` folder into the
-workspace PVC. If ``local/resources.json`` exists, edit that file. Otherwise,
-edit ``local/resources.json.default``. The generated startup kit normally uses
-``ClientProcessJobLauncher``. For Kubernetes job pods, replace it with
-``ClientK8sJobLauncher``.
+The ``site-1`` folder is already prepared for Kubernetes. Its
+``local/resources.json.default`` contains ``ClientK8sJobLauncher`` with the
+same launcher settings from ``/tmp/nvflare-k8s.yaml``. Keep the Helm namespace
+consistent with the ``namespace`` value used by ``nvflare deploy prepare``.
 
-Replace this client launcher path:
-
-.. code-block:: text
-
-   nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher
-
-with this Kubernetes launcher path:
-
-.. code-block:: text
-
-   nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher
-
-Set the client launcher ``args`` for this Brev Helm deployment:
-
-.. code-block:: json
-
-   {
-     "id": "k8s_launcher",
-     "path": "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
-     "args": {
-       "config_file_path": null,
-       "study_data_pvc_file_path": "/var/tmp/nvflare/workspace/local/study_data.yaml",
-       "namespace": "nvflare",
-       "python_path": "/usr/local/bin/python3",
-       "workspace_mount_path": "/var/tmp/nvflare/workspace",
-       "pending_timeout": 300,
-       "ephemeral_storage": "1Gi"
-     }
-   }
-
-Replace the launcher component ``id`` with ``k8s_launcher`` when you update the
-``path`` and ``args`` values.
-
-The client K8s launcher args mean:
-
-* ``config_file_path``: use ``null`` when the FL client pod launches job pods in
-  the same Brev Kubernetes cluster. The launcher uses in-cluster Kubernetes
-  credentials from the Helm-created service account.
-* ``study_data_pvc_file_path``: path inside the FL client pod to the study data
-  mapping file. This guide copies ``local/`` into
-  ``/var/tmp/nvflare/workspace/local`` through the ``nvflws`` PVC.
-* ``namespace``: Kubernetes namespace where launched job pods are created. Use
-  the same namespace used by the client Helm release, ``nvflare`` in this guide.
-* ``python_path``: Python executable inside the job container image.
-* ``workspace_mount_path``: in-container path where launched job pods mount the
-  transferred job workspace and startup kit.
-* ``pending_timeout``: seconds to wait for a launched job pod to leave
-  ``Pending`` before terminating it.
-* ``ephemeral_storage``: temporary workspace size requested for each launched
-  job pod.
-
-Copy the ``site-1`` startup kit contents into the client ``nvflws`` PVC:
+Copy the prepared ``site-1`` ``startup/`` and ``local/`` directories into the
+client ``nvflws`` PVC:
 
 .. code-block:: shell
 
@@ -797,7 +730,10 @@ Copy the ``site-1`` startup kit contents into the client ``nvflws`` PVC:
    kubectl -n "$NAMESPACE" apply -f ~/nvflare/copy-to-pvcs.yaml
    kubectl -n "$NAMESPACE" wait \
      --for=condition=Ready pod/nvflare-pvc-copy --timeout=120s
-   kubectl -n "$NAMESPACE" cp ~/nvflare/site-1/. nvflare-pvc-copy:/mnt/nvflws/
+   kubectl -n "$NAMESPACE" exec nvflare-pvc-copy -- \
+     rm -rf /mnt/nvflws/startup /mnt/nvflws/local
+   kubectl -n "$NAMESPACE" cp ~/nvflare/site-1/startup nvflare-pvc-copy:/mnt/nvflws/startup
+   kubectl -n "$NAMESPACE" cp ~/nvflare/site-1/local nvflare-pvc-copy:/mnt/nvflws/local
    kubectl -n "$NAMESPACE" exec nvflare-pvc-copy -- \
      ls -la /mnt/nvflws/startup /mnt/nvflws/local
    kubectl -n "$NAMESPACE" delete pod nvflare-pvc-copy
@@ -846,18 +782,17 @@ name must resolve to the Brev server environment endpoint.
 Kubernetes Job Pods and nvfldata
 ================================
 
-The server and client deployment sections tell you to patch
-``local/resources.json`` or ``local/resources.json.default`` before copying each
-startup kit into ``nvflws``. Those patched files replace the process launcher
-with the Kubernetes launcher and set ``study_data_pvc_file_path`` to:
+``nvflare deploy prepare`` writes the Kubernetes launcher into
+``local/resources.json.default`` before the participant folders are copied to
+Brev. The generated launcher config sets ``study_data_pvc_file_path`` to:
 
 .. code-block:: text
 
    /var/tmp/nvflare/workspace/local/study_data.yaml
 
-When launched job pods need the ``nvfldata`` PVC, create
-``local/study_data.yaml`` in both the server and client folders before copying
-those folders into ``nvflws``. This example maps the ``default`` study's
+When launched job pods need the ``nvfldata`` PVC, edit
+``local/study_data.yaml`` in the prepared server and client folders before
+copying those folders into ``nvflws``. This example maps the ``default`` study's
 ``data`` dataset to ``nvfldata``:
 
 .. code-block:: yaml
@@ -867,8 +802,10 @@ those folders into ``nvflws``. This example maps the ``default`` study's
        source: nvfldata
        mode: rw
 
-Job pod images must also be specified in the submitted job's ``meta.json``
-``launcher_spec`` or ``resource_spec`` for the ``k8s`` launcher.
+Job pod image, Python, CPU, memory, and ephemeral storage settings should be
+specified in the submitted job's ``meta.json`` under ``launcher_spec`` for the
+``k8s`` launcher. GPU resource requests such as ``num_of_gpus`` should be
+specified under ``resource_spec``, matching :ref:`helm_chart`.
 
 Troubleshooting
 ===============
@@ -906,8 +843,9 @@ workspace root must contain:
    /var/tmp/nvflare/workspace/startup
    /var/tmp/nvflare/workspace/local
 
-Use the helper pod to inspect ``/mnt/nvflws`` and restage the contents of
-``$PROD_DIR/server1/.`` if needed.
+Use the helper pod to inspect ``/mnt/nvflws`` and restage ``startup/`` and
+``local/`` from the extracted prepared folder, such as
+``~/nvflare/server1/startup`` and ``~/nvflare/server1/local``, if needed.
 
 site-1 cannot connect to the server
 -----------------------------------
