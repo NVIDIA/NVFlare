@@ -137,7 +137,6 @@ Default local GPU candidate budget:
 - `--task med-vlm`
 - `--n_clients 3`
 - `--num_rounds 20`
-- `--aggregation_epochs 1`
 - `--local_train_steps 4`
 - `--batch_size 8`
 - `--grad_accum 1`
@@ -164,7 +163,7 @@ Recommended shell form:
 
 ```bash
 COMMON_ARGS="--task med-vlm --n_clients 3 --num_rounds 20 \
---aggregation_epochs 1 --local_train_steps 4 \
+--local_train_steps 4 \
 --batch_size 8 --grad_accum 1 --eval_batch_size 1 \
 --max_samples_per_site 512 --max_eval_samples 512 \
 --site_datasets vqa-rad,slake,path-vqa --seed 0 \
