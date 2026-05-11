@@ -7,12 +7,12 @@ SP/CP containers are started manually; SJ/CJ containers are launched automatical
 
 - Docker with a working daemon
 - NVFlare installed (development install from repo root: `pip install -e .[dev,PT]`)
-- Run all commands from the **repo root** unless noted otherwise
+- Run all commands from the `examples/docker` directory unless noted otherwise
 
 ## Step 0: Build Docker images
 
 ```bash
-bash examples/docker/build_docker.sh
+bash build_docker.sh
 ```
 
 This builds two images:
@@ -22,7 +22,7 @@ This builds two images:
 ## Step 1: Provision
 
 ```bash
-nvflare provision -p examples/docker/project.yml
+nvflare provision -p project.yml
 ```
 
 This generates a workspace under `workspace/docker_test_project/` relative to the current directory.
@@ -34,12 +34,12 @@ Prepare the server and site-1 startup kits for Docker mode:
 ```bash
 nvflare deploy prepare \
   workspace/docker_test_project/prod_00/server \
-  --config examples/docker/docker.yaml \
+  --config docker.yaml \
   --output workspace/docker_test_project/prepared/server
 
 nvflare deploy prepare \
   workspace/docker_test_project/prod_00/site-1 \
-  --config examples/docker/docker.yaml \
+  --config docker.yaml \
   --output workspace/docker_test_project/prepared/site-1
 ```
 
@@ -62,35 +62,41 @@ This example runs in **hybrid mode**: site-1 uses Docker job launcher (`start_do
 site-2 runs in process mode (`start.sh`). This tests that both modes work together in the
 same federation.
 
-Run each block in a separate terminal from the repo root.
+The first `start_docker.sh` command creates `nvflare-network` if it does not
+already exist, so no separate `docker network create` command is required.
 
-Terminal 1:
+Start all three parent processes from the `examples/docker` directory:
+
 ```bash
-# Server (Docker mode)
-cd workspace/docker_test_project/prepared/server
-bash startup/start_docker.sh
+(
+  cd workspace/docker_test_project/prepared/server
+  nohup bash startup/start_docker.sh > server.log 2>&1 < /dev/null &
+)
+(
+  cd workspace/docker_test_project/prepared/site-1
+  nohup bash startup/start_docker.sh > site-1.log 2>&1 < /dev/null &
+)
+(
+  cd workspace/docker_test_project/prod_00/site-2
+  nohup bash startup/start.sh > site-2.log 2>&1 < /dev/null &
+)
 ```
 
-Terminal 2:
-```bash
-# site-1 (Docker mode — job containers launched per job)
-cd workspace/docker_test_project/prepared/site-1
-bash startup/start_docker.sh
-```
+You can watch startup logs with:
 
-Terminal 3:
 ```bash
-# site-2 (process mode — jobs run as subprocesses of CP)
-cd workspace/docker_test_project/prod_00/site-2
-bash startup/start.sh
+tail -f \
+  workspace/docker_test_project/prepared/server/server.log \
+  workspace/docker_test_project/prepared/site-1/site-1.log \
+  workspace/docker_test_project/prod_00/site-2/site-2.log
 ```
 
 ## Step 5: Submit a job
 
 ```bash
 nvflare job submit \
-  -j examples/docker/jobs/hello-numpy-docker \
-  -w workspace/docker_test_project/prod_00/admin@nvidia.com
+  -j jobs/hello-numpy-docker \
+  --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
 ```
 
 Available jobs:
