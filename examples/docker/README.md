@@ -34,12 +34,12 @@ Prepare the server and site-1 startup kits for Docker mode:
 ```bash
 nvflare deploy prepare \
   workspace/docker_test_project/prod_00/server \
-  --config examples/docker/docker.yaml \
+  --config docker.yaml \
   --output workspace/docker_test_project/prepared/server
 
 nvflare deploy prepare \
   workspace/docker_test_project/prod_00/site-1 \
-  --config examples/docker/docker.yaml \
+  --config docker.yaml \
   --output workspace/docker_test_project/prepared/site-1
 ```
 
