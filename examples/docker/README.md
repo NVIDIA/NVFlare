@@ -7,12 +7,12 @@ SP/CP containers are started manually; SJ/CJ containers are launched automatical
 
 - Docker with a working daemon
 - NVFlare installed (development install from repo root: `pip install -e .[dev,PT]`)
-- Run all commands from the **repo root** unless noted otherwise
+- Run all commands from the `examples/docker` directory unless noted otherwise
 
 ## Step 0: Build Docker images
 
 ```bash
-bash examples/docker/build_docker.sh
+bash build_docker.sh
 ```
 
 This builds two images:
@@ -22,7 +22,7 @@ This builds two images:
 ## Step 1: Provision
 
 ```bash
-nvflare provision -p examples/docker/project.yml
+nvflare provision -p project.yml
 ```
 
 This generates a workspace under `workspace/docker_test_project/` relative to the current directory.
@@ -65,7 +65,7 @@ same federation.
 The first `start_docker.sh` command creates `nvflare-network` if it does not
 already exist, so no separate `docker network create` command is required.
 
-Start all three parent processes from the repo root:
+Start all three parent processes from the `examples/docker` directory:
 
 ```bash
 (
@@ -95,7 +95,7 @@ tail -f \
 
 ```bash
 nvflare job submit \
-  -j examples/docker/jobs/hello-numpy-docker \
+  -j jobs/hello-numpy-docker \
   --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
 ```
 
