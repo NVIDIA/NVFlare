@@ -60,7 +60,6 @@ commands shown as examples of how they may be run with a description.
     ,``configure_site_log client <client-name>... config``,Configure the site log on the target client(s).
     sys_info,``sys_info server``,Get system information
     ,``sys_info client *clientname*``,Get system information. Individual clients can be shutdown by specifying *clientname*.
-    remove_client,``remove_client clientname``,Issue command for server to release client before the 10 minute timeout to allow client to rejoin after manual restart.
     restart,``restart client``,Restarts all of the clients. Individual clients can be restarted by specifying *clientname*.
     ,``restart server``,Restarts the server. Clients will also be restarted. Note that the admin client will need to log in again after the server restarts.
     shutdown,``shutdown client``,Shuts down all of the clients. Individual clients can be shutdown by specifying *clientname*. Please note that this may not be instant but may take time for the command to take effect.

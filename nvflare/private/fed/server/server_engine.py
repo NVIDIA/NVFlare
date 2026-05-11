@@ -587,6 +587,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         return ""
 
     def remove_clients(self, clients: List[str]) -> str:
+        """Remove active client-token entries so those clients can register again."""
         for client in clients:
             self._remove_dead_client(client)
         return ""
