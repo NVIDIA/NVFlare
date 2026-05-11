@@ -289,7 +289,11 @@ class K8sJobHandle(JobHandleSpec):
             self.terminal_state = JobState.TERMINATED
         except ApiException as e:
             if getattr(e, "status", None) == 404:
-                self.logger.info(
+                # Expected when terminate() runs as an idempotent cleanup after the
+                # pod already exited gracefully (e.g. server abort path where the SJ
+                # left on its own before the safety-net terminate fires). Not an
+                # event of interest for operators monitoring logs.
+                self.logger.debug(
                     f"job {self.job_id} pod {self.pod_name} not found during termination; assuming terminated"
                 )
             else:
