@@ -259,11 +259,9 @@ Safe medical VLM search axes include:
 - `batch_size`, `grad_accum`, `eval_batch_size`, and `num_workers` within the
   single-GPU memory budget
 - `weight_decay`
-- `max_grad_norm`
 - FedProx via `--fedproxloss_mu`
 - client-local FedDyn-style regularization via `--feddyn_alpha`
 - sharpness-aware minimization via `--sam_rho` and `--sam_eps`
-- LoRA+ via `--lora_plus_ratio` and bounded site-specific LoRA+ ratios
 - LoRA trainable module or layer subsets when the adapter state keys remain
   stable
 - adapter-only architecture variants under an explicitly labeled adapter-budget
