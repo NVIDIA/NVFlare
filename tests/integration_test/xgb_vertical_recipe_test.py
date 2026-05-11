@@ -76,6 +76,19 @@ class MockVerticalDataLoader(XGBDataLoader):
         return dtrain, dval
 
 
+def _make_vertical_per_site_config(num_clients=2, label_owner="site-1", n_samples=50, n_features=3):
+    return {
+        f"site-{site_id}": {
+            "data_loader": MockVerticalDataLoader(
+                has_labels=f"site-{site_id}" == label_owner,
+                n_samples=n_samples,
+                n_features=n_features,
+            )
+        }
+        for site_id in range(1, num_clients + 1)
+    }
+
+
 class TestXGBVerticalRecipe:
     """Smoke tests for XGBVerticalRecipe.
 
@@ -86,14 +99,8 @@ class TestXGBVerticalRecipe:
     def test_vertical_basic(self):
         """Test basic vertical XGBoost completes successfully."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            env = SimEnv(num_clients=2, workspace_root=os.path.join(tmpdir, "test_vertical"))
-
-            # Configure per-site data loaders
-            # site-1 has labels, site-2 has features only
-            per_site_config = {
-                "site-1": {"data_loader": MockVerticalDataLoader(has_labels=True, n_samples=50, n_features=3)},
-                "site-2": {"data_loader": MockVerticalDataLoader(has_labels=False, n_samples=50, n_features=3)},
-            }
+            per_site_config = _make_vertical_per_site_config()
+            env = SimEnv(clients=list(per_site_config), workspace_root=os.path.join(tmpdir, "test_vertical"))
 
             recipe = XGBVerticalRecipe(
                 name="test_vertical",
@@ -123,6 +130,7 @@ class TestXGBVerticalRecipe:
             min_clients=2,
             num_rounds=1,
             label_owner="site-1",  # Valid
+            per_site_config=_make_vertical_per_site_config(),
         )
         assert recipe.label_owner == "site-1"
 
@@ -133,6 +141,7 @@ class TestXGBVerticalRecipe:
                 min_clients=2,
                 num_rounds=1,
                 label_owner="client1",  # Invalid format
+                per_site_config=_make_vertical_per_site_config(),
             )
 
     def test_custom_xgb_params(self):
@@ -152,6 +161,7 @@ class TestXGBVerticalRecipe:
             num_rounds=1,
             label_owner="site-1",
             xgb_params=custom_params,
+            per_site_config=_make_vertical_per_site_config(),
         )
 
         # Verify params are stored
@@ -161,15 +171,10 @@ class TestXGBVerticalRecipe:
         """Test vertical recipe works with more than 2 clients."""
         with tempfile.TemporaryDirectory() as tmpdir:
             num_clients = 3
-            env = SimEnv(num_clients=num_clients, workspace_root=os.path.join(tmpdir, "test_multi_vertical"))
-
-            # Configure per-site data loaders - only site-2 has labels
-            per_site_config = {}
-            for site_id in range(1, num_clients + 1):
-                has_labels = site_id == 2  # Only site-2 has labels
-                per_site_config[f"site-{site_id}"] = {
-                    "data_loader": MockVerticalDataLoader(has_labels=has_labels, n_samples=30, n_features=2)
-                }
+            per_site_config = _make_vertical_per_site_config(
+                num_clients=num_clients, label_owner="site-2", n_samples=30, n_features=2
+            )
+            env = SimEnv(clients=list(per_site_config), workspace_root=os.path.join(tmpdir, "test_multi_vertical"))
 
             recipe = XGBVerticalRecipe(
                 name="test_multi_vertical",
@@ -191,6 +196,7 @@ class TestXGBVerticalRecipe:
             num_rounds=1,
             label_owner="site-1",
             in_process=True,  # Default
+            per_site_config=_make_vertical_per_site_config(),
         )
         assert recipe.in_process is True
 
@@ -200,6 +206,7 @@ class TestXGBVerticalRecipe:
             num_rounds=1,
             label_owner="site-1",
             in_process=False,
+            per_site_config=_make_vertical_per_site_config(),
         )
         assert recipe2.in_process is False
 
@@ -212,5 +219,6 @@ class TestXGBVerticalRecipe:
             num_rounds=1,
             label_owner="site-1",
             model_file_name=custom_name,
+            per_site_config=_make_vertical_per_site_config(),
         )
         assert recipe.model_file_name == custom_name

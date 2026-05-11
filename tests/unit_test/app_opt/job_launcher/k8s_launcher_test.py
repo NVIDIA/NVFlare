@@ -681,6 +681,25 @@ class TestK8sJobHandle:
         handle.terminate()
         ws_transfer.remove_job.assert_called_once_with("job-raw")
 
+    def test_manual_terminate_poll_returns_aborted(self):
+        api = _make_api_instance()
+        handle = _make_handle(api=api)
+
+        handle.terminate()
+
+        assert handle.poll() == JobReturnCode.ABORTED
+
+    def test_poll_honors_preserved_return_code_when_observed_state_becomes_terminal(self):
+        api = _make_api_instance()
+        resp = Mock()
+        resp.status.phase = PodPhase.FAILED.value
+        api.read_namespaced_pod.return_value = resp
+        handle = _make_handle(api=api)
+        handle.terminal_return_code = JobReturnCode.EXCEPTION
+
+        assert handle.poll() == JobReturnCode.EXCEPTION
+        assert handle.terminal_state == JobState.TERMINATED
+
     # -- enter_states ---------------------------------------------------------
     def test_enter_states_returns_true_when_state_matches(self):
         api = _make_api_instance()
@@ -715,6 +734,40 @@ class TestK8sJobHandle:
         handle.enter_states([JobState.RUNNING])
         api.delete_namespaced_pod.assert_called_once()
         assert handle.terminal_state == JobState.TERMINATED
+
+    def test_enter_states_timeout_poll_returns_exception(self):
+        api = _make_api_instance()
+        resp = Mock()
+        resp.status.phase = PodPhase.PENDING.value
+        api.read_namespaced_pod.return_value = resp
+        handle = _make_handle(api=api, timeout=0)
+        handle.enter_states([JobState.RUNNING])
+        assert handle.poll() == JobReturnCode.EXCEPTION
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time.sleep")
+    def test_enter_states_deletes_pending_pod_after_pending_timeout(self, mock_sleep):
+        api = _make_api_instance()
+        resp = Mock()
+        resp.status.phase = PodPhase.PENDING.value
+        api.read_namespaced_pod.return_value = resp
+        handle = _make_handle(
+            api=api,
+            timeout=None,
+            pending_timeout=2,
+            namespace="nvflare-test",
+            pod_name="pending-resource-pod",
+        )
+
+        assert handle.enter_states([JobState.RUNNING]) is False
+
+        assert api.read_namespaced_pod.call_count == 2
+        api.delete_namespaced_pod.assert_called_once_with(
+            name="pending-resource-pod",
+            namespace="nvflare-test",
+            grace_period_seconds=0,
+        )
+        assert handle.terminal_state == JobState.TERMINATED
+        assert handle.poll() == JobReturnCode.EXCEPTION
 
     def test_enter_states_returns_false_on_terminal_pod_phase(self):
         api = _make_api_instance()
@@ -755,6 +808,7 @@ class TestK8sJobHandle:
         assert handle.terminal_state == JobState.TERMINATED
         assert api.read_namespaced_pod.call_count == 2
         api.delete_namespaced_pod.assert_called_once()
+        assert handle.poll() == JobReturnCode.EXCEPTION
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time.sleep")
     def test_enter_states_does_not_count_api_errors_as_pending(self, mock_sleep):

@@ -1156,6 +1156,29 @@ def test_list_jobs_ignores_duration_parse_failures(monkeypatch):
     assert first_row[0] == "job-1"
 
 
+def test_list_jobs_shows_execution_exception_status(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    jobs = [
+        _FakeListedJob(
+            {
+                JobMetaKey.JOB_ID.value: "job-1",
+                JobMetaKey.JOB_NAME.value: "k8s-pending-timeout",
+                JobMetaKey.STATUS.value: RunStatus.FINISHED_EXECUTION_EXCEPTION.value,
+            }
+        )
+    ]
+    conn = _MockConnection(app_ctx=_FakeListEngine(jobs), props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().list_jobs(conn, ["list_jobs"])
+
+    assert conn.errors == []
+    assert len(conn.tables) == 1
+    assert len(conn.tables[0].rows) == 1
+    first_row, row_meta = conn.tables[0].rows[0]
+    assert first_row[2] == RunStatus.FINISHED_EXECUTION_EXCEPTION.value
+    assert row_meta[MetaKey.STATUS] == RunStatus.FINISHED_EXECUTION_EXCEPTION.value
+
+
 def test_job_match_tolerates_missing_job_id_and_name():
     assert JobCommandModule._job_match({}, "job", "name", "", "default") is False
 

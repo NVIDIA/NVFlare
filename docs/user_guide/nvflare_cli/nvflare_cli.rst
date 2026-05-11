@@ -31,6 +31,8 @@ Command groups
 - ``poc``: manage a local proof-of-concept deployment
 - ``provision``: centralized provisioning workflow
 - ``cert`` / ``package``: distributed (manual) provisioning workflow
+- ``deploy``: prepare existing server or client startup kits for deployment
+  runtimes such as Docker or Kubernetes
 - ``job``: submit and manage jobs
 - ``study``: manage multi-study lifecycle (register, enroll sites, manage users)
 - ``system``: inspect and operate a running FL system
@@ -54,6 +56,7 @@ workflows unless you are maintaining an older setup.
    kit_command
    provision_command
    distributed_provisioning
+   deploy_command
    job_cli
    study_command
    system_command

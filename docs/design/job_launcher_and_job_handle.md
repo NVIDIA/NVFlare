@@ -86,7 +86,12 @@ Abstract base class for launching jobs (`class JobLauncherSpec(FLComponent, ABC)
 | `SUCCESS` | 0 | Job completed successfully. |
 | `EXECUTION_ERROR` | 1 | Job failed during execution. |
 | `ABORTED` | 9 | Job was terminated/aborted. |
+| `EXCEPTION` | 101 | Launcher or child process hit an execution exception before normal completion. |
 | `UNKNOWN` | 127 | Status cannot be determined (still running, or lost). |
+
+`JobReturnCode` inherits the shared `ProcessExitCode` values, so launchers can
+also return `EXCEPTION`, `CONFIG_ERROR`, or `UNSAFE_COMPONENT` when the failure
+is detected outside the child job process.
 
 **`add_launcher(launcher, fl_ctx)`** — Appends a launcher to the `FLContextKey.JOB_LAUNCHER` list on `fl_ctx`. Called by launchers during the `BEFORE_JOB_LAUNCH` event to register for the current job.
 
@@ -131,18 +136,23 @@ If a job lacks required configuration for the site's launcher (e.g. no image on 
     },
     "site-1": {
       "docker": { "image": "nvflare-pt:2.7", "shm_size": "8g" },
-      "k8s":    { "image": "nvflare-pt:2.7", "cpu": "4", "memory": "16Gi", "num_of_gpus": 1, "ephemeral_storage": "8Gi" }
+      "k8s":    { "image": "nvflare-pt:2.7", "cpu": "4", "memory": "16Gi", "ephemeral_storage": "8Gi" }
+    }
+  },
+  "resource_spec": {
+    "site-1": {
+      "num_of_gpus": 1
     }
   }
 }
 ```
 
-Resolution via `get_job_launcher_spec(job_meta, site_name, mode)` in `nvflare/utils/job_launcher_utils.py`:
+Resolution model for new job metadata:
 
 1. Merge `launcher_spec["default"][mode]` with `launcher_spec[site_name][mode]` (site wins on conflict).
-2. Fall back to the nested `resource_spec[site][mode]` format for backward compatibility when `launcher_spec` is absent.
+2. Keep `resource_spec` separate from launcher settings; it is not a place for new Docker or K8s launcher configuration.
 
-`resource_spec` (distinct from `launcher_spec`) is scheduler-facing: the scheduler reads it at job admission time to decide if the site has the required hardware. Docker and K8s both support flat `resource_spec[site]["num_of_gpus"]` as a backward-compatible GPU fallback when `num_of_gpus` is not present in `launcher_spec`.
+`resource_spec` (distinct from `launcher_spec`) is scheduler-facing: the scheduler reads it at job admission time to decide if the site has the required hardware. Docker and K8s use flat `resource_spec[site]["num_of_gpus"]` for GPU requests.
 
 ### 3.3 Server Side (`ServerEngine`)
 
@@ -289,7 +299,7 @@ Launch sequence:
 | 1 | Read `job_image` from `get_job_launcher_spec(job_meta, site_name, "docker").get("image")`. Raise `RuntimeError` if absent. |
 | 2 | Override `PARENT_URL`: replace `localhost` with the site container name so SJ/CJ connects back via Docker DNS. |
 | 3 | Build `command = [python_path, "-u", "-m", exe_module] + module_args`, using `launcher_spec[site][docker].python_path` when present and `default_python_path` otherwise. |
-| 4 | Resolve `num_of_gpus` from `launcher_spec[site][docker]`, falling back to flat `resource_spec[site]` if no mode keys present. |
+| 4 | Resolve `num_of_gpus` from the flat `resource_spec[site]` GPU resource requirement. |
 | 5 | Merge `default_job_container_kwargs` with job-level `launcher_spec` keys (job wins). Set `device_requests` from `num_of_gpus` if not already in merged kwargs. |
 | 6 | `docker_client.containers.run(job_image, command=..., network=..., volumes=..., **merged_kwargs)`. |
 | 7 | `job_handle.enter_states([DockerStatus.RUNNING])`. Return handle. |
@@ -332,7 +342,7 @@ JobLauncherSpec (FLComponent, ABC)
 | `poll()` | Returns `terminal_state` if set; otherwise calls `_query_state()` mapped through `JOB_RETURN_CODE_MAPPING`. |
 | `wait()` | Loops `_query_state()`; sets `terminal_state` when `SUCCEEDED` or `TERMINATED`; sleeps 1s. No timeout. |
 | `_query_phase()` | Calls `read_namespaced_pod`. On 404: sets `terminal_state = TERMINATED`. Returns `PodPhase.UNKNOWN` on any error. |
-| `enter_states()` | Polls every 1s. Exits on: (1) stuck-in-pending → `terminate()`, (2) terminal pod phase → set `terminal_state`, (3) wall-clock timeout → `terminate()`. Returns `True` on state reached, `False` otherwise. |
+| `enter_states()` | Polls every 1s. Exits on: (1) stuck-in-pending → delete pod and preserve `EXCEPTION` return code, (2) terminal pod phase → set `terminal_state`, (3) wall-clock timeout → delete pod and preserve `EXCEPTION` return code. Returns `True` on state reached, `False` otherwise. |
 
 Pod phase mapping:
 
@@ -343,6 +353,13 @@ Pod phase mapping:
 | `Succeeded` | `SUCCEEDED` | `SUCCESS` |
 | `Failed` | `TERMINATED` | `ABORTED` |
 | `Unknown` | `UNKNOWN` | `UNKNOWN` |
+
+Manual termination still maps to `ABORTED`. Startup timeout paths are different:
+when a pod stays `Pending` or `Unknown` past `pending_timeout`, or misses the
+wall-clock `timeout`, `K8sJobHandle` deletes the pod but makes subsequent
+`poll()` calls return `EXCEPTION`. This lets the server mark `list_jobs` as
+`FINISHED:EXECUTION_EXCEPTION` for cluster resource or startup failures instead
+of reporting a user abort.
 
 #### K8sJobLauncher
 
@@ -355,7 +372,7 @@ Constructor parameters:
 | `study_data_pvc_file_path` | required | YAML file mapping study/dataset names to PVC claim names. Validated lazily; missing study entries skip data PVC mounts and log a warning. |
 | `timeout` | `None` | Wall-clock seconds for `enter_states([RUNNING])`; also `_max_stuck_count`. |
 | `namespace` | `"default"` | Kubernetes namespace. |
-| `pending_timeout` | `120` | Stuck-detection threshold (poll iterations) when `timeout` is `None`. |
+| `pending_timeout` | `120` | Stuck-detection threshold, in poll iterations, for pods that remain `Pending` or `Unknown` when `timeout` is `None`. Hitting it reports `EXCEPTION`. |
 | `default_python_path` | `"/usr/local/bin/python3"` | Default Python executable in the pod command. Job meta can override with `launcher_spec[site][k8s].python_path`. |
 | `workspace_mount_path` | `"/var/tmp/nvflare/workspace"` | In-container path where job pods mount the transferred job workspace and startup kit. `nvflare deploy prepare` sets this from `parent.workspace_mount_path`. |
 | `ephemeral_storage` | `"1Gi"` | Default job pod workspace `emptyDir` size and `ephemeral-storage` request/limit. Job meta can override with `launcher_spec[site][k8s].ephemeral_storage`. |
@@ -367,7 +384,7 @@ Launch sequence:
 | 0 | Lazy init: load kubeconfig and create `CoreV1Api`. |
 | 1 | Sanitize job ID via `uuid4_to_rfc1123`. Extract `site_name`, `job_image` from `get_job_launcher_spec(job_meta, site_name, "k8s")`. Raise if `WORKSPACE_OBJECT` missing. |
 | 2 | Read `JOB_PROCESS_ARGS`; raise if absent or `EXE_MODULE` missing. Resolve dataset PVC mounts from `study_data_pvc_file_path` when the YAML file contains entries for the job study. |
-| 3 | Build `job_config`: name, image, args from `get_module_args()`. Use `launcher_spec[site][k8s].python_path` for the pod command when present, falling back to `default_python_path`. Mount the job workspace at `workspace_mount_path`, mount the startup-kit Secret at `<workspace_mount_path>/startup`, and set custom-code `PYTHONPATH` under `workspace_mount_path`. Add the workspace `emptyDir.sizeLimit` and `resources.requests/limits["ephemeral-storage"]` from `launcher_spec[site][k8s].ephemeral_storage` when present, falling back to the launcher default. Add K8s `resources.limits` from `launcher_spec` `num_of_gpus`, `cpu`, and `memory` when present; `num_of_gpus` falls back to flat `resource_spec[site]` for backward compatibility. Missing study entries skip data PVC mounts and log a warning. |
+| 3 | Build `job_config`: name, image, args from `get_module_args()`. Use `launcher_spec[site][k8s].python_path` for the pod command when present, falling back to `default_python_path`. Mount the job workspace at `workspace_mount_path`, mount the startup-kit Secret at `<workspace_mount_path>/startup`, and set custom-code `PYTHONPATH` under `workspace_mount_path`. Add the workspace `emptyDir.sizeLimit` and `resources.requests/limits["ephemeral-storage"]` from `launcher_spec[site][k8s].ephemeral_storage` when present, falling back to the launcher default. Add K8s CPU and memory limits from `launcher_spec`; add GPU limits from the flat `resource_spec[site].num_of_gpus` GPU resource requirement. Missing study entries skip data PVC mounts and log a warning. |
 | 4 | Create `K8sJobHandle`. |
 | 5 | `core_v1.create_namespaced_pod()`. On any exception: set `terminal_state = TERMINATED`, return handle. |
 | 6 | `job_handle.enter_states([RUNNING])`. On any `BaseException`: `terminate()` then re-raise. |

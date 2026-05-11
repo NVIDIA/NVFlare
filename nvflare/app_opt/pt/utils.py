@@ -219,7 +219,10 @@ def feed_vars(model: nn.Module, model_params):
     Notes:
         Empty payloads are treated as a no-op. Partial payloads are accepted as
         long as at least one key matches; unknown keys are ignored with a warning
-        instead of being applied to the local state dict.
+        instead of being applied to the local state dict. This is for loading a
+        received model into a local PyTorch module. Server-side validation of
+        learned client updates is handled by ``PTModelPersistenceFormatManager``
+        and rejects keys outside the server checkpoint schema.
     """
     _logger = get_module_logger(__name__, "AssignVariables")
     _logger.debug("AssignVariables...")
