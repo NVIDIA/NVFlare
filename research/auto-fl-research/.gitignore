@@ -8,6 +8,7 @@ results/
 runs/
 artifacts/
 /tmp/
+vlm_exp/
 run.log
 *.log
 .DS_Store

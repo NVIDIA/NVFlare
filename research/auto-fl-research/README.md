@@ -304,11 +304,6 @@ use the same sites, rounds, data limits, seed policy, model-exchange state,
 metric, timeout, and final evaluation clients unless the profile explicitly
 changes the experiment contract.
 
-See [`vlm_local/README.md`](vlm_local/README.md) for a concrete example that
-adapts Auto-FL to a 3-site medical VLM task on a local single-GPU machine while
-reusing the parent runner, ledger, literature loop, reporting, and aggregation
-utilities.
-
 ## Post-run campaign report
 
 After manually stopping an autoresearch experiment, leave the agent on the experiment branch that contains `results.tsv` and prompt it to make the bundled reporting skill available and run it. The skill should not launch more experiments; it only refreshes the plot, writes the report, and commits those reporting artifacts.
