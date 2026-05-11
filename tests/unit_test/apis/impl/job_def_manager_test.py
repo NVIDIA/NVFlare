@@ -20,7 +20,7 @@ from unittest import mock
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import JobMetaKey, job_from_meta
 from nvflare.apis.storage import WORKSPACE, StorageException
 from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
@@ -45,6 +45,15 @@ class TestJobManager(unittest.TestCase):
             data, meta = self._create_job()
             content = self.job_manager.get_content(meta, self.fl_ctx)
             assert content == data
+
+    def test_get_app_rejects_escaping_job_folder_name(self):
+        with mock.patch("nvflare.apis.impl.job_def_manager.SimpleJobDefManager._get_job_store") as mock_store:
+            mock_store.return_value = FilesystemStorage()
+
+            _, meta = self._create_job()
+            meta[JobMetaKey.JOB_FOLDER_NAME.value] = "../../outside"
+            with self.assertRaisesRegex(ValueError, "job folder.*escapes"):
+                self.job_manager.get_app(job_from_meta(meta), "sag", self.fl_ctx)
 
     def _create_job(self):
         data = zip_directory_to_bytes(self.data_folder, "valid_job")
