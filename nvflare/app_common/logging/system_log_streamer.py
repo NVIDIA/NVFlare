@@ -252,8 +252,8 @@ class SystemLogStreamer(Widget):
         engine = fl_ctx.get_engine()
         stream_fl_ctx = engine.new_context() if engine else fl_ctx
         if stream_fl_ctx is not fl_ctx:
-            stream_fl_ctx.put(key=ReservedKey.RUN_NUM, value=job_id, private=True, sticky=False)
-            stream_fl_ctx.put(key=ReservedKey.IDENTITY_NAME, value=client_name, private=True, sticky=False)
+            stream_fl_ctx.put(key=ReservedKey.RUN_NUM, value=job_id, private=False, sticky=True)
+            stream_fl_ctx.put(key=ReservedKey.IDENTITY_NAME, value=client_name, private=False, sticky=False)
         threading.Thread(
             target=self._stream_completed_log,
             args=(stream_fl_ctx, log_path, client_name, job_id),

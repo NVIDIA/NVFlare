@@ -102,7 +102,7 @@ def test_completed_upload_seeds_run_num_and_identity_on_fresh_context(tmp_path):
     fresh context with no per-job RUN_NUM / IDENTITY_NAME, so without explicit
     seeding the receiver gets back peer_ctx.get_job_id()=='' and routes the
     upload under the literal 'unknown' job id (StorageException). Verify that
-    the upload thread's context carries the real job_id and client_name."""
+    the upload thread's public context carries the real job_id and client_name."""
     os.makedirs(tmp_path / "startup", exist_ok=True)
     os.makedirs(tmp_path / "local", exist_ok=True)
     workspace = Workspace(root_dir=str(tmp_path), site_name="site-1")
@@ -117,6 +117,8 @@ def test_completed_upload_seeds_run_num_and_identity_on_fresh_context(tmp_path):
     # the production CLIENT_PARENT engine.new_context() behavior.
     assert stream_fl_ctx.get_job_id(default="") == ""
     assert stream_fl_ctx.get_identity_name(default="") == ""
+    assert ReservedKey.RUN_NUM not in stream_fl_ctx.get_all_public_props()
+    assert ReservedKey.IDENTITY_NAME not in stream_fl_ctx.get_all_public_props()
 
     streamer = SystemLogStreamer(log_file_name=WorkspaceConstants.ERROR_LOG_FILE_NAME)
     with (
@@ -128,6 +130,13 @@ def test_completed_upload_seeds_run_num_and_identity_on_fresh_context(tmp_path):
 
     assert stream_fl_ctx.get_job_id() == "job-1"
     assert stream_fl_ctx.get_identity_name() == "site-1"
+
+    # AuxRunner forwards only public props. Rebuild the receiver-side peer ctx
+    # from that public view to verify JobLogReceiver sees the real identity.
+    peer_ctx = FLContext()
+    peer_ctx.set_public_props(stream_fl_ctx.get_all_public_props())
+    assert peer_ctx.get_job_id() == "job-1"
+    assert peer_ctx.get_identity_name() == "site-1"
 
 
 def test_system_log_streamer_skips_completed_upload_for_non_error_logs(tmp_path):
