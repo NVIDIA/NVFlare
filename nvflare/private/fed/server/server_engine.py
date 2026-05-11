@@ -340,6 +340,9 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         self.logger.info("Abort the server app run.")
         command_data = Shareable()
         command_data.set_header(ServerCommandKey.TURN_TO_COLD, turn_to_cold)
+        with self.lock:
+            job_handle = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE)
+        graceful_wait = 10.0
 
         try:
             status_message = self.send_command_to_child_runner_process(
@@ -351,28 +354,37 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             )
             self.logger.info(f"Abort server status: {status_message}")
         except Exception:
-            with self.lock:
-                child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE, None)
-                if child_process:
-                    child_process.terminate()
-        finally:
-            threading.Thread(target=self._remove_run_processes, args=[job_id]).start()
+            graceful_wait = 0.0
+        self._remove_run_processes(job_id, job_handle=job_handle, max_wait=graceful_wait)
 
         self.engine_info.status = MachineStatus.STOPPED
         return ""
 
-    def _remove_run_processes(self, job_id):
-        # wait for the run process to gracefully terminated, and ensure to remove from run_processes.
-        max_wait = 5.0
+    def _remove_run_processes(self, job_id, job_handle=None, max_wait=10.0):
+        # Wait for the run process to terminate gracefully, then always call
+        # terminate() for the captured job handle. For launcher-managed jobs
+        # this is the resource cleanup path, not only a force-kill path.
         start = time.time()
         while True:
-            if job_id not in self.run_processes:
-                # job already gone
-                return
+            with self.lock:
+                run_process = self.run_processes.get(job_id)
+                if job_handle is None and run_process:
+                    job_handle = run_process.get(RunProcessKey.JOB_HANDLE)
+            if run_process is None:
+                # graceful shutdown: wait_for_complete already popped this entry
+                break
             if time.time() - start >= max_wait:
                 break
             time.sleep(0.1)
-        self.run_processes.pop(job_id, None)
+
+        if job_handle is not None:
+            try:
+                job_handle.terminate()
+                self.logger.debug(f"job {job_id}: terminated job handle after abort cleanup")
+            except Exception as e:
+                self.logger.error(f"job {job_id}: failed to terminate job handle: {secure_format_exception(e)}")
+        with self.lock:
+            self.run_processes.pop(job_id, None)
 
     def check_app_start_readiness(self, job_id: str) -> str:
         if job_id not in self.run_processes.keys():
