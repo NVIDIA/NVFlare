@@ -174,3 +174,98 @@ def test_wait_for_complete_records_nonzero_return_code_for_first_failure():
     assert exception_run_processes["job-1"] is run_process_info
     assert run_process_info[RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.EXCEPTION
     assert "job-1" not in engine.run_processes
+
+
+def _make_remove_engine(run_processes):
+    engine = ServerEngine.__new__(ServerEngine)
+    engine.lock = threading.Lock()
+    engine.run_processes = run_processes
+    engine.logger = MagicMock()
+    return engine
+
+
+def _make_abort_engine(job_handle):
+    engine = _make_remove_engine({"job-1": {RunProcessKey.JOB_HANDLE: job_handle}})
+    engine.engine_info = MagicMock()
+    engine.send_command_to_child_runner_process = MagicMock(return_value="OK")
+    return engine
+
+
+def test_abort_app_on_server_waits_for_cleanup_after_in_band_abort():
+    job_handle = MagicMock()
+    engine = _make_abort_engine(job_handle)
+    engine._remove_run_processes = MagicMock()
+
+    result = engine.abort_app_on_server("job-1")
+
+    assert result == ""
+    engine._remove_run_processes.assert_called_once_with("job-1", job_handle=job_handle, max_wait=10.0)
+
+
+def test_abort_app_on_server_skips_graceful_wait_when_in_band_abort_fails():
+    job_handle = MagicMock()
+    engine = _make_abort_engine(job_handle)
+    engine.send_command_to_child_runner_process.side_effect = RuntimeError("child unavailable")
+    engine._remove_run_processes = MagicMock()
+
+    result = engine.abort_app_on_server("job-1")
+
+    assert result == ""
+    engine._remove_run_processes.assert_called_once_with("job-1", job_handle=job_handle, max_wait=0.0)
+
+
+def test_remove_run_processes_terminates_job_handle_when_graceful_wait_expires():
+    """If the SJ does not exit on its own (e.g. K8s pod hung during shutdown), the
+    abort cleanup must call job_handle.terminate() so launcher resources (the K8s
+    server pod) are deleted instead of leaking after an admin abort. Without this
+    fallback, FINISHED:ABORTED can be reported while the pod stays Running.
+    """
+    job_handle = MagicMock()
+    run_process_info = {RunProcessKey.JOB_HANDLE: job_handle}
+    engine = _make_remove_engine({"job-1": run_process_info})
+
+    with patch("nvflare.private.fed.server.server_engine.time.time", side_effect=[0.0, 99.0]):
+        with patch("nvflare.private.fed.server.server_engine.time.sleep"):
+            engine._remove_run_processes("job-1")
+
+    job_handle.terminate.assert_called_once()
+    assert "job-1" not in engine.run_processes
+
+
+def test_remove_run_processes_terminates_captured_handle_when_run_exits_gracefully():
+    """Even if wait_for_complete pops the entry before max_wait expires, abort
+    cleanup must still terminate the captured launcher handle. For K8s this is
+    what deletes the server job pod after an admin abort.
+    """
+    job_handle = MagicMock()
+    engine = _make_remove_engine({})  # entry already removed by wait_for_complete
+
+    engine._remove_run_processes("job-1", job_handle=job_handle)
+
+    job_handle.terminate.assert_called_once()
+
+
+def test_remove_run_processes_has_nothing_to_terminate_without_run_or_handle():
+    engine = _make_remove_engine({})  # entry already removed by wait_for_complete
+
+    engine._remove_run_processes("job-1")
+
+    assert "job-1" not in engine.run_processes
+
+
+def test_remove_run_processes_tolerates_terminate_failure():
+    """A failure to delete the launcher resource (e.g. K8s API error) must not crash
+    abort cleanup; the run_processes entry is still popped so the engine state
+    stays consistent.
+    """
+    job_handle = MagicMock()
+    job_handle.terminate.side_effect = RuntimeError("k8s api down")
+    run_process_info = {RunProcessKey.JOB_HANDLE: job_handle}
+    engine = _make_remove_engine({"job-1": run_process_info})
+
+    with patch("nvflare.private.fed.server.server_engine.time.time", side_effect=[0.0, 99.0]):
+        with patch("nvflare.private.fed.server.server_engine.time.sleep"):
+            engine._remove_run_processes("job-1")
+
+    job_handle.terminate.assert_called_once()
+    assert "job-1" not in engine.run_processes
