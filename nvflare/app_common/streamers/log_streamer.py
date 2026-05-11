@@ -198,6 +198,8 @@ def dispatch_stream_done(stream_ctx: StreamContext, fl_ctx: FLContext, **kwargs)
 
 
 class _LogTailProducer(BaseChunkProducer):
+    _MAX_BOOTSTRAP_MISSES = 10
+
     def __init__(
         self,
         file_name: str,
@@ -226,6 +228,7 @@ class _LogTailProducer(BaseChunkProducer):
         # we treat an EXECUTION_EXCEPTION as a transient miss, roll the file
         # offset back, and let produce() re-emit the same bytes.
         self._first_ok_received = False
+        self._bootstrap_miss_count = 0
         self._last_data_offset = None
         self._last_was_data = False
         self._open_file()
@@ -341,33 +344,37 @@ class _LogTailProducer(BaseChunkProducer):
             self.file = None
 
     def process_replies(self, replies, stream_ctx, fl_ctx):
-        # Tolerate exactly one bootstrap miss at job startup. The receiver
-        # registers its handler on START_RUN in the server's job subprocess;
-        # if the client's first chunk arrives before that handler is wired
-        # up, the server replies EXECUTION_EXCEPTION. Without this guard the
-        # base class logs an ERROR and tears the stream down for the rest of
-        # the job. Instead, until we see the first OK reply, treat a uniform
-        # EXECUTION_EXCEPTION as transient: roll the file offset back so the
-        # bytes are re-emitted on the next produce(), log at debug, and keep
-        # the stream alive. After the first OK reply, fall through to the
+        # Tolerate a bounded number of bootstrap misses at job startup. The
+        # receiver registers its handler on ABOUT_TO_START_RUN in the server's
+        # job subprocess; if the client's first chunk arrives before that
+        # handler is wired up, the server replies EXECUTION_EXCEPTION. Without
+        # this guard the base class logs an ERROR and tears the stream down for
+        # the rest of the job. Instead, until we see the first OK reply, treat
+        # a small number of uniform EXECUTION_EXCEPTION replies as transient:
+        # roll the file offset back so the bytes are re-emitted on the next
+        # produce(), log at debug, and keep the stream alive. After the retry
+        # budget is exhausted, or after the first OK reply, fall through to the
         # base behavior so genuine receiver failures are still surfaced.
         if not self._first_ok_received and replies:
             transient = all(
                 reply.get_return_code(ReturnCode.OK) == ReturnCode.EXECUTION_EXCEPTION for reply in replies.values()
             )
-            if transient:
+            if transient and self._bootstrap_miss_count < self._MAX_BOOTSTRAP_MISSES:
+                self._bootstrap_miss_count += 1
                 if self._last_was_data and self.file is not None and self._last_data_offset is not None:
                     try:
                         self.file.seek(self._last_data_offset)
                     except OSError as e:
                         self.logger.warning(f"could not seek back after bootstrap miss: {e}")
                 self.logger.debug(
-                    f"transient bootstrap miss on first chunk to {list(replies)}; rolling back and retrying"
+                    f"transient bootstrap miss {self._bootstrap_miss_count}/{self._MAX_BOOTSTRAP_MISSES} "
+                    f"on first chunk to {list(replies)}; rolling back and retrying"
                 )
                 return None  # keep producing — receiver should be ready by next send
 
         if any(reply.get_return_code(ReturnCode.OK) == ReturnCode.OK for reply in replies.values()):
             self._first_ok_received = True
+            self._bootstrap_miss_count = 0
 
         return super().process_replies(replies, stream_ctx, fl_ctx)
 

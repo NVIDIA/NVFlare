@@ -210,6 +210,7 @@ def test_first_chunk_execution_exception_is_transient_and_retries():
         result = producer.process_replies(replies, {}, Mock(spec=FLContext))
         assert result is None  # stream must continue
         assert producer._first_ok_received is False
+        assert producer._bootstrap_miss_count == 1
 
         retry_request, _ = _produce_data_chunk(producer)
         assert retry_request[KEY_DATA] == b"hello world"  # bytes re-emitted, not lost
@@ -234,6 +235,7 @@ def test_first_chunk_execution_exception_on_heartbeat_does_not_seek():
     result = producer.process_replies(replies, {}, Mock(spec=FLContext))
     assert result is None  # transient miss, stream continues
     assert producer._first_ok_received is False
+    assert producer._bootstrap_miss_count == 1
 
 
 def test_execution_exception_after_first_ok_still_ends_stream():
@@ -255,6 +257,32 @@ def test_execution_exception_after_first_ok_still_ends_stream():
         os.unlink(path)
 
 
+def test_persistent_bootstrap_execution_exception_is_capped():
+    """A receiver that never acks OK should eventually surface as a real
+    failure instead of retrying the same first chunk forever."""
+    with tempfile.NamedTemporaryFile("wb", suffix=".log", delete=False) as f:
+        f.write(b"never acked")
+        path = f.name
+    try:
+        producer = _make_producer(path)
+        first_request, _ = _produce_data_chunk(producer)
+        assert first_request[KEY_DATA] == b"never acked"
+
+        replies = {"server": make_reply(ReturnCode.EXECUTION_EXCEPTION)}
+        for i in range(producer._MAX_BOOTSTRAP_MISSES):
+            result = producer.process_replies(replies, {}, Mock(spec=FLContext))
+            assert result is None
+            assert producer._bootstrap_miss_count == i + 1
+
+        result = producer.process_replies(replies, {}, Mock(spec=FLContext))
+        assert result is False
+        assert producer._first_ok_received is False
+        assert producer._bootstrap_miss_count == producer._MAX_BOOTSTRAP_MISSES
+    finally:
+        producer.close()
+        os.unlink(path)
+
+
 def test_first_chunk_ok_flips_strict_mode():
     """A first OK reply must flip the producer into strict mode so the next
     failure is treated as a real error rather than another transient miss."""
@@ -264,9 +292,11 @@ def test_first_chunk_ok_flips_strict_mode():
     try:
         producer = _make_producer(path)
         producer._last_was_data = True
+        producer._bootstrap_miss_count = 3
         ok_replies = {"server": make_reply(ReturnCode.OK)}
         producer.process_replies(ok_replies, {}, Mock(spec=FLContext))
         assert producer._first_ok_received is True
+        assert producer._bootstrap_miss_count == 0
 
         fail_replies = {"server": make_reply(ReturnCode.EXECUTION_EXCEPTION)}
         result = producer.process_replies(fail_replies, {}, Mock(spec=FLContext))
