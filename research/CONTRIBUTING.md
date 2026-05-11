@@ -58,12 +58,12 @@ python3 -m pip install --user virtualenv
 ```
 find . -name ".sh" -exec chmod +x {} \;
 ```
-initialize virtual environment.
+Initialize the virtual environment.
 ```
 python3 -m venv venv
 source venv/bin/activate
 ```
-within each research folder, install required packages for training
+Within each research folder, install the required packages for training.
 ```
 pip install --upgrade pip
 pip install -r requirements.txt

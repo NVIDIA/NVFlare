@@ -346,6 +346,7 @@ class Connection(private val context: Context) {
             throw NVFlareError.InvalidRequest("Invalid hostname or port")
         }
 
+        // Build URL and request once — nothing changes between retries for fetchJob.
         val url = HttpUrl.Builder()
             .scheme(scheme)
             .host(hostname.value ?: "")
@@ -353,7 +354,6 @@ class Connection(private val context: Context) {
             .addPathSegment(ENDPOINT_JOB)
             .build()
 
-        // Prepare request body with job_name and capabilities
         val requestBody = JsonObject().apply {
             add(FIELD_JOB_NAME, JsonPrimitive(jobName))
             add(FIELD_CAPABILITIES, gson.toJsonTree(capabilities))
@@ -367,53 +367,65 @@ class Connection(private val context: Context) {
             .header(HEADER_USER_INFO, infoToQueryString(userInfo))
             .build()
 
-        Log.d(TAG, "Sending request: ${request.method} ${request.url}")
-        Log.d(TAG, "Headers: ${request.headers}")
-        Log.d(TAG, "Request body: $requestBody")
+        // Retry on STATUS_RETRY in a loop rather than recursing. The previous recursive
+        // implementation added a stack frame per retry; with short retryWait values
+        // (seen in sync FedAvg when the device is ahead of the server) this caused a
+        // StackOverflowError. See #3827 item #12.
+        while (true) {
+            Log.d(TAG, "Sending request: ${request.method} ${request.url}")
+            Log.d(TAG, "Headers: ${request.headers}")
+            Log.d(TAG, "Request body: $requestBody")
 
-        try {
-            val response = httpClient.newCall(request).execute()
-            val responseBody = response.body
-            Log.d(TAG, "Response Status Code: ${response.code}")
-            Log.d(TAG, "Response Headers: ${response.headers}")
-            
-            // Log response body info without corrupting data
-            val contentLength = response.headers[HEADER_CONTENT_LENGTH]?.toIntOrNull() ?: 0
-            Log.d(TAG, "Response Content-Length: $contentLength bytes")
-            
-            // Check status code first like iOS
-            when (response.code) {
-                HTTP_OK -> {
-                    // Parse directly from response body using charStream to avoid string conversion corruption
-                    val jobResponse = if (responseBody != null) {
-                        val reader = responseBody.charStream()
-                        gson.fromJson(reader, JobResponse::class.java)
-                    } else {
-                        throw NVFlareError.JobFetchFailed("No response body")
-                    }
-                    
-                    when (jobResponse.status) {
-                        STATUS_OK -> jobResponse
-                        STATUS_RETRY -> {
-                            val retryWait = jobResponse.retryWait ?: 5000
-                            Log.d(TAG, "Retrying job fetch after $retryWait ms")
-                            delay(retryWait.toLong())
-                            fetchJob(jobName)
+            try {
+                val response = httpClient.newCall(request).execute()
+                val responseBody = response.body
+                Log.d(TAG, "Response Status Code: ${response.code}")
+                Log.d(TAG, "Response Headers: ${response.headers}")
+
+                // Log response body info without corrupting data
+                val contentLength = response.headers[HEADER_CONTENT_LENGTH]?.toIntOrNull() ?: 0
+                Log.d(TAG, "Response Content-Length: $contentLength bytes")
+
+                // Check status code first like iOS
+                when (response.code) {
+                    HTTP_OK -> {
+                        // Parse directly from response body using charStream to avoid string conversion corruption
+                        val jobResponse = if (responseBody != null) {
+                            val reader = responseBody.charStream()
+                            gson.fromJson(reader, JobResponse::class.java)
+                        } else {
+                            throw NVFlareError.JobFetchFailed("No response body")
                         }
 
-                        else -> throw NVFlareError.JobFetchFailed("Job fetch failed")
-                    }
-                }
+                        when (jobResponse.status) {
+                            STATUS_OK -> return@withContext jobResponse
+                            STATUS_RETRY -> {
+                                val retryWait = jobResponse.retryWait ?: 5000
+                                Log.d(TAG, "Retrying job fetch after $retryWait ms")
+                                delay(retryWait.toLong())
+                                // fall through to next loop iteration
+                            }
 
-                HTTP_BAD_REQUEST -> throw NVFlareError.InvalidRequest("Invalid request")
-                HTTP_FORBIDDEN -> throw NVFlareError.AuthError("Authentication error")
-                HTTP_SERVER_ERROR -> throw NVFlareError.ServerError("Server error")
-                else -> throw NVFlareError.JobFetchFailed("Job fetch failed")
+                            else -> throw NVFlareError.JobFetchFailed("Job fetch failed")
+                        }
+                    }
+
+                    HTTP_BAD_REQUEST -> throw NVFlareError.InvalidRequest("Invalid request")
+                    HTTP_FORBIDDEN -> throw NVFlareError.AuthError("Authentication error")
+                    HTTP_SERVER_ERROR -> throw NVFlareError.ServerError("Server error")
+                    else -> throw NVFlareError.JobFetchFailed("Job fetch failed")
+                }
+            } catch (e: IOException) {
+                Log.e(TAG, "Network error fetching job", e)
+                throw NVFlareError.NetworkError("Network error")
             }
-        } catch (e: IOException) {
-            Log.e(TAG, "Network error fetching job", e)
-            throw NVFlareError.NetworkError("Network error")
         }
+        // Unreachable: the loop above only exits via return@withContext or throw.
+        // This line exists so the lambda's return type is inferred as JobResponse
+        // rather than Unit. Without it, kotlinc treats the while(true) as a
+        // Unit-valued trailing expression and the type check fails.
+        @Suppress("UNREACHABLE_CODE")
+        error("unreachable")
     }
 
     suspend fun fetchTask(jobId: String): TaskResponse = withContext(Dispatchers.IO) {
@@ -421,6 +433,7 @@ class Connection(private val context: Context) {
             throw NVFlareError.InvalidRequest("Invalid hostname or port")
         }
 
+        // Build URL once — the endpoint and job ID don't change between retries.
         val url = HttpUrl.Builder()
             .scheme(scheme)
             .host(hostname.value ?: "")
@@ -429,83 +442,92 @@ class Connection(private val context: Context) {
             .addQueryParameter(PARAM_JOB_ID, jobId)
             .build()
 
-        // Prepare request body with cookie
-        val requestBody = if (currentCookie != null) {
-            JsonObject().apply {
-                add(FIELD_COOKIE, gson.toJsonTree(currentCookie?.toAny()))
-            }
-        } else {
-            JsonObject() // Empty JSON object like iOS
-        }
-
-        val request = Request.Builder()
-            .url(url)
-            .post(requestBody.toString().toRequestBody(CONTENT_TYPE_JSON.toMediaType()))
-            .header(HEADER_DEVICE_ID, deviceId)
-            .header(HEADER_DEVICE_INFO, infoToQueryString(deviceInfo))
-            .header(HEADER_USER_INFO, infoToQueryString(userInfo))
-            .build()
-
-        Log.d(TAG, "Sending request: ${request.method} ${request.url}")
-        Log.d(TAG, "Headers: ${request.headers}")
-        Log.d(TAG, "Request body: $requestBody")
-
-        try {
-            val response = httpClient.newCall(request).execute()
-            val responseBody = response.body
-            Log.d(TAG, "Response Status Code: ${response.code}")
-            Log.d(TAG, "Response Headers: ${response.headers}")
-            
-            // Log response body info without corrupting data
-            val contentLength = response.headers[HEADER_CONTENT_LENGTH]?.toIntOrNull() ?: 0
-            Log.d(TAG, "Response Content-Length: $contentLength bytes")
-            
-            // Check status code first like iOS
-            when (response.code) {
-                HTTP_OK -> {
-                    // Parse directly from response body using charStream to avoid string conversion corruption
-                    val taskResponse = if (responseBody != null) {
-                        val reader = responseBody.charStream()
-                        gson.fromJson(reader, TaskResponse::class.java)
-                    } else {
-                        throw NVFlareError.TaskFetchFailed("No response body")
-                    }
-                    Log.d(TAG, "Parsed TaskResponse: $taskResponse")
-                    
-                    // Update cookie if present - convert JsonObject to JSONValue
-                    taskResponse.cookie?.let { cookie ->
-                        currentCookie = JSONValue.fromJsonElement(cookie)
-                        Log.d(TAG, "Updated cookie: $cookie")
-                    }
-
-                    // Check task status using enum
-                    val taskStatus = taskResponse.taskStatus
-                    when (taskStatus) {
-                        TaskResponse.TaskStatus.OK -> taskResponse
-                        TaskResponse.TaskStatus.RETRY -> {
-                            val retryWait = taskResponse.retryWait ?: 5000
-                            Log.d(TAG, "Retrying task fetch after $retryWait ms")
-                            delay(retryWait.toLong())
-                            fetchTask(jobId)
-                        }
-                        else -> {
-                            if (!taskStatus.shouldContinueTraining) {
-                                throw NVFlareError.TaskFetchFailed("Task fetch failed")
-                            }
-                            taskResponse
-                        }
-                    }
+        // Retry on TaskStatus.RETRY in a loop rather than recursing. The previous
+        // recursive implementation added a stack frame per retry; with short retryWait
+        // values this caused a StackOverflowError. See #3827 item #12.
+        // The request body is rebuilt inside the loop because a RETRY response can
+        // carry a new cookie that must be forwarded to the next attempt.
+        while (true) {
+            val requestBody = if (currentCookie != null) {
+                JsonObject().apply {
+                    add(FIELD_COOKIE, gson.toJsonTree(currentCookie?.toAny()))
                 }
-
-                HTTP_BAD_REQUEST -> throw NVFlareError.InvalidRequest("Invalid request")
-                HTTP_FORBIDDEN -> throw NVFlareError.AuthError("Authentication error")
-                HTTP_SERVER_ERROR -> throw NVFlareError.ServerError("Server error")
-                else -> throw NVFlareError.TaskFetchFailed("Task fetch failed")
+            } else {
+                JsonObject() // Empty JSON object like iOS
             }
-        } catch (e: IOException) {
-            Log.e(TAG, "Network error fetching task", e)
-            throw NVFlareError.NetworkError("Network error")
+
+            val request = Request.Builder()
+                .url(url)
+                .post(requestBody.toString().toRequestBody(CONTENT_TYPE_JSON.toMediaType()))
+                .header(HEADER_DEVICE_ID, deviceId)
+                .header(HEADER_DEVICE_INFO, infoToQueryString(deviceInfo))
+                .header(HEADER_USER_INFO, infoToQueryString(userInfo))
+                .build()
+
+            Log.d(TAG, "Sending request: ${request.method} ${request.url}")
+            Log.d(TAG, "Headers: ${request.headers}")
+            Log.d(TAG, "Request body: $requestBody")
+
+            try {
+                val response = httpClient.newCall(request).execute()
+                val responseBody = response.body
+                Log.d(TAG, "Response Status Code: ${response.code}")
+                Log.d(TAG, "Response Headers: ${response.headers}")
+
+                // Log response body info without corrupting data
+                val contentLength = response.headers[HEADER_CONTENT_LENGTH]?.toIntOrNull() ?: 0
+                Log.d(TAG, "Response Content-Length: $contentLength bytes")
+
+                // Check status code first like iOS
+                when (response.code) {
+                    HTTP_OK -> {
+                        // Parse directly from response body using charStream to avoid string conversion corruption
+                        val taskResponse = if (responseBody != null) {
+                            val reader = responseBody.charStream()
+                            gson.fromJson(reader, TaskResponse::class.java)
+                        } else {
+                            throw NVFlareError.TaskFetchFailed("No response body")
+                        }
+                        Log.d(TAG, "Parsed TaskResponse: $taskResponse")
+
+                        // Update cookie if present - convert JsonObject to JSONValue
+                        taskResponse.cookie?.let { cookie ->
+                            currentCookie = JSONValue.fromJsonElement(cookie)
+                            Log.d(TAG, "Updated cookie: $cookie")
+                        }
+
+                        // Check task status using enum
+                        val taskStatus = taskResponse.taskStatus
+                        when (taskStatus) {
+                            TaskResponse.TaskStatus.OK -> return@withContext taskResponse
+                            TaskResponse.TaskStatus.RETRY -> {
+                                val retryWait = taskResponse.retryWait ?: 5000
+                                Log.d(TAG, "Retrying task fetch after $retryWait ms")
+                                delay(retryWait.toLong())
+                                // fall through to next loop iteration
+                            }
+                            else -> {
+                                if (!taskStatus.shouldContinueTraining) {
+                                    throw NVFlareError.TaskFetchFailed("Task fetch failed")
+                                }
+                                return@withContext taskResponse
+                            }
+                        }
+                    }
+
+                    HTTP_BAD_REQUEST -> throw NVFlareError.InvalidRequest("Invalid request")
+                    HTTP_FORBIDDEN -> throw NVFlareError.AuthError("Authentication error")
+                    HTTP_SERVER_ERROR -> throw NVFlareError.ServerError("Server error")
+                    else -> throw NVFlareError.TaskFetchFailed("Task fetch failed")
+                }
+            } catch (e: IOException) {
+                Log.e(TAG, "Network error fetching task", e)
+                throw NVFlareError.NetworkError("Network error")
+            }
         }
+        // See fetchJob() for why this unreachable line is required.
+        @Suppress("UNREACHABLE_CODE")
+        error("unreachable")
     }
 
     suspend fun sendResult(

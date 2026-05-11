@@ -49,12 +49,28 @@ from nvflare.security.study_registry import StudyRegistry, StudyRegistryService
 from ..simulator.simulator_const import SimulatorConstants
 from .app_authz import AppAuthzService
 
+# Job signing uses the same trust model for centralized and distributed provisioning:
+# the submitted job carries the submitter certificate, and verification chains that cert
+# to the server's rootCA.pem.  require_signed_jobs() only controls whether unsigned job
+# folders are accepted.  _warn_once suppresses repeated log noise for the same condition.
+_SIGNED_JOB_WARNINGS_EMITTED = set()
+
+
+def _warn_once(logger: logging.Logger, cache_key: str, message: str, *args) -> None:
+    # Suppress duplicate warnings emitted on every job submission (e.g. TOCTOU advisory).
+    if cache_key in _SIGNED_JOB_WARNINGS_EMITTED:
+        return
+    _SIGNED_JOB_WARNINGS_EMITTED.add(cache_key)
+    logger.warning(message, *args)
+
 
 def require_signed_jobs(workspace: Workspace) -> bool:
     """Return True if the server requires all submitted jobs to carry __nvfl_sig.json.
 
-    Reads fed_server.json at call time (not cached) to allow hot-reload: an operator can
-    change the policy without restarting the server.
+    Centralized and distributed provisioning use the same verification model: the job
+    carries the submitter certificate, and that certificate must chain to the server's
+    rootCA.pem.  Operators can set ``require_signed_jobs: false`` in fed_server.json to
+    allow unsigned job folders without restarting the server (hot-reload).
 
     Default: True when rootCA.pem is present (any PKI deployment); False otherwise.
     Explicit "require_signed_jobs" key in fed_server.json overrides the inferred default.
@@ -65,23 +81,41 @@ def require_signed_jobs(workspace: Workspace) -> bool:
 
     server_config_path = os.path.join(workspace.get_startup_kit_dir(), "fed_server.json")
     if os.path.exists(server_config_path):
-        st = os.stat(server_config_path)
-        if st.st_mode & (_stat.S_IWGRP | _stat.S_IWOTH):
-            logger.warning(
-                "fed_server.json is group/world-writable — require_signed_jobs policy "
-                "can be altered by other local users (TOCTOU risk)"
-            )
         try:
-            with open(server_config_path) as f:
-                cfg = json.load(f)
+            _open_flags = os.O_RDONLY
+            if hasattr(os, "O_NOFOLLOW"):
+                _open_flags |= os.O_NOFOLLOW
+            fd = os.open(server_config_path, _open_flags)
+            try:
+                with os.fdopen(fd) as f:
+                    fd = -1  # ownership transferred to f
+                    st = os.fstat(f.fileno())
+                    if st.st_mode & (_stat.S_IWGRP | _stat.S_IWOTH):
+                        _warn_once(
+                            logger,
+                            f"writable:{server_config_path}",
+                            "fed_server.json is group/world-writable — require_signed_jobs policy "
+                            "can be altered by other local users (TOCTOU risk)",
+                        )
+                    cfg = json.load(f)
+            except BaseException:
+                if fd != -1:
+                    os.close(fd)
+                raise
             if "require_signed_jobs" in cfg:
                 value = bool(cfg["require_signed_jobs"])
                 logger.debug("require_signed_jobs=%s (explicit config)", value)
                 return value
+        except FileNotFoundError:
+            pass
         except Exception as e:
-            logger.warning(
-                "failed to parse fed_server.json for require_signed_jobs: %s — falling back to rootCA.pem heuristic", e
+            _warn_once(
+                logger,
+                f"parse:{server_config_path}",
+                "failed to parse fed_server.json for require_signed_jobs: %s — failing closed",
+                e,
             )
+            return True
 
     root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
     value = os.path.exists(root_ca_path)
@@ -151,6 +185,9 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
     startup_dir = workspace.get_startup_kit_dir()
     SecurityContentService.initialize(content_folder=startup_dir)
 
+    # valid_config is False when the startup kit has no signature.json. That is expected
+    # for standard mTLS kits without a startup content-integrity manifest; TLS credentials
+    # remain the trust anchor.
     if secure_train and SecurityContentService.security_content_manager.valid_config:
         insecure_list = _check_secure_content(site_type=site_type)
         if len(insecure_list):
@@ -175,7 +212,8 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
         policy_file_path = workspace.get_authorization_file_path()
 
         if policy_file_path and os.path.exists(policy_file_path):
-            policy_config = json.load(open(policy_file_path, "rt"))
+            with open(policy_file_path, "rt") as f:
+                policy_config = json.load(f)
             authorizer = FLAuthorizer(site_org, policy_config)
 
     if not authorizer:
@@ -208,6 +246,9 @@ def security_init_for_job(secure_train: bool, workspace: Workspace, site_type: s
     startup_dir = workspace.get_startup_kit_dir()
     SecurityContentService.initialize(content_folder=startup_dir)
 
+    # valid_config is False when the startup kit has no signature.json. That is expected
+    # for standard mTLS kits without a startup content-integrity manifest; TLS credentials
+    # remain the trust anchor.
     if secure_train and SecurityContentService.security_content_manager.valid_config:
         insecure_list = _check_secure_content(site_type=site_type)
         if len(insecure_list):
@@ -234,7 +275,8 @@ def get_job_meta_from_workspace(workspace: Workspace, job_id: str) -> dict:
 
 def create_job_processing_context_properties(workspace: Workspace, job_id: str) -> dict:
     job_meta = get_job_meta_from_workspace(workspace, job_id)
-    assert isinstance(job_meta, dict), f"job_meta must be dict but got {type(job_meta)}"
+    if not isinstance(job_meta, dict):
+        raise RuntimeError(f"job_meta must be dict but got {type(job_meta)}")
     scope_name = job_meta.get(JobMetaKey.SCOPE, "")
     scope_object = PrivacyService.get_scope(scope_name)
     scope_props = None
@@ -269,7 +311,7 @@ def get_scope_info():
             if privacy_manager.default_scope:
                 default_scope_name = privacy_manager.default_scope.name
         return scope_names, default_scope_name
-    except:
+    except Exception:
         return [], "processing_error"
 
 
@@ -449,10 +491,10 @@ def get_return_code(job_handle, job_id, workspace, logger):
             with open(rc_file, "r") as f:
                 return_code = int(f.readline())
             os.remove(rc_file)
-        except Exception:
+        except Exception as e:
             logger.warning(
-                f"Could not get the return_code from {rc_file} of the job:{job_id}, "
-                f"Return the RC from the job_handle:{job_handle}"
+                f"Could not get the return code from {rc_file} of the job:{job_id}, "
+                f"falling back to the return code from the job_handle:{job_handle}: {secure_format_exception(e)}"
             )
             return_code = job_handle.poll()
     else:
@@ -523,6 +565,12 @@ def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
         job_launcher = job_launcher_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
         if not (job_launcher and isinstance(job_launcher, list)):
             raise RuntimeError(f"There's no job launcher can handle this job: {job_meta}.")
+        if len(job_launcher) != 1:
+            launcher_types = [type(x).__name__ for x in job_launcher]
+            raise RuntimeError(
+                f"Exactly one job launcher must be configured for this site, but found {len(job_launcher)}: "
+                f"{launcher_types}."
+            )
 
     launcher = job_launcher[0]
     if not isinstance(launcher, JobLauncherSpec):

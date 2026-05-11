@@ -1,0 +1,25 @@
+{
+    "name": "pt_ddp",
+    "min_clients": 2,
+    "deploy_map": {
+        "app_server": ["server"],
+        "app_site-1": ["site-1"],
+        "app_site-2": ["site-2"]
+    },
+    "resource_spec": {
+        "server": {
+            "docker": {"image": "nvflare-job:latest"}
+        },
+        "site-1": {
+            "docker": {
+                "image": "nvflare-job:latest",
+                "num_of_gpus": 2,
+                "shm_size": "8g",
+                "ipc_mode": "host"
+            },
+            "process": {
+                "num_of_gpus": 2
+            }
+        }
+    }
+}

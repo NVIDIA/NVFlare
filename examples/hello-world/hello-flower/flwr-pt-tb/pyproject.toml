@@ -4,19 +4,19 @@ build-backend = "hatchling.build"
 
 # Tested with:
 #   flwr==1.27.0
-#   nvflare==2.7.2
+#   nvflare==2.8.0rc1
 #   torch==2.11.0
 #   torchvision==0.26.0
 #   tensorboard==2.20.0
 
 [project]
-name = "flwr_pt_tb"
+name = "flwr-pt-tb"
 version = "1.0.0"
 description = ""
 license = "Apache-2.0"
 dependencies = [
     "flwr>=1.26",
-    "nvflare~=2.6.0rc",
+    "nvflare~=2.8.0rc",
     "torch",
     "torchvision",
     "tensorboard"

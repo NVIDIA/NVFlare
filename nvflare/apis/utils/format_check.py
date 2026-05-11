@@ -19,8 +19,6 @@ from functools import wraps
 type_pattern_mapping = {
     "server": r"^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$",
     "host_name": r"^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$",
-    "overseer": r"^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$",
-    "sp_end_point": r"^((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9]):[0-9]*:[0-9]*)$",
     "client": r"^[A-Za-z0-9-_]+$",
     "job_name": r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
     "relay": r"^[A-Za-z0-9-_]+$",
@@ -28,7 +26,8 @@ type_pattern_mapping = {
     "email": r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$",
     "org": r"^[A-Za-z0-9_]+$",
     "simple_name": r"^[A-Za-z0-9_]+$",
-    "study": r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+    "study": r"^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$",
+    "site": r"^[A-Za-z0-9-_]+$",
 }
 
 

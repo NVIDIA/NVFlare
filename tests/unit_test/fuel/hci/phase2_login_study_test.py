@@ -88,15 +88,15 @@ class _FakeCell:
 
 
 class _FakeStudyRegistry:
-    def __init__(self, roles=None, studies=None):
-        self.roles = roles or {}
+    def __init__(self, users=None, studies=None):
+        self.users = users or {}
         self.studies = studies or {}
 
     def has_study(self, study):
         return study in self.studies
 
-    def get_role(self, user_name, study):
-        return self.roles.get((user_name, study))
+    def has_user(self, user_name, study):
+        return (user_name, study) in self.users
 
     def get_sites(self, study):
         return self.studies.get(study)
@@ -143,7 +143,7 @@ def test_handle_cert_login_rejects_unknown_study_when_registry_exists(monkeypatc
     try:
         login.handle_cert_login(conn, ["CERT_LOGIN", "admin@nvidia.com"])
 
-        assert conn.strings == [("REJECT", None)]
+        assert conn.strings == [("REJECT: AUTH_UNKNOWN_STUDY: unknown study 'trial-study'", None)]
         assert conn.tokens == []
         assert session_mgr.sessions == {}
     finally:
@@ -163,7 +163,7 @@ def test_handle_cert_login_rejects_unmapped_user_when_registry_exists(monkeypatc
     monkeypatch.setattr("nvflare.fuel.hci.server.login.StudyRegistryService", _FakeStudyRegistryService, raising=False)
     _FakeStudyRegistryService.registry = _FakeStudyRegistry(
         studies={"cancer-research": {"site-a"}},
-        roles={("other-admin@nvidia.com", "cancer-research"): "lead"},
+        users={("other-admin@nvidia.com", "cancer-research"): True},
     )
 
     session_mgr = SessionManager(_FakeCell(), idle_timeout=3600, monitor_interval=3600)
@@ -173,7 +173,12 @@ def test_handle_cert_login_rejects_unmapped_user_when_registry_exists(monkeypatc
     try:
         login.handle_cert_login(conn, ["CERT_LOGIN", "admin@nvidia.com"])
 
-        assert conn.strings == [("REJECT", None)]
+        assert conn.strings == [
+            (
+                "REJECT: AUTH_STUDY_USER_NOT_MAPPED: user 'admin@nvidia.com' is not mapped to study 'cancer-research'",
+                None,
+            )
+        ]
         assert conn.tokens == []
         assert session_mgr.sessions == {}
     finally:
@@ -193,7 +198,7 @@ def test_handle_cert_login_accepts_mapped_user_for_valid_study(monkeypatch):
     monkeypatch.setattr("nvflare.fuel.hci.server.login.StudyRegistryService", _FakeStudyRegistryService, raising=False)
     _FakeStudyRegistryService.registry = _FakeStudyRegistry(
         studies={"cancer-research": {"site-a"}},
-        roles={("admin@nvidia.com", "cancer-research"): "lead"},
+        users={("admin@nvidia.com", "cancer-research"): True},
     )
 
     session_mgr = SessionManager(_FakeCell(), idle_timeout=3600, monitor_interval=3600)
@@ -260,7 +265,9 @@ def test_handle_cert_login_rejects_non_default_study_without_registry(monkeypatc
     try:
         login.handle_cert_login(conn, ["CERT_LOGIN", "admin@nvidia.com"])
 
-        assert conn.strings == [("REJECT", None)]
+        assert conn.strings == [
+            ("REJECT: AUTH_STUDY_NOT_CONFIGURED: study 'study-a' is not configured on the server", None)
+        ]
         assert conn.tokens == []
         assert session_mgr.sessions == {}
     finally:

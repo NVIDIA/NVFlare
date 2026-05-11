@@ -99,6 +99,7 @@ class SysCommandTopic(object):
     SHELL = "sys.shell"
     REPORT_RESOURCES = "resource_manager.report_resources"
     REPORT_ENV = "sys.report_env"
+    REPORT_VERSION = "sys.report_version"
     CONFIGURE_SITE_LOG = "sys.configure_site_log"
 
 
@@ -154,6 +155,10 @@ class CellMessageHeaderKeys:
     JOB_IDS = "job_ids"
     MESSAGE = "message"
     ABORT_JOBS = "abort_jobs"
+
+
+class ClientRegMsgKey:
+    SITE_CONFIG = "site_config"
 
 
 class ClientType:

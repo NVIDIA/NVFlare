@@ -71,6 +71,9 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
             Defaults to "accuracy".
+        best_model_filename: Filename for saving the best model. Accepted for API compatibility.
+            The default TensorFlow persistor does not currently create a separate best-model artifact.
+        save_filename: Deprecated alias for best_model_filename. If both are specified, they must match.
 
     Example:
         Basic usage without experiment tracking:
@@ -117,6 +120,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
+        best_model_filename: Optional[str] = None,
+        save_filename: Optional[str] = None,
         server_memory_gc_rounds: int = 0,
         client_memory_gc_rounds: int = 0,
     ):
@@ -141,6 +146,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
+            best_model_filename=best_model_filename,
+            save_filename=save_filename,
             server_memory_gc_rounds=server_memory_gc_rounds,
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=False,

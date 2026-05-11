@@ -16,7 +16,7 @@ In our federated implementation, the LLM parameters stay fixed. Prompt encoder p
 The example was tested with the [NeMo 23.02 container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo).
 In the following, we assume this example folder of the container is mounted to `/workspace` and all downloading, etc. operations are based on this root path.
 
-Start the docker container from **this directory** using
+Start the Docker container from **this directory** using
 ```
 # cd NVFlare/integration/nemo/examples/prompt_learning
 DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.02"
@@ -41,7 +41,7 @@ jupyter lab .
 and open [prompt_learning.ipynb](./prompt_learning.ipynb).
 
 #### Hardware requirement
-This example requires a GPU with at least 16GB of memory to run three clients in parallel on the same GPU.
+This example requires a GPU with at least 16 GB of memory to run three clients in parallel on the same GPU.
 
 ### 2. Federated p-tuning using a 20 billion parameter GPT model
 This example of running a 20B GPT model requires more computational resources. 

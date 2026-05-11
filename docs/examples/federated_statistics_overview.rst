@@ -5,7 +5,7 @@ Federated Statistics Overview
 
 Objective
 =========
-NVIDIA FLARE will provide built-in federated statistics operators (controller and executors) that can generate global statistics based on local client side statistics.
+NVIDIA FLARE will provide built-in federated statistics operators (controllers and executors) that can generate global statistics based on local client side statistics.
 
 At each client site, we could have one or more datasets (such as "train" and "test" datasets); each dataset may have many features. For each feature in the dataset, we will calculate the statistics and then combine them to produce global statistics for all the numeric features. The output would be complete statistics for all datasets in clients and global.
 

@@ -241,7 +241,8 @@ class TestCrossSiteEvalIdempotency:
     """Tests for resilient idempotency in add_cross_site_evaluation."""
 
     def test_idempotency_survives_missing_flag(self):
-        from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
+        from nvflare.fuel.utils.constants import FrameworkType
+        from nvflare.recipe import FedAvgRecipe
         from nvflare.recipe.utils import add_cross_site_evaluation
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
@@ -249,12 +250,13 @@ class TestCrossSiteEvalIdempotency:
             train_script = f.name
 
         try:
-            recipe = NumpyFedAvgRecipe(
+            recipe = FedAvgRecipe(
                 name="test_cse_idempotency",
                 model=[1.0, 2.0],
                 min_clients=2,
                 num_rounds=2,
                 train_script=train_script,
+                framework=FrameworkType.NUMPY,
             )
 
             add_cross_site_evaluation(recipe)
@@ -293,3 +295,35 @@ class TestCrossSiteEvalIdempotency:
             assert getattr(recipe, "_cse_added", False) is True
         finally:
             os.unlink(train_script)
+
+    def test_participating_clients_passed_to_cross_site_eval_controller(self, tmp_path, monkeypatch):
+        from nvflare.app_common.workflows import cross_site_model_eval
+        from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+        from nvflare.fuel.utils.constants import FrameworkType
+        from nvflare.recipe import FedAvgRecipe
+        from nvflare.recipe.utils import add_cross_site_evaluation
+
+        train_script = tmp_path / "client.py"
+        train_script.write_text("# dummy train script\n")
+        participating_clients = ["site-1", "site-3"]
+        captured_kwargs = {}
+
+        class RecordingCrossSiteModelEval(CrossSiteModelEval):
+            def __init__(self, *args, **kwargs):
+                captured_kwargs.update(kwargs)
+                super().__init__(*args, **kwargs)
+
+        monkeypatch.setattr(cross_site_model_eval, "CrossSiteModelEval", RecordingCrossSiteModelEval)
+
+        recipe = FedAvgRecipe(
+            name="test_cse_participating_clients",
+            model=[1.0, 2.0],
+            min_clients=2,
+            num_rounds=2,
+            train_script=str(train_script),
+            framework=FrameworkType.NUMPY,
+        )
+
+        add_cross_site_evaluation(recipe, participating_clients=participating_clients)
+
+        assert captured_kwargs["participating_clients"] == participating_clients

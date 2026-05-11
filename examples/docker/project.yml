@@ -1,0 +1,30 @@
+api_version: 3
+name: docker_test_project
+description: Docker job launcher test project
+
+participants:
+  - name: server
+    type: server
+    org: nvidia
+    fed_learn_port: 8002
+
+  - name: site-1
+    type: client
+    org: nvidia
+
+  - name: site-2
+    type: client
+    org: nvidia
+
+  - name: admin@nvidia.com
+    type: admin
+    org: nvidia
+    role: project_admin
+
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      config_folder: config
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder

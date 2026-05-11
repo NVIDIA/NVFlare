@@ -19,6 +19,7 @@ import shutil
 
 from setuptools import find_packages, setup
 
+
 def load_local_versioneer():
     root = os.path.abspath(os.path.dirname(__file__)) if "__file__" in globals() else os.getcwd()
     versioneer_path = os.path.join(root, "versioneer.py")
@@ -86,6 +87,7 @@ extra_files = package_files(root="nvflare/dashboard/application", starting="stat
 tmp_job_template_folder = "./nvflare/tool/job/templates"
 copy_package(src_dir="job_templates", dst_dir=tmp_job_template_folder)
 job_templates = package_files(root="nvflare/tool/job", starting="templates")
+deploy_templates = package_files(root="nvflare/tool/deploy", starting="templates")
 
 
 setup(
@@ -101,9 +103,10 @@ setup(
         exclude=["tests", "tests.*"],
     ),
     package_data={
-        "": ["*.yml", "*.html", "*.js", "poc.zip", "*.config", "*.conf"],
+        "": ["*.yml", "*.yaml", "*.tpl", "*.html", "*.js", "poc.zip", "*.config", "*.conf"],
         "nvflare.dashboard.application": extra_files,
         "nvflare.tool.job": job_templates,
+        "nvflare.tool.deploy": deploy_templates,
     },
     include_package_data=True,
 )

@@ -1,0 +1,64 @@
+{
+    "format_version": 2,
+    "workflows": [
+        {
+            "id": "controller",
+            "path": "nvflare.app_common.workflows.fedavg.FedAvg",
+            "args": {
+                "aggregation_weights": {},
+                "num_clients": 2,
+                "num_rounds": 3
+            }
+        }
+    ],
+    "components": [
+        {
+            "id": "json_generator",
+            "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
+            "args": {}
+        },
+        {
+            "id": "model_selector",
+            "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
+            "args": {
+                "aggregation_weights": {},
+                "key_metric": "accuracy"
+            }
+        },
+        {
+            "id": "persistor",
+            "path": "nvflare.app_common.np.np_model_persistor.NPModelPersistor",
+            "args": {
+                "model": [
+                    [
+                        1,
+                        2,
+                        3
+                    ],
+                    [
+                        4,
+                        5,
+                        6
+                    ],
+                    [
+                        7,
+                        8,
+                        9
+                    ]
+                ]
+            }
+        },
+        {
+            "id": "receiver",
+            "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver",
+            "args": {
+                "events": [
+                    "analytix_log_stats",
+                    "fed.analytix_log_stats"
+                ]
+            }
+        }
+    ],
+    "task_data_filters": [],
+    "task_result_filters": []
+}

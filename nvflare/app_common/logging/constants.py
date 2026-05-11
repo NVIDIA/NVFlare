@@ -12,7 +12,61 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+import logging
+import os
+
+from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.workspace import Workspace
+from nvflare.fuel.utils.config_service import ConfigService
+
 LOG_STREAM_EVENT_TYPE = "stream_log"
+LIVE_LOG_TOPIC = "live_log"
+
+# Resources.json var name. Default is True (streaming is allowed). To disable
+# live log streaming at a site, set this to False in the site's resources.json:
+# JobLogStreamer will no-op, SystemLogStreamer will skip injection and strip
+# any pre-declared JobLogStreamer, and the server-side JobLogReceiver will log
+# an error if a stream still arrives from this site.
+ALLOW_LOG_STREAMING_VAR = "allow_log_streaming"
+
+_logger = logging.getLogger(__name__)
+
+
+def is_log_streaming_allowed(fl_ctx: FLContext = None) -> bool:
+    """Check whether the site permits live log streaming.
+
+    Default-allow: returns True unless resources.json explicitly sets
+    ``allow_log_streaming`` to False. Tries ConfigService first (fast path,
+    populated in production via FLClientStarterConfiger); falls back to
+    reading resources.json directly via the workspace from fl_ctx, which is
+    required in the simulator path where the section is not registered.
+    """
+    val = ConfigService.get_bool_var(name=ALLOW_LOG_STREAMING_VAR, conf=SystemConfigs.RESOURCES_CONF, default=None)
+    if val is not None:
+        return bool(val)
+
+    if fl_ctx is None:
+        return True
+
+    workspace_root = fl_ctx.get_prop(FLContextKey.WORKSPACE_ROOT)
+    site_name = fl_ctx.get_identity_name(default="")
+    if not workspace_root or not site_name:
+        return True
+
+    try:
+        ws = Workspace(root_dir=workspace_root, site_name=site_name)
+        path = ws.get_resources_file_path()
+        if not path or not os.path.exists(path):
+            return True
+        with open(path) as f:
+            data = json.load(f)
+    except Exception as ex:
+        _logger.debug(f"failed to read resources.json for {ALLOW_LOG_STREAMING_VAR} check: {ex}")
+        return True
+
+    return bool(data.get(ALLOW_LOG_STREAMING_VAR, True))
 
 
 class Channels(object):

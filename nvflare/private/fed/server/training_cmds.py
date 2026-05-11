@@ -34,6 +34,11 @@ from .cmd_utils import CommandUtil
 from .server_engine import ServerEngine
 
 
+def _server_status_value(engine: ServerEngineInternalSpec) -> str:
+    engine_info = engine.get_engine_info()
+    return engine_info.status.value
+
+
 class TrainingCommandModule(CommandModule, CommandUtil):
     def __init__(self):
         """A class for training commands."""
@@ -58,6 +63,24 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                     usage="remove_client <client-name>",
                     handler_func=self.remove_client,
                     authz_func=self.authorize_client_operation,
+                    visible=True,
+                    confirm=ConfirmMethod.AUTH,
+                ),
+                CommandSpec(
+                    name=AdminCommandNames.DISABLE_CLIENT,
+                    description="disable a FL client from reconnecting",
+                    usage="disable_client <client-name>",
+                    handler_func=self.disable_client,
+                    authz_func=self.command_authz_required,
+                    visible=True,
+                    confirm=ConfirmMethod.AUTH,
+                ),
+                CommandSpec(
+                    name=AdminCommandNames.ENABLE_CLIENT,
+                    description="enable a disabled FL client to reconnect",
+                    usage="enable_client <client-name>",
+                    handler_func=self.enable_client,
+                    authz_func=self.command_authz_required,
                     visible=True,
                     confirm=ConfirmMethod.AUTH,
                 ),
@@ -190,6 +213,40 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             return
         conn.append_success("")
 
+    def _client_names_from_args(self, conn: Connection, args: List[str]) -> List[str]:
+        if len(args) < 2:
+            conn.append_error("missing client name", meta=make_meta(MetaStatusValue.SYNTAX_ERROR))
+            return []
+        return args[1:]
+
+    def disable_client(self, conn: Connection, args: List[str]):
+        engine = conn.app_ctx
+        if not isinstance(engine, ServerEngineInternalSpec):
+            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+        client_names = self._client_names_from_args(conn, args)
+        if not client_names:
+            return
+        try:
+            result = engine.disable_clients(client_names)
+        except Exception as e:
+            conn.append_error(str(e), meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+            return
+        conn.append_dict(result, meta=make_meta(MetaStatusValue.OK))
+
+    def enable_client(self, conn: Connection, args: List[str]):
+        engine = conn.app_ctx
+        if not isinstance(engine, ServerEngineInternalSpec):
+            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+        client_names = self._client_names_from_args(conn, args)
+        if not client_names:
+            return
+        try:
+            result = engine.enable_clients(client_names)
+        except Exception as e:
+            conn.append_error(str(e), meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+            return
+        conn.append_dict(result, meta=make_meta(MetaStatusValue.OK))
+
     # Restart
     def _restart_clients(self, conn) -> str:
         engine = conn.app_ctx
@@ -255,12 +312,13 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
         if dst in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             engine_info = engine.get_engine_info()
+            server_status = _server_status_value(engine)
             conn.append_string(
-                f"Engine status: {engine_info.status.value}",
+                f"Engine status: {server_status}",
                 meta=make_meta(
                     MetaStatusValue.OK,
                     extra={
-                        MetaKey.SERVER_STATUS: engine_info.status.value,
+                        MetaKey.SERVER_STATUS: server_status,
                         MetaKey.SERVER_START_TIME: engine_info.start_time,
                     },
                 ),

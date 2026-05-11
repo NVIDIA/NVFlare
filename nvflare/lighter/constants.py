@@ -25,7 +25,7 @@ class ParticipantType:
     SERVER = "server"
     CLIENT = "client"
     ADMIN = "admin"
-    OVERSEER = "overseer"
+    OVERSEER = "overseer"  # obsolete: kept only to recognize and ignore old entries
     RELAY = "relay"
 
 
@@ -33,7 +33,6 @@ DEFINED_PARTICIPANT_TYPES = [
     ParticipantType.SERVER,
     ParticipantType.CLIENT,
     ParticipantType.ADMIN,
-    ParticipantType.OVERSEER,
     ParticipantType.RELAY,
 ]
 
@@ -53,14 +52,15 @@ class PropKey:
     PROTOCOL = "protocol"
     API_ROOT = "api_root"
     PORT = "port"
-    OVERSEER_END_POINT = "overseer_end_point"
     ADMIN_PORT = "admin_port"
     FED_LEARN_PORT = "fed_learn_port"
-    ALLOW_ERROR_SENDING = "allow_error_sending"
+    # Renamed from the never-publicly-released "allow_error_sending"; no
+    # backward-compat shim is required because no project.yml in the wild
+    # ever shipped with the previous name.
+    ALLOW_LOG_STREAMING = "allow_log_streaming"
     CONN_SECURITY = "connection_security"
     CUSTOM_CA_CERT = "custom_ca_cert"
     SCHEME = "scheme"
-    RUN_IN_DOCKER = "run_in_docker"
     CAPACITY = "capacity"
     NUM_GPUS = "num_of_gpus"
     GPU_MEM = "mem_per_gpu_in_GiB"
@@ -93,6 +93,8 @@ class CtxKey(WorkDir, PropKey):
     ROOT_PRI_KEY = "root_pri_key"
     RELAY_MAP = "relay_map"
     CLIENT_MAP = "client_map"
+    ERRORS = "__errors__"
+    WARNINGS = "__warnings__"
 
 
 class ProvisionMode:
@@ -116,21 +118,13 @@ class AdminRole:
 DEFINED_ROLES = [AdminRole.PROJECT_ADMIN, AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER]
 
 
-class OverseerRole:
-    SERVER = "server"
-    CLIENT = "client"
-    ADMIN = "admin"
-
-
 class TemplateSectionKey:
     ADM_NOTEBOOK = "adm_notebook"
     START_SERVER_SH = "start_svr_sh"
     START_CLIENT_SH = "start_cln_sh"
     DOCKER_BUILD_SH = "docker_build_sh"
     DOCKER_SERVER_SH = "docker_svr_sh"
-    DOCKER_LAUNCHER_SERVER_SH = "docker_launcher_svr_sh"
     DOCKER_CLIENT_SH = "docker_cln_sh"
-    DOCKER_LAUNCHER_CLIENT_SH = "docker_launcher_cln_sh"
     DOCKER_ADMIN_SH = "docker_adm_sh"
     FED_SERVER = "fed_server"
     FED_CLIENT = "fed_client"
@@ -152,12 +146,6 @@ class TemplateSectionKey:
     COMPOSE_YAML = "compose_yaml"
     DOCKERFILE = "dockerfile"
     LAUNCHER_DOCKERFILE = "launcher_dockerfile"
-    HELM_CHART_CHART = "helm_chart_chart"
-    HELM_CHART_VALUES = "helm_chart_values"
-    HELM_CHART_SERVICE_OVERSEER = "helm_chart_service_overseer"
-    HELM_CHART_SERVICE_SERVER = "helm_chart_service_server"
-    HELM_CHART_DEPLOYMENT_OVERSEER = "helm_chart_deployment_overseer"
-    HELM_CHART_DEPLOYMENT_SERVER = "helm_chart_deployment_server"
     RELAY_RESOURCES_JSON = "relay_resources_json"
     FED_RELAY = "fed_relay"
     CLOUD_SCRIPT_HEADER = "cloud_script_header"
@@ -174,7 +162,6 @@ class ProvFileName:
     PRIVILEGE_YML = "privilege.yml"
     DOCKER_BUILD_SH = "docker_build.sh"
     DOCKER_SH = "docker.sh"
-    DOCKER_LAUNCHER_SH = "docker_launcher.sh"
     FED_SERVER_JSON = "fed_server.json"
     FED_CLIENT_JSON = "fed_client.json"
     STOP_FL_SH = "stop_fl.sh"
@@ -196,12 +183,6 @@ class ProvFileName:
     REQUIREMENTS_TXT = "requirements.txt"
     SERVER_CONTEXT_TENSEAL = "server_context.tenseal"
     CLIENT_CONTEXT_TENSEAL = "client_context.tenseal"
-    HELM_CHART_DIR = "nvflare_hc"
-    DEPLOYMENT_OVERSEER_YAML = "deployment_overseer.yaml"
-    SERVICE_OVERSEER_YAML = "service_overseer.yaml"
-    CHART_YAML = "Chart.yaml"
-    VALUES_YAML = "values.yaml"
-    HELM_CHART_TEMPLATES_DIR = "templates"
     CUSTOM_CA_CERT_FILE_NAME = "customRootCA.pem"
     RELAY_RESOURCES_JSON = "relay__resources.json"
     FED_RELAY_JSON = "fed_relay.json"

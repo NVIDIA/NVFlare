@@ -16,23 +16,7 @@ import shutil
 import tempfile
 from unittest.mock import MagicMock, patch
 
-import pytest
-from requests import Response
-
-from nvflare.fuel.utils.network_utils import get_open_ports
-from nvflare.tool.package_checker.utils import (
-    NVFlareRole,
-    get_required_args_for_overseer_agent,
-    try_bind_address,
-    try_write_dir,
-)
-
-
-def _mock_response(code) -> Response:
-    resp = MagicMock(spec=Response)
-    resp.json.return_value = {}
-    resp.status_code = code
-    return resp
+from nvflare.tool.package_checker.utils import try_bind_address, try_write_dir
 
 
 class TestUtils:
@@ -51,21 +35,14 @@ class TestUtils:
             assert try_write_dir("hello").args == OSError("Test").args
 
     def test_try_bind_address(self):
-        assert try_bind_address(host="localhost", port=get_open_ports(1)[0]) is None
+        with patch("socket.socket") as mock_socket_cls:
+            mock_sock = MagicMock()
+            mock_socket_cls.return_value = mock_sock
+            assert try_bind_address(host="localhost", port=12345) is None
 
     def test_try_bind_address_error(self):
-        host = "localhost"
-        port = get_open_ports(1)[0]
-        with patch("socket.socket.bind", side_effect=OSError("Test")):
-            assert try_bind_address(host=host, port=port).args == OSError("Test").args
-
-    @pytest.mark.parametrize(
-        "overseer_agent_class, role, result",
-        [
-            ("nvflare.ha.dummy_overseer_agent.DummyOverseerAgent", NVFlareRole.SERVER, ["sp_end_point"]),
-            ("nvflare.ha.dummy_overseer_agent.DummyOverseerAgent", NVFlareRole.CLIENT, ["sp_end_point"]),
-            ("nvflare.ha.dummy_overseer_agent.DummyOverseerAgent", NVFlareRole.ADMIN, ["sp_end_point"]),
-        ],
-    )
-    def test_get_required_args_for_overseer_agent(self, overseer_agent_class, role, result):
-        assert get_required_args_for_overseer_agent(overseer_agent_class, role) == result
+        with patch("socket.socket") as mock_socket_cls:
+            mock_sock = MagicMock()
+            mock_sock.bind.side_effect = OSError("Test")
+            mock_socket_cls.return_value = mock_sock
+            assert try_bind_address(host="localhost", port=12345).args == OSError("Test").args

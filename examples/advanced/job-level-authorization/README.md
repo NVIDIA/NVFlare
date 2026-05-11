@@ -14,7 +14,7 @@ The purpose of this example is to demonstrate following features of NVFlare,
 python3 -m venv nvflare-env
 source nvflare-env/bin/activate
 ```
-2. Install NVFlare
+2. Install NVFlare.
 ```
 pip install -r requirements.txt
 ```
@@ -34,7 +34,7 @@ cd NVFlare/examples/advanced/job-level-authorization
 ./setup.sh
 ```
 
-All the startup kits will be generated in this folder,
+All the startup kits will be generated in this folder.
 ```
 /tmp/nvflare/poc/job-level-authorization/prod_00
 ```

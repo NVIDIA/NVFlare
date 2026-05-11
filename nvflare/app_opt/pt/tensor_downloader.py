@@ -15,12 +15,15 @@ import json
 import os
 import struct
 import tempfile
+import threading
+import weakref
 from typing import Any, List, Optional, Tuple
 
 import torch
 from safetensors.torch import load as load_tensors
 from safetensors.torch import save as save_tensors
 
+from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.streaming.cacheable import CacheableObject, ItemConsumer
 from nvflare.fuel.f3.streaming.download_service import download_object
@@ -29,6 +32,17 @@ from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 from .lazy_tensor_dict import LazyTensorDict, _cleanup_temp_dir
 
 _TWO_MB = 2 * 1024 * 1024
+_ACTIVE_DISK_TENSOR_CONSUMERS = weakref.WeakSet()
+_ACTIVE_DISK_TENSOR_CONSUMERS_LOCK = threading.Lock()
+
+
+def cleanup_active_disk_tensor_downloads(reason: str = "download aborted") -> None:
+    """Clean partial tensor offload dirs still owned by active disk consumers."""
+    with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
+        consumers = list(_ACTIVE_DISK_TENSOR_CONSUMERS)
+
+    for consumer in consumers:
+        consumer.download_failed("active_disk_tensor_download", reason)
 
 
 class TensorDownloadable(CacheableObject):
@@ -167,7 +181,24 @@ class DiskTensorConsumer(ItemConsumer):
     def __init__(self, temp_dir: str):
         ItemConsumer.__init__(self)
         self._temp_dir = temp_dir
+        self._cleaned = False
         self._file_counter = 0
+        with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
+            _ACTIVE_DISK_TENSOR_CONSUMERS.add(self)
+
+    def release(self) -> None:
+        with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
+            _ACTIVE_DISK_TENSOR_CONSUMERS.discard(self)
+            self._cleaned = True
+
+    def cleanup(self) -> None:
+        with _ACTIVE_DISK_TENSOR_CONSUMERS_LOCK:
+            if self._cleaned:
+                return
+            self._cleaned = True
+            _ACTIVE_DISK_TENSOR_CONSUMERS.discard(self)
+
+        _cleanup_temp_dir(self._temp_dir)
 
     def consume_items(self, items: List[Any], result: Any) -> Any:
         if not isinstance(items, list):
@@ -196,7 +227,7 @@ class DiskTensorConsumer(ItemConsumer):
         # Eager cleanup on download callback error; the outer caller may also
         # attempt cleanup via consumer.error path. Double cleanup is intentional
         # and safe because _cleanup_temp_dir handles already-removed paths.
-        _cleanup_temp_dir(self._temp_dir)
+        self.cleanup()
 
 
 def download_tensors_to_disk(
@@ -212,7 +243,10 @@ def download_tensors_to_disk(
 
     Returns: tuple of (error message if any, LazyTensorDict for lazy access).
     """
-    temp_dir = tempfile.mkdtemp(prefix="nvflare_tensors_")
+    root_dir = cell.get_fobs_context().get(_TENSOR_DISK_OFFLOAD_ROOT_DIR)
+    if not root_dir:
+        raise RuntimeError(f"{_TENSOR_DISK_OFFLOAD_ROOT_DIR} is not set in FOBS context")
+    temp_dir = tempfile.mkdtemp(prefix="nvflare_tensors_", dir=root_dir)
 
     consumer = DiskTensorConsumer(temp_dir)
     try:
@@ -227,12 +261,13 @@ def download_tensors_to_disk(
             abort_signal=abort_signal,
         )
     except Exception:
-        _cleanup_temp_dir(temp_dir)
+        consumer.cleanup()
         raise
 
     if consumer.error:
-        _cleanup_temp_dir(temp_dir)
+        consumer.cleanup()
         return consumer.error, None
 
     key_to_file = consumer.result if consumer.result is not None else {}
+    consumer.release()
     return None, LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)

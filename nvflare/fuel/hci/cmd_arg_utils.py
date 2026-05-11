@@ -19,15 +19,33 @@ import re
 import shlex
 from typing import List
 
-from nvflare.apis.utils.format_check import type_pattern_mapping
+
+def _split_unquoted_args(line: str) -> List[str]:
+    line = re.sub(" +", " ", line)
+    return line.split(" ")
+
+
+def _has_quotes(line: str) -> bool:
+    return '"' in line or "'" in line
+
+
+def _split_quoted_args(line: str) -> List[str]:
+    """Split HCI command args for quoted input, honoring shell quotes.
+
+    Fall back to the unquoted whitespace splitter for malformed quoting so we
+    don't turn previously accepted inputs into parse errors.
+    """
+    try:
+        args = shlex.split(line)
+        return args if args else _split_unquoted_args(line)
+    except ValueError:
+        return _split_unquoted_args(line)
 
 
 def split_to_args(line: str) -> List[str]:
-    if '"' in line:
-        return shlex.split(line)
-    else:
-        line = re.sub(" +", " ", line)
-        return line.split(" ")
+    if _has_quotes(line):
+        return _split_quoted_args(line)
+    return _split_unquoted_args(line)
 
 
 def parse_command_line(line: str) -> (str, List[str], str):
@@ -39,26 +57,26 @@ def parse_command_line(line: str) -> (str, List[str], str):
     Returns:
 
     """
-    if '"' in line:
-        return line, shlex.split(line), None
-    else:
-        # cmd props are after "#"
-        parts = line.split("#", maxsplit=1)
-        line = parts[0].strip()
-        props = parts[1] if len(parts) > 1 else None
-        line = re.sub(" +", " ", line)
-        return line, line.split(" "), props
+    if _has_quotes(line):
+        return line, _split_quoted_args(line), None
+
+    # cmd props are after "#"
+    parts = line.split("#", maxsplit=1)
+    line = parts[0].strip()
+    props = parts[1] if len(parts) > 1 else None
+    return line, _split_unquoted_args(line), props
 
 
 def join_args(segs: List[str]) -> str:
     result = ""
     sep = ""
     for a in segs:
-        parts = a.split()
-        if len(parts) < 2:
-            p = parts[0]
+        needs_quotes = any(ch.isspace() for ch in a) or '"' in a or "\\" in a
+        if needs_quotes:
+            escaped = a.replace("\\", "\\\\").replace('"', '\\"')
+            p = f'"{escaped}"'
         else:
-            p = '"' + a + '"'
+            p = a
         result = result + sep + p
         sep = " "
 
@@ -186,13 +204,3 @@ def validate_file_string(file: str) -> str:
     if err:
         raise SyntaxError(err)
     return file
-
-
-def validate_sp_string(sp_string) -> str:
-    if re.match(
-        type_pattern_mapping.get("sp_end_point"),
-        sp_string,
-    ):
-        return sp_string
-    else:
-        raise SyntaxError("sp_string must be of the format example.com:8002:8003")

@@ -105,6 +105,9 @@ Use ``initial_ckpt`` to specify a path to pre-trained model weights:
      the recipe. It only needs to exist on the **server** when the model is actually loaded during job execution.
    * **PyTorch requires model architecture**: For PyTorch, you must provide ``model`` (class instance or
      dict config) along with ``initial_ckpt``, because PyTorch checkpoints contain only weights, not architecture.
+   * **PyTorch update schema**: The server-side PyTorch model or checkpoint defines the accepted
+     ``state_dict()`` key schema for client updates. A client may return only the subset of keys it trained,
+     but every returned key must already exist in the server schema. New client-only keys are rejected.
    * **TensorFlow/Keras can use checkpoint alone**: Keras ``.h5`` or SavedModel formats contain both architecture
      and weights, so ``initial_ckpt`` can be used without ``model``. If ``model`` is provided, use a subclassed
      Keras class instance (or dict config).
@@ -163,7 +166,7 @@ Execution Environments
 
 A **Job Recipe** defines *what* to run in a federated learning setting, but it also needs to know *where* to run. NVFlare provides several **execution environments** that allow the same recipe to be executed in different contexts:
 
-* **Simulation (** ``SimEnv`` **)** – For local testing and experimentation on a single machine
+* **Simulation (** ``SimEnv`` **)** – For local testing and experimentation on a single machine or in one batch job
 * **Proof-of-Concept (** ``PocEnv`` **)** – For small-scale, multi-process setups that mimic real-world deployment on a single machine
 * **Production (** ``ProdEnv`` **)** – For full-scale distributed deployments across multiple organizations and sites
 
@@ -172,17 +175,22 @@ This separation enables users to **prototype once and deploy anywhere** without 
 SimEnv – Simulation Environment
 -------------------------------
 
-Runs all clients and the server as **threads** within a single process. This is lightweight and easy to set up with no networking required. Best suited for:
+Runs the job with the local FL simulator backend: no provisioned project or
+long-running server/client daemons. Simulated clients use local worker
+processes; ``num_threads`` is the historical name for the worker-process
+concurrency. Best suited for:
 
 * Quick experiments
 * Debugging scripts and models
 * Educational use cases
+* Batch-scheduled experiments where one submitted job should run the complete
+  federated workflow and then exit
 
 **Arguments:**
 
 * ``num_clients`` (int): Number of simulated clients
 * ``clients``: A list of client names (length needs to match ``num_clients`` if both are provided)
-* ``num_threads``: Number of threads to use to run simulated clients
+* ``num_threads``: Number of concurrent simulated client worker processes
 * ``gpu_config`` (str): List of GPU device IDs, comma separated
 * ``log_config`` (str): Log config mode (``'concise'``, ``'full'``, ``'verbose'``), filepath, or level
 
@@ -221,8 +229,11 @@ Best suited for:
 * ``gpu_ids`` (List[int], optional): List of GPU IDs to assign to clients. If ``None``, uses CPU only.
 * ``auto_stop`` (bool, optional): Whether to automatically stop POC services after job completion.
 * ``use_he`` (bool, optional): Whether to use HE. Defaults to ``False``.
-* ``docker_image`` (str, optional): Docker image to use for POC.
+* ``docker_image`` (str, optional): SP/CP Docker image for Docker POC mode
+  prepared with the deploy Docker preparation path. Jobs submitted in this mode
+  must specify their SJ/CJ Docker image in ``launcher_spec``.
 * ``project_conf_path`` (str, optional): Path to the project configuration file.
+* ``study`` (str, optional): The study context for this execution environment. Jobs will be submitted and monitored within this study. Defaults to ``"default"``. Named studies require ``project_conf_path`` to point to a project with ``api_version: 4`` and ``studies:``. See :ref:`multi_study_guide`.
 
 Let's first set the path to the POC environment:
 
@@ -244,6 +255,18 @@ Let's first set the path to the POC environment:
    run.get_result()
 
 The result is stored under the directory ``/tmp/nvflare/poc``.
+
+To use a named study, point ``PocEnv`` to a custom project file that defines ``studies:``:
+
+.. code-block:: python
+
+   env = PocEnv(
+       num_clients=2,
+       project_conf_path="/tmp/nvflare/poc_project.yml",
+       study="cancer-research"  # omit for the default study
+   )
+
+If ``project_conf_path`` is not specified, or if the project does not define ``studies:``, the POC deployment behaves as single-tenant and only the ``default`` study is valid.
 
 ProdEnv – Production Environment
 --------------------------------

@@ -1,7 +1,7 @@
-API Reference
-=============
+nvflare
+=======
 
-.. note::
+.. toctree::
+   :maxdepth: 4
 
-   Full API documentation is generated during production builds.
-   Run ``sphinx-apidoc`` or build without ``--skip-api`` to generate it.
+   nvflare

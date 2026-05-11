@@ -97,6 +97,7 @@ class FlowerRecipe(Recipe):
         client_shutdown_timeout (float, optional): Timeout for client shutdown. Defaults to 5.0 seconds.
         extra_env (dict, optional): optional extra env variables to be passed to Flower client.
         run_config (dict, optional): optional dict for flwr run --run-config arguments.
+        allow_runtime_dependency_installation (bool, optional): whether to allow dynamic dependency installation (only flwr>=1.29). Defaults to False.
     """
 
     def __init__(
@@ -116,6 +117,7 @@ class FlowerRecipe(Recipe):
         client_shutdown_timeout=5.0,
         extra_env: Optional[dict] = None,
         run_config: Optional[dict] = None,
+        allow_runtime_dependency_installation: bool = False,
     ):
         """Initialize the FlowerRecipe.
 
@@ -155,6 +157,7 @@ class FlowerRecipe(Recipe):
             client_shutdown_timeout=client_shutdown_timeout,
             extra_env=env,
             run_config=run_config,
+            allow_runtime_dependency_installation=allow_runtime_dependency_installation,
         )
 
         super().__init__(job)

@@ -1,0 +1,63 @@
+name: all-clouds
+
+participants:
+  - { name: gcp-server,     cloud: gcp,   namespace: nvflare-server,   role: server }
+  - { name: gcp-client-1,   cloud: gcp,   namespace: nvflare-client-1, role: client }
+  - { name: aws-client-2,   cloud: aws,   namespace: nvflare-client-2, role: client }
+  - { name: azure-client-3, cloud: azure, namespace: nvflare-client-3, role: client }
+
+clouds:
+  gcp:
+    prepare:
+      runtime: k8s
+      parent:
+        docker_image: gcp-registry.example.com/nvflare/nvflare:dev
+        workspace_pvc: nvflws
+        workspace_mount_path: /var/tmp/nvflare/workspace
+      job_launcher:
+        default_python_path: /usr/local/bin/python3
+    pull_policy: Always
+    helm_overrides: []
+    pvc_config:
+      nvflws:   { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
+      nvfldata: { sc: standard-rwo,  access: ReadWriteOnce,  size: 1Gi }
+    study_data:
+      default:
+        data: { pvc: nvfldata, mode: ro }
+  aws:
+    prepare:
+      runtime: k8s
+      parent:
+        docker_image: aws-registry.example.com/nvflare/nvflare:dev
+        workspace_pvc: nvflws
+        workspace_mount_path: /var/tmp/nvflare/workspace
+        pod_security_context: { seLinuxOptions: { type: spc_t } }
+      job_launcher:
+        default_python_path: /usr/local/bin/python3
+        job_pod_security_context: { seLinuxOptions: { type: spc_t } }
+    pull_policy: Always
+    helm_overrides: []
+    pod_annotations:
+      karpenter.sh/do-not-disrupt: "true"
+    pvc_config:
+      nvflws:   { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }
+      nvfldata: { sc: auto-ebs-sc, access: ReadWriteOnce, size: 1Gi }
+    study_data:
+      default:
+        data: { pvc: nvfldata, mode: ro }
+  azure:
+    prepare:
+      runtime: k8s
+      parent:
+        docker_image: azure-registry.example.com/nvflare/nvflare:dev
+        workspace_pvc: nvflws
+        workspace_mount_path: /var/tmp/nvflare/workspace
+      job_launcher:
+        default_python_path: /usr/local/bin/python3
+    helm_overrides: []
+    pvc_config:
+      nvflws:   { sc: managed-csi,   access: ReadWriteOnce, size: 10Gi }
+      nvfldata: { sc: managed-csi,   access: ReadWriteOnce, size: 1Gi  }
+    study_data:
+      default:
+        data: { pvc: nvfldata, mode: ro }

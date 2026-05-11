@@ -1,0 +1,15 @@
+name: fed_project
+description: FL server for the example federation
+
+participants:
+  - name: server.example.com
+    type: server
+    org: nvidia
+    fed_learn_port: 8002
+    admin_port: 8003
+    # Optional: add default_host or host_names when the server certificate
+    # must cover DNS names/IPs beyond the participant name.
+    # default_host: server-public.example.com
+    # host_names:
+    #   - server-public.example.com
+    #   - 10.0.0.10

@@ -12,16 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from pyhocon import ConfigFactory as CF
 
 from nvflare.utils.cli_utils import (
     append_if_not_in_list,
-    create_startup_kit_config,
+    backup_hidden_config_file,
+    find_startup_kit_config_keys,
     get_hidden_nvflare_config_path,
     get_hidden_nvflare_dir,
+    load_hidden_config,
+    remove_startup_kit_config_keys,
+    save_config,
 )
 
 
@@ -35,28 +38,119 @@ class TestCLIUtils:
             Path.home() / ".nvflare/config.conf"
         )
 
-    def test_create_startup_kit_config(self):
-        with patch("nvflare.utils.cli_utils.check_startup_dir", side_effect=None) as mock:
-            mock.return_value = ""
-            with patch("os.path.isdir", side_effect=None) as mock1:
-                mock1.return_value = True
-                prev_conf = CF.parse_string(
-                    """
-                        poc_workspace {
-                            path = "/tmp/nvflare/poc"
-                        }
-                    """
-                )
-                config = create_startup_kit_config(
-                    nvflare_config=prev_conf, startup_kit_dir="/tmp/nvflare/poc/example_project/prod_00"
-                )
+    def test_remove_startup_kit_config_keys_preserves_registry(self):
+        config = CF.parse_string(
+            """
+                version = 2
+                startup_kits {
+                    active = "admin"
+                    entries {
+                        admin = "/tmp/admin"
+                    }
+                }
+                poc {
+                    startup_kit = "/tmp/old-poc"
+                    workspace = "/tmp/nvflare/poc"
+                }
+                prod {
+                    startup_kit = "/tmp/old-prod"
+                }
+            """
+        )
 
-                assert "/tmp/nvflare/poc" == config.get("poc_workspace.path")
-                assert "/tmp/nvflare/poc/example_project/prod_00" == config.get("startup_kit.path")
+        updated = remove_startup_kit_config_keys(config)
 
-                config = create_startup_kit_config(nvflare_config=prev_conf, startup_kit_dir="")
+        assert updated.get("startup_kits.active") == "admin"
+        assert updated.get("startup_kits.entries.admin") == "/tmp/admin"
+        assert updated.get("poc.workspace") == "/tmp/nvflare/poc"
+        assert updated.get("poc.startup_kit", None) is None
+        assert updated.get("prod.startup_kit", None) is None
 
-                assert config.get("startup_kit.path", None) is None
+    def test_find_startup_kit_config_keys_reports_removed_keys(self):
+        config = CF.parse_string(
+            """
+                startup_kits {
+                    active = "admin"
+                }
+                poc {
+                    startup_kit = "/tmp/old-poc"
+                    workspace = "/tmp/nvflare/poc"
+                }
+                prod {
+                    startup_kit = "/tmp/old-prod"
+                }
+            """
+        )
+
+        assert find_startup_kit_config_keys(config) == ["poc.startup_kit", "prod.startup_kit"]
+
+    def test_load_hidden_config_reads_without_migration_or_persistence(self, tmp_path, monkeypatch):
+        hidden_dir = tmp_path / ".nvflare"
+        hidden_dir.mkdir()
+        config_path = hidden_dir / "config.conf"
+        legacy_text = """
+startup_kit {
+  path = "/tmp/nvflare/legacy/prod_00"
+}
+poc_workspace {
+  path = "/tmp/nvflare/poc"
+}
+""".strip()
+        config_path.write_text(legacy_text)
+
+        monkeypatch.setattr("nvflare.utils.cli_utils.get_or_create_hidden_nvflare_dir", lambda: hidden_dir)
+
+        loaded = load_hidden_config()
+
+        assert loaded.get("startup_kit.path") == "/tmp/nvflare/legacy/prod_00"
+        assert loaded.get("poc_workspace.path") == "/tmp/nvflare/poc"
+        persisted = config_path.read_text()
+        assert persisted.strip() == legacy_text
+        assert not (hidden_dir / "config.conf.bak").exists()
+
+    def test_backup_hidden_config_file_returns_none_when_source_missing(self, tmp_path):
+        hidden_dir = tmp_path / ".nvflare"
+        hidden_dir.mkdir()
+        config_path = hidden_dir / "config.conf"
+
+        backup_path = backup_hidden_config_file(str(config_path))
+
+        assert backup_path is None
+        assert not (hidden_dir / "config.conf.bak").exists()
+
+    def test_backup_hidden_config_file_uses_non_overwriting_suffixes(self, tmp_path):
+        config_path = tmp_path / "config.conf"
+        config_path.write_text("current\n")
+        backup_path = tmp_path / "config.conf.bak"
+        backup1_path = tmp_path / "config.conf.bak1"
+        backup_path.write_text("older\n")
+        backup1_path.write_text("older1\n")
+
+        new_backup_path = backup_hidden_config_file(str(config_path))
+
+        assert new_backup_path == str(tmp_path / "config.conf.bak2")
+        assert Path(new_backup_path).read_text() == "current\n"
+        assert backup_path.read_text() == "older\n"
+        assert backup1_path.read_text() == "older1\n"
+
+    def test_save_config_replaces_file_atomically_without_temp_leak(self, tmp_path):
+        config_path = tmp_path / "config.conf"
+        config_path.write_text("version = 1\n")
+        config = CF.parse_string(
+            """
+                version = 2
+                poc {
+                    workspace = "/tmp/nvflare/poc"
+                }
+            """
+        )
+
+        save_config(config, str(config_path))
+
+        persisted = config_path.read_text()
+        assert "version = 2" in persisted
+        assert 'workspace = "/tmp/nvflare/poc"' in persisted
+        assert list(tmp_path.glob("tmp*")) == []
 
     @pytest.mark.parametrize(
         "inputs, result", [(([], "a"), ["a"]), ((["a"], "a"), ["a"]), ((["a", "b"], "b"), ["a", "b"])]

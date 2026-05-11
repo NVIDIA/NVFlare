@@ -13,14 +13,17 @@
 # limitations under the License.
 
 import argparse
+import json
 from typing import List, Optional
 
-SCHEMA_VERSION = "1"
+from nvflare.tool.cli_contract import SCHEMA_VERSION
 
 _PATH_KEYWORDS = ("dir", "path", "file", "output")
 
 
 def _infer_type(action: argparse.Action) -> str:
+    # Stage-1 schema is inferred from argparse only; richer explicit typing can be added later if
+    # commands need stronger MCP/tool contracts than these naming heuristics provide.
     if action.option_strings:
         name = max(action.option_strings, key=len)
     else:
@@ -42,19 +45,31 @@ def parser_to_schema(
     parser: argparse.ArgumentParser,
     command: str,
     examples: Optional[List[str]] = None,
+    deprecated: bool = False,
+    deprecated_message: str = "",
+    streaming: Optional[bool] = None,
+    output_modes: Optional[List[str]] = None,
+    mutating: Optional[bool] = None,
+    idempotent: Optional[bool] = None,
+    retry_token: Optional[dict] = None,
 ) -> dict:
     """Serialize an argparse parser to a JSON-compatible schema dict."""
+    # argparse exposes parser structure via the private _actions list; this is the standard
+    # introspection hook available for building a schema from parser definitions.
     args = []
     for action in parser._actions:
-        if isinstance(action, (argparse._HelpAction, argparse._VersionAction)):
+        if isinstance(action, (argparse._HelpAction, argparse._SubParsersAction)):
+            continue
+        if action.help == argparse.SUPPRESS:
             continue
 
-        if action.option_strings:
-            name = max(action.option_strings, key=len)
-            required = bool(getattr(action, "required", False))
-        else:
+        is_positional = not action.option_strings
+        if is_positional:
             name = action.dest
-            required = True
+            required = action.nargs not in (argparse.OPTIONAL, argparse.ZERO_OR_MORE)
+        else:
+            name = max(action.option_strings, key=len)
+            required = bool(getattr(action, "required", False) or getattr(action, "schema_required", False))
 
         entry = {
             "name": name,
@@ -74,12 +89,87 @@ def parser_to_schema(
         if action.option_strings and len(action.option_strings) > 1:
             entry["aliases"] = action.option_strings[:-1]
 
+        if action.nargs in ("*", "+", "?"):
+            entry["nargs"] = action.nargs
+
         args.append(entry)
 
-    return {
+    result = {
         "schema_version": SCHEMA_VERSION,
         "command": command,
         "description": parser.description or "",
         "args": args,
         "examples": examples or [],
     }
+    if deprecated:
+        result["deprecated"] = True
+        result["deprecated_message"] = deprecated_message
+    if streaming is not None:
+        result["streaming"] = streaming
+    if output_modes is not None:
+        result["output_modes"] = output_modes
+    if mutating is not None:
+        result["mutating"] = mutating
+    if idempotent is not None:
+        result["idempotent"] = idempotent
+    if retry_token is not None:
+        result["retry_token"] = retry_token
+    return result
+
+
+def handle_schema_flag(
+    parser: argparse.ArgumentParser,
+    command: str,
+    examples: List[str],
+    args_list: List[str],
+    deprecated: bool = False,
+    deprecated_message: str = "",
+    streaming: Optional[bool] = None,
+    output_modes: Optional[List[str]] = None,
+    mutating: Optional[bool] = None,
+    idempotent: Optional[bool] = None,
+    retry_token: Optional[dict] = None,
+) -> None:
+    """Handle the pre-parse --schema fast path.
+
+    This must run before parser.parse_args() because many commands want schema discovery even when
+    the rest of the required arguments are absent.
+    """
+    if "--schema" in args_list:
+        if parser is None:
+            schema = {
+                "schema_version": SCHEMA_VERSION,
+                "command": command,
+                "args": [],
+                "examples": examples or [],
+            }
+            if deprecated:
+                schema["deprecated"] = True
+                schema["deprecated_message"] = deprecated_message
+            if streaming is not None:
+                schema["streaming"] = streaming
+            if output_modes is not None:
+                schema["output_modes"] = output_modes
+            if mutating is not None:
+                schema["mutating"] = mutating
+            if idempotent is not None:
+                schema["idempotent"] = idempotent
+            if retry_token is not None:
+                schema["retry_token"] = retry_token
+        else:
+            schema = parser_to_schema(
+                parser,
+                command,
+                examples,
+                deprecated,
+                deprecated_message,
+                streaming=streaming,
+                output_modes=output_modes,
+                mutating=mutating,
+                idempotent=idempotent,
+                retry_token=retry_token,
+            )
+        # --schema intentionally bypasses the normal command-output envelope so agent/tool callers
+        # always get the raw schema document.
+        print(json.dumps(schema, indent=2))
+        raise SystemExit(0)

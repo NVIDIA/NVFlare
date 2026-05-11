@@ -128,7 +128,7 @@ The :github_nvflare_link:`FedBN example <research/fed-bn>` showcases a federated
 to address the feature shift problem when aggregating models across different data distributions.
 
 In this work, we propose an effective method that uses local batch normalization to alleviate the feature shift before averaging models.
-The resulting scheme, called FedBN, outperforms both classical FedAvg and FedProx on our extensive experiments. These empirical results
+The resulting scheme, called FedBN, outperforms both classical FedAvg and FedProx in our extensive experiments. These empirical results
 are supported by a convergence analysis that shows in a simplified setting that FedBN has a faster convergence rate than FedAvg.
 
 

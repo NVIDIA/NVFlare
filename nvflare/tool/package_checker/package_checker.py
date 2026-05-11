@@ -16,10 +16,18 @@ import os
 import signal
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from enum import Enum, auto
 from subprocess import TimeoutExpired
 
 from nvflare.tool.package_checker.check_rule import CHECK_PASSED, CheckResult, CheckRule
 from nvflare.tool.package_checker.utils import run_command_in_subprocess, split_by_len
+
+
+class CheckStatus(Enum):
+    PASS = auto()
+    PASS_WITH_CLEANUP = auto()
+    FAIL_WITH_CLEANUP = auto()
+    FAIL = auto()
 
 
 class PackageChecker(ABC):
@@ -56,24 +64,27 @@ class PackageChecker(ABC):
         return None
 
     def stop_dry_run(self, force: bool = True):
+        from nvflare.tool.cli_output import print_human
+
         # todo: add gracefully shutdown command
-        print("killing dry run process")
+        print_human("killing dry run process")
         command = self.get_dry_run_command()
         cmd = f"pkill -9 -f '{command}'"
         process = run_command_in_subprocess(cmd)
         out, err = process.communicate()
-        print(f"killed dry run process output: {out}")
-        print(f"killed dry run process err: {err}")
+        print_human(f"killed dry run process output: {out}")
+        print_human(f"killed dry run process err: {err}")
 
-    def check(self) -> int:
+    def check(self) -> CheckStatus:
         """Checks if the package is runnable on the current system.
 
         Returns:
-            0: if no dry-run process started.
-            1: if the dry-run process is started and return code is 0.
-            2: if the dry-run process is started and return code is not 0.
+            CheckStatus.PASS: checks passed, no dry-run cleanup needed.
+            CheckStatus.PASS_WITH_CLEANUP: checks passed, dry-run process needs cleanup.
+            CheckStatus.FAIL_WITH_CLEANUP: checks failed, dry-run process needs cleanup.
+            CheckStatus.FAIL: checks failed, no dry-run cleanup needed.
         """
-        ret_code = 0
+        status = CheckStatus.PASS
         try:
             all_passed = True
             for rule in self.rules:
@@ -94,23 +105,26 @@ class PackageChecker(ABC):
 
             # check dry run
             if all_passed:
-                ret_code = self.check_dry_run()
+                status = self.check_dry_run()
+            else:
+                status = CheckStatus.FAIL
         except Exception as e:
             self.add_report(
                 "Package Error",
                 f"Exception happens in checking: {e}, this package is not in correct format.",
                 "Please download a new package.",
             )
-        finally:
-            return ret_code
+            status = CheckStatus.FAIL
 
-    def check_dry_run(self) -> int:
+        return status
+
+    def check_dry_run(self) -> CheckStatus:
         """Runs dry run command.
 
         Returns:
-            0: if no process started.
-            1: if the process is started and return code is 0.
-            2: if the process is started and return code is not 0.
+            CheckStatus.PASS_WITH_CLEANUP: dry run started successfully and needs cleanup.
+            CheckStatus.FAIL_WITH_CLEANUP: dry run started but failed and needs cleanup.
+            CheckStatus.FAIL: dry run could not be started.
         """
         command = self.get_dry_run_command()
         dry_run_input = self.get_dry_run_inputs()
@@ -128,12 +142,14 @@ class PackageChecker(ABC):
                     CHECK_PASSED,
                     "N/A",
                 )
+                return CheckStatus.PASS_WITH_CLEANUP
             else:
                 self.add_report(
                     "Check dry run",
                     f"Can't start successfully: {out}",
                     "Please check the error message of dry run.",
                 )
+                return CheckStatus.FAIL_WITH_CLEANUP
         except TimeoutExpired:
             os.killpg(process.pid, signal.SIGTERM)
             # Assumption, preflight check is focused on the connectivity, so we assume all sub-systems should
@@ -147,15 +163,14 @@ class PackageChecker(ABC):
                 CHECK_PASSED,
                 "N/A",
             )
-
-        finally:
-            if process:
-                if process.returncode == 0:
-                    return 1
-                else:
-                    return 2
-            else:
-                return 0
+            return CheckStatus.PASS_WITH_CLEANUP
+        except Exception as e:
+            self.add_report(
+                "Check dry run",
+                f"Can't start successfully: {e}",
+                "Please check the error message of dry run.",
+            )
+            return CheckStatus.FAIL
 
     def add_report(self, check_name, problem_text: str, fix_text: str):
         self.report[self.package_path].append((check_name, problem_text, fix_text))
@@ -163,10 +178,14 @@ class PackageChecker(ABC):
         self.fix_len = max(self.fix_len, len(fix_text))
 
     def _print_line(self):
-        print("|" + "-" * (self.check_len + self.problem_len + self.fix_len + 8) + "|")
+        from nvflare.tool.cli_output import print_human
+
+        print_human("|" + "-" * (self.check_len + self.problem_len + self.fix_len + 8) + "|")
 
     def _print_row(self, check, problem, fix):
-        print(
+        from nvflare.tool.cli_output import print_human
+
+        print_human(
             "| {check:<{width1}s} | {problems:<{width2}s} | {fix:<{width3}s} |".format(
                 check=check,
                 problems=problem,
@@ -178,19 +197,21 @@ class PackageChecker(ABC):
         )
 
     def print_report(self):
+        from nvflare.tool.cli_output import print_human
+
         total_width = self.check_len + self.problem_len + self.fix_len + 10
         for package_path, results in self.report.items():
-            print("Checking Package: " + package_path)
-            print("-" * total_width)
+            print_human("Checking Package: " + package_path)
+            print_human("-" * total_width)
             if results:
                 self._print_row("Checks", "Problems", "How to fix")
             else:
-                print("| {:{}s} |".format("Passed", total_width - 4))
+                print_human("| {:{}s} |".format("Passed", total_width - 4))
             for row in results:
                 self._print_line()
                 lines = split_by_len(row[1], max_len=self.problem_len)
                 self._print_row(row[0], lines[0], row[2])
                 for line in lines[1:]:
                     self._print_row("", line, "")
-            print("-" * total_width)
-            print()
+            print_human("-" * total_width)
+            print_human()

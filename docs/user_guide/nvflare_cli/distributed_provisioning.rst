@@ -1,520 +1,636 @@
 .. _distributed_provisioning:
 
-##########################
+########################
 Distributed Provisioning
-##########################
+########################
 
-Distributed (manual) provisioning is an alternative to centralized provisioning
-(``nvflare provision``) designed for deployments where a Project Admin cannot or
-should not generate private keys on behalf of each site.
+Distributed provisioning lets each participant create and keep its own private
+key. The Project Admin signs certificate requests, but never receives any
+participant private key.
 
-In the standard ``nvflare provision`` workflow the Project Admin runs a single
-command and distributes pre-packaged startup kits — including each site's private
-key — to participants. This requires participants to trust the Project Admin with
-their private key during transit and at rest.
+Use this workflow when sites, servers, or users should be provisioned
+independently. The public workflow uses three commands:
 
-Distributed provisioning uses an **inverted-trust model**:
+.. code-block:: shell
 
-- Each site generates its own RSA private key **locally**. The key never leaves the machine.
-- The site sends only a **Certificate Signing Request (CSR)** to the Project Admin.
-- The Project Admin signs the CSR and returns a certificate.
-- Each site assembles its own startup kit from its local key, the signed certificate, and the root CA.
+   nvflare cert request --participant <participant.yaml>
+   nvflare cert approve <request.zip> --ca-dir <ca-dir> --profile <project_profile.yaml>
+   nvflare package <signed.zip> --fingerprint <rootca_fingerprint_sha256>
 
-The resulting startup kits are structurally identical to those produced by
-``nvflare provision`` and are fully compatible with all NVFlare runtime components.
+At a high level:
 
-.. note::
+1. The Project Admin creates ``project_profile.yaml`` and initializes the
+   project CA from that explicit profile file. The default deploy version is
+   ``00``.
+2. The server admin decides the server host name and ports and shares them with
+   the Project Admin.
+3. The Project Admin records the approved server endpoint in
+   ``project_profile.yaml`` before approving requests.
+4. The requester creates a participant definition file using the project name.
+5. The requester runs ``nvflare cert request`` and sends only the generated
+   request zip to the Project Admin.
+6. The Project Admin approves the request zip and returns the signed zip, which
+   includes the approved server endpoint.
+7. The Project Admin shares ``rootca_fingerprint_sha256`` through a trusted
+   out-of-band channel.
+8. The requester packages the signed zip on the machine that owns the local
+   private key.
 
-   Distributed provisioning uses mTLS as the sole trust anchor. No ``signature.json``
-   is generated. The ``require_signed_jobs`` policy is always enabled on the server.
-
-****************************************
-Centralized vs. Distributed at a Glance
-****************************************
-
-+-----------------------------+--------------------------------------+--------------------------------------+
-| Aspect                      | Centralized (``nvflare provision``)  | Distributed (manual workflow)        |
-+=============================+======================================+======================================+
-| Private key custody         | Admin generates/distributes keys     | Site generates key locally           |
-+-----------------------------+--------------------------------------+--------------------------------------+
-| Data distributed to site    | Full startup kit                     | Signed cert + ``rootCA.pem``         |
-+-----------------------------+--------------------------------------+--------------------------------------+
-| Data sent from site         | Nothing                              | CSR (public key only)                |
-+-----------------------------+--------------------------------------+--------------------------------------+
-| Project Admin workflow      | One command provisions all sites     | Sign one CSR per participant         |
-+-----------------------------+--------------------------------------+--------------------------------------+
-| Site Admin workflow         | Unpack and run                       | CSR -> sign -> package -> run        |
-+-----------------------------+--------------------------------------+--------------------------------------+
-| Participant onboarding      | Usually prepared up front            | Join independently, on demand        |
-+-----------------------------+--------------------------------------+--------------------------------------+
-| Adding a new site           | Dynamic provisioning with root CA    | Same flow; no impact on existing     |
-+-----------------------------+--------------------------------------+--------------------------------------+
-| Trust in Project Admin      | Must trust admin with private keys   | Admin never sees private keys        |
-+-----------------------------+--------------------------------------+--------------------------------------+
-| Support scope               | Supports CC and HE                   | Targets non-CC and non-HE            |
-+-----------------------------+--------------------------------------+--------------------------------------+
-
-*****
-Roles
-*****
-
-+------------------+------------------------------------------------------------------------------------------+
-| Role             | Responsibility                                                                           |
-+==================+==========================================================================================+
-| Project Admin    | Runs cert init once, signs incoming CSRs, and returns signed certificates and rootCA.   |
-+------------------+------------------------------------------------------------------------------------------+
-| Site Admin       | Runs cert csr locally, sends CSR out-of-band, receives cert and rootCA, then packages.  |
-+------------------+------------------------------------------------------------------------------------------+
-
-The ``-t`` / ``--type`` argument identifies either a **site** (FL process identity) or a
-**user** (human connecting via the admin API):
-
-**Site types** — receive ``start.sh``; no role embedded in cert ``UNSTRUCTURED_NAME``:
-
-+---------------+---------------------------------------------------------------+
-| Type          | Description                                                   |
-+===============+===============================================================+
-| ``server``    | FL server process identity (mTLS server endpoint)             |
-+---------------+---------------------------------------------------------------+
-| ``client``    | FL client (data site) process identity (mTLS client)          |
-+---------------+---------------------------------------------------------------+
-
-**User roles** — receive ``fl_admin.sh``; role embedded in cert ``UNSTRUCTURED_NAME``
-and enforced by ``local/authorization.json.default`` at each site:
-
-+---------------+---------------------------------------------------+-----------------------------+
-| Role          | Description                                       | Default ``submit_job``      |
-+===============+===================================================+=============================+
-| ``lead``      | Lead researcher / primary job submitter.          | Allowed (any site)          |
-|               | Can submit, clone, manage own jobs; operate and   |                             |
-|               | deploy custom code (byoc) on own site.            |                             |
-+---------------+---------------------------------------------------+-----------------------------+
-| ``org_admin`` | Organization administrator. Can manage and        | **Not allowed**             |
-|               | operate own site, view all jobs, but cannot       |                             |
-|               | submit or clone jobs.                             |                             |
-+---------------+---------------------------------------------------+-----------------------------+
-| ``member``    | Read-only observer. Can view jobs and status;     | **Not allowed**             |
-|               | no submit, operate, or byoc permissions.          |                             |
-+---------------+---------------------------------------------------+-----------------------------+
-
-Sites may customize ``local/authorization.json.default`` to tighten or loosen the
-default policy. ``lead`` is the intended role for users who run FL experiments.
-``project_admin`` is not a ``-t`` choice — the Project Admin self-provisions via
-``nvflare cert init``.
-
-**Default authorization policy** enforced at runtime against
-``local/authorization.json.default`` on each site:
-
-+------------------------------------------+------------------+------------------+------------------+
-| Permission                               | ``lead``         | ``org_admin``    | ``member``       |
-+==========================================+==================+==================+==================+
-| ``submit_job``                           | Any site         | —                | —                |
-+------------------------------------------+------------------+------------------+------------------+
-| ``clone_job``                            | Own jobs         | —                | —                |
-+------------------------------------------+------------------+------------------+------------------+
-| ``manage_job`` (abort / delete)          | Own jobs         | Jobs from own org| —                |
-+------------------------------------------+------------------+------------------+------------------+
-| ``download_job``                         | Own jobs         | Jobs from own org| —                |
-+------------------------------------------+------------------+------------------+------------------+
-| ``view``                                 | Any              | Any              | Any              |
-+------------------------------------------+------------------+------------------+------------------+
-| ``operate`` (start / stop site)          | Own site         | Own site         | —                |
-+------------------------------------------+------------------+------------------+------------------+
-| ``byoc`` (custom code)                   | Any              | —                | —                |
-+------------------------------------------+------------------+------------------+------------------+
-
-*****
-Steps
-*****
-
-+------+-------------------+-------------------------------------------------------------------+
-| Step | Who               | Action                                                            |
-+======+===================+===================================================================+
-| 1    | Site Admin        | ``nvflare cert csr -n hospital-1 -t client -o ./csr``             |
-+------+-------------------+-------------------------------------------------------------------+
-| 2    | Site Admin        | Send ``hospital-1.csr`` to Project Admin (email, file share, etc.)|
-+------+-------------------+-------------------------------------------------------------------+
-| 3    | Project Admin     | ``nvflare cert init --project my-project -o ./ca``                |
-|      |                   | *(one-time per federation)*                                       |
-+------+-------------------+-------------------------------------------------------------------+
-| 4    | Project Admin     | ``nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed``       |
-+------+-------------------+-------------------------------------------------------------------+
-| 5    | Project Admin     | Return ``hospital-1.crt`` + ``rootCA.pem`` to site admin          |
-+------+-------------------+-------------------------------------------------------------------+
-| 6    | Site Admin        | ``nvflare package -e grpc://fl-server:8002 --dir ./csr``          |
-|      |                   | *(kit type derived from signed cert)*                             |
-+------+-------------------+-------------------------------------------------------------------+
-| 7    | Site Admin        | ``cd hospital-1 && ./startup/start.sh``                           |
-+------+-------------------+-------------------------------------------------------------------+
-
-Step 3 is done once per federation. Each new participant repeats steps 1–2 and 4–7 independently.
-
-Step 1 — Project Admin: Initialize the Root CA (once per federation)
-=====================================================================
-
-The Project Admin bootstraps the root certificate authority. This is a **one-time
-operation** per federation.
-
-.. code-block:: bash
-
-   nvflare cert init --project <project-name> -o ./ca
-
-Example:
-
-.. code-block:: bash
-
-   nvflare cert init --project my-fl-project -o ./ca
-
-This produces:
-
-- ``./ca/rootCA.pem`` — root CA certificate (distribute to all sites)
-- ``./ca/rootCA.key`` — root CA private key (keep secret, never distribute)
-- ``./ca/ca.json`` — audit metadata (serial counter)
-
-.. attention::
-
-   ``rootCA.key`` must be kept confidential. Anyone with access to it can sign
-   certificates for any participant identity. Store it on a secure, air-gapped
-   machine or in a hardware security module (HSM).
-
-Step 2 — Site Admin: Generate a Local Key and CSR
-==================================================
-
-Each participant (server, each client, each admin user) runs this step on their
-own machine. The optional ``-t`` flag embeds the proposed certificate type in the
-CSR as a hint for the Project Admin.
-
-.. code-block:: bash
-
-   nvflare cert csr -n <participant-name> -t <type> -o ./csr
-
-Example for a client site named ``hospital-1``:
-
-.. code-block:: bash
-
-   nvflare cert csr -n hospital-1 -t client -o ./csr
-
-This produces:
-
-- ``./csr/hospital-1.key`` — private key (permissions: 0600, never leaves this machine)
-- ``./csr/hospital-1.csr`` — certificate signing request (send to Project Admin)
-
-Example for the FL server named ``fl-server``:
-
-.. code-block:: bash
-
-   nvflare cert csr -n fl-server -t server -o ./csr
+The resulting startup kit is used the same way as a centrally provisioned
+startup kit.
 
 .. note::
 
-   The ``-t`` flag in ``cert csr`` is a **proposal** only. The Project Admin sets
-   the final type authoritatively when signing. The org admin should generate CSRs
-   on behalf of participants to ensure the correct type is requested.
+   The Project Admin's approval covers only what is inside the signed zip:
+   participant identity, the signed certificate, ``rootCA.pem``, and the
+   federation connection parameters (server endpoint, ``scheme``,
+   ``connection_security``), plus signed CA information. ``builders:`` blocks in
+   participant definition files are **not** included in the request zip or
+   signed zip, are not approved by the Project Admin, and remain local,
+   package-time behavior applied on the requester's machine. Features that
+   require coordinated builder configuration across all participants (such as
+   homomorphic encryption) are not directly supported; use centralized
+   ``nvflare provision`` for those deployments.
 
-Step 3 — Site Admin: Send CSR to Project Admin
-===============================================
+*******************************************
+Before You Start: Record Connection Details
+*******************************************
 
-Deliver ``<participant-name>.csr`` to the Project Admin through any out-of-band
-channel (email, secure file transfer, shared storage, etc.). The private key file
-stays on the site's machine and is never shared.
+Before approvals begin, the project name and server endpoint must be in place.
+There is also an optional deploy version for new deployment CA generations;
+normally ignore it and use the default ``00``.
 
-Step 4 — Project Admin: Sign the CSR
-======================================
+**1. Project name**
 
-For each received CSR, the Project Admin runs:
+The Project Admin chooses the project name when writing
+``project_profile.yaml``. Every participant definition file must use this exact
+name in its ``name:`` field.
 
-.. code-block:: bash
+**2. Server host and ports**
 
-   nvflare cert sign -r <participant>.csr -c ./ca -o ./signed/<participant>
+The server admin decides the FL server's host name (or DNS name), the
+``fed_learn_port``, and the ``admin_port`` before any provisioning begins. The
+server admin communicates these values to the Project Admin, who records them
+in ``project_profile.yaml``. ``nvflare cert approve`` signs this endpoint into
+the signed zip. Client and user participant definition files do not contain
+local ``server:`` blocks.
 
-The certificate type is read from the CSR's embedded proposal. The Project Admin
-may override it with ``-t <type>``:
+**Optional: deploy version**
 
-.. code-block:: bash
+The Project Admin normally ignores this option. The default is ``00``:
 
-   nvflare cert sign -r <participant>.csr -t <type> -c ./ca -o ./signed/<participant>
+.. code-block:: shell
 
-The ``-t`` argument **overrides** whatever type was proposed in the CSR, ensuring
-the Project Admin has final authority over certificate types.
+   nvflare cert init --profile project_profile.yaml -o ./ca --deploy-version 00
 
-Example — signing the ``hospital-1`` client CSR (type embedded in CSR):
+The deploy version is internal metadata stored in ``ca.json`` and signed into
+each approval zip. ``nvflare package`` writes startup kits to ``prod_<NN>``.
+With the default ``00``, multiple participants approved by the same CA are
+packaged into the same ``prod_00`` directory. Use ``01``, ``02``, etc. only
+when intentionally creating a new deployment CA/generation.
 
-.. code-block:: bash
+The only value shared out-of-band for requester verification is
+``rootca_fingerprint_sha256`` after approval.
 
-   nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed/hospital-1
+*********************
+Project Profile
+*********************
 
-Example — signing the ``fl-server`` server CSR with explicit type override:
-
-.. code-block:: bash
-
-   nvflare cert sign -r fl-server.csr -t server -c ./ca -o ./signed/fl-server
-
-Each output directory contains:
-
-- ``<name>.crt`` (e.g. ``hospital-1.crt``, ``fl-server.crt``) — signed certificate
-- ``rootCA.pem`` — copy of the root CA certificate
-
-Step 5 — Project Admin: Distribute Signed Certificates
-=======================================================
-
-Send each site their signed certificate and ``rootCA.pem``:
-
-- ``hospital-1/hospital-1.crt`` + ``rootCA.pem`` → send to ``hospital-1``
-- ``fl-server/fl-server.crt`` + ``rootCA.pem`` → send to the server site
-
-No private keys are exchanged at this step.
-
-Step 6 — Site Admin: Assemble the Startup Kit
-==============================================
-
-Each site runs ``nvflare package`` to assemble a startup kit from:
-
-- The local private key (generated in Step 2)
-- The signed certificate (received in Step 5)
-- ``rootCA.pem`` (received in Step 5)
-
-**Using** ``--project-file``:
-
-For users already familiar with ``nvflare provision`` project.yaml, those who need
-custom builders, or who prefer to describe all participants in a single file.
-
-.. note::
-
-   ``nvflare package`` always provides its own ``WorkspaceBuilder`` and
-   ``StaticFileBuilder`` (with the scheme derived from ``--endpoint``).
-   If your YAML ``builders:`` section lists either of these, those entries —
-   including any custom args such as ``config_folder`` — are silently ignored
-   and a warning is emitted. Custom third-party builders are passed through unchanged.
-
-Place all received certs and ``rootCA.pem`` in one directory (named by participant CN),
-then run:
-
-.. code-block:: bash
-
-   nvflare package -e grpc://fl-server:8002 -p ./site.yaml --dir ./certs
-
-A minimal ``site.yaml``:
+The Project Admin creates ``project_profile.yaml`` once per federation. This is
+a lightweight project profile, not the full centralized provisioning
+``project.yaml``.
 
 .. code-block:: yaml
 
-   api_version: 3
-   name: my-project
-   description: ""
+   name: hospital_federation
+   scheme: grpc
+   connection_security: tls
+   server:
+     host: server1.hospital-central.org
+     fed_learn_port: 8002
+     admin_port: 8003
+
+Fields:
+
+- ``name``: project name. Requests must match this value.
+- ``scheme``: FLARE communication driver, such as ``grpc``, ``tcp``, or
+  ``http``.
+- ``connection_security``: project default connection security, such as
+  ``tls``, ``mtls``, or ``clear``.
+- ``server``: Project Admin-approved FL server endpoint, provided by the server
+  admin before approvals.
+
+The Project Admin keeps this file local. During approval, ``scheme``, the
+default ``connection_security``, and the ``server`` endpoint are copied into the
+signed zip metadata so participants do not need the profile file.
+
+********************************
+Participant Definition Files
+********************************
+
+Each requester creates a participant definition file for one identity. The file
+uses the same ``participants`` structure as centralized ``project.yaml``, but it
+contains only the local participant.
+
+Client site example:
+
+.. code-block:: yaml
+
+   name: hospital_federation
+   description: Site A - Hospital Alpha
+
    participants:
-     - name: hospital-1
+     - name: hospital-a
        type: client
-       org: hospital
-     - name: alice@hospital.com
+       org: hospital_alpha
+
+User example:
+
+.. code-block:: yaml
+
+   name: hospital_federation
+
+   participants:
+     - name: alice@hospital-alpha.org
        type: admin
-       org: hospital
+       org: hospital_alpha
        role: lead
 
-**Using** ``--dir``:
+Server example:
 
-Place the key, certificate, and ``rootCA.pem`` in the same directory. The participant
-name is auto-detected from the ``.key`` filename, and the kit type is derived
-automatically from the certificate's embedded type:
+.. code-block:: yaml
 
-.. code-block:: bash
+   name: hospital_federation
+   description: Central FL server for hospital network
 
-   nvflare package -e grpc://fl-server:8002 --dir ./hospital-1-kit
+   participants:
+     - name: server1.hospital-central.org
+       type: server
+       org: hospital_central
+       host_names:
+         - 10.0.1.50
+         - fl-server.internal
+       connection_security: mtls
 
-The ``-e`` / ``--endpoint`` argument sets the FL server address using one of the
-supported schemes: ``grpc://``, ``tcp://``, or ``http://``. The server identity
-used for mTLS validation is derived from the hostname in the endpoint.
+For clients and users, server endpoint fields are intentionally absent.
+``nvflare package`` gets the approved endpoint from the signed zip created by
+``nvflare cert approve``.
 
-**Explicit mode** (when files are in different locations):
+For servers, ``connection_security`` is an optional local override. It is used
+only when the server startup kit is packaged from the local request folder. It
+is not approved by the Project Admin and is not distributed as federation
+policy. If the server definition does not set it, package uses the project
+default from the signed zip.
 
-.. code-block:: bash
+User roles are certificate roles. Supported values are ``org_admin``, ``lead``,
+and ``member``. Study-specific roles and study membership are assigned later by
+study commands.
 
-   nvflare package \
-     -n hospital-1 \
-     -e grpc://fl-server:8002 \
-     --cert ./signed/hospital-1/hospital-1.crt \
-     --key  ./csr/hospital-1.key \
-     --rootca ./signed/hospital-1/rootCA.pem
+****************************
+Quick Start: Add a Site
+****************************
 
-Step 7 — Start the Federation
-==============================
+This example provisions a client site named ``hospital-a`` for project
+``hospital_federation``.
 
-Each site starts NVFlare using the assembled startup kit, exactly as with a
-centrally provisioned kit:
+Project Admin creates ``project_profile.yaml``:
 
-.. code-block:: bash
+.. code-block:: yaml
 
-   cd <startup-kit-dir>
+   name: hospital_federation
+   scheme: grpc
+   connection_security: tls
+   server:
+     host: server1.hospital-central.org
+     fed_learn_port: 8002
+     admin_port: 8003
+
+Project Admin initializes the project CA once:
+
+.. code-block:: shell
+
+   nvflare cert init --profile project_profile.yaml -o ./ca --deploy-version 00
+
+.. note::
+
+   The server host and ports are chosen by the server admin. The Project Admin
+   records them in ``project_profile.yaml`` before approving requests. They are
+   signed into the approval zip and do not need to be copied into client or user
+   participant definition files.
+
+Site Admin creates ``hospital-a.yaml`` with the project name and participant
+identity:
+
+.. code-block:: yaml
+
+   name: hospital_federation
+
+   participants:
+     - name: hospital-a
+       type: client
+       org: hospital_alpha
+
+Site Admin creates the request:
+
+.. code-block:: shell
+
+   nvflare cert request --participant hospital-a.yaml
+
+This creates:
+
+.. code-block:: text
+
+   hospital-a/
+     hospital-a.key
+     hospital-a.csr
+     site.yaml
+     request.json
+     hospital-a.request.zip
+
+Send ``hospital-a/hospital-a.request.zip`` to the Project Admin. Do not send
+``hospital-a.key``. The request zip does not include the private key.
+
+Project Admin approves the request:
+
+.. code-block:: shell
+
+   nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
+
+This creates ``hospital-a.signed.zip`` and prints
+``rootca_fingerprint_sha256``. The signed zip already includes ``rootCA.pem``;
+return the signed zip to the Site Admin and share only the fingerprint through
+a trusted out-of-band channel.
+
+Site Admin packages the startup kit:
+
+.. code-block:: shell
+
+   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
+
+The output goes under:
+
+.. code-block:: text
+
+   workspace/hospital_federation/prod_00/hospital-a/
+
+The ``00`` directory name comes from the CA ``provision_version``. Other
+participants approved by the same CA/version are added under the same
+``prod_00`` package root.
+
+Start the site:
+
+.. code-block:: shell
+
+   cd workspace/hospital_federation/prod_00/hospital-a
    ./startup/start.sh
 
-Admin users connect via:
+********************************
+Quick Start: Add a User
+********************************
 
-.. code-block:: bash
+Requester creates ``alice.yaml`` with the project name and user identity:
 
-   cd <admin-startup-kit-dir>
+.. code-block:: yaml
+
+   name: hospital_federation
+
+   participants:
+     - name: alice@hospital-alpha.org
+       type: admin
+       org: hospital_alpha
+       role: lead
+
+Requester creates the user request:
+
+.. code-block:: shell
+
+   nvflare cert request --participant alice.yaml
+
+Send ``alice@hospital-alpha.org/alice@hospital-alpha.org.request.zip`` to the
+Project Admin.
+
+Project Admin approves it:
+
+.. code-block:: shell
+
+   nvflare cert approve alice@hospital-alpha.org.request.zip --ca-dir ./ca --profile project_profile.yaml
+
+Requester packages the returned signed zip:
+
+.. code-block:: shell
+
+   nvflare package alice@hospital-alpha.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
+
+The generated user startup kit contains ``startup/fl_admin.sh``.
+
+.. code-block:: shell
+
+   cd workspace/hospital_federation/prod_00/alice@hospital-alpha.org
    ./startup/fl_admin.sh
 
-*************************************
-Complete Example: Two-Site Federation
-*************************************
+******************************
+Quick Start: Add a Server
+******************************
 
-This example sets up a federation with one server (``fl-server``) and one client
-(``hospital-1``).
+The server admin first decides the host name and ports, then communicates
+those values to the Project Admin. The Project Admin records them in
+``project_profile.yaml`` before approvals.
 
-**Project Admin machine:**
+Server Admin creates ``server.yaml``:
 
-.. code-block:: bash
+.. code-block:: yaml
 
-   # 1. Initialize root CA
-   nvflare cert init --project my-project -o ./ca
+   name: hospital_federation
 
-   # 4a. Sign server CSR (type embedded in CSR; override with -t if needed)
-   nvflare cert sign -r fl-server.csr -c ./ca -o ./signed/fl-server
+   participants:
+     - name: server1.hospital-central.org
+       type: server
+       org: hospital_central
+       host_names:
+         - 10.0.1.50
+         - fl-server.internal
+       connection_security: mtls
 
-   # 4b. Sign client CSR
-   nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed/hospital-1
+Server Admin tells the Project Admin:
 
-**Server site (fl-server):**
+.. code-block:: text
 
-.. code-block:: bash
+   Server host:    server1.hospital-central.org
+   fed_learn_port: 8002
+   admin_port:     8003
 
-   # 2. Generate key + CSR (propose type 'server')
-   nvflare cert csr -n fl-server -t server -o ./csr
+The Project Admin records these values under the ``server:`` block in
+``project_profile.yaml``. ``cert approve`` signs that endpoint into every
+approved signed zip.
 
-   # 3. Send ./csr/fl-server.csr to Project Admin
+Then use the same request, approval, and package workflow:
 
-   # 6. Copy signed cert + rootCA.pem into ./csr/ (alongside fl-server.key), then:
-   nvflare package -e grpc://fl-server:8002 --dir ./csr
-   # Kit type is derived from the signed cert; output to workspace/project/prod_00/fl-server/
+.. code-block:: shell
 
-   # 7. Start
-   cd workspace/project/prod_00/fl-server && ./startup/start.sh
+   nvflare cert request --participant server.yaml
+   nvflare cert approve server1.hospital-central.org.request.zip --ca-dir ./ca --profile project_profile.yaml
+   nvflare package server1.hospital-central.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
-**Client site (hospital-1):**
+The server participant name follows the same validation convention as
+centralized ``project.yaml`` server participants. A DNS name is recommended for
+production, and ``localhost`` remains valid for local/demo workflows.
+Additional DNS names or IP addresses can be added with ``host_names``.
 
-.. code-block:: bash
+********************
+Remote Transfer Flow
+********************
 
-   # 2. Generate key + CSR (propose type 'client')
-   nvflare cert csr -n hospital-1 -t client -o ./csr
+When the Project Admin and requester are on different machines, the zip files
+are copied between machines. The private key remains on the requester machine.
 
-   # 3. Send ./csr/hospital-1.csr to Project Admin
+Requester machine:
 
-   # 6. Copy signed cert + rootCA.pem into ./csr/ (alongside hospital-1.key), then:
-   nvflare package -e grpc://fl-server:8002 --dir ./csr
-   # Kit type is derived from the signed cert; output to workspace/project/prod_00/hospital-1/
+.. code-block:: shell
 
-   # 7. Start
-   cd workspace/project/prod_00/hospital-1 && ./startup/start.sh
+   nvflare cert request --participant hospital-a.yaml
+
+Transfer this file to the Project Admin:
+
+.. code-block:: text
+
+   hospital-a/hospital-a.request.zip
+
+Project Admin machine:
+
+.. code-block:: shell
+
+   nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
+
+Transfer this file back to the requester:
+
+.. code-block:: text
+
+   hospital-a.signed.zip
+
+Requester machine:
+
+.. code-block:: shell
+
+   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
+
+If the signed zip is not next to the local request folder and package cannot
+find the folder from local request state, specify it:
+
+.. code-block:: shell
+
+   nvflare package hospital-a.signed.zip --request-dir ./hospital-a --fingerprint <rootca_fingerprint_sha256>
+
+*****************************
+Root CA Fingerprint Check
+*****************************
+
+``nvflare cert approve`` prints ``rootca_fingerprint_sha256``. This is the
+SHA256 certificate fingerprint for the project ``rootCA.pem``. The Project
+Admin should send this value to the requester through a trusted out-of-band
+channel.
+
+The signed zip already contains ``rootCA.pem``. The requester does not need a
+separate root CA file before running ``nvflare package``; the out-of-band value
+is only the fingerprint used to verify the root CA inside the signed zip.
+
+``nvflare package`` always prints the fingerprint computed from the signed zip.
+Use one of these options to make the package command verify the out-of-band
+fingerprint:
+
+.. code-block:: shell
+
+   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
+   nvflare package hospital-a.signed.zip \
+       --fingerprint <rootca_fingerprint_sha256>
+
+Use ``--fingerprint <rootca_fingerprint_sha256>`` when you have the expected
+out-of-band fingerprint. If you intentionally skip out-of-band fingerprint
+verification, omit the fingerprint option:
+
+.. code-block:: shell
+
+   nvflare package hospital-a.signed.zip
+
+Without either option, packaging still validates the signed zip, metadata,
+certificate chain, and local private-key match, but it does not prompt and does
+not perform an out-of-band fingerprint comparison.
+
+``signed.json`` also contains signed CA metadata. ``nvflare package`` checks
+that the signed fingerprint metadata matches the ``rootCA.pem`` in the signed
+zip and any existing ``prod_<NN>`` package root. A root CA mismatch is a hard
+error. This internal check prevents accidental CA mixing, but the out-of-band
+fingerprint is still required to establish trust in the root CA delivered in
+the signed zip. Older signed zips without signed CA metadata default to deploy
+version ``00`` and use the fingerprint computed from the included
+``rootCA.pem`` for this workspace consistency check.
 
 *********************
-CLI Reference Summary
+Local Automation Flow
 *********************
 
-``nvflare cert init``
-=====================
+For local testing, use the same zip artifacts instead of switching to a
+different command shape:
 
-Initialize the root CA (Project Admin, once per federation).
+.. code-block:: shell
 
-+------------------+--------------------------------------------------+----------+
-| Argument         | Description                                      | Required |
-+==================+==================================================+==========+
-| ``--project``         | Project name (used as CA subject CN)        | Yes      |
-+------------------+--------------------------------------------------+----------+
-| ``-o`` / ``--output-dir`` | Directory to write CA files             | Yes      |
-+------------------+--------------------------------------------------+----------+
-| ``--org``        | Organization name for the CA certificate         | No       |
-+------------------+--------------------------------------------------+----------+
-| ``--force``      | Overwrite existing CA (backs up old files)       | No       |
-+------------------+--------------------------------------------------+----------+
+   # create project_profile.yaml and participant definition files
+   nvflare cert init --profile project_profile.yaml -o ./ca --deploy-version 00
+   nvflare cert request --participant hospital-a.yaml
+   nvflare cert approve hospital-a/hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
+   nvflare package hospital-a/hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
-``nvflare cert csr``
-====================
+This is the same workflow as remote approval. The only difference is that the
+zip files are not copied between machines.
 
-Generate a local private key and CSR (Site Admin).
+****************
+Artifacts
+****************
 
-+------------------+--------------------------------------------------+----------+
-| Argument         | Description                                      | Required |
-+==================+==================================================+==========+
-| ``-n`` / ``--name``   | Participant name (becomes cert CN)          | Yes      |
-+------------------+--------------------------------------------------+----------+
-| ``-o`` / ``--output-dir`` | Directory for key and CSR files         | Yes      |
-+------------------+--------------------------------------------------+----------+
-| ``-t`` / ``--type``   | Proposed certificate type. Embedded in      | No       |
-|                  | the CSR as a hint for the Project Admin.         |          |
-|                  | The Project Admin may override with              |          |
-|                  | ``cert sign -t <type>``.                         |          |
-+------------------+--------------------------------------------------+----------+
-| ``--org``        | Organization name                                | No       |
-+------------------+--------------------------------------------------+----------+
+Request folder:
 
-``nvflare cert sign``
-=====================
+.. code-block:: text
 
-Sign a CSR with the root CA (Project Admin).
+   hospital-a/
+     hospital-a.key          # private key, stays local
+     hospital-a.csr          # CSR
+     site.yaml               # full local participant definition
+     request.json            # request metadata and hashes
+     hospital-a.request.zip  # sent to Project Admin
 
-+------------------+--------------------------------------------------+----------+
-| Argument         | Description                                      | Required |
-+==================+==================================================+==========+
-| ``-r`` / ``--csr``    | Path to the CSR file to sign                | Yes      |
-+------------------+--------------------------------------------------+----------+
-| ``-c`` / ``--ca-dir`` | Directory containing ``rootCA.key`` and     | Yes      |
-|                  | ``rootCA.pem``                                   |          |
-+------------------+--------------------------------------------------+----------+
-| ``-o`` / ``--output-dir`` | Directory for signed cert and rootCA.pem | Yes     |
-+------------------+--------------------------------------------------+----------+
-| ``-t`` / ``--type``   | Certificate type to issue. Overrides the    | No       |
-|                  | type proposed in the CSR. Required when the      |          |
-|                  | CSR has no embedded type.                        |          |
-+------------------+--------------------------------------------------+----------+
-| ``--force``      | Overwrite existing certificate                   | No       |
-+------------------+--------------------------------------------------+----------+
+Request zip:
 
-``nvflare package``
-===================
+.. code-block:: text
 
-Assemble a startup kit (Site Admin).
+   request.json
+   site.yaml
+   hospital-a.csr
 
-+--------------------------+--------------------------------------------------------------------------+----------+
-| Argument                 | Description                                                              | Required |
-+==========================+==========================================================================+==========+
-| -e / --endpoint          | Server endpoint URI (grpc/tcp/http).                                    | Yes      |
-+--------------------------+--------------------------------------------------------------------------+----------+
-| -t / --type              | Optional type filter for yaml mode only. In single mode the kit type    | No       |
-|                          | is always derived from the signed cert's embedded type.                 |          |
-+--------------------------+--------------------------------------------------------------------------+----------+
-| -p / --project-file      | Site-scoped project YAML for multi-participant mode; requires --dir.    | No       |
-+--------------------------+--------------------------------------------------------------------------+----------+
-| --dir                    | Directory containing key/cert/rootCA files.                             | Mode     |
-+--------------------------+--------------------------------------------------------------------------+----------+
-| -n / --name              | Participant name; required in explicit single mode.                     | No*      |
-+--------------------------+--------------------------------------------------------------------------+----------+
-| --cert                   | Path to signed certificate.                                              | No*      |
-+--------------------------+--------------------------------------------------------------------------+----------+
-| --key                    | Path to private key.                                                     | No*      |
-+--------------------------+--------------------------------------------------------------------------+----------+
-| --rootca                 | Path to rootCA.pem.                                                      | No*      |
-+--------------------------+--------------------------------------------------------------------------+----------+
-| -w / --workspace         | Workspace root; output under <workspace>/<project>/prod_NN/<name>/.     | No       |
-+--------------------------+--------------------------------------------------------------------------+----------+
-| --project-name           | Project name used in output path and in fed_server/fed_admin configs.   | No       |
-+--------------------------+--------------------------------------------------------------------------+----------+
-| --admin-port             | Admin port; default is service port + 1.                                | No       |
-+--------------------------+--------------------------------------------------------------------------+----------+
-| --force                  | Allow re-packaging when participant exists in latest prod_NN.           | No       |
-+--------------------------+--------------------------------------------------------------------------+----------+
+Signed zip:
 
-* ``-n``, ``--cert``, ``--key``, and ``--rootca`` are used together in explicit
-  single-participant mode; mutually exclusive with ``-p`` / ``--project-file``.
+.. code-block:: text
 
-All commands support ``--output json`` for machine-readable output and ``--schema``
-to print the JSON schema for the command's arguments.
+   signed.json
+   signed.json.sig
+   site.yaml
+   hospital-a.crt
+   rootCA.pem
 
-*****
+``signed.json.sig`` is a Project Admin CA signature over ``signed.json``.
+Packaging verifies it before trusting the approved endpoint, scheme, or
+connection security values. ``signed.json`` also contains signed CA metadata
+used by ``nvflare package``.
+
+The ``site.yaml`` in the local request folder is the full participant
+definition used later by ``nvflare package``. It can contain local
+package-time fields, such as the server-side ``connection_security`` override.
+Client and user request folders do not contain server endpoint blocks; the
+approved endpoint comes from the signed zip.
+
+The ``site.yaml`` inside the request zip and signed zip is sanitized approval
+metadata. It contains the identity fields needed for approval and packaging,
+but it does not contain private keys. Server endpoint fields are
+injected from ``project_profile.yaml`` during approval, not from participant
+definition files. Server-side ``connection_security`` overrides are excluded
+from this sanitized copy because they are local package-time behavior.
+
+The request zip and signed zip must not contain ``*.key`` files. The signed zip
+is not a startup kit; it is the approval response used by ``nvflare package``.
+
+**************
+Trust Boundary
+**************
+
+The Project Admin's signature (``signed.json.sig``) covers exactly what is
+inside the signed zip:
+
+- Participant identity: name, org, type, and role.
+- Signed participant certificate (``*.crt``) and root CA (``rootCA.pem``).
+- Signed CA information used by ``nvflare package``.
+- Federation connection parameters: ``scheme``, ``connection_security``, and
+  the server endpoint from ``project_profile.yaml``.
+
+Everything else is **outside the approval chain** and remains local
+package-time behavior:
+
+- **Custom builders**: builders are not included in the request zip, the
+  signed zip, or the signed metadata, and are never approved by the Project
+  Admin. ``nvflare package`` reads any ``builders:`` block from the local
+  participant definition and applies those builders at package time on the
+  requester's machine — this is purely local, package-time behavior. Because
+  each site configures its own builders independently without central
+  coordination, features that require a matching builder configuration across
+  all participants — such as homomorphic encryption (HE) or confidential
+  computing (CC) — are not directly supported by the distributed provisioning
+  workflow.
+- **Server-side** ``connection_security`` **override**: read from the local
+  server request folder at package time; not approved and not distributed.
+- **Private key**: stays on the requester machine and is never sent anywhere.
+- **Workspace layout**: chosen by the requester when running
+  ``nvflare package``.
+
+If your deployment requires centrally coordinated builders across all
+participants (HE, CC, or other extensions), use centralized
+``nvflare provision`` instead.
+
+****************
+Command Summary
+****************
+
+Project Admin:
+
+.. code-block:: shell
+
+   # create project_profile.yaml
+   nvflare cert init --profile project_profile.yaml -o ./ca --deploy-version 00
+   nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
+
+Requester:
+
+.. code-block:: shell
+
+   nvflare cert request --participant hospital-a.yaml
+   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
+
+With explicit locations:
+
+.. code-block:: shell
+
+   nvflare cert request --participant ./defs/hospital-a.yaml --out ./requests/hospital-a
+   nvflare cert approve ./requests/hospital-a/hospital-a.request.zip \
+       --ca-dir ./ca \
+       --profile ./project_profile.yaml \
+       --out ./signed/hospital-a.signed.zip
+   nvflare package ./signed/hospital-a.signed.zip \
+       --request-dir ./requests/hospital-a \
+       -w ./workspace \
+       --fingerprint <rootca_fingerprint_sha256>
+
+****************
 Notes
-*****
+****************
 
-- The ``--dir`` mode for ``nvflare package`` locates the ``.key`` file automatically.
-  Place the signed ``.crt`` and ``rootCA.pem`` in the same directory before running.
-- Startup kits produced by ``nvflare package`` are structurally identical to those
-  produced by ``nvflare provision`` and work with all NVFlare runtime components.
-- The server identity for mTLS validation is always the hostname from ``--endpoint``.
-  Ensure that the hostname in the endpoint matches the CN in the server certificate
-  (i.e. the ``-n`` name used when running ``nvflare cert csr`` for the server).
+- The private key stays in the request folder and is never sent to the Project
+  Admin.
+- Client and user participant definition files do not include server endpoint
+  blocks. The approved endpoint comes from ``project_profile.yaml`` through the
+  signed zip.
+- Project-wide ``scheme`` and default ``connection_security`` come from the
+  Project Admin's profile through the signed zip.
+- Deploy version comes from ``cert init`` CA metadata and controls the
+  ``prod_<NN>`` output directory. The default is ``00``, which maps to
+  ``prod_00``. Normally ignore it unless intentionally creating a new
+  deployment CA/generation.
+- Server ``connection_security`` overrides are resolved locally at package time
+  from the original server participant definition.
+- Use ``--fingerprint <rootca_fingerprint_sha256>`` to verify the out-of-band root
+  CA fingerprint. Omit it only when you intentionally skip out-of-band
+  fingerprint verification.
+- Startup kits generated from signed zips are compatible with the normal
+  NVFlare runtime.
+- Standard distributed provisioning does not generate ``signature.json``.
+  Trust is anchored in the signed participant certificate and ``rootCA.pem``.
+- Custom builders are not part of the approval chain. Any ``builders:`` block
+  in the local participant definition is applied at package time on the
+  requester's machine. Features requiring coordinated builder configuration
+  across all participants (HE, CC) are not directly supported; use centralized
+  ``nvflare provision`` for those deployments.

@@ -26,7 +26,7 @@ Multi-study deployment (`api_version: 4` with `studies:`):
 - unknown-study and unmapped-user logins are rejected
 - default and non-default sessions see only their own jobs
 - cross-study direct job access is hidden as not found
-- per-study role overrides control submit authorization and persisted `submitter_role`
+- study membership does not override the certificate role used for submit authorization
 - `check_status client` is filtered to the enrolled sites of the active study
 - `@ALL` scheduling is narrowed to study-enrolled sites only
 - submit-time `deploy_map` validation rejects out-of-study sites
@@ -454,7 +454,7 @@ class TestMultiStudySessionIntegration:
         with pytest.raises(JobNotFound):
             default_session.get_job_meta(job_id)
 
-    def test_multistudy_role_override_controls_submit_and_submitter_role(self, multi_study_system):
+    def test_multistudy_membership_does_not_override_certificate_role(self, multi_study_system):
         lead_admin_root = multi_study_system["admin_roots"][LEAD_ADMIN]
 
         default_session = new_secure_session(LEAD_ADMIN, lead_admin_root)
@@ -465,10 +465,8 @@ class TestMultiStudySessionIntegration:
         with pytest.raises(AuthorizationError):
             default_session.submit_job(JOB_DIR)
 
-        study_a_job_id = study_a_session.submit_job(JOB_DIR)
-        study_a_meta = _wait_for_session_job_meta(study_a_session, study_a_job_id)
-        assert study_a_meta[JobMetaKey.STUDY.value] == "study-a"
-        assert study_a_meta[JobMetaKey.SUBMITTER_ROLE.value] == "lead"
+        with pytest.raises(AuthorizationError):
+            study_a_session.submit_job(JOB_DIR)
 
         with pytest.raises(AuthorizationError):
             study_b_session.submit_job(JOB_DIR)

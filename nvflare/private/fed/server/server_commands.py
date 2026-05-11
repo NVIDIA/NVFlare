@@ -104,7 +104,7 @@ class AbortCommand(CommandProcessor):
 
         """
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-        # for HA server switch over
+        # Preserve the caller's request to move the runner to a cold state.
         turn_to_cold = data.get_header(ServerCommandKey.TURN_TO_COLD, False)
         if server_runner:
             server_runner.abort(fl_ctx=fl_ctx, turn_to_cold=turn_to_cold)
@@ -126,6 +126,8 @@ class GetRunInfoCommand(CommandProcessor):
 
     def process(self, data: Shareable, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
+        if not engine:
+            return NO_OP_REPLY
         run_info = engine.get_run_info()
         if run_info:
             return run_info

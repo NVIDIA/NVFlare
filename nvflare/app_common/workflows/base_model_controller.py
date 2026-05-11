@@ -237,6 +237,17 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         else:
             fl_ctx.set_prop(key, value, private=default_private, sticky=default_sticky)
 
+    @staticmethod
+    def _clear_training_result(fl_ctx: FLContext) -> None:
+        detail = fl_ctx.get_prop_detail(AppConstants.TRAINING_RESULT)
+        if detail is not None:
+            fl_ctx.set_prop(
+                AppConstants.TRAINING_RESULT,
+                None,
+                private=detail["private"],
+                sticky=detail["sticky"],
+            )
+
     def _process_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         self.fl_ctx = fl_ctx
         result = client_task.result
@@ -250,9 +261,12 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             self._set_ctx_prop_preserving_attrs(fl_ctx, AppConstants.CURRENT_ROUND, current_round)
 
         # Check return code and handle errors first
-        self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
-        accepted = self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
-        self.event(AppEventType.AFTER_CONTRIBUTION_ACCEPT)
+        try:
+            self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
+            accepted = self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
+            self.event(AppEventType.AFTER_CONTRIBUTION_ACCEPT)
+        finally:
+            self._clear_training_result(fl_ctx)
 
         # If result was rejected (error ignored or panic), skip further processing
         if not accepted:

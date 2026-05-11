@@ -14,6 +14,14 @@
 
 from enum import Enum
 
+# Server-to-CLI protocol value used in job metadata to signal that a retry-safe
+# submit token conflicts with an existing submission.
+SUBMIT_TOKEN_CONFLICT_STATUS = "submit_token_conflict"
+
+# Server-to-CLI protocol value used when a retry-safe submit token points to a job
+# that was deliberately deleted.
+SUBMIT_TOKEN_JOB_DELETED_STATUS = "submit_token_job_deleted"
+
 
 class ReturnCode(object):
 
@@ -98,7 +106,6 @@ class ReservedKey(object):
     FROM_RANK_NUMBER = "__from_rank_number__"
     SECURE_MODE = "__secure_mode__"
     SIMULATE_MODE = "__simulate_mode__"
-    SP_END_POINT = "__sp_end_point__"
     JOB_INFO = "__job_info__"
     JOB_META = "__job_meta__"
     CURRENT_JOB_ID = "__current_job_id__"
@@ -144,7 +151,6 @@ class FLContextKey(object):
     FROM_RANK_NUMBER = ReservedKey.FROM_RANK_NUMBER
     SECURE_MODE = ReservedKey.SECURE_MODE
     SIMULATE_MODE = ReservedKey.SIMULATE_MODE
-    SP_END_POINT = ReservedKey.SP_END_POINT
     JOB_INFO = ReservedKey.JOB_INFO
     JOB_META = ReservedKey.JOB_META
     CURRENT_JOB_ID = ReservedKey.CURRENT_JOB_ID
@@ -191,6 +197,7 @@ class FLContextKey(object):
     NOT_READY_TO_END_RUN = "not_ready_to_end_run__"  # component sets this to indicate it's not ready to end run yet
     CLIENT_CONFIG = "__client_config__"
     SERVER_CONFIG = "__server_config__"
+    CLIENT_SITE_CONFIG = "__client_site_config__"
     SERVER_HOST_NAME = "__server_host_name__"
     PROCESS_TYPE = ReservedKey.PROCESS_TYPE
     JOB_PROCESS_ARGS = ReservedKey.JOB_PROCESS_ARGS
@@ -225,6 +232,14 @@ class ReservedTopic(object):
 
 class AdminCommandNames(object):
 
+    REGISTER_STUDY = "register_study"
+    ADD_STUDY_SITE = "add_study_site"
+    REMOVE_STUDY_SITE = "remove_study_site"
+    REMOVE_STUDY = "remove_study"
+    LIST_STUDIES = "list_studies"
+    SHOW_STUDY = "show_study"
+    ADD_STUDY_USER = "add_study_user"
+    REMOVE_STUDY_USER = "remove_study_user"
     SUBMIT_JOB = "submit_job"
     LIST_JOBS = "list_jobs"
     GET_JOB_META = "get_job_meta"
@@ -242,16 +257,20 @@ class AdminCommandNames(object):
     ABORT = "abort"
     ABORT_TASK = "abort_task"
     REMOVE_CLIENT = "remove_client"
+    DISABLE_CLIENT = "disable_client"
+    ENABLE_CLIENT = "enable_client"
     SHUTDOWN = "shutdown"
     RESTART = "restart"
     SET_TIMEOUT = "set_timeout"
     SHOW_STATS = "show_stats"
     SHOW_ERRORS = "show_errors"
     RESET_ERRORS = "reset_errors"
+    GET_JOB_LOG = "get_job_log"
     AUX_COMMAND = "aux_command"
     SYS_INFO = "sys_info"
     REPORT_RESOURCES = "report_resources"
     REPORT_ENV = "report_env"
+    REPORT_VERSION = "report_version"
     SHOW_SCOPES = "show_scopes"
     CALL = "call"
     SHELL_PWD = "pwd"
@@ -261,6 +280,7 @@ class AdminCommandNames(object):
     SHELL_TAIL = "tail"
     SHELL_GREP = "grep"
     APP_COMMAND = "app_command"
+    GET_JOB_LOG = "get_job_log"
     CONFIGURE_JOB_LOG = "configure_job_log"
     CONFIGURE_SITE_LOG = "configure_site_log"
 

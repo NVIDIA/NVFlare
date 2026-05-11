@@ -78,6 +78,33 @@ class JobMetaKey(str, Enum):
     EDGE_METHOD = "edge_method"
     JOB_CLIENTS = "job_clients"  # clients that participated the job
     STUDY = "study"
+    JOB_LAUNCHER_SPEC = "launcher_spec"
+
+    def __repr__(self):
+        return self.value
+
+
+class SubmitRecordState(str, Enum):
+    CREATING = "creating"
+    CREATED = "created"
+    JOB_DELETED = "job_deleted"
+
+
+class SubmitRecordKey(str, Enum):
+    SCHEMA_VERSION = "schema_version"
+    STATE = "state"
+    SUBMIT_TOKEN = "submit_token"
+    JOB_ID = "job_id"
+    STUDY = "study"
+    SUBMITTER_NAME = "submitter_name"
+    SUBMITTER_ORG = "submitter_org"
+    SUBMITTER_ROLE = "submitter_role"
+    JOB_NAME = "job_name"
+    JOB_FOLDER_NAME = "job_folder_name"
+    JOB_CONTENT_HASH = "job_content_hash"
+    SUBMIT_TIME = "submit_time"
+    DELETED_TIME = "deleted_time"
+    DELETED_BY = "deleted_by"
 
     def __repr__(self):
         return self.value

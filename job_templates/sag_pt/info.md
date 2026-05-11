@@ -2,8 +2,8 @@
 
 ## sag_pt
     name = "sag_pt"
-    description = "FedAvg with Scatter and Gather Workflow using pytorch" 
-    class_name  =  "ScatterAndGather"
+    description = "FedAvg with Scatter and Gather workflow using PyTorch" 
+    class_name = "ScatterAndGather"
     controller_type = "server"
     executor_type = "launcher_executor"
     contributor = "NVIDIA"

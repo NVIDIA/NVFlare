@@ -27,6 +27,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
     AdminCommandNames,
+    ConnPropKey,
     FLContextKey,
     MachineStatus,
     RunProcessKey,
@@ -43,7 +44,7 @@ from nvflare.apis.job_def import Job
 from nvflare.apis.job_launcher_spec import JobLauncherSpec, JobProcessArgs
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
-from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx, get_serializable_data
+from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -267,7 +268,6 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             JobProcessArgs.WORKSPACE: ("-m", args.workspace),
             JobProcessArgs.STARTUP_CONFIG_FILE: ("-s", "fed_server.json"),
             JobProcessArgs.APP_ROOT: ("-r", app_root),
-            JobProcessArgs.HA_MODE: ("--ha_mode", server.ha_mode),
             JobProcessArgs.AUTH_TOKEN: ("-t", token),
             JobProcessArgs.TOKEN_SIGNATURE: ("-ts", signature),
             JobProcessArgs.PARENT_URL: ("-p", str(cell.get_internal_listener_url())),
@@ -277,6 +277,17 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             JobProcessArgs.SSID: ("--ssid", str(server_state.ssid)),
             JobProcessArgs.OPTIONS: ("--set", command_options),
         }
+
+        # Pass the parent's listener connection-security mode through to the
+        # launched runner so its short-lived bootstrap CellNet child can connect
+        # back with the same transport/security settings before the normal job
+        # cell is created.
+        params = cell.get_internal_listener_params()
+        if params:
+            parent_conn_sec = params.get(ConnPropKey.CONNECTION_SECURITY)
+            if parent_conn_sec:
+                job_args[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", parent_conn_sec)
+
         fl_ctx.set_prop(key=FLContextKey.JOB_PROCESS_ARGS, value=job_args, private=True, sticky=False)
         job_handle = job_launcher.launch_job(job.meta, fl_ctx)
         self.logger.info(f"Launch job_id: {job.job_id}  with job launcher: {type(job_launcher)} ")
@@ -555,6 +566,56 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             self._remove_dead_client(client)
         return ""
 
+    @staticmethod
+    def _client_operation_error(client_name: str, e: Exception) -> dict:
+        return {"client_name": client_name, "state": "error", "error": str(e)}
+
+    def disable_clients(self, client_names: List[str]) -> dict:
+        results = []
+        for client_name in client_names:
+            try:
+                already_disabled = self.server.client_manager.is_client_disabled(client_name)
+                removed_tokens = self.server.client_manager.disable_client(client_name)
+                for token in removed_tokens:
+                    self.server.remove_client_data(token)
+                    if self.server.admin_server:
+                        self.server.admin_server.client_dead(token)
+                results.append(
+                    {
+                        "client_name": client_name,
+                        "state": "disabled",
+                        "already_disabled": already_disabled,
+                        "active_session_removed": bool(removed_tokens),
+                        "credential_revoked": False,
+                        "rejoin_allowed": False,
+                    }
+                )
+            except Exception as e:
+                if len(client_names) == 1:
+                    raise
+                results.append(self._client_operation_error(client_name, e))
+        return {"clients": results}
+
+    def enable_clients(self, client_names: List[str]) -> dict:
+        results = []
+        for client_name in client_names:
+            try:
+                was_disabled = self.server.client_manager.enable_client(client_name)
+                results.append(
+                    {
+                        "client_name": client_name,
+                        "state": "enabled",
+                        "was_disabled": was_disabled,
+                        "credential_revoked": False,
+                        "rejoin_allowed": True,
+                    }
+                )
+            except Exception as e:
+                if len(client_names) == 1:
+                    raise
+                results.append(self._client_operation_error(client_name, e))
+        return {"clients": results}
+
     def _remove_dead_client(self, token):
         _ = self.server.client_manager.remove_client(token)
         self.server.remove_client_data(token)
@@ -817,53 +878,9 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         return result
 
     def persist_components(self, fl_ctx: FLContext, completed: bool):
-        if not self.server.ha_mode:
-            return
-
-        self.logger.info("Start saving snapshot on server.")
-
-        # Call the State Persistor to persist all the component states
-        # 1. call every component to generate the component states data
-        #    Make sure to include the current round number
-        # 2. call persistence API to save the component states
-
-        try:
-            job_id = fl_ctx.get_job_id()
-            snapshot = RunSnapshot(job_id)
-            for component_id, component in self.run_manager.components.items():
-                if isinstance(component, FLComponent):
-                    snapshot.set_component_snapshot(
-                        component_id=component_id, component_state=component.get_persist_state(fl_ctx)
-                    )
-
-            snapshot.set_component_snapshot(
-                component_id=SnapshotKey.FL_CONTEXT, component_state=copy.deepcopy(get_serializable_data(fl_ctx).props)
-            )
-
-            workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-            data = zip_directory_to_bytes(workspace.get_run_dir(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)), "")
-            snapshot.set_component_snapshot(component_id=SnapshotKey.WORKSPACE, component_state={"content": data})
-
-            job_info = fl_ctx.get_prop(FLContextKey.JOB_INFO)
-            if not job_info:
-                job_clients = self.get_participating_clients()
-                fl_ctx.set_prop(FLContextKey.JOB_INFO, (job_id, job_clients))
-            else:
-                (job_id, job_clients) = job_info
-            snapshot.set_component_snapshot(
-                component_id=SnapshotKey.JOB_INFO,
-                component_state={SnapshotKey.JOB_CLIENTS: job_clients, SnapshotKey.JOB_ID: job_id},
-            )
-
-            snapshot.completed = completed
-
-            self.server.snapshot_location = self.snapshot_persistor.save(snapshot=snapshot)
-            if not completed:
-                self.logger.info(f"persist the snapshot to: {self.server.snapshot_location}")
-            else:
-                self.logger.info(f"The snapshot: {self.server.snapshot_location} has been removed.")
-        except Exception as e:
-            self.logger.error(f"Failed to persist the components. {secure_format_exception(e)}")
+        # Component snapshot persistence has been removed; keep this as a no-op
+        # so existing callers do not have to be changed.
+        return
 
     def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
         for component_id, component in self.run_manager.components.items():

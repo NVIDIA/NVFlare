@@ -71,7 +71,7 @@ See the `configuration dictionary schema <https://docs.python.org/3/library/logg
                 "class": "logging.handlers.RotatingFileHandler",
                 "level": "ERROR",
                 "formatter": "baseFormatter",
-                "filename": "log_error.txt",
+                "filename": "error_log.txt",
                 "mode": "a",
                 "maxBytes": 20971520,
                 "backupCount": 10
@@ -255,7 +255,7 @@ Example configuration:
 The following log file handlers are pre-configured:
 
 - logFileHandler with baseFormatter to write all logs to ``log.txt``
-- errorFileHandler  with baseFormatter and level "ERROR" to write error level logs to ``log_error.txt``
+- errorFileHandler  with baseFormatter and level "ERROR" to write error level logs to ``error_log.txt``
 - jsonFileHandler with jsonFormatter to write json formatted logs to ``log.json``
 - FLFileHandler with baseFormatter and FLFilter to write fl training and custom logs to ``log_fl.txt``
 
