@@ -3,8 +3,9 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Generate NVFlare startup kits for three Brev Kubernetes environments and copy
-the kits to the matching environments with the Brev CLI.
+Generate and prepare NVFlare startup kits for three Brev Kubernetes
+environments, then copy the prepared kits to the matching environments with the
+Brev CLI.
 
 Usage:
   bash prepare_brev_startup_kits.sh [--prompt-brev-names]
@@ -26,7 +27,11 @@ Defaults:
   SERVER_PARTICIPANT=server
   SITE_1_PARTICIPANT=site-1
   SITE_2_PARTICIPANT=site-2
+  NAMESPACE=nvflare
   FED_LEARN_PORT=8002
+  PARENT_PORT=8102
+  WORKSPACE_PVC=nvflws
+  WORKSPACE_MOUNT_PATH=/var/tmp/nvflare/workspace
   PROJECT_NAME=brev_nvflare_project
   PROVISION_WORKSPACE=/tmp/nvflare/brev-provision
   KIT_DIR=/tmp/nvflare/brev-kits
@@ -163,6 +168,7 @@ EOF
 write_prepare_config() {
   cat >"${PREPARE_CONFIG}" <<EOF
 runtime: k8s
+namespace: ${NAMESPACE}
 parent:
   docker_image: "${IMAGE}"
   parent_port: ${PARENT_PORT}
@@ -301,6 +307,7 @@ PREPARED_DIR="${PREPARED_DIR:-${KIT_DIR}/prepared}"
 PREPARE_CONFIG="${PREPARE_CONFIG:-${KIT_DIR}/deploy-prepare-k8s.yaml}"
 FED_LEARN_PORT="${FED_LEARN_PORT:-8002}"
 PARENT_PORT="${PARENT_PORT:-8102}"
+NAMESPACE="${NAMESPACE:-nvflare}"
 WORKSPACE_PVC="${WORKSPACE_PVC:-nvflws}"
 WORKSPACE_MOUNT_PATH="${WORKSPACE_MOUNT_PATH:-/var/tmp/nvflare/workspace}"
 ORG="${ORG:-nvidia}"
@@ -354,16 +361,17 @@ report_port_exposure
 cat <<EOF
 
 Next steps:
-  Run the launch script inside each Brev Kubernetes environment:
+  Run the launch script inside each Brev Kubernetes environment with the same
+  NAMESPACE used by deploy prepare:
 
     brev shell ${SERVER_BREV}
-    IMAGE="${IMAGE}" bash ${REMOTE_DIR}/launch_brev_nvflare.sh ${SERVER_PARTICIPANT}
+    NAMESPACE="${NAMESPACE}" IMAGE="${IMAGE}" bash ${REMOTE_DIR}/launch_brev_nvflare.sh ${SERVER_PARTICIPANT}
 
     brev shell ${SITE_1_BREV}
-    IMAGE="${IMAGE}" SERVER_HOST="${SERVER_HOST}" bash ${REMOTE_DIR}/launch_brev_nvflare.sh ${SITE_1_PARTICIPANT}
+    NAMESPACE="${NAMESPACE}" IMAGE="${IMAGE}" SERVER_HOST="${SERVER_HOST}" bash ${REMOTE_DIR}/launch_brev_nvflare.sh ${SITE_1_PARTICIPANT}
 
     brev shell ${SITE_2_BREV}
-    IMAGE="${IMAGE}" SERVER_HOST="${SERVER_HOST}" bash ${REMOTE_DIR}/launch_brev_nvflare.sh ${SITE_2_PARTICIPANT}
+    NAMESPACE="${NAMESPACE}" IMAGE="${IMAGE}" SERVER_HOST="${SERVER_HOST}" bash ${REMOTE_DIR}/launch_brev_nvflare.sh ${SITE_2_PARTICIPANT}
 
   Or run them non-interactively with brev exec after confirming kubectl and helm
   are configured in each Brev environment.
