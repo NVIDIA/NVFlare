@@ -150,7 +150,6 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
         has_byoc = False
         for app, deployments in deploy_map.items():
-            check_job_app_name(app)
             deployments = extract_participants(deployments)
 
             config_folder = job_name + "/" + app + CONFIG_FOLDER

@@ -397,8 +397,11 @@ class SimpleJobDefManager(JobDefManagerSpec):
             job_id_dir = self._load_job_data_from_store(job, temp_dir, fl_ctx)
             job_folder = os.path.join(job_id_dir, job.meta[JobMetaKey.JOB_FOLDER_NAME.value])
             fullpath_src = os.path.join(job_folder, app_name)
+            job_id_dir_real = os.path.realpath(job_id_dir)
             job_folder_real = os.path.realpath(job_folder)
             fullpath_src_real = os.path.realpath(fullpath_src)
+            if os.path.commonpath([job_id_dir_real, job_folder_real]) != job_id_dir_real:
+                raise ValueError(f"job folder for app '{app_name}' escapes job data folder")
             if os.path.commonpath([job_folder_real, fullpath_src_real]) != job_folder_real:
                 raise ValueError(f"app '{app_name}' escapes job folder")
             result = zip_directory_to_bytes(fullpath_src_real, "")
