@@ -21,7 +21,7 @@ from unittest import mock
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.storage import WORKSPACE
+from nvflare.apis.storage import WORKSPACE, StorageException
 from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
@@ -63,3 +63,22 @@ class TestJobManager(unittest.TestCase):
             self.job_manager.save_workspace(job_id, data, self.fl_ctx)
             result = self.job_manager.get_storage_component(job_id, WORKSPACE, self.fl_ctx)
             assert result == data
+
+    def test_create_rejects_traversing_job_id(self):
+        with mock.patch("nvflare.apis.impl.job_def_manager.SimpleJobDefManager._get_job_store") as mock_store:
+            mock_store.return_value = FilesystemStorage()
+
+            meta = {JobMetaKey.JOB_ID.value: "../outside"}
+            with self.assertRaises(ValueError):
+                self.job_manager.create(meta, b"data", self.fl_ctx)
+
+    def test_create_does_not_overwrite_existing_job_id(self):
+        with mock.patch("nvflare.apis.impl.job_def_manager.SimpleJobDefManager._get_job_store") as mock_store:
+            mock_store.return_value = FilesystemStorage()
+
+            data, meta = self._create_job()
+            with self.assertRaises(StorageException):
+                self.job_manager.create(dict(meta), b"replacement", self.fl_ctx)
+
+            content = self.job_manager.get_content(meta, self.fl_ctx)
+            assert content == data
