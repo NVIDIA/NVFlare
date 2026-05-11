@@ -193,21 +193,6 @@ After every reviewed batch, run `"${PYTHON}" scripts/plateau_watchdog.py results
 Commit `results.tsv` locally after the baseline and after each reviewed batch. Commit surviving code changes locally on the active `autoresearch/` branch as soon as they are kept; do not let kept mutations accumulate only in the working tree. Do not require pushing from inside the devcontainer.
 ```
 
-To override the default task profile, say so explicitly in the first prompt.
-Examples:
-
-```text
-Start in this directory and read `program.md` first, then use `tasks/vlm_med/profile.md` as the active task profile instead of the default `tasks/cifar10/profile.md`.
-```
-
-```text
-Use the medical VLM profile for this campaign. Read `program.md`, then `tasks/vlm_med/profile.md`, and follow that task profile for environment, budget, metric, and mutation-surface details.
-```
-
-```text
-Create a new task folder named `tasks/my_task/` for this dataset, with `profile.md` and `requirements.txt`. Keep `program.md` as the general loop and put only the task-specific budget, metric, environment, and edit-surface rules in `tasks/my_task/profile.md`.
-```
-
 ## Bounded architecture search
 
 The harness now permits architecture search through a registered model selector instead of free-form model replacement:
@@ -284,10 +269,14 @@ details that differ from the general `program.md` control plane. Keep shared
 aggregators in the parent directory unless a path or environment override cannot
 support the new profile.
 
-Humans select a non-default profile by naming it in the prompt, for example:
-"use `tasks/vlm_med/profile.md` as the active task profile", "use the medical
-VLM profile instead of `tasks/cifar10/profile.md`", or "create and use
-`tasks/my_task/profile.md` for this campaign".
+Humans select a non-default profile by naming the profile path or task name in
+the initial prompt so the agent reads `program.md` first and the requested task
+profile second. Example prompts:
+
+- "Use `tasks/vlm_med/profile.md` as the active task profile."
+- "Use the medical VLM profile instead of `tasks/cifar10/profile.md`."
+- "Create a new task folder named `tasks/my_task/` with `profile.md` and
+  `requirements.txt`, then use `tasks/my_task/profile.md` for this campaign."
 
 The practical starting point is a working non-FL training scheme for the task.
 Once the dataset loading, model construction, local training step, and
