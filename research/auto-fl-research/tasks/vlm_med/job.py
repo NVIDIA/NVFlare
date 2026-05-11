@@ -19,7 +19,7 @@ REPO_ROOT = PROFILE_DIR.parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(1, str(REPO_ROOT))
 
-from custom_aggregators import WeightedAggregator
+from tasks.shared.custom_aggregators import WeightedAggregator
 from med_vlm_data_utils import DEFAULT_SITE_DATASETS, DEFAULT_VLM_REPO_ROOT, parse_site_datasets
 from model import (
     DEFAULT_MODEL_ARCH,

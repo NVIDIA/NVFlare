@@ -10,8 +10,8 @@ literature workflow, and output discipline remain in `program.md`.
 
 This profile owns its implementation files under `tasks/vlm_med/`, including
 `client.py`, `job.py`, `model.py`, `train_utils.py`,
-`med_vlm_data_utils.py`, `custom_aggregators.py`, `mutation_schema.yaml`, and
-`requirements.txt`.
+`med_vlm_data_utils.py`, `mutation_schema.yaml`, and `requirements.txt`. Shared
+aggregation utilities live in `tasks/shared/custom_aggregators.py`.
 
 ## Setup
 
@@ -241,7 +241,7 @@ Preferred mutation order:
 4. `train_utils.py` - prompt-preserving aggregate VLM evaluation helpers.
 5. `med_vlm_data_utils.py` - deterministic site mapping and VLM data
    loading.
-6. `custom_aggregators.py` - task-local aggregation experiments.
+6. `tasks/shared/custom_aggregators.py` - shared aggregation experiments.
 
 Do not duplicate shared `scripts/`, `templates/`, ledger helpers, reporting
 helpers, or plotting utilities for the VLM profile. Prefer `TASK_DIR`,

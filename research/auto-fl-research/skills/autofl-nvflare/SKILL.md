@@ -1,6 +1,6 @@
 ---
 name: autofl-nvflare
-description: Help coding agents work on an NVFlare-based Auto-FL harness that follows an autoresearch-style loop. Use when the user wants to create, edit, debug, or extend program.md, task folders such as tasks/cifar10/ and tasks/vlm_med/, task-local job.py, client.py, custom_aggregators.py, model.py, mutation policies, results.tsv logging, or coding-agent prompts for a bounded federated-learning research loop. This skill is specifically for NVFlare harness work where the Client API loop, DIFF upload contract, and NUM_STEPS_CURRENT_ROUND metadata must stay intact unless the user explicitly asks for a protocol upgrade.
+description: Help coding agents work on an NVFlare-based Auto-FL harness that follows an autoresearch-style loop. Use when the user wants to create, edit, debug, or extend program.md, task folders such as tasks/cifar10/ and tasks/vlm_med/, task-local job.py, client.py, model.py, shared custom_aggregators.py, mutation policies, results.tsv logging, or coding-agent prompts for a bounded federated-learning research loop. This skill is specifically for NVFlare harness work where the Client API loop, DIFF upload contract, and NUM_STEPS_CURRENT_ROUND metadata must stay intact unless the user explicitly asks for a protocol upgrade.
 ---
 
 # autofl-nvflare
@@ -39,7 +39,7 @@ Preserve these invariants unless the user explicitly asks for a protocol change:
    - label smoothing
    - FedProx local loss
    - extra scalar metrics
-2. Aggregation changes in the active task's `custom_aggregators.py`
+2. Aggregation changes in shared `tasks/shared/custom_aggregators.py`
    - weighted aggregation refinements
    - FedAvg/FedOpt-style DIFF aggregation that stays inside the existing FLModel contract
    - explicit SCAFFOLD control-variate metadata when the user has opted into that protocol mode

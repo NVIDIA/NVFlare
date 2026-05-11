@@ -1,4 +1,4 @@
-target: task-local client.py, job.py, model.py, train_utils.py, med_vlm_data_utils.py, custom_aggregators.py
+target: task-local client.py, job.py, model.py, train_utils.py, med_vlm_data_utils.py; shared custom_aggregators.py
 goal: keep VLM task/environment specifics in this task folder while following the global program.md workflow
 
 shared_global_files:
@@ -200,7 +200,7 @@ preferred_targets:
   - model.py
   - train_utils.py
   - med_vlm_data_utils.py
-  - custom_aggregators.py
+  - tasks/shared/custom_aggregators.py
 
 forbidden_mutations:
   - duplicate shared scripts or templates inside tasks/vlm_med

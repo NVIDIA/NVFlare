@@ -16,7 +16,7 @@ Improve this Auto-FL NVFlare harness without breaking the federated contract.
 
 Preferred mutation files:
 - task-local `client.py`
-- task-local `custom_aggregators.py`
+- shared `tasks/shared/custom_aggregators.py`
 - task-local `job.py`
 - task-local `model.py` for registered architecture variants under the active parameter cap
 

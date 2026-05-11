@@ -17,8 +17,9 @@ It is designed to combine:
 ## What is included
 
 - `program.md` — the general agent control plane
-- `tasks/cifar10/` — the default CIFAR-10/H100 task folder with `profile.md`, `requirements.txt`, `mutation_schema.yaml`, `client.py`, `job.py`, `model.py`, `train_utils.py`, and `custom_aggregators.py`
+- `tasks/cifar10/` — the default CIFAR-10/H100 task folder with `profile.md`, `requirements.txt`, `mutation_schema.yaml`, `client.py`, `job.py`, `model.py`, and `train_utils.py`
 - `tasks/vlm_med/` — a medical VLM task folder for Qwen3-VL adapter FL campaigns
+- `tasks/shared/` — shared task utilities such as `custom_aggregators.py`
 - `AGENTS.md`, `CLAUDE.md` — thin repository guardrails that point back to `program.md` and the active task profile
 - `data/` — shared CIFAR-10 data utilities used by the default task
 - `scripts/init_run.sh` — creates an autoresearch branch and initializes `results.tsv`
@@ -37,7 +38,7 @@ It is designed to combine:
 The [autoresearch](https://github.com/karpathy/autoresearch) repo keeps the setup intentionally small and treats `program.md` as the agent-facing control plane. The core repo only has a few files that matter, with one main editable target and a fixed evaluation harness. This starter follows that spirit, but adapts it to NVFlare:
 
 - **Primary control plane:** `program.md` is the first file the agent should read; the active task profile, such as `tasks/cifar10/profile.md` or `tasks/vlm_med/profile.md`, is read immediately afterward.
-- **Bounded edit surface:** mutations should follow the active task profile. For the default CIFAR-10 profile this mostly means `tasks/cifar10/client.py`, then `tasks/cifar10/custom_aggregators.py`, then `tasks/cifar10/job.py`; registered, parameter-capped variants may also touch `tasks/cifar10/model.py`.
+- **Bounded edit surface:** mutations should follow the active task profile. For the default CIFAR-10 profile this mostly means `tasks/cifar10/client.py`, then `tasks/shared/custom_aggregators.py` for shared aggregation experiments, then `tasks/cifar10/job.py`; registered, parameter-capped variants may also touch `tasks/cifar10/model.py`.
 - **Fixed communication budget:** compare candidates with the same round/data/evaluation setup while allowing task-profile-approved local-compute sweeps under the runtime cap.
 - **Comparable metric extraction:** recommended runs enable cross-site evaluation and extract one task-defined score from `cross_val_results.json`.
 - **Run keep / discard loop:** the agent follows the active task profile's local hardware and candidate-width rules, then ranks completed candidates against the ledger and keeps, narrows, or discards.
@@ -294,9 +295,11 @@ At minimum, a new task should define:
   profile.
 - `tasks/<task>/mutation_schema.yaml` entries for bounded mutation axes that
   the agent may choose during a campaign.
-- Task-specific `client.py`, `job.py`, `model.py`, `train_utils.py`,
-  aggregation helpers, and data bridge files when the dataset, training loop,
-  model state, or score extraction differs from another task.
+- Task-specific `client.py`, `job.py`, `model.py`, `train_utils.py`, and data
+  bridge files when the dataset, training loop, model state, or score
+  extraction differs from another task. Reuse `tasks/shared/custom_aggregators.py`
+  for aggregation logic unless the new task needs a genuinely task-specific
+  protocol.
 
 The shared runner defaults are `TASK_DIR=tasks/cifar10`,
 `JOB_SCRIPT=$TASK_DIR/job.py`, and `CLIENT_CONTRACT_PATH=$TASK_DIR/client.py`.

@@ -23,8 +23,8 @@ To set up a CIFAR-10 campaign, work with the user to:
 7. Verify `git branch --show-current` starts with `autoresearch/`. If it does not, stop before running experiments; do not run campaigns on `main`, `upstream/main`, the starter branch, or a shared feature branch.
 8. After reading `program.md`, treat this file as the active task profile, then inspect only the supporting files needed for the next action:
    - `tasks/cifar10/mutation_schema.yaml` for hard mutation bounds
-   - `tasks/cifar10/client.py`, `tasks/cifar10/custom_aggregators.py`, and
-     `tasks/cifar10/job.py` for the active code surface
+   - `tasks/cifar10/client.py`, `tasks/cifar10/job.py`, and
+     `tasks/shared/custom_aggregators.py` for the active code surface
    - `README.md` or `ACKNOWLEDGEMENTS.md` only when user-facing setup or provenance context is needed
 9. Verify the prepared environment is ready:
    - `PYTHON=.venv/bin/python TASK_DIR=tasks/cifar10 make validate`
@@ -193,7 +193,7 @@ reliability or score comparability.
 
 Prefer this mutation order:
 1. `client.py`
-2. `custom_aggregators.py`
+2. `tasks/shared/custom_aggregators.py`
 3. `job.py`
 4. `model.py` only for registered architecture variants under the active parameter cap
 

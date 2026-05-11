@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Custom aggregator implementations for the Auto-FL NVFlare starter.
+"""Shared custom aggregator implementations for the Auto-FL NVFlare starter.
 
 These are NVFlare-oriented aggregation variants intended for bounded autoresearch experiments.
 The repo-level loop is inspired by the public karpathy/autoresearch operating model, but the
@@ -25,7 +25,7 @@ import numpy as np
 
 try:
     import torch
-except Exception:
+except ImportError:
     torch = None
 
 from nvflare.apis.fl_constant import FLMetaKey
