@@ -19,7 +19,8 @@ VLM campaigns.
 To set up a medical VLM campaign, work with the user to:
 
 1. Use the prepared local VLM environment by default:
-   `PYTHON=/workspace/vlm_env/bin/python`. If the human explicitly provides a
+   `PYTHON=/workspace/vlm_env/bin/python`. The VLM dependency set is listed in
+   `tasks/vlm_med/requirements.txt`. If the human explicitly provides a
    different `PYTHON` value, treat that override as authoritative, but require it
    to be a prepared VLM/NVFlare environment with Torch, Transformers, PEFT,
    Datasets, Safetensors, and NVFlare installed.

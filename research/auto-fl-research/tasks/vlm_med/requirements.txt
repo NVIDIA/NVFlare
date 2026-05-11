@@ -1,0 +1,14 @@
+nvflare[PT]>=2.7.2
+numpy
+torch
+tensorboard
+transformers>=4.57.0
+datasets
+huggingface_hub
+accelerate
+peft
+sentencepiece
+tokenizers
+safetensors
+Pillow
+qwen-vl-utils

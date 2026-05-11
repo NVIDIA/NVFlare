@@ -7,25 +7,27 @@ federated-learning harnesses.
 fit most Auto-FL applications: setup discipline, fixed-budget comparisons, FL
 contract invariants, ledger handling, literature recovery, and output hygiene.
 
-Task-specific files define the concrete workload, environment, metric, budget,
-and mutation surface. For the default CIFAR-10/H100 profile, read `cifar10.md`
-immediately after this file.
+Task-specific folders define the concrete workload, environment, metric, budget,
+and mutation surface. For the default CIFAR-10/H100 profile, read
+`tasks/cifar10/profile.md` immediately after this file.
 
 ## Setup
 
 To start a campaign:
 
 1. Identify the active task profile. If the human does not specify one, use
-   `cifar10.md`.
+   `tasks/cifar10/profile.md`.
 2. Read this file first, then read the task profile. The task profile owns the
    dataset, model family, runtime environment, metric, budget, and preferred edit
    surface for that campaign.
    Examples of human profile-selection prompts:
-   - "Use `vlm_med.md` as the active task profile for this campaign."
-   - "Use the medical VLM profile instead of the default `cifar10.md`."
-   - "Create and use `my_task.md` as the task profile; follow `program.md` for
-     the general loop."
-   - "Default to `cifar10.md` for this run."
+   - "Use `tasks/vlm_med/profile.md` as the active task profile for this
+     campaign."
+   - "Use the medical VLM profile instead of the default
+     `tasks/cifar10/profile.md`."
+   - "Create and use `tasks/my_task/profile.md` as the task profile; follow
+     `program.md` for the general loop."
+   - "Default to `tasks/cifar10/profile.md` for this run."
 3. Use the interpreter and dependency instructions from the task profile. Do not
    create virtual environments, install dependencies, or search for alternate
    interpreters unless the human explicitly asks.

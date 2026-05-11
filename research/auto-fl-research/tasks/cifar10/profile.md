@@ -12,7 +12,7 @@ output discipline remain in `program.md`.
 
 To set up a CIFAR-10 campaign, work with the user to:
 
-1. Assume the README preflight created a Python 3.12 local environment in this directory and set `PYTHON=.venv/bin/python` by default. If the human explicitly provides a different `PYTHON` value, treat that override as authoritative, but still require Python 3.12 for this harness.
+1. Assume the README preflight created a Python 3.12 local environment in this directory and set `PYTHON=.venv/bin/python` by default. The default dependency set is listed in `tasks/cifar10/requirements.txt` and mirrored by the root `requirements.txt` for the standard preflight. If the human explicitly provides a different `PYTHON` value, treat that override as authoritative, but still require Python 3.12 for this harness.
 2. Do not create virtual environments or install dependencies unless the human explicitly asks you to. Do not search for Python interpreters with filesystem globs such as `ls /usr/bin/python*`, `ls /workspace/.venv*/bin/python*`, `which python`, or similar discovery commands.
 3. If `PYTHON` is missing, empty, not executable, or not Python 3.12, tell the human to rerun the README preflight in this directory with `python3.12` or provide an explicit Python 3.12 override. Do not guess.
 4. Verify the prepared interpreter before running repo commands:

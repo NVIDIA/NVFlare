@@ -3,7 +3,8 @@
 ## Entry point
 
 Start with `program.md`. It is the general research-org entry point for the agent.
-Then read the active task profile. If the human does not specify one, use `cifar10.md`.
+Then read the active task profile. If the human does not specify one, use
+`tasks/cifar10/profile.md`.
 
 Use `mutation_schema.yaml` only when `program.md` or the active task profile directs you to the hard mutation bounds, or when choosing a mutation axis. If anything here conflicts with `program.md`, follow `program.md` unless a human explicitly overrides it. If a task profile conflicts with generic `program.md` text on task budget, environment, metric, or edit surface, follow the task profile.
 
