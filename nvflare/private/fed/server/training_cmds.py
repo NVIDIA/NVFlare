@@ -59,11 +59,11 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 ),
                 CommandSpec(
                     name=AdminCommandNames.REMOVE_CLIENT,
-                    description="remove a FL client",
+                    description="release a client's active token so the client may register again",
                     usage="remove_client <client-name>",
                     handler_func=self.remove_client,
                     authz_func=self.authorize_client_operation,
-                    visible=True,
+                    visible=False,
                     confirm=ConfirmMethod.AUTH,
                 ),
                 CommandSpec(
@@ -201,7 +201,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 return
         conn.append_success("")
 
-    # Remove Clients
+    # Remove active client tokens.
     def remove_client(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
