@@ -96,7 +96,7 @@ tail -f \
 ```bash
 nvflare job submit \
   -j examples/docker/jobs/hello-numpy-docker \
-  -w workspace/docker_test_project/prod_00/admin@nvidia.com
+  --startup-kit workspace/docker_test_project/prod_00/admin@nvidia.com
 ```
 
 Available jobs:
