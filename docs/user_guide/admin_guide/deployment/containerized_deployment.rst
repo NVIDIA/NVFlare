@@ -7,6 +7,14 @@ Containerized Deployment
 Containerized Deployment with Docker
 ====================================
 
+.. note::
+
+   This page explains how to build and use a Docker environment for FLARE. To
+   run FLARE parent processes and per-job containers with the Docker job
+   launcher, prepare each server or client startup kit with
+   :ref:`deploy_prepare_command`. For job-level image and container settings,
+   see :ref:`launcher_spec`.
+
 Prerequisites
 -------------
 Before starting with containerized deployment, ensure you have:

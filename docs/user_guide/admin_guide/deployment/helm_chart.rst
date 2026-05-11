@@ -27,6 +27,13 @@ The generated Helm chart does not run submitted jobs directly. It installs the
 parent participant process, its Kubernetes Service, its ServiceAccount, and the
 Role/RoleBinding that allow the launcher to create job pods.
 
+The parent Service is the stable in-cluster address for dynamically launched job
+pods. ``nvflare deploy prepare`` patches the prepared kit's internal
+communication settings to use the generated Service name and ``parent_port``, so
+job pods do not depend on the parent pod IP. If you rename or replace the
+Service, keep the Service name, Service port, and prepared kit communication
+settings consistent.
+
 Each prepared participant folder contains its own chart:
 
 .. code-block:: text
@@ -101,6 +108,11 @@ The runtime config controls site-level Kubernetes settings:
   ``default_python_path`` controls SJ/CJ job pods when a job does not override
   ``launcher_spec[site][k8s].python_path``. It does not control the SP/CP parent
   pod Python path; use ``parent.python_path`` for that command.
+  ``pending_timeout`` controls how long a dynamically launched job pod can stay
+  in ``Pending`` or ``Unknown`` before the launcher deletes it and reports the
+  run as an execution exception. The admin ``list_jobs`` command then shows
+  ``FINISHED:EXECUTION_EXCEPTION`` instead of treating the timeout as a user
+  abort.
 
 Prepare Cluster Storage
 =======================
@@ -234,10 +246,14 @@ block overrides it:
        "site-1": {
          "k8s": {
            "image": "registry.example.com/site-1-job:latest",
-           "num_of_gpus": 1,
            "cpu_request": "1",
            "memory_request": "4Gi"
          }
+       }
+     },
+     "resource_spec": {
+       "site-1": {
+         "num_of_gpus": 1
        }
      }
    }
@@ -249,8 +265,6 @@ Supported ``launcher_spec[site][k8s]`` keys include:
 * ``python_path``: Python executable inside the job image. If omitted, the
   launcher uses ``job_launcher.default_python_path`` from the prepared site
   runtime config.
-* ``num_of_gpus``: GPU count. The launcher writes this as both the
-  ``nvidia.com/gpu`` request and limit.
 * ``cpu`` and ``memory``: container limits. When ``cpu_request`` or
   ``memory_request`` is omitted, the request matches the corresponding limit.
 * ``cpu_request`` and ``memory_request``: optional requests when the request
@@ -260,10 +274,10 @@ Supported ``launcher_spec[site][k8s]`` keys include:
   limit. If omitted, the launcher uses its configured default.
 
 ``resource_spec`` remains scheduler-facing. New jobs should place K8s launcher
-settings in ``launcher_spec``. For backward compatibility, the K8s launcher can
-fall back to nested ``resource_spec[site][k8s]`` only when no applicable
-``launcher_spec`` exists, and it can still read a flat
-``resource_spec[site].num_of_gpus`` as a GPU fallback.
+settings in ``launcher_spec`` and resource requests such as
+``num_of_gpus`` in ``resource_spec``. The launcher writes
+``resource_spec[site].num_of_gpus`` as both the ``nvidia.com/gpu`` request and
+limit.
 
 Expose FL Traffic
 =================
@@ -318,6 +332,13 @@ If a pod is not ready, inspect the pod and recent events:
 Common issues are missing PVCs, the prepared kit not being copied into the
 workspace PVC, an image that the cluster cannot pull, or FL ports that are not
 reachable from clients and admin consoles.
+
+When a submitted job cannot start because an SJ or CJ job pod remains
+``Pending`` or ``Unknown`` longer than ``job_launcher.pending_timeout``, NVFLARE
+deletes the stuck pod and marks the job as ``FINISHED:EXECUTION_EXCEPTION``.
+Use ``kubectl describe pod`` and ``kubectl get events`` in the participant's
+namespace to check common cluster causes such as insufficient CPU, memory, GPU,
+ephemeral storage, unsatisfied PVCs, or image pull failures.
 
 Login With The Admin Console
 ============================

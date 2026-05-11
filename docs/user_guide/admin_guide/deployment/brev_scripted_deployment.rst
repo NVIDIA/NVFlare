@@ -23,7 +23,9 @@ What the Scripts Do
 
 * creates a simple three-participant ``project.yml`` unless you provide one;
 * runs ``nvflare provision``;
-* packages the generated ``server``, ``site-1``, and ``site-2`` startup kits;
+* runs ``nvflare deploy prepare`` for K8s on the generated ``server``,
+  ``site-1``, and ``site-2`` startup kits;
+* packages the prepared participant kits;
 * copies the matching archive and launch script to each Brev environment with
   ``brev copy``.
 
@@ -31,7 +33,7 @@ What the Scripts Do
 
 * extracts the copied participant archive;
 * creates the ``nvflare`` namespace and the workspace/data PVCs;
-* patches the startup kit to use the Kubernetes job launcher;
+* patches the participant kit to use the Kubernetes job launcher;
 * copies the startup kit contents into the workspace PVC;
 * installs or upgrades the generated Helm chart;
 * waits for the participant deployment and prints recent pod logs.
@@ -130,9 +132,9 @@ Site 2:
    brev shell "${SITE_2_BREV:-site-2}"
    IMAGE="$IMAGE" SERVER_HOST="$SERVER_HOST" bash /home/ubuntu/launch_brev_nvflare.sh site-2
 
-The launch script creates the namespace and PVCs, patches the startup kit to use
-the Kubernetes job launcher, stages the kit into the workspace PVC, installs the
-Helm chart, and prints recent pod logs.
+The launch script creates the namespace and PVCs, patches the participant kit to
+use the Kubernetes job launcher, stages the prepared kit into the workspace PVC,
+installs the Helm chart, and prints recent pod logs.
 
 Useful Overrides
 ================
