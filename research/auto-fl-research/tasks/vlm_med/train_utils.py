@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
+
 import torch
 from torch.optim import Optimizer
 
@@ -21,7 +23,13 @@ def _token_f1_score(pred: str, gt_answers: list[str]) -> float:
         from src.common import token_f1_score
 
         return token_f1_score(pred, gt_answers)
-    except ImportError:
+    except ImportError as exc:
+        warnings.warn(
+            "src.common.token_f1_score is unavailable; "
+            f"using the local whitespace token_f1 fallback. ImportError: {exc}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         pred_tokens = pred.strip().lower().split()
         if not pred_tokens:
             return 0.0
