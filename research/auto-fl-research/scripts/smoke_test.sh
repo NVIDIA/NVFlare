@@ -16,9 +16,9 @@ if [[ -z "${SMOKE_ARGS_TEXT}" && "${TASK_DIR}" == "tasks/cifar10" ]]; then
 fi
 
 if [[ -z "${SMOKE_ARGS_TEXT}" ]]; then
-  echo "Skipping runtime smoke test because no default smoke budget is defined for TASK_DIR=${TASK_DIR}."
-  echo "Set SMOKE_ARGS to run a task-specific no-ledger smoke through scripts/run_iteration.sh."
-  exit 0
+  echo "ERROR: no default runtime smoke budget is defined for TASK_DIR=${TASK_DIR}." >&2
+  echo "Set SMOKE_ARGS to run a task-specific no-ledger smoke through scripts/run_iteration.sh." >&2
+  exit 2
 fi
 
 if "${PYTHON}" - <<'PY'

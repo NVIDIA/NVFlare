@@ -140,9 +140,11 @@ The default CIFAR-10 harness expects the released PyPI `nvflare` package from `t
 If `apt-get` cannot find the Python 3.12 packages, update the devcontainer image or add an appropriate Python 3.12 package source before continuing; do not fall back to Python 3.13.
 
 Shared runner scripts default to `TASK_DIR=tasks/cifar10`. For another task,
-set `TASK_DIR=tasks/<task>` before running `make validate`, `make smoke`, or
+set `TASK_DIR=tasks/<task>` before running `make validate` or
 `scripts/run_iteration.sh`; advanced cases can override `JOB_SCRIPT` and
-`CLIENT_CONTRACT_PATH` directly.
+`CLIENT_CONTRACT_PATH` directly. For `make smoke`, non-CIFAR tasks must also
+provide task-specific `SMOKE_ARGS`; otherwise the smoke wrapper fails instead
+of silently skipping runtime coverage.
 
 On the H100 node, verify that the container can see the GPU before starting an overnight campaign:
 
@@ -178,13 +180,7 @@ export PYTHON=.venv/bin/python
 Treat that PYTHON value as authoritative. First verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version; print(sys.executable)"`, then use that exact interpreter for validation, smoke tests, candidate runs, plotting, summaries, and reports.
 Do not create a virtual environment, install dependencies, or search for alternate Python interpreters unless I explicitly ask you to. If `.venv/bin/python` is missing, invalid, or not Python 3.12, stop and tell me to rerun the README preflight in this directory with `python3.12`.
 
-Use the default H100 candidate budget unless the active task profile says otherwise:
---n_clients 8 --num_rounds 20 --aggregation_epochs 4 --local_train_steps 0 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
-
-Use cross-site evaluation and keep RUN_TIMEOUT_SECONDS=1200.
-Keep `--num_rounds 20` fixed as the communication budget. You may sweep either `--aggregation_epochs` or `--local_train_steps` as the local-compute budget knob when each candidate stays within RUN_TIMEOUT_SECONDS; do not vary both in the same narrow sweep. `--local_train_steps 0` means epoch-based training with `--aggregation_epochs`; positive values use exact optimizer steps per client per round.
-
-Set PARALLEL_CANDIDATES=4 unless I override it. Use one local GPU; if multiple GPUs are visible, pin candidate runs to CUDA_VISIBLE_DEVICES=0 rather than spreading candidates across devices. Lower the candidate width if CUDA memory, host memory, or I/O contention appears.
+Use the default candidate budget, local hardware policy, calibration sequence, and mutation surface from the active task profile. Keep task-specific budget values in the profile instead of copying them into this prompt.
 
 Once setup and baseline are complete, do not ask whether to keep going or whether this is a good stopping point. Continue the experiment loop until manually interrupted.
 
@@ -193,65 +189,21 @@ After every reviewed batch, run `"${PYTHON}" scripts/plateau_watchdog.py results
 Commit `results.tsv` locally after the baseline and after each reviewed batch. Commit surviving code changes locally on the active `autoresearch/` branch as soon as they are kept; do not let kept mutations accumulate only in the working tree. Do not require pushing from inside the devcontainer.
 ```
 
-## Bounded architecture search
+## Task budgets and calibration
 
-The harness now permits architecture search through a registered model selector instead of free-form model replacement:
+The active task profile owns model or adapter budgets, default CLI args,
+algorithm calibration sequences, local hardware width, and task-specific
+mutation surfaces. Use this README for setup and task-selection flow; use
+`tasks/cifar10/profile.md` or `tasks/vlm_med/profile.md` for comparable budget
+and calibration details.
 
-- `--model_arch moderate_cnn` keeps the original baseline architecture.
-- `--model_arch moderate_cnn_norm` adds buffer-free normalization layers while staying near the baseline size.
-- `--model_arch moderate_cnn_small_head` keeps the convolutional trunk and uses a smaller classifier head.
-- `--max_model_params 5000000` is the default hard parameter cap.
+## Progress Plot
 
-`tasks/cifar10/job.py` and `tasks/cifar10/client.py` both instantiate the same registered architecture and fail before training if the parameter count exceeds the cap. Treat `model_arch` and `max_model_params` as fixed budget fields inside a campaign. Rank architecture candidates primarily by score, use `runtime_seconds` as a coarse secondary signal, and rerun finalists before trusting small score gaps.
-
-## Baseline algorithm knobs
-
-The current harness covers the NVFlare CIFAR-10 simulation benchmark modes that fit the existing DIFF-upload contract:
-
-- FedAvg: `--aggregator weighted`, `--aggregator fedavg`, or NVFlare's built-in `--aggregator default`.
-- FedProx: keep a FedAvg-style aggregator and set `--fedproxloss_mu <mu>`.
-- FedOpt: use `--aggregator fedavgm` or `--aggregator fedopt` for server SGD momentum over aggregated DIFFs, or `--aggregator fedadam` for a server Adam variant. Tune with `--server_lr`, `--server_momentum`, `--fedopt_beta1`, `--fedopt_beta2`, and `--fedopt_tau`.
-- SCAFFOLD: use `--aggregator scaffold`. This automatically passes `--scaffold` to the task-local `client.py`, sends client control deltas in `FLModel.meta["scaffold_c_diff"]`, and sends server global controls back in `FLModel.meta["scaffold_c_global"]`.
-
-SCAFFOLD is an explicit opt-in protocol mode. It still preserves the core model contract (`ParamsType.DIFF`, same model keys, `NUM_STEPS_CURRENT_ROUND`) but it does add SCAFFOLD-specific metadata, so keep SCAFFOLD comparisons labeled separately from strict no-extra-meta baselines.
-
-The first post-baseline calibration should run these algorithm families before broader tuning. Run them in batches of up to `PARALLEL_CANDIDATES` concurrent candidates on the same H100 under the same communication and local-compute budget:
-
-| Step | Description | Extra args |
-| --- | --- | --- |
-| 0 | built-in FedAvg audit | `--aggregator default` |
-| 1 | explicit FedAvg audit | `--aggregator fedavg` |
-| 2 | FedProx light | `--aggregator weighted --fedproxloss_mu 1e-5` |
-| 3 | FedProx medium | `--aggregator weighted --fedproxloss_mu 1e-4` |
-| 4 | FedAvgM NVFlare-style | `--aggregator fedavgm --server_lr 1.0 --server_momentum 0.6` |
-| 5 | FedAvgM accelerated | `--aggregator fedavgm --server_lr 2.0 --server_momentum 0.4` |
-| 6 | FedAdam | `--aggregator fedadam --server_lr 1.0 --fedopt_beta1 0.9 --fedopt_beta2 0.99 --fedopt_tau 1e-3` |
-| 7 | SCAFFOLD metadata mode | `--aggregator scaffold` |
-
-Keep the step order when assembling calibration batches and schedule any unfinished calibration steps before moving to unrelated sweeps. After the sequence is complete, use the ledger summary to pick the family for narrower follow-up runs.
-
-For single-H100 sweeps, use unique `RUN_LOG` and `--name` values for each concurrent candidate, then rank the ledger:
-
-```bash
-"${PYTHON:-python3}" scripts/summarize_results.py results.tsv --status candidate --top "${PARALLEL_CANDIDATES:-4}"
-```
-
-After reviewing the table, finalize the completed batch status:
-
-```bash
-"${PYTHON:-python3}" scripts/finalize_batch_status.py results.tsv --last "${PARALLEL_CANDIDATES:-4}" --keep-best --discard-others
-```
-
-Then run the plateau watchdog before selecting the next sweep:
-
-```bash
-"${PYTHON:-python3}" scripts/plateau_watchdog.py results.tsv
-```
-
-If it prints `recommendation=literature`, switch to the literature loop before launching more candidates. If it prints `recommendation=continue`, keep iterating locally rather than logging another literature row for a normal non-improving batch.
-
-The progress plot reads the `status` column directly. If all successful rows remain `candidate`, the plot will correctly show no kept runs.
-Rows with `status=literature` are shown as vertical markers, with their `runtime_seconds` counted separately from candidate runtime, so long score plateaus can be compared against actual paper-review cycles.
+The progress plot reads the `status` column directly. If all successful rows
+remain `candidate`, the plot will correctly show no kept runs. Rows with
+`status=literature` are shown as vertical markers, with their `runtime_seconds`
+counted separately from candidate runtime, so long score plateaus can be
+compared against actual paper-review cycles.
 
 To generate an autoresearch-style progress image from the ledger:
 

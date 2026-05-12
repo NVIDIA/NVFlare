@@ -208,8 +208,6 @@ def build_train_args(args):
         args.aggregation_epochs,
         "--local_train_steps",
         args.local_train_steps,
-        "--site_local_steps_spec",
-        args.site_local_steps_spec,
         "--weight_decay",
         args.weight_decay,
         "--fedproxloss_mu",
@@ -249,6 +247,8 @@ def build_train_args(args):
         "--max_new_tokens",
         args.max_new_tokens,
     ]
+    if args.site_local_steps_spec:
+        train_args.extend(["--site_local_steps_spec", args.site_local_steps_spec])
     if args.site_lr_scale_spec:
         train_args.extend(["--site_lr_scale_spec", args.site_lr_scale_spec])
     if args.site_lr_scale_end_spec:
