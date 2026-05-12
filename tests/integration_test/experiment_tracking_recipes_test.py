@@ -29,13 +29,12 @@ They use CIFAR-10 dataset and run real training.
 
 To run manually:
     cd tests/integration_test
-    pytest test_experiment_tracking_recipes.py -v
+    pytest experiment_tracking_recipes_test.py -v
 
 TODO: Decide if these should be added to an existing test category (e.g., CIFAR integration tests)
 or run in a separate recipe test suite (takes ~1-2 minutes).
 """
 
-import importlib.util
 import os
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
@@ -62,12 +61,13 @@ class TestExperimentTrackingRecipes:
     def client_script_dir(self):
         return os.path.dirname(self.client_script_path)
 
-    def _make_model(self):
-        model_path = os.path.join(self.client_script_dir, "model.py")
-        spec = importlib.util.spec_from_file_location("_exp_tracking_model", model_path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module.SimpleNetwork()
+    @property
+    def model_path(self):
+        return os.path.join(self.client_script_dir, "model.py")
+
+    def _add_model_to_apps(self, recipe):
+        recipe.job.add_file_to_server(self.model_path)
+        recipe.job.add_file_to_clients(self.model_path)
 
     def test_tensorboard_tracking_integration(self):
         """Test TensorBoard tracking can be added and job completes."""
@@ -79,9 +79,10 @@ class TestExperimentTrackingRecipes:
                 name="test_tensorboard",
                 min_clients=2,
                 num_rounds=1,
-                model=self._make_model(),
+                model={"class_path": "model.SimpleNetwork", "args": {}},
                 train_script=self.client_script_path,
             )
+            self._add_model_to_apps(recipe)
 
             # Add TensorBoard tracking
             add_experiment_tracking(recipe, "tensorboard")
@@ -102,9 +103,10 @@ class TestExperimentTrackingRecipes:
                 name="test_mlflow",
                 min_clients=2,
                 num_rounds=1,
-                model=self._make_model(),
+                model={"class_path": "model.SimpleNetwork", "args": {}},
                 train_script=self.client_script_path,
             )
+            self._add_model_to_apps(recipe)
 
             # Add MLflow tracking
             mlflow_uri = os.path.join(mlflow_dir, "mlruns")
