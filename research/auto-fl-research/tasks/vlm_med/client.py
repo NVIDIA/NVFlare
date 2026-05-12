@@ -431,10 +431,27 @@ def _make_vlm_optimizer(args, vlm_model):
 
 
 def _load_adapter_state_into_vlm(adapter_model, vlm_model):
-    from peft.utils.save_and_load import set_peft_model_state_dict
+    from peft.utils.save_and_load import get_peft_model_state_dict, set_peft_model_state_dict
 
     peft_state = adapter_state_to_peft_state(adapter_model.state_dict())
+    vlm_adapter_keys = set(get_peft_model_state_dict(vlm_model))
+    missing_global_keys = sorted(vlm_adapter_keys - set(peft_state))
+    if missing_global_keys:
+        raise ValueError(
+            "Global adapter state is missing VLM adapter keys before loading: "
+            f"{missing_global_keys[:4]} (count={len(missing_global_keys)})"
+        )
+
     result = set_peft_model_state_dict(vlm_model, peft_state)
+    missing = getattr(result, "missing_keys", None) or []
+    missing_adapter_keys = sorted(
+        key for key in missing if "lora_" in _saved_adapter_key_from_trainable_name(key)
+    )
+    if missing_adapter_keys:
+        raise ValueError(
+            "Missing VLM adapter keys while loading global state: "
+            f"{missing_adapter_keys[:4]} (count={len(missing_adapter_keys)})"
+        )
     unexpected = getattr(result, "unexpected_keys", None)
     if unexpected:
         raise ValueError(f"Unexpected VLM adapter keys while loading global state: {unexpected[:4]}")
