@@ -187,6 +187,14 @@ class TestStorage:
 
         storage.delete_object(uri)
 
+    def test_rejects_uri_that_escapes_storage_root(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            storage = FilesystemStorage(root_dir=os.path.join(tmp_dir, "storage"), uri_root="/jobs")
+            with pytest.raises(StorageException):
+                storage.create_object("/jobs/../outside", b"data", {}, overwrite_existing=True)
+
+            assert not os.path.exists(os.path.join(tmp_dir, "outside"))
+
     @pytest.mark.parametrize(
         "uri",
         ["/test_dir/test_object"],
