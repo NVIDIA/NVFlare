@@ -73,7 +73,8 @@ class RunManager(EngineSpec):
         )
 
         self.workspace = workspace
-        self.run_info = RunInfo(job_id=job_id, app_path=self.workspace.get_app_dir(job_id))
+        app_path = self.workspace.get_app_dir(job_id) if job_id else ""
+        self.run_info = RunInfo(job_id=job_id, app_path=app_path)
 
         self.components = components
         self.cell = None

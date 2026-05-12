@@ -549,7 +549,7 @@ class TestDockerJobLauncherLaunchJob:
             "Source": None,
             "Type": "tmpfs",
             "ReadOnly": False,
-            "tmpfs_mode": 0o555,
+            "tmpfs_mode": 0o1777,
         }
         assert mounts_by_target["/var/tmp/nvflare/workspace/startup"] == {
             "Target": "/var/tmp/nvflare/workspace/startup",
