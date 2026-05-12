@@ -296,7 +296,7 @@ class TestFederatedServer:
 
     @pytest.mark.parametrize(
         "failure_code",
-        [ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION, JobReturnCode.EXECUTION_ERROR],
+        [ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION],
     )
     def test_process_job_failure_fails_run_for_reported_exception_client_failures(self, failure_code):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
@@ -332,6 +332,40 @@ class TestFederatedServer:
             server.process_job_failure(request)
 
             server.engine.job_runner.fail_run.assert_called_once_with("job-1", ProcessExitCode.EXCEPTION, fl_ctx)
+            server.engine.job_runner.stop_run.assert_not_called()
+
+    def test_process_job_failure_ignores_generic_launcher_execution_error(self):
+        with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
+            server = FederatedServer(
+                project_name="project_name",
+                min_num_clients=1,
+                max_num_clients=10,
+                cmd_modules=None,
+                heart_beat_timeout=600,
+                args=MagicMock(),
+                secure_train=False,
+                snapshot_persistor=MagicMock(),
+            )
+
+            server.client_manager.is_from_authorized_client = MagicMock(return_value=True)
+            server.engine.job_runner.stop_run = MagicMock()
+            server.engine.job_runner.fail_run = MagicMock()
+
+            request = new_cell_message(
+                {
+                    CellMessageHeaderKeys.TOKEN: "token-1",
+                    MessageHeaderKey.ORIGIN: "site-1",
+                },
+                {
+                    JobFailureMsgKey.JOB_ID: "job-1",
+                    JobFailureMsgKey.CODE: JobReturnCode.EXECUTION_ERROR,
+                    JobFailureMsgKey.REASON: "generic launcher failure",
+                },
+            )
+
+            server.process_job_failure(request)
+
+            server.engine.job_runner.fail_run.assert_not_called()
             server.engine.job_runner.stop_run.assert_not_called()
 
 
