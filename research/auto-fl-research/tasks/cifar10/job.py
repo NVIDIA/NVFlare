@@ -25,9 +25,14 @@ Provenance:
 import argparse
 import os
 import shlex
+import sys
 from pathlib import Path
 
-from custom_aggregators import (
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(1, str(REPO_ROOT))
+
+from tasks.shared.custom_aggregators import (
     FedAdamAggregator,
     FedAvgAggregator,
     FedAvgMAggregator,

@@ -1,6 +1,6 @@
 ---
 name: autofl-nvflare
-description: Help coding agents work on an NVFlare-based Auto-FL harness that follows an autoresearch-style loop. Use when the user wants to create, edit, debug, or extend program.md, job.py, client.py, custom_aggregators.py, model.py, mutation policies, results.tsv logging, or coding-agent prompts for a bounded federated-learning research loop. This skill is specifically for NVFlare harness work where the Client API loop, DIFF upload contract, and NUM_STEPS_CURRENT_ROUND metadata must stay intact unless the user explicitly asks for a protocol upgrade.
+description: Help coding agents work on an NVFlare-based Auto-FL harness that follows an autoresearch-style loop. Use when the user wants to create, edit, debug, or extend program.md, task folders such as tasks/cifar10/ and tasks/vlm_med/, task-local job.py, client.py, model.py, shared custom_aggregators.py, mutation policies, results.tsv logging, or coding-agent prompts for a bounded federated-learning research loop. This skill is specifically for NVFlare harness work where the Client API loop, DIFF upload contract, and NUM_STEPS_CURRENT_ROUND metadata must stay intact unless the user explicitly asks for a protocol upgrade.
 ---
 
 # autofl-nvflare
@@ -9,9 +9,9 @@ Use this skill to keep edits to the Auto-FL NVFlare starter coherent, safe, and 
 
 ## Entry point
 
-When the target repo includes `program.md`, read it first and treat it as the single control plane.
+When the target repo includes `program.md`, read it first and treat it as the general control plane. Then read the active task profile; use `tasks/cifar10/profile.md` when the human does not specify another profile.
 
-Use `mutation_schema.yaml` for bounded mutation details only when `program.md` points you there or when choosing a mutation axis. Use `AGENTS.md` / `CLAUDE.md` only as thin local guardrails.
+Use the active task's `mutation_schema.yaml` for bounded mutation details only when `program.md` or the active task profile points you there, or when choosing a mutation axis. Use `AGENTS.md` / `CLAUDE.md` only as thin local guardrails.
 
 ## Core rules
 
@@ -30,7 +30,7 @@ Preserve these invariants unless the user explicitly asks for a protocol change:
 
 ## Preferred mutation order
 
-1. Client-local changes in `client.py`
+1. Client-local changes in the active task's `client.py`
    - optimizer family
    - scheduler settings
    - local epochs, fixed local training steps, batch size, workers
@@ -39,19 +39,19 @@ Preserve these invariants unless the user explicitly asks for a protocol change:
    - label smoothing
    - FedProx local loss
    - extra scalar metrics
-2. Aggregation changes in `custom_aggregators.py`
+2. Aggregation changes in shared `tasks/shared/custom_aggregators.py`
    - weighted aggregation refinements
    - FedAvg/FedOpt-style DIFF aggregation that stays inside the existing FLModel contract
    - explicit SCAFFOLD control-variate metadata when the user has opted into that protocol mode
    - clipping / robust aggregation
    - median or trimmed-mean style logic
-3. Recipe changes in `job.py`
+3. Recipe changes in the active task's `job.py`
    - rounds
    - clients
    - `cross_site_eval`
    - `launch_external_process`
    - `client_memory_gc_rounds`
-4. Registered architecture changes in `model.py`
+4. Registered architecture changes in the active task's `model.py`
    - named `model_arch` variants
    - parameter-count checks through `max_model_params`
    - no new dependencies
@@ -62,15 +62,15 @@ FedProx is compatible as a client-local loss term. FedOpt is compatible only whe
 ## Required workflow
 
 After making edits:
-1. set and use `PYTHON=.venv/bin/python` by default, unless the human explicitly provides a different `PYTHON` value; treat the selected value as authoritative, verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version; print(sys.executable)"`, and do not search for alternate interpreters with glob or discovery commands such as `ls /usr/bin/python*`, `ls /workspace/.venv*/bin/python*`, or `which python`
-2. do not create virtual environments or install dependencies unless the user explicitly asks; if `.venv/bin/python` is missing, invalid, or not Python 3.12 and no override was provided, tell the user to rerun the README preflight in this directory with `python3.12` instead of guessing
+1. use the interpreter and dependency rules from the active task profile. For the default CIFAR-10 profile, set and use `PYTHON=.venv/bin/python` by default, unless the human explicitly provides a different `PYTHON` value; treat the selected value as authoritative, verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version; print(sys.executable)"`, and do not search for alternate interpreters with glob or discovery commands such as `ls /usr/bin/python*`, `ls /workspace/.venv*/bin/python*`, or `which python`
+2. do not create virtual environments or install dependencies unless the user explicitly asks; if the active profile's interpreter is missing or invalid and no override was provided, tell the user to rerun that profile's preflight instead of guessing
 3. when initializing a campaign, use a descriptive branch tag with the pattern `<node>-<campaign-topic>-YYYYMMDD`, such as `h100-fedavgm-20260430` or `h100-archsearch-20260430`; run `bash scripts/init_run.sh <tag>` before validation, baseline, or candidates; verify `git branch --show-current` starts with `autoresearch/`; never run experiments on `main`, `upstream/main`, the starter branch, or a shared feature branch; never use date-only branch names
-4. run static checks and syntax validation
-5. run the client contract validator if present
-6. run the smoke test if the prepared environment has `nvflare`
-7. assume one local 80 GB H100; launch up to `PARALLEL_CANDIDATES` same-budget candidates concurrently on that one GPU when memory allows, default to `PARALLEL_CANDIDATES=4`, and reduce the width if candidates hit CUDA OOM or host contention
-8. use the default H100 candidate budget unless told otherwise: 8 clients, 20 communication rounds, 4 local epochs, `local_train_steps=0`, training batch size 64, eval batch size 1024, alpha 0.5, seed 0, `model_arch=moderate_cnn`, `max_model_params=5000000`, weighted aggregation, deterministic client training, final global evaluation on site-1, 1200-second timeout; local epochs or `local_train_steps` may be swept under that runtime cap, but do not vary both in the same narrow sweep
-9. use unique `RUN_LOG` and job `--name` values for each candidate; if the environment exposes multiple GPUs but this campaign should use the local H100 only, pin each run with `CUDA_VISIBLE_DEVICES=0` instead of spreading candidates across devices
+4. run the active task profile's static checks and syntax validation, with `TASK_DIR` set to the active task
+5. run the client contract validator against the active task's `client.py`, not a stale root-level path
+6. run the active task profile's smoke command if the prepared environment has `nvflare`; for non-CIFAR tasks, pass the task-specific `SMOKE_ARGS` or use `scripts/run_iteration.sh` with the active task budget
+7. follow the active task profile's local hardware and candidate-width rules. For the default CIFAR-10/H100 profile, launch up to `PARALLEL_CANDIDATES=4` same-budget candidates concurrently on one local H100 when memory allows, and reduce the width if candidates hit CUDA OOM or host contention
+8. use the active task profile's default candidate budget unless told otherwise. For the default CIFAR-10/H100 profile, that budget is 8 clients, 20 communication rounds, 4 local epochs, `local_train_steps=0`, training batch size 64, eval batch size 1024, alpha 0.5, seed 0, `model_arch=moderate_cnn`, `max_model_params=5000000`, weighted aggregation, deterministic client training, final global evaluation on site-1, and a 1200-second timeout; local epochs or `local_train_steps` may be swept under that runtime cap, but do not vary both in the same narrow sweep
+9. use unique `RUN_LOG` and job `--name` values for each candidate; if the active profile requires one local GPU, pin each run with `CUDA_VISIBLE_DEVICES=0` instead of spreading candidates across devices
 10. record the outcome in `results.tsv`; `run_iteration.sh` initializes the header before launching logged runs, and successful runs are appended as `candidate`, which means unreviewed, not kept
 11. after every completed batch, update reviewed `results.tsv` statuses before launching the next batch: promote the selected survivor to `keep`, mark reviewed non-survivors as `discard`, leave crashes as `crash`, and leave only unresolved active rows as `candidate`; prefer `scripts/finalize_batch_status.py --last "${PARALLEL_CANDIDATES:-4}"`
 12. commit that ledger on the active `autoresearch/` branch after baseline and completed runs/checkpoints, and commit surviving code changes as soon as they are kept rather than carrying them uncommitted into the next batch
