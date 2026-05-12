@@ -61,5 +61,9 @@ CLIENT_CONTRACT_PATH=${CLIENT_CONTRACT_PATH:-${TASK_DIR}/client.py}
 
 echo "Run initialized. Next steps:"
 echo "  TASK_DIR=${TASK_DIR} make validate"
-echo "  TASK_DIR=${TASK_DIR} make smoke"
+if [[ "${TASK_DIR}" == "tasks/cifar10" ]]; then
+  echo "  TASK_DIR=${TASK_DIR} make smoke"
+else
+  echo "  TASK_DIR=${TASK_DIR} SMOKE_ARGS=\"<task smoke args>\" make smoke"
+fi
 echo "  TASK_DIR=${TASK_DIR} bash scripts/run_iteration.sh --description \"baseline\" --target ${CLIENT_CONTRACT_PATH} -- <budget args>"

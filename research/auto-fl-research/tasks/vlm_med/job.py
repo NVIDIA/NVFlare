@@ -87,6 +87,7 @@ def define_parser():
     parser.add_argument("--evaluate_local", action="store_true")
     parser.add_argument("--eval_global_every_round", action="store_true")
     parser.add_argument("--no_deterministic_training", action="store_true")
+    parser.add_argument("--save_local_ckpt", action="store_true")
     parser.add_argument("--final_eval_clients", type=str, default="all")
 
     parser.add_argument("--max_pixels", type=int, default=50176)
@@ -265,6 +266,8 @@ def build_train_args(args):
         train_args.append("--eval_global_every_round")
     if args.no_deterministic_training:
         train_args.append("--no_deterministic_training")
+    if args.save_local_ckpt:
+        train_args.append("--save_local_ckpt")
     if not args.bf16:
         train_args.append("--no-bf16")
     if not args.gradient_checkpointing:
