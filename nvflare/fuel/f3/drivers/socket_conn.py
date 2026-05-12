@@ -171,7 +171,7 @@ class SocketConnection(Connection):
             remaining -= n
 
     @staticmethod
-    def _format_address(addr: Union[str, tuple], fileno: int) -> str:
+    def _format_address(addr: str | tuple, fileno: int) -> str:
 
         if isinstance(addr, tuple):
             result = f"{addr[0]}:{addr[1]}"

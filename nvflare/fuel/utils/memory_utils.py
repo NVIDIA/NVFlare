@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
-def _get_glibc() -> Optional[CDLL]:
+def _get_glibc() -> CDLL | None:
     """Get glibc library handle if available (Linux only).
 
     Returns:
@@ -96,7 +96,7 @@ def get_allocator_type() -> str:
     return "unknown"
 
 
-def try_malloc_trim() -> Optional[int]:
+def try_malloc_trim() -> int | None:
     """Attempt to release free memory back to the OS (glibc only).
 
     This calls glibc's malloc_trim(0) to return free heap pages to the OS,

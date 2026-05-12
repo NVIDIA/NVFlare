@@ -19,7 +19,7 @@ from nvflare.apis.fl_constant import FilterKey
 from nvflare.private.fed_json_config import FilterChain
 
 
-class Scope(object):
+class Scope:
     TASK_DATA_FILTERS_NAME = "task_data_filters"
     TASK_RESULT_FILTERS_NAME = "task_result_filters"
 
@@ -41,7 +41,7 @@ class Scope(object):
 
     def add_task_data_filter(self, f: Filter, direction):
         if not FilterChain.validate_direction(direction):
-            raise TypeError("Filter chain direction {} is not supported.".format(direction))
+            raise TypeError(f"Filter chain direction {direction} is not supported.")
         if not isinstance(f, Filter):
             raise TypeError(f"task data filter must be Filter but got {type(f)}")
         f.set_prop(FilterContextKey.CHAIN_TYPE, FilterChainType.TASK_DATA_CHAIN)
@@ -54,7 +54,7 @@ class Scope(object):
 
     def add_task_result_filter(self, f: Filter, direction):
         if not FilterChain.validate_direction(direction):
-            raise TypeError("Filter chain direction {} is not supported.".format(direction))
+            raise TypeError(f"Filter chain direction {direction} is not supported.")
         if not isinstance(f, Filter):
             raise TypeError(f"task result filter must be Filter but got {type(f)}")
         f.set_prop(FilterContextKey.CHAIN_TYPE, FilterChainType.TASK_RESULT_CHAIN)
@@ -66,10 +66,8 @@ class Scope(object):
             self.task_result_filters.get(direction).append(f)
 
 
-class PrivacyManager(object):
-    def __init__(
-        self, scopes: Union[None, List[Scope]], default_scope_name: Union[None, str], components: Union[None, dict]
-    ):
+class PrivacyManager:
+    def __init__(self, scopes: None | list[Scope], default_scope_name: None | str, components: None | dict):
         self.name_to_scopes = {}
         self.default_scope = None
         self.components = components
@@ -87,7 +85,7 @@ class PrivacyManager(object):
         else:
             self.policy_defined = False
 
-    def get_scope(self, name: Union[None, str]):
+    def get_scope(self, name: None | str):
         if not name:
             return self.default_scope
 
@@ -97,7 +95,7 @@ class PrivacyManager(object):
         return self.policy_defined
 
 
-class PrivacyService(object):
+class PrivacyService:
     manager = None
 
     @staticmethod
@@ -107,7 +105,7 @@ class PrivacyService(object):
         PrivacyService.manager = manager
 
     @staticmethod
-    def get_scope(name: Union[None, str]):
+    def get_scope(name: None | str):
         if not PrivacyService.manager:
             return None
         else:

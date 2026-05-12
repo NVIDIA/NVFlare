@@ -24,7 +24,7 @@ from nvflare.fuel.utils.validation_utils import check_str
 HEARTBEAT_SEND_TIMEOUT = 600.0
 
 
-class Topic(object):
+class Topic:
 
     ABORT = "_ABORT_"
     END = "_END_"
@@ -151,7 +151,7 @@ class Pipe(AttributesExportable, ABC):
         pass
 
     @abstractmethod
-    def receive(self, timeout=None) -> Union[None, Message]:
+    def receive(self, timeout=None) -> None | Message:
         """Try to receive message from peer.
 
         Args:
@@ -200,7 +200,7 @@ class Pipe(AttributesExportable, ABC):
         """
         return 0
 
-    def export(self, export_mode: str) -> Tuple[str, dict]:
+    def export(self, export_mode: str) -> tuple[str, dict]:
         if export_mode == ExportMode.SELF:
             mode = self.mode
         else:

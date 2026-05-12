@@ -103,7 +103,7 @@ class HECrossSiteModelEval(CrossSiteModelEval):
 
         return data_filename
 
-    def _load_validation_content(self, name: str, load_dir: str, fl_ctx: FLContext) -> Union[DXO, None]:
+    def _load_validation_content(self, name: str, load_dir: str, fl_ctx: FLContext) -> DXO | None:
         # Load shareable from disk
         shareable_filename = os.path.join(load_dir, name)
 

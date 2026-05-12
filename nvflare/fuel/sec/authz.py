@@ -37,7 +37,7 @@ class FieldNames(str, Enum):
     CATEGORY_RIGHT = "Right for Category"
 
 
-class Person(object):
+class Person:
     def __init__(self, name: str, org: str, role: str):
         self.name = _normalize_str(name, FieldNames.USER_NAME)
         self.org = _normalize_str(org, FieldNames.USER_ORG)
@@ -53,7 +53,7 @@ class Person(object):
             return f"{name}:{org}:{role}"
 
 
-class AuthzContext(object):
+class AuthzContext:
     def __init__(self, right: str, user: Person, submitter: Person = None):
         """Base class to contain context data for authorization."""
         if not isinstance(user, Person):
@@ -114,7 +114,7 @@ class FalseEvaluator(ConditionEvaluator):
         return False
 
 
-class _RoleRightConditions(object):
+class _RoleRightConditions:
     def __init__(self):
         self.allowed_conditions = []
         self.blocked_conditions = []
@@ -210,7 +210,7 @@ class _RoleRightConditions(object):
         return ""
 
 
-class Policy(object):
+class Policy:
     def __init__(self, config: dict, role_right_map: dict, roles: list, rights: list, role_rights: dict):
         self.config = config
         self.role_right_map = role_right_map
@@ -380,7 +380,7 @@ def parse_policy_config(config: dict, right_categories: dict):
     return Policy(config=config, role_right_map=role_right_map, role_rights=role_rights, roles=roles, rights=rights), ""
 
 
-class Authorizer(object):
+class Authorizer:
     def __init__(self, site_org: str, right_categories: dict = None):
         """Base class containing the authorization policy."""
         self.site_org = _normalize_str(site_org, FieldNames.SITE_ORG)
@@ -430,7 +430,7 @@ class Authorizer(object):
         return ""
 
 
-class AuthorizationService(object):
+class AuthorizationService:
 
     the_authorizer = None
 

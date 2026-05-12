@@ -13,7 +13,8 @@
 # limitations under the License.
 import logging
 import threading
-from typing import Callable, Optional
+from typing import Optional
+from collections.abc import Callable
 
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.connection import BytesAlike
@@ -30,7 +31,7 @@ log = logging.getLogger(__name__)
 
 
 class BlobStream(Stream):
-    def __init__(self, blob: BytesAlike, headers: Optional[dict]):
+    def __init__(self, blob: BytesAlike, headers: dict | None):
         size = self.buffer_len(blob)
         super().__init__(size, headers)
 

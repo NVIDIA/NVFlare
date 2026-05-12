@@ -32,7 +32,7 @@ class ObjectProducer(ABC):
         self,
         stream_ctx: StreamContext,
         fl_ctx: FLContext,
-    ) -> Tuple[Shareable, float]:
+    ) -> tuple[Shareable, float]:
         """Called to produce the next Shareable object to be sent.
         If this method needs to take long time, it should check the abort_signal in the fl_ctx frequently.
         If aborted it should return immediately.
@@ -50,7 +50,7 @@ class ObjectProducer(ABC):
     @abstractmethod
     def process_replies(
         self,
-        replies: Dict[str, Shareable],
+        replies: dict[str, Shareable],
         stream_ctx: StreamContext,
         fl_ctx: FLContext,
     ) -> Any:
@@ -77,7 +77,7 @@ class ObjectConsumer(ABC):
         shareable: Shareable,
         stream_ctx: StreamContext,
         fl_ctx: FLContext,
-    ) -> Tuple[bool, Shareable]:
+    ) -> tuple[bool, Shareable]:
         """Consume the received Shareable object in the stream.
 
         Args:
@@ -173,7 +173,7 @@ class StreamableEngine(ABC):
         channel: str,
         topic: str,
         stream_ctx: StreamContext,
-        targets: List[str],
+        targets: list[str],
         producer: ObjectProducer,
         fl_ctx: FLContext,
         optional=False,

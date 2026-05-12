@@ -65,12 +65,12 @@ class ETFedBuffRecipe(EdgeFedBuffRecipe):
         output_shape,
         model_manager_config: ModelManagerConfig,
         device_manager_config: DeviceManagerConfig,
-        initial_ckpt: Optional[str] = None,
+        initial_ckpt: str | None = None,
         evaluator_config: EvaluatorConfig = None,
         simulation_config: SimulationConfig = None,
-        device_training_params: Dict = None,
+        device_training_params: dict = None,
         custom_source_root: str = None,
-        device_wait_timeout: Optional[float] = None,
+        device_wait_timeout: float | None = None,
     ):
         if importlib.util.find_spec("executorch.extension.training") is None:
             raise ImportError(

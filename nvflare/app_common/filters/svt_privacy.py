@@ -29,7 +29,7 @@ _SVT_PRIVACY_BUDGET = "svt_privacy_budget"
 _SVT_PRIVACY_ACCOUNTANT = "svt_privacy_accountant"
 
 
-def _sample_partition_counts(group_counts: List[int], total_to_sample: int, replace: bool) -> List[int]:
+def _sample_partition_counts(group_counts: list[int], total_to_sample: int, replace: bool) -> list[int]:
     """Partition ``total_to_sample`` across groups while preserving the total.
 
     The last group absorbs any remaining samples after the sequential draws so the
@@ -69,7 +69,7 @@ def _sample_partition_counts(group_counts: List[int], total_to_sample: int, repl
 
 def _compute_epsilon_split(
     epsilon: float, n_upload: int, epsilon_threshold: float = None, epsilon_query: float = None
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     if epsilon <= 0:
         raise ValueError("epsilon must be > 0.")
     if n_upload <= 0:
@@ -188,7 +188,7 @@ class SVTPrivacy(DXOFilter):
         with self._accountant_lock:
             return self._privacy_spent
 
-    def get_privacy_ledger(self) -> List[dict]:
+    def get_privacy_ledger(self) -> list[dict]:
         with self._accountant_lock:
             return list(self._privacy_ledger)
 
@@ -255,7 +255,7 @@ class SVTPrivacy(DXOFilter):
             % (epsilon_total, cumulative_epsilon),
         )
 
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> None | DXO:
         """Compute the differentially private SVT.
 
         Args:
@@ -269,7 +269,7 @@ class SVTPrivacy(DXOFilter):
         model_diff = dxo.data
         total_steps = np.float64(dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, 1))
 
-        param_items: List[Tuple[str, np.ndarray, bool]] = []
+        param_items: list[tuple[str, np.ndarray, bool]] = []
         total_params = 0
         max_abs = 0.0
         min_abs = None
@@ -455,7 +455,7 @@ class SVTPrivacy(DXOFilter):
                 remaining_selected -= chunk_selected
 
         median_noise = float(np.median(noise_medians)) if noise_medians else 0.0
-        self.log_info(fl_ctx, "noise max: {}, median approx {}".format(noise_max, median_noise))
+        self.log_info(fl_ctx, f"noise max: {noise_max}, median approx {median_noise}")
 
         dxo.data = dp_w
         self._record_privacy_accounting(

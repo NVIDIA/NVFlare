@@ -39,7 +39,7 @@ class DeviceManager(FLComponent, ABC):
         self.used_devices = {}
 
     @abstractmethod
-    def update_available_devices(self, devices: Dict, fl_ctx: FLContext) -> None:
+    def update_available_devices(self, devices: dict, fl_ctx: FLContext) -> None:
         """Update the list of available devices.
         modify self.available_devices with devices input
 
@@ -115,7 +115,7 @@ class DeviceManager(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def get_active_model_versions(self, fl_ctx: FLContext) -> Set[int]:
+    def get_active_model_versions(self, fl_ctx: FLContext) -> set[int]:
         """Get the active model versions that is associated with the current selection.
 
         Args:
@@ -137,7 +137,7 @@ class DeviceManager(FLComponent, ABC):
         """
         return self.current_selection
 
-    def get_available_devices(self, fl_ctx: FLContext) -> Set[str]:
+    def get_available_devices(self, fl_ctx: FLContext) -> set[str]:
         """Get the available devices.
 
         Args:
@@ -148,7 +148,7 @@ class DeviceManager(FLComponent, ABC):
         """
         return self.available_devices
 
-    def get_used_devices(self, fl_ctx: FLContext) -> Set[str]:
+    def get_used_devices(self, fl_ctx: FLContext) -> set[str]:
         """Get the used devices.
 
         Args:

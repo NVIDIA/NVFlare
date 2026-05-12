@@ -46,7 +46,7 @@ from nvflare.private.fed.utils.fed_utils import extract_participants, require_si
 from nvflare.security.logging import secure_format_exception
 
 
-def _send_to_clients(admin_server, client_sites: List[str], engine, message, timeout=None, optional=False):
+def _send_to_clients(admin_server, client_sites: list[str], engine, message, timeout=None, optional=False):
     clients, invalid_inputs = engine.validate_targets(client_sites)
     if invalid_inputs:
         raise RuntimeError(f"unknown clients: {invalid_inputs}.")
@@ -61,7 +61,7 @@ def _send_to_clients(admin_server, client_sites: List[str], engine, message, tim
     return replies
 
 
-def _get_active_job_participants(connected_clients: Dict[str, Client], participants: Dict[str, Client]) -> List[str]:
+def _get_active_job_participants(connected_clients: dict[str, Client], participants: dict[str, Client]) -> list[str]:
     """Gets active job participants.
 
         Some clients might be dropped/dead during job execution.
@@ -112,7 +112,7 @@ class JobRunner(FLComponent):
         set_message_security_data(message, job, fl_ctx)
         return message
 
-    def _deploy_job(self, job: Job, sites: dict, fl_ctx: FLContext) -> Tuple[str, list]:
+    def _deploy_job(self, job: Job, sites: dict, fl_ctx: FLContext) -> tuple[str, list]:
         """Deploy the application to the list of participants
 
         Args:
@@ -252,7 +252,7 @@ class JobRunner(FLComponent):
         self.fire_event(EventType.JOB_DEPLOYED, fl_ctx)
         return run_number, failed_clients
 
-    def _start_run(self, job_id: str, job: Job, client_sites: Dict[str, DispatchInfo], fl_ctx: FLContext):
+    def _start_run(self, job_id: str, job: Job, client_sites: dict[str, DispatchInfo], fl_ctx: FLContext):
         """Start the application
 
         Args:
@@ -337,7 +337,7 @@ class JobRunner(FLComponent):
         engine = fl_ctx.get_engine()
         run_process = engine.run_processes.get(job_id)
         if run_process:
-            participants: Dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS)
+            participants: dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS)
             active_client_sites_names = _get_active_job_participants(
                 connected_clients=engine.client_manager.clients, participants=participants
             )
@@ -348,7 +348,7 @@ class JobRunner(FLComponent):
             if err:
                 self.log_error(fl_ctx, f"Failed to abort the server for run: {job_id}: {err}")
 
-    def abort_client_run(self, job_id, client_sites: List[str], fl_ctx):
+    def abort_client_run(self, job_id, client_sites: list[str], fl_ctx):
         """Send the abort run command to the clients
 
         Args:
@@ -368,7 +368,7 @@ class JobRunner(FLComponent):
         except RuntimeError as e:
             self.log_error(fl_ctx, f"Failed to abort run ({job_id}) on the clients: {secure_format_exception(e)}")
 
-    def _delete_run(self, job_id, client_sites: List[str], fl_ctx: FLContext):
+    def _delete_run(self, job_id, client_sites: list[str], fl_ctx: FLContext):
         """Deletes the run workspace
 
         Args:
@@ -419,7 +419,7 @@ class JobRunner(FLComponent):
             run_process = exception_run_processes[job.job_id]
 
             # stop client run
-            participants: Dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS)
+            participants: dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS)
             active_client_sites_names = _get_active_job_participants(
                 connected_clients=engine.client_manager.clients, participants=participants
             )

@@ -57,7 +57,7 @@ def _get_job_id_tag(fl_ctx: FLContext) -> str:
 
 class WandBReceiver(AnalyticsReceiver):
     def __init__(
-        self, wandb_args: dict, mode: str = "offline", events: Optional[List[str]] = None, process_timeout: float = 10.0
+        self, wandb_args: dict, mode: str = "offline", events: list[str] | None = None, process_timeout: float = 10.0
     ):
         super().__init__(events=events)
         self.fl_ctx = None
@@ -174,7 +174,7 @@ class WandBReceiver(AnalyticsReceiver):
         if not data:
             return
 
-        q: Optional[Queue] = self.get_task_queue(record_origin)
+        q: Queue | None = self.get_task_queue(record_origin)
         if q:
             if data.data_type == AnalyticsDataType.PARAMETER or data.data_type == AnalyticsDataType.METRIC:
                 log_data = {data.tag: data.value}
@@ -190,7 +190,7 @@ class WandBReceiver(AnalyticsReceiver):
         """
         for site in self.processes:
             self.log_info(fl_ctx, f"inform {site} to stop")
-            q: Optional[Queue] = self.get_task_queue(site)
+            q: Queue | None = self.get_task_queue(site)
             q.put(WandBTask(task_owner=site, task_type="stop", task_data={}, step=0))
 
         for site in self.processes:

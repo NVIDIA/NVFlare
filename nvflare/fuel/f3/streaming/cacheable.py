@@ -45,7 +45,7 @@ class CacheableObject(Downloadable):
         check_non_negative_int("max_chunk_size", max_chunk_size)
         self.max_chunk_size = max_chunk_size
         self.size = self.get_item_count()
-        self.cache: list[tuple[Optional[bytes], int]] = [(None, 0)] * self.size
+        self.cache: list[tuple[bytes | None, int]] = [(None, 0)] * self.size
         self.lock = threading.Lock()
         self.num_receivers = 0
         self.logger = get_obj_logger(self)
@@ -162,7 +162,7 @@ class CacheableObject(Downloadable):
                 else:
                     self.cache[i] = (data, num_received)
 
-    def produce(self, state: dict, requester: str) -> Tuple[str, Any, dict]:
+    def produce(self, state: dict, requester: str) -> tuple[str, Any, dict]:
         if not state:
             # first request
             start = 0
@@ -202,7 +202,7 @@ class ItemConsumer(Consumer):
         self.result = None
 
     @abstractmethod
-    def consume_items(self, items: List[Any], result: Any) -> Any:
+    def consume_items(self, items: list[Any], result: Any) -> Any:
         """Process items and return updated result."""
         pass
 

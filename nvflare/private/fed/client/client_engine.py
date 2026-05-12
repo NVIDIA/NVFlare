@@ -139,7 +139,7 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         self.cell = cell
 
     def _handle_aux_message(self, request: CellMessage) -> CellMessage:
-        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        assert isinstance(request, CellMessage), f"request must be CellMessage but got {type(request)}"
         data = request.payload
 
         topic = request.get_header(MessageHeaderKey.TOPIC)
@@ -220,7 +220,7 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         channel: str,
         topic: str,
         stream_ctx: StreamContext,
-        targets: List[str],
+        targets: list[str],
         producer: ObjectProducer,
         fl_ctx: FLContext,
         optional=False,
@@ -331,7 +331,7 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
             app_name = ""
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
-                with open(app_file, "r") as f:
+                with open(app_file) as f:
                     app_name = f.readline().strip()
             job = {
                 ClientStatusKey.APP_NAME: app_name,
@@ -366,7 +366,7 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         if not os.path.exists(app_root):
             return f"{ERROR_MSG_PREFIX}: Client app does not exist. Please deploy it before starting client."
 
-        self.logger.info("Starting client app. rank: {}".format(self.rank))
+        self.logger.info(f"Starting client app. rank: {self.rank}")
 
         self.client_executor.start_app(
             self.client,

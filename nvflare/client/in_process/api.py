@@ -56,7 +56,7 @@ class InProcessClientAPI(APISpec):
 
         self.fl_model = None
         self.sys_info = {}
-        self.client_config: Optional[ClientConfig] = None
+        self.client_config: ClientConfig | None = None
         self.logger = get_obj_logger(self)
         self.event_manager = EventManager(self.data_bus)
         self.abort_reason = ""
@@ -66,7 +66,7 @@ class InProcessClientAPI(APISpec):
         self.rank = None
         self.receive_called = False  # to check if users have call received for a new model
 
-    def init(self, rank: Optional[str] = None, config: Optional[Dict] = None):
+    def init(self, rank: str | None = None, config: dict | None = None):
         """Initializes NVFlare Client API environment.
 
         Args:
@@ -113,7 +113,7 @@ class InProcessClientAPI(APISpec):
         if gc_rounds > 0:
             self.logger.info(f"Memory management enabled: cleanup every {gc_rounds} round(s)")
 
-    def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
+    def receive(self, timeout: float | None = None) -> FLModel | None:
         result = self.__receive()
         self.receive_called = True
         if result is not None:
@@ -122,7 +122,7 @@ class InProcessClientAPI(APISpec):
             log_rss(f"CA s={self._mem_site} r={result.current_round} recv")
         return result
 
-    def __receive(self) -> Optional[FLModel]:
+    def __receive(self) -> FLModel | None:
         if self.fl_model:
             return self.fl_model
 
@@ -172,10 +172,10 @@ class InProcessClientAPI(APISpec):
         self._maybe_cleanup_memory()
         log_rss(f"CA s={getattr(self, '_mem_site', '?')} r={getattr(self, '_mem_round', None)} send")
 
-    def system_info(self) -> Dict:
+    def system_info(self) -> dict:
         return self.sys_info
 
-    def get_config(self) -> Dict:
+    def get_config(self) -> dict:
         return self.client_config.get_config()
 
     def get_job_id(self) -> str:

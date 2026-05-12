@@ -36,32 +36,32 @@ class _FedAvgValidator(BaseModel):
 
     name: str
     model: Any
-    initial_ckpt: Optional[str] = None
+    initial_ckpt: str | None = None
     min_clients: int
     num_rounds: int
     train_script: str
     train_args: str
     # Legacy parameters for backward compatibility (not used by new FedAvg)
-    aggregator: Optional[Aggregator] = None
-    aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS
+    aggregator: Aggregator | None = None
+    aggregator_data_kind: DataKind | None = DataKind.WEIGHTS
     # Core parameters
     launch_external_process: bool
     command: str
     framework: FrameworkType
     server_expected_format: ExchangeFormat
     params_transfer_type: TransferType
-    model_persistor: Optional[ModelPersistor] = None
-    per_site_config: Optional[Dict[str, Dict]] = None
+    model_persistor: ModelPersistor | None = None
+    per_site_config: dict[str, dict] | None = None
     launch_once: bool = True
     shutdown_timeout: float = 0.0
     key_metric: str = "accuracy"
     # New FedAvg features
-    stop_cond: Optional[str] = None
-    patience: Optional[int] = None
+    stop_cond: str | None = None
+    patience: int | None = None
     best_model_filename: str = DefaultCheckpointFileName.BEST_GLOBAL_MODEL
-    save_filename: Optional[str] = None
-    exclude_vars: Optional[str] = None
-    aggregation_weights: Optional[Dict[str, float]] = None
+    save_filename: str | None = None
+    exclude_vars: str | None = None
+    aggregation_weights: dict[str, float] | None = None
     # Memory management
     server_memory_gc_rounds: int = 0
     enable_tensor_disk_offload: bool = False
@@ -163,33 +163,33 @@ class FedAvgRecipe(Recipe):
         self,
         *,
         name: str = "fedavg",
-        model: Union[Any, Dict[str, Any], None] = None,
-        initial_ckpt: Optional[str] = None,
+        model: Any | dict[str, Any] | None = None,
+        initial_ckpt: str | None = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
         train_args: str = "",
         # Legacy parameters for backward compatibility
-        aggregator: Optional[Aggregator] = None,
-        aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
+        aggregator: Aggregator | None = None,
+        aggregator_data_kind: DataKind | None = DataKind.WEIGHTS,
         # Core parameters
         launch_external_process: bool = False,
         command: str = "python3 -u",
         framework: FrameworkType = FrameworkType.PYTORCH,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
-        model_persistor: Optional[ModelPersistor] = None,
-        per_site_config: Optional[Dict[str, Dict]] = None,
+        model_persistor: ModelPersistor | None = None,
+        per_site_config: dict[str, dict] | None = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
         # New FedAvg features
-        stop_cond: Optional[str] = None,
-        patience: Optional[int] = None,
-        best_model_filename: Optional[str] = None,
-        save_filename: Optional[str] = None,
-        exclude_vars: Optional[str] = None,
-        aggregation_weights: Optional[Dict[str, float]] = None,
+        stop_cond: str | None = None,
+        patience: int | None = None,
+        best_model_filename: str | None = None,
+        save_filename: str | None = None,
+        exclude_vars: str | None = None,
+        aggregation_weights: dict[str, float] | None = None,
         server_memory_gc_rounds: int = 0,
         enable_tensor_disk_offload: bool = False,
         client_memory_gc_rounds: int = 0,
@@ -407,7 +407,7 @@ class FedAvgRecipe(Recipe):
         Recipe.__init__(self, job)
 
     @staticmethod
-    def _resolve_model_filenames(best_model_filename: Optional[str], save_filename: Optional[str]) -> tuple[str, str]:
+    def _resolve_model_filenames(best_model_filename: str | None, save_filename: str | None) -> tuple[str, str]:
         if save_filename is None:
             resolved_best_model_filename = best_model_filename or DefaultCheckpointFileName.BEST_GLOBAL_MODEL
             controller_save_filename = best_model_filename or DefaultCheckpointFileName.GLOBAL_MODEL
@@ -425,7 +425,7 @@ class FedAvgRecipe(Recipe):
         return save_filename, save_filename
 
     @staticmethod
-    def _validate_per_site_config(per_site_config: Optional[Dict[str, Dict]]) -> None:
+    def _validate_per_site_config(per_site_config: dict[str, dict] | None) -> None:
         if per_site_config is None:
             return
 
@@ -441,7 +441,7 @@ class FedAvgRecipe(Recipe):
             if not isinstance(site_config, dict):
                 raise ValueError(f"per_site_config['{site_name}'] must be a dict, got {type(site_config).__name__}")
 
-    def _get_model_params(self) -> Optional[Dict]:
+    def _get_model_params(self) -> dict | None:
         """Convert model to dict of params.
 
         Base implementation handles dict and None. Framework-specific subclasses
@@ -494,7 +494,7 @@ class FedAvgRecipe(Recipe):
             )
             return None
 
-    def _setup_numpy_model_and_persistor(self, job: BaseFedJob, *, model: Any, initial_ckpt: Optional[str]) -> str:
+    def _setup_numpy_model_and_persistor(self, job: BaseFedJob, *, model: Any, initial_ckpt: str | None) -> str:
         """Configure NPModelPersistor for unified NumPy recipe usage."""
         import numpy as np
 

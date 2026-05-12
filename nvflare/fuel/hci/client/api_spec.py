@@ -21,7 +21,7 @@ from nvflare.fuel.common.ctx import SimpleContext
 from nvflare.fuel.hci.table import Table
 
 
-class CommandCtxKey(object):
+class CommandCtxKey:
 
     API = "api"
     CMD = "cmd"
@@ -117,7 +117,7 @@ class CommandContext(SimpleContext):
         return self.get_prop(CommandCtxKey.CMD_HEADERS)
 
 
-class ApiPocValue(object):
+class ApiPocValue:
     ADMIN = "admin"
 
 

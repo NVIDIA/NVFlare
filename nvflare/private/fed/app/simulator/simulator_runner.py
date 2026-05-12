@@ -459,7 +459,7 @@ class SimulatorRunner(FLComponent):
             rc_file = os.path.join(workspace, FLMetaKey.PROCESS_RC_FILE)
             if os.path.exists(rc_file):
                 try:
-                    with open(rc_file, "r") as f:
+                    with open(rc_file) as f:
                         return_code = int(f.readline())
                     os.remove(rc_file)
                     self.logger.info(f"return_code from process_rc_file: {return_code}")

@@ -22,7 +22,7 @@ from nvflare.apis.shareable import Shareable
 
 
 class ExcludeVars(DXOFilter):
-    def __init__(self, exclude_vars: Union[List[str], str, None] = None, data_kinds: List[str] = None):
+    def __init__(self, exclude_vars: list[str] | str | None = None, data_kinds: list[str] = None):
         """Exclude/Remove variables from Shareable.
 
         Args:
@@ -71,7 +71,7 @@ class ExcludeVars(DXOFilter):
             self.logger.debug("Not excluding anything")
             self.skip = True
 
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> None | DXO:
         """Called by upper layer to remove variables in weights/weight_diff dictionary.
 
         When the return code of shareable is not ReturnCode.OK, this

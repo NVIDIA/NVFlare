@@ -14,7 +14,8 @@
 import importlib
 import inspect
 import pkgutil
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
+from collections.abc import Callable
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.fuel.common.excepts import ConfigError
@@ -49,7 +50,7 @@ def instantiate_class(class_path, init_params):
 
 def get_class_path_from_config(
     config_dict: dict,
-    resolve_name: Optional[Callable[[str], Optional[str]]] = None,
+    resolve_name: Callable[[str], str | None] | None = None,
 ) -> str:
     """Resolve a component config dict to a fully qualified class path.
 
@@ -74,42 +75,42 @@ def get_class_path_from_config(
     if "path" in config_dict:
         path_spec = config_dict["path"]
         if not isinstance(path_spec, str):
-            raise ConfigError("path spec must be str but got {}.".format(type(path_spec)))
+            raise ConfigError(f"path spec must be str but got {type(path_spec)}.")
         if len(path_spec) <= 0:
             raise ConfigError("path spec must not be empty")
         parts = path_spec.split(".")
         if len(parts) < 2:
-            raise ConfigError("invalid class path '{}': missing module name".format(path_spec))
+            raise ConfigError(f"invalid class path '{path_spec}': missing module name")
         return path_spec
 
     if "class_path" in config_dict:
         path_spec = config_dict["class_path"]
         if not isinstance(path_spec, str):
-            raise ConfigError("path spec must be str but got {}.".format(type(path_spec)))
+            raise ConfigError(f"path spec must be str but got {type(path_spec)}.")
         if len(path_spec) <= 0:
             raise ConfigError("path spec must not be empty")
         parts = path_spec.split(".")
         if len(parts) < 2:
-            raise ConfigError("invalid class path '{}': missing module name".format(path_spec))
+            raise ConfigError(f"invalid class path '{path_spec}': missing module name")
         return path_spec
 
     if "name" not in config_dict:
         raise ConfigError("class name or path or class_path must be specified")
     class_name = config_dict["name"]
     if not isinstance(class_name, str):
-        raise ConfigError("class name must be str but got {}.".format(type(class_name)))
+        raise ConfigError(f"class name must be str but got {type(class_name)}.")
     if len(class_name) <= 0:
         raise ConfigError("class name must not be empty")
     if resolve_name is None:
         raise ConfigError("resolve_name required when config uses 'name'")
     module_name = resolve_name(class_name)
     if module_name is None:
-        raise ConfigError('Cannot find component class "{}"'.format(class_name))
-    return module_name + ".{}".format(class_name)
+        raise ConfigError(f'Cannot find component class "{class_name}"')
+    return module_name + f".{class_name}"
 
 
 class ModuleScanner:
-    def __init__(self, base_pkgs: List[str], module_names: List[str], exclude_libs=True):
+    def __init__(self, base_pkgs: list[str], module_names: list[str], exclude_libs=True):
         """Loads specified modules from base packages and then constructs a class to module name mapping.
 
         Args:
@@ -125,7 +126,7 @@ class ModuleScanner:
         self._class_table = create_classes_table_static()
 
     def create_classes_table(self):
-        class_table: Dict[str, list[str]] = {}
+        class_table: dict[str, list[str]] = {}
         for base in self.base_pkgs:
             package = importlib.import_module(base)
 
@@ -157,7 +158,7 @@ class ModuleScanner:
                                 pass
         return class_table
 
-    def get_module_name(self, class_name) -> Optional[str]:
+    def get_module_name(self, class_name) -> str | None:
         """Gets the name of the module that contains this class.
 
         Args:

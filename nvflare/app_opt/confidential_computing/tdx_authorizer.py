@@ -53,11 +53,11 @@ class TDXAuthorizer(CCAuthorizer):
             return ""
 
         try:
-            with open(error_file, "r") as e_f:
+            with open(error_file) as e_f:
                 if "Error:" in e_f.read():
                     return ""
                 else:
-                    with open(token_file, "r") as t_f:
+                    with open(token_file) as t_f:
                         token = t_f.readline()
                     return token
         except:
@@ -75,7 +75,7 @@ class TDXAuthorizer(CCAuthorizer):
             return False
 
         try:
-            with open(error_file, "r") as f:
+            with open(error_file) as f:
                 if "Error:" in f.read():
                     return False
         except:

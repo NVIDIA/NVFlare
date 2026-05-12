@@ -31,8 +31,8 @@ class FlareRunner:
         device_info: dict,
         user_info: dict,
         job_timeout: float,
-        in_filters: List[Filter] = None,
-        out_filters: List[Filter] = None,
+        in_filters: list[Filter] = None,
+        out_filters: list[Filter] = None,
         resolver_registry: dict = None,
     ):
         """Constructor of FlareRunner

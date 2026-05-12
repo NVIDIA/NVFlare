@@ -65,12 +65,12 @@ class OperatorConfigKey:
     OPERATORS = "operators"
 
 
-class Task(object):
+class Task:
     def __init__(
         self,
         name: str,
         data: Shareable,
-        props: Optional[Dict] = None,
+        props: dict | None = None,
         timeout: int = 0,
         before_task_sent_cb=None,
         after_task_sent_cb=None,
@@ -102,10 +102,10 @@ class Task(object):
 
         """
         if not isinstance(name, str):
-            raise TypeError("name must be str, but got {}.".format(type(name)))
+            raise TypeError(f"name must be str, but got {type(name)}.")
 
         if not isinstance(data, Shareable):
-            raise TypeError("data must be an instance of Shareable, but got {}.".format(type(data)))
+            raise TypeError(f"data must be an instance of Shareable, but got {type(data)}.")
         if operator and not isinstance(operator, dict):
             raise TypeError(f"operator must be a dict but got {type(operator)}")
 
@@ -121,30 +121,26 @@ class Task(object):
             self.props = {}
         else:
             if not isinstance(props, dict):
-                raise TypeError("props must be None or dict, but got {}.".format(type(props)))
+                raise TypeError(f"props must be None or dict, but got {type(props)}.")
             self.props = props
 
         if not isinstance(timeout, int):
-            raise TypeError("timeout must be an int, but got {}.".format(type(timeout)))
+            raise TypeError(f"timeout must be an int, but got {type(timeout)}.")
 
         if timeout < 0:
-            raise ValueError("timeout must be >= 0, but got {}.".format(timeout))
+            raise ValueError(f"timeout must be >= 0, but got {timeout}.")
 
         if before_task_sent_cb is not None and not callable(before_task_sent_cb):
-            raise TypeError(
-                "before_task_sent must be a callable function, but got {}.".format(type(before_task_sent_cb))
-            )
+            raise TypeError(f"before_task_sent must be a callable function, but got {type(before_task_sent_cb)}.")
 
         if after_task_sent_cb is not None and not callable(after_task_sent_cb):
-            raise TypeError(
-                "after_task_sent_cb must be a callable function, but got {}.".format(type(after_task_sent_cb))
-            )
+            raise TypeError(f"after_task_sent_cb must be a callable function, but got {type(after_task_sent_cb)}.")
 
         if result_received_cb is not None and not callable(result_received_cb):
-            raise TypeError("result_received must be a callable function, but got {}.".format(type(result_received_cb)))
+            raise TypeError(f"result_received must be a callable function, but got {type(result_received_cb)}.")
 
         if task_done_cb is not None and not callable(task_done_cb):
-            raise TypeError("task_done must be a callable function, but got {}.".format(type(task_done_cb)))
+            raise TypeError(f"task_done must be a callable function, but got {type(task_done_cb)}.")
 
         self.timeout = timeout
         self.before_task_sent_cb = before_task_sent_cb
@@ -163,14 +159,14 @@ class Task(object):
 
     def set_prop(self, key, value):
         if key.startswith("__"):
-            raise ValueError("Keys start with __ is reserved. Please use other key instead of {}.".format(key))
+            raise ValueError(f"Keys start with __ is reserved. Please use other key instead of {key}.")
         self.props[key] = value
 
     def get_prop(self, key):
         return self.props.get(key)
 
 
-class ClientTask(object):
+class ClientTask:
     """ClientTask records the processing information of a task for a client."""
 
     def __init__(self, client: Client, task: Task):
@@ -320,7 +316,7 @@ class ControllerSpec(ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         min_responses: int = 0,
         wait_time_after_min_received: int = 0,
     ):
@@ -364,7 +360,7 @@ class ControllerSpec(ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         min_responses: int = 0,
         wait_time_after_min_received: int = 0,
         abort_signal: Signal = None,
@@ -391,7 +387,7 @@ class ControllerSpec(ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
     ):
         """Schedule a broadcast task that never ends until timeout or explicitly cancelled.
 
@@ -412,7 +408,7 @@ class ControllerSpec(ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
     ):
@@ -444,7 +440,7 @@ class ControllerSpec(ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
         abort_signal: Signal = None,
@@ -470,7 +466,7 @@ class ControllerSpec(ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
         task_result_timeout: int = 0,
@@ -496,7 +492,7 @@ class ControllerSpec(ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order=SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
         task_result_timeout: int = 0,
@@ -518,7 +514,7 @@ class ControllerSpec(ABC):
         self,
         task: Task,
         completion_status: TaskCompletionStatus = TaskCompletionStatus.CANCELLED,
-        fl_ctx: Optional[FLContext] = None,
+        fl_ctx: FLContext | None = None,
     ):
         """Cancels the specified task.
 
@@ -535,7 +531,7 @@ class ControllerSpec(ABC):
         """
         pass
 
-    def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
+    def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: FLContext | None = None):
         """Cancels all standing tasks.
 
         Args:

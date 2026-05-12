@@ -13,7 +13,7 @@
 # limitations under the License.
 import importlib
 import inspect
-from typing import Callable
+from collections.abc import Callable
 
 
 def find_task_fn(task_fn_path) -> Callable:

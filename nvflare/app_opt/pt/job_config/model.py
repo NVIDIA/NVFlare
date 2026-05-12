@@ -26,12 +26,12 @@ from nvflare.job_config.api import validate_object_for_job
 class PTModel:
     def __init__(
         self,
-        model: Union[nn.Module, Dict[str, Any]],
-        persistor: Optional[ModelPersistor] = None,
-        locator: Optional[ModelLocator] = None,
+        model: nn.Module | dict[str, Any],
+        persistor: ModelPersistor | None = None,
+        locator: ModelLocator | None = None,
         allow_numpy_conversion: bool = True,
-        initial_ckpt: Optional[str] = None,
-        best_model_filename: Optional[str] = None,
+        initial_ckpt: str | None = None,
+        best_model_filename: str | None = None,
     ):
         """PyTorch model wrapper.
 

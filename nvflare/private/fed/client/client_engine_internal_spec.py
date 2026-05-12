@@ -55,8 +55,8 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         self,
         job_id: str,
         job_meta: dict,
-        allocated_resource: Optional[dict] = None,
-        token: Optional[str] = None,
+        allocated_resource: dict | None = None,
+        token: str | None = None,
         resource_manager=None,
     ) -> str:
         """Starts the app for the specified run.

@@ -64,7 +64,7 @@ class AddNoiseToMinMax(FLComponent, StatisticsPrivacyCleanser):
             )
 
     @staticmethod
-    def _get_min_value(local_min_value: float, noise_level: Tuple):
+    def _get_min_value(local_min_value: float, noise_level: tuple):
         r = random.uniform(noise_level[0], noise_level[1])
         if local_min_value == 0:
             min_value = -(1 - r) * 1e-5
@@ -77,7 +77,7 @@ class AddNoiseToMinMax(FLComponent, StatisticsPrivacyCleanser):
         return min_value
 
     @staticmethod
-    def _get_max_value(local_max_value: float, noise_level: Tuple):
+    def _get_max_value(local_max_value: float, noise_level: tuple):
         r = random.uniform(noise_level[0], noise_level[1])
         if local_max_value == 0:
             max_value = (1 + r) * 1e-5
@@ -98,7 +98,7 @@ class AddNoiseToMinMax(FLComponent, StatisticsPrivacyCleanser):
                 statistics[statistic][ds_name][feature_name] = noise_value
         return statistics
 
-    def apply(self, statistics: dict, client_name: str) -> Tuple[dict, bool]:
+    def apply(self, statistics: dict, client_name: str) -> tuple[dict, bool]:
         statistics_modified = False
         for statistic in statistics:
             if statistic in self.noise_generators:

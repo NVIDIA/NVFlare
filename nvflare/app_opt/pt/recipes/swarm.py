@@ -36,7 +36,7 @@ _VALID_PIPE_TYPES = ("cell_pipe", "file_pipe")
 
 
 class _SwarmValidator(BaseModel):
-    initial_ckpt: Optional[str] = None
+    initial_ckpt: str | None = None
 
     @field_validator("initial_ckpt")
     @classmethod
@@ -184,11 +184,11 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
     def __init__(
         self,
         name: str,
-        model: Union[Any, Dict[str, Any]],
+        model: Any | dict[str, Any],
         num_rounds: int,
         train_script: str,
         min_clients: int,
-        initial_ckpt: Optional[str] = None,
+        initial_ckpt: str | None = None,
         train_args: dict = None,
         do_cross_site_eval: bool = False,
         cross_site_eval_timeout: float = 300,
@@ -203,7 +203,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         max_status_report_interval: float = 300,
         round_timeout: float = 3600,
         pipe_type: str = "cell_pipe",
-        pipe_root_path: Optional[str] = None,
+        pipe_root_path: str | None = None,
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
 

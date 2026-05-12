@@ -83,7 +83,7 @@ class AuxRunner(FLComponent):
             raise ValueError("message handler function is not specified")
 
         if not callable(message_handle_func):
-            raise TypeError("specified message_handle_func {} is not callable".format(message_handle_func))
+            raise TypeError(f"specified message_handle_func {message_handle_func} is not callable")
 
         with self.reg_lock:
             if topic in self.topic_table:
@@ -108,7 +108,7 @@ class AuxRunner(FLComponent):
         """
         handler_f = self.topic_table.get(topic, None)
         if handler_f is None:
-            self.log_error(fl_ctx, "received unknown aux message topic {}".format(topic))
+            self.log_error(fl_ctx, f"received unknown aux message topic {topic}")
             return make_reply(ReturnCode.TOPIC_UNKNOWN)
 
         if not isinstance(request, Shareable):
@@ -212,7 +212,7 @@ class AuxRunner(FLComponent):
     def multicast_aux_requests(
         self,
         topic: str,
-        target_requests: List[Tuple[AuxMsgTarget, Shareable]],
+        target_requests: list[tuple[AuxMsgTarget, Shareable]],
         timeout: float,
         fl_ctx: FLContext,
         optional: bool = False,
@@ -247,7 +247,7 @@ class AuxRunner(FLComponent):
     def _send_multi_requests(
         self,
         topic: str,
-        target_requests: List[Tuple[AuxMsgTarget, Shareable]],
+        target_requests: list[tuple[AuxMsgTarget, Shareable]],
         timeout: float,
         fl_ctx: FLContext,
         optional: bool = False,
@@ -291,7 +291,7 @@ class AuxRunner(FLComponent):
 
     def send_aux_request(
         self,
-        targets: List[AuxMsgTarget],
+        targets: list[AuxMsgTarget],
         topic: str,
         request: Shareable,
         timeout: float,
@@ -343,7 +343,7 @@ class AuxRunner(FLComponent):
 
     def _send_to_cell(
         self,
-        targets: List[AuxMsgTarget],
+        targets: list[AuxMsgTarget],
         channel: str,
         topic: str,
         request: Shareable,

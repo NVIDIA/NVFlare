@@ -54,7 +54,7 @@ class ProvisionContext(dict):
     def get_project(self) -> Project:
         return self.get(CtxKey.PROJECT)
 
-    def load_templates(self, temp_files: Union[str, List[str]]):
+    def load_templates(self, temp_files: str | list[str]):
         if not temp_files:
             return
 
@@ -120,10 +120,10 @@ class ProvisionContext(dict):
     def get_workspace(self):
         return self.get(CtxKey.WORKSPACE)
 
-    def get_errors(self) -> List[str]:
+    def get_errors(self) -> list[str]:
         return list(self.get(CtxKey.ERRORS, []))
 
-    def get_warnings(self) -> List[str]:
+    def get_warnings(self) -> list[str]:
         return list(self.get(CtxKey.WARNINGS, []))
 
     def yaml_load_template_section(self, section_key: str, replacement=None):
@@ -137,7 +137,7 @@ class ProvisionContext(dict):
     def build_from_template(
         self,
         dest_dir: str,
-        temp_section: Union[str, List[str]],
+        temp_section: str | list[str],
         file_name,
         replacement=None,
         mode="t",
@@ -164,7 +164,7 @@ class ProvisionContext(dict):
 
     def build_section_from_template(
         self,
-        temp_section: Union[str, List[str]],
+        temp_section: str | list[str],
         replacement=None,
         content_modify_cb=None,
         **cb_kwargs,
@@ -226,7 +226,7 @@ class ProvisionContext(dict):
             if not _is_json_mode():
                 print(f"WARNING: {msg}", file=sys.stderr)
 
-    def get_result_location(self) -> Optional[str]:
+    def get_result_location(self) -> str | None:
         """Get the directory of the provision result.
         This should be called after the provision is done.
 

@@ -89,14 +89,14 @@ def _get_conn_sec(startup: str):
     # first try to see whether this is a client config.
     client_config = os.path.join(startup, "fed_client.json")
     if os.path.exists(client_config):
-        with open(client_config, "r") as f:
+        with open(client_config) as f:
             config = json.load(f)
             return config["client"].get("connection_security", "mtls")
 
     # try admin config
     admin_config = os.path.join(startup, "fed_admin.json")
     if os.path.exists(admin_config):
-        with open(admin_config, "r") as f:
+        with open(admin_config) as f:
             config = json.load(f)
             return config["admin"].get("connection_security", "mtls")
     return "mtls"
@@ -184,7 +184,7 @@ def check_socket_server_running(startup: str, host: str, port: int, scheme: str 
             sock.close()
 
         return True
-    except (socket.timeout, socket.error, ssl.SSLError, OSError, ConnectionRefusedError):
+    except (TimeoutError, OSError, ssl.SSLError, ConnectionRefusedError):
         # Connection failed - server is not accessible
         return False
     finally:
@@ -229,7 +229,7 @@ def get_communication_scheme(package_path: str, config_name: str, default_scheme
     fed_config_file = os.path.join(startup, config_name)
     if os.path.exists(fed_config_file):
         try:
-            with open(fed_config_file, "r") as f:
+            with open(fed_config_file) as f:
                 fed_config = json.load(f)
                 server_conf = fed_config.get("servers", [{}])[0]
                 service_config = server_conf.get("service", {})

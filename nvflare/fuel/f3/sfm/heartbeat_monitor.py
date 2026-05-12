@@ -29,7 +29,7 @@ DEFAULT_SEND_STALL_CONSECUTIVE_CHECKS = 3
 
 
 class HeartbeatMonitor(Thread):
-    def __init__(self, conns: Dict[str, SfmConnection]):
+    def __init__(self, conns: dict[str, SfmConnection]):
         Thread.__init__(self, name="hb_mon", daemon=True)
         self.conns = conns
         self.stopped = Event()

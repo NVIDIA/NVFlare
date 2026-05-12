@@ -24,7 +24,7 @@ ALL_END = "\x04"  # Marks the end of a complete transmission (End of Transmissio
 MAX_BLOCK_SIZE = 1024
 
 
-class ProtoKey(object):
+class ProtoKey:
 
     TIME = "time"
     DATA = "data"
@@ -44,7 +44,7 @@ class ProtoKey(object):
     APP_DATA = "app_data"  # used by application to add additional data
 
 
-class MetaKey(object):
+class MetaKey:
 
     STATUS = "status"
     INFO = "info"
@@ -79,7 +79,7 @@ class MetaKey(object):
     SOURCE_FQCN = "source_fqcn"
 
 
-class MetaStatusValue(object):
+class MetaStatusValue:
 
     OK = "ok"
     SYNTAX_ERROR = "syntax_error"
@@ -114,7 +114,7 @@ class ReplyKeyword:
     NOT_AUTHORIZED = "not authorized"
 
 
-class InternalCommands(object):
+class InternalCommands:
 
     CERT_LOGIN = "_cert_login"
     LOGOUT = "_logout"
@@ -129,7 +129,7 @@ class InternalCommands(object):
         return command in InternalCommands.commands
 
 
-class ConfirmMethod(object):
+class ConfirmMethod:
 
     AUTH = "auth"
     YESNO = "yesno"
@@ -145,14 +145,14 @@ class StreamTopic:
     FILE = "file"
 
 
-class Buffer(object):
+class Buffer:
     def __init__(self):
         """Buffer to append to for :class:`nvflare.fuel.hci.conn.Connection`."""
         self.meta = {}
         self.data = []
         self.output = {ProtoKey.TIME: f"{format(datetime.now())}", ProtoKey.DATA: self.data, ProtoKey.META: self.meta}
 
-    def append_table(self, headers: List[str], name=None) -> Table:
+    def append_table(self, headers: list[str], name=None) -> Table:
         meta_rows = []
         if name:
             self.meta.update({name: meta_rows})

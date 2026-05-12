@@ -84,7 +84,7 @@ def main(args):
     logger = logging.getLogger()
 
     relay_config_file = workspace.get_file_path_in_startup(args.relay_config)
-    with open(relay_config_file, "rt") as f:
+    with open(relay_config_file) as f:
         relay_config = json.load(f)
 
     if not isinstance(relay_config, dict):

@@ -44,7 +44,7 @@ def _create_new_data(key, value, sender):
 
 
 class TBAnalyticsReceiver(AnalyticsReceiver):
-    def __init__(self, tb_folder="tb_events", events: Optional[List[str]] = None):
+    def __init__(self, tb_folder="tb_events", events: list[str] | None = None):
         """Receives analytics data to save to TensorBoard.
 
         Args:
@@ -82,7 +82,7 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
             f"Tensorboard records can be found in {self.root_log_dir} you can view it using `tensorboard --logdir={self.root_log_dir}`",
         )
 
-    def _convert_to_records(self, analytic_data: AnalyticsData, fl_ctx: FLContext) -> List[AnalyticsData]:
+    def _convert_to_records(self, analytic_data: AnalyticsData, fl_ctx: FLContext) -> list[AnalyticsData]:
         # break dict of stuff to smaller items to support
         # AnalyticsDataType.PARAMETER and AnalyticsDataType.PARAMETERS
         records = []

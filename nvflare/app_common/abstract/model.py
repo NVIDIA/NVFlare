@@ -17,12 +17,13 @@
 This import simply lets you call the Learnable 'Model'.
 Model Learnable is a dict that contains two items: weights and meta info
 """
+
 from nvflare.apis.dxo import DXO, DataKind
 
 from .learnable import Learnable
 
 
-class ModelLearnableKey(object):
+class ModelLearnableKey:
     WEIGHTS = "weights"
     META = "meta"
 
@@ -45,7 +46,7 @@ def validate_model_learnable(model_learnable: ModelLearnable) -> str:
         str: error text or empty string if no error
     """
     if not isinstance(model_learnable, ModelLearnable):
-        return "invalid model learnable: expect Model type but got {}".format(type(model_learnable))
+        return f"invalid model learnable: expect Model type but got {type(model_learnable)}"
 
     if ModelLearnableKey.WEIGHTS not in model_learnable:
         return "invalid model learnable: missing weights"

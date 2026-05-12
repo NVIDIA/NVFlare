@@ -39,7 +39,7 @@ class ProcessorDataConverter(DataConverter):
         self.feature_list = None
         self.num_samples = 0
 
-    def decode_gh_pairs(self, buffer: bytes, fl_ctx: FLContext) -> List[Tuple[int, int]]:
+    def decode_gh_pairs(self, buffer: bytes, fl_ctx: FLContext) -> list[tuple[int, int]]:
         decoder = DamDecoder(buffer)
         if not decoder.is_valid():
             return None
@@ -89,7 +89,7 @@ class ProcessorDataConverter(DataConverter):
         return AggregationContext(self.features, sample_groups)
 
     def encode_aggregation_result(
-        self, aggr_results: Dict[int, List[FeatureAggregationResult]], fl_ctx: FLContext
+        self, aggr_results: dict[int, list[FeatureAggregationResult]], fl_ctx: FLContext
     ) -> bytes:
         encoder = DamEncoder(DATA_SET_AGGREGATION_RESULT)
         node_list = sorted(aggr_results.keys())
@@ -103,7 +103,7 @@ class ProcessorDataConverter(DataConverter):
 
         return encoder.finish()
 
-    def decode_histograms(self, buffer: bytes, fl_ctx: FLContext) -> List[float]:
+    def decode_histograms(self, buffer: bytes, fl_ctx: FLContext) -> list[float]:
         decoder = DamDecoder(buffer)
         if not decoder.is_valid():
             return None
@@ -113,7 +113,7 @@ class ProcessorDataConverter(DataConverter):
 
         return decoder.decode_float_array()
 
-    def encode_histograms_result(self, histograms: List[float], fl_ctx: FLContext) -> bytes:
+    def encode_histograms_result(self, histograms: list[float], fl_ctx: FLContext) -> bytes:
         encoder = DamEncoder(DATA_SET_HISTOGRAMS_RESULT)
         encoder.add_float_array(histograms)
         return encoder.finish()
@@ -123,7 +123,7 @@ class ProcessorDataConverter(DataConverter):
         return cuts[feature_id + 1] - cuts[feature_id]
 
     @staticmethod
-    def slot_to_bin(cuts: [int], slot: int) -> Tuple[int, int]:
+    def slot_to_bin(cuts: [int], slot: int) -> tuple[int, int]:
 
         if slot < 0:
             return 0, -1
@@ -147,7 +147,7 @@ class ProcessorDataConverter(DataConverter):
         return value / SCALE_FACTOR
 
     @staticmethod
-    def to_float_array(result: FeatureAggregationResult) -> List[float]:
+    def to_float_array(result: FeatureAggregationResult) -> list[float]:
         float_array = []
         for g, h in result.aggregated_hist:
             float_array.append(ProcessorDataConverter.int_to_float(g))

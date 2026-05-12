@@ -76,7 +76,7 @@ def _write(path: str, content, mv_file=True):
         os.rename(tmp_path, path)
 
 
-def _write_multi(output_zip_file_name: str, content: List[str]):
+def _write_multi(output_zip_file_name: str, content: list[str]):
     with tempfile.TemporaryDirectory() as td:
         for c in content:
             if os.path.isfile(c):
@@ -247,7 +247,7 @@ class FilesystemStorage(StorageSpec):
         full_uri = self._object_path(uri)
 
         if not _object_exists(full_uri):
-            raise StorageException("object {} does not exist".format(uri))
+            raise StorageException(f"object {uri} does not exist")
 
         if replace:
             _write(os.path.join(full_uri, META), _encode_meta(meta))
@@ -256,7 +256,7 @@ class FilesystemStorage(StorageSpec):
             prev_meta.update(meta)
             _write(os.path.join(full_uri, META), _encode_meta(prev_meta))
 
-    def list_objects(self, path: str, without_tag=None) -> List[str]:
+    def list_objects(self, path: str, without_tag=None) -> list[str]:
         """List all objects in the specified path.
 
         Args:
@@ -306,11 +306,11 @@ class FilesystemStorage(StorageSpec):
         full_uri = self._object_path(uri)
 
         if not _object_exists(full_uri):
-            raise StorageException("object {} does not exist".format(uri))
+            raise StorageException(f"object {uri} does not exist")
 
         return _decode_meta(_read(os.path.join(full_uri, META)))
 
-    def list_components_of_object(self, uri: str) -> List[str]:
+    def list_components_of_object(self, uri: str) -> list[str]:
         """Gets all components of the specified object.
 
         Args:
@@ -327,7 +327,7 @@ class FilesystemStorage(StorageSpec):
         full_uri = self._object_path(uri)
 
         if not _object_exists(full_uri):
-            raise StorageException("object {} does not exist".format(uri))
+            raise StorageException(f"object {uri} does not exist")
 
         return os.listdir(full_uri)
 
@@ -352,7 +352,7 @@ class FilesystemStorage(StorageSpec):
             raise StorageException(f"{component_name} is not a valid component for storage object.")
 
         if not _object_exists(full_uri):
-            raise StorageException("object {} does not exist".format(uri))
+            raise StorageException(f"object {uri} does not exist")
 
         return _read(os.path.join(full_uri, component_name))
 
@@ -363,7 +363,7 @@ class FilesystemStorage(StorageSpec):
             raise StorageException(f"{component_name} is not a valid component for storage object.")
 
         if not _object_exists(full_uri):
-            raise StorageException("object {} does not exist".format(uri))
+            raise StorageException(f"object {uri} does not exist")
 
         if os.path.exists(download_file):
             os.remove(download_file)
@@ -373,7 +373,7 @@ class FilesystemStorage(StorageSpec):
         else:
             log.debug(f"{src} does not exist, skipping the creation of the symlink {download_file} for download.")
 
-    def get_detail(self, uri: str) -> Tuple[dict, bytes]:
+    def get_detail(self, uri: str) -> tuple[dict, bytes]:
         """Gets both data and meta of the specified object.
 
         Args:
@@ -390,7 +390,7 @@ class FilesystemStorage(StorageSpec):
         full_uri = self._object_path(uri)
 
         if not _object_exists(full_uri):
-            raise StorageException("object {} does not exist".format(uri))
+            raise StorageException(f"object {uri} does not exist")
 
         return self.get_meta(uri), self.get_data(uri)
 
@@ -408,7 +408,7 @@ class FilesystemStorage(StorageSpec):
         full_uri = self._object_path(uri)
 
         if not _object_exists(full_uri):
-            raise StorageException("object {} does not exist".format(uri))
+            raise StorageException(f"object {uri} does not exist")
 
         shutil.rmtree(full_uri)
 

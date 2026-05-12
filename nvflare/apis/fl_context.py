@@ -60,7 +60,7 @@ def to_string(mask) -> str:
         return result + "non-sticky"
 
 
-class FLContext(object):
+class FLContext:
     def __init__(self):
         """Init the FLContext.
 
@@ -78,13 +78,13 @@ class FLContext(object):
         self.props = {}
         self.logger = get_obj_logger(self)
 
-    def get_prop_keys(self) -> List[str]:
+    def get_prop_keys(self) -> list[str]:
         return list(self.props.keys())
 
     def public_key_exists(self, key) -> bool:
         return key in self.props and not is_private(self.props[key][M])
 
-    def get_all_public_props(self) -> Dict[str, Any]:
+    def get_all_public_props(self) -> dict[str, Any]:
         result = {}
         with _update_lock:
             for k, v in self.props.items():
@@ -133,7 +133,7 @@ class FLContext(object):
 
     def set_prop(self, key: str, value, private=True, sticky=True):
         if not isinstance(key, str):
-            raise ValueError("prop key must be str, but got {}".format(type(key)))
+            raise ValueError(f"prop key must be str, but got {type(key)}")
 
         with _update_lock:
             mask = make_mask(private, sticky)
@@ -297,7 +297,7 @@ class FLContext(object):
         pass
 
 
-class FLContextManager(object):
+class FLContextManager:
     """FLContextManager manages the creation and updates of FLContext objects for a run.
 
     NOTE: The engine may create a new FLContextManager object for each RUN!

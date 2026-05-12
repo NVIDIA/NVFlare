@@ -33,7 +33,7 @@ class MinCountCleanser(FLComponent, StatisticsPrivacyCleanser):
         if self.min_count < 0:
             raise ValueError(f"min_count must be positive, but {self.min_count} is provided. ")
 
-    def min_count_validate(self, client_name: str, statistics: Dict) -> Dict[str, Dict[str, bool]]:
+    def min_count_validate(self, client_name: str, statistics: dict) -> dict[str, dict[str, bool]]:
         feature_statistics_valid = {}
         if StC.STATS_COUNT in statistics:
             count_statistics = statistics[StC.STATS_COUNT]
@@ -54,7 +54,7 @@ class MinCountCleanser(FLComponent, StatisticsPrivacyCleanser):
                         )
         return feature_statistics_valid
 
-    def apply(self, statistics: dict, client_name) -> Tuple[dict, bool]:
+    def apply(self, statistics: dict, client_name) -> tuple[dict, bool]:
         self.logger.info(f"apply MinCountCheck for client {client_name}")
         validation_result = self.min_count_validate(client_name, statistics)
         statistics_keys = list(statistics.keys())

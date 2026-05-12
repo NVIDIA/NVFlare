@@ -63,11 +63,11 @@ class TcpDriver(BaseDriver):
         self.server = None
 
     @staticmethod
-    def supported_transports() -> List[str]:
+    def supported_transports() -> list[str]:
         return ["tcp", "stcp"]
 
     @staticmethod
-    def capabilities() -> Dict[str, Any]:
+    def capabilities() -> dict[str, Any]:
         return {DriverCap.SEND_HEARTBEAT.value: True, DriverCap.SUPPORT_SSL.value: True}
 
     def listen(self, connector: ConnectorInfo):

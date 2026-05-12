@@ -99,7 +99,7 @@ class SKLearnExecutor(Executor):
 
         try:
             if task_name == self.train_task:
-                (current_round, global_params) = _get_global_params(shareable, fl_ctx)
+                current_round, global_params = _get_global_params(shareable, fl_ctx)
                 if current_round > 0:
                     # first round for parameter initialization
                     # no model evaluation

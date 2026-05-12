@@ -83,7 +83,7 @@ class FedEventRunner(Widget):
 
             event_data = fl_ctx.get_prop(FLContextKey.EVENT_DATA, None)
             if not isinstance(event_data, Shareable):
-                self.log_error(fl_ctx, "bad fed event: expect data to be Shareable but got {}".format(type(event_data)))
+                self.log_error(fl_ctx, f"bad fed event: expect data to be Shareable but got {type(event_data)}")
                 return
 
             direction = event_data.get_header(FedEventHeader.DIRECTION, "out")
@@ -193,7 +193,7 @@ class ServerFedEventRunner(FedEventRunner):
 
     def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None, secure=False):
         if not isinstance(self.engine, ServerEngineSpec):
-            raise TypeError("self.engine must be ServerEngineSpec but got {}".format(type(self.engine)))
+            raise TypeError(f"self.engine must be ServerEngineSpec but got {type(self.engine)}")
         self.engine.fire_and_forget_aux_request(
             topic=self.topic, targets=targets, request=request, fl_ctx=fl_ctx, secure=secure
         )
@@ -217,5 +217,5 @@ class ClientFedEventRunner(FedEventRunner):
             return
 
         if not isinstance(self.engine, ClientEngineSpec):
-            raise TypeError("self.engine must be ClientEngineSpec but got {}".format(type(self.engine)))
+            raise TypeError(f"self.engine must be ClientEngineSpec but got {type(self.engine)}")
         self.engine.fire_and_forget_aux_request(topic=self.topic, request=request, fl_ctx=fl_ctx, secure=secure)

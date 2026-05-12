@@ -17,7 +17,7 @@ from typing import List
 from nvflare.fuel.hci.proto import ConfirmMethod
 
 
-class CommandSpec(object):
+class CommandSpec:
 
     valid_confirms = ["none", ConfirmMethod.YESNO, ConfirmMethod.AUTH]
 
@@ -62,8 +62,8 @@ class CommandSpec(object):
             assert confirm in CommandSpec.valid_confirms
 
 
-class CommandModuleSpec(object):
-    def __init__(self, name: str, cmd_specs: List[CommandSpec], conn_props: dict = None):
+class CommandModuleSpec:
+    def __init__(self, name: str, cmd_specs: list[CommandSpec], conn_props: dict = None):
         """Specification for a command module containing a list of commands in the form of CommandSpec.
 
         Args:
@@ -76,7 +76,7 @@ class CommandModuleSpec(object):
         self.conn_props = conn_props
 
 
-class CommandModule(object):
+class CommandModule:
     """Base class containing CommandModuleSpec."""
 
     def get_spec(self) -> CommandModuleSpec:
@@ -89,7 +89,7 @@ class CommandModule(object):
         pass
 
 
-class CommandEntry(object):
+class CommandEntry:
     def __init__(self, scope, name, desc, usage, handler, authz_func, visible, confirm, client_cmd):
         """Contains information about a command. This is registered in Scope within CommandRegister.
 
@@ -114,10 +114,10 @@ class CommandEntry(object):
         self.client_cmd = client_cmd
 
     def full_command_name(self) -> str:
-        return "{}.{}".format(self.scope.name, self.name)
+        return f"{self.scope.name}.{self.name}"
 
 
-class _Scope(object):
+class _Scope:
     def __init__(self, name: str):
         """A container grouping CommandEntry objects inside CommandRegister.
 
@@ -135,7 +135,7 @@ class _Scope(object):
         )
 
 
-class CommandRegister(object):
+class CommandRegister:
     def __init__(self, app_ctx):
         """Object containing the commands in scopes once they have been registered.
 

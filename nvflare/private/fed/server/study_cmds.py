@@ -140,14 +140,14 @@ class StudyCommandModule(CommandModule, CommandUtil):
             ],
         )
 
-    def authorize_study_admin(self, conn: Connection, args: List[str]):
+    def authorize_study_admin(self, conn: Connection, args: list[str]):
         role = conn.get_prop(ConnProps.USER_ROLE, "")
         if role in {"project_admin", "org_admin"}:
             return PreAuthzReturnCode.OK
         conn.append_error(f"NOT_AUTHORIZED for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))
         return PreAuthzReturnCode.ERROR
 
-    def authorize_list_studies(self, conn: Connection, args: List[str]):
+    def authorize_list_studies(self, conn: Connection, args: list[str]):
         role = conn.get_prop(ConnProps.USER_ROLE, "")
         # This only authorizes invoking the list command. cmd_list_studies still
         # filters each returned study by caller role, org, and explicit user mapping.
@@ -172,7 +172,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
         )
 
     @staticmethod
-    def _parse_sites(sites_arg: str) -> List[str]:
+    def _parse_sites(sites_arg: str) -> list[str]:
         if sites_arg is None:
             raise _InvalidArgsError("--sites is required")
         sites = []
@@ -188,7 +188,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
         return sites
 
     @staticmethod
-    def _parse_site_orgs(site_org_args: List[str]) -> Dict[str, List[str]]:
+    def _parse_site_orgs(site_org_args: list[str]) -> dict[str, list[str]]:
         if not site_org_args:
             raise _InvalidArgsError("--site-org is required")
         result = {}
@@ -218,7 +218,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
         if invalid or study == "default":
             raise _InvalidStudyNameError(f"invalid study name '{study}'")
 
-    def _validate_site_names(self, sites: List[str]):
+    def _validate_site_names(self, sites: list[str]):
         if not sites:
             raise _InvalidSiteError("sites are required")
         for site in sites:
@@ -226,7 +226,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
             if invalid:
                 raise _InvalidSiteError(f"invalid site '{site}'")
 
-    def _validate_site_orgs(self, site_orgs: Dict[str, List[str]]):
+    def _validate_site_orgs(self, site_orgs: dict[str, list[str]]):
         for org, sites in site_orgs.items():
             invalid, _ = name_check(org, "org")
             if invalid:
@@ -254,7 +254,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
     def _load_registry_config(path: str) -> dict:
         if not os.path.exists(path):
             return {"format_version": StudyRegistry.FORMAT_VERSION, "studies": {}}
-        with open(path, "rt") as f:
+        with open(path) as f:
             return json.load(f)
 
     @staticmethod
@@ -283,7 +283,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
         return conn.get_prop(ConnProps.USER_ORG, "")
 
     @staticmethod
-    def _validate_sites_for_org(engine: ServerEngine, sites: List[str], expected_org: str) -> List[str]:
+    def _validate_sites_for_org(engine: ServerEngine, sites: list[str], expected_org: str) -> list[str]:
         """Returns sites that are unknown to the server or whose cert org does not match expected_org."""
         if not expected_org:
             return list(sites)
@@ -327,7 +327,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
             item["reason"] = reason or f"user '{self._caller_name(conn)}' is not authorized for 'submit_job'"
         return item
 
-    def _can_submit_job(self, conn: Connection) -> Tuple[bool, str]:
+    def _can_submit_job(self, conn: Connection) -> tuple[bool, str]:
         user = Person(
             name=self._caller_name(conn),
             org=self._caller_org(conn),
@@ -345,7 +345,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
         }
 
     @staticmethod
-    def _normalize_admins(study_def: dict) -> List[str]:
+    def _normalize_admins(study_def: dict) -> list[str]:
         admins = study_def.setdefault("admins", [])
         if admins is None:
             admins = []
@@ -355,7 +355,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
         raise ValueError("study admins must be a list")
 
     @staticmethod
-    def _normalize_site_orgs(study_def: dict) -> Dict[str, List[str]]:
+    def _normalize_site_orgs(study_def: dict) -> dict[str, list[str]]:
         site_orgs = study_def.setdefault("site_orgs", {})
         if site_orgs is None:
             site_orgs = {}
@@ -364,7 +364,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
             raise ValueError("study site_orgs must be a mapping")
         return site_orgs
 
-    def _requested_site_orgs(self, conn: Connection, parsed) -> Dict[str, List[str]]:
+    def _requested_site_orgs(self, conn: Connection, parsed) -> dict[str, list[str]]:
         caller_role = self._caller_role(conn)
         has_sites = bool(getattr(parsed, "sites", None))
         has_site_org = bool(getattr(parsed, "site_orgs", []))
@@ -446,7 +446,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
             hint="Verify the study name. If the study exists and you expect access, contact a project_admin.",
         )
 
-    def cmd_register_study(self, conn: Connection, args: List[str]):
+    def cmd_register_study(self, conn: Connection, args: list[str]):
         parser = _study_parser(AdminCommandNames.REGISTER_STUDY, include_sites=True, include_site_org=True)
         try:
             parsed = parser.parse_args(args[1:])
@@ -504,7 +504,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
 
         self._with_mutation(conn, _mutate)
 
-    def cmd_add_study_site(self, conn: Connection, args: List[str]):
+    def cmd_add_study_site(self, conn: Connection, args: list[str]):
         parser = _study_parser(AdminCommandNames.ADD_STUDY_SITE, include_sites=True, include_site_org=True)
         try:
             parsed = parser.parse_args(args[1:])
@@ -555,7 +555,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
 
         self._with_mutation(conn, _mutate)
 
-    def cmd_remove_study_site(self, conn: Connection, args: List[str]):
+    def cmd_remove_study_site(self, conn: Connection, args: list[str]):
         parser = _study_parser(AdminCommandNames.REMOVE_STUDY_SITE, include_sites=True, include_site_org=True)
         try:
             parsed = parser.parse_args(args[1:])
@@ -606,7 +606,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
 
         self._with_mutation(conn, _mutate)
 
-    def cmd_remove_study(self, conn: Connection, args: List[str]):
+    def cmd_remove_study(self, conn: Connection, args: list[str]):
         parser = _study_parser(AdminCommandNames.REMOVE_STUDY)
         try:
             parsed = parser.parse_args(args[1:])
@@ -644,7 +644,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
 
         self._with_mutation(conn, _mutate)
 
-    def cmd_list_studies(self, conn: Connection, args: List[str]):
+    def cmd_list_studies(self, conn: Connection, args: list[str]):
         if len(args) != 1:
             self._error(conn, "INVALID_ARGS", "list_studies does not accept arguments", exit_code=4)
             return
@@ -665,7 +665,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
             },
         )
 
-    def cmd_show_study(self, conn: Connection, args: List[str]):
+    def cmd_show_study(self, conn: Connection, args: list[str]):
         parser = _study_parser(AdminCommandNames.SHOW_STUDY)
         try:
             parsed = parser.parse_args(args[1:])
@@ -680,7 +680,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
             return
         self._reply(conn, self._study_payload(parsed.study, study_def))
 
-    def cmd_add_study_user(self, conn: Connection, args: List[str]):
+    def cmd_add_study_user(self, conn: Connection, args: list[str]):
         parser = _study_parser(AdminCommandNames.ADD_STUDY_USER, include_user=True)
         try:
             parsed = parser.parse_args(args[1:])
@@ -711,7 +711,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
 
         self._with_mutation(conn, _mutate)
 
-    def cmd_remove_study_user(self, conn: Connection, args: List[str]):
+    def cmd_remove_study_user(self, conn: Connection, args: list[str]):
         parser = _study_parser(AdminCommandNames.REMOVE_STUDY_USER, include_user=True)
         try:
             parsed = parser.parse_args(args[1:])

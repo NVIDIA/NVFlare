@@ -271,7 +271,7 @@ class ScatterAndGatherForEdge(Controller):
             collector = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR, None)
             if collector:
                 if not isinstance(collector, GroupInfoCollector):
-                    raise TypeError("collector must be GroupInfoCollector but got {}".format(type(collector)))
+                    raise TypeError(f"collector must be GroupInfoCollector but got {type(collector)}")
 
                 collector.add_info(
                     group_name=self._name,

@@ -21,7 +21,7 @@ from typing import Optional
 from zipfile import ZipFile
 
 
-def print_zip_tree(zip_path: Path, exclude_patterns: Optional[str] = None):
+def print_zip_tree(zip_path: Path, exclude_patterns: str | None = None):
     """Print zip contents in a tree structure using system tree command.
 
     Args:
@@ -43,7 +43,7 @@ def print_zip_tree(zip_path: Path, exclude_patterns: Optional[str] = None):
         print_tree(temp_path, exclude_patterns)
 
 
-def print_tree(temp_path: Path, exclude_patterns: Optional[str] = None):
+def print_tree(temp_path: Path, exclude_patterns: str | None = None):
     """Print zip contents in a tree structure using system tree command.
 
     Args:

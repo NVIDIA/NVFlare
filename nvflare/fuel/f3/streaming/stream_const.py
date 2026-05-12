@@ -19,7 +19,7 @@ STREAM_ACK_TOPIC = STREAM_PREFIX + "ACK"
 STREAM_CERT_TOPIC = STREAM_PREFIX + "CERT"
 
 # End of Stream indicator
-EOS = bytes()
+EOS = b""
 
 
 class StreamDataType:

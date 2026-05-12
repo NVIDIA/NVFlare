@@ -111,9 +111,9 @@ class SubprocessLauncher(Launcher):
     def __init__(
         self,
         script: str,
-        launch_once: Optional[bool] = True,
-        clean_up_script: Optional[str] = None,
-        shutdown_timeout: Optional[float] = 0.0,
+        launch_once: bool | None = True,
+        clean_up_script: str | None = None,
+        shutdown_timeout: float | None = 0.0,
     ):
         """Initializes the SubprocessLauncher.
 

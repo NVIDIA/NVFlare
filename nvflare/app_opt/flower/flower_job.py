@@ -31,7 +31,7 @@ class FlowerJob(FedJob):
         name: str,
         flower_content: str,
         min_clients: int = 1,
-        mandatory_clients: Optional[List[str]] = None,
+        mandatory_clients: list[str] | None = None,
         database: str = "",
         superlink_ready_timeout: float = 10.0,
         configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
@@ -41,8 +41,8 @@ class FlowerJob(FedJob):
         per_msg_timeout=10.0,
         tx_timeout=100.0,
         client_shutdown_timeout=5.0,
-        extra_env: Optional[dict] = None,
-        run_config: Optional[dict] = None,
+        extra_env: dict | None = None,
+        run_config: dict | None = None,
         allow_runtime_dependency_installation: bool = False,
     ):
         """

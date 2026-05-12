@@ -36,9 +36,9 @@ class ModelAggrState:
     def __init__(self, aggregator: Aggregator, model_version: int):
         self.aggregator = aggregator
         self.model_version = model_version
-        self.devices: Dict[str, float] = {}
+        self.devices: dict[str, float] = {}
 
-    def accept(self, contribution: Shareable, devices: Dict[str, float], fl_ctx: FLContext) -> bool:
+    def accept(self, contribution: Shareable, devices: dict[str, float], fl_ctx: FLContext) -> bool:
         if not devices:
             raise ValueError("cannot accept contribution with no devices")
 
@@ -63,13 +63,13 @@ class ModelAggrState:
 
 class EdgeModelUpdater(Updater):
 
-    def __init__(self, aggr_factory_id: Union[str, AggregatorFactory], max_model_versions: int):
+    def __init__(self, aggr_factory_id: str | AggregatorFactory, max_model_versions: int):
         Updater.__init__(self)
         self.aggr_factory_id = aggr_factory_id
         self.max_model_versions = max_model_versions
         self.aggr_factory = None
-        self.aggr_states: Dict[int, ModelAggrState] = {}  # model_version => ModelAggrState
-        self.available_devices: Dict[str, Device] = {}  # device_id => Device
+        self.aggr_states: dict[int, ModelAggrState] = {}  # model_version => ModelAggrState
+        self.available_devices: dict[str, Device] = {}  # device_id => Device
         self._update_lock = threading.Lock()
         self.register_event_handler(EventType.START_RUN, self._emu_handle_start_run)
 
@@ -94,7 +94,7 @@ class EdgeModelUpdater(Updater):
         self.current_state = BaseState.from_shareable(task_data)
         return self.current_state
 
-    def prepare_update_for_parent(self, fl_ctx: FLContext) -> Optional[Shareable]:
+    def prepare_update_for_parent(self, fl_ctx: FLContext) -> Shareable | None:
         state = self.current_state
         assert isinstance(state, BaseState)
         with self._update_lock:
@@ -188,7 +188,7 @@ class EdgeModelUpdater(Updater):
         self.log_info(fl_ctx, f"updated one model V{mu.model_version} with {len(mu.devices)} devices: {accepted=}")
         return accepted
 
-    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
+    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Shareable | None):
         report = StateUpdateReport.from_shareable(update)
         with self._update_lock:
             if report.available_devices:

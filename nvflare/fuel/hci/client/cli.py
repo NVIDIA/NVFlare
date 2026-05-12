@@ -75,7 +75,7 @@ class AdminClient(cmd.Cmd, EventHandler):
     def __init__(
         self,
         admin_config: dict,
-        cmd_modules: Optional[List] = None,
+        cmd_modules: list | None = None,
         debug: bool = False,
         username: str = "",
         handlers=None,
@@ -219,7 +219,7 @@ class AdminClient(cmd.Cmd, EventHandler):
     def _show_one_command(self, cmd_name, reg, show_invisible=False):
         entries = reg.get_command_entries(cmd_name)
         if len(entries) <= 0:
-            self.write_string("Undefined command {}\n".format(cmd_name))
+            self.write_string(f"Undefined command {cmd_name}\n")
             return
 
         for e in entries:
@@ -227,12 +227,12 @@ class AdminClient(cmd.Cmd, EventHandler):
                 continue
 
             if len(e.scope.name) > 0:
-                self.write_string("Command: {}.{}".format(e.scope.name, cmd_name))
+                self.write_string(f"Command: {e.scope.name}.{cmd_name}")
             else:
-                self.write_string("Command: {}".format(cmd_name))
+                self.write_string(f"Command: {cmd_name}")
 
-            self.write_string("Description: {}".format(e.desc))
-            self.write_string("Usage: {}\n".format(e.usage))
+            self.write_string(f"Description: {e.desc}")
+            self.write_string(f"Usage: {e.usage}\n")
 
     def _show_commands(self, reg: CommandRegister):
         table = Table(["Command", "Description"])
@@ -341,10 +341,10 @@ class AdminClient(cmd.Cmd, EventHandler):
         # check client command first
         info = self.api.check_command(line)
         if info == CommandInfo.UNKNOWN:
-            self.write_string("Undefined command {}".format(cmd_name))
+            self.write_string(f"Undefined command {cmd_name}")
             return
         elif info == CommandInfo.AMBIGUOUS:
-            self.write_string("Ambiguous command {} - qualify with scope".format(cmd_name))
+            self.write_string(f"Ambiguous command {cmd_name} - qualify with scope")
             return
         elif info == CommandInfo.CONFIRM_AUTH:
             if self.user_name:
@@ -368,7 +368,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         resp = self.api.do_command(line, props=props)
         secs = time.time() - start
         usecs = int(secs * 1000000)
-        done = "Done [{} usecs] {}".format(usecs, datetime.now())
+        done = f"Done [{usecs} usecs] {datetime.now()}"
         self.print_resp(resp)
         if resp["status"] == APIStatus.ERROR_INACTIVE_SESSION:
             return True

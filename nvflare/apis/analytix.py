@@ -25,7 +25,7 @@ class LogWriterName(Enum):
     WANDB = "WEIGHTS_AND_BIASES"
 
 
-class TrackConst(object):
+class TrackConst:
     TRACKER_KEY = "tracker_key"
 
     TRACK_KEY = "track_key"
@@ -133,7 +133,7 @@ class AnalyticsData:
             AnalyticsData object
         """
         if not isinstance(dxo, DXO):
-            raise TypeError("expect dxo to be an instance of DXO, but got {}.".format(type(dxo)))
+            raise TypeError(f"expect dxo to be an instance of DXO, but got {type(dxo)}.")
 
         if len(dxo.data) == 0:
             raise ValueError(
@@ -167,22 +167,20 @@ class AnalyticsData:
         **kwargs,
     ):
         if not isinstance(key, str):
-            raise TypeError("expect tag to be an instance of str, but got {}.".format(type(key)))
+            raise TypeError(f"expect tag to be an instance of str, but got {type(key)}.")
         if not isinstance(data_type, AnalyticsDataType):
-            raise TypeError(
-                "expect data_type to be an instance of AnalyticsDataType, but got {}.".format(type(data_type))
-            )
+            raise TypeError(f"expect data_type to be an instance of AnalyticsDataType, but got {type(data_type)}.")
         if kwargs and not isinstance(kwargs, dict):
-            raise TypeError("expect kwargs to be an instance of dict, but got {}.".format(type(kwargs)))
+            raise TypeError(f"expect kwargs to be an instance of dict, but got {type(kwargs)}.")
         step = kwargs.get(TrackConst.GLOBAL_STEP_KEY, None)
         if step:
             if not isinstance(step, int):
-                raise TypeError("expect step to be an instance of int, but got {}.".format(type(step)))
+                raise TypeError(f"expect step to be an instance of int, but got {type(step)}.")
             if step < 0:
-                raise ValueError("expect step to be non-negative int, but got {}.".format(step))
+                raise ValueError(f"expect step to be non-negative int, but got {step}.")
         path = kwargs.get(TrackConst.PATH_KEY, None)
         if path and not isinstance(path, str):
-            raise TypeError("expect path to be an instance of str, but got {}.".format(type(step)))
+            raise TypeError(f"expect path to be an instance of str, but got {type(step)}.")
         if data_type in [AnalyticsDataType.SCALAR, AnalyticsDataType.METRIC] and not (
             isinstance(value, float) or isinstance(value, int)
         ):

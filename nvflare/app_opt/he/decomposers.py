@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Decomposers for HE related classes"""
+
 from typing import Any
 
 import tenseal as ts

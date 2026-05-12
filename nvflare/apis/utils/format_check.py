@@ -34,9 +34,9 @@ type_pattern_mapping = {
 def name_check(name: str, entity_type: str):
     regex_pattern = type_pattern_mapping.get(entity_type)
     if regex_pattern is None:
-        return True, "entity_type={} not defined, unable to check name={}.".format(entity_type, name)
+        return True, f"entity_type={entity_type} not defined, unable to check name={name}."
     if re.match(regex_pattern, name):
-        return False, "name={} passed on regex_pattern={} check".format(name, regex_pattern)
+        return False, f"name={name} passed on regex_pattern={regex_pattern} check"
     else:
         return True, "name={} is ill-formatted for entity_type={} based on regex_pattern={}".format(
             name, entity_type, regex_pattern
@@ -59,9 +59,7 @@ def validate_args(method):
         for name, value in bound_arguments.arguments.items():
             annotation = signature.parameters[name].annotation
             if not (annotation is inspect.Signature.empty or isinstance(value, annotation)):
-                raise TypeError(
-                    "argument '{}' of {} must be {} but got {}".format(name, method, annotation, type(value))
-                )
+                raise TypeError(f"argument '{name}' of {method} must be {annotation} but got {type(value)}")
         return method(*args, **kwargs)
 
     return wrapper

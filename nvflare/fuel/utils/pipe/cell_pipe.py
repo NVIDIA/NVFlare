@@ -429,7 +429,7 @@ class CellPipe(Pipe):
         else:
             return False
 
-    def _receive_message(self, request: CellMessage) -> Union[None, CellMessage]:
+    def _receive_message(self, request: CellMessage) -> None | CellMessage:
         # Return the pipe-level ACK as quickly as possible.
         #
         # The expensive work (FOBS decode / tensor download) has ALREADY been done
@@ -450,7 +450,7 @@ class CellPipe(Pipe):
         self.received_msgs.put_nowait(request)
         return make_reply(ReturnCode.OK)
 
-    def receive(self, timeout=None) -> Union[None, Message]:
+    def receive(self, timeout=None) -> None | Message:
         try:
             if timeout:
                 cm = self.received_msgs.get(block=True, timeout=timeout)
@@ -493,7 +493,7 @@ class CellPipe(Pipe):
             self.ci.close_pipe(self)
             self.closed = True
 
-    def export(self, export_mode: str) -> Tuple[str, dict]:
+    def export(self, export_mode: str) -> tuple[str, dict]:
         if export_mode == ExportMode.SELF:
             mode = self.mode
         else:

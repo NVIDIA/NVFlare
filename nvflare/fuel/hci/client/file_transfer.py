@@ -67,10 +67,10 @@ class FileTransferModule(CommandModule):
 
     def __init__(self, upload_dir: str, download_dir: str):
         if not os.path.isdir(upload_dir):
-            raise ValueError("upload_dir {} is not a valid dir".format(upload_dir))
+            raise ValueError(f"upload_dir {upload_dir} is not a valid dir")
 
         if not os.path.isdir(download_dir):
-            raise ValueError("download_dir {} is not a valid dir".format(download_dir))
+            raise ValueError(f"download_dir {download_dir} is not a valid dir")
 
         self.upload_dir = upload_dir
         self.download_dir = download_dir
@@ -124,7 +124,7 @@ class FileTransferModule(CommandModule):
 
         handler = self.cmd_handlers.get(server_cmd_spec.client_cmd)
         if handler is None:
-            _print_hci_message("no cmd handler found for {}".format(server_cmd_spec.client_cmd))
+            _print_hci_message(f"no cmd handler found for {server_cmd_spec.client_cmd}")
             return None
 
         return CommandModuleSpec(
@@ -149,7 +149,7 @@ class FileTransferModule(CommandModule):
         """
         cmd_entry = ctx.get_command_entry()
         if len(args) < 6 or len(args) > 7:
-            return {ProtoKey.STATUS: APIStatus.ERROR_SYNTAX, ProtoKey.DETAILS: "usage: {}".format(cmd_entry.usage)}
+            return {ProtoKey.STATUS: APIStatus.ERROR_SYNTAX, ProtoKey.DETAILS: f"usage: {cmd_entry.usage}"}
         source_fqcn = args[1]
         tx_id = args[2]
         ref_id = args[3]
@@ -199,7 +199,7 @@ class FileTransferModule(CommandModule):
     def pull_folder(self, args, ctx: CommandContext):
         cmd_entry = ctx.get_command_entry()
         if len(args) < 2:
-            return {ProtoKey.STATUS: APIStatus.ERROR_SYNTAX, ProtoKey.DETAILS: "usage: {}".format(cmd_entry.usage)}
+            return {ProtoKey.STATUS: APIStatus.ERROR_SYNTAX, ProtoKey.DETAILS: f"usage: {cmd_entry.usage}"}
         folder_name = args[1]
         destination_name = folder_name
         if len(args) > 2:
@@ -296,7 +296,7 @@ class FileTransferModule(CommandModule):
         cmd_entry = ctx.get_command_entry()
         assert isinstance(cmd_entry, CommandEntry)
         if len(args) < 2:
-            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: {}".format(cmd_entry.usage)}
+            return {"status": APIStatus.ERROR_SYNTAX, "details": f"usage: {cmd_entry.usage}"}
 
         folder_name = args[1]
         submit_args = args[2:]

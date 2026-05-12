@@ -18,7 +18,7 @@ from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 _RIGHT_BYOC = "byoc"
 
 
-class AppAuthzService(object):
+class AppAuthzService:
 
     app_validator = None
 

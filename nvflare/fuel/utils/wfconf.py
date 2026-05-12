@@ -28,7 +28,7 @@ from .dict_utils import extract_first_level_primitive, merge_dict
 from .json_scanner import JsonObjectProcessor, JsonScanner, Node
 
 
-class ConfigContext(object):
+class ConfigContext:
     def __init__(self):
         """Object containing configuration context."""
         self.app_root = ""
@@ -41,7 +41,7 @@ class _EnvUpdater(JsonObjectProcessor):
     def __init__(self, vs, element_filter=None):
         JsonObjectProcessor.__init__(self)
         if element_filter is not None and not callable(element_filter):
-            raise ValueError("element_filter must be a callable function but got {}.".format(type(element_filter)))
+            raise ValueError(f"element_filter must be a callable function but got {type(element_filter)}.")
         self.vars = copy.copy(vs)
 
         # make all os env vars available for config
@@ -178,8 +178,8 @@ class Configurator(JsonObjectProcessor):
         cmd_vars: dict,
         env_config: dict,
         wf_config_file_name: str,
-        base_pkgs: List[str],
-        module_names: List[str],
+        base_pkgs: list[str],
+        module_names: list[str],
         exclude_libs=True,
         default_vars=None,
         num_passes=1,
@@ -203,16 +203,16 @@ class Configurator(JsonObjectProcessor):
         """
         JsonObjectProcessor.__init__(self)
 
-        assert isinstance(app_root, str), "app_root must be str but got {}.".format(type(app_root))
+        assert isinstance(app_root, str), f"app_root must be str but got {type(app_root)}."
 
-        assert isinstance(num_passes, int), "num_passes must be int but got {}.".format(type(num_passes))
+        assert isinstance(num_passes, int), f"num_passes must be int but got {type(num_passes)}."
         assert num_passes > 0, "num_passes must > 0"
 
         if cmd_vars:
-            assert isinstance(cmd_vars, dict), "cmd_vars must be dict but got {}.".format(type(cmd_vars))
+            assert isinstance(cmd_vars, dict), f"cmd_vars must be dict but got {type(cmd_vars)}."
 
         if env_config:
-            assert isinstance(env_config, dict), "env_config must be dict but got {}.".format(type(env_config))
+            assert isinstance(env_config, dict), f"env_config must be dict but got {type(env_config)}."
 
         assert isinstance(wf_config_file_name, str), "wf_config_file_name must be str but got {}.".format(
             type(wf_config_file_name)
@@ -220,10 +220,10 @@ class Configurator(JsonObjectProcessor):
         assert os.path.isfile(wf_config_file_name), "wf_config_file_name {} is not a valid file".format(
             wf_config_file_name
         )
-        assert os.path.exists(wf_config_file_name), "wf_config_file_name {} does not exist".format(wf_config_file_name)
+        assert os.path.exists(wf_config_file_name), f"wf_config_file_name {wf_config_file_name} does not exist"
 
         if default_vars is not None:
-            assert isinstance(default_vars, dict), "default_vars must be dict but got {}.".format(type(default_vars))
+            assert isinstance(default_vars, dict), f"default_vars must be dict but got {type(default_vars)}."
         else:
             default_vars = {}
 
@@ -306,9 +306,9 @@ class Configurator(JsonObjectProcessor):
         try:
             self._do_configure()
         except ConfigError as e:
-            raise ConfigError("Config error in {}: {}".format(self.wf_config_file_name, secure_format_exception(e)))
+            raise ConfigError(f"Config error in {self.wf_config_file_name}: {secure_format_exception(e)}")
         except Exception as e:
-            print("Error processing config {}: {}".format(self.wf_config_file_name, secure_format_exception(e)))
+            print(f"Error processing config {self.wf_config_file_name}: {secure_format_exception(e)}")
             raise e
 
     def process_element(self, node: Node):
@@ -322,7 +322,7 @@ class Configurator(JsonObjectProcessor):
             return None
 
         if not isinstance(config_dict, dict):
-            raise ConfigError("component config must be dict but got {}.".format(type(config_dict)))
+            raise ConfigError(f"component config must be dict but got {type(config_dict)}.")
 
         if config_dict.get("disabled") is True:
             return None
@@ -380,9 +380,9 @@ def get_component_refs(component):
         raise ConfigError('component has no "path", "class_path", or "name"')
 
     if name is None or not isinstance(name, str):
-        raise ConfigError('component "{}" must be a non-null string, got {}'.format(key, type(name).__name__))
+        raise ConfigError(f'component "{key}" must be a non-null string, got {type(name).__name__}')
     if len(name) <= 0:
-        raise ConfigError('component "{}" must not be empty'.format(key))
+        raise ConfigError(f'component "{key}" must not be empty')
 
     parts = name.split("#")
     component[key] = parts[0]

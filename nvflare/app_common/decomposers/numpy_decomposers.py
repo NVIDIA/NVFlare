@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Decomposers for types from app_common and Machine Learning libraries."""
+
 import os
 from abc import ABC
 from io import BytesIO
@@ -83,7 +84,7 @@ class NumpyArrayDecomposer(ViaDownloaderDecomposer):
         secure=False,
         optional=False,
         abort_signal=None,
-    ) -> Tuple[str, dict]:
+    ) -> tuple[str, dict]:
         return download_arrays(
             from_fqcn,
             ref_id,

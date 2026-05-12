@@ -45,7 +45,7 @@ class CollectAndAssembleModelAggregator(ModelAggregator):
     def __init__(self, assembler_id: str):
         super().__init__()
         self.assembler_id = assembler_id
-        self.assembler: Optional[Assembler] = None
+        self.assembler: Assembler | None = None
 
     def accept_model(self, model: FLModel) -> None:
         """Accept one FLModel from a client.

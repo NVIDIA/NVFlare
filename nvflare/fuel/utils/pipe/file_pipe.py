@@ -294,7 +294,7 @@ class FilePipe(Pipe):
     def can_resend(self) -> bool:
         return False
 
-    def export(self, export_mode: str) -> Tuple[str, dict]:
+    def export(self, export_mode: str) -> tuple[str, dict]:
         if export_mode == ExportMode.SELF:
             mode = self.mode
         else:

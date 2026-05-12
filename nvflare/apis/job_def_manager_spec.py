@@ -24,7 +24,7 @@ class JobDefManagerSpec(FLComponent, ABC):
     """Job Definition Management API."""
 
     @abstractmethod
-    def create(self, meta: dict, uploaded_content: Union[str, bytes], fl_ctx: FLContext) -> Dict[str, Any]:
+    def create(self, meta: dict, uploaded_content: str | bytes, fl_ctx: FLContext) -> dict[str, Any]:
         """Create a new job permanently.
 
         The caller must have validated the content already and created initial meta. Receives bytes of uploaded folder,
@@ -41,7 +41,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         """
         pass
 
-    def get_job_content_hash(self, uploaded_content: Union[str, bytes]) -> str:
+    def get_job_content_hash(self, uploaded_content: str | bytes) -> str:
         """Compute the canonical content hash for uploaded job content.
 
         The hash is based on sorted real job file paths and bytes, excluding volatile
@@ -50,7 +50,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         """
         raise NotImplementedError("job content hashing is not supported by this JobDefManager")
 
-    def get_submit_record(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> Optional[dict]:
+    def get_submit_record(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> dict | None:
         """Get the persistent submit-token record for the scoped submit token."""
         raise NotImplementedError("submit-token records are not supported by this JobDefManager")
 
@@ -80,7 +80,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         """Replace the persistent submit-token record with updated metadata."""
         raise NotImplementedError("submit-token records are not supported by this JobDefManager")
 
-    def mark_submit_records_job_deleted(self, job_id: str, deleted_by, fl_ctx: FLContext) -> List[dict]:
+    def mark_submit_records_job_deleted(self, job_id: str, deleted_by, fl_ctx: FLContext) -> list[dict]:
         """Mark submit-token records that reference a deleted job.
 
         Custom job managers that do not maintain submit-token records can keep the
@@ -88,12 +88,12 @@ class JobDefManagerSpec(FLComponent, ABC):
         """
         return []
 
-    def get_job_by_submit_token(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> Optional[Job]:
+    def get_job_by_submit_token(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> Job | None:
         """Resolve a submit-token record to its referenced Job, if both exist."""
         raise NotImplementedError("submit-token records are not supported by this JobDefManager")
 
     @abstractmethod
-    def clone(self, from_jid: str, meta: dict, fl_ctx: FLContext) -> Dict[str, Any]:
+    def clone(self, from_jid: str, meta: dict, fl_ctx: FLContext) -> dict[str, Any]:
         """Create a new job by cloning an existing job.
 
         Args:
@@ -136,7 +136,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def get_content(self, meta: dict, fl_ctx: FLContext) -> Optional[bytes]:
+    def get_content(self, meta: dict, fl_ctx: FLContext) -> bytes | None:
         """Gets the entire uploaded content for a Job.
 
         Args:
@@ -174,7 +174,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def set_client_data(self, jid: str, data: Union[bytes, str], client_name: str, data_type: str, fl_ctx: FLContext):
+    def set_client_data(self, jid: str, data: bytes | str, client_name: str, data_type: str, fl_ctx: FLContext):
         """Save the provided data content for the specified job, client name and data type.
 
         Args:
@@ -188,7 +188,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def get_client_data(self, jid: str, client_name: str, data_type: str, fl_ctx: FLContext) -> Optional[bytes]:
+    def get_client_data(self, jid: str, client_name: str, data_type: str, fl_ctx: FLContext) -> bytes | None:
         """Get data content for the specified job, client name and data type.
 
         Args:
@@ -204,7 +204,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def list_components(self, jid: str, fl_ctx: FLContext) -> List[str]:
+    def list_components(self, jid: str, fl_ctx: FLContext) -> list[str]:
         """Get list of all the components for the specified job.
 
         Args:
@@ -230,7 +230,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def get_jobs_to_schedule(self, fl_ctx: FLContext) -> List[Job]:
+    def get_jobs_to_schedule(self, fl_ctx: FLContext) -> list[Job]:
         """Get job candidates for scheduling.
 
         Args:
@@ -242,7 +242,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def get_all_jobs(self, fl_ctx: FLContext) -> List[Job]:
+    def get_all_jobs(self, fl_ctx: FLContext) -> list[Job]:
         """Gets all Jobs in the system.
 
         Args:
@@ -254,7 +254,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def get_jobs_by_status(self, run_status: Union[RunStatus, List[RunStatus]], fl_ctx: FLContext) -> List[Job]:
+    def get_jobs_by_status(self, run_status: RunStatus | list[RunStatus], fl_ctx: FLContext) -> list[Job]:
         """Gets Jobs of a specified status.
 
         Args:
@@ -267,7 +267,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def get_jobs_waiting_for_review(self, reviewer_name: str, fl_ctx: FLContext) -> List[Job]:
+    def get_jobs_waiting_for_review(self, reviewer_name: str, fl_ctx: FLContext) -> list[Job]:
         """Gets Jobs waiting for review for the specified user.
 
         Args:
@@ -282,7 +282,7 @@ class JobDefManagerSpec(FLComponent, ABC):
     @abstractmethod
     def set_approval(
         self, jid: str, reviewer_name: str, approved: bool, note: str, fl_ctx: FLContext
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Sets the approval for the specified user for a certain Job.
 
         Args:
@@ -309,7 +309,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def save_workspace(self, jid: str, data: Union[bytes, str, List[str]], fl_ctx: FLContext) -> str:
+    def save_workspace(self, jid: str, data: bytes | str | list[str], fl_ctx: FLContext) -> str:
         """Save the job workspace to the job storage.
 
         Args:

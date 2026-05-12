@@ -97,7 +97,7 @@ class MetricRelay(Widget, AttributesExportable):
             return
         send_analytic_dxo(self, msg.data, self._fl_ctx, self._event_type, fire_fed_event=self._fed_event)
 
-    def export(self, export_mode: str) -> Tuple[str, dict]:
+    def export(self, export_mode: str) -> tuple[str, dict]:
         pipe_export_class, pipe_export_args = self.pipe.export(export_mode)
         config_dict = {
             ConfigKey.PIPE_CHANNEL_NAME: self.pipe_channel_name,

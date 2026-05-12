@@ -30,7 +30,7 @@ class _ScaffoldValidator(BaseModel):
 
     name: str = "scaffold"
     model: Any = None
-    initial_ckpt: Optional[str] = None
+    initial_ckpt: str | None = None
     min_clients: int
     num_rounds: int = 2
     train_script: str
@@ -115,8 +115,8 @@ class ScaffoldRecipe(Recipe):
         self,
         *,
         name: str = "scaffold",
-        model: Union[Any, dict[str, Any], None] = None,
-        initial_ckpt: Optional[str] = None,
+        model: Any | dict[str, Any] | None = None,
+        initial_ckpt: str | None = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,

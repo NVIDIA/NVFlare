@@ -41,11 +41,11 @@ class TaskExchanger(Executor):
         pipe_id: str,
         read_interval: float = 0.5,
         heartbeat_interval: float = 5.0,
-        heartbeat_timeout: Optional[float] = 60.0,
+        heartbeat_timeout: float | None = 60.0,
         resend_interval: float = 2.0,
-        max_resends: Optional[int] = None,
-        peer_read_timeout: Optional[float] = 60.0,
-        task_wait_time: Optional[float] = None,
+        max_resends: int | None = None,
+        peer_read_timeout: float | None = 60.0,
+        task_wait_time: float | None = None,
         result_poll_interval: float = 0.5,
         pipe_channel_name=PipeChannelName.TASK,
     ):
@@ -224,7 +224,7 @@ class TaskExchanger(Executor):
                 abort_signal.trigger("task pipe stopped!")
                 return make_reply(ReturnCode.TASK_ABORTED)
 
-            reply: Optional[Message] = self.pipe_handler.get_next()
+            reply: Message | None = self.pipe_handler.get_next()
             if reply is None:
                 if self.task_wait_time and time.time() - start > self.task_wait_time:
                     # timed out

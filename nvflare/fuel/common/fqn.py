@@ -25,11 +25,11 @@ class FQN:
         return fqn.strip()
 
     @staticmethod
-    def split(fqn: str) -> List[str]:
+    def split(fqn: str) -> list[str]:
         return fqn.split(FQN.SEPARATOR)
 
     @staticmethod
-    def join(path: List[str]) -> str:
+    def join(path: list[str]) -> str:
         return FQN.SEPARATOR.join(path)
 
     @staticmethod

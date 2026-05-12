@@ -38,7 +38,7 @@ SHELL_CMD_VALIDATORS = {
 
 
 class ShellCommandProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
+    def get_topics(self) -> list[str]:
         return [SysCommandTopic.SHELL]
 
     def process(self, req: Message, app_ctx) -> Message:

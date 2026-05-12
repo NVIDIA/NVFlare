@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """Flask configuration variables."""
+
 import json
 import os
 from datetime import timedelta
@@ -44,13 +45,13 @@ class PropertyManager:
         self.props = {}
         yml_file = os.path.join(web_root, "properties.yml")
         if os.path.exists(yml_file):
-            with open(yml_file, "r") as f:
+            with open(yml_file) as f:
                 self.props = yaml.safe_load(f)
             return
 
         json_file = os.path.join(web_root, "properties.json")
         if os.path.exists(json_file):
-            with open(json_file, "r") as f:
+            with open(json_file) as f:
                 self.props = json.load(f)
 
     def get_project_props(self):

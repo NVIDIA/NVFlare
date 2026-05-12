@@ -33,7 +33,7 @@ class Connection(BaseContext):
         if props:
             self.set_props(props)
 
-    def append_table(self, headers: List[str], name=None) -> Table:
+    def append_table(self, headers: list[str], name=None) -> Table:
         return self.buffer.append_table(headers, name=name)
 
     def append_string(self, data: str, meta: dict = None):
@@ -66,7 +66,7 @@ class Connection(BaseContext):
         elif isinstance(data, dict):
             self.append_dict(data, meta)
         else:
-            self.append_error("unsupported data type {}".format(type(data)))
+            self.append_error(f"unsupported data type {type(data)}")
 
     def update_meta(self, meta: dict):
         self.buffer.update_meta(meta)

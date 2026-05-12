@@ -74,20 +74,20 @@ class DockerBuilder(Builder):
         self.services.pop("__flserver__", None)
         self.services.pop("__flclient__", None)
         compose["services"] = self.services
-        with open(self.compose_file_path, "wt") as f:
+        with open(self.compose_file_path, "w") as f:
             yaml.dump(compose, f)
         env_file_path = os.path.join(ctx.get_wip_dir(), ProvFileName.ENV)
-        with open(env_file_path, "wt") as f:
+        with open(env_file_path, "w") as f:
             f.write("WORKSPACE=/workspace\n")
             f.write("PYTHON_EXECUTABLE=/usr/local/bin/python3\n")
             f.write("IMAGE_NAME=nvflare-service\n")
         compose_build_dir = os.path.join(ctx.get_wip_dir(), ProvFileName.COMPOSE_BUILD_DIR)
         os.mkdir(compose_build_dir)
-        with open(os.path.join(compose_build_dir, ProvFileName.DOCKERFILE), "wt") as f:
+        with open(os.path.join(compose_build_dir, ProvFileName.DOCKERFILE), "w") as f:
             f.write(f"FROM {self.base_image}\n")
             f.write(ctx.get_template_section(TemplateSectionKey.DOCKERFILE))
         try:
             shutil.copyfile(self.requirements_file, os.path.join(compose_build_dir, ProvFileName.REQUIREMENTS_TXT))
         except Exception:
-            f = open(os.path.join(compose_build_dir, ProvFileName.REQUIREMENTS_TXT), "wt")
+            f = open(os.path.join(compose_build_dir, ProvFileName.REQUIREMENTS_TXT), "w")
             f.close()

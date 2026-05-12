@@ -60,7 +60,7 @@ class FLComponent(StatePersistable):
         fl_ctx.set_prop(FLContextKey.EVENT_ORIGIN, self._name, private=True, sticky=False)
         engine = fl_ctx.get_engine()
         if engine is None:
-            self.log_error(fl_ctx=fl_ctx, msg="Logic Error: no engine in fl_ctx: {}".format(fl_ctx), fire_event=False)
+            self.log_error(fl_ctx=fl_ctx, msg=f"Logic Error: no engine in fl_ctx: {fl_ctx}", fire_event=False)
         else:
             engine.fire_event(event_type, fl_ctx)
 
@@ -72,13 +72,13 @@ class FLComponent(StatePersistable):
             fl_ctx (FLContext): FLContext information.
         """
         if not isinstance(event_type, str):
-            raise TypeError("expect event_type to be str, but got {}".format(type(event_type)))
+            raise TypeError(f"expect event_type to be str, but got {type(event_type)}")
 
         if not event_type:
             raise ValueError("event_type must be specified")
 
         if not isinstance(fl_ctx, FLContext):
-            raise TypeError("expect fl_ctx to be FLContext, but got {}".format(type(fl_ctx)))
+            raise TypeError(f"expect fl_ctx to be FLContext, but got {type(fl_ctx)}")
 
         fl_ctx.set_prop(FLContextKey.EVENT_SCOPE, value=EventScope.LOCAL, private=True, sticky=False)
         self._fire(event_type, fl_ctx)
@@ -108,10 +108,10 @@ class FLComponent(StatePersistable):
             targets: The targets to send to. It is only used when fire federation event from server side.
         """
         if not isinstance(fl_ctx, FLContext):
-            raise TypeError("expect fl_ctx to be FLContext, but got {}".format(type(fl_ctx)))
+            raise TypeError(f"expect fl_ctx to be FLContext, but got {type(fl_ctx)}")
 
         if not isinstance(event_data, Shareable):
-            raise TypeError("expect event_data to be Shareable, but got {}".format(type(event_data)))
+            raise TypeError(f"expect event_data to be Shareable, but got {type(event_data)}")
 
         event_data.set_header(key=FedEventHeader.TARGETS, value=targets)
         fl_ctx.set_prop(FLContextKey.EVENT_DATA, event_data, private=True, sticky=False)
@@ -243,7 +243,7 @@ class FLComponent(StatePersistable):
         self.logger.error(ex_text)
 
         if fire_event:
-            ex_msg = "{}\n{}".format(log_msg, ex_text)
+            ex_msg = f"{log_msg}\n{ex_text}"
             self._fire_log_event(
                 event_type=EventType.EXCEPTION_LOG_AVAILABLE,
                 log_tag=LogMessageTag.EXCEPTION,
@@ -260,7 +260,7 @@ class FLComponent(StatePersistable):
         fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=dxo.to_shareable(), private=True, sticky=False)
         self.fire_event(event_type=event_type, fl_ctx=fl_ctx)
 
-    def register_event_handler(self, event_types: Union[str, List[str]], handler, **kwargs):
+    def register_event_handler(self, event_types: str | list[str], handler, **kwargs):
         self._self_check()
         if isinstance(event_types, str):
             event_types = [event_types]

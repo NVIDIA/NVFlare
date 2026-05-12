@@ -54,7 +54,7 @@ class Driver(ABC):
 
     @staticmethod
     @abstractmethod
-    def supported_transports() -> List[str]:
+    def supported_transports() -> list[str]:
         """Return a list of transports supported by this driver, for example
         ["http", "https", "grpc", "grpcs"]
         """
@@ -62,7 +62,7 @@ class Driver(ABC):
 
     @staticmethod
     @abstractmethod
-    def capabilities() -> Dict[str, Any]:
+    def capabilities() -> dict[str, Any]:
         """Return a dictionary of capabilities of the driver."""
         pass
 

@@ -221,7 +221,7 @@ def _validate_participant_name(name: str, kit_type: str, *, code: str = "INVALID
     return True
 
 
-def _project_dir_under_workspace(workspace: str, project_name: str) -> Optional[str]:
+def _project_dir_under_workspace(workspace: str, project_name: str) -> str | None:
     if not _validate_safe_project_name(project_name):
         return None
     workspace_abs = os.path.abspath(workspace)
@@ -928,7 +928,7 @@ def _contains_private_key_material(content: bytes) -> bool:
     return any(marker in content for marker in _PEM_PRIVATE_KEY_MARKERS)
 
 
-def _read_zip_member_limited(zf: zipfile.ZipFile, name: str, zip_path: str) -> Optional[bytes]:
+def _read_zip_member_limited(zf: zipfile.ZipFile, name: str, zip_path: str) -> bytes | None:
     try:
         with zf.open(name) as member_file:
             content = member_file.read(_MAX_ZIP_MEMBER_SIZE + 1)
@@ -962,7 +962,7 @@ def _read_zip_member_limited(zf: zipfile.ZipFile, name: str, zip_path: str) -> O
     return content
 
 
-def _decode_zip_json(content: Optional[bytes], name: str, zip_path: str):
+def _decode_zip_json(content: bytes | None, name: str, zip_path: str):
     if content is None:
         return None
     try:
@@ -982,7 +982,7 @@ def _read_zip_json(zf: zipfile.ZipFile, name: str, zip_path: str):
     return _decode_zip_json(_read_zip_member_limited(zf, name, zip_path), name, zip_path)
 
 
-def _decode_zip_yaml(content: Optional[bytes], name: str, zip_path: str):
+def _decode_zip_yaml(content: bytes | None, name: str, zip_path: str):
     if content is None:
         return None
     data = None

@@ -123,7 +123,7 @@ def require_signed_jobs(workspace: Workspace) -> bool:
     return value
 
 
-def _check_secure_content(site_type: str) -> List[str]:
+def _check_secure_content(site_type: str) -> list[str]:
     """To check the security contents.
 
     Args:
@@ -212,7 +212,7 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
         policy_file_path = workspace.get_authorization_file_path()
 
         if policy_file_path and os.path.exists(policy_file_path):
-            with open(policy_file_path, "rt") as f:
+            with open(policy_file_path) as f:
                 policy_config = json.load(f)
             authorizer = FLAuthorizer(site_org, policy_config)
 
@@ -222,13 +222,13 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
     _, err = AuthorizationService.initialize(authorizer)
 
     if err:
-        print("AuthorizationService error: {}".format(err))
+        print(f"AuthorizationService error: {err}")
         sys.exit(1)
 
     studies_file = workspace.get_file_path_in_site_config("study_registry.json")
     registry = None
     if os.path.exists(studies_file):
-        with open(studies_file, "rt") as f:
+        with open(studies_file) as f:
             registry = StudyRegistry(json.load(f))
     StudyRegistryService.initialize(registry)
 
@@ -315,13 +315,13 @@ def get_scope_info():
         return [], "processing_error"
 
 
-def fobs_initialize(workspace: Workspace = None, job_id: Optional[str] = None):
+def fobs_initialize(workspace: Workspace = None, job_id: str | None = None):
     nvflare_fobs_initialize()
 
     custom_fobs_initialize(workspace, job_id)
 
 
-def custom_fobs_initialize(workspace: Workspace = None, job_id: Optional[str] = None):
+def custom_fobs_initialize(workspace: Workspace = None, job_id: str | None = None):
     if workspace:
         site_custom_dir = workspace.get_client_custom_dir()
         decomposer_dir = os.path.join(site_custom_dir, ConfigVarName.DECOMPOSER_MODULE)
@@ -341,7 +341,7 @@ def nvflare_fobs_initialize():
     private_decomposers.register()
 
 
-def register_ext_decomposers(decomposer_module: Union[str, List[str]]):
+def register_ext_decomposers(decomposer_module: str | list[str]):
     if decomposer_module:
         if isinstance(decomposer_module, str):
             modules = [decomposer_module]
@@ -488,7 +488,7 @@ def get_return_code(job_handle, job_id, workspace, logger):
     rc_file = os.path.join(run_dir, FLMetaKey.PROCESS_RC_FILE)
     if os.path.exists(rc_file):
         try:
-            with open(rc_file, "r") as f:
+            with open(rc_file) as f:
                 return_code = int(f.readline())
             os.remove(rc_file)
         except Exception as e:
@@ -579,7 +579,7 @@ def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
     return job_launcher[0]
 
 
-def execute_command_directly(args: List[str]) -> str:
+def execute_command_directly(args: list[str]) -> str:
     """Execute a command directly, without using shell"""
 
     result = subprocess.run(

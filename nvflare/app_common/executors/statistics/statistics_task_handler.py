@@ -40,7 +40,7 @@ class StatisticsTaskHandler(TaskHandler):
 
     def __init__(self, generator_id: str, precision: int = 4):
         super().__init__(generator_id, Statistics)
-        self.stats_generator: Optional[Statistics] = None
+        self.stats_generator: Statistics | None = None
         self.precision = precision
         fobs_registration()
 
@@ -55,13 +55,13 @@ class StatisticsTaskHandler(TaskHandler):
         statistics_result = {}
         if task_name == StC.FED_STATS_PRE_RUN:
             # initial handshake
-            target_statistics: List[StatisticConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_STATISTICS))
+            target_statistics: list[StatisticConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_STATISTICS))
             return self.pre_run(target_statistics)
 
         elif task_name == StC.FED_STATS_TASK:
             ds_features = self.get_numeric_features()
             statistics_task = shareable.get(StC.STATISTICS_TASK_KEY)
-            target_statistics: List[StatisticConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_STATISTICS))
+            target_statistics: list[StatisticConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_STATISTICS))
             if StC.STATS_FAILURE_COUNT not in target_statistics:
                 target_statistics.append(StatisticConfig(StC.STATS_FAILURE_COUNT, {}))
 
@@ -102,7 +102,7 @@ class StatisticsTaskHandler(TaskHandler):
     def _populate_result_statistics(self, statistics_result, ds_features, tm: StatisticConfig, shareable, fl_ctx, fn):
         for ds_name in ds_features:
             statistics_result[tm.name][ds_name] = {}
-            features: List[Feature] = ds_features[ds_name]
+            features: list[Feature] = ds_features[ds_name]
             for feature in features:
                 try:
                     statistics_result[tm.name][ds_name][feature.feature_name] = fn(
@@ -115,11 +115,11 @@ class StatisticsTaskHandler(TaskHandler):
                         f" and feature {feature.feature_name} with exception: {secure_format_exception(e)}",
                     )
 
-    def get_numeric_features(self) -> Dict[str, List[Feature]]:
-        ds_features: Dict[str, List[Feature]] = self.stats_generator.features()
+    def get_numeric_features(self) -> dict[str, list[Feature]]:
+        ds_features: dict[str, list[Feature]] = self.stats_generator.features()
         return filter_numeric_features(ds_features)
 
-    def pre_run(self, target_statistics: List[StatisticConfig]):
+    def pre_run(self, target_statistics: list[StatisticConfig]):
         feature_num_of_bins = None
         feature_bin_ranges = None
         target_statistic_keys = []
@@ -237,7 +237,7 @@ class StatisticsTaskHandler(TaskHandler):
             if global_min_value is not None and global_max_value is not None:
                 hist_config: dict = statistic_configs.config
                 num_of_bins: int = self.get_number_of_bins(feature_name, hist_config)
-                bin_range: List[float] = self.get_bin_range(
+                bin_range: list[float] = self.get_bin_range(
                     feature_name, global_min_value, global_max_value, hist_config
                 )
                 result = self.stats_generator.histogram(
@@ -310,7 +310,7 @@ class StatisticsTaskHandler(TaskHandler):
 
     def get_bin_range(
         self, feature_name: str, global_min_value: float, global_max_value: float, hist_config: dict
-    ) -> List[float]:
+    ) -> list[float]:
 
         global_bin_range = [global_min_value, global_max_value]
         bin_range = get_feature_bin_range(feature_name, hist_config)

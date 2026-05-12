@@ -95,7 +95,7 @@ class EdgeJob(FedJob):
     def configure_client(
         self,
         aggregator_factory: AggregatorFactory,
-        max_model_versions: Optional[int] = None,
+        max_model_versions: int | None = None,
         update_timeout=5.0,
         executor_task_name="train",
         simulation_config_file: str = None,
@@ -160,7 +160,7 @@ class EdgeJob(FedJob):
             raise ValueError(f"file {simulation_config_file} does not exist or is not a valid file")
 
         try:
-            with open(simulation_config_file, "r") as f:
+            with open(simulation_config_file) as f:
                 json.load(f)
         except Exception as ex:
             raise ValueError(f"file {simulation_config_file} is not a valid JSON file: {ex}")

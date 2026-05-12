@@ -105,7 +105,7 @@ class Downloadable(ABC):
         pass
 
     @abstractmethod
-    def produce(self, state: dict, requester: str) -> Tuple[str, Any, dict]:
+    def produce(self, state: dict, requester: str) -> tuple[str, Any, dict]:
         """Produce a small object to be sent (on object sender side).
 
         Args:
@@ -436,7 +436,7 @@ class DownloadService:
             cls._ref_table.pop(r.rid, None)
 
     @classmethod
-    def get_transaction_info(cls, transaction_id: str) -> Optional[TransactionInfo]:
+    def get_transaction_info(cls, transaction_id: str) -> TransactionInfo | None:
         tx = cls._tx_table.get(transaction_id)
         if not tx:
             return None
@@ -444,7 +444,7 @@ class DownloadService:
             return TransactionInfo(tx)
 
     @classmethod
-    def get_transaction_id(cls, ref_id: str) -> Optional[str]:
+    def get_transaction_id(cls, ref_id: str) -> str | None:
         ref = cls._ref_table.get(ref_id)
         if not ref:
             return None

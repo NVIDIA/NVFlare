@@ -18,7 +18,7 @@ from typing import Type
 
 # Those functions are extracted from class_utils module to share the code
 # with FOBS and to avoid circular imports
-def get_class_name(cls: Type) -> str:
+def get_class_name(cls: type) -> str:
     """Get canonical class path or fully qualified name. The builtins module is removed
     so common builtin class can be referenced with its normal name
 

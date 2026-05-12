@@ -177,7 +177,7 @@ class IPCAgent:
 
             time.sleep(_SHORT_SLEEP_TIME)
 
-    def _handle_bye(self, request: Message) -> Union[None, Message]:
+    def _handle_bye(self, request: Message) -> None | Message:
         peer = request.get_header(MessageHeaderKey.ORIGIN)
         self.logger.info(f"got goodbye from {peer}")
         self.is_done = True
@@ -195,12 +195,12 @@ class IPCAgent:
             self.is_connected = True
             self.logger.info(f"connected to flare site {peer}")
 
-    def _handle_heartbeat(self, request: Message) -> Union[None, Message]:
+    def _handle_heartbeat(self, request: Message) -> None | Message:
         peer = request.get_header(MessageHeaderKey.ORIGIN)
         self.logger.debug(f"got heartbeat from {peer}")
         return make_reply(ReturnCode.OK)
 
-    def _handle_abort_task(self, request: Message) -> Union[None, Message]:
+    def _handle_abort_task(self, request: Message) -> None | Message:
         peer = request.get_header(MessageHeaderKey.ORIGIN)
         task_id = request.get_header(defs.MsgHeader.TASK_ID)
         task_name = request.get_header(defs.MsgHeader.TASK_NAME)
@@ -212,7 +212,7 @@ class IPCAgent:
                 self.pending_task = None
         return make_reply(ReturnCode.OK)
 
-    def _receive_task(self, request: Message) -> Union[None, Message]:
+    def _receive_task(self, request: Message) -> None | Message:
         with self.task_lock:
             return self._do_receive_task(request)
 
@@ -239,7 +239,7 @@ class IPCAgent:
 
         return defs.Task(task_name, task_id, meta, data)
 
-    def _do_receive_task(self, request: Message) -> Union[None, Message]:
+    def _do_receive_task(self, request: Message) -> None | Message:
         peer = request.get_header(MessageHeaderKey.ORIGIN)
         task_id = request.get_header(defs.MsgHeader.TASK_ID)
         task_name = request.get_header(defs.MsgHeader.TASK_NAME)

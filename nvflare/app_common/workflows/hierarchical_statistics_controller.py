@@ -30,12 +30,12 @@ from nvflare.fuel.utils import fobs
 class HierarchicalStatisticsController(StatisticsController):
     def __init__(
         self,
-        statistic_configs: Dict[str, dict],
+        statistic_configs: dict[str, dict],
         writer_id: str,
         wait_time_after_min_received: int = 1,
         result_wait_timeout: int = 10,
         precision=4,
-        min_clients: Optional[int] = None,
+        min_clients: int | None = None,
         enable_pre_run_task: bool = True,
         hierarchy_config: str = None,
     ):
@@ -216,7 +216,7 @@ class HierarchicalStatisticsController(StatisticsController):
             except FileNotFoundError:
                 self.system_panic(f"The hierarchy config file {hierarchy_config_file_path} does not exist.", fl_ctx)
                 return False
-            except IOError as e:
+            except OSError as e:
                 self.system_panic(
                     f"An I/O error occurred while loading hierarchy config file {hierarchy_config_file_path}: {e}",
                     fl_ctx,
@@ -316,7 +316,7 @@ class HierarchicalStatisticsController(StatisticsController):
             A dict containing inputs.
         """
         inputs = Shareable()
-        target_statistics: List[StatisticConfig] = StatisticsController._get_target_statistics(
+        target_statistics: list[StatisticConfig] = StatisticsController._get_target_statistics(
             self.statistic_configs, StC.ordered_statistics[statistic_task]
         )
         for tm in target_statistics:

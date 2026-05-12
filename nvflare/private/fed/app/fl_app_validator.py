@@ -20,18 +20,18 @@ from .default_app_validator import DefaultAppValidator
 
 
 class FLAppValidator(AppValidator):
-    def __init__(self, site_type: str, custom_validators: Optional[List[AppValidator]] = None):
+    def __init__(self, site_type: str, custom_validators: list[AppValidator] | None = None):
         super().__init__()
         self.validators = [DefaultAppValidator(site_type=site_type)]
         if custom_validators:
             if not isinstance(custom_validators, list):
-                raise TypeError("custom_validators must be list, but got {}".format(type(custom_validators)))
+                raise TypeError(f"custom_validators must be list, but got {type(custom_validators)}")
             for validator in custom_validators:
                 if not isinstance(validator, AppValidator):
-                    raise TypeError("validator must be AppValidator, but got {}".format(type(validator)))
+                    raise TypeError(f"validator must be AppValidator, but got {type(validator)}")
                 self.validators.append(validator)
 
-    def validate(self, app_folder: str) -> Tuple[str, Dict]:
+    def validate(self, app_folder: str) -> tuple[str, dict]:
         final_result = {}
         for v in self.validators:
             err, result = v.validate(app_folder)

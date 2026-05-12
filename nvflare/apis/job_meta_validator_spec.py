@@ -18,7 +18,7 @@ from typing import Tuple
 
 class JobMetaValidatorSpec(ABC):
     @abstractmethod
-    def validate(self, job_name: str, job_data: bytes) -> Tuple[bool, str, dict]:
+    def validate(self, job_name: str, job_data: bytes) -> tuple[bool, str, dict]:
         """Validate job
 
         Args:

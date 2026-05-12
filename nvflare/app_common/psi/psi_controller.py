@@ -28,7 +28,7 @@ class PSIController(ErrorHandlingController):
     def __init__(self, psi_workflow_id: str):
         super().__init__()
         self.psi_workflow_id = psi_workflow_id
-        self.psi_workflow: Optional[PSIWorkflow] = None
+        self.psi_workflow: PSIWorkflow | None = None
         self.fl_ctx = None
         self.task_name = PSIConst.TASK
 

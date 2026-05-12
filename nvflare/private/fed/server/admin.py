@@ -63,7 +63,7 @@ def new_message(conn: Connection, topic, body, require_authz: bool) -> Message:
     return msg
 
 
-class _Client(object):
+class _Client:
     def __init__(self, token, name, fqcn):
         self.token = token
         self.name = name
@@ -71,15 +71,15 @@ class _Client(object):
         self.last_heard_time = None
 
 
-class _ClientReq(object):
+class _ClientReq:
     def __init__(self, client, req: Message):
         self.client = client
         self.req = req
 
 
 def check_client_replies(
-    replies: List[ClientReply], client_sites: List[str], command: str, strict: bool = False
-) -> List[str]:
+    replies: list[ClientReply], client_sites: list[str], command: str, strict: bool = False
+) -> list[str]:
     """Check client replies for errors.
 
     Args:
@@ -184,7 +184,7 @@ class FedAdminServer(AdminServer):
         auditor = AuditService.get_auditor()
         # TODO:: clean this up
         if not isinstance(auditor, Auditor):
-            raise TypeError("auditor must be Auditor but got {}".format(type(auditor)))
+            raise TypeError(f"auditor must be Auditor but got {type(auditor)}")
         audit_filter = CommandAudit(auditor)
         cmd_reg.add_filter(audit_filter)
 
@@ -203,11 +203,11 @@ class FedAdminServer(AdminServer):
 
         if cmd_modules:
             if not isinstance(cmd_modules, list):
-                raise TypeError("cmd_modules must be list but got {}".format(type(cmd_modules)))
+                raise TypeError(f"cmd_modules must be list but got {type(cmd_modules)}")
 
             for m in cmd_modules:
                 if not isinstance(m, CommandModule):
-                    raise TypeError("cmd_modules must contain CommandModule but got element of type {}".format(type(m)))
+                    raise TypeError(f"cmd_modules must contain CommandModule but got element of type {type(m)}")
                 cmd_reg.register_module(m)
 
         AdminServer.__init__(
@@ -262,9 +262,9 @@ class FedAdminServer(AdminServer):
                 result.append(token)
         return result
 
-    def send_request_to_client(self, req: Message, client_token: str, timeout_secs=2.0) -> Optional[ClientReply]:
+    def send_request_to_client(self, req: Message, client_token: str, timeout_secs=2.0) -> ClientReply | None:
         if not isinstance(req, Message):
-            raise TypeError("request must be Message but got {}".format(type(req)))
+            raise TypeError(f"request must be Message but got {type(req)}")
         reqs = {client_token: req}
         with self.sai.new_context() as fl_ctx:
             replies = self.send_requests(reqs, fl_ctx, timeout_secs=timeout_secs)

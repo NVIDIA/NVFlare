@@ -95,7 +95,7 @@ class ScatterAndGather(Controller):
 
         # Check arguments
         if not isinstance(min_clients, int):
-            raise TypeError("min_clients must be int but got {}".format(type(min_clients)))
+            raise TypeError(f"min_clients must be int but got {type(min_clients)}")
         elif min_clients <= 0:
             raise ValueError("min_clients must be greater than 0.")
 
@@ -108,13 +108,13 @@ class ScatterAndGather(Controller):
         check_non_negative_int("memory_gc_rounds", memory_gc_rounds)
 
         if not isinstance(aggregator_id, str):
-            raise TypeError("aggregator_id must be a string but got {}".format(type(aggregator_id)))
+            raise TypeError(f"aggregator_id must be a string but got {type(aggregator_id)}")
         if not isinstance(persistor_id, str):
-            raise TypeError("persistor_id must be a string but got {}".format(type(persistor_id)))
+            raise TypeError(f"persistor_id must be a string but got {type(persistor_id)}")
         if not isinstance(shareable_generator_id, str):
-            raise TypeError("shareable_generator_id must be a string but got {}".format(type(shareable_generator_id)))
+            raise TypeError(f"shareable_generator_id must be a string but got {type(shareable_generator_id)}")
         if not isinstance(train_task_name, str):
-            raise TypeError("train_task_name must be a string but got {}".format(type(train_task_name)))
+            raise TypeError(f"train_task_name must be a string but got {type(train_task_name)}")
 
         if not isinstance(task_check_period, (int, float)):
             raise TypeError(f"task_check_period must be an int or float but got {type(task_check_period)}")
@@ -337,7 +337,7 @@ class ScatterAndGather(Controller):
             collector = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR, None)
             if collector:
                 if not isinstance(collector, GroupInfoCollector):
-                    raise TypeError("collector must be GroupInfoCollector but got {}".format(type(collector)))
+                    raise TypeError(f"collector must be GroupInfoCollector but got {type(collector)}")
 
                 collector.add_info(
                     group_name=self._name,

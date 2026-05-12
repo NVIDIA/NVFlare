@@ -127,13 +127,13 @@ class ClientConfig:
 
     """
 
-    def __init__(self, config: Optional[Dict] = None):
+    def __init__(self, config: dict | None = None):
         if config is None:
             config = {}
         self.config = config
         self.logger = get_obj_logger(self)
 
-    def get_config(self) -> Dict:
+    def get_config(self) -> dict:
         return self.config
 
     def get_pipe_channel_name(self, section: str) -> str:

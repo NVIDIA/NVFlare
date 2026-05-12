@@ -56,7 +56,7 @@ def _consume_recipe_args() -> tuple:
 _RECIPE_EXPORT, _RECIPE_EXPORT_DIR = _consume_recipe_args()
 
 
-def _peek_recipe_args(argv: Optional[List[str]] = None) -> tuple:
+def _peek_recipe_args(argv: list[str] | None = None) -> tuple:
     """Return the export flags consumed at import time (argv argument is ignored)."""
     return _RECIPE_EXPORT, _RECIPE_EXPORT_DIR
 
@@ -70,7 +70,7 @@ from nvflare.job_config.defs import FilterType
 
 class ExecEnv(ABC):
 
-    def __init__(self, extra: Optional[dict] = None):
+    def __init__(self, extra: dict | None = None):
         """Constructor of ExecEnv
 
         Args:
@@ -107,7 +107,7 @@ class ExecEnv(ABC):
         pass
 
     @abstractmethod
-    def get_job_status(self, job_id: str) -> Optional[str]:
+    def get_job_status(self, job_id: str) -> str | None:
         """Get the status of a job.
 
         Args:
@@ -128,7 +128,7 @@ class ExecEnv(ABC):
         pass
 
     @abstractmethod
-    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
+    def get_job_result(self, job_id: str, timeout: float = 0.0) -> str | None:
         """Get the result workspace of a job.
 
         Args:
@@ -173,7 +173,7 @@ class Recipe(ABC):
         """
         pass
 
-    def _snapshot_additional_params(self) -> Dict[str, Dict]:
+    def _snapshot_additional_params(self) -> dict[str, dict]:
         snapshot = {}
         deploy_map = getattr(self.job, "_deploy_map", {})
         for target, app in deploy_map.items():
@@ -185,7 +185,7 @@ class Recipe(ABC):
                 snapshot[target] = dict(params)
         return snapshot
 
-    def _restore_additional_params(self, snapshot: Dict[str, Dict]) -> None:
+    def _restore_additional_params(self, snapshot: dict[str, dict]) -> None:
         deploy_map = getattr(self.job, "_deploy_map", {})
         for target, app in deploy_map.items():
             app_config = getattr(app, "app_config", None)
@@ -197,7 +197,7 @@ class Recipe(ABC):
                 params.clear()
                 params.update(original)
 
-    def _replace_additional_params_for_targets(self, targets: List[str], new_params: dict) -> None:
+    def _replace_additional_params_for_targets(self, targets: list[str], new_params: dict) -> None:
         deploy_map = getattr(self.job, "_deploy_map", {})
         for target in targets:
             app = deploy_map.get(target)
@@ -212,9 +212,7 @@ class Recipe(ABC):
                 params.update(new_params)
 
     @contextmanager
-    def _temporary_exec_params(
-        self, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None
-    ):
+    def _temporary_exec_params(self, server_exec_params: dict | None = None, client_exec_params: dict | None = None):
         """Temporarily override per-target additional_params during execute/export.
 
         Semantics:
@@ -248,7 +246,7 @@ class Recipe(ABC):
             if params_snapshot is not None:
                 self._restore_additional_params(params_snapshot)
 
-    def _add_to_client_apps(self, obj, clients: Optional[List[str]] = None, **kwargs):
+    def _add_to_client_apps(self, obj, clients: list[str] | None = None, **kwargs):
         """Add an object to client apps, preserving existing per-site structure.
 
         Args:
@@ -278,9 +276,7 @@ class Recipe(ABC):
             for client in clients:
                 self.job.to(obj, client, **kwargs)
 
-    def add_client_input_filter(
-        self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
-    ):
+    def add_client_input_filter(self, filter: Filter, tasks: list[str] | None = None, clients: list[str] | None = None):
         """Add a filter to clients for incoming tasks from the server.
 
         Args:
@@ -294,7 +290,7 @@ class Recipe(ABC):
         self._add_to_client_apps(filter, clients=clients, filter_type=FilterType.TASK_DATA, tasks=tasks)
 
     def add_client_output_filter(
-        self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
+        self, filter: Filter, tasks: list[str] | None = None, clients: list[str] | None = None
     ):
         """Add a filter to clients for outgoing result to server.
 
@@ -308,7 +304,7 @@ class Recipe(ABC):
         """
         self._add_to_client_apps(filter, clients=clients, filter_type=FilterType.TASK_RESULT, tasks=tasks)
 
-    def add_client_config(self, config: Dict, clients: Optional[List[str]] = None):
+    def add_client_config(self, config: dict, clients: list[str] | None = None):
         """Add top-level configuration parameters to config_fed_client.json.
 
         Args:
@@ -323,7 +319,7 @@ class Recipe(ABC):
 
         self._add_to_client_apps(config, clients=clients)
 
-    def add_client_file(self, file_path: str, clients: Optional[List[str]] = None):
+    def add_client_file(self, file_path: str, clients: list[str] | None = None):
         """Add a file or directory to client apps.
 
         The file will be added to the client's custom directory and bundled with the job.
@@ -348,7 +344,7 @@ class Recipe(ABC):
 
         self._add_to_client_apps(file_path, clients=clients)
 
-    def add_server_output_filter(self, filter: Filter, tasks: Optional[List[str]] = None):
+    def add_server_output_filter(self, filter: Filter, tasks: list[str] | None = None):
         """Add a filter to the server for outgoing tasks to clients.
 
         Args:
@@ -360,7 +356,7 @@ class Recipe(ABC):
         """
         self.job.to_server(filter, filter_type=FilterType.TASK_DATA, tasks=tasks)
 
-    def add_server_input_filter(self, filter: Filter, tasks: Optional[List[str]] = None):
+    def add_server_input_filter(self, filter: Filter, tasks: list[str] | None = None):
         """Add a filter to server for incoming task result from clients. .
 
         Args:
@@ -372,7 +368,7 @@ class Recipe(ABC):
         """
         self.job.to_server(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
 
-    def add_server_config(self, config: Dict):
+    def add_server_config(self, config: dict):
         """Add top-level configuration parameters to config_fed_server.json.
 
         Args:
@@ -446,7 +442,7 @@ class Recipe(ABC):
             self._add_to_client_apps(JobLogStreamer(log_file_name=name))
         self.job.to_server(JobLogReceiver())
 
-    def add_decomposers(self, decomposers: List[Union[str, Decomposer]]):
+    def add_decomposers(self, decomposers: list[str | Decomposer]):
         """Add decomposers to the job
 
         Args:
@@ -474,9 +470,9 @@ class Recipe(ABC):
     def export(
         self,
         job_dir: str,
-        server_exec_params: Optional[dict] = None,
-        client_exec_params: Optional[dict] = None,
-        env: Optional[ExecEnv] = None,
+        server_exec_params: dict | None = None,
+        client_exec_params: dict | None = None,
+        env: ExecEnv | None = None,
     ):
         """Export the recipe to a job definition.
 
@@ -495,7 +491,7 @@ class Recipe(ABC):
             self.job.export_job(job_dir)
 
     def run(
-        self, env: ExecEnv, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None
+        self, env: ExecEnv, server_exec_params: dict | None = None, client_exec_params: dict | None = None
     ) -> "Run":
         """Run the recipe in a specified execution environment.
 
@@ -517,8 +513,8 @@ class Recipe(ABC):
     def execute(
         self,
         env: ExecEnv,
-        server_exec_params: Optional[dict] = None,
-        client_exec_params: Optional[dict] = None,
+        server_exec_params: dict | None = None,
+        client_exec_params: dict | None = None,
     ) -> Optional["Run"]:
         """Execute or export the recipe based on command-line flags.
 

@@ -59,7 +59,7 @@ class XGBDataLoader(ABC):
         return self._data_split_mode
 
     @abstractmethod
-    def load_data(self) -> Tuple[xgb.DMatrix, xgb.DMatrix]:
+    def load_data(self) -> tuple[xgb.DMatrix, xgb.DMatrix]:
         """Loads data for xgboost.
 
         Returns:

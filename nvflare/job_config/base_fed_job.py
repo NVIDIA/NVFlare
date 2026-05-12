@@ -37,12 +37,12 @@ class BaseFedJob(FedJob):
         self,
         name: str = "fed_job",
         min_clients: int = 1,
-        mandatory_clients: Optional[List[str]] = None,
+        mandatory_clients: list[str] | None = None,
         key_metric: str = "accuracy",
-        validation_json_generator: Optional[ValidationJsonGenerator] = None,
-        model_selector: Optional[FLComponent] = None,
-        convert_to_fed_event: Optional[ConvertToFedEvent] = None,
-        analytics_receiver: Optional[AnalyticsReceiver] = None,
+        validation_json_generator: ValidationJsonGenerator | None = None,
+        model_selector: FLComponent | None = None,
+        convert_to_fed_event: ConvertToFedEvent | None = None,
+        analytics_receiver: AnalyticsReceiver | None = None,
     ):
         """Unified BaseFedJob for PyTorch, TensorFlow, and Scikit-learn.
 

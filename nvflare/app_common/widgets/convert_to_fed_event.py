@@ -23,7 +23,7 @@ FED_EVENT_PREFIX = "fed."
 
 
 class ConvertToFedEvent(Widget):
-    def __init__(self, events_to_convert: List[str], fed_event_prefix=FED_EVENT_PREFIX):
+    def __init__(self, events_to_convert: list[str], fed_event_prefix=FED_EVENT_PREFIX):
         """Converts local event to federated events.
 
         Args:

@@ -28,11 +28,11 @@ class TaskRegistry:
     - Each rank maintains its own task state
     """
 
-    def __init__(self, config: ClientConfig, rank: Optional[str] = None, flare_agent: Optional[FlareAgent] = None):
+    def __init__(self, config: ClientConfig, rank: str | None = None, flare_agent: FlareAgent | None = None):
         self.flare_agent = flare_agent
         self.config = config
 
-        self.received_task: Optional[Task] = None
+        self.received_task: Task | None = None
         self.task_name: str = ""
         self.cache_loaded = False
         self.sys_info = {}
@@ -48,7 +48,7 @@ class TaskRegistry:
         """Whether this is the rank 0 process."""
         return self.rank is None or self.rank == "0"
 
-    def _receive(self, timeout: Optional[float] = None) -> Task:
+    def _receive(self, timeout: float | None = None) -> Task:
         """Receives a task using flare agent.
 
         This is only called on rank0.
@@ -71,7 +71,7 @@ class TaskRegistry:
         self.task_name = task.task_name
         self.cache_loaded = True
 
-    def get_task(self, timeout: Optional[float] = None) -> Optional[Task]:
+    def get_task(self, timeout: float | None = None) -> Task | None:
         """Gets the cached received task.
 
         Args:
@@ -86,7 +86,7 @@ class TaskRegistry:
             self._set_task(task)
         return self.received_task
 
-    def get_sys_info(self) -> Dict:
+    def get_sys_info(self) -> dict:
         """Gets NVFlare system information.
 
         Returns:

@@ -30,7 +30,7 @@ class _SVMValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     kernel: Literal["linear", "poly", "rbf", "sigmoid"]
-    model_path: Optional[str] = None
+    model_path: str | None = None
 
     @field_validator("model_path")
     @classmethod
@@ -130,12 +130,12 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         name: str = "svm_fedavg",
         min_clients: int,
         kernel: Literal["linear", "poly", "rbf", "sigmoid"] = "rbf",
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
         train_script: str,
         train_args: str = "",
         launch_external_process: bool = False,
         command: str = "python3 -u",
-        per_site_config: Optional[dict[str, dict]] = None,
+        per_site_config: dict[str, dict] | None = None,
         key_metric: str = "AUC",  # Matches client's metric key
     ):
         v = _SVMValidator(kernel=kernel, model_path=model_path)

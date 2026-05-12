@@ -13,7 +13,8 @@
 # limitations under the License.
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, List
+from typing import Any, List
+from collections.abc import Callable
 
 from nvflare.fuel.data_event.pub_sub import EventPubSub
 
@@ -39,14 +40,14 @@ class DataBus(EventPubSub):
         """
         with cls._lock:
             if not cls._instance:
-                cls._instance = super(DataBus, cls).__new__(cls)
+                cls._instance = super().__new__(cls)
                 cls._instance.subscribers = {}
                 cls._instance.data_store = {}
         return cls._instance
 
     def subscribe(
         self,
-        topics: List[str],
+        topics: list[str],
         callback: Callable[[str, Any, "DataBus"], None],
         **cb_kwargs,
     ) -> None:
@@ -110,7 +111,7 @@ class DataBus(EventPubSub):
                 # no more subs for this topic!
                 self.subscribers.pop(topic, None)
 
-    def publish(self, topics: List[str], datum: Any) -> None:
+    def publish(self, topics: list[str], datum: Any) -> None:
         """
         Publish a data to one or more topics, notifying all subscribed callbacks.
 

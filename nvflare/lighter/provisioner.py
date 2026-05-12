@@ -23,7 +23,7 @@ from .spec import Builder, Packager
 
 
 class Provisioner:
-    def __init__(self, root_dir: str, builders: List[Builder], packager: Optional[Packager] = None):
+    def __init__(self, root_dir: str, builders: list[Builder], packager: Packager | None = None):
         """Workflow class that drive the provision process.
 
         Provisioner's tasks:

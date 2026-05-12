@@ -52,7 +52,7 @@ class Assembler(FLComponent, ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def assemble(self, data: Dict[str, dict], fl_ctx: FLContext) -> DXO:
+    def assemble(self, data: dict[str, dict], fl_ctx: FLContext) -> DXO:
         """Assemble the collected submissions.
         This will be specified according to the specific algorithm
         E.g. global svm round on the collected local supporting vectors;

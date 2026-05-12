@@ -37,7 +37,7 @@ class ErrorHandlingExecutor(Executor, ABC):
         self.init_status_ok = True
         self.init_failure = {"abort_job": None, "fail_client": None}
         self.client_name = None
-        self.task_handler: Optional[TaskHandler] = None
+        self.task_handler: TaskHandler | None = None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:

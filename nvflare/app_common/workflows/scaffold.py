@@ -92,7 +92,7 @@ class Scaffold(BaseFedAvg):
         self.info("Finished FedAvg.")
 
 
-def scaffold_aggregate_fn(results: List[FLModel]) -> FLModel:
+def scaffold_aggregate_fn(results: list[FLModel]) -> FLModel:
     # aggregates both the model weights and the SCAFFOLD control terms
 
     aggregation_helper = WeightedAggregationHelper()

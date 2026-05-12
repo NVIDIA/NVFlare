@@ -68,13 +68,13 @@ class Query:
     def _add_lcp(self, name: str, addr: str):
         self.lcp_list.append((name, addr))
 
-    def _map(self, device_id: str) -> Tuple[str, str]:
+    def _map(self, device_id: str) -> tuple[str, str]:
         uniform_hash = UniformHash(len(self.lcp_list))
         index = uniform_hash.hash(device_id)
         return self.lcp_list[index]
 
     def load_lcp_map(self, mapping_file: str):
-        with open(mapping_file, "r") as f:
+        with open(mapping_file) as f:
             mapping = json.load(f)
 
         for name, config in mapping.items():
@@ -85,7 +85,7 @@ class Query:
 
     def _query(
         self,
-        request: Union[TaskRequest, JobRequest, SelectionRequest, ResultReport],
+        request: TaskRequest | JobRequest | SelectionRequest | ResultReport,
         to_grpc_f,
         from_grpc_f,
         default_response,
@@ -109,7 +109,7 @@ class Query:
             self.logger.error(f"exception querying grpc service: {secure_format_exception(ex)}")
             return default_response
 
-    def __call__(self, request: Union[TaskRequest, JobRequest, SelectionRequest, ResultReport]):
+    def __call__(self, request: TaskRequest | JobRequest | SelectionRequest | ResultReport):
         if isinstance(request, JobRequest):
             return self._query(
                 request, job_request_to_grpc_request, grpc_reply_to_job_response, JobResponse(EdgeApiStatus.RETRY)

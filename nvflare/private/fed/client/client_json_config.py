@@ -28,7 +28,7 @@ from nvflare.private.json_configer import ConfigContext, ConfigError
 from .client_runner import ClientRunnerConfig, TaskRouter
 
 
-class _ExecutorDef(object):
+class _ExecutorDef:
     def __init__(self):
         self.tasks = []
         self.executor = None
@@ -55,7 +55,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         module_names = FL_MODULES
 
         if kv_list:
-            assert isinstance(kv_list, list), "cmd_vars must be list, but got {}".format(type(kv_list))
+            assert isinstance(kv_list, list), f"cmd_vars must be list, but got {type(kv_list)}"
             self.cmd_vars = parse_vars(kv_list)
         else:
             self.cmd_vars = {}
@@ -117,10 +117,10 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         # default task fetch interval
         if re.search(r"default_task_fetch_interval", path):
             if not isinstance(element, int) and not isinstance(element, float):
-                raise ConfigError('"default_task_fetch_interval" must be a number, but got {}'.format(type(element)))
+                raise ConfigError(f'"default_task_fetch_interval" must be a number, but got {type(element)}')
 
             if element <= 0:
-                raise ConfigError('"default_task_fetch_interval" must > 0, but got {}'.format(element))
+                raise ConfigError(f'"default_task_fetch_interval" must > 0, but got {element}')
 
             self._default_task_fetch_interval = element
             return
@@ -149,11 +149,11 @@ class ClientJsonConfigurator(FedJsonConfigurator):
     def _process_executor_def(self, node: Node):
         e = node.props["data"]
         if not isinstance(e, _ExecutorDef):
-            raise TypeError("e must be _ExecutorDef but got {}".format(type(e)))
+            raise TypeError(f"e must be _ExecutorDef but got {type(e)}")
         self.validate_tasks(e.tasks)
 
         if not isinstance(e.executor, Executor):
-            raise ConfigError('"executor" must be an Executor object but got {}'.format(type(e.executor)))
+            raise ConfigError(f'"executor" must be an Executor object but got {type(e.executor)}')
 
         self.executors.append(e)
 

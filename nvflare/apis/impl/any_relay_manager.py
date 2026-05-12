@@ -90,7 +90,7 @@ class AnyRelayTaskManager(TaskManager):
                 # Note: in this case, the pending client and the asking client must not be the
                 # same, because this would be a resend case already taken care of by the controller.
                 if pending_client_name == client_name:
-                    raise RuntimeError("Logic Error: must not be here for client {}".format(client_name))
+                    raise RuntimeError(f"Logic Error: must not be here for client {client_name}")
 
                 # should this client timeout?
                 if task_result_timeout and time.time() - pending_task.task_sent_time > task_result_timeout:
@@ -107,7 +107,7 @@ class AnyRelayTaskManager(TaskManager):
         sent_target_count[client_name] = send_count + 1
         return TaskCheckStatus.SEND
 
-    def check_task_exit(self, task: Task) -> Tuple[bool, TaskCompletionStatus]:
+    def check_task_exit(self, task: Task) -> tuple[bool, TaskCompletionStatus]:
         """Determine whether the task should exit.
 
         Args:

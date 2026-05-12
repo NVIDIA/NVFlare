@@ -37,7 +37,7 @@ def main():
         return
 
     result = hash_password(user_name + pwd)
-    print("Password Hash: {}".format(result))
+    print(f"Password Hash: {result}")
 
 
 if __name__ == "__main__":

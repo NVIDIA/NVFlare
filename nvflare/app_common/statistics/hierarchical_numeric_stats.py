@@ -577,7 +577,7 @@ def get_client_hierarchy(hierarchy_config: dict, client_name: str, path=None) ->
     return None
 
 
-def bins_to_dict(bins: List[Bin]) -> Dict[BinRange, float]:
+def bins_to_dict(bins: list[Bin]) -> dict[BinRange, float]:
     """Convert histogram bins to a 'dict'.
 
     Args:
@@ -593,7 +593,7 @@ def bins_to_dict(bins: List[Bin]) -> Dict[BinRange, float]:
     return buckets
 
 
-def filter_numeric_features(ds_features: Dict[str, List[Feature]]) -> Dict[str, List[Feature]]:
+def filter_numeric_features(ds_features: dict[str, list[Feature]]) -> dict[str, list[Feature]]:
     """Filter numeric features.
 
     Args:
@@ -604,7 +604,7 @@ def filter_numeric_features(ds_features: Dict[str, List[Feature]]) -> Dict[str, 
     """
     numeric_ds_features = {}
     for ds_name in ds_features:
-        features: List[Feature] = ds_features[ds_name]
+        features: list[Feature] = ds_features[ds_name]
         n_features = [f for f in features if (f.data_type == DataType.INT or f.data_type == DataType.FLOAT)]
         numeric_ds_features[ds_name] = n_features
 

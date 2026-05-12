@@ -36,7 +36,7 @@ def use_nvidia_smi(query: str, report_format: str = "csv"):
     return None
 
 
-def _parse_gpu_mem(result: str = None, unit: str = "MiB") -> List:
+def _parse_gpu_mem(result: str = None, unit: str = "MiB") -> list:
     gpu_memory = []
     if result:
         for i in result[1:]:
@@ -47,17 +47,17 @@ def _parse_gpu_mem(result: str = None, unit: str = "MiB") -> List:
     return gpu_memory
 
 
-def get_host_gpu_memory_total(unit="MiB") -> List:
+def get_host_gpu_memory_total(unit="MiB") -> list:
     result = use_nvidia_smi("memory.total")
     return _parse_gpu_mem(result, unit)
 
 
-def get_host_gpu_memory_free(unit="MiB") -> List:
+def get_host_gpu_memory_free(unit="MiB") -> list:
     result = use_nvidia_smi("memory.free")
     return _parse_gpu_mem(result, unit)
 
 
-def get_host_gpu_ids() -> List:
+def get_host_gpu_ids() -> list:
     """Gets GPU IDs.
 
     Note:

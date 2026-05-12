@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import absolute_import
 
 import argparse
 import os
@@ -416,8 +415,8 @@ def provision(
     project_dict: dict,
     project_full_path: str,
     workspace_full_path: str,
-    add_user_full_path: Optional[str] = None,
-    add_client_full_path: Optional[str] = None,
+    add_user_full_path: str | None = None,
+    add_client_full_path: str | None = None,
 ):
     project_dict["gen_scripts"] = args.gen_scripts
     edge_params = project_dict.get("edge")

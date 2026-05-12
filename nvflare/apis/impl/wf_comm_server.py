@@ -44,27 +44,25 @@ _TASK_KEY_DONE = "___done"
 
 def _check_positive_int(name, value):
     if not isinstance(value, int):
-        raise TypeError("{} must be an instance of int, but got {}.".format(name, type(name)))
+        raise TypeError(f"{name} must be an instance of int, but got {type(name)}.")
     if value < 0:
-        raise ValueError("{} must >= 0.".format(name))
+        raise ValueError(f"{name} must >= 0.")
 
 
-def _check_inputs(task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None]):
+def _check_inputs(task: Task, fl_ctx: FLContext, targets: list[Client] | list[str] | None):
     if not isinstance(task, Task):
-        raise TypeError("task must be an instance of Task, but got {}".format(type(task)))
+        raise TypeError(f"task must be an instance of Task, but got {type(task)}")
 
     if not isinstance(fl_ctx, FLContext):
-        raise TypeError("fl_ctx must be an instance of FLContext, but got {}".format(type(fl_ctx)))
+        raise TypeError(f"fl_ctx must be an instance of FLContext, but got {type(fl_ctx)}")
 
     if targets is not None:
         if not isinstance(targets, list):
-            raise TypeError("targets must be a list of Client or string, but got {}".format(type(targets)))
+            raise TypeError(f"targets must be a list of Client or string, but got {type(targets)}")
 
         for t in targets:
             if not isinstance(t, (Client, str)):
-                raise TypeError(
-                    "targets must be a list of Client or string, but got element of type {}".format(type(t))
-                )
+                raise TypeError(f"targets must be a list of Client or string, but got element of type {type(t)}")
 
 
 def _get_client_task(target, task: Task):
@@ -133,10 +131,10 @@ class WFCommServer(FLComponent, WFCommSpec):
         except Exception as e:
             self.log_warning(
                 fl_ctx,
-                "failed to cleanup active tensor downloads: {}".format(secure_format_exception(e)),
+                f"failed to cleanup active tensor downloads: {secure_format_exception(e)}",
             )
 
-    def _try_again(self) -> Tuple[str, str, Optional[Shareable]]:
+    def _try_again(self) -> tuple[str, str, Shareable | None]:
         # TODO: how to tell client no shareable available now?
         return "", "", None
 
@@ -149,9 +147,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         collector = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR, None)
         if collector:
             if not isinstance(collector, GroupInfoCollector):
-                raise TypeError(
-                    "collector must be an instance of GroupInfoCollector, but got {}".format(type(collector))
-                )
+                raise TypeError(f"collector must be an instance of GroupInfoCollector, but got {type(collector)}")
             collector.add_info(
                 group_name=self.controller.name,
                 info={
@@ -178,7 +174,7 @@ class WFCommServer(FLComponent, WFCommSpec):
             else:
                 self.log_warning(fl_ctx, f"discarded dead client report {client_name=}: already on watch list")
 
-    def process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
+    def process_task_request(self, client: Client, fl_ctx: FLContext) -> tuple[str, str, Shareable]:
         """Called by runner when a client asks for a task.
 
         .. note::
@@ -200,16 +196,16 @@ class WFCommServer(FLComponent, WFCommSpec):
         with self._controller_lock:
             return self._do_process_task_request(client, fl_ctx)
 
-    def _do_process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
+    def _do_process_task_request(self, client: Client, fl_ctx: FLContext) -> tuple[str, str, Shareable]:
         if not isinstance(client, Client):
-            raise TypeError("client must be an instance of Client, but got {}".format(type(client)))
+            raise TypeError(f"client must be an instance of Client, but got {type(client)}")
 
         if not isinstance(fl_ctx, FLContext):
-            raise TypeError("fl_ctx must be an instance of FLContext, but got {}".format(type(fl_ctx)))
+            raise TypeError(f"fl_ctx must be an instance of FLContext, but got {type(fl_ctx)}")
 
         client_task_to_send = None
         with self._task_lock:
-            self.logger.debug("self._tasks: {}".format(self._tasks))
+            self.logger.debug(f"self._tasks: {self._tasks}")
             for task in self._tasks:
                 if task.completion_status is not None:
                     # this task is finished (and waiting for the monitor to exit it)
@@ -219,7 +215,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                 # note: the task could be sent to a client multiple times (e.g. in relay)
                 # we only check the last ClientTask sent to the client
                 client_task_to_check = task.last_client_task_map.get(client.name, None)
-                self.logger.debug("client_task_to_check: {}".format(client_task_to_check))
+                self.logger.debug(f"client_task_to_check: {client_task_to_check}")
                 resend_task = False
 
                 if client_task_to_check is not None:
@@ -242,7 +238,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                             client_task_to_check, client_task_to_check.client.name
                         )
                     )
-                    self.logger.debug("Check task send get check_status: {}".format(check_status))
+                    self.logger.debug(f"Check task send get check_status: {check_status}")
                     if check_status == TaskCheckStatus.BLOCK:
                         # do not send this task, and do not check other tasks
                         return self._try_again()
@@ -257,7 +253,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         # NOTE: move task sending process outside the task lock
         # This is to minimize the locking time and to avoid potential deadlock:
         # the CB could schedule another task, which requires lock
-        self.logger.debug("Determining based on client_task_to_send: {}".format(client_task_to_send))
+        self.logger.debug(f"Determining based on client_task_to_send: {client_task_to_send}")
         if client_task_to_send is None:
             # no task available for this client
             return self._try_again()
@@ -283,7 +279,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = e
 
-            self.logger.debug("before_task_sent_cb done on client_task_to_send: {}".format(client_task_to_send))
+            self.logger.debug(f"before_task_sent_cb done on client_task_to_send: {client_task_to_send}")
             self.logger.debug(f"task completion status is {task.completion_status}")
 
             if task.completion_status is not None:
@@ -335,7 +331,7 @@ class WFCommServer(FLComponent, WFCommSpec):
             if not can_send_task:
                 return self._try_again()
 
-            self.logger.debug("after_task_sent_cb done on client_task_to_send: {}".format(client_task_to_send))
+            self.logger.debug(f"after_task_sent_cb done on client_task_to_send: {client_task_to_send}")
 
         with self._task_lock:
             # sent the ClientTask and remember it
@@ -370,7 +366,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         with self._task_lock:
             # task_id is the uuid associated with the client_task
             client_task = self._client_task_map.get(task_id, None)
-            self.logger.debug("Handle exception on client_task {} with id {}".format(client_task, task_id))
+            self.logger.debug(f"Handle exception on client_task {client_task} with id {task_id}")
 
         if client_task is None:
             # cannot find a standing task on the exception
@@ -378,7 +374,7 @@ class WFCommServer(FLComponent, WFCommSpec):
 
         task = client_task.task
         self.cancel_task(task=task, fl_ctx=fl_ctx)
-        self.log_error(fl_ctx, "task {} is cancelled due to exception".format(task.name))
+        self.log_error(fl_ctx, f"task {task.name} is cancelled due to exception")
 
     def process_task_check(self, task_id: str, fl_ctx: FLContext):
         with self._task_lock:
@@ -412,21 +408,21 @@ class WFCommServer(FLComponent, WFCommSpec):
         self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
     ):
         if not isinstance(client, Client):
-            raise TypeError("client must be an instance of Client, but got {}".format(type(client)))
+            raise TypeError(f"client must be an instance of Client, but got {type(client)}")
 
         if not isinstance(fl_ctx, FLContext):
-            raise TypeError("fl_ctx must be an instance of FLContext, but got {}".format(type(fl_ctx)))
+            raise TypeError(f"fl_ctx must be an instance of FLContext, but got {type(fl_ctx)}")
         if not isinstance(result, Shareable):
-            raise TypeError("result must be an instance of Shareable, but got {}".format(type(result)))
+            raise TypeError(f"result must be an instance of Shareable, but got {type(result)}")
 
         with self._task_lock:
             # task_id is the uuid associated with the client_task
             client_task = self._client_task_map.get(task_id, None)
-            self.log_debug(fl_ctx, "Get submission from client task={} id={}".format(client_task, task_id))
+            self.log_debug(fl_ctx, f"Get submission from client task={client_task} id={task_id}")
 
         if client_task is None:
             # cannot find a standing task for the submission
-            self.log_debug(fl_ctx, "no standing task found for {}:{}".format(task_name, task_id))
+            self.log_debug(fl_ctx, f"no standing task found for {task_name}:{task_id}")
 
             self.log_debug(fl_ctx, "firing event EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK")
             self.fire_event(EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK, fl_ctx)
@@ -440,7 +436,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         task = client_task.task
         with task.cb_lock:
             if task.name != task_name:
-                raise ValueError("client specified task name {} doesn't match {}".format(task_name, task.name))
+                raise ValueError(f"client specified task name {task_name} doesn't match {task.name}")
 
             if task.completion_status is not None:
                 # the task is already finished - drop the result
@@ -478,13 +474,13 @@ class WFCommServer(FLComponent, WFCommSpec):
         task: Task,
         fl_ctx: FLContext,
         manager: TaskManager,
-        targets: Union[List[Client], List[str], None],
+        targets: list[Client] | list[str] | None,
         allow_dup_targets: bool = False,
     ):
         if task.schedule_time is not None:
             # this task was scheduled before
             # we do not allow a task object to be reused
-            self.logger.debug("task.schedule_time: {}".format(task.schedule_time))
+            self.logger.debug(f"task.schedule_time: {task.schedule_time}")
             raise ValueError("Task was already used. Please create a new task object.")
 
         # task.targets = targets
@@ -505,14 +501,14 @@ class WFCommServer(FLComponent, WFCommSpec):
                 target_names.append(targets)
         else:
             if not isinstance(targets, list):
-                raise ValueError("task targets must be a list, but got {}".format(type(targets)))
+                raise ValueError(f"task targets must be a list, but got {type(targets)}")
             for t in targets:
                 if isinstance(t, str):
                     name = t
                 elif isinstance(t, Client):
                     name = t.name
                 else:
-                    raise ValueError("element in targets must be string or Client type, but got {}".format(type(t)))
+                    raise ValueError(f"element in targets must be string or Client type, but got {type(t)}")
 
                 if allow_dup_targets or (name not in target_names):
                     target_names.append(name)
@@ -525,13 +521,13 @@ class WFCommServer(FLComponent, WFCommSpec):
 
         with self._task_lock:
             self._tasks.append(task)
-            self.log_info(fl_ctx, "scheduled task {}".format(task.name))
+            self.log_info(fl_ctx, f"scheduled task {task.name}")
 
     def broadcast(
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         min_responses: int = 1,
         wait_time_after_min_received: int = 0,
     ):
@@ -571,9 +567,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         _check_positive_int("min_responses", min_responses)
         _check_positive_int("wait_time_after_min_received", wait_time_after_min_received)
         if targets and min_responses > len(targets):
-            raise ValueError(
-                "min_responses ({}) must be less than length of targets ({}).".format(min_responses, len(targets))
-            )
+            raise ValueError(f"min_responses ({min_responses}) must be less than length of targets ({len(targets)}).")
 
         manager = BcastTaskManager(
             task=task, min_responses=min_responses, wait_time_after_min_received=wait_time_after_min_received
@@ -584,10 +578,10 @@ class WFCommServer(FLComponent, WFCommSpec):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         min_responses: int = 1,
         wait_time_after_min_received: int = 0,
-        abort_signal: Optional[Signal] = None,
+        abort_signal: Signal | None = None,
     ):
         """Schedule a broadcast task.  This is a blocking call.
 
@@ -616,7 +610,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         )
         self.wait_for_task(task, abort_signal)
 
-    def broadcast_forever(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None):
+    def broadcast_forever(self, task: Task, fl_ctx: FLContext, targets: list[Client] | list[str] | None = None):
         """Schedule a broadcast task.  This is a non-blocking call.
 
         The task is scheduled into a task list.  Clients can request tasks and controller will dispatch
@@ -647,7 +641,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
     ):
@@ -685,7 +679,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                 )
             )
         if not isinstance(send_order, SendOrder):
-            raise TypeError("send_order must be in Enum SendOrder, but got {}".format(type(send_order)))
+            raise TypeError(f"send_order must be in Enum SendOrder, but got {type(send_order)}")
 
         # targets must be provided
         if targets is None or len(targets) == 0:
@@ -703,7 +697,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
         abort_signal: Signal = None,
@@ -745,7 +739,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         return len(self._tasks)
 
     def cancel_task(
-        self, task: Task, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None
+        self, task: Task, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: FLContext | None = None
     ):
         """Cancel the specified task.
 
@@ -764,7 +758,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         """
         task.completion_status = completion_status
 
-    def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
+    def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: FLContext | None = None):
         """Cancel all standing tasks in this controller.
 
         This only marks tasks completed. In the normal running path, the task
@@ -779,7 +773,7 @@ class WFCommServer(FLComponent, WFCommSpec):
             for t in self._tasks:
                 t.completion_status = completion_status
 
-    def _release_task_resources(self, task: Task, fl_ctx: Optional[FLContext] = None):
+    def _release_task_resources(self, task: Task, fl_ctx: FLContext | None = None):
         """Drop references owned by a task after it leaves the communicator."""
         try:
             msg_root_id = getattr(task, "msg_root_id", None)
@@ -788,7 +782,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         except Exception as e:
             self.log_warning(
                 fl_ctx,
-                "error cleaning up download transactions for task {}: {}".format(task.name, secure_format_exception(e)),
+                f"error cleaning up download transactions for task {task.name}: {secure_format_exception(e)}",
             )
 
         if hasattr(task, "_broadcast_data"):
@@ -812,9 +806,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         # references still owned by this communicator.
         task.task_done_cb = None
 
-    def _clear_standing_tasks(
-        self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None
-    ):
+    def _clear_standing_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: FLContext | None = None):
         """Cancel and remove standing tasks, releasing references synchronously.
 
         finalize_run stops the task monitor, so it cannot rely on
@@ -850,7 +842,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
         task_result_timeout: int = 0,
@@ -903,9 +895,9 @@ class WFCommServer(FLComponent, WFCommSpec):
                 )
             )
         if not isinstance(send_order, SendOrder):
-            raise TypeError("send_order must be in Enum SendOrder, but got {}".format(type(send_order)))
+            raise TypeError(f"send_order must be in Enum SendOrder, but got {type(send_order)}")
         if not isinstance(dynamic_targets, bool):
-            raise TypeError("dynamic_targets must be an instance of bool, but got {}".format(type(dynamic_targets)))
+            raise TypeError(f"dynamic_targets must be an instance of bool, but got {type(dynamic_targets)}")
         if targets is None and dynamic_targets is False:
             raise ValueError("Need to provide targets when dynamic_targets is set to False.")
 
@@ -933,12 +925,12 @@ class WFCommServer(FLComponent, WFCommSpec):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order=SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
         task_result_timeout: int = 0,
         dynamic_targets: bool = True,
-        abort_signal: Optional[Signal] = None,
+        abort_signal: Signal | None = None,
     ):
         """Schedule a single task to targets in one-after-another style.  This is a blocking call.
 
@@ -1025,11 +1017,9 @@ class WFCommServer(FLComponent, WFCommSpec):
                 manager = task.props[_TASK_KEY_MANAGER]
                 if manager is not None:
                     if not isinstance(manager, TaskManager):
-                        raise TypeError(
-                            "manager in task must be an instance of TaskManager, but got {}".format(manager)
-                        )
+                        raise TypeError(f"manager in task must be an instance of TaskManager, but got {manager}")
                     should_exit, exit_status = manager.check_task_exit(task)
-                    self.logger.debug("should_exit: {}, exit_status: {}".format(should_exit, exit_status))
+                    self.logger.debug(f"should_exit: {should_exit}, exit_status: {exit_status}")
                     if should_exit:
                         task.completion_status = exit_status
                         exit_tasks.append(task)
@@ -1051,12 +1041,10 @@ class WFCommServer(FLComponent, WFCommSpec):
 
             for exit_task in exit_tasks:
                 exit_task.is_standing = False
-                self.logger.debug(
-                    "Removing task={}, completion_status={}".format(exit_task, exit_task.completion_status)
-                )
+                self.logger.debug(f"Removing task={exit_task}, completion_status={exit_task.completion_status}")
                 self._tasks.remove(exit_task)
                 for client_task in exit_task.client_tasks:
-                    self.logger.debug("Removing client_task with id={}".format(client_task.id))
+                    self.logger.debug(f"Removing client_task with id={client_task.id}")
                     self._client_task_map.pop(client_task.id)
 
         # do the task exit processing outside the lock to minimize the locking time
@@ -1067,9 +1055,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         with self._engine.new_context() as fl_ctx:
             for exit_task in exit_tasks:
                 with exit_task.cb_lock:
-                    self.log_info(
-                        fl_ctx, "task {} exit with status {}".format(exit_task.name, exit_task.completion_status)
-                    )
+                    self.log_info(fl_ctx, f"task {exit_task.name} exit with status {exit_task.completion_status}")
 
                     # Clean up download transactions for this task
                     try:

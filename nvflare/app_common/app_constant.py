@@ -21,7 +21,7 @@ class ExecutorTasks:
     REPORT_STATUS = "report_status"
 
 
-class AppConstants(object):
+class AppConstants:
     CONFIG_PATH = "config_path"
     MODEL_NETWORK = "model_network"
     MULTI_GPU = "multi_gpu"
@@ -121,22 +121,22 @@ class AppConstants(object):
     CLIENT_UNKNOWN = "unknown"
 
 
-class EnvironmentKey(object):
+class EnvironmentKey:
     CHECKPOINT_DIR = "APP_CKPT_DIR"
     CHECKPOINT_FILE_NAME = "APP_CKPT"
 
 
-class DefaultCheckpointFileName(object):
+class DefaultCheckpointFileName:
     GLOBAL_MODEL = "FL_global_model.pt"
     BEST_GLOBAL_MODEL = "best_FL_global_model.pt"
 
 
-class ModelName(object):
+class ModelName:
     BEST_MODEL = "best_model"
     FINAL_MODEL = "final_model"
 
 
-class ModelFormat(object):
+class ModelFormat:
     PT_CHECKPOINT = "pt_checkpoint"
     TORCH_SCRIPT = "torch_script"
     PT_ONNX = "pt_onnx"
@@ -144,12 +144,12 @@ class ModelFormat(object):
     KERAS = "keras_model"
 
 
-class ValidateType(object):
+class ValidateType:
     BEFORE_TRAIN_VALIDATE = "before_train_validate"
     MODEL_VALIDATE = "model_validate"
 
 
-class AlgorithmConstants(object):
+class AlgorithmConstants:
     SCAFFOLD_CTRL_DIFF = "scaffold_c_diff"
     SCAFFOLD_CTRL_GLOBAL = "scaffold_c_global"
     SCAFFOLD_CTRL_AGGREGATOR_ID = "scaffold_ctrl_aggregator"

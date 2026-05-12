@@ -107,7 +107,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
             ],
         )
 
-    def authorize_configure_site_log(self, conn: Connection, args: List[str]):
+    def authorize_configure_site_log(self, conn: Connection, args: list[str]):
         if len(args) < 3:
             conn.append_error("syntax error: please provide target_type and config")
             return PreAuthzReturnCode.ERROR
@@ -140,7 +140,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
             self._process_replies(conn, replies)
             return
 
-        conn.append_string("invalid target type {}. Usage: sys_info server|client <client-name>".format(target_type))
+        conn.append_string(f"invalid target type {target_type}. Usage: sys_info server|client <client-name>")
 
     def configure_site_log(self, conn: Connection, args: [str]):
         if len(args) < 3:
@@ -157,7 +157,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
         if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             engine = conn.app_ctx
             if not isinstance(engine, ServerEngine):
-                raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
+                raise TypeError(f"engine must be ServerEngine but got {type(engine)}")
 
             workspace = engine.get_workspace()
             try:
@@ -214,7 +214,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
             else:
                 conn.append_string(": No replies")
 
-    def report_resources(self, conn: Connection, args: List[str]):
+    def report_resources(self, conn: Connection, args: list[str]):
         if len(args) < 2:
             conn.append_error("syntax error: missing site names")
             return
@@ -222,7 +222,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
         target_type = args[1]
         if target_type not in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             conn.append_string(
-                "invalid target type {}. Usage: report_resources server|client|all <client-name>".format(target_type)
+                f"invalid target type {target_type}. Usage: report_resources server|client|all <client-name>"
             )
             return
 
@@ -243,7 +243,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
         for k, v in site_resources.items():
             table.add_row([str(k), str(v)])
 
-    def report_env(self, conn: Connection, args: List[str]):
+    def report_env(self, conn: Connection, args: list[str]):
         message = new_message(conn, topic=SysCommandTopic.REPORT_ENV, body="", require_authz=True)
         replies = self.send_request_to_clients(conn, message)
         if not replies:
@@ -255,7 +255,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
         for k, v in site_resources.items():
             table.add_row([str(k), str(v)], meta=v)
 
-    def report_version(self, conn: Connection, args: List[str]):
+    def report_version(self, conn: Connection, args: list[str]):
         """Return per-site version info.
 
         Successful site replies have shape {"version": "<nvflare-version>"}.
@@ -309,7 +309,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
 
         conn.append_dict(versions, meta=make_meta(MetaStatusValue.OK))
 
-    def dead_client(self, conn: Connection, args: List[str]):
+    def dead_client(self, conn: Connection, args: list[str]):
         if len(args) != 3:
             conn.append_error(f"Usage: {args[0]} client_name job_id")
             return

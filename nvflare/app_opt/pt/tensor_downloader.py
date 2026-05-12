@@ -70,7 +70,7 @@ class TensorConsumer(ItemConsumer):
         if tensors_received_cb is not None and not callable(tensors_received_cb):
             raise ValueError("tensors_received_cb must be callable")
 
-    def consume_items(self, items: List[Any], result: Any) -> Any:
+    def consume_items(self, items: list[Any], result: Any) -> Any:
         if not isinstance(items, list):
             raise TypeError(f"items must be list but got {type(items)}")
         if result is None:
@@ -121,7 +121,7 @@ def download_tensors(
     abort_signal=None,
     tensors_received_cb=None,
     **cb_kwargs,
-) -> Tuple[str, Optional[dict[str, torch.Tensor]]]:
+) -> tuple[str, dict[str, torch.Tensor] | None]:
     """Download the referenced state dict from the source.
 
     Args:
@@ -200,7 +200,7 @@ class DiskTensorConsumer(ItemConsumer):
 
         _cleanup_temp_dir(self._temp_dir)
 
-    def consume_items(self, items: List[Any], result: Any) -> Any:
+    def consume_items(self, items: list[Any], result: Any) -> Any:
         if not isinstance(items, list):
             raise TypeError(f"items must be list but got {type(items)}")
         if result is None:
@@ -238,7 +238,7 @@ def download_tensors_to_disk(
     secure=False,
     optional=False,
     abort_signal=None,
-) -> Tuple[str, Optional[LazyTensorDict]]:
+) -> tuple[str, LazyTensorDict | None]:
     """Download tensors to disk instead of memory.
 
     Returns: tuple of (error message if any, LazyTensorDict for lazy access).

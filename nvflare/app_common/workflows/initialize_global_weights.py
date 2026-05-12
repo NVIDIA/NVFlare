@@ -29,7 +29,7 @@ class InitializeGlobalWeights(BroadcastAndProcess):
         task_timeout: int = 0,
         weights_prop_name=AppConstants.GLOBAL_MODEL,
         weight_method: str = WeightMethod.FIRST,
-        weights_client_name: Union[str, List[str], None] = None,
+        weights_client_name: str | list[str] | None = None,
     ):
         """A controller for initializing global model weights based on reported weights from clients.
 

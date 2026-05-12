@@ -25,7 +25,8 @@ import sys
 import time
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Dict, List, Optional, OrderedDict, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+from collections import OrderedDict
 
 import yaml
 from pyhocon import ConfigFactory as CF
@@ -113,7 +114,7 @@ def _quiet_cli_streams(enabled: bool):
     return stack
 
 
-def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, List[int]]:
+def client_gpu_assignments(clients: list[str], gpu_ids: list[int]) -> dict[str, list[int]]:
     n_gpus = len(gpu_ids)
     n_clients = len(clients)
     gpu_assignments = {}
@@ -140,7 +141,7 @@ def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, 
 
 
 def get_service_command(
-    cmd_type: str, prod_dir: str, service_dir, service_config: Dict, study: Optional[str] = None
+    cmd_type: str, prod_dir: str, service_dir, service_config: dict, study: str | None = None
 ) -> str:
     cmd = ""
     proj_admin_dir_name = service_config.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
@@ -182,7 +183,7 @@ def get_stop_cmd(poc_workspace: str, service_dir_name: str):
     return f"touch {stop_file}"
 
 
-def get_nvflare_home() -> Optional[str]:
+def get_nvflare_home() -> str | None:
     nvflare_home = None
     if "NVFLARE_HOME" in os.environ:
         nvflare_home = os.getenv("NVFLARE_HOME")
@@ -195,10 +196,10 @@ def get_nvflare_home() -> Optional[str]:
 def get_upload_dir(startup_dir) -> str:
     console_config_path = os.path.join(startup_dir, "fed_admin.json")
     try:
-        with open(console_config_path, "r") as f:
+        with open(console_config_path) as f:
             console_config = json.load(f)
             upload_dir = console_config["admin"]["upload_dir"]
-    except IOError as e:
+    except OSError as e:
         raise CLIException(f"failed to load {console_config_path} {e}")
     except json.decoder.JSONDecodeError as e:
         raise CLIException(f"failed to load {console_config_path}, please double check the configuration {e}")
@@ -210,7 +211,7 @@ def is_dir_empty(path: str):
 
 
 def _link_jobs_dir_to_admin_transfer(
-    jobs_dir: str, workspace: str, config_packages: Optional[Tuple] = None, force: bool = False
+    jobs_dir: str, workspace: str, config_packages: tuple | None = None, force: bool = False
 ) -> bool:
     project_config, service_config = config_packages if config_packages else setup_service_config(workspace)
     project_name = project_config.get("name")
@@ -254,7 +255,7 @@ def _link_jobs_dir_to_admin_transfer(
     return True
 
 
-def _get_prod_dirs(workspace, project_name: str = DEFAULT_PROJECT_NAME) -> List[str]:
+def _get_prod_dirs(workspace, project_name: str = DEFAULT_PROJECT_NAME) -> list[str]:
     project_name = project_name if project_name else DEFAULT_PROJECT_NAME
     project_dir = os.path.join(workspace, project_name)
     prod_dirs = []
@@ -295,7 +296,7 @@ def verify_host(host_name: str) -> bool:
 
 
 def verify_hosts(project_config: OrderedDict):
-    hosts: List[str] = get_project_hosts(project_config)
+    hosts: list[str] = get_project_hosts(project_config)
     for h in hosts:
         if not verify_host(h):
             from nvflare.tool.cli_output import print_human
@@ -303,13 +304,13 @@ def verify_hosts(project_config: OrderedDict):
             print_human(f"host name: '{h}' is not defined, considering modify /etc/hosts to add localhost alias")
 
 
-def get_project_hosts(project_config) -> List[str]:
-    participants: List[dict] = project_config["participants"]
+def get_project_hosts(project_config) -> list[str]:
+    participants: list[dict] = project_config["participants"]
     return [p["name"] for p in participants if p["type"] == "client" or p["type"] == "server"]
 
 
 def get_fl_server_name(project_config: OrderedDict) -> str:
-    participants: List[dict] = project_config["participants"]
+    participants: list[dict] = project_config["participants"]
     servers = [p["name"] for p in participants if p["type"] == "server"]
     if len(servers) == 1:
         return servers[0]
@@ -318,7 +319,7 @@ def get_fl_server_name(project_config: OrderedDict) -> str:
 
 
 def get_fl_admins(project_config: OrderedDict, is_project_admin: bool):
-    participants: List[dict] = project_config["participants"]
+    participants: list[dict] = project_config["participants"]
     return [
         p["name"]
         for p in participants
@@ -338,20 +339,20 @@ def get_proj_admin(project_config: OrderedDict):
         raise CLIException(f"project should have only one project admin, but {len(admins)} are provided: {admins}")
 
 
-def get_fl_client_names(project_config: OrderedDict) -> List[str]:
-    participants: List[dict] = project_config["participants"]
+def get_fl_client_names(project_config: OrderedDict) -> list[str]:
+    participants: list[dict] = project_config["participants"]
     client_names = [p["name"] for p in participants if p["type"] == "client"]
     return client_names
 
 
 def local_provision(
-    clients: List[str],
+    clients: list[str],
     number_of_clients: int,
     workspace: str,
     docker_image: str,
     use_he: bool = False,
     project_conf_path: str = "",
-) -> Tuple:
+) -> tuple:
     user_provided_project_config = False
     if project_conf_path:
         src_project_file = project_conf_path
@@ -433,7 +434,7 @@ def add_poc_docker_runtime(docker_image: str, project_config: OrderedDict):
     return project_config
 
 
-def _get_poc_runtime_config(project_config: Dict) -> Mapping:
+def _get_poc_runtime_config(project_config: dict) -> Mapping:
     runtime_config = project_config.get(POC_RUNTIME_KEY)
     if runtime_config is None:
         return {}
@@ -446,7 +447,7 @@ def _get_poc_runtime_config(project_config: Dict) -> Mapping:
     return runtime_config
 
 
-def get_poc_docker_runtime_config(project_config: Dict) -> Optional[Dict]:
+def get_poc_docker_runtime_config(project_config: dict) -> dict | None:
     runtime_config = _get_poc_runtime_config(project_config)
     if runtime_config.get("runtime") != POC_RUNTIME_DOCKER:
         return None
@@ -481,7 +482,7 @@ def get_poc_docker_runtime_config(project_config: Dict) -> Optional[Dict]:
     }
 
 
-def _prepare_poc_docker_deployments(poc_workspace: str, project_config: Dict):
+def _prepare_poc_docker_deployments(poc_workspace: str, project_config: dict):
     docker_config = get_poc_docker_runtime_config(project_config)
     if not docker_config:
         return False
@@ -525,7 +526,7 @@ def _write_poc_docker_study_data(kit_dir: Path, poc_workspace: str) -> None:
         yaml.safe_dump(study_data, f, default_flow_style=False, sort_keys=False)
 
 
-def _prepare_poc_docker_kit(kit_dir: str, docker_config: Dict, poc_workspace: str):
+def _prepare_poc_docker_kit(kit_dir: str, docker_config: dict, poc_workspace: str):
     from nvflare.tool.deploy.deploy_commands import (
         ROLE_CLIENT,
         RUNTIME_DOCKER,
@@ -582,10 +583,10 @@ def add_he_builder(use_he: bool, project_config: OrderedDict):
     return project_config
 
 
-def update_clients(clients: List[str], n_clients: int, project_config: OrderedDict) -> OrderedDict:
+def update_clients(clients: list[str], n_clients: int, project_config: OrderedDict) -> OrderedDict:
     requested_clients = prepare_clients(clients, n_clients)
 
-    participants: List[dict] = project_config["participants"]
+    participants: list[dict] = project_config["participants"]
     new_participants = [p for p in participants if p["type"] != "client"]
 
     for client in requested_clients:
@@ -614,7 +615,7 @@ def _is_startup_kit_kind(kit_dir: str, expected_kind: str) -> bool:
     return kind == expected_kind
 
 
-def _get_generated_poc_startup_kits(project_config: Dict, prod_dir: str) -> Tuple[Dict[str, str], Optional[str]]:
+def _get_generated_poc_startup_kits(project_config: dict, prod_dir: str) -> tuple[dict[str, str], str | None]:
     participants = project_config.get("participants", [])
     if not isinstance(participants, list):
         raise CLIException("project.yml participants must be a list")
@@ -638,7 +639,7 @@ def _get_generated_poc_startup_kits(project_config: Dict, prod_dir: str) -> Tupl
     return entries, active_id
 
 
-def _get_configured_poc_workspace(config: Dict[str, Any]) -> Optional[str]:
+def _get_configured_poc_workspace(config: dict[str, Any]) -> str | None:
     try:
         workspace = config.get(f"{POC_KEY}.{WORKSPACE_KEY}", None)
     except Exception:
@@ -647,8 +648,8 @@ def _get_configured_poc_workspace(config: Dict[str, Any]) -> Optional[str]:
 
 
 def _register_poc_startup_kits(
-    config: Dict[str, Any], workspace: str, kit_entries: Dict[str, str]
-) -> Tuple[Dict[str, Any], set]:
+    config: dict[str, Any], workspace: str, kit_entries: dict[str, str]
+) -> tuple[dict[str, Any], set]:
     removed_ids = set()
     previous_workspace = _get_configured_poc_workspace(config)
     if previous_workspace:
@@ -672,7 +673,7 @@ def _register_poc_startup_kits(
     return config, removed_ids
 
 
-def _write_poc_startup_kit_registry(workspace: str, project_name: str, project_config: Dict):
+def _write_poc_startup_kit_registry(workspace: str, project_name: str, project_config: dict):
     config = load_cli_config()
     prod_dir = get_prod_dir(workspace, project_name)
     kit_entries, active_id = _get_generated_poc_startup_kits(project_config, prod_dir)
@@ -708,7 +709,7 @@ def save_startup_kit_dir_config(workspace, project_name):
     _write_poc_startup_kit_registry(workspace, project_name, project_config)
 
 
-def _load_poc_project_config(poc_workspace: str) -> Tuple[str, Dict]:
+def _load_poc_project_config(poc_workspace: str) -> tuple[str, dict]:
     project_file = os.path.join(poc_workspace, "project.yml")
     if not os.path.isfile(project_file):
         raise CLIException("please use nvflare poc prepare to create workspace first")
@@ -724,14 +725,14 @@ def _load_poc_project_config(poc_workspace: str) -> Tuple[str, Dict]:
     return project_file, project_config
 
 
-def _find_participant_index(participants: List[Dict], name: str) -> Optional[int]:
+def _find_participant_index(participants: list[dict], name: str) -> int | None:
     for index, participant in enumerate(participants):
         if isinstance(participant, dict) and participant.get("name") == name:
             return index
     return None
 
 
-def _upsert_poc_participant(project_config: Dict, participant: Dict, force: bool) -> str:
+def _upsert_poc_participant(project_config: dict, participant: dict, force: bool) -> str:
     participants = project_config.get("participants")
     index = _find_participant_index(participants, participant["name"])
     if index is None:
@@ -760,7 +761,7 @@ def _upsert_poc_participant(project_config: Dict, participant: Dict, force: bool
     return "updated"
 
 
-def _restore_poc_active_kit(previous_active: Optional[str], preferred_active: Optional[str] = None):
+def _restore_poc_active_kit(previous_active: str | None, preferred_active: str | None = None):
     config = load_cli_config()
     entries = get_startup_kit_entries(config)
     active_id = None
@@ -774,14 +775,14 @@ def _restore_poc_active_kit(previous_active: Optional[str], preferred_active: Op
         save_cli_config(config)
 
 
-def _get_active_startup_kit_id_safely() -> Optional[str]:
+def _get_active_startup_kit_id_safely() -> str | None:
     try:
         return get_active_startup_kit_id(load_cli_config())
     except Exception:
         return None
 
 
-def _is_local_port_available(port: int, host: str = POC_PORT_PREFLIGHT_HOST) -> Tuple[bool, Optional[str]]:
+def _is_local_port_available(port: int, host: str = POC_PORT_PREFLIGHT_HOST) -> tuple[bool, str | None]:
     try:
         port = int(port)
     except (TypeError, ValueError):
@@ -801,7 +802,7 @@ def _is_local_port_available(port: int, host: str = POC_PORT_PREFLIGHT_HOST) -> 
     return True, None
 
 
-def _get_poc_server_port_specs(project_config: Dict) -> List[Dict]:
+def _get_poc_server_port_specs(project_config: dict) -> list[dict]:
     if not isinstance(project_config, dict):
         return []
 
@@ -839,7 +840,7 @@ def _get_poc_server_port_specs(project_config: Dict) -> List[Dict]:
     return []
 
 
-def _build_poc_port_preflight(project_config: Dict, host: str = POC_PORT_PREFLIGHT_HOST) -> Dict:
+def _build_poc_port_preflight(project_config: dict, host: str = POC_PORT_PREFLIGHT_HOST) -> dict:
     port_specs = _get_poc_server_port_specs(project_config)
     if not port_specs:
         return {
@@ -882,7 +883,7 @@ def _build_poc_port_preflight(project_config: Dict, host: str = POC_PORT_PREFLIG
     }
 
 
-def _get_poc_server_participant(project_config: Dict, service_config: Dict = None) -> Optional[Dict]:
+def _get_poc_server_participant(project_config: dict, service_config: dict = None) -> dict | None:
     if not isinstance(project_config, dict):
         return None
 
@@ -906,7 +907,7 @@ def _get_poc_server_participant(project_config: Dict, service_config: Dict = Non
     return None
 
 
-def _get_poc_server_ports(project_config: Dict, service_config: Dict = None) -> Tuple[int, int]:
+def _get_poc_server_ports(project_config: dict, service_config: dict = None) -> tuple[int, int]:
     server_participant = _get_poc_server_participant(project_config, service_config)
     if not server_participant:
         return POC_DEFAULT_FED_LEARN_PORT, POC_DEFAULT_ADMIN_PORT
@@ -926,7 +927,7 @@ def _get_poc_server_ports(project_config: Dict, service_config: Dict = None) -> 
     return fed_learn_port, admin_port
 
 
-def _build_poc_endpoint_info(project_config: Dict, service_config: Dict = None) -> Dict:
+def _build_poc_endpoint_info(project_config: dict, service_config: dict = None) -> dict:
     fed_learn_port, admin_port = _get_poc_server_ports(project_config, service_config)
     server_address = f"{POC_LOCAL_HOST}:{fed_learn_port}"
     admin_address = f"{POC_LOCAL_HOST}:{admin_port}"
@@ -941,8 +942,8 @@ def _build_poc_endpoint_info(project_config: Dict, service_config: Dict = None) 
 
 
 def _build_poc_start_port_preflight(
-    project_config: Dict, service_config: Dict, services_list: List[str], excluded: List[str]
-) -> Dict:
+    project_config: dict, service_config: dict, services_list: list[str], excluded: list[str]
+) -> dict:
     if not project_config or not service_config:
         return {
             "checked": False,
@@ -969,11 +970,11 @@ def _build_poc_start_port_preflight(
     return _build_poc_port_preflight(project_config)
 
 
-def _poc_port_warnings(port_preflight: Dict) -> List[str]:
+def _poc_port_warnings(port_preflight: dict) -> list[str]:
     return [conflict.get("message") for conflict in port_preflight.get("conflicts", []) if conflict.get("message")]
 
 
-def _build_poc_port_diagnostics(port_preflight: Dict) -> Dict:
+def _build_poc_port_diagnostics(port_preflight: dict) -> dict:
     return {
         "port_conflict": bool(port_preflight.get("conflicts")),
         "port_preflight": port_preflight,
@@ -1009,7 +1010,7 @@ class _PocDynamicProvisionLogger:
         pass
 
 
-def _dynamic_poc_project_config(project_config: Dict, participant: Dict) -> Dict:
+def _dynamic_poc_project_config(project_config: dict, participant: dict) -> dict:
     dynamic_config = copy.deepcopy(project_config)
     participants = project_config.get("participants", [])
     servers = [p for p in participants if isinstance(p, dict) and p.get("type") == "server"]
@@ -1023,7 +1024,7 @@ def _dynamic_poc_project_config(project_config: Dict, participant: Dict) -> Dict
     return dynamic_config
 
 
-def _ensure_dynamic_poc_ca_available(poc_workspace: str, project_name: str, prod_dir: str, project_config: Dict) -> str:
+def _ensure_dynamic_poc_ca_available(poc_workspace: str, project_name: str, prod_dir: str, project_config: dict) -> str:
     state_file = os.path.join(poc_workspace, project_name, "state", "cert.json")
     if not os.path.isfile(state_file):
         raise CLIException(
@@ -1041,8 +1042,8 @@ def _ensure_dynamic_poc_ca_available(poc_workspace: str, project_name: str, prod
 
 def _provision_poc_participant_only(
     poc_workspace: str,
-    project_config: Dict,
-    participant: Dict,
+    project_config: dict,
+    participant: dict,
     target_prod_dir: str,
     force: bool = False,
 ) -> str:
@@ -1091,13 +1092,13 @@ def _provision_poc_participant_only(
 def _dynamic_poc_provision(
     poc_workspace: str,
     project_file: str,
-    project_config: Dict,
-    participant: Dict,
+    project_config: dict,
+    participant: dict,
     expected_kit_kind: str,
-    previous_active: Optional[str],
-    preferred_active: Optional[str] = None,
+    previous_active: str | None,
+    preferred_active: str | None = None,
     force: bool = False,
-) -> Tuple[Dict, str]:
+) -> tuple[dict, str]:
     project_name = project_config.get("name") if project_config else DEFAULT_PROJECT_NAME
     prod_dir = _get_existing_poc_prod_dir(poc_workspace, project_name)
     startup_kit = _provision_poc_participant_only(
@@ -1116,7 +1117,7 @@ def _dynamic_poc_provision(
     return project_config, prod_dir
 
 
-def _add_poc_user(poc_workspace: str, cert_role: str, email: str, org: str, force: bool = False) -> Dict:
+def _add_poc_user(poc_workspace: str, cert_role: str, email: str, org: str, force: bool = False) -> dict:
     if cert_role not in POC_USER_CERT_ROLES:
         raise CLIException(
             f"unsupported POC user certificate role '{cert_role}'; "
@@ -1158,7 +1159,7 @@ def _add_poc_user(poc_workspace: str, cert_role: str, email: str, org: str, forc
     return result
 
 
-def _add_poc_site(poc_workspace: str, name: str, org: str, force: bool = False) -> Dict:
+def _add_poc_site(poc_workspace: str, name: str, org: str, force: bool = False) -> dict:
     project_file, project_config = _load_poc_project_config(poc_workspace)
     previous_active = get_active_startup_kit_id(load_cli_config())
     participant = {"name": name, "type": "client", "org": org}
@@ -1345,7 +1346,7 @@ def prepare_poc(cmd_args):
                     if not name:
                         raise CLIException("client participant missing name")
                     clients.append(name)
-    except (OSError, IOError, yaml.YAMLError):
+    except (OSError, yaml.YAMLError):
         # If the post-provision readback fails, preserve the best-known client list instead of
         # silently reporting an empty set in the success payload.
         pass
@@ -1385,13 +1386,13 @@ def prepare_poc(cmd_args):
 
 
 def _prepare_poc(
-    clients: List[str],
+    clients: list[str],
     number_of_clients: int,
     workspace: str,
-    docker_image: Optional[str] = None,
+    docker_image: str | None = None,
     use_he: bool = False,
     project_conf_path: str = "",
-    examples_dir: Optional[str] = None,
+    examples_dir: str | None = None,
     force: bool = False,
 ) -> bool:
     if clients:
@@ -1485,14 +1486,14 @@ def _ensure_poc_stopped(
 
 
 def prepare_poc_provision(
-    clients: List[str],
+    clients: list[str],
     number_of_clients: int,
     workspace: str,
     docker_image: str,
     use_he: bool = False,
     project_conf_path: str = "",
-    examples_dir: Optional[str] = None,
-) -> Dict:
+    examples_dir: str | None = None,
+) -> dict:
     os.makedirs(workspace, exist_ok=True)
     os.makedirs(os.path.join(workspace, "data"), exist_ok=True)
     project_config, service_config = local_provision(
@@ -1571,7 +1572,7 @@ def validate_gpu_ids(gpu_ids: list, host_gpu_ids: list):
             )
 
 
-def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> List[int]:
+def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> list[int]:
     if isinstance(user_input_gpu_ids, int) and user_input_gpu_ids == -1:
         gpu_ids = host_gpu_ids
     else:
@@ -1666,7 +1667,7 @@ def start_poc(cmd_args):
                     if name:
                         clients.append(name)
             endpoint_info = _build_poc_endpoint_info(project_config, service_config)
-    except (OSError, IOError, yaml.YAMLError):
+    except (OSError, yaml.YAMLError):
         pass
     except CLIException as e:
         output_error("INVALID_ARGS", exit_code=4, detail=str(e))
@@ -1751,7 +1752,7 @@ def start_poc(cmd_args):
         print_human("  Submit jobs with: nvflare job submit -j <job_folder>")
 
 
-def _get_started_readiness_participants(service_config: Dict, services_list: List[str], excluded: List[str]):
+def _get_started_readiness_participants(service_config: dict, services_list: list[str], excluded: list[str]):
     excluded_set = set(excluded or [])
     server_name = service_config.get(SC.FLARE_SERVER)
     clients = list(service_config.get(SC.FLARE_CLIENTS, []))
@@ -1764,10 +1765,10 @@ def _get_started_readiness_participants(service_config: Dict, services_list: Lis
 
 def _wait_for_poc_system_ready(
     poc_workspace: str,
-    project_config: Dict,
-    service_config: Dict,
-    services_list: List[str],
-    excluded: List[str],
+    project_config: dict,
+    service_config: dict,
+    services_list: list[str],
+    excluded: list[str],
     timeout_in_sec: int = POC_START_READY_TIMEOUT,
 ) -> bool:
     starts_server, expected_clients = _get_started_readiness_participants(service_config, services_list, excluded)
@@ -1822,7 +1823,7 @@ def _get_server_url(project_config, service_config) -> str:
     return _build_poc_endpoint_info(project_config, service_config)["server_url"]
 
 
-def _start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_list=None, study: Optional[str] = None):
+def _start_poc(poc_workspace: str, gpu_ids: list[int], excluded=None, services_list=None, study: str | None = None):
     project_config, service_config = setup_service_config(poc_workspace)
     if services_list is None:
         services_list = []
@@ -1856,7 +1857,7 @@ def _start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_l
     )
 
 
-def validate_services(project_config, services_list: List, excluded: List):
+def validate_services(project_config, services_list: list, excluded: list):
     participant_names = [p["name"] for p in project_config["participants"]]
     validate_participants(participant_names, services_list)
     validate_participants(participant_names, excluded)
@@ -1868,7 +1869,7 @@ def validate_participants(participant_names, list_participants):
             raise CLIException(f"participant '{p}' is not defined, expecting one of: {participant_names}")
 
 
-def setup_service_config(poc_workspace) -> Tuple:
+def setup_service_config(poc_workspace) -> tuple:
     project_file = os.path.join(poc_workspace, "project.yml")
     if os.path.isfile(project_file):
         project_config = load_yaml(project_file)
@@ -1959,7 +1960,7 @@ def _stop_poc(
     validate_services(project_config, services_list, excluded)
 
     validate_poc_workspace(poc_workspace, service_config, project_config)
-    gpu_ids: List[int] = []
+    gpu_ids: list[int] = []
     project_name = project_config.get("name")
     prod_dir = get_prod_dir(poc_workspace, project_name)
 
@@ -1990,7 +1991,7 @@ def _stop_poc(
         return {"services": services_list}
 
 
-def _get_clients(service_commands: list, service_config) -> List[str]:
+def _get_clients(service_commands: list, service_config) -> list[str]:
     clients = [
         service_dir_name
         for service_dir_name, _ in service_commands
@@ -2008,7 +2009,7 @@ def _build_commands(
     project_config,
     excluded: list,
     services_list=None,
-    study: Optional[str] = None,
+    study: str | None = None,
 ) -> list:
     """Builds commands.
 
@@ -2050,7 +2051,7 @@ def _build_commands(
     return _sort_service_cmds(cmd_type, service_commands, service_config)
 
 
-def prepare_env(service_name, gpu_ids: Optional[List[int]], service_config: Dict):
+def prepare_env(service_name, gpu_ids: list[int] | None, service_config: dict):
     my_env = None
     if gpu_ids:
         my_env = os.environ.copy()
@@ -2075,8 +2076,8 @@ def _poc_service_console_log(cmd_path: str) -> str:
 
 
 def _build_poc_console_logs(
-    poc_workspace: str, project_config: Dict, service_config: Dict, services_list, excluded
-) -> Dict:
+    poc_workspace: str, project_config: dict, service_config: dict, services_list, excluded
+) -> dict:
     if not project_config or not service_config:
         return {}
 
@@ -2093,7 +2094,7 @@ def _build_poc_console_logs(
     return logs
 
 
-def async_process(service_name, cmd_path, gpu_ids: Optional[List[int]], service_config: Dict):
+def async_process(service_name, cmd_path, gpu_ids: list[int] | None, service_config: dict):
     my_env = prepare_env(service_name, gpu_ids, service_config)
     console_log = _poc_service_console_log(cmd_path)
     os.makedirs(os.path.dirname(console_log), exist_ok=True)
@@ -2113,12 +2114,12 @@ def sync_process(service_name, cmd_path):
 def _run_poc(
     cmd_type: str,
     poc_workspace: str,
-    gpu_ids: List[int],
-    service_config: Dict,
-    project_config: Dict,
+    gpu_ids: list[int],
+    service_config: dict,
+    project_config: dict,
     excluded: list,
     services_list=None,
-    study: Optional[str] = None,
+    study: str | None = None,
 ):
     if services_list is None:
         services_list = []
@@ -2126,7 +2127,7 @@ def _run_poc(
         cmd_type, poc_workspace, service_config, project_config, excluded, services_list, study=study
     )
     clients = _get_clients(service_commands, service_config)
-    gpu_assignments: Dict[str, List[int]] = client_gpu_assignments(clients, gpu_ids)
+    gpu_assignments: dict[str, list[int]] = client_gpu_assignments(clients, gpu_ids)
     for service_name, cmd_path in service_commands:
         if service_name == service_config[SC.FLARE_PROJ_ADMIN]:
             # give other commands a chance to start first
@@ -2196,7 +2197,7 @@ def _is_live_pid_file(pid_file: str) -> bool:
         return False
 
     try:
-        with open(pid_file, "r") as f:
+        with open(pid_file) as f:
             pid = int(f.read().strip())
     except (OSError, ValueError):
         return False
@@ -2346,7 +2347,7 @@ def define_config_parser(poc_parser):
     config_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
-def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optional[str] = None):
+def define_prepare_parser(poc_parser, cmd: str | None = None, help_str: str | None = None):
     cmd = CMD_PREPARE_POC if cmd is None else cmd
     help_str = "prepare poc environment by provisioning local project" if help_str is None else help_str
     prepare_parser = poc_parser.add_parser(cmd, help=help_str)

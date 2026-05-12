@@ -51,7 +51,7 @@ class CyclicController(Controller):
         task_check_period: float = 0.5,
         persist_every_n_rounds: int = 1,
         snapshot_every_n_rounds: int = 1,
-        order: Union[str, List[str]] = RelayOrder.FIXED,
+        order: str | list[str] = RelayOrder.FIXED,
         allow_early_termination=False,
         memory_gc_rounds: int = 1,
     ):
@@ -91,15 +91,15 @@ class CyclicController(Controller):
         super().__init__(task_check_period=task_check_period)
 
         if not isinstance(num_rounds, int):
-            raise TypeError("num_rounds must be int but got {}".format(type(num_rounds)))
+            raise TypeError(f"num_rounds must be int but got {type(num_rounds)}")
         if not isinstance(task_assignment_timeout, int):
-            raise TypeError("task_assignment_timeout must be int but got {}".format(type(task_assignment_timeout)))
+            raise TypeError(f"task_assignment_timeout must be int but got {type(task_assignment_timeout)}")
         if not isinstance(persistor_id, str):
-            raise TypeError("persistor_id must be a string but got {}".format(type(persistor_id)))
+            raise TypeError(f"persistor_id must be a string but got {type(persistor_id)}")
         if not isinstance(shareable_generator_id, str):
-            raise TypeError("shareable_generator_id must be a string but got {}".format(type(shareable_generator_id)))
+            raise TypeError(f"shareable_generator_id must be a string but got {type(shareable_generator_id)}")
         if not isinstance(task_name, str):
-            raise TypeError("task_name must be a string but got {}".format(type(task_name)))
+            raise TypeError(f"task_name must be a string but got {type(task_name)}")
 
         if order not in SUPPORTED_ORDERS and not isinstance(order, list):
             raise ValueError(f"order must be in {SUPPORTED_ORDERS} or a list")
@@ -151,12 +151,12 @@ class CyclicController(Controller):
         fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=True)
         self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
 
-        self._participating_clients: List[Client] = self._engine.get_clients()
+        self._participating_clients: list[Client] = self._engine.get_clients()
         if len(self._participating_clients) <= 1:
             self.system_panic("Not enough client sites.", fl_ctx)
         self._last_client = None
 
-    def _get_relay_orders(self, fl_ctx: FLContext) -> Union[List[Client], None]:
+    def _get_relay_orders(self, fl_ctx: FLContext) -> list[Client] | None:
         active_clients_map = {}
         for t in self._participating_clients:
             if not self.get_client_disconnect_time(t.name):
@@ -246,7 +246,7 @@ class CyclicController(Controller):
                 if abort_signal.triggered:
                     return
 
-                self.log_debug(fl_ctx, "Starting current round={}.".format(self._current_round))
+                self.log_debug(fl_ctx, f"Starting current round={self._current_round}.")
                 fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
 
                 # Task for one cyclic
@@ -290,7 +290,7 @@ class CyclicController(Controller):
                     # Call the self._engine to persist the snapshot of all the FLComponents
                     self._engine.persist_components(fl_ctx, completed=False)
 
-                self.log_debug(fl_ctx, "Ending current round={}.".format(self._current_round))
+                self.log_debug(fl_ctx, f"Ending current round={self._current_round}.")
 
                 # Memory cleanup at end of round (if configured)
                 self._maybe_cleanup_memory()

@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import time
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
+from collections.abc import Callable
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
@@ -35,12 +36,12 @@ from nvflare.fuel.utils import fobs
 class StatisticsController(Controller):
     def __init__(
         self,
-        statistic_configs: Dict[str, dict],
+        statistic_configs: dict[str, dict],
         writer_id: str,
         wait_time_after_min_received: int = 1,
         result_wait_timeout: int = 10,
         precision=4,
-        min_clients: Optional[int] = None,
+        min_clients: int | None = None,
         enable_pre_run_task: bool = True,
     ):
         """Controller for Statistics.
@@ -131,7 +132,7 @@ class StatisticsController(Controller):
 
         """
         super().__init__()
-        self.statistic_configs: Dict[str, dict] = statistic_configs
+        self.statistic_configs: dict[str, dict] = statistic_configs
         self.writer_id = writer_id
         self.task_name = StC.FED_STATS_TASK
         self.client_statistics = {}
@@ -146,7 +147,7 @@ class StatisticsController(Controller):
 
         self.enable_pre_run_task = enable_pre_run_task
 
-        self.result_callback_fns: Dict[str, Callable] = {
+        self.result_callback_fns: dict[str, Callable] = {
             StC.STATS_1st_STATISTICS: self.results_cb,
             StC.STATS_2nd_STATISTICS: self.results_cb,
         }
@@ -202,7 +203,7 @@ class StatisticsController(Controller):
     ):
         pass
 
-    def _get_all_statistic_configs(self) -> List[StatisticConfig]:
+    def _get_all_statistic_configs(self) -> list[StatisticConfig]:
 
         all_statistics = {
             StC.STATS_COUNT: StatisticConfig(StC.STATS_COUNT, {}),
@@ -227,7 +228,7 @@ class StatisticsController(Controller):
 
         self.log_info(fl_ctx, f"start pre_run task for client {client_name}")
         inputs = Shareable()
-        target_statistics: List[StatisticConfig] = self._get_all_statistic_configs()
+        target_statistics: list[StatisticConfig] = self._get_all_statistic_configs()
         inputs[StC.STATS_TARGET_STATISTICS] = fobs.dumps(target_statistics)
         results_cb_fn = self.results_pre_run_cb
 
@@ -449,7 +450,7 @@ class StatisticsController(Controller):
         return result
 
     @staticmethod
-    def _apply_histogram_precision(bins: List[Bin], precision) -> List[Bin]:
+    def _apply_histogram_precision(bins: list[Bin], precision) -> list[Bin]:
         buckets = []
         for bucket in bins:
             buckets.append(
@@ -462,7 +463,7 @@ class StatisticsController(Controller):
         return buckets
 
     @staticmethod
-    def _get_target_statistics(statistic_configs: dict, ordered_statistics: list) -> List[StatisticConfig]:
+    def _get_target_statistics(statistic_configs: dict, ordered_statistics: list) -> list[StatisticConfig]:
         # make sure the execution order of the statistics calculation
 
         targets = []
@@ -492,7 +493,7 @@ class StatisticsController(Controller):
 
     def _prepare_inputs(self, statistic_task: str) -> Shareable:
         inputs = Shareable()
-        target_statistics: List[StatisticConfig] = StatisticsController._get_target_statistics(
+        target_statistics: list[StatisticConfig] = StatisticsController._get_target_statistics(
             self.statistic_configs, StC.ordered_statistics[statistic_task]
         )
 

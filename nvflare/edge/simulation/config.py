@@ -25,7 +25,7 @@ from nvflare.fuel.utils.validation_utils import check_positive_int, check_positi
 VAR_PATTERN = re.compile(r"\{(.*?)}")
 
 
-def load_class(class_path) -> Type:
+def load_class(class_path) -> type:
 
     try:
         if "." in class_path:
@@ -72,7 +72,7 @@ class ConfigParser:
         return self.job_name
 
     def parse(self, config_file: str):
-        with open(config_file, "r") as f:
+        with open(config_file) as f:
             config = json.load(f)
 
         # Load processor

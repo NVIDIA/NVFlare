@@ -63,7 +63,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
         module_names = FL_MODULES
 
         if kv_list:
-            assert isinstance(kv_list, list), "cmd_vars must be list, but got {}".format(type(kv_list))
+            assert isinstance(kv_list, list), f"cmd_vars must be list, but got {type(kv_list)}"
             self.cmd_vars = parse_vars(kv_list)
         else:
             self.cmd_vars = {}
@@ -87,7 +87,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
         )
 
         if kv_list:
-            assert isinstance(kv_list, list), "cmd_vars must be list, but got {}".format(type(kv_list))
+            assert isinstance(kv_list, list), f"cmd_vars must be list, but got {type(kv_list)}"
             self.cmd_vars = parse_vars(kv_list)
         else:
             self.cmd_vars = {}
@@ -113,40 +113,40 @@ class ServerJsonConfigurator(FedJsonConfigurator):
         if path == "server.heart_beat_timeout":
             self.heartbeat_timeout = element
             if not isinstance(element, int) and not isinstance(element, float):
-                raise ConfigError('"heart_beat_timeout" must be a number, but got {}'.format(type(element)))
+                raise ConfigError(f'"heart_beat_timeout" must be a number, but got {type(element)}')
 
             if element <= 0.0:
-                raise ConfigError('"heart_beat_timeout" must be positive number, but got {}'.format(element))
+                raise ConfigError(f'"heart_beat_timeout" must be positive number, but got {element}')
 
             return
 
         if path == "server.task_request_interval":
             self.task_request_interval = element
             if not isinstance(element, int) and not isinstance(element, float):
-                raise ConfigError('"task_request_interval" must be a number, but got {}'.format(type(element)))
+                raise ConfigError(f'"task_request_interval" must be a number, but got {type(element)}')
 
             if element <= 0:
-                raise ConfigError('"task_request_interval" must > 0, but got {}'.format(element))
+                raise ConfigError(f'"task_request_interval" must > 0, but got {element}')
 
             return
 
         if re.search(r"^workflows\.#[0-9]+$", path):
             controller = self.authorize_and_build_component(element, config_ctx, node)
             if not isinstance(controller, Controller):
-                raise ConfigError('"controller" must be a Controller object, but got {}'.format(type(controller)))
+                raise ConfigError(f'"controller" must be a Controller object, but got {type(controller)}')
 
             cid = element.get("id", None)
             if not cid:
                 cid = type(controller).__name__
 
             if not isinstance(cid, str):
-                raise ConfigError('"id" must be str but got {}'.format(type(cid)))
+                raise ConfigError(f'"id" must be str but got {type(cid)}')
 
             if cid in self._get_all_workflows_ids():
-                raise ConfigError('duplicate workflow id "{}"'.format(cid))
+                raise ConfigError(f'duplicate workflow id "{cid}"')
 
             if cid in self.components:
-                raise ConfigError('duplicate component id "{}"'.format(cid))
+                raise ConfigError(f'duplicate component id "{cid}"')
 
             communicator = WFCommServer()
             self.handlers.append(communicator)

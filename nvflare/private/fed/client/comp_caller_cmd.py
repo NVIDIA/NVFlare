@@ -27,11 +27,11 @@ class ComponentCallerProcessor(RequestProcessor):
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
-            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ClientEngineInternalSpec, but got {type(engine)}")
 
         caller = engine.get_widget(WidgetID.COMPONENT_CALLER)
         if not isinstance(caller, ComponentCaller):
-            raise TypeError("caller must be ComponentCaller, but got {}".format(type(caller)))
+            raise TypeError(f"caller must be ComponentCaller, but got {type(caller)}")
 
         run_info = engine.get_current_run_info()
         if not run_info or run_info.job_id < 0:

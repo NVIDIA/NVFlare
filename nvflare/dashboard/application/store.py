@@ -68,7 +68,7 @@ def inc_dl(model, id):
     db.session.commit()
 
 
-class Store(object):
+class Store:
     @classmethod
     def ready(cls):
         user = User.query.get(1)

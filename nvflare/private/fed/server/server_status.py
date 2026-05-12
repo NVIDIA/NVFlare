@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-class ServerStatus(object):
+class ServerStatus:
     NOT_STARTED = 0
     STARTING = 1
     STARTED = 2

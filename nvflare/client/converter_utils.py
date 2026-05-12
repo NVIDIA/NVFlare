@@ -32,7 +32,7 @@ def create_default_params_converters(
     train_task_name: str,
     eval_task_name: str,
     submit_model_task_name: str,
-) -> Tuple[Optional[ParamsConverter], Optional[ParamsConverter]]:
+) -> tuple[ParamsConverter | None, ParamsConverter | None]:
     """Create default from/to NVFlare converters for common Client API formats."""
     if server_expected_format != ExchangeFormat.NUMPY:
         return None, None

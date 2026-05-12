@@ -75,7 +75,7 @@ class FeatureElectionExecutor(Executor):
     def __init__(
         self,
         fs_method: str = "lasso",
-        fs_params: Optional[Dict] = None,
+        fs_params: dict | None = None,
         eval_metric: str = "f1",
         task_name: str = "feature_election",
     ):
@@ -372,7 +372,7 @@ class FeatureElectionExecutor(Executor):
             logger.error(f"Training failed: {e}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-    def perform_feature_selection(self) -> Tuple[np.ndarray, np.ndarray]:
+    def perform_feature_selection(self) -> tuple[np.ndarray, np.ndarray]:
         n_features = self.X_train.shape[1]
 
         scaler = StandardScaler()

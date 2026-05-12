@@ -23,7 +23,7 @@ from nvflare.fuel.utils.log_utils import get_module_logger
 ENV_VAR_PREFIX = "NVFLARE_"
 
 
-def find_file_in_dir(file_basename, path) -> Union[None, str]:
+def find_file_in_dir(file_basename, path) -> None | str:
     """
     Find a file from a directory and return the full path of the file, if found
 
@@ -39,7 +39,7 @@ def find_file_in_dir(file_basename, path) -> Union[None, str]:
     return None
 
 
-def search_file(file_basename: str, dirs: List[str]) -> Union[None, str]:
+def search_file(file_basename: str, dirs: list[str]) -> None | str:
     """
     Find a file by searching a list of dirs and return the one in the last dir.
 
@@ -77,7 +77,7 @@ class ConfigService:
     _var_values = {}
 
     @classmethod
-    def initialize(cls, section_files: Dict[str, str], config_path: List[str], parsed_args=None, var_dict=None):
+    def initialize(cls, section_files: dict[str, str], config_path: list[str], parsed_args=None, var_dict=None):
         """
         Initialize the ConfigService.
         Configuration is divided into sections, and each section must have a JSON config file.
@@ -177,7 +177,7 @@ class ConfigService:
             cls._sections[section_name] = data
 
     @classmethod
-    def load_configuration(cls, file_basename: str) -> Optional[Config]:
+    def load_configuration(cls, file_basename: str) -> Config | None:
         """Load config data from the specified file basename.
         The full name of the config file will be determined by ConfigFactory.
 
@@ -192,8 +192,8 @@ class ConfigService:
 
     @classmethod
     def load_config_dict(
-        cls, file_basename: str, search_dirs: Optional[List] = None, raise_exception: bool = True
-    ) -> Optional[Dict]:
+        cls, file_basename: str, search_dirs: list | None = None, raise_exception: bool = True
+    ) -> dict | None:
         """
         Load a specified config file ( ignore extension)
 
@@ -229,7 +229,7 @@ class ConfigService:
         return msg
 
     @classmethod
-    def find_file(cls, file_basename: str) -> Union[None, str]:
+    def find_file(cls, file_basename: str) -> None | str:
         """
         Find specified file from the config path.
         Caller is responsible for loading/processing the file. This is useful for non-JSON files.

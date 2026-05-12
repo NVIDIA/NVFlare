@@ -218,7 +218,7 @@ class ModelQuantizer(DXOFilter):
         )
         return params, quant_state, source_datatype
 
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> None | DXO:
         """Filter process apply to the Shareable object.
 
         Args:

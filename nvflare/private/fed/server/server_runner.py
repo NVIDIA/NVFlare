@@ -35,7 +35,7 @@ from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
-class ServerRunnerConfig(object):
+class ServerRunnerConfig:
     def __init__(
         self,
         heartbeat_timeout: int,
@@ -129,14 +129,14 @@ class ServerRunner(TBI):
             wf = self.config.workflows[self.current_wf_index]
             try:
                 with self.engine.new_context() as fl_ctx:
-                    self.log_info(fl_ctx, "starting workflow {} ({}) ...".format(wf.id, type(wf.controller)))
+                    self.log_info(fl_ctx, f"starting workflow {wf.id} ({type(wf.controller)}) ...")
 
                     fl_ctx.set_prop(FLContextKey.WORKFLOW, wf.id, sticky=True)
 
                     wf.controller.communicator.initialize_run(fl_ctx)
                     wf.controller.initialize(fl_ctx)
 
-                    self.log_info(fl_ctx, "Workflow {} ({}) started".format(wf.id, type(wf.controller)))
+                    self.log_info(fl_ctx, f"Workflow {wf.id} ({type(wf.controller)}) started")
                     self.log_debug(fl_ctx, "firing event EventType.START_WORKFLOW")
                     self.fire_event(EventType.START_WORKFLOW, fl_ctx)
 
@@ -149,8 +149,8 @@ class ServerRunner(TBI):
                     wf.controller.control_flow(self.abort_signal, fl_ctx)
             except Exception as e:
                 with self.engine.new_context() as fl_ctx:
-                    self.log_exception(fl_ctx, "Exception in workflow {}: {}".format(wf.id, secure_format_exception(e)))
-                self.system_panic("Exception in workflow {}: {}".format(wf.id, secure_format_exception(e)), fl_ctx)
+                    self.log_exception(fl_ctx, f"Exception in workflow {wf.id}: {secure_format_exception(e)}")
+                self.system_panic(f"Exception in workflow {wf.id}: {secure_format_exception(e)}", fl_ctx)
             finally:
                 with self.engine.new_context() as fl_ctx:
                     # do not execute finalize_run() until the wf_lock is acquired
@@ -167,9 +167,7 @@ class ServerRunner(TBI):
                         wf.controller.stop_controller(fl_ctx)
                         wf.controller.communicator.finalize_run(fl_ctx)
                     except Exception as e:
-                        self.log_exception(
-                            fl_ctx, "Error finalizing workflow {}: {}".format(wf.id, secure_format_exception(e))
-                        )
+                        self.log_exception(fl_ctx, f"Error finalizing workflow {wf.id}: {secure_format_exception(e)}")
 
                     self.log_debug(fl_ctx, "firing event EventType.END_WORKFLOW")
                     self.fire_event(EventType.END_WORKFLOW, fl_ctx)
@@ -238,7 +236,7 @@ class ServerRunner(TBI):
             collector = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR)
             if collector:
                 if not isinstance(collector, GroupInfoCollector):
-                    raise TypeError("collector must be GroupInfoCollect but got {}".format(type(collector)))
+                    raise TypeError(f"collector must be GroupInfoCollect but got {type(collector)}")
 
                 with self.wf_lock:
                     if self.current_wf:
@@ -249,7 +247,7 @@ class ServerRunner(TBI):
         elif event_type == EventType.FATAL_SYSTEM_ERROR:
             fl_ctx.set_prop(key=FLContextKey.FATAL_SYSTEM_ERROR, value=True, private=True, sticky=True)
             reason = fl_ctx.get_prop(key=FLContextKey.EVENT_DATA, default="")
-            self.log_error(fl_ctx, "Aborting current RUN due to FATAL_SYSTEM_ERROR received: {}".format(reason))
+            self.log_error(fl_ctx, f"Aborting current RUN due to FATAL_SYSTEM_ERROR received: {reason}")
             self.abort(fl_ctx)
 
     def _task_try_again(self) -> (str, str, Shareable):
@@ -275,7 +273,7 @@ class ServerRunner(TBI):
         """
         engine = fl_ctx.get_engine()
         if not isinstance(engine, ServerEngineSpec):
-            raise TypeError("engine must be ServerEngineSpec but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ServerEngineSpec but got {type(engine)}")
 
         self.log_debug(fl_ctx, "process task request from client")
 
@@ -451,7 +449,7 @@ class ServerRunner(TBI):
         self._report_client_active("submitTaskResult", fl_ctx)
 
         if not isinstance(result, Shareable):
-            self.log_error(fl_ctx, "invalid result submission: must be Shareable but got {}".format(type(result)))
+            self.log_error(fl_ctx, f"invalid result submission: must be Shareable but got {type(result)}")
             return
 
         fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task_name, private=True, sticky=False)
@@ -464,7 +462,7 @@ class ServerRunner(TBI):
         )
 
         if self.status != "started":
-            self.log_info(fl_ctx, "ignored result submission since server runner's status is {}".format(self.status))
+            self.log_info(fl_ctx, f"ignored result submission since server runner's status is {self.status}")
             return
 
         peer_ctx = fl_ctx.get_peer_context()
@@ -519,7 +517,7 @@ class ServerRunner(TBI):
                 except Exception as e:
                     self.log_exception(
                         fl_ctx,
-                        "processing error in task result filter {}; ".format(secure_format_exception(e)),
+                        f"processing error in task result filter {secure_format_exception(e)}; ",
                     )
                     result = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
 
@@ -532,14 +530,14 @@ class ServerRunner(TBI):
                 self.current_wf.controller.communicator.process_submission(
                     client=client, task_name=task_name, task_id=task_id, result=result, fl_ctx=fl_ctx
                 )
-                self.log_info(fl_ctx, "finished processing client result by {}".format(self.current_wf.id))
+                self.log_info(fl_ctx, f"finished processing client result by {self.current_wf.id}")
 
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_SUBMISSION")
                 self.fire_event(EventType.AFTER_PROCESS_SUBMISSION, fl_ctx)
             except Exception as e:
                 self.log_exception(
                     fl_ctx,
-                    "Error processing client result by {}: {}".format(self.current_wf.id, secure_format_exception(e)),
+                    f"Error processing client result by {self.current_wf.id}: {secure_format_exception(e)}",
                 )
 
     def _report_client_active(self, reason: str, fl_ctx: FLContext):

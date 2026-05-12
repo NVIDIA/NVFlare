@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """The FedAdmin to communicate with the Admin server."""
+
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey
@@ -28,7 +29,7 @@ from nvflare.private.fed.server.site_security import SiteSecurity
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
-class RequestProcessor(object):
+class RequestProcessor:
     """The RequestProcessor is responsible for processing a request."""
 
     def get_topics(self) -> [str]:
@@ -52,7 +53,7 @@ class RequestProcessor(object):
         pass
 
 
-class FedAdminAgent(object):
+class FedAdminAgent:
     """FedAdminAgent communicate with the FedAdminServer."""
 
     def __init__(self, client_name: str, cell: Cell, app_ctx):
@@ -65,7 +66,7 @@ class FedAdminAgent(object):
         """
         auditor = AuditService.get_auditor()
         if not isinstance(auditor, Auditor):
-            raise TypeError("auditor must be an instance of Auditor, but got {}".format(type(auditor)))
+            raise TypeError(f"auditor must be an instance of Auditor, but got {type(auditor)}")
 
         self.name = client_name
         self.cell = cell
@@ -90,11 +91,11 @@ class FedAdminAgent(object):
 
         """
         if not isinstance(processor, RequestProcessor):
-            raise TypeError("processor must be an instance of RequestProcessor, but got {}".format(type(processor)))
+            raise TypeError(f"processor must be an instance of RequestProcessor, but got {type(processor)}")
 
         topics = processor.get_topics()
         for topic in topics:
-            assert topic not in self.processors, "duplicate processors for topic {}".format(topic)
+            assert topic not in self.processors, f"duplicate processors for topic {topic}"
             self.processors[topic] = processor
 
     def _dispatch_request(
@@ -102,10 +103,10 @@ class FedAdminAgent(object):
         request: CellMessage,
         # *args, **kwargs
     ) -> CellMessage:
-        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        assert isinstance(request, CellMessage), f"request must be CellMessage but got {type(request)}"
         req = request.payload
 
-        assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
+        assert isinstance(req, Message), f"request payload must be Message but got {type(req)}"
         topic = req.topic
 
         # create audit record

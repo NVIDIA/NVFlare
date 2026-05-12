@@ -374,7 +374,7 @@ class IPCExchanger(Executor):
         else:
             return make_cell_reply(CellReturnCode.INVALID_REQUEST)
 
-    def _receive_result(self, request: Message) -> Union[None, Message]:
+    def _receive_result(self, request: Message) -> None | Message:
         sender = request.get_header(MessageHeaderKey.ORIGIN)
         task_id = request.get_header(defs.MsgHeader.TASK_ID)
 

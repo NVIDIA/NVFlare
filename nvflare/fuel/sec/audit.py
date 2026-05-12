@@ -24,7 +24,7 @@ EXCLUDED_ACTIONS = {
 }
 
 
-class Auditor(object):
+class Auditor:
     def __init__(self, audit_file_name: str):
         """Manages the audit file to log events.
 
@@ -87,7 +87,7 @@ class Auditor(object):
             self.audit_file = None
 
 
-class AuditService(object):
+class AuditService:
     """Service for interacting with Auditor to add events to log."""
 
     the_auditor = None

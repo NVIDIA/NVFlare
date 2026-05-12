@@ -33,11 +33,11 @@ class PreAuthzReturnCode(enum.Enum):
     REQUIRE_AUTHZ = 2  # command preprocessed successfully, further authz required
 
 
-def command_handler_func_signature(conn: Connection, args: List[str]):
+def command_handler_func_signature(conn: Connection, args: list[str]):
     pass
 
 
-def command_authz_func_signature(conn: Connection, args: List[str]) -> PreAuthzReturnCode:
+def command_authz_func_signature(conn: Connection, args: list[str]) -> PreAuthzReturnCode:
     pass
 
 
@@ -46,7 +46,7 @@ class AuthzFilter(CommandFilter):
         """Filter for authorization of admin commands."""
         CommandFilter.__init__(self)
 
-    def pre_command(self, conn: Connection, args: List[str]):
+    def pre_command(self, conn: Connection, args: list[str]):
         cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY, None)
         if not cmd_entry:
             return True
@@ -79,7 +79,7 @@ class AuthzFilter(CommandFilter):
 
         ctx = AuthzContext(user=user, submitter=submitter, right=cmd_entry.name)
 
-        log.debug("User: {} Submitter: {}  Right: {}".format(user, submitter, cmd_entry.name))
+        log.debug(f"User: {user} Submitter: {submitter}  Right: {cmd_entry.name}")
         authorized, err = AuthorizationService.authorize(ctx)
         if err:
             conn.append_error(f"Authorization Error: {err}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED, err))

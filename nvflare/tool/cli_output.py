@@ -130,7 +130,7 @@ def _render_table(data: Any) -> None:
         print(str(data))
 
 
-def output(data: Any, fmt: Optional[str]) -> None:
+def output(data: Any, fmt: str | None) -> None:
     """Legacy output helper used by older cert/package command paths."""
     if fmt is None and _is_json_mode():
         fmt = "json"
@@ -221,7 +221,7 @@ def output_error_message(
     error_code: str,
     message: str,
     hint: str = None,
-    fmt: Optional[str] = None,
+    fmt: str | None = None,
     exit_code: int = 1,
     detail: str = None,
 ) -> None:

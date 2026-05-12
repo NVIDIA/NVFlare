@@ -26,12 +26,12 @@ class PTInProcessClientAPIExecutor(InProcessClientAPIExecutor):
         self,
         task_script_path: str,
         task_script_args: str = "",
-        task_wait_time: Optional[float] = None,
+        task_wait_time: float | None = None,
         result_pull_interval: float = 0.5,
-        log_pull_interval: Optional[float] = None,
+        log_pull_interval: float | None = None,
         params_transfer_type: TransferType = TransferType.FULL,
-        from_nvflare_converter_id: Optional[str] = None,
-        to_nvflare_converter_id: Optional[str] = None,
+        from_nvflare_converter_id: str | None = None,
+        to_nvflare_converter_id: str | None = None,
         train_with_evaluation: bool = True,
         train_task_name: str = AppConstants.TASK_TRAIN,
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
@@ -41,7 +41,7 @@ class PTInProcessClientAPIExecutor(InProcessClientAPIExecutor):
         memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
     ):
-        super(PTInProcessClientAPIExecutor, self).__init__(
+        super().__init__(
             task_script_path=task_script_path,
             task_script_args=task_script_args,
             task_wait_time=task_wait_time,

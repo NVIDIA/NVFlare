@@ -56,7 +56,7 @@ class AppDeployer(AppDeployerSpec):
 
             unzip_all_from_bytes(app_data, app_path)
 
-            with open(app_file, "wt") as f:
+            with open(app_file, "w") as f:
                 f.write(f"{app_name}")
 
             with open(job_meta_file, "w") as f:

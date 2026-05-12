@@ -20,7 +20,7 @@ from nvflare.apis.fl_context import FLContext
 
 
 class ModelLocator(FLComponent):
-    def get_model_names(self, fl_ctx: FLContext) -> List[str]:
+    def get_model_names(self, fl_ctx: FLContext) -> list[str]:
         """List the name of the models.
 
         Args:

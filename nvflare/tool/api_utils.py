@@ -23,11 +23,11 @@ class SystemStartTimeout(RuntimeError):
     pass
 
 
-def _client_names(client_info: list) -> List[str]:
+def _client_names(client_info: list) -> list[str]:
     return [name for name in (getattr(client, "name", None) for client in client_info) if name]
 
 
-def _format_ready_clients(client_names: List[str], ready_count: int, expected_count: int) -> str:
+def _format_ready_clients(client_names: list[str], ready_count: int, expected_count: int) -> str:
     names = f" ({', '.join(client_names)})" if client_names else ""
     return f"Clients ready: {ready_count}/{expected_count}{names}"
 
@@ -88,7 +88,7 @@ def shutdown_system_by_session(
     }
 
 
-def get_running_job_ids(jobs: list) -> List[str]:
+def get_running_job_ids(jobs: list) -> list[str]:
     running_job_ids = []
     for job in jobs or []:
         if not isinstance(job, dict) or job.get("status") != "RUNNING":
@@ -117,7 +117,7 @@ def wait_for_system_start(
     timeout_in_sec: int = 30,
     poll_interval: float = 2.0,
     conn_timeout: float = 10.0,
-    expected_clients: Optional[List[str]] = None,
+    expected_clients: list[str] | None = None,
 ):
     from nvflare.tool.cli_output import print_human
 

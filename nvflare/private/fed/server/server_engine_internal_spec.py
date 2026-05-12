@@ -30,7 +30,7 @@ from .run_manager import RunManager
 from .server_json_config import ServerJsonConfigurator
 
 
-class EngineInfo(object):
+class EngineInfo:
     def __init__(self):
         """Engine information."""
         self.start_time = time.time()
@@ -86,7 +86,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def get_app_run_info(self, job_id) -> Optional[RunInfo]:
+    def get_app_run_info(self, job_id) -> RunInfo | None:
         """Gets the app RunInfo from the child process."""
         pass
 

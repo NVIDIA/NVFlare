@@ -69,11 +69,11 @@ class PTFedAvg(FedAvg):
     def __init__(
         self,
         *args,
-        stop_cond: Optional[str] = None,
-        patience: Optional[int] = None,
-        task_name: Optional[str] = "train",
-        save_filename: Optional[str] = "FL_global_model.pt",
-        model: Optional[Union[torch.nn.Module, dict, FLModel]] = None,
+        stop_cond: str | None = None,
+        patience: int | None = None,
+        task_name: str | None = "train",
+        save_filename: str | None = "FL_global_model.pt",
+        model: torch.nn.Module | dict | FLModel | None = None,
         **kwargs,
     ) -> None:
         # Convert PyTorch model to dict if needed

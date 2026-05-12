@@ -48,7 +48,7 @@ class JsonStatsFileWriter(StatisticsWriter):
 
         data_exists = os.path.isfile(full_uri)
         if data_exists and not overwrite_existing:
-            raise StorageException("object {} already exists and overwrite_existing is False".format(full_uri))
+            raise StorageException(f"object {full_uri} already exists and overwrite_existing is False")
 
         content = json.dumps(data, cls=self.json_encoder_class)
 

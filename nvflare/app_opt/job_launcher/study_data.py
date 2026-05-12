@@ -50,7 +50,7 @@ def _validate_path_component(value: str, label: str, file_path: str) -> None:
 
 def load_study_data_file(file_path: str) -> dict:
     try:
-        with open(file_path, "rt") as f:
+        with open(file_path) as f:
             study_data = yaml.safe_load(f)
     except FileNotFoundError:
         return {}
@@ -88,7 +88,7 @@ def load_study_data_file(file_path: str) -> dict:
     return study_data
 
 
-def should_mount_study_data(study: Optional[str]) -> bool:
+def should_mount_study_data(study: str | None) -> bool:
     return bool(study)
 
 

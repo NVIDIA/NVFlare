@@ -36,12 +36,12 @@ from nvflare.fuel.utils import fobs
 class PTFileModelPersistor(ModelPersistor):
     def __init__(
         self,
-        exclude_vars: Optional[str] = None,
-        model: Optional[Union[torch.nn.Module, str, Dict[str, Any]]] = None,
+        exclude_vars: str | None = None,
+        model: torch.nn.Module | str | dict[str, Any] | None = None,
         global_model_file_name: str = DefaultCheckpointFileName.GLOBAL_MODEL,
         best_global_model_file_name: str = DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
-        source_ckpt_file_full_name: Optional[str] = None,
-        filter_id: Optional[str] = None,
+        source_ckpt_file_full_name: str | None = None,
+        filter_id: str | None = None,
         load_weights_only: bool = True,
         allow_numpy_conversion: bool = True,
     ):
@@ -141,9 +141,7 @@ class PTFileModelPersistor(ModelPersistor):
                     with open(env_config_file_name) as file:
                         env = json.load(file)
                 except Exception:
-                    self.system_panic(
-                        reason="error opening env config file {}".format(env_config_file_name), fl_ctx=fl_ctx
-                    )
+                    self.system_panic(reason=f"error opening env config file {env_config_file_name}", fl_ctx=fl_ctx)
                     return
 
         if env is not None:
@@ -200,7 +198,7 @@ class PTFileModelPersistor(ModelPersistor):
             engine = fl_ctx.get_engine()
             self.model = engine.get_component(model_component_id)
             if not self.model:
-                self.system_panic(reason="cannot find model component '{}'".format(model_component_id), fl_ctx=fl_ctx)
+                self.system_panic(reason=f"cannot find model component '{model_component_id}'", fl_ctx=fl_ctx)
                 return
             if not isinstance(self.model, torch.nn.Module):
                 self.system_panic(
@@ -211,9 +209,7 @@ class PTFileModelPersistor(ModelPersistor):
                 )
                 return
         elif self.model and not isinstance(self.model, torch.nn.Module):
-            self.system_panic(
-                reason="expect model to be torch.nn.Module but got {}".format(type(self.model)), fl_ctx=fl_ctx
-            )
+            self.system_panic(reason=f"expect model to be torch.nn.Module but got {type(self.model)}", fl_ctx=fl_ctx)
             return
 
         fl_ctx.sync_sticky()
@@ -256,7 +252,7 @@ class PTFileModelPersistor(ModelPersistor):
                 data = torch.load(src_file_name, map_location=device, weights_only=self.load_weights_only)
                 # "checkpoint may contain 'model', 'optimizer', 'lr_scheduler', etc. or only contain model dict directly."
             except Exception:
-                self.log_exception(fl_ctx, "error loading checkpoint from {}".format(src_file_name))
+                self.log_exception(fl_ctx, f"error loading checkpoint from {src_file_name}")
                 self.system_panic(reason="cannot load model checkpoint", fl_ctx=fl_ctx)
                 return None
         else:
@@ -328,10 +324,10 @@ class PTFileModelPersistor(ModelPersistor):
             )
             return persistence_manager.to_model_learnable(self.exclude_vars)
         except Exception:
-            self.log_exception(fl_ctx, "error loading checkpoint from {}".format(location))
+            self.log_exception(fl_ctx, f"error loading checkpoint from {location}")
             return None
 
-    def get_model_inventory(self, fl_ctx: FLContext) -> Dict[str, ModelDescriptor]:
+    def get_model_inventory(self, fl_ctx: FLContext) -> dict[str, ModelDescriptor]:
         model_inventory = {}
 
         # Include source checkpoint if provided (supports external/pre-trained models)

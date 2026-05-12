@@ -111,7 +111,7 @@ class SGAPAssessor(Assessor):
         self.log_info(fl_ctx, f"starting round {current_round}")
         return self.shareable_gen.learnable_to_shareable(self._global_weights, fl_ctx)
 
-    def process_child_update(self, data: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
+    def process_child_update(self, data: Shareable, fl_ctx: FLContext) -> (bool, Shareable | None):
         # Process update from child.
         with self._aggr_lock:
             accepted = self.aggregator.accept(data, fl_ctx)

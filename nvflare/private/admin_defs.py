@@ -17,20 +17,20 @@ import uuid
 from typing import Optional
 
 
-class MsgHeader(object):
+class MsgHeader:
 
     REF_MSG_ID = "_refMsgId"
     RETURN_CODE = "_rtnCode"
     META = "_meta"
 
 
-class ReturnCode(object):
+class ReturnCode:
 
     OK = "_ok"
     ERROR = "_error"
 
 
-class Message(object):
+class Message:
     def __init__(self, topic: str, body):
         """To init a Message.
 
@@ -61,7 +61,7 @@ class Message(object):
         if not headers:
             return
         if not isinstance(headers, dict):
-            raise TypeError("headers must be dict but got {}".format(type(headers)))
+            raise TypeError(f"headers must be dict but got {type(headers)}")
         if len(headers) > 0:
             self.headers.update(headers)
 
@@ -75,7 +75,7 @@ class Message(object):
         self.set_header(MsgHeader.REF_MSG_ID, msg_id)
 
 
-def error_reply(err: str, meta: Optional[dict] = None) -> Message:
+def error_reply(err: str, meta: dict | None = None) -> Message:
     msg = Message(topic="reply", body=err)
     msg.set_header(MsgHeader.RETURN_CODE, ReturnCode.ERROR)
     if meta:
@@ -83,7 +83,7 @@ def error_reply(err: str, meta: Optional[dict] = None) -> Message:
     return msg
 
 
-def ok_reply(topic=None, body=None, meta: Optional[dict] = None) -> Message:
+def ok_reply(topic=None, body=None, meta: dict | None = None) -> Message:
     if body is None:
         body = "ok"
 

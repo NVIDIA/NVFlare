@@ -204,9 +204,9 @@ class CCWFJob(FedJob):
         self,
         name: str = "fed_job",
         min_clients: int = 1,
-        mandatory_clients: Optional[List[str]] = None,
-        executor_tasks: Optional[List[str]] = None,
-        external_resources: Optional[str] = None,
+        mandatory_clients: list[str] | None = None,
+        executor_tasks: list[str] | None = None,
+        external_resources: str | None = None,
     ):
         """Client-Controlled Workflow Job.
 

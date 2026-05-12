@@ -14,7 +14,8 @@
 import logging
 import threading
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Optional
+from typing import Any, Optional
+from collections.abc import Callable
 
 from nvflare.fuel.f3.connection import BytesAlike
 
@@ -36,7 +37,7 @@ class StreamCancelled(StreamError):
 class Stream(ABC):
     """A raw, read-only, seekable binary byte stream"""
 
-    def __init__(self, size: int = 0, headers: Optional[dict] = None):
+    def __init__(self, size: int = 0, headers: dict | None = None):
         """Constructor for stream
 
         Args:
@@ -54,7 +55,7 @@ class Stream(ABC):
     def get_pos(self):
         return self.pos
 
-    def get_headers(self) -> Optional[dict]:
+    def get_headers(self) -> dict | None:
         return self.headers
 
     @abstractmethod
@@ -101,12 +102,12 @@ class StreamFuture:
     Fashioned after concurrent.futures.Future
     """
 
-    def __init__(self, stream_id: int, headers: Optional[dict] = None, task_handle: StreamTaskSpec = None):
+    def __init__(self, stream_id: int, headers: dict | None = None, task_handle: StreamTaskSpec = None):
         self.stream_id = stream_id
         self.headers = headers
         self.waiter = threading.Event()
         self.lock = threading.Lock()
-        self.error: Optional[StreamError] = None
+        self.error: StreamError | None = None
         self.value = None
         self.size = 0
         self.progress = 0
@@ -116,7 +117,7 @@ class StreamFuture:
     def get_stream_id(self) -> int:
         return self.stream_id
 
-    def get_headers(self) -> Optional[dict]:
+    def get_headers(self) -> dict | None:
         return self.headers
 
     def get_size(self) -> int:

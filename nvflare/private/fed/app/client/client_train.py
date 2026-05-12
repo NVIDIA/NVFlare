@@ -62,7 +62,7 @@ def main(args):
             if os.path.exists(f):
                 os.remove(f)
         except Exception:
-            print("Could not remove the {} file.  Please check your system before starting FL.".format(name))
+            print(f"Could not remove the {name} file.  Please check your system before starting FL.")
             sys.exit(-1)
 
     rank = args.local_rank

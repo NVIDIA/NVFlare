@@ -27,7 +27,7 @@ from nvflare.fuel.utils.fobs.datum import DatumManager
 
 
 class StatisticConfigDecomposer(fobs.Decomposer):
-    def supported_type(self) -> Type[Any]:
+    def supported_type(self) -> type[Any]:
         return StatisticConfig
 
     def decompose(self, statistic_config: StatisticConfig, manager: DatumManager = None) -> Any:
@@ -38,7 +38,7 @@ class StatisticConfigDecomposer(fobs.Decomposer):
 
 
 class FeatureDecomposer(fobs.Decomposer):
-    def supported_type(self) -> Type[Any]:
+    def supported_type(self) -> type[Any]:
         return Feature
 
     def decompose(self, f: Feature, manager: DatumManager = None) -> Any:
@@ -49,7 +49,7 @@ class FeatureDecomposer(fobs.Decomposer):
 
 
 class BinDecomposer(fobs.Decomposer):
-    def supported_type(self) -> Type[Any]:
+    def supported_type(self) -> type[Any]:
         return Bin
 
     def decompose(self, b: Bin, manager: DatumManager = None) -> Any:
@@ -60,7 +60,7 @@ class BinDecomposer(fobs.Decomposer):
 
 
 class BinRangeDecomposer(fobs.Decomposer):
-    def supported_type(self) -> Type[Any]:
+    def supported_type(self) -> type[Any]:
         return BinRange
 
     def decompose(self, b: BinRange, manager: DatumManager = None) -> Any:
@@ -71,7 +71,7 @@ class BinRangeDecomposer(fobs.Decomposer):
 
 
 class HistogramDecomposer(fobs.Decomposer):
-    def supported_type(self) -> Type[Any]:
+    def supported_type(self) -> type[Any]:
         return Histogram
 
     def decompose(self, b: Histogram, manager: DatumManager = None) -> Any:
@@ -82,7 +82,7 @@ class HistogramDecomposer(fobs.Decomposer):
 
 
 class HistogramTypeDecomposer(fobs.Decomposer):
-    def supported_type(self) -> Type[HistogramType]:
+    def supported_type(self) -> type[HistogramType]:
         return HistogramType
 
     def decompose(self, target: HistogramType, manager: DatumManager = None) -> Any:
@@ -93,7 +93,7 @@ class HistogramTypeDecomposer(fobs.Decomposer):
 
 
 class DataTypeDecomposer(fobs.Decomposer):
-    def supported_type(self) -> Type[DataType]:
+    def supported_type(self) -> type[DataType]:
         return DataType
 
     def decompose(self, target: DataType, manager: DatumManager = None) -> Any:

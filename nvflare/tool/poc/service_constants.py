@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-class FlareServiceConstants(object):
+class FlareServiceConstants:
     FLARE_PROJ_ADMIN = "admin@nvidia.com"
     FLARE_OTHER_ADMINS = "other_admins"
     FLARE_SERVER = "server"

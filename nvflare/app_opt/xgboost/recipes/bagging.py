@@ -144,8 +144,8 @@ class XGBBaggingRecipe(Recipe):
         name: str,
         min_clients: int,
         training_mode: str = "bagging",
-        num_rounds: Optional[int] = None,
-        num_client_bagging: Optional[int] = None,
+        num_rounds: int | None = None,
+        num_client_bagging: int | None = None,
         num_local_parallel_tree: int = 1,
         local_subsample: float = 0.8,
         learning_rate: float = 0.1,
@@ -158,7 +158,7 @@ class XGBBaggingRecipe(Recipe):
         lr_mode: str = "uniform",
         save_name: str = "xgboost_model.json",
         data_loader_id: str = "dataloader",
-        per_site_config: Optional[dict[str, dict]] = None,
+        per_site_config: dict[str, dict] | None = None,
     ):
         # Set default num_rounds based on training_mode if not specified
         if num_rounds is None:

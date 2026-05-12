@@ -105,7 +105,7 @@ class Communicator:
         """
         self.conn_manager.add_endpoint_monitor(monitor)
 
-    def find_endpoint(self, name: str) -> Optional[Endpoint]:
+    def find_endpoint(self, name: str) -> Endpoint | None:
         """Find endpoint by name
 
         Args:

@@ -68,7 +68,7 @@ class ConvertWeights(DXOFilter):
 
         return dxo.data
 
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> None | DXO:
         """Called by runners to perform weight conversion.
 
         Args:

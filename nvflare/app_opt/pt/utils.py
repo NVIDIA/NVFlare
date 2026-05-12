@@ -15,7 +15,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping, Optional
+from typing import Optional
+from collections.abc import Mapping
 
 import torch
 import torch.nn as nn
@@ -60,7 +61,7 @@ class ModelParamMatchReport:
     matched_keys: tuple[str, ...]
     unexpected_keys: tuple[str, ...]
     shape_mismatches: tuple[ParamShapeMismatch, ...]
-    prefix_hint: Optional[str] = None
+    prefix_hint: str | None = None
 
     def format_context(self) -> str:
         return (
@@ -109,7 +110,7 @@ def _format_key_sample(keys: tuple[str, ...], max_keys: int = 5) -> str:
     return str(sample)
 
 
-def _get_value_shape(value) -> Optional[tuple]:
+def _get_value_shape(value) -> tuple | None:
     shape = getattr(value, "shape", None)
     if shape is not None:
         return tuple(shape)
@@ -120,7 +121,7 @@ def _get_value_shape(value) -> Optional[tuple]:
         return None
 
 
-def _detect_prefix_hint(local_keys: set[str], external_keys: tuple[str, ...]) -> Optional[str]:
+def _detect_prefix_hint(local_keys: set[str], external_keys: tuple[str, ...]) -> str | None:
     if not local_keys or not external_keys:
         return None
 
@@ -146,7 +147,7 @@ def _detect_prefix_hint(local_keys: set[str], external_keys: tuple[str, ...]) ->
 
 
 def inspect_model_params(
-    local_var_dict: Mapping[str, object], model_params: Optional[Mapping[str, object]]
+    local_var_dict: Mapping[str, object], model_params: Mapping[str, object] | None
 ) -> ModelParamMatchReport:
     """Compare incoming model parameters against a local model/checkpoint keyspace.
 

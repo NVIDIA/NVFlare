@@ -104,7 +104,7 @@ class ETEdgeModelExecutor(EdgeModelExecutor):
 
     def _convert_device_result_to_model_update(
         self, result_report: ResultReport, current_task: TaskInfo, fl_ctx: FLContext
-    ) -> Optional[ModelUpdate]:
+    ) -> ModelUpdate | None:
         self.log_info(fl_ctx, f"ETEdgeModelExecutor Converting result for task: {current_task.id}")
 
         device_id = result_report.get_device_id()

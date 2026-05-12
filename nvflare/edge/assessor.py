@@ -63,7 +63,7 @@ class Assessor(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
+    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Shareable | None):
         pass
 
     def end_task(self, fl_ctx: FLContext):

@@ -23,17 +23,17 @@ from nvflare.fuel.f3.cellnet.utils import new_cell_message  # noqa: F401
 from nvflare.fuel.hci.server.constants import ConnProps
 
 
-class SpecialTaskName(object):
+class SpecialTaskName:
 
     TRY_AGAIN = "__try_again__"
     END_RUN = "__end_run__"
 
 
-class TaskConstant(object):
+class TaskConstant:
     WAIT_TIME = "__wait_time__"
 
 
-class EngineConstant(object):
+class EngineConstant:
 
     FEDERATE_CLIENT = "federate_client"
     AUTH_TOKEN = "auth_token"
@@ -41,19 +41,19 @@ class EngineConstant(object):
     ENGINE_TASK_NAME = "engine_task_name"
 
 
-class InfoCollectorTopic(object):
+class InfoCollectorTopic:
 
     SHOW_STATS = "info.show_stats"
     SHOW_ERRORS = "info.show_errors"
     RESET_ERRORS = "info.reset_errors"
 
 
-class ComponentCallerTopic(object):
+class ComponentCallerTopic:
 
     CALL_COMPONENT = "comp_caller.call"
 
 
-class TrainingTopic(object):
+class TrainingTopic:
 
     START = "train.start"
     ABORT = "train.abort"
@@ -73,7 +73,7 @@ class TrainingTopic(object):
     CONFIGURE_JOB_LOG = "train.configure_job_log"
 
 
-class RequestHeader(object):
+class RequestHeader:
 
     JOB_ID = "job_id"
     JOB_STATUS = "job_status"
@@ -93,7 +93,7 @@ class RequestHeader(object):
     REQUIRE_AUTHZ = "require_authz"
 
 
-class SysCommandTopic(object):
+class SysCommandTopic:
 
     SYS_INFO = "sys.info"
     SHELL = "sys.shell"
@@ -103,18 +103,18 @@ class SysCommandTopic(object):
     CONFIGURE_SITE_LOG = "sys.configure_site_log"
 
 
-class ControlCommandTopic(object):
+class ControlCommandTopic:
 
     DO_COMMAND = "control.do_command"
 
 
-class ControlCommandName(object):
+class ControlCommandName:
 
     ABORT_TASK = "abort_task"
     END_RUN = "end_run"
 
 
-class ClientStatusKey(object):
+class ClientStatusKey:
 
     JOB_ID = "job_id"
     CURRENT_TASK = "current_task"
@@ -124,7 +124,7 @@ class ClientStatusKey(object):
     RUNNING_JOBS = "running_jobs"
 
 
-class ScopeInfoKey(object):
+class ScopeInfoKey:
 
     SCOPE_NAMES = "scope_names"
     DEFAULT_SCOPE = "default_scope"

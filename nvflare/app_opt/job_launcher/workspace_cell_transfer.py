@@ -185,7 +185,7 @@ class WorkspaceTransferManager:
         )
 
     @classmethod
-    def get_or_create(cls, cell: Cell) -> "WorkspaceTransferManager":
+    def get_or_create(cls, cell: Cell) -> WorkspaceTransferManager:
         """Return the per-cell manager, constructing one on first use."""
         lock = cell.__dict__.setdefault("_workspace_transfer_lock", threading.Lock())
         with lock:

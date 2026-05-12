@@ -28,14 +28,14 @@ from .constants import NONE_DATA, QueryType
 from .edge_api_pb2 import Reply, Request
 
 
-def to_bytes(data: Optional[dict]) -> bytes:
+def to_bytes(data: dict | None) -> bytes:
     if not data:
         return NONE_DATA
     str_data = json.dumps(data)
     return str_data.encode("utf-8")
 
 
-def make_reply(status: str, payload: Optional[dict] = None):
+def make_reply(status: str, payload: dict | None = None):
     return Reply(
         status=status,
         payload=to_bytes(payload),

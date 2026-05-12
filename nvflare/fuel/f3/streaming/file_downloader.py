@@ -82,7 +82,7 @@ class FileDownloadable(Downloadable):
         self.cb_kwargs = cb_kwargs
         self.logger = get_obj_logger(self)
 
-    def produce(self, state: dict, requester: str) -> Tuple[str, Any, dict]:
+    def produce(self, state: dict, requester: str) -> tuple[str, Any, dict]:
         received_bytes = 0
         if state:
             received_bytes = state.get(_StateKey.RECEIVED_BYTES, 0)
@@ -153,7 +153,7 @@ def download_file(
     secure=False,
     optional=False,
     abort_signal=None,
-) -> Tuple[str, Optional[str]]:
+) -> tuple[str, str | None]:
     """Download the referenced file from the file owner.
 
     Args:

@@ -21,8 +21,8 @@ from typing import Optional
 from nvflare.tool.cli_output import output_usage_error
 from nvflare.tool.cli_schema import handle_schema_flag
 
-_deploy_root_parser: Optional[argparse.ArgumentParser] = None
-_deploy_prepare_parser: Optional[argparse.ArgumentParser] = None
+_deploy_root_parser: argparse.ArgumentParser | None = None
+_deploy_prepare_parser: argparse.ArgumentParser | None = None
 
 _DEPLOY_PREPARE_EXAMPLES = [
     "nvflare deploy prepare ./site-1",

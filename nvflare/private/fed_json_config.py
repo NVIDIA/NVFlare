@@ -20,7 +20,7 @@ from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.json_configer import ConfigContext, ConfigError, JsonConfigurator
 
 
-class FilterChain(object):
+class FilterChain:
     def __init__(self, chain_type, direction):
         """To init the FilterChain."""
         self.chain_type = chain_type
@@ -94,10 +94,10 @@ class FedJsonConfigurator(JsonConfigurator):
                 raise ConfigError("missing component id")
 
             if not isinstance(cid, str):
-                raise ConfigError('"id" must be str but got {}'.format(type(cid)))
+                raise ConfigError(f'"id" must be str but got {type(cid)}')
 
             if cid in self.components:
-                raise ConfigError('duplicate component id "{}"'.format(cid))
+                raise ConfigError(f'duplicate component id "{cid}"')
 
             self.components[cid] = c
             return
@@ -146,27 +146,27 @@ class FedJsonConfigurator(JsonConfigurator):
 
     def validate_tasks(self, tasks):
         if not isinstance(tasks, list):
-            raise ConfigError('"tasks" must be specified as list of task names but got {}'.format(type(tasks)))
+            raise ConfigError(f'"tasks" must be specified as list of task names but got {type(tasks)}')
 
         if len(tasks) <= 0:
             raise ConfigError('"tasks" must not be empty')
 
         for n in tasks:
             if not isinstance(n, str):
-                raise ConfigError("task names must be string but got {}".format(type(n)))
+                raise ConfigError(f"task names must be string but got {type(n)}")
 
     def validate_filter_chain(self, chain: FilterChain):
         self.validate_tasks(chain.tasks)
 
         if not isinstance(chain.filters, list):
-            raise ConfigError('"filters" must be specified as list of filters but got {}'.format(type(chain.filters)))
+            raise ConfigError(f'"filters" must be specified as list of filters but got {type(chain.filters)}')
 
         if len(chain.filters) <= 0:
             raise ConfigError('"filters" must not be empty')
 
         for f in chain.filters:
             if not isinstance(f, Filter):
-                raise ConfigError('"filters" must contain Filter object but got {}'.format(type(f)))
+                raise ConfigError(f'"filters" must contain Filter object but got {type(f)}')
             f.set_prop(FilterContextKey.CHAIN_TYPE, chain.chain_type)
             f.set_prop(FilterContextKey.SOURCE, FilterSource.JOB)
 
@@ -185,10 +185,10 @@ class FedJsonConfigurator(JsonConfigurator):
             raise ConfigError("missing format_version")
 
         if not isinstance(self.format_version, int):
-            raise ConfigError('"format_version" must be int, but got {}'.format(type(self.format_version)))
+            raise ConfigError(f'"format_version" must be int, but got {type(self.format_version)}')
 
         if self.format_version != 2:
-            raise ConfigError('wrong "format_version" {}: must be 2'.format(self.format_version))
+            raise ConfigError(f'wrong "format_version" {self.format_version}: must be 2')
 
         data_filter_table = {}
         for c in self.task_data_filter_chains:
@@ -203,9 +203,9 @@ class FedJsonConfigurator(JsonConfigurator):
     def _build_filter_table(self, c, data_filter_table):
         direction = c.direction.lower()
         if not FilterChain.validate_direction(direction):
-            raise TypeError("Filter chain direction {} is not supported.".format(direction))
+            raise TypeError(f"Filter chain direction {direction} is not supported.")
         if not isinstance(c, FilterChain):
-            raise TypeError("chain must be FilterChain but got {}".format(type(c)))
+            raise TypeError(f"chain must be FilterChain but got {type(c)}")
         for t in c.tasks:
             if direction == FilterKey.INOUT:
                 directions = [FilterKey.IN, FilterKey.OUT]
@@ -214,5 +214,5 @@ class FedJsonConfigurator(JsonConfigurator):
             for item in directions:
                 task_filter_key = t + FilterKey.DELIMITER + item
                 if task_filter_key in data_filter_table:
-                    raise ConfigError("multiple data filter chains defined for task {}".format(task_filter_key))
+                    raise ConfigError(f"multiple data filter chains defined for task {task_filter_key}")
                 data_filter_table[task_filter_key] = c.filters

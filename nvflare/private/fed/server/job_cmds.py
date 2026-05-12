@@ -256,7 +256,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             ],
         )
 
-    def authorize_job_file(self, conn: Connection, args: List[str]):
+    def authorize_job_file(self, conn: Connection, args: list[str]):
         """
         Args: cmd_name tx_id job_id file_name [end]
         """
@@ -268,7 +268,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         args_for_authz = [args[0], job_id]
         return self.authorize_job_id(conn, args_for_authz)
 
-    def authorize_job_id(self, conn: Connection, args: List[str]):
+    def authorize_job_id(self, conn: Connection, args: list[str]):
         if len(args) < 2:
             conn.append_error(
                 "syntax error: missing job_id", meta=make_meta(MetaStatusValue.SYNTAX_ERROR, "missing job_id")
@@ -308,7 +308,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             return PreAuthzReturnCode.ERROR
         return PreAuthzReturnCode.REQUIRE_AUTHZ
 
-    def authorize_job(self, conn: Connection, args: List[str]):
+    def authorize_job(self, conn: Connection, args: list[str]):
         rc = self.authorize_job_id(conn, args)
         if rc == PreAuthzReturnCode.ERROR:
             return rc
@@ -321,17 +321,17 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         return PreAuthzReturnCode.REQUIRE_AUTHZ
 
-    def authorize_configure_job_log(self, conn: Connection, args: List[str]):
+    def authorize_configure_job_log(self, conn: Connection, args: list[str]):
         if len(args) < 4:
             conn.append_error("syntax error: please provide job_id, target_type, and config")
             return PreAuthzReturnCode.ERROR
         return self.authorize_job(conn, args[:-1])
 
-    def delete_job_id(self, conn: Connection, args: List[str]):
+    def delete_job_id(self, conn: Connection, args: list[str]):
         job_id = args[1]
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngine):
-            raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ServerEngine but got {type(engine)}")
 
         if job_id in engine.run_processes.keys():
             conn.append_error(f"Current running run_{job_id} can not be deleted.")
@@ -353,7 +353,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         conn.append_success("")
 
-    def configure_job_log(self, conn: Connection, args: List[str]):
+    def configure_job_log(self, conn: Connection, args: list[str]):
         if len(args) < 4:
             conn.append_error("syntax error: please provide job_id, target_type, and config")
             return
@@ -364,7 +364,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngine):
-            raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ServerEngine but got {type(engine)}")
 
         try:
             with engine.new_context() as fl_ctx:
@@ -402,7 +402,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 )
             )
 
-    def list_jobs(self, conn: Connection, args: List[str]):
+    def list_jobs(self, conn: Connection, args: list[str]):
         try:
             parser = _create_list_job_cmd_parser()
             parsed_args = parser.parse_args(args[1:])
@@ -474,7 +474,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         conn.append_success("")
 
-    def delete_job(self, conn: Connection, args: List[str]):
+    def delete_job(self, conn: Connection, args: list[str]):
         job = conn.get_prop(self.JOB)
         if not job:
             conn.append_error(
@@ -517,7 +517,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             ),
         )
 
-    def get_job_meta(self, conn: Connection, args: List[str]):
+    def get_job_meta(self, conn: Connection, args: list[str]):
         job_id = conn.get_prop(self.JOB_ID)
         engine = conn.app_ctx
         job_def_manager = engine.job_def_manager
@@ -538,7 +538,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
                 )
 
-    def get_job_log(self, conn: Connection, args: List[str]):
+    def get_job_log(self, conn: Connection, args: list[str]):
         try:
             parser = _create_get_job_log_cmd_parser()
             parsed_args = parser.parse_args(args[1:])
@@ -564,7 +564,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_id = prop_job_id if prop_job_id is not None else parsed_job_id
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngine):
-            raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ServerEngine but got {type(engine)}")
 
         target = parsed_args.target
         target_lower = target.lower() if isinstance(target, str) else target
@@ -624,7 +624,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         log_file_name: str = WorkspaceConstants.LOG_FILE_NAME,
         workspace_zip: bytes = None,
         workspace_zip_loaded: bool = False,
-    ) -> Optional[str]:
+    ) -> str | None:
         engine = conn.app_ctx
         log_text = self._read_live_server_job_log(engine, job_id, log_file_name)
         if log_text is not None:
@@ -635,7 +635,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     def _read_live_server_job_log(
         self, engine, job_id: str, log_file_name: str = WorkspaceConstants.LOG_FILE_NAME
-    ) -> Optional[str]:
+    ) -> str | None:
         workspace = engine.get_workspace()
         log_file = os.path.join(workspace.get_log_root(job_id), log_file_name)
         try:
@@ -650,11 +650,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     def _read_stored_server_job_log(
         self, conn: Connection, job_id: str, log_file_name: str = WorkspaceConstants.LOG_FILE_NAME
-    ) -> Optional[str]:
+    ) -> str | None:
         workspace_zip = self._read_stored_workspace_zip(conn, job_id)
         return self._extract_server_log_from_workspace_zip(workspace_zip, log_file_name)
 
-    def _read_stored_workspace_zip(self, conn: Connection, job_id: str) -> Optional[bytes]:
+    def _read_stored_workspace_zip(self, conn: Connection, job_id: str) -> bytes | None:
         engine = conn.app_ctx
         job_def_manager = engine.job_def_manager
         if not isinstance(job_def_manager, JobDefManagerSpec):
@@ -670,7 +670,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     def _extract_server_log_from_workspace_zip(
         self, workspace_zip: bytes, log_file_name: str = WorkspaceConstants.LOG_FILE_NAME
-    ) -> Optional[str]:
+    ) -> str | None:
         if not workspace_zip:
             return None
 
@@ -688,8 +688,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     @staticmethod
     def _find_server_log_member(
-        member_names: List[str], log_file_name: str = WorkspaceConstants.LOG_FILE_NAME
-    ) -> Optional[str]:
+        member_names: list[str], log_file_name: str = WorkspaceConstants.LOG_FILE_NAME
+    ) -> str | None:
         if log_file_name in member_names:
             return log_file_name
         server_log_name = f"{SERVER_SITE_NAME}/{log_file_name}"
@@ -772,7 +772,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_id: str,
         client_name: str,
         log_file_name: str = WorkspaceConstants.LOG_FILE_NAME,
-    ) -> Optional[str]:
+    ) -> str | None:
         engine = conn.app_ctx
         job_def_manager = engine.job_def_manager
         if not isinstance(job_def_manager, JobDefManagerSpec):
@@ -803,7 +803,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_id: str,
         client_name: str,
         log_file_name: str = WorkspaceConstants.LOG_FILE_NAME,
-    ) -> Optional[str]:
+    ) -> str | None:
         workspace = engine.get_workspace()
         log_file = os.path.join(workspace.get_log_root(job_id), client_name, log_file_name)
         try:
@@ -819,7 +819,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_id: str,
         client_name: str,
         log_file_name: str = WorkspaceConstants.LOG_FILE_NAME,
-    ) -> Optional[str]:
+    ) -> str | None:
         engine = conn.app_ctx
         job_def_manager = engine.job_def_manager
         if not isinstance(job_def_manager, JobDefManagerSpec):
@@ -838,7 +838,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         workspace_zip: bytes,
         client_name: str,
         log_file_name: str = WorkspaceConstants.LOG_FILE_NAME,
-    ) -> Optional[str]:
+    ) -> str | None:
         if not workspace_zip:
             return None
 
@@ -856,8 +856,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     @staticmethod
     def _find_client_log_member(
-        member_names: List[str], client_name: str, log_file_name: str = WorkspaceConstants.LOG_FILE_NAME
-    ) -> Optional[str]:
+        member_names: list[str], client_name: str, log_file_name: str = WorkspaceConstants.LOG_FILE_NAME
+    ) -> str | None:
         client_log_name = f"{client_name}/{log_file_name}"
         if client_log_name in member_names:
             return client_log_name
@@ -877,7 +877,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_id: str,
         fl_ctx,
         log_file_name: str = WorkspaceConstants.LOG_FILE_NAME,
-    ) -> Set[str]:
+    ) -> set[str]:
         component_prefix = f"{self._client_log_data_type(log_file_name)}_"
         components = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx) or []
         return {
@@ -892,7 +892,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_id: str,
         fl_ctx,
         log_file_name: str = WorkspaceConstants.LOG_FILE_NAME,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         try:
             workspace_zip = job_def_manager.get_storage_component(jid=job_id, component=WORKSPACE, fl_ctx=fl_ctx)
         except StorageException:
@@ -902,7 +902,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     def _extract_client_logs_from_workspace_zip(
         self, workspace_zip: bytes, log_file_name: str = WorkspaceConstants.LOG_FILE_NAME
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         if not workspace_zip:
             return {}
 
@@ -925,14 +925,14 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     @staticmethod
     def _find_workspace_client_log_sites(
-        member_names: List[str], log_file_name: str = WorkspaceConstants.LOG_FILE_NAME
-    ) -> Set[str]:
+        member_names: list[str], log_file_name: str = WorkspaceConstants.LOG_FILE_NAME
+    ) -> set[str]:
         return set(JobCommandModule._find_workspace_client_log_members(member_names, log_file_name))
 
     @staticmethod
     def _find_workspace_client_log_members(
-        member_names: List[str], log_file_name: str = WorkspaceConstants.LOG_FILE_NAME
-    ) -> Dict[str, str]:
+        member_names: list[str], log_file_name: str = WorkspaceConstants.LOG_FILE_NAME
+    ) -> dict[str, str]:
         members = {}
         exact_members = {}
         for member_name in member_names:
@@ -950,7 +950,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         return members
 
     @staticmethod
-    def _get_job_client_targets(job) -> Set[str]:
+    def _get_job_client_targets(job) -> set[str]:
         if not job or not getattr(job, "meta", None):
             return set()
 
@@ -966,7 +966,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 targets.add(site_name)
         return targets
 
-    def _decode_job_log_data(self, data) -> Optional[str]:
+    def _decode_job_log_data(self, data) -> str | None:
         if data is None:
             return None
         if isinstance(data, str):
@@ -987,7 +987,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         collected_bytes = 0
         truncated_by_bytes = False
 
-        with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+        with open(log_file, encoding="utf-8", errors="replace") as f:
             for line in f:
                 line_len = len(line.encode("utf-8", errors="replace"))
                 if collected_bytes + line_len > self.MAX_RETURNED_JOB_LOG_BYTES:
@@ -1000,7 +1000,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             lines.append(f"... output truncated after {self.MAX_RETURNED_JOB_LOG_BYTES} bytes ...\n")
         return lines
 
-    def list_job_components(self, conn: Connection, args: List[str]):
+    def list_job_components(self, conn: Connection, args: list[str]):
         if len(args) < 2:
             conn.append_error("Usage: list_job_components job_id", meta=make_meta(MetaStatusValue.SYNTAX_ERROR))
             return
@@ -1033,7 +1033,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
                 )
 
-    def abort_job(self, conn: Connection, args: List[str]):
+    def abort_job(self, conn: Connection, args: list[str]):
         engine = conn.app_ctx
         job_runner = engine.job_runner
 
@@ -1068,7 +1068,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             )
             return
 
-    def clone_job(self, conn: Connection, args: List[str]):
+    def clone_job(self, conn: Connection, args: list[str]):
         job = conn.get_prop(self.JOB)
         job_id = conn.get_prop(self.JOB_ID)
         engine = conn.app_ctx
@@ -1102,7 +1102,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         conn.append_success("", meta=make_meta(status=MetaStatusValue.OK, extra={MetaKey.JOB_ID: new_job_id}))
 
     @staticmethod
-    def _job_match(job_meta: Dict, id_prefix: str, name_prefix: str, user_name: str, requested_study: str) -> bool:
+    def _job_match(job_meta: dict, id_prefix: str, name_prefix: str, user_name: str, requested_study: str) -> bool:
         job_id = (job_meta.get(JobMetaKey.JOB_ID.value) or "").lower()
         job_name = (job_meta.get(JobMetaKey.JOB_NAME.value) or "").lower()
         return (
@@ -1284,7 +1284,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         return job_def_manager.get_job(job_id, fl_ctx)
 
     @staticmethod
-    def _job_id_from_job(job) -> Optional[str]:
+    def _job_id_from_job(job) -> str | None:
         if not job:
             return None
         job_id = getattr(job, "job_id", None)
@@ -1481,7 +1481,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         submitter: dict,
         submit_token: str,
         fl_ctx,
-    ) -> List[Job]:
+    ) -> list[Job]:
         record = self._get_submit_record(job_def_manager, study, submitter, submit_token, fl_ctx)
         if self._submit_record_job_deleted(record):
             raise _SubmitTokenJobDeleted(record)
@@ -1497,7 +1497,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         return [job] if job else []
 
     @staticmethod
-    def _send_detail_list(conn: Connection, jobs: List[Job]):
+    def _send_detail_list(conn: Connection, jobs: list[Job]):
         list_of_jobs = []
         for job in jobs:
             try:
@@ -1511,7 +1511,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         conn.append_string("", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOBS: list_of_jobs}))
 
     @staticmethod
-    def _send_summary_list(conn: Connection, jobs: List[Job]):
+    def _send_summary_list(conn: Connection, jobs: list[Job]):
         table = conn.append_table(["Job ID", "Name", "Status", "Submit Time", "Run Duration"], name=MetaKey.JOBS)
         for job in jobs:
             try:
@@ -1549,7 +1549,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             duration = datetime.datetime.now() - start_time
             job.meta[JobMetaKey.DURATION.value] = str(duration)
 
-    def submit_job(self, conn: Connection, args: List[str]):
+    def submit_job(self, conn: Connection, args: list[str]):
         try:
             parser = _create_submit_job_cmd_parser()
             parsed_args = parser.parse_args(args[1:])
@@ -1671,7 +1671,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_download_dir = self.tx_path(conn, tx_id)
         shutil.rmtree(job_download_dir, ignore_errors=True)
 
-    def _download_job_comps(self, conn: Connection, args: List[str], get_comps_f):
+    def _download_job_comps(self, conn: Connection, args: list[str], get_comps_f):
         """
         Job download uses binary protocol for more efficient download.
         - Retrieve job data from job store. This puts job files (meta, data, and workspace) in a transfer folder
@@ -1725,7 +1725,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def _get_default_job_components(self, job_def_manager, job_id, fl_ctx):
         return [(DATA, JOB_ZIP), (META, META_JSON), (WORKSPACE, WORKSPACE_ZIP)]
 
-    def download_job(self, conn: Connection, args: List[str]):
+    def download_job(self, conn: Connection, args: list[str]):
         """
         Job download uses binary protocol for more efficient download.
         - Retrieve job data from job store. This puts job files (meta, data, and workspace) in a transfer folder
@@ -1734,7 +1734,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         """
         self._download_job_comps(conn, args, self._get_default_job_components)
 
-    def download_job_components(self, conn: Connection, args: List[str]):
+    def download_job_components(self, conn: Connection, args: list[str]):
         """Download additional job components (e.g., ERRORLOG_site-1) for a specified job.
 
         Based on job download but downloads the additional components for a job that job download does
@@ -1753,7 +1753,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         else:
             return None
 
-    def do_app_command(self, conn: Connection, args: List[str]):
+    def do_app_command(self, conn: Connection, args: list[str]):
         # cmd job_id topic
         if len(args) != 3:
             cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)

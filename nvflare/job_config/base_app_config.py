@@ -30,12 +30,12 @@ class BaseAppConfig(ABC):
 
         self.task_data_filters = []  # list of tuples: (task_set, list of filters)
         self.task_result_filters = []  # list of tuples: (task_set, list of filters)
-        self.components: Dict[str, object] = {}
+        self.components: dict[str, object] = {}
         self.ext_scripts = []
         self.ext_dirs = []
         self.file_sources = []
         self.handlers: [FLComponent] = []
-        self.additional_params: Dict[str, any] = {}  # additional configuration parameters
+        self.additional_params: dict[str, any] = {}  # additional configuration parameters
 
     def add_component(self, cid: str, component):
         if cid in self.components.keys():
@@ -46,10 +46,10 @@ class BaseAppConfig(ABC):
         if isinstance(component, FLComponent):
             self.handlers.append(component)
 
-    def add_task_data_filter(self, tasks: List[str], filter: Filter):
+    def add_task_data_filter(self, tasks: list[str], filter: Filter):
         self._add_task_filter(tasks, filter, self.task_data_filters)
 
-    def add_task_result_filter(self, tasks: List[str], filter: Filter):
+    def add_task_result_filter(self, tasks: list[str], filter: Filter):
         self._add_task_filter(tasks, filter, self.task_result_filters)
 
     def add_ext_script(self, ext_script: str):
@@ -67,7 +67,7 @@ class BaseAppConfig(ABC):
 
         self.ext_dirs.append(ext_dir)
 
-    def add_params(self, args: Dict[str, any]):
+    def add_params(self, args: dict[str, any]):
         """Add additional system configuration parameters to be included in the generated JSON configs.
 
         Args:

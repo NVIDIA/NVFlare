@@ -29,7 +29,7 @@ class WaiterRC:
 
 
 def conditional_wait(
-    waiter: Optional[threading.Event], timeout: float, abort_signal: Signal, condition_cb=None, **cb_kwargs
+    waiter: threading.Event | None, timeout: float, abort_signal: Signal, condition_cb=None, **cb_kwargs
 ):
     """Wait for an event until timeout, aborted, or some condition is met.
 

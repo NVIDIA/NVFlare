@@ -64,7 +64,7 @@ class QueryHandler(ABC):
             ),
         }
 
-    def _to_dict(self, name: str, data: bytes) -> Optional[dict]:
+    def _to_dict(self, name: str, data: bytes) -> dict | None:
         try:
             return json.loads(data)
         except Exception as ex:

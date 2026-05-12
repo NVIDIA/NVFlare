@@ -95,7 +95,7 @@ def _validate_job_polling_options(timeout: float, poll_interval: float) -> None:
         raise InvalidArgumentError("poll_interval must be > 0")
 
 
-def _validate_submit_token_arg(submit_token: Optional[str]) -> Optional[str]:
+def _validate_submit_token_arg(submit_token: str | None) -> str | None:
     try:
         return validate_submit_token(submit_token)
     except ValueError as ex:
@@ -105,7 +105,7 @@ def _validate_submit_token_arg(submit_token: Optional[str]) -> Optional[str]:
 __all__ = ["NoConnection", "NoReply", "SystemInfo", "TargetType"]
 
 
-def _validate_target_strs(targets: List[str]) -> None:
+def _validate_target_strs(targets: list[str]) -> None:
     """Validate that each item in ``targets`` is a well-formed target name.
 
     Wraps :func:`process_targets_into_str` for its validation side-effect only —
@@ -384,13 +384,13 @@ class Session(SessionSpec):
     def list_jobs(
         self,
         detailed: bool = False,
-        limit: Optional[int] = None,
-        id_prefix: Optional[str] = None,
-        name_prefix: Optional[str] = None,
+        limit: int | None = None,
+        id_prefix: str | None = None,
+        name_prefix: str | None = None,
         reverse: bool = False,
-        submit_token: Optional[str] = None,
+        submit_token: str | None = None,
         **kwargs,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Get the job info from the server.
 
         Args:
@@ -449,11 +449,11 @@ class Session(SessionSpec):
             parts.extend(["-m", str(limit)])
         if name_prefix:
             if not isinstance(name_prefix, str):
-                raise InvalidArgumentError("name_prefix must be str but got {}.".format(type(name_prefix)))
+                raise InvalidArgumentError(f"name_prefix must be str but got {type(name_prefix)}.")
             parts.extend(["-n", name_prefix])
         if id_prefix:
             if not isinstance(id_prefix, str):
-                raise InvalidArgumentError("id_prefix must be str but got {}.".format(type(id_prefix)))
+                raise InvalidArgumentError(f"id_prefix must be str but got {type(id_prefix)}.")
             parts.append(id_prefix)
         if submit_token:
             parts.extend(["--submit-token", submit_token])
@@ -490,7 +490,7 @@ class Session(SessionSpec):
 
         return location
 
-    def list_job_components(self, job_id: str) -> List[str]:
+    def list_job_components(self, job_id: str) -> list[str]:
         """Get the list of additional job components for the specified job.
 
         Args:
@@ -594,7 +594,7 @@ class Session(SessionSpec):
 
         return SystemInfo(server_info=server_info, client_info=clients, job_info=jobs)
 
-    def get_client_job_status(self, client_names: List[str] = None) -> List[dict]:
+    def get_client_job_status(self, client_names: list[str] = None) -> list[dict]:
         """Get job status info of specified FL clients.
 
         Args:
@@ -689,14 +689,14 @@ class Session(SessionSpec):
 
         raise TimeoutError(f"server did not restart within {timeout} seconds; last error: {last_error}")
 
-    def _client_last_connect_times(self, client_names: Optional[List[str]] = None):
+    def _client_last_connect_times(self, client_names: list[str] | None = None):
         sys_info = self.get_system_info()
         connected = {client.name: client.last_connect_time for client in sys_info.client_info}
         if client_names:
             return {client_name: connected.get(client_name) for client_name in client_names}
         return connected
 
-    def _wait_for_clients_shutdown(self, client_names: Optional[List[str]], timeout: float):
+    def _wait_for_clients_shutdown(self, client_names: list[str] | None, timeout: float):
         timeout = self._validate_state_change_timeout(timeout)
         deadline = time.time() + timeout
         target_names = set(client_names or [])
@@ -756,7 +756,7 @@ class Session(SessionSpec):
     def restart(
         self,
         target_type: str,
-        client_names: Optional[List[str]] = None,
+        client_names: list[str] | None = None,
         wait: bool = True,
         timeout: float = _DEFAULT_STATE_CHANGE_TIMEOUT,
     ) -> dict:
@@ -811,7 +811,7 @@ class Session(SessionSpec):
     def shutdown(
         self,
         target_type: str,
-        client_names: Optional[List[str]] = None,
+        client_names: list[str] | None = None,
         wait: bool = True,
         timeout: float = _DEFAULT_STATE_CHANGE_TIMEOUT,
     ) -> dict:
@@ -894,7 +894,7 @@ class Session(SessionSpec):
         if sys_info.server_info.status != "stopped":
             raise JobNotDone("there are still running jobs")
 
-    def ls_target(self, target: str, options: Optional[str] = None, path: Optional[str] = None) -> str:
+    def ls_target(self, target: str, options: str | None = None, path: str | None = None) -> str:
         """Run the "ls" command on the specified target and return the result.
 
         Args:
@@ -907,7 +907,7 @@ class Session(SessionSpec):
         """
         return self._shell_command_on_target("ls", target, options, path)
 
-    def cat_target(self, target: str, options: Optional[str] = None, file: Optional[str] = None) -> str:
+    def cat_target(self, target: str, options: str | None = None, file: str | None = None) -> str:
         """Run the "cat" command on the specified target and return the result.
 
         Args:
@@ -920,7 +920,7 @@ class Session(SessionSpec):
         """
         return self._shell_command_on_target("cat", target, options, file, fp_required=True, fp_type="file")
 
-    def tail_target(self, target: str, options: Optional[str] = None, file: Optional[str] = None) -> str:
+    def tail_target(self, target: str, options: str | None = None, file: str | None = None) -> str:
         """Run the "tail" command on the specified target and return the result.
 
         Args:
@@ -933,7 +933,7 @@ class Session(SessionSpec):
         """
         return self._shell_command_on_target("tail", target, options, file, fp_required=True, fp_type="file")
 
-    def tail_target_log(self, target: str, options: Optional[str] = None) -> str:
+    def tail_target_log(self, target: str, options: str | None = None) -> str:
         """Run the "tail log.txt" command on the specified target and return the result.
 
         Args:
@@ -945,7 +945,7 @@ class Session(SessionSpec):
         """
         return self.tail_target(target, options, file="log.txt")
 
-    def head_target(self, target: str, options: Optional[str] = None, file: Optional[str] = None) -> str:
+    def head_target(self, target: str, options: str | None = None, file: str | None = None) -> str:
         """Run the "head" command on the specified target and return the result.
 
         Args:
@@ -958,7 +958,7 @@ class Session(SessionSpec):
         """
         return self._shell_command_on_target("head", target, options, file, fp_required=True, fp_type="file")
 
-    def head_target_log(self, target: str, options: Optional[str] = None) -> str:
+    def head_target_log(self, target: str, options: str | None = None) -> str:
         """Run the "head log.txt" command on the specified target and return the result.
 
         Args:
@@ -971,7 +971,7 @@ class Session(SessionSpec):
         return self.head_target(target, options, file="log.txt")
 
     def grep_target(
-        self, target: str, options: Optional[str] = None, pattern: Optional[str] = None, file: Optional[str] = None
+        self, target: str, options: str | None = None, pattern: str | None = None, file: str | None = None
     ) -> str:
         """Run the "grep" command on the specified target and return the result.
 
@@ -1079,7 +1079,7 @@ class Session(SessionSpec):
             raise InvalidArgumentError("study is required but not specified.")
 
     @staticmethod
-    def _validate_study_sites(sites: List[str]):
+    def _validate_study_sites(sites: list[str]):
         if not isinstance(sites, list):
             raise InvalidArgumentError(f"sites must be list but got {type(sites)}")
         if not sites:
@@ -1096,7 +1096,7 @@ class Session(SessionSpec):
             raise InvalidArgumentError("user is required but not specified.")
 
     @staticmethod
-    def _validate_study_site_orgs(site_orgs: List[str]):
+    def _validate_study_site_orgs(site_orgs: list[str]):
         if not isinstance(site_orgs, list):
             raise InvalidArgumentError(f"site_orgs must be list but got {type(site_orgs)}")
         if not site_orgs:
@@ -1105,9 +1105,7 @@ class Session(SessionSpec):
             if not isinstance(item, str) or not item:
                 raise InvalidArgumentError(f"invalid site_org value: {item}")
 
-    def register_study(
-        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
-    ) -> dict:
+    def register_study(self, study: str, sites: list[str] | None = None, site_orgs: list[str] | None = None) -> dict:
         self._validate_study_name(study)
         if sites and site_orgs:
             raise InvalidArgumentError("sites and site_orgs are mutually exclusive; provide only one")
@@ -1122,9 +1120,7 @@ class Session(SessionSpec):
         reply = self._do_command(join_args(parts))
         return self._get_study_payload(reply)
 
-    def add_study_site(
-        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
-    ) -> dict:
+    def add_study_site(self, study: str, sites: list[str] | None = None, site_orgs: list[str] | None = None) -> dict:
         self._validate_study_name(study)
         if sites and site_orgs:
             raise InvalidArgumentError("sites and site_orgs are mutually exclusive; provide only one")
@@ -1139,9 +1135,7 @@ class Session(SessionSpec):
         reply = self._do_command(join_args(parts))
         return self._get_study_payload(reply)
 
-    def remove_study_site(
-        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
-    ) -> dict:
+    def remove_study_site(self, study: str, sites: list[str] | None = None, site_orgs: list[str] | None = None) -> dict:
         self._validate_study_name(study)
         if sites and site_orgs:
             raise InvalidArgumentError("sites and site_orgs are mutually exclusive; provide only one")
@@ -1182,7 +1176,7 @@ class Session(SessionSpec):
         reply = self._do_command(join_args([AdminCommandNames.REMOVE_STUDY_USER, study, user]))
         return self._get_study_payload(reply)
 
-    def show_stats(self, job_id: str, target_type: str, targets: Optional[List[str]] = None) -> dict:
+    def show_stats(self, job_id: str, target_type: str, targets: list[str] | None = None) -> dict:
         """Show processing stats of specified job on specified targets.
 
         Args:
@@ -1196,7 +1190,7 @@ class Session(SessionSpec):
         """
         return self._collect_info(AdminCommandNames.SHOW_STATS, job_id, target_type, targets)
 
-    def show_errors(self, job_id: str, target_type: str, targets: Optional[List[str]] = None) -> dict:
+    def show_errors(self, job_id: str, target_type: str, targets: list[str] | None = None) -> dict:
         """Show processing errors of specified job on specified targets.
 
         Args:
@@ -1223,7 +1217,7 @@ class Session(SessionSpec):
 
     def _collect_info(self, cmd: str, job_id: str, target_type: str, targets=None) -> dict:
         if not isinstance(job_id, str):
-            raise TypeError("job_id must be str but got {}.".format(type(job_id)))
+            raise TypeError(f"job_id must be str but got {type(job_id)}.")
 
         if not job_id:
             raise ValueError("job_id is required but not specified.")
@@ -1300,7 +1294,7 @@ class Session(SessionSpec):
                         resources[str(row[0])] = row[1]
         return resources
 
-    def report_version(self, target_type: str, targets: Optional[List[str]] = None) -> dict:
+    def report_version(self, target_type: str, targets: list[str] | None = None) -> dict:
         """Report NVFlare version for specified system target(s).
 
         Args:
@@ -1367,7 +1361,7 @@ class Session(SessionSpec):
         return self._get_dict_data(reply)
 
     @staticmethod
-    def _filter_job_log_text(log_text: str, tail_lines: Optional[int], grep_pattern: Optional[str]) -> str:
+    def _filter_job_log_text(log_text: str, tail_lines: int | None, grep_pattern: str | None) -> str:
         lines = log_text.splitlines(keepends=True)
         if tail_lines is not None:
             try:
@@ -1383,7 +1377,7 @@ class Session(SessionSpec):
         return "".join(lines)
 
     @classmethod
-    def _filter_job_logs_payload(cls, result: dict, tail_lines: Optional[int], grep_pattern: Optional[str]) -> dict:
+    def _filter_job_logs_payload(cls, result: dict, tail_lines: int | None, grep_pattern: str | None) -> dict:
         if tail_lines is None and not grep_pattern:
             return result
 
@@ -1406,8 +1400,8 @@ class Session(SessionSpec):
         self,
         job_id: str,
         target: str = "server",
-        tail_lines: Optional[int] = None,
-        grep_pattern: Optional[str] = None,
+        tail_lines: int | None = None,
+        grep_pattern: str | None = None,
         log_file_name: str = WorkspaceConstants.LOG_FILE_NAME,
     ) -> dict:
         """Retrieve job logs from the server-side log store.
@@ -1530,7 +1524,7 @@ class Session(SessionSpec):
         reply = self._do_command(command, enforce_meta=False, props=cmd_data)
         return self._get_dict_data(reply)
 
-    def get_connected_client_list(self) -> List[ClientInfo]:
+    def get_connected_client_list(self) -> list[ClientInfo]:
         """Get the list of connected clients.
 
         Returns: a list of ClientInfo objects
@@ -1581,7 +1575,7 @@ class Session(SessionSpec):
         """
         return self.api.do_command(command, props)
 
-    def get_job_status(self, job_id: str) -> Optional[str]:
+    def get_job_status(self, job_id: str) -> str | None:
         """Get the status of a job.
 
         Args:
@@ -1598,7 +1592,7 @@ class Session(SessionSpec):
 
     def monitor_job_and_return_job_meta(
         self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs
-    ) -> (MonitorReturnCode, Optional[dict]):
+    ) -> (MonitorReturnCode, dict | None):
         """Monitor the job progress.
 
         Monitors until one of the conditions occurs:

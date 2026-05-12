@@ -30,7 +30,7 @@ class XGBFedController(XGBController):
         data_split_mode: int,
         secure_training: bool,
         xgb_params: dict,
-        xgb_options: Optional[dict] = None,
+        xgb_options: dict | None = None,
         disable_version_check=False,
         configure_task_name=Constant.CONFIG_TASK_NAME,
         configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,

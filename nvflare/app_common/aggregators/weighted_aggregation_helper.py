@@ -14,7 +14,8 @@
 
 import re
 import threading
-from typing import Any, Callable, Dict, Optional, Set
+from typing import Any, Dict, Optional, Set
+from collections.abc import Callable
 
 
 def _is_aggregatable_metric_value(v: Any) -> bool:
@@ -39,10 +40,10 @@ def _is_aggregatable_metric_value(v: Any) -> bool:
 
 
 def filter_aggregatable_metrics(
-    metrics: Optional[Dict[str, Any]],
-    warn_skipped: Optional[Callable[[str, str], None]] = None,
-    warned_metric_keys: Optional[Set[str]] = None,
-) -> Dict[str, Any]:
+    metrics: dict[str, Any] | None,
+    warn_skipped: Callable[[str, str], None] | None = None,
+    warned_metric_keys: set[str] | None = None,
+) -> dict[str, Any]:
     """Return metric entries that support weighted aggregation.
 
     Note:
@@ -71,8 +72,8 @@ def filter_aggregatable_metrics(
     return filtered
 
 
-class WeightedAggregationHelper(object):
-    def __init__(self, exclude_vars: Optional[str] = None, weigh_by_local_iter: bool = True):
+class WeightedAggregationHelper:
+    def __init__(self, exclude_vars: str | None = None, weigh_by_local_iter: bool = True):
         """Perform weighted aggregation.
 
         Args:

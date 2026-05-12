@@ -84,7 +84,7 @@ class HEModelShareableGenerator(ShareableGenerator):
         dxo = from_shareable(shareable)
         enc_algorithm = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)
         if enc_algorithm != HE_ALGORITHM_CKKS:
-            raise ValueError("expected encryption algorithm {} but got {}".format(HE_ALGORITHM_CKKS, enc_algorithm))
+            raise ValueError(f"expected encryption algorithm {HE_ALGORITHM_CKKS} but got {enc_algorithm}")
 
         base_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
         if not base_model:

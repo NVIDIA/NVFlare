@@ -33,8 +33,8 @@ class ModelUpdateAssessor(Assessor):
         model_manager_id,
         device_manager_id,
         max_model_version,
-        device_wait_timeout: Optional[float] = None,
-        device_status_log_interval: Optional[float] = 30.0,
+        device_wait_timeout: float | None = None,
+        device_status_log_interval: float | None = 30.0,
     ):
         """Initialize the ModelUpdateAssessor.
         Enable both asynchronous and synchronous model updates from clients.
@@ -165,7 +165,7 @@ class ModelUpdateAssessor(Assessor):
             self.model_manager.initialize_model(dxo_model, fl_ctx)
             self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
         else:
-            self.system_panic(reason="cannot find persistor component '{}'".format(self.persistor_id), fl_ctx=fl_ctx)
+            self.system_panic(reason=f"cannot find persistor component '{self.persistor_id}'", fl_ctx=fl_ctx)
             return
 
     def start_task(self, fl_ctx: FLContext) -> Shareable:
@@ -178,11 +178,11 @@ class ModelUpdateAssessor(Assessor):
         )
         return base_state.to_shareable()
 
-    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
+    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Shareable | None):
         with self.update_lock:
             return self._do_child_update(update, fl_ctx)
 
-    def _do_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
+    def _do_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Shareable | None):
         report = StateUpdateReport.from_shareable(update)
 
         # Update available devices

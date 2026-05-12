@@ -45,8 +45,8 @@ class DhPSITaskHandler(TaskHandler):
         self.bloom_filter_fpr = None
         self.psi_client = None
         self.psi_server = None
-        self.intersects: Optional[List[str]] = None
-        self.local_psi_handler: Optional[PSI] = None
+        self.intersects: list[str] | None = None
+        self.local_psi_handler: PSI | None = None
         self.client_name = None
         self.items = None
         # needed by JobAPI, add the following line to the constructor

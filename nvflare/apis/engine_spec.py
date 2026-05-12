@@ -18,7 +18,7 @@ from typing import List, Tuple
 
 class EngineSpec(ABC):
     @abstractmethod
-    def validate_targets(self, target_names: List[str]) -> Tuple[List, List[str]]:
+    def validate_targets(self, target_names: list[str]) -> tuple[list, list[str]]:
         """Validate specified target names.
 
         Args:

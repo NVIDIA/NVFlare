@@ -22,7 +22,7 @@ class SelectionResponse(BaseModel):
         status: str,
         job_id: str = None,
         task_id: str = None,
-        selection: Optional[dict] = None,
+        selection: dict | None = None,
         **kwargs,
     ):
         super().__init__()

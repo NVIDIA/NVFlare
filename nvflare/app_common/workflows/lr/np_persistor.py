@@ -40,7 +40,7 @@ class LRModelPersistor(NPModelPersistor):
         model_dir="models",
         model_name="weights.npy",
         n_features=13,
-        source_ckpt_file_full_name: Optional[str] = None,
+        source_ckpt_file_full_name: str | None = None,
     ):
         """
         Init function for LRModelPersistor.

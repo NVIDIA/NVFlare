@@ -45,7 +45,7 @@ class BuiltInCmdModule(CommandModule):
     def _show_command(self, conn: Connection, cmd_name):
         entries = self.reg.get_command_entries(cmd_name)
         if len(entries) <= 0:
-            conn.append_error("undefined command {}\n".format(cmd_name))
+            conn.append_error(f"undefined command {cmd_name}\n")
             return
 
         for e in entries:
@@ -53,14 +53,14 @@ class BuiltInCmdModule(CommandModule):
                 continue
 
             if len(e.scope.name) > 0:
-                conn.append_string("Command: {}.{}".format(e.scope.name, cmd_name))
+                conn.append_string(f"Command: {e.scope.name}.{cmd_name}")
             else:
-                conn.append_string("Command: {}".format(cmd_name))
+                conn.append_string(f"Command: {cmd_name}")
 
-            conn.append_string("Description: {}".format(e.desc))
-            conn.append_string("Usage: {}\n".format(e.usage))
+            conn.append_string(f"Description: {e.desc}")
+            conn.append_string(f"Usage: {e.usage}\n")
 
-    def handle_list_commands(self, conn: Connection, args: List[str]):
+    def handle_list_commands(self, conn: Connection, args: list[str]):
         if len(args) <= 1:
             table = conn.append_table(["Scope", "Command", "Description", "Usage", "Confirm", "ClientCmd", "Visible"])
 

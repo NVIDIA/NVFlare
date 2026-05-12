@@ -51,7 +51,7 @@ def get_lr_values(optimizer: Optimizer):
     return [group["lr"] for group in optimizer.state_dict()["param_groups"]]
 
 
-class PTScaffoldHelper(object):
+class PTScaffoldHelper:
     """Helper to be used with SCAFFOLD components.
     Implements the functions used for the algorithm proposed in
     Karimireddy et al. "SCAFFOLD: Stochastic Controlled Averaging for Federated Learning"

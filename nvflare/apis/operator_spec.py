@@ -32,7 +32,7 @@ class OperatorSpec(ABC):
         task_data: Shareable,
         abort_signal: Signal,
         fl_ctx: FLContext,
-    ) -> Union[Shareable, None]:
+    ) -> Shareable | None:
         pass
 
     def process_result_of_unknown_task(

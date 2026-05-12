@@ -51,7 +51,7 @@ class Updater(FLComponent, ABC):
         return self.current_state
 
     @abstractmethod
-    def prepare_update_for_parent(self, fl_ctx: FLContext) -> Optional[Shareable]:
+    def prepare_update_for_parent(self, fl_ctx: FLContext) -> Shareable | None:
         """This is called by HUG to prepare update report to be sent to the parent.
 
 
@@ -78,7 +78,7 @@ class Updater(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
+    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Shareable | None):
         """This is called by HUG to process an update report from a child.
 
         Args:

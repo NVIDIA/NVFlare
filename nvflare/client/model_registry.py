@@ -24,7 +24,7 @@ from .utils import DIFF_FUNCS
 class ModelRegistry(TaskRegistry):
     """Gets and submits FLModel."""
 
-    def get_model(self, timeout: Optional[float] = None) -> Optional[FLModel]:
+    def get_model(self, timeout: float | None = None) -> FLModel | None:
         """Gets a model from FLARE client.
 
         This method gets the task from FLARE client, and extract the `task.data` out.

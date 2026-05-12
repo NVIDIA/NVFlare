@@ -32,7 +32,7 @@ class ServerEngineSpec(EngineSpec, ABC):
         pass
 
     @abstractmethod
-    def get_clients(self) -> List[Client]:
+    def get_clients(self) -> list[Client]:
         pass
 
     @abstractmethod
@@ -136,7 +136,7 @@ class ServerEngineSpec(EngineSpec, ABC):
     def multicast_aux_requests(
         self,
         topic: str,
-        target_requests: Dict[str, Shareable],
+        target_requests: dict[str, Shareable],
         timeout: float,
         fl_ctx: FLContext,
         optional: bool = False,
@@ -218,8 +218,8 @@ class ServerEngineSpec(EngineSpec, ABC):
 
     @abstractmethod
     def check_client_resources(
-        self, job: Job, resource_reqs: Dict[str, dict], fl_ctx: FLContext
-    ) -> Dict[str, Tuple[bool, Optional[str]]]:
+        self, job: Job, resource_reqs: dict[str, dict], fl_ctx: FLContext
+    ) -> dict[str, tuple[bool, str | None]]:
         """Sends the check_client_resources requests to the clients.
 
         Args:
@@ -237,7 +237,7 @@ class ServerEngineSpec(EngineSpec, ABC):
 
     @abstractmethod
     def cancel_client_resources(
-        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict], fl_ctx: FLContext
+        self, resource_check_results: dict[str, tuple[bool, str]], resource_reqs: dict[str, dict], fl_ctx: FLContext
     ):
         """Cancels the request resources for the job.
 

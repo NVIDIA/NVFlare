@@ -13,7 +13,8 @@
 # limitations under the License.
 import uuid
 from enum import Enum
-from typing import Any, Callable, Dict, Union
+from typing import Any, Dict, Union
+from collections.abc import Callable
 
 TEN_MEGA = 10 * 1024 * 1024
 MIN_THRESHOLD = 1024
@@ -62,7 +63,7 @@ class Datum:
         self.restore_func_data = func_data
 
     @staticmethod
-    def blob_datum(blob: Union[bytes, bytearray, memoryview], dot=0):
+    def blob_datum(blob: bytes | bytearray | memoryview, dot=0):
         """Factory method to create a BLOB datum"""
         return Datum(DatumType.BLOB, blob, dot)
 
@@ -101,7 +102,7 @@ class DatumManager:
             fobs_ctx = {}
 
         self.threshold = threshold
-        self.datums: Dict[str, Datum] = {}
+        self.datums: dict[str, Datum] = {}
         self.fobs_ctx = fobs_ctx
 
         # some decomposers (e.g. Shareable, Learnable, etc.) make a shallow copy of the original object before

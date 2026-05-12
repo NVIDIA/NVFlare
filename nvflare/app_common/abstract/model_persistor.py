@@ -91,7 +91,7 @@ class ModelPersistor(LearnablePersistor, ABC):
         """
         pass
 
-    def get_model_inventory(self, fl_ctx: FLContext) -> Dict[str, ModelDescriptor]:
+    def get_model_inventory(self, fl_ctx: FLContext) -> dict[str, ModelDescriptor]:
         """Get the model inventory of the ModelPersister.
 
         Args:

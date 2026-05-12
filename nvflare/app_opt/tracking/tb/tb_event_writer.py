@@ -94,16 +94,16 @@ class TensorBoardEventWriter:
         self.writer = EventFileWriter(log_dir)
         self.scalar_writers = {}
 
-    def add_scalar(self, tag: str, scalar_value: float, global_step: Optional[int] = None):
+    def add_scalar(self, tag: str, scalar_value: float, global_step: int | None = None):
         self._add_summary(self.writer, _create_scalar_summary(tag, scalar_value), global_step)
 
-    def add_text(self, tag: str, text_string: str, global_step: Optional[int] = None):
+    def add_text(self, tag: str, text_string: str, global_step: int | None = None):
         self._add_summary(self.writer, text_pb(tag, text_string), global_step)
 
-    def add_image(self, tag: str, img_tensor, global_step: Optional[int] = None):
+    def add_image(self, tag: str, img_tensor, global_step: int | None = None):
         self._add_summary(self.writer, _create_image_summary(tag, img_tensor), global_step)
 
-    def add_scalars(self, main_tag: str, tag_scalar_dict: dict, global_step: Optional[int] = None):
+    def add_scalars(self, main_tag: str, tag_scalar_dict: dict, global_step: int | None = None):
         for tag, scalar_value in tag_scalar_dict.items():
             # Match torch.utils.tensorboard.SummaryWriter.add_scalars: keep the
             # sub-series tag as-is in the per-run path, so "/" continues to create
@@ -126,7 +126,7 @@ class TensorBoardEventWriter:
             writer.close()
 
     @staticmethod
-    def _add_summary(writer: EventFileWriter, summary: Summary, global_step: Optional[int] = None):
+    def _add_summary(writer: EventFileWriter, summary: Summary, global_step: int | None = None):
         event = Event(wall_time=time.time(), summary=summary)
         if global_step is not None:
             event.step = global_step

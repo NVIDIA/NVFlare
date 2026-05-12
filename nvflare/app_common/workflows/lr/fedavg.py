@@ -15,6 +15,7 @@
 Federated Averaging for Logistic Regression with Newton-Raphson method
 using Numpy
 """
+
 from typing import List, Optional
 
 import numpy as np
@@ -38,7 +39,7 @@ class FedAvgLR(BaseFedAvg):
         model_name: str = "weights.npy",
         n_features: int = 13,
         aggregator: WeightedAggregationHelper = WeightedAggregationHelper(),
-        persistor: Optional[NPModelPersistor] = None,
+        persistor: NPModelPersistor | None = None,
         *args,
         **kwargs,
     ):
@@ -90,7 +91,7 @@ class FedAvgLR(BaseFedAvg):
         model.start_round = self.start_round
         model.total_rounds = self.num_rounds
 
-        self.info("Server side model loader: {}".format(model))
+        self.info(f"Server side model loader: {model}")
 
         for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
             self.info(f"Round {self.current_round} started.")
@@ -130,7 +131,7 @@ class FedAvgLR(BaseFedAvg):
 
         self.info("Finished FedAvg.")
 
-    def newton_raphson_aggregator_fn(self, results: List[FLModel]):
+    def newton_raphson_aggregator_fn(self, results: list[FLModel]):
         """
         Custom aggregator function for second order Newton-Raphson
         optimization.
@@ -144,7 +145,7 @@ class FedAvgLR(BaseFedAvg):
                 from a client. The field `params` is a dictionary that
                 contains values to be aggregated: the gradient and hessian.
         """
-        self.info("received results from clients: {}".format(results))
+        self.info(f"received results from clients: {results}")
 
         # On client side the `NUM_STEPS_CURRENT_ROUND` key
         # is used to track the number of samples for each client.
@@ -167,7 +168,7 @@ class FedAvgLR(BaseFedAvg):
         newton_raphson_updates = self.damping_factor * np.linalg.solve(
             aggregated_dict["hessian"] + reg, aggregated_dict["gradient"]
         )
-        self.info("Newton-Raphson updates: {}".format(newton_raphson_updates))
+        self.info(f"Newton-Raphson updates: {newton_raphson_updates}")
 
         # Convert the aggregated result to `FLModel`, this `FLModel`
         # will then be used by `update_model` method from the base class,

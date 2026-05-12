@@ -64,7 +64,7 @@ class FLServerStarterConfiger(JsonConfigurator):
         module_names = FL_MODULES
 
         if kv_list:
-            assert isinstance(kv_list, list), "cmd_vars must be list, but got {}".format(type(kv_list))
+            assert isinstance(kv_list, list), f"cmd_vars must be list, but got {type(kv_list)}"
             self.cmd_vars = parse_vars(kv_list)
         else:
             self.cmd_vars = {}
@@ -154,10 +154,10 @@ class FLServerStarterConfiger(JsonConfigurator):
                 raise ConfigError("missing component id")
 
             if not isinstance(cid, str):
-                raise ConfigError('"id" must be str but got {}'.format(type(cid)))
+                raise ConfigError(f'"id" must be str but got {type(cid)}')
 
             if cid in self.components:
-                raise ConfigError('duplicate component id "{}"'.format(cid))
+                raise ConfigError(f'duplicate component id "{cid}"')
 
             self.components[cid] = c
             return
@@ -223,7 +223,7 @@ class FLClientStarterConfiger(JsonConfigurator):
         module_names = FL_MODULES
 
         if kv_list:
-            assert isinstance(kv_list, list), "cmd_vars must be list, but got {}".format(type(kv_list))
+            assert isinstance(kv_list, list), f"cmd_vars must be list, but got {type(kv_list)}"
             self.cmd_vars = parse_vars(kv_list)
         else:
             self.cmd_vars = {}
@@ -272,10 +272,10 @@ class FLClientStarterConfiger(JsonConfigurator):
                 raise ConfigError("missing component id")
 
             if not isinstance(cid, str):
-                raise ConfigError('"id" must be str but got {}'.format(type(cid)))
+                raise ConfigError(f'"id" must be str but got {type(cid)}')
 
             if cid in self.components:
-                raise ConfigError('duplicate component id "{}"'.format(cid))
+                raise ConfigError(f'duplicate component id "{cid}"')
 
             self.components[cid] = c
             return
@@ -512,10 +512,10 @@ class PrivacyConfiger(JsonConfigurator):
                     raise ConfigError("missing component id")
 
                 if not isinstance(cid, str):
-                    raise ConfigError('"id" must be str but got {}'.format(type(cid)))
+                    raise ConfigError(f'"id" must be str but got {type(cid)}')
 
                 if cid in self.components:
-                    raise ConfigError('duplicate component id "{}"'.format(cid))
+                    raise ConfigError(f'duplicate component id "{cid}"')
 
                 self.components[cid] = c
                 return

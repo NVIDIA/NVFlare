@@ -14,13 +14,14 @@
 
 import os
 from types import MappingProxyType
-from typing import Dict, Mapping, Optional, Tuple
+from typing import Dict, Optional, Tuple
+from collections.abc import Mapping
 
 # _ERROR_REGISTRY is a plain mutable dict so entries can be added simply at module load time.
 # It is never exported; callers must use ERROR_REGISTRY (the frozen public view) or the
 # helper functions below.  The two-name pattern avoids accidental mutation from call sites
 # while keeping the definition readable.
-_ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
+_ERROR_REGISTRY: dict[str, dict[str, str]] = {
     # --- General ---
     "CONNECTION_FAILED": {
         "message": "Could not connect to the FLARE server.",
@@ -393,14 +394,14 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
 ERROR_REGISTRY: Mapping[str, Mapping[str, str]] = MappingProxyType(_ERROR_REGISTRY)
 
 
-def get_error_entry(code: str) -> Optional[Mapping[str, str]]:
+def get_error_entry(code: str) -> Mapping[str, str] | None:
     entry = ERROR_REGISTRY.get(code)
     if entry is None and os.getenv("NVFLARE_DEV") == "1":
         raise KeyError(f"Unknown CLI error code: {code}")
     return entry
 
 
-def get_error(code: str, **kwargs) -> Tuple[str, str]:
+def get_error(code: str, **kwargs) -> tuple[str, str]:
     """Return (message, hint) for the given error code with placeholders filled.
 
     Transitional helper for legacy cert/package call sites. New CLI code should prefer

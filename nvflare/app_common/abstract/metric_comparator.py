@@ -18,7 +18,7 @@ from typing import Union
 
 class MetricComparator:
     @abstractmethod
-    def compare(self, a, b) -> Union[int, float]:
+    def compare(self, a, b) -> int | float:
         """Compare two metric values.
         Metric values do not have to be numbers.
 

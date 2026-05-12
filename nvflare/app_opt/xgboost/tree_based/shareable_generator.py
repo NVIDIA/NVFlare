@@ -77,7 +77,7 @@ class XGBModelShareableGenerator(ShareableGenerator):
             ValueError: if data_kind is not `DataKind.WEIGHTS`
         """
         if not isinstance(shareable, Shareable):
-            raise TypeError("shareable must be Shareable, but got {}.".format(type(shareable)))
+            raise TypeError(f"shareable must be Shareable, but got {type(shareable)}.")
 
         base_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
         if not base_model:
@@ -105,5 +105,5 @@ class XGBModelShareableGenerator(ShareableGenerator):
                 base_model[ModelLearnableKey.WEIGHTS] = model
             self.shareable = dxo.to_shareable()
         else:
-            raise ValueError("data_kind should be either DataKind.WEIGHTS, but got {}".format(dxo.data_kind))
+            raise ValueError(f"data_kind should be either DataKind.WEIGHTS, but got {dxo.data_kind}")
         return base_model

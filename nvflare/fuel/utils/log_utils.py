@@ -37,7 +37,7 @@ class LogMode:
 
 
 # Predefined log dicts based from DEFAULT_LOG_JSON
-with open(os.path.join(os.path.dirname(__file__), DEFAULT_LOG_JSON), "r") as f:
+with open(os.path.join(os.path.dirname(__file__), DEFAULT_LOG_JSON)) as f:
     default_log_dict = json.load(f)
 
 concise_log_dict = copy.deepcopy(default_log_dict)
@@ -325,7 +325,7 @@ def configure_logging(workspace: Workspace, job_id: str = None, file_prefix: str
     log_config_file_path = workspace.get_log_config_file_path()
     assert os.path.isfile(log_config_file_path), f"missing log config file {log_config_file_path}"
 
-    with open(log_config_file_path, "r") as f:
+    with open(log_config_file_path) as f:
         dict_config = json.load(f)
 
     log_root = workspace.get_log_root(job_id)
@@ -353,7 +353,7 @@ def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):
     logging.captureWarnings(True)  # route Python warnings through logging so they reach file handlers
 
 
-def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str, file_prefix: str = ""):
+def dynamic_log_config(config: dict | str, dir_path: str, reload_path: str, file_prefix: str = ""):
     # Dynamically configure log given a config (dict, filepath, LogMode, or level), apply the config to the proper locations.
 
     if isinstance(config, dict):
@@ -380,7 +380,7 @@ def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str
 
         # Read config file
         if os.path.isfile(config):
-            with open(config, "r") as f:
+            with open(config) as f:
                 dict_config = json.load(f)
 
             apply_log_config(dict_config, dir_path, file_prefix=file_prefix)

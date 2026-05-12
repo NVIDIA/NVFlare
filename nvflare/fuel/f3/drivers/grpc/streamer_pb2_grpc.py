@@ -19,7 +19,7 @@ import grpc
 from .streamer_pb2 import Frame
 
 
-class StreamerStub(object):
+class StreamerStub:
     """Interface exported by the server.
     """
 
@@ -36,7 +36,7 @@ class StreamerStub(object):
                 )
 
 
-class StreamerServicer(object):
+class StreamerServicer:
     """Interface exported by the server.
     """
 
@@ -62,7 +62,7 @@ def add_StreamerServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class Streamer(object):
+class Streamer:
     """Interface exported by the server.
     """
 

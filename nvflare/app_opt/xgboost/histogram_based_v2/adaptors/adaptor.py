@@ -178,7 +178,7 @@ class AppAdaptor(ABC, FLComponent):
         pass
 
     @abstractmethod
-    def _is_stopped(self) -> Tuple[bool, int]:
+    def _is_stopped(self) -> tuple[bool, int]:
         """Called by the adaptor's monitor to know whether the target is stopped.
         Note that this method is not called by XGB Controller/Executor.
 
@@ -268,7 +268,7 @@ class AppAdaptor(ABC, FLComponent):
             if p:
                 p.kill()
 
-    def is_runner_stopped(self) -> Tuple[bool, int]:
+    def is_runner_stopped(self) -> tuple[bool, int]:
         if self.in_process:
             if self.starter:
                 if self.starter.stopped:

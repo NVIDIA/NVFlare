@@ -24,7 +24,7 @@ from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_me
 from .server_commands import ServerCommands
 
 
-class ServerCommandAgent(object):
+class ServerCommandAgent:
     def __init__(self, engine, cell: Cell) -> None:
         """To init the CommandAgent.
 
@@ -52,7 +52,7 @@ class ServerCommandAgent(object):
     def execute_command(self, request: CellMessage) -> CellMessage:
 
         if not isinstance(request, CellMessage):
-            raise RuntimeError("request must be CellMessage but got {}".format(type(request)))
+            raise RuntimeError(f"request must be CellMessage but got {type(request)}")
 
         command_name = request.get_header(MessageHeaderKey.TOPIC)
         # data = fobs.loads(request.payload)
@@ -109,7 +109,7 @@ class ServerCommandAgent(object):
 
     def aux_communicate(self, request: CellMessage) -> CellMessage:
 
-        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        assert isinstance(request, CellMessage), f"request must be CellMessage but got {type(request)}"
         data = request.payload
 
         topic = request.get_header(MessageHeaderKey.TOPIC)

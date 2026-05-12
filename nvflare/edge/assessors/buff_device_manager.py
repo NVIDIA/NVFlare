@@ -66,7 +66,7 @@ class BuffDeviceManager(DeviceManager):
         # keep a map of device_id -> client_name
         self.device_client_map = {}
 
-    def _balanced_device_sampling(self, usable_devices: Set[str], num_holes: int) -> Set[str]:
+    def _balanced_device_sampling(self, usable_devices: set[str], num_holes: int) -> set[str]:
         """Sample devices while balancing across clients.
 
         Args:
@@ -159,7 +159,7 @@ class BuffDeviceManager(DeviceManager):
 
         return selected_devices
 
-    def update_available_devices(self, devices: Dict, fl_ctx) -> None:
+    def update_available_devices(self, devices: dict, fl_ctx) -> None:
         self.available_devices.update(devices)
         self.log_debug(
             fl_ctx,
@@ -215,11 +215,11 @@ class BuffDeviceManager(DeviceManager):
                 f"current selection has only {len(self.current_selection)} devices, which is less than the expected {self.device_selection_size} devices. Please check the configuration to make sure this is expected.",
             )
 
-    def remove_devices_from_selection(self, devices: Set[str], fl_ctx) -> None:
+    def remove_devices_from_selection(self, devices: set[str], fl_ctx) -> None:
         for device_id in devices:
             self.current_selection.pop(device_id, None)
 
-    def remove_devices_from_used(self, devices: Set[str], fl_ctx) -> None:
+    def remove_devices_from_used(self, devices: set[str], fl_ctx) -> None:
         for device_id in devices:
             self.used_devices.pop(device_id, None)
 
@@ -238,5 +238,5 @@ class BuffDeviceManager(DeviceManager):
         num_holes = self.device_selection_size - len(self.current_selection)
         return num_holes >= self.min_hole_to_fill
 
-    def get_active_model_versions(self, fl_ctx) -> Set[int]:
+    def get_active_model_versions(self, fl_ctx) -> set[int]:
         return set(self.current_selection.values())

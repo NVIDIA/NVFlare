@@ -49,7 +49,7 @@ class XGBFedController(Controller):
         super().__init__()
 
         if not isinstance(train_timeout, int):
-            raise TypeError("train_timeout must be int but got {}".format(type(train_timeout)))
+            raise TypeError(f"train_timeout must be int but got {type(train_timeout)}")
 
         self._port = port
         self._xgb_fl_server = None

@@ -26,7 +26,7 @@ class ResourceConsumerSpec(ABC):
 
 class ResourceManagerSpec(ABC):
     @abstractmethod
-    def check_resources(self, resource_requirement: dict, fl_ctx: FLContext) -> Tuple[bool, str]:
+    def check_resources(self, resource_requirement: dict, fl_ctx: FLContext) -> tuple[bool, str]:
         """Checks whether the specified resource requirement can be satisfied.
 
         Args:

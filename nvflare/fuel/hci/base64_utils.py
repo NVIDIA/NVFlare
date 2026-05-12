@@ -65,7 +65,7 @@ def text_file_to_b64str(file_name) -> str:
     Returns: base64-encoded string
 
     """
-    data_string = open(file_name, "r").read()
+    data_string = open(file_name).read()
     return str_to_b64str(data_string)
 
 

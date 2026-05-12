@@ -64,7 +64,7 @@ def load_cert_bytes(data: bytes):
     return load_crt_bytes(data)
 
 
-def get_parent_site_name(fqsn: str) -> Optional[str]:
+def get_parent_site_name(fqsn: str) -> str | None:
     """Get the parent site's name for a specified FQSN (fully qualified site name)
 
     Args:

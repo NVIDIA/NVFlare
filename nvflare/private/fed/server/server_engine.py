@@ -114,7 +114,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         self.engine_info = EngineInfo()
 
         if not workers >= 1:
-            raise ValueError("workers must >= 1 but got {}".format(workers))
+            raise ValueError(f"workers must >= 1 but got {workers}")
 
         self.executor = ThreadPoolExecutor(max_workers=workers)
         self.lock = Lock()
@@ -149,14 +149,14 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             run_folder = self._get_run_folder(job_id)
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
-                with open(app_file, "r") as f:
+                with open(app_file) as f:
                     self.engine_info.app_names[job_id] = f.readline().strip()
             else:
                 self.engine_info.app_names[job_id] = "?"
 
         return self.engine_info
 
-    def get_run_info(self) -> Optional[RunInfo]:
+    def get_run_info(self) -> RunInfo | None:
         if self.run_manager:
             run_info: RunInfo = self.run_manager.get_run_info()
             return run_info
@@ -171,7 +171,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def get_clients(self) -> [Client]:
         return list(self.client_manager.get_clients().values())
 
-    def validate_targets(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
+    def validate_targets(self, client_names: list[str]) -> tuple[list[Client], list[str]]:
         return self.client_manager.get_all_clients_from_inputs(client_names)
 
     def start_app_on_server(self, fl_ctx: FLContext, job: Job = None, job_clients=None, snapshot=None) -> str:
@@ -320,7 +320,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         for path in custom_paths:
             sys.path.remove(path)
 
-    def abort_app_on_clients(self, clients: List[str]) -> str:
+    def abort_app_on_clients(self, clients: list[str]) -> str:
         status = self.engine_info.status
         if status == MachineStatus.STOPPED:
             return "Server app has not started."
@@ -411,7 +411,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def get_client_from_name(self, client_name):
         return self.client_manager.get_client_from_name(client_name)
 
-    def get_app_data(self, app_name: str) -> Tuple[str, object]:
+    def get_app_data(self, app_name: str) -> tuple[str, object]:
         fullpath_src = os.path.join(self.server.admin_server.file_upload_dir, app_name)
         if not os.path.exists(fullpath_src):
             return f"App folder '{app_name}' does not exist in staging area.", None
@@ -419,7 +419,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         data = zip_directory_to_bytes(fullpath_src, "")
         return "", data
 
-    def get_app_run_info(self, job_id) -> Optional[RunInfo]:
+    def get_app_run_info(self, job_id) -> RunInfo | None:
         run_info = None
         try:
             run_info = self.send_command_to_child_runner_process(
@@ -487,7 +487,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         )
 
     def _handle_aux_message(self, request: CellMessage) -> CellMessage:
-        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        assert isinstance(request, CellMessage), f"request must be CellMessage but got {type(request)}"
         data = request.payload
 
         topic = request.get_header(MessageHeaderKey.TOPIC)
@@ -509,7 +509,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
     def set_configurator(self, conf: ServerJsonConfigurator):
         if not isinstance(conf, ServerJsonConfigurator):
-            raise TypeError("conf must be ServerJsonConfigurator but got {}".format(type(conf)))
+            raise TypeError(f"conf must be ServerJsonConfigurator but got {type(conf)}")
         self.conf = conf
 
     def build_component(self, config_dict):
@@ -556,12 +556,12 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         app_file = os.path.join(self._get_run_folder(job_id), "fl_app.txt")
         if os.path.exists(app_file):
             os.remove(app_file)
-        with open(app_file, "wt") as f:
+        with open(app_file, "w") as f:
             f.write(f"{src}")
 
         return ""
 
-    def remove_clients(self, clients: List[str]) -> str:
+    def remove_clients(self, clients: list[str]) -> str:
         for client in clients:
             self._remove_dead_client(client)
         return ""
@@ -570,7 +570,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def _client_operation_error(client_name: str, e: Exception) -> dict:
         return {"client_name": client_name, "state": "error", "error": str(e)}
 
-    def disable_clients(self, client_names: List[str]) -> dict:
+    def disable_clients(self, client_names: list[str]) -> dict:
         results = []
         for client_name in client_names:
             try:
@@ -596,7 +596,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
                 results.append(self._client_operation_error(client_name, e))
         return {"clients": results}
 
-    def enable_clients(self, client_names: List[str]) -> dict:
+    def enable_clients(self, client_names: list[str]) -> dict:
         results = []
         for client_name in client_names:
             try:
@@ -643,7 +643,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def multicast_aux_requests(
         self,
         topic: str,
-        target_requests: Dict[str, Shareable],
+        target_requests: dict[str, Shareable],
         timeout: float,
         fl_ctx: FLContext,
         optional: bool = False,
@@ -682,7 +682,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         else:
             return None
 
-    def _to_aux_msg_targets(self, target_names: List[str]):
+    def _to_aux_msg_targets(self, target_names: list[str]):
         msg_targets = []
         if not target_names:
             # all clients
@@ -724,7 +724,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         channel: str,
         topic: str,
         stream_ctx: StreamContext,
-        targets: List[str],
+        targets: list[str],
         producer: ObjectProducer,
         fl_ctx: FLContext,
         optional=False,
@@ -954,10 +954,10 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
         return error
 
-    def _send_admin_requests(self, requests, fl_ctx: FLContext, timeout_secs=10) -> List[ClientReply]:
+    def _send_admin_requests(self, requests, fl_ctx: FLContext, timeout_secs=10) -> list[ClientReply]:
         return self.server.admin_server.send_requests(requests, fl_ctx, timeout_secs=timeout_secs)
 
-    def check_client_resources(self, job: Job, resource_reqs, fl_ctx: FLContext) -> Dict[str, Tuple[bool, str]]:
+    def check_client_resources(self, job: Job, resource_reqs, fl_ctx: FLContext) -> dict[str, tuple[bool, str]]:
         requests = {}
         for site_name, resource_requirements in resource_reqs.items():
             # assume server resource is unlimited
@@ -1000,7 +1000,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         return request
 
     def cancel_client_resources(
-        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict], fl_ctx: FLContext
+        self, resource_check_results: dict[str, tuple[bool, str]], resource_reqs: dict[str, dict], fl_ctx: FLContext
     ):
         requests = {}
         for site_name, result in resource_check_results.items():

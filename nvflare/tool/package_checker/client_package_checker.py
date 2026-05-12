@@ -50,7 +50,7 @@ class ClientPackageChecker(PackageChecker):
         sub_start_path = os.path.join(self.package_path, "startup", "sub_start.sh")
 
         try:
-            with open(sub_start_path, "r") as f:
+            with open(sub_start_path) as f:
                 content = f.read()
 
             # Look for uid=value in the python command

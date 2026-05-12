@@ -27,13 +27,13 @@ from nvflare.fuel.utils.import_utils import optional_import
 @dataclasses.dataclass
 class KeyIndex:
     key: str
-    value: Union[None, Any, ConfigTree] = None
+    value: None | Any | ConfigTree = None
     parent_key: Optional["KeyIndex"] = None
-    index: Optional[int] = None
-    component_name: Optional[str] = None
+    index: int | None = None
+    component_name: str | None = None
 
 
-def build_reverse_order_index(input_config_file_path: str) -> Tuple[str, ConfigTree, List[str], Dict]:
+def build_reverse_order_index(input_config_file_path: str) -> tuple[str, ConfigTree, list[str], dict]:
     # use pyhocon to load config
     config_dir = os.path.dirname(input_config_file_path)
     config_dir = None if not config_dir else config_dir
@@ -68,7 +68,7 @@ def build_reverse_order_index(input_config_file_path: str) -> Tuple[str, ConfigT
     return config_file_path, config, excluded_list, key_indices
 
 
-def load_pyhocon_conf(config_file_path: str, search_dir: Optional[str]) -> Tuple[ConfigTree, str]:
+def load_pyhocon_conf(config_file_path: str, search_dir: str | None) -> tuple[ConfigTree, str]:
     """Loads config using pyhocon."""
     try:
         temp_conf: Config = ConfigFactory.load_config(config_file_path, [search_dir])
@@ -87,12 +87,12 @@ def load_pyhocon_conf(config_file_path: str, search_dir: Optional[str]) -> Tuple
 
 
 def build_list_reverse_order_index(
-    config_list: List,
+    config_list: list,
     key: str,
-    excluded_keys: Optional[List[str]],
-    root_index: Optional[KeyIndex],
-    key_indices: Optional[Dict],
-) -> Dict:
+    excluded_keys: list[str] | None,
+    root_index: KeyIndex | None,
+    key_indices: dict | None,
+) -> dict:
     """
     Recursively build a reverse order index for a list.
     """
@@ -156,16 +156,16 @@ def is_primitive(value):
     )
 
 
-def has_none_primitives_in_list(values: List):
+def has_none_primitives_in_list(values: list):
     return any(not is_primitive(x) for x in values)
 
 
 def build_dict_reverse_order_index(
     config: ConfigTree,
-    excluded_keys: List[str] = None,
-    root_index: Optional[KeyIndex] = None,
-    key_indices: Optional[Dict] = None,
-) -> Dict:
+    excluded_keys: list[str] = None,
+    root_index: KeyIndex | None = None,
+    key_indices: dict | None = None,
+) -> dict:
     key_indices = {} if key_indices is None else key_indices
     if excluded_keys is None:
         excluded_keys = []
@@ -276,7 +276,7 @@ def add_class_defaults_to_key(excluded_keys, key_index, key_indices, results):
 
                 if name_key:
 
-                    name_indices: List[KeyIndex] = key_indices.get(v.name, [])
+                    name_indices: list[KeyIndex] = key_indices.get(v.name, [])
                     has_one = any(
                         k.parent_key is not None
                         and k.parent_key.key == "args"
@@ -302,7 +302,7 @@ def update_index_comp_name(key_index: KeyIndex):
     return key_index
 
 
-def add_default_values(excluded_keys, key_indices: Dict):
+def add_default_values(excluded_keys, key_indices: dict):
     results = key_indices.copy()
 
     for key, key_index_list in key_indices.items():
@@ -312,7 +312,7 @@ def add_default_values(excluded_keys, key_indices: Dict):
     return results
 
 
-def populate_key_component_names(key_indices: Dict):
+def populate_key_component_names(key_indices: dict):
     results = {}
     for key, key_index_list in key_indices.items():
         for key_index in key_index_list:

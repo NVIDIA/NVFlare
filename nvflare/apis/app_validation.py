@@ -16,14 +16,14 @@ from abc import ABC, abstractmethod
 from typing import Dict, Tuple
 
 
-class AppValidationKey(object):
+class AppValidationKey:
 
     BYOC = "byoc"
 
 
 class AppValidator(ABC):
     @abstractmethod
-    def validate(self, app_folder: str) -> Tuple[str, Dict]:
+    def validate(self, app_folder: str) -> tuple[str, dict]:
         """Validate and/or clean the content of specified application folder.
 
         Args:

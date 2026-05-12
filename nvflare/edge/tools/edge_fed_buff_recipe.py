@@ -32,7 +32,7 @@ DEVICE_SIMULATION_ENV_KEY = "device_simulation"
 class _EdgeFedBuffValidator(BaseModel):
     """Internal validator for EdgeFedBuffRecipe parameters."""
 
-    initial_ckpt: Optional[str] = None
+    initial_ckpt: str | None = None
 
     @field_validator("initial_ckpt")
     @classmethod
@@ -142,7 +142,7 @@ class SimulationConfig:
 
     def __init__(
         self,
-        task_processor: Optional[DeviceTaskProcessor],
+        task_processor: DeviceTaskProcessor | None,
         job_timeout: float = 60.0,
         num_devices: int = 1000,
         num_workers: int = 10,
@@ -170,8 +170,8 @@ class EvaluatorConfig:
     def __init__(
         self,
         eval_frequency: int = 1,
-        torchvision_dataset: Optional[Dict] = None,
-        custom_dataset: Optional[Dict] = None,
+        torchvision_dataset: dict | None = None,
+        custom_dataset: dict | None = None,
     ):
         self.eval_frequency = eval_frequency
         self.torchvision_dataset = torchvision_dataset
@@ -232,14 +232,14 @@ class EdgeFedBuffRecipe(Recipe):
     def __init__(
         self,
         job_name: str,
-        model: Union[Any, Dict],
+        model: Any | dict,
         model_manager_config: ModelManagerConfig,
         device_manager_config: DeviceManagerConfig,
-        initial_ckpt: Optional[str] = None,
+        initial_ckpt: str | None = None,
         evaluator_config: EvaluatorConfig = None,
         simulation_config: SimulationConfig = None,
         custom_source_root: str = None,
-        device_wait_timeout: Optional[float] = None,
+        device_wait_timeout: float | None = None,
     ):
         # Validate initial_ckpt
         _EdgeFedBuffValidator(initial_ckpt=initial_ckpt)

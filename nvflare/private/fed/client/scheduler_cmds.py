@@ -29,7 +29,7 @@ from nvflare.security.logging import secure_format_exception
 
 def _get_resource_manager(engine: ClientEngineInternalSpec):
     if not isinstance(engine, ClientEngineInternalSpec):
-        raise ValueError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+        raise ValueError(f"engine must be ClientEngineInternalSpec, but got {type(engine)}")
 
     resource_manager = engine.get_component(SystemComponents.RESOURCE_MANAGER)
     if not isinstance(resource_manager, ResourceManagerSpec):
@@ -40,7 +40,7 @@ def _get_resource_manager(engine: ClientEngineInternalSpec):
 
 def _get_resource_consumer(engine: ClientEngineInternalSpec):
     if not isinstance(engine, ClientEngineInternalSpec):
-        raise ValueError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+        raise ValueError(f"engine must be ClientEngineInternalSpec, but got {type(engine)}")
 
     resource_consumer = engine.get_component(SystemComponents.RESOURCE_CONSUMER)
     if not isinstance(resource_consumer, ResourceConsumerSpec):
@@ -52,7 +52,7 @@ def _get_resource_consumer(engine: ClientEngineInternalSpec):
 
 
 class CheckResourceProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
+    def get_topics(self) -> list[str]:
         return [TrainingTopic.CHECK_RESOURCE]
 
     def process(self, req: Message, app_ctx) -> Message:
@@ -90,7 +90,7 @@ class CheckResourceProcessor(RequestProcessor):
 
 
 class StartJobProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
+    def get_topics(self) -> list[str]:
         return [TrainingTopic.START_JOB]
 
     def process(self, req: Message, app_ctx) -> Message:
@@ -134,7 +134,7 @@ class StartJobProcessor(RequestProcessor):
 
 
 class CancelResourceProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
+    def get_topics(self) -> list[str]:
         return [TrainingTopic.CANCEL_RESOURCE]
 
     def process(self, req: Message, app_ctx) -> Message:

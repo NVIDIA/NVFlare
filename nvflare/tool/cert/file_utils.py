@@ -16,14 +16,15 @@
 
 import os
 import re
-from typing import Callable, Optional, Tuple
+from typing import Optional, Tuple
+from collections.abc import Callable
 
 _PROJECT_NAME_HINT = "Project names must match [A-Za-z0-9][A-Za-z0-9._-]* and must not contain path separators."
 _PROJECT_NAME_MAX_LENGTH_HINT = "Project names must be 64 characters or fewer."
 _SAFE_PROJECT_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
-def safe_project_name_error(project_name: str, *, field_label: str = "Project") -> Optional[Tuple[str, str]]:
+def safe_project_name_error(project_name: str, *, field_label: str = "Project") -> tuple[str, str] | None:
     if not isinstance(project_name, str) or not project_name.strip():
         return f"{field_label} must not be empty or whitespace only.", _PROJECT_NAME_HINT
     if len(project_name) > 64:
@@ -60,7 +61,7 @@ def read_file_nofollow(
     path: str,
     max_size: int,
     *,
-    too_large_error_factory: Optional[Callable[[str], Exception]] = None,
+    too_large_error_factory: Callable[[str], Exception] | None = None,
 ) -> bytes:
     flags = os.O_RDONLY
     if hasattr(os, "O_NOFOLLOW"):

@@ -212,12 +212,12 @@ class Connector(ABC, FLComponent):
 
     def send_request(
         self,
-        target: Optional[str],
+        target: str | None,
         op: str,
         request: Shareable,
         per_msg_timeout: float,
         tx_timeout: float,
-        fl_ctx: Optional[FLContext],
+        fl_ctx: FLContext | None,
     ) -> Shareable:
         """Send app request to the specified target via FLARE ReliableMessage.
 

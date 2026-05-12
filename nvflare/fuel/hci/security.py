@@ -18,7 +18,7 @@ import os
 import uuid
 
 
-class IdentityKey(object):
+class IdentityKey:
 
     NAME = "common_name"
     ORG = "organization"

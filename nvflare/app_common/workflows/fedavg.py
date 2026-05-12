@@ -90,14 +90,14 @@ class FedAvg(BaseFedAvg):
     def __init__(
         self,
         *args,
-        model: Optional[Union[Dict, FLModel]] = None,
-        save_filename: Optional[str] = "FL_global_model.pt",
-        aggregator: Optional[ModelAggregator] = None,
-        stop_cond: Optional[str] = None,
-        patience: Optional[int] = None,
-        task_name: Optional[str] = "train",
-        exclude_vars: Optional[str] = None,
-        aggregation_weights: Optional[Dict[str, float]] = None,
+        model: dict | FLModel | None = None,
+        save_filename: str | None = "FL_global_model.pt",
+        aggregator: ModelAggregator | None = None,
+        stop_cond: str | None = None,
+        patience: int | None = None,
+        task_name: str | None = "train",
+        exclude_vars: str | None = None,
+        aggregation_weights: dict[str, float] | None = None,
         enable_tensor_disk_offload: bool = False,
         **kwargs,
     ) -> None:
@@ -131,10 +131,10 @@ class FedAvg(BaseFedAvg):
         self.best_target_metric_value: Any = None
 
         # InTime aggregation helpers (reset each round, used only when no custom aggregator)
-        self._aggr_helper: Optional[WeightedAggregationHelper] = None
-        self._aggr_metrics_helper: Optional[WeightedAggregationHelper] = None
+        self._aggr_helper: WeightedAggregationHelper | None = None
+        self._aggr_metrics_helper: WeightedAggregationHelper | None = None
         self._all_metrics: bool = True
-        self._warned_metric_keys: Set[str] = set()  # warn at most once per key (across clients/rounds)
+        self._warned_metric_keys: set[str] = set()  # warn at most once per key (across clients/rounds)
         self._received_count: int = 0
         self._expected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
@@ -345,7 +345,7 @@ class FedAvg(BaseFedAvg):
                 meta={"nr_aggregated": self._received_count, "current_round": self.current_round},
             )
 
-    def should_stop(self, metrics: Optional[Dict] = None) -> bool:
+    def should_stop(self, metrics: dict | None = None) -> bool:
         """Checks whether the current FL experiment should stop.
 
         Args:

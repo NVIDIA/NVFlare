@@ -44,8 +44,8 @@ class ConfigFactory:
 
     @staticmethod
     def search_config_format(
-        init_file_path: str, search_dirs: Optional[List[str]] = None, target_fmt: Optional[ConfigFormat] = None
-    ) -> Tuple[Optional[ConfigFormat], Optional[str]]:
+        init_file_path: str, search_dirs: list[str] | None = None, target_fmt: ConfigFormat | None = None
+    ) -> tuple[ConfigFormat | None, str | None]:
         """Finds the configuration format and the location (file_path) for given initial init_file_path and search directories.
 
         For example, the initial config file path given is `config_client.json`
@@ -96,8 +96,8 @@ class ConfigFactory:
 
     @staticmethod
     def load_config(
-        file_path: str, search_dirs: Optional[List[str]] = None, target_fmt: Optional[ConfigFormat] = None
-    ) -> Optional[Config]:
+        file_path: str, search_dirs: list[str] | None = None, target_fmt: ConfigFormat | None = None
+    ) -> Config | None:
         """Finds the configuration for given initial init_file_path and search directories.
 
         For example, the initial config file path given is `config_client.json`
@@ -125,7 +125,7 @@ class ConfigFactory:
         return None
 
     @staticmethod
-    def get_config_loader(config_format: ConfigFormat) -> Optional[ConfigLoader]:
+    def get_config_loader(config_format: ConfigFormat) -> ConfigLoader | None:
         """Returns ConfigLoader for given config_format
 
         Args:
@@ -150,6 +150,6 @@ class ConfigFactory:
         return False
 
     @staticmethod
-    def has_config(init_file_path: str, search_dirs: Optional[List[str]] = None) -> bool:
+    def has_config(init_file_path: str, search_dirs: list[str] | None = None) -> bool:
         fmt, real_file_path = ConfigFactory.search_config_format(init_file_path, search_dirs)
         return real_file_path is not None

@@ -50,5 +50,5 @@ def init_app():
             org = parts[2]
             Store.seed_user(email, pwd, org)
     with open(os.path.join(web_root, ".db_init_done"), "ab") as f:
-        f.write(bytes())
+        f.write(b"")
     return app

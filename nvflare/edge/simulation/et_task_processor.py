@@ -77,7 +77,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
     def __init__(
         self,
         data_path: str,
-        training_config: Dict = None,
+        training_config: dict = None,
     ):
         """Initialize the task processor.
 
@@ -154,7 +154,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         log.info(f"Shutting down job {self.job_name} (ID: {self.job_id})")
         # Add cleanup code here if needed
 
-    def run_training(self, et_model, total_epochs: int = 1) -> Dict:
+    def run_training(self, et_model, total_epochs: int = 1) -> dict:
         """Run training loop.
 
         Args:

@@ -23,7 +23,7 @@ from .job_def_manager_spec import JobDefManagerSpec
 class DispatchInfo:
     """Information needed for dispatch"""
 
-    def __init__(self, app_name: str, resource_requirements: dict, token: Optional[str]):
+    def __init__(self, app_name: str, resource_requirements: dict, token: str | None):
         self.app_name = app_name
         self.resource_requirements = resource_requirements
         self.token = token
@@ -42,8 +42,8 @@ class DispatchInfo:
 class JobSchedulerSpec(ABC):
     @abstractmethod
     def schedule_job(
-        self, job_manager: JobDefManagerSpec, job_candidates: List[Job], fl_ctx: FLContext
-    ) -> (Optional[Job], Optional[Dict[str, DispatchInfo]]):
+        self, job_manager: JobDefManagerSpec, job_candidates: list[Job], fl_ctx: FLContext
+    ) -> (Job | None, dict[str, DispatchInfo] | None):
         """Try to schedule a Job.
 
         Args:

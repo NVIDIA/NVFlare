@@ -54,7 +54,7 @@ class Communicator:
         self,
         client_config=None,
         secure_train=False,
-        client_state_processors: Optional[List[Filter]] = None,
+        client_state_processors: list[Filter] | None = None,
         compression=None,
         cell: Cell = None,
         client_register_interval=2,

@@ -22,7 +22,7 @@ from .api_context import APIContext
 
 
 class _BaseWriter:
-    def __init__(self, ctx: Optional[APIContext] = None):
+    def __init__(self, ctx: APIContext | None = None):
         self.ctx = get_context(ctx)
 
 
@@ -38,7 +38,7 @@ class SummaryWriter(_BaseWriter):
     rather than auto-incrementing on the server side.
     """
 
-    def add_scalar(self, tag: str, scalar: float, global_step: Optional[int] = None, **kwargs):
+    def add_scalar(self, tag: str, scalar: float, global_step: int | None = None, **kwargs):
         """Sends a scalar.
 
         Args:
@@ -57,7 +57,7 @@ class SummaryWriter(_BaseWriter):
             **kwargs,
         )
 
-    def add_scalars(self, tag: str, scalars: dict, global_step: Optional[int] = None, **kwargs):
+    def add_scalars(self, tag: str, scalars: dict, global_step: int | None = None, **kwargs):
         """Sends scalars.
 
         Args:
@@ -89,7 +89,7 @@ class WandBWriter(_BaseWriter):
     WandBWriter will send log records to the FLARE system.
     """
 
-    def log(self, metrics: Dict[str, float], step: Optional[int] = None):
+    def log(self, metrics: dict[str, float], step: int | None = None):
         """Log multiple metrics for the current run.
 
         Args:
@@ -142,7 +142,7 @@ class MLflowWriter(_BaseWriter):
             ctx=self.ctx,
         )
 
-    def log_metric(self, key: str, value: float, step: Optional[int] = None) -> None:
+    def log_metric(self, key: str, value: float, step: int | None = None) -> None:
         """Log a metric under the current run.
 
         Args:
@@ -164,7 +164,7 @@ class MLflowWriter(_BaseWriter):
             ctx=self.ctx,
         )
 
-    def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None) -> None:
+    def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
         """Log multiple metrics for the current run.
 
         Args:

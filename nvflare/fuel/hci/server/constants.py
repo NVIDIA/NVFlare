@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-class ConnProps(object):
+class ConnProps:
     """Constants for connection properties."""
 
     ADMIN_SERVER = "_adminServer"

@@ -110,7 +110,7 @@ class SubmitRecordKey(str, Enum):
         return self.value
 
 
-class TopDir(object):
+class TopDir:
     JOB = "job"
     WORKSPACE = "workspace"
 
@@ -119,11 +119,11 @@ class Job:
     def __init__(
         self,
         job_id: str,
-        resource_spec: Dict[str, Dict],
-        deploy_map: Dict[str, List[str]],
+        resource_spec: dict[str, dict],
+        deploy_map: dict[str, list[str]],
         meta,
         min_sites: int = 1,
-        required_sites: Optional[List[str]] = None,
+        required_sites: list[str] | None = None,
     ):
         """Job object containing the job metadata.
 
@@ -153,7 +153,7 @@ class Job:
         self.run_record = None  # job id, dispatched time/UUID, finished time, completion code (normal, aborted)
         self.run_aborted = False
 
-    def get_deployment(self) -> Dict[str, List[str]]:
+    def get_deployment(self) -> dict[str, list[str]]:
         """Returns the deployment configuration.
 
         ::

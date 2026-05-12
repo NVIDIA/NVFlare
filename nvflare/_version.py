@@ -14,7 +14,8 @@ import os
 import re
 import subprocess
 import sys
-from typing import Callable, Dict
+from typing import Dict
+from collections.abc import Callable
 
 
 def get_keywords():
@@ -52,8 +53,8 @@ class NotThisMethod(Exception):
     """Exception raised if a method is not valid for the current scenario."""
 
 
-LONG_VERSION_PY: Dict[str, str] = {}
-HANDLERS: Dict[str, Dict[str, Callable]] = {}
+LONG_VERSION_PY: dict[str, str] = {}
+HANDLERS: dict[str, dict[str, Callable]] = {}
 
 
 def register_vcs_handler(vcs, method):  # decorator
@@ -108,7 +109,7 @@ def run_command(commands, args, cwd=None, verbose=False, hide_stderr=False, env=
             return None, None
     else:
         if verbose:
-            print("unable to find command, tried %s" % (commands,))
+            print("unable to find command, tried {}".format(commands))
         return None, None
     stdout = process.communicate()[0].strip().decode()
     if process.returncode != 0:
@@ -142,7 +143,7 @@ def versions_from_parentdir(parentdir_prefix, root, verbose):
         root = os.path.dirname(root)  # up a level
 
     if verbose:
-        print("Tried directories %s but none started with prefix %s" % (str(rootdirs), parentdir_prefix))
+        print("Tried directories {} but none started with prefix {}".format(str(rootdirs), parentdir_prefix))
     raise NotThisMethod("rootdir doesn't start with parentdir_prefix")
 
 
@@ -155,7 +156,7 @@ def git_get_keywords(versionfile_abs):
     # _version.py.
     keywords = {}
     try:
-        with open(versionfile_abs, "r") as fobj:
+        with open(versionfile_abs) as fobj:
             for line in fobj:
                 if line.strip().startswith("git_refnames ="):
                     mo = re.search(r'=\s*"(.*)"', line)
@@ -269,7 +270,7 @@ def git_pieces_from_vcs(tag_prefix, root, verbose, runner=run_command):
     # if there isn't one, this yields HEX[-dirty] (no NUM)
     describe_out, rc = runner(
         GITS,
-        ["describe", "--tags", "--dirty", "--always", "--long", "--match", "%s%s" % (tag_prefix, TAG_PREFIX_REGEX)],
+        ["describe", "--tags", "--dirty", "--always", "--long", "--match", "{}{}".format(tag_prefix, TAG_PREFIX_REGEX)],
         cwd=root,
     )
     # --long was added in git-1.5.5
@@ -344,7 +345,7 @@ def git_pieces_from_vcs(tag_prefix, root, verbose, runner=run_command):
             if verbose:
                 fmt = "tag '%s' doesn't start with prefix '%s'"
                 print(fmt % (full_tag, tag_prefix))
-            pieces["error"] = "tag '%s' doesn't start with prefix '%s'" % (full_tag, tag_prefix)
+            pieces["error"] = "tag '{}' doesn't start with prefix '{}'".format(full_tag, tag_prefix)
             return pieces
         pieces["closest-tag"] = full_tag[len(tag_prefix) :]
 

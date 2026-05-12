@@ -42,9 +42,7 @@ def get_open_ports(number) -> list:
         s.close()
 
     if len(ports) != number:
-        raise RuntimeError(
-            "Could not get enough open ports from the system. Needed {} but got {}.".format(number, len(ports))
-        )
+        raise RuntimeError(f"Could not get enough open ports from the system. Needed {number} but got {len(ports)}.")
     return ports
 
 

@@ -28,12 +28,12 @@ from nvflare.fuel.utils.import_utils import optional_import
 class DFStatisticsCore(Statistics, ABC):
     def __init__(self, max_bin=None):
         # assumption: the data can be loaded and cached in the memory
-        self.data: Optional[Dict[str, pd.DataFrame]] = None
-        super(DFStatisticsCore, self).__init__()
+        self.data: dict[str, pd.DataFrame] | None = None
+        super().__init__()
         self.max_bin = max_bin
 
-    def features(self) -> Dict[str, List[Feature]]:
-        results: Dict[str, List[Feature]] = {}
+    def features(self) -> dict[str, list[Feature]]:
+        results: dict[str, list[Feature]] = {}
         for ds_name in self.data:
             df = self.data[ds_name]
             results[ds_name] = []
@@ -94,7 +94,7 @@ class DFStatisticsCore(Statistics, ABC):
         df = self.data[dataset_name]
         return df[feature_name].min()
 
-    def quantiles(self, dataset_name: str, feature_name: str, percents: List) -> Dict:
+    def quantiles(self, dataset_name: str, feature_name: str, percents: list) -> dict:
         TDigest, flag = optional_import("fastdigest", name="TDigest")
         results = {}
         if not flag:

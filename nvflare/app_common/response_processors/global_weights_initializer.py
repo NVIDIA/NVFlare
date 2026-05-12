@@ -21,7 +21,7 @@ from nvflare.app_common.abstract.response_processor import ResponseProcessor
 from nvflare.app_common.app_constant import AppConstants
 
 
-class WeightMethod(object):
+class WeightMethod:
 
     FIRST = "first"
     CLIENT = "client"

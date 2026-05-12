@@ -20,10 +20,10 @@ from typing import Optional
 from nvflare.tool.cert.cert_constants import is_valid_provision_version
 
 # Module-level parser references used by --schema in handlers and for help fallback.
-_cert_init_parser: Optional[argparse.ArgumentParser] = None
-_cert_request_parser: Optional[argparse.ArgumentParser] = None
-_cert_approve_parser: Optional[argparse.ArgumentParser] = None
-_cert_parser: Optional[argparse.ArgumentParser] = None
+_cert_init_parser: argparse.ArgumentParser | None = None
+_cert_request_parser: argparse.ArgumentParser | None = None
+_cert_approve_parser: argparse.ArgumentParser | None = None
+_cert_parser: argparse.ArgumentParser | None = None
 
 
 def _name_type(value: str) -> str:

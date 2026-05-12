@@ -31,10 +31,10 @@ class CommandAudit(CommandFilter):
             auditor: instance of Auditor
         """
         CommandFilter.__init__(self)
-        assert isinstance(auditor, Auditor), "auditor must be Auditor but got {}".format(type(auditor))
+        assert isinstance(auditor, Auditor), f"auditor must be Auditor but got {type(auditor)}"
         self.auditor = auditor
 
-    def pre_command(self, conn: Connection, args: List[str]):
+    def pre_command(self, conn: Connection, args: list[str]):
         user_name = conn.get_prop(ConnProps.USER_NAME, "?")
 
         event_id = self.auditor.add_event(

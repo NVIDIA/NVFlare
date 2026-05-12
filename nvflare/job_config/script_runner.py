@@ -54,11 +54,11 @@ class BaseScriptRunner:
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         framework: FrameworkType = FrameworkType.PYTORCH,
         params_transfer_type: TransferType = TransferType.FULL,
-        executor: Union[ClientAPILauncherExecutor, InProcessClientAPIExecutor, None] = None,
-        task_pipe: Optional[Pipe] = None,
-        launcher: Optional[Launcher] = None,
-        metric_relay: Optional[MetricRelay] = None,
-        metric_pipe: Optional[Pipe] = None,
+        executor: ClientAPILauncherExecutor | InProcessClientAPIExecutor | None = None,
+        task_pipe: Pipe | None = None,
+        launcher: Launcher | None = None,
+        metric_relay: MetricRelay | None = None,
+        metric_pipe: Pipe | None = None,
         pipe_connect_type: str = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
@@ -279,7 +279,7 @@ class BaseScriptRunner:
         job.add_resources(resources=[self._script], ctx=ctx)
         return comp_ids
 
-    def _get_ex_process_executor_cls(self, framework: FrameworkType) -> Type[ClientAPILauncherExecutor]:
+    def _get_ex_process_executor_cls(self, framework: FrameworkType) -> type[ClientAPILauncherExecutor]:
         if framework == FrameworkType.PYTORCH:
             from nvflare.app_opt.pt.client_api_launcher_executor import PTClientAPILauncherExecutor
 
@@ -291,7 +291,7 @@ class BaseScriptRunner:
         else:
             return ClientAPILauncherExecutor
 
-    def _get_in_process_executor_cls(self, framework: FrameworkType) -> Type[InProcessClientAPIExecutor]:
+    def _get_in_process_executor_cls(self, framework: FrameworkType) -> type[InProcessClientAPIExecutor]:
         if framework == FrameworkType.PYTORCH:
             from nvflare.app_opt.pt.in_process_client_api_executor import PTInProcessClientAPIExecutor
 
@@ -315,7 +315,7 @@ class ScriptRunner(BaseScriptRunner):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         pipe_connect_type: PipeConnectType = PipeConnectType.VIA_CP,
-        task_pipe: Optional[Pipe] = None,
+        task_pipe: Pipe | None = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         memory_gc_rounds: int = 0,

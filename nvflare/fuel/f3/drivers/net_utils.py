@@ -54,7 +54,7 @@ def ssl_required(params: dict) -> bool:
     return scheme in SECURE_SCHEMES or str2bool(params.get(DriverParams.SECURE.value))
 
 
-def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
+def get_ssl_context(params: dict, ssl_server: bool) -> SSLContext | None:
     if not ssl_required(params):
         params[DriverParams.IMPLEMENTED_CONN_SEC.value] = "clear"
         return None
@@ -158,7 +158,7 @@ def check_tcp_port(port) -> bool:
     return result
 
 
-def get_open_tcp_port(resources: dict) -> Optional[int]:
+def get_open_tcp_port(resources: dict) -> int | None:
 
     port = resources.get(DriverParams.PORT)
     if port:

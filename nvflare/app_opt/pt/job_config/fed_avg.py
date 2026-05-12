@@ -27,7 +27,7 @@ class FedAvgJob(BaseFedJob):
         num_rounds: int,
         name: str = "fed_job",
         min_clients: int = 1,
-        mandatory_clients: Optional[List[str]] = None,
+        mandatory_clients: list[str] | None = None,
         key_metric: str = "accuracy",
     ):
         """PyTorch FedAvg Job.

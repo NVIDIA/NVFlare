@@ -29,7 +29,7 @@ class WandBWriter(LogWriter):
     def get_default_metric_data_type(self) -> AnalyticsDataType:
         return AnalyticsDataType.METRICS
 
-    def log(self, metrics: Dict[str, float], step: Optional[int] = None):
+    def log(self, metrics: dict[str, float], step: int | None = None):
         """Log multiple metrics for the current run.
 
         Args:

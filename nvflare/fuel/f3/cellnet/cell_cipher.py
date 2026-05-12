@@ -184,7 +184,7 @@ class SimpleCellCipher:
             signature = _sign(self._pri_key, key_enc)
             self._cached_enc[cert_hash] = (key, key_enc, signature)
         else:
-            (key, key_enc, signature) = secret
+            key, key_enc, signature = secret
         nonce = os.urandom(NONCE_LENGTH)
         ct = nonce + key_enc + signature + _sym_enc(key, nonce, message)
         return ct

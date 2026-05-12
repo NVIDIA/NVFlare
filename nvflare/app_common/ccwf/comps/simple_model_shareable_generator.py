@@ -51,7 +51,7 @@ class SimpleModelShareableGenerator(ShareableGenerator):
             ValueError: if data_kind is not `DataKind.WEIGHTS` and is not `DataKind.WEIGHT_DIFF`
         """
         if not isinstance(shareable, Shareable):
-            raise TypeError("shareable must be Shareable, but got {}.".format(type(shareable)))
+            raise TypeError(f"shareable must be Shareable, but got {type(shareable)}.")
 
         dxo = from_shareable(shareable)
         base_model = ModelLearnable()
@@ -76,7 +76,7 @@ class SimpleModelShareableGenerator(ShareableGenerator):
                 base_model[ModelLearnableKey.WEIGHTS] = weights
         else:
             raise ValueError(
-                "data_kind should be either DataKind.WEIGHTS or DataKind.WEIGHT_DIFF, but got {}".format(dxo.data_kind)
+                f"data_kind should be either DataKind.WEIGHTS or DataKind.WEIGHT_DIFF, but got {dxo.data_kind}"
             )
 
         base_model[ModelLearnableKey.META] = dxo.get_meta_props()

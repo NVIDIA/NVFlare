@@ -38,8 +38,8 @@ class RunManager(EngineSpec):
         job_id,
         workspace: Workspace,
         components: {str: FLComponent},
-        client_manager: Optional[ClientManager] = None,
-        handlers: Optional[List[FLComponent]] = None,
+        client_manager: ClientManager | None = None,
+        handlers: list[FLComponent] | None = None,
     ):
         """Manage run.
 
@@ -108,7 +108,7 @@ class RunManager(EngineSpec):
     def get_cell(self):
         return self.cell
 
-    def validate_targets(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
+    def validate_targets(self, client_names: list[str]) -> tuple[list[Client], list[str]]:
         return self.client_manager.get_all_clients_from_inputs(client_names)
 
     def create_job_processing_context_properties(self, workspace, job_id):

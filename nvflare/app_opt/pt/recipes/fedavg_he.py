@@ -46,18 +46,18 @@ class _FedAvgRecipeWithHEValidator(BaseModel):
 
     name: str
     model: Any
-    initial_ckpt: Optional[str] = None
+    initial_ckpt: str | None = None
     min_clients: int
     num_rounds: int
     train_script: str
     train_args: str
-    aggregator: Optional[Aggregator]
-    aggregator_data_kind: Optional[DataKind]
+    aggregator: Aggregator | None
+    aggregator_data_kind: DataKind | None
     launch_external_process: bool = False
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
-    encrypt_layers: Optional[Union[List[str], str]] = None
+    encrypt_layers: list[str] | str | None = None
     server_memory_gc_rounds: int = 1
     client_memory_gc_rounds: int = 0
     cuda_empty_cache: bool = False
@@ -157,19 +157,19 @@ class FedAvgRecipeWithHE(Recipe):
         self,
         *,
         name: str = "fedavg_he",
-        model: Union[Any, dict[str, Any], None] = None,
-        initial_ckpt: Optional[str] = None,
+        model: Any | dict[str, Any] | None = None,
+        initial_ckpt: str | None = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
         train_args: str = "",
-        aggregator: Optional[Aggregator] = None,
-        aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
+        aggregator: Aggregator | None = None,
+        aggregator_data_kind: DataKind | None = DataKind.WEIGHTS,
         launch_external_process: bool = False,
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
-        encrypt_layers: Optional[Union[List[str], str]] = None,
+        encrypt_layers: list[str] | str | None = None,
         server_memory_gc_rounds: int = 1,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
@@ -216,7 +216,7 @@ class FedAvgRecipeWithHE(Recipe):
         self.command = v.command
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
-        self.encrypt_layers: Optional[Union[List[str], str]] = v.encrypt_layers
+        self.encrypt_layers: list[str] | str | None = v.encrypt_layers
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
         self.client_memory_gc_rounds = v.client_memory_gc_rounds
         self.cuda_empty_cache = v.cuda_empty_cache

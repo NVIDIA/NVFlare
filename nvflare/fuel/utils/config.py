@@ -39,7 +39,7 @@ class ConfigFormat(Enum):
         )
 
     @classmethod
-    def extensions(cls, target_fmt=None) -> List[str]:
+    def extensions(cls, target_fmt=None) -> list[str]:
         if target_fmt is None:
             return [ext for ext, fmt in cls.config_ext_formats().items()]
         else:
@@ -47,7 +47,7 @@ class ConfigFormat(Enum):
 
 
 class Config(ABC):
-    def __init__(self, conf: Any, fmt: ConfigFormat, file_path: Optional[str] = None):
+    def __init__(self, conf: Any, fmt: ConfigFormat, file_path: str | None = None):
         self.format = fmt
         self.conf = conf
         self.file_path = file_path
@@ -60,7 +60,7 @@ class Config(ABC):
         """
         return self.format
 
-    def get_exts(self) -> List[str]:
+    def get_exts(self) -> list[str]:
         return ConfigFormat.extensions(self.format)
 
     def get_native_conf(self):
@@ -75,7 +75,7 @@ class Config(ABC):
 
         return self.conf
 
-    def get_location(self) -> Optional[str]:
+    def get_location(self) -> str | None:
         """Returns the file path where this configuration is loaded from.
 
         Returns:
@@ -85,7 +85,7 @@ class Config(ABC):
         return self.file_path
 
     @abstractmethod
-    def to_dict(self, resolve: Optional[bool] = True) -> Dict:
+    def to_dict(self, resolve: bool | None = True) -> dict:
         """Converts underline config object to dictionary.
 
         Args:
@@ -99,7 +99,7 @@ class Config(ABC):
         """
 
     @abstractmethod
-    def to_str(self, element: Optional[Dict] = None) -> str:
+    def to_str(self, element: dict | None = None) -> str:
         """Converts dict element to the str representation of the underline configuration, if element is not None
            For example, for JsonFormat, the method return json string
            for PyhoconFormat, the method return pyhocon string

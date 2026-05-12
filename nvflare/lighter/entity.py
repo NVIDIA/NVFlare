@@ -230,7 +230,7 @@ class Entity:
 
 
 class Participant(Entity):
-    def __init__(self, type: str, name: str, org: str, props: Optional[dict] = None, project: Entity = None):
+    def __init__(self, type: str, name: str, org: str, props: dict | None = None, project: Entity = None):
         """Class to represent a participant.
 
         Each participant communicates to other participant.  Therefore, each participant has its
@@ -295,7 +295,7 @@ class Participant(Entity):
         else:
             return self.name
 
-    def get_listening_host(self) -> Optional[ListeningHost]:
+    def get_listening_host(self) -> ListeningHost | None:
         """Get listening host property of the participant
 
         Returns: a ListeningHost object, or None if the property is not defined.
@@ -323,7 +323,7 @@ class Participant(Entity):
 
         return lh
 
-    def get_connect_to(self) -> Optional[ConnectTo]:
+    def get_connect_to(self) -> ConnectTo | None:
         """Get the connect_to property of the participant
 
         Returns: a ConnectTo object
@@ -376,7 +376,7 @@ class Project(Entity):
         name: str,
         description: str,
         participants=None,
-        props: Optional[dict] = None,
+        props: dict | None = None,
         serialized_root_cert=None,
         root_private_key=None,
     ):
@@ -430,7 +430,7 @@ class Project(Entity):
         """
         return self.add_participant(Participant(ParticipantType.SERVER, name, org, props))
 
-    def get_server(self) -> Optional[Participant]:
+    def get_server(self) -> Participant | None:
         """Get the server definition. Only one server is supported!
 
         Returns: server participant
@@ -438,7 +438,7 @@ class Project(Entity):
         """
         return self.server
 
-    def remove_server(self) -> Optional[Participant]:
+    def remove_server(self) -> Participant | None:
         """Remove the server definition from the project.
 
         Returns: removed server participant, or None if no server is defined.
@@ -504,7 +504,7 @@ class Project(Entity):
         """
         return self.add_participant(Participant(ParticipantType.CLIENT, name, org, props))
 
-    def get_clients(self) -> List[Participant]:
+    def get_clients(self) -> list[Participant]:
         """Get all clients of the project
 
         Returns: a list of clients
@@ -525,7 +525,7 @@ class Project(Entity):
         """
         return self.add_participant(Participant(ParticipantType.RELAY, name, org, props))
 
-    def get_relays(self) -> List[Participant]:
+    def get_relays(self) -> list[Participant]:
         """Get all relays of the project
 
         Returns: the list of relays of the project
@@ -546,7 +546,7 @@ class Project(Entity):
         """
         return self.add_participant(Participant(ParticipantType.ADMIN, name, org, props))
 
-    def get_admins(self) -> List[Participant]:
+    def get_admins(self) -> list[Participant]:
         """Get the list of admin users
 
         Returns: list of admin users
@@ -554,7 +554,7 @@ class Project(Entity):
         """
         return self.get_all_participants(ParticipantType.ADMIN)
 
-    def get_all_participants(self, types: Union[None, str, List[str]] = None):
+    def get_all_participants(self, types: None | str | list[str] = None):
         """Get all participants of the project of specified types.
 
         Args:

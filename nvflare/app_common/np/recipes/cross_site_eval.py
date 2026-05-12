@@ -31,13 +31,13 @@ from nvflare.recipe.utils import validate_ckpt
 class _CrossSiteEvalValidator(BaseModel):
     name: str
     min_clients: int
-    eval_script: Optional[str] = None
+    eval_script: str | None = None
     eval_args: str = ""
     launch_external_process: bool = False
     command: str = "python3 -u"
-    initial_ckpt: Optional[str] = None
-    model_dir: Optional[str] = None
-    model_name: Optional[dict] = None
+    initial_ckpt: str | None = None
+    model_dir: str | None = None
+    model_name: dict | None = None
     submit_model_timeout: int = 600
     validation_timeout: int = 6000
     client_memory_gc_rounds: int = 0
@@ -111,13 +111,13 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         self,
         name: str = "numpy_cross_site_eval",
         min_clients: int = 2,
-        eval_script: Optional[str] = None,
+        eval_script: str | None = None,
         eval_args: str = "",
         launch_external_process: bool = False,
         command: str = "python3 -u",
-        initial_ckpt: Optional[str] = None,
-        model_dir: Optional[str] = None,
-        model_name: Optional[dict] = None,
+        initial_ckpt: str | None = None,
+        model_dir: str | None = None,
+        model_name: dict | None = None,
         submit_model_timeout: int = 600,
         validation_timeout: int = 6000,
         client_memory_gc_rounds: int = 0,

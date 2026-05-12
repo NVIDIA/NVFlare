@@ -19,7 +19,7 @@ from nvflare.private.admin_defs import Message
 from nvflare.private.defs import CellChannel, new_cell_message
 
 
-class ClientReply(object):
+class ClientReply:
     def __init__(self, client_token: str, client_name: str, req: Message, reply: Message):
         """Client reply.
 
@@ -60,7 +60,7 @@ def send_requests(
     """
 
     if not isinstance(requests, dict):
-        raise TypeError("requests must be a dict but got {}".format(type(requests)))
+        raise TypeError(f"requests must be a dict but got {type(requests)}")
 
     if len(requests) == 0:
         return []

@@ -42,7 +42,7 @@ class LogWriter(FLComponent, ABC):
                 self.sender = AnalyticsSender(self.event_type, self.get_writer_name())
                 self.sender.engine = engine
 
-    def write(self, tag: str, value, data_type: AnalyticsDataType, global_step: Optional[int] = None, **kwargs):
+    def write(self, tag: str, value, data_type: AnalyticsDataType, global_step: int | None = None, **kwargs):
         """Writes a record.
 
         Args:

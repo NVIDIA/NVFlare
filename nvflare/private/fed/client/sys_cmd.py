@@ -32,7 +32,7 @@ from nvflare.security.logging import secure_format_exception
 
 
 class SysInfoProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
+    def get_topics(self) -> list[str]:
         return [SysCommandTopic.SYS_INFO]
 
     def process(self, req: Message, app_ctx) -> Message:
@@ -83,7 +83,7 @@ class ReportEnvProcessor(RequestProcessor):
 
 
 class ConfigureSiteLogProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
+    def get_topics(self) -> list[str]:
         return [SysCommandTopic.CONFIGURE_SITE_LOG]
 
     def process(self, req: Message, app_ctx) -> Message:

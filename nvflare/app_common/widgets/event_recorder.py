@@ -25,7 +25,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.widgets.widget import Widget
 
 
-class _CtxPropReq(object):
+class _CtxPropReq:
     """Requirements of a prop in the FLContext.
 
     Arguments:
@@ -42,7 +42,7 @@ class _CtxPropReq(object):
         self.allow_none = allow_none
 
 
-class _EventReq(object):
+class _EventReq:
     """Requirements for FL and peer context when an event is fired.
 
     Arguments:
@@ -52,8 +52,8 @@ class _EventReq(object):
 
     def __init__(
         self,
-        ctx_reqs: Dict[str, _CtxPropReq],
-        peer_ctx_reqs: Dict[str, _CtxPropReq],
+        ctx_reqs: dict[str, _CtxPropReq],
+        peer_ctx_reqs: dict[str, _CtxPropReq],
         ctx_block_list: [str] = None,
         peer_ctx_block_list: [str] = None,
     ):
@@ -70,7 +70,7 @@ class _EventReq(object):
         self.peer_ctx_block_list = peer_ctx_block_list
 
 
-class _EventStats(object):
+class _EventStats:
     """Stats of each event."""
 
     def __init__(self):
@@ -113,13 +113,13 @@ class EventRecorder(Widget):
         event_type = fl_ctx.get_prop(self._KEY_EVENT_TYPE, "?")
         event_id = fl_ctx.get_prop(FLContextKey.EVENT_ID, None)
         if event_id:
-            return "[type={}, id={}]".format(event_type, event_id)
+            return f"[type={event_type}, id={event_id}]"
         else:
-            return "[{}]".format(event_type)
+            return f"[{event_type}]"
 
     def event_error_tag(self, fl_ctx: FLContext):
         ctx_type = fl_ctx.get_prop(self._KEY_CTX_TYPE, "?")
-        return "Event {}: in {},".format(self.event_tag(fl_ctx), ctx_type)
+        return f"Event {self.event_tag(fl_ctx)}: in {ctx_type},"
 
     def validate_prop(self, prop_name: str, req: _CtxPropReq, fl_ctx: FLContext):
         stats = fl_ctx.get_prop(self._KEY_EVENT_STATS, None)
@@ -127,15 +127,13 @@ class EventRecorder(Widget):
         detail = fl_ctx.get_prop_detail(prop_name)
         if not isinstance(detail, dict):
             stats.prop_missing += 1
-            self.logger.error("{} required prop '{}' doesn't exist".format(self.event_error_tag(fl_ctx), prop_name))
+            self.logger.error(f"{self.event_error_tag(fl_ctx)} required prop '{prop_name}' doesn't exist")
             return
 
         value = detail["value"]
         if value is None and not req.allow_none:
             stats.prop_none_value += 1
-            self.logger.error(
-                "{} prop '{}' is None, but None is not allowed".format(self.event_error_tag(fl_ctx), prop_name)
-            )
+            self.logger.error(f"{self.event_error_tag(fl_ctx)} prop '{prop_name}' is None, but None is not allowed")
 
         if req.dtype is not None:
             if not isinstance(value, req.dtype):
@@ -148,27 +146,19 @@ class EventRecorder(Widget):
 
         if req.is_private and not detail["private"]:
             stats.prop_attr_mismatch += 1
-            self.logger.error(
-                "{} prop '{}' should be private but is public".format(self.event_error_tag(fl_ctx), prop_name)
-            )
+            self.logger.error(f"{self.event_error_tag(fl_ctx)} prop '{prop_name}' should be private but is public")
 
         if req.is_private is not None and not req.is_private and detail["private"]:
             stats.prop_attr_mismatch += 1
-            self.logger.error(
-                "{} prop '{}' should be public but is private".format(self.event_error_tag(fl_ctx), prop_name)
-            )
+            self.logger.error(f"{self.event_error_tag(fl_ctx)} prop '{prop_name}' should be public but is private")
 
         if req.is_sticky and not detail["sticky"]:
             stats.prop_attr_mismatch += 1
-            self.logger.error(
-                "{} prop '{}' should be sticky but is non-sticky".format(self.event_error_tag(fl_ctx), prop_name)
-            )
+            self.logger.error(f"{self.event_error_tag(fl_ctx)} prop '{prop_name}' should be sticky but is non-sticky")
 
         if req.is_sticky is not None and not req.is_sticky and detail["sticky"]:
             stats.prop_attr_mismatch += 1
-            self.logger.error(
-                "{} prop '{}' should be non-sticky but is sticky".format(self.event_error_tag(fl_ctx), prop_name)
-            )
+            self.logger.error(f"{self.event_error_tag(fl_ctx)} prop '{prop_name}' should be non-sticky but is sticky")
 
     def check_block_list(self, block_list, fl_ctx: FLContext):
         stats = fl_ctx.get_prop(self._KEY_EVENT_STATS, None)
@@ -176,7 +166,7 @@ class EventRecorder(Widget):
             detail = fl_ctx.get_prop_detail(prop_name)
             if detail:
                 stats.prop_block_list_violation += 1
-                self.logger.error("{} prop {} is not expected".format(self.event_error_tag(fl_ctx), prop_name))
+                self.logger.error(f"{self.event_error_tag(fl_ctx)} prop {prop_name} is not expected")
 
     def check_props(self, fl_ctx: FLContext):
         event_req = fl_ctx.get_prop(self._KEY_EVENT_REQ)
@@ -191,7 +181,7 @@ class EventRecorder(Widget):
             peer_ctx = fl_ctx.get_peer_context()
             if not peer_ctx:
                 stats.peer_ctx_missing += 1
-                self.logger.error("{} expected peer_ctx not present".format(self.event_error_tag(fl_ctx)))
+                self.logger.error(f"{self.event_error_tag(fl_ctx)} expected peer_ctx not present")
             else:
                 for prop_name, req in event_req.peer_ctx_reqs.items():
                     self.validate_prop(prop_name, req, peer_ctx)
@@ -215,7 +205,7 @@ class EventRecorder(Widget):
         fl_ctx.set_prop(key=self._KEY_EVENT_TYPE, value=event_type, private=True, sticky=False)
         fl_ctx.set_prop(key=self._KEY_CTX_TYPE, value="fl_ctx", private=True, sticky=False)
 
-        self.log_info(fl_ctx, "Got event {}".format(self.event_tag(fl_ctx)), fire_event=False)
+        self.log_info(fl_ctx, f"Got event {self.event_tag(fl_ctx)}", fire_event=False)
         event_stats.call_count += 1
 
         peer_ctx = fl_ctx.get_peer_context()
@@ -225,9 +215,7 @@ class EventRecorder(Widget):
             peer_ctx.set_prop(key=self._KEY_EVENT_STATS, value=event_stats, private=True, sticky=False)
             peer_ctx.set_prop(key=self._KEY_EVENT_TYPE, value=event_type, private=True, sticky=False)
             peer_ctx.set_prop(key=self._KEY_CTX_TYPE, value="peer_ctx", private=True, sticky=False)
-            self.log_info(
-                fl_ctx, "Peer Context for event {}: {}".format(self.event_tag(fl_ctx), peer_ctx), fire_event=False
-            )
+            self.log_info(fl_ctx, f"Peer Context for event {self.event_tag(fl_ctx)}: {peer_ctx}", fire_event=False)
 
         event_req = self.event_reqs.get(event_type, None)
         fl_ctx.set_prop(key=self._KEY_EVENT_REQ, value=event_req, private=True, sticky=False)
@@ -237,7 +225,7 @@ class EventRecorder(Widget):
         if event_type == EventType.END_RUN:
             # print stats
             for e, s in self.event_stats.items():
-                self.log_info(fl_ctx, "Stats of {}: {}".format(e, vars(s)), fire_event=False)
+                self.log_info(fl_ctx, f"Stats of {e}: {vars(s)}", fire_event=False)
 
 
 class ServerEventRecorder(EventRecorder):

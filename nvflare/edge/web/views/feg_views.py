@@ -43,7 +43,7 @@ class APIQuery:
     def start(self):
         self.query = Query(lcp_mapping_file=self.lcp_mapping_file, ca_cert_file=self.ca_cert_file)
 
-    def __call__(self, req: Union[TaskRequest, JobRequest, SelectionRequest, ResultReport]):
+    def __call__(self, req: TaskRequest | JobRequest | SelectionRequest | ResultReport):
         return self.query(req)
 
 

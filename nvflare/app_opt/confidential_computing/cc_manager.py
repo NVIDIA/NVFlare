@@ -269,7 +269,7 @@ class CCManager(FLComponent):
 
     def _verify_participants_tokens(
         self, participants_tokens: dict[str, list[dict[str, str]]]
-    ) -> Tuple[dict[str, bool], list[str]]:
+    ) -> tuple[dict[str, bool], list[str]]:
         """Verifies tokens for all participants.
 
         Args:
@@ -337,7 +337,7 @@ class CCManager(FLComponent):
             self._shutdown_system(f"Exception in cross-site validation: {e}", fl_ctx)
             return False
 
-    def _get_all_sites(self) -> list[Tuple[str, str]]:
+    def _get_all_sites(self) -> list[tuple[str, str]]:
         """Get list of all sites (server + participating clients), excluding admin clients."""
         if not isinstance(self.engine, ServerEngineSpec):
             raise RuntimeError("_get_all_sites should only be called by server")
@@ -353,7 +353,7 @@ class CCManager(FLComponent):
         self.logger.info(f"Server: Found {len(all_sites)} sites (excluding admin clients): {all_sites}")
         return all_sites
 
-    def _get_all_cc_enabled_sites(self, fl_ctx: FLContext) -> list[Tuple[str, str]]:
+    def _get_all_cc_enabled_sites(self, fl_ctx: FLContext) -> list[tuple[str, str]]:
         """Get list of all sites (server + participating clients), excluding admin clients.
 
         This method works differently depending on the context:
@@ -384,7 +384,7 @@ class CCManager(FLComponent):
                 self.logger.warning(msg)
                 raise RuntimeError(msg)
 
-    def _request_sites_from_server(self, fl_ctx: FLContext) -> list[Tuple[str, str]]:
+    def _request_sites_from_server(self, fl_ctx: FLContext) -> list[tuple[str, str]]:
         """Client side: Request current list of participating sites from server."""
         engine = fl_ctx.get_engine()
         cell = engine.get_cell()

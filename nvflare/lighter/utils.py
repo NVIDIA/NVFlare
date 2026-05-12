@@ -278,7 +278,7 @@ def sign_folders(folder, signing_pri_key, crt_path=None, max_depth=9999, signatu
                 signing_pri_key=signing_pri_key,
             )
 
-        with open(os.path.join(root, signature_file), "wt") as f:
+        with open(os.path.join(root, signature_file), "w") as f:
             json.dump(signatures, f)
         if crt_path is not None:
             shutil.copyfile(crt_path, os.path.join(root, NVFLARE_SUBMITTER_CRT_FILE))
@@ -314,7 +314,7 @@ def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signa
         root_ca_public_key = root_ca_cert.public_key()
         for root, folders, files in os.walk(src_folder):
             try:
-                with open(os.path.join(root, signature_file), "rt") as f:
+                with open(os.path.join(root, signature_file)) as f:
                     signatures = json.load(f)
                 if single_signer:
                     public_key = root_ca_public_key
@@ -370,7 +370,7 @@ def load_yaml(file):
 
     root = os.path.split(file)[0]
     if isinstance(file, str) or isinstance(file, Path):
-        with open(file, "r") as f:
+        with open(file) as f:
             yaml_data = yaml.safe_load(f)
     elif isinstance(file, bytes):
         yaml_data = yaml.safe_load(file)
@@ -461,7 +461,7 @@ def update_server_default_host(project_config, default_host):
 
 
 def update_project_server_name(project_file: str, old_server_name, server_name):
-    with open(project_file, "r") as file:
+    with open(project_file) as file:
         project_config = yaml.safe_load(file)
 
     if not project_config:
@@ -488,7 +488,7 @@ def update_storage_locations(
     snapshot_storage = f"{workspace}/{snapshot_storage_name}"
 
     # load resources.json
-    with open(default_resource, "r") as f:
+    with open(default_resource) as f:
         resources = json.load(f)
 
     # update resources
@@ -530,7 +530,7 @@ def add_component_to_resources(resources_file: str, component: dict):
     """
     components = []
     if os.path.exists(resources_file):
-        with open(resources_file, "r") as f:
+        with open(resources_file) as f:
             existing = json.load(f)
             components = existing.get("components", [])
 

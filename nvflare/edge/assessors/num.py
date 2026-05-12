@@ -105,11 +105,11 @@ class NumAssessor(Assessor):
 
         self.current_model = DXO(data_kind="number", data={"value": total})
 
-    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
+    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Shareable | None):
         with self.update_lock:
             return self._do_child_update(update, fl_ctx)
 
-    def _do_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
+    def _do_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Shareable | None):
         report = StateUpdateReport.from_shareable(update)
         if report.available_devices:
             self.available_devices.update(report.available_devices)
@@ -206,9 +206,9 @@ class NumAssessor(Assessor):
                 usable_devices = set(self.available_devices.keys()) - set(self.used_devices.keys())
             else:
                 # remove only the devices that are associated with the current model version
-                usable_devices = set(self.available_devices.keys()) - set(
+                usable_devices = set(self.available_devices.keys()) - {
                     k for k, v in self.used_devices.items() if v == self.current_model_version
-                )
+                }
 
             if usable_devices:
                 for _ in range(num_holes):

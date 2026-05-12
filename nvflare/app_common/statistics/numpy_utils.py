@@ -29,7 +29,7 @@ class NpEncoder(json.JSONEncoder):
             return float(obj)
         if isinstance(obj, np.ndarray):
             return obj.tolist()
-        return super(NpEncoder, self).default(obj)
+        return super().default(obj)
 
 
 def dtype_to_data_type(dtype) -> DataType:
@@ -51,7 +51,7 @@ def dtype_to_data_type(dtype) -> DataType:
         return DataType.STRING
 
 
-def get_std_histogram_buckets(nums: np.ndarray, num_bins: int = 10, br: Optional[BinRange] = None):
+def get_std_histogram_buckets(nums: np.ndarray, num_bins: int = 10, br: BinRange | None = None):
     num_posinf = len(nums[np.isposinf(nums)])
     num_neginf = len(nums[np.isneginf(nums)])
     if br:
@@ -59,7 +59,7 @@ def get_std_histogram_buckets(nums: np.ndarray, num_bins: int = 10, br: Optional
     else:
         counts, buckets = np.histogram(nums, bins=num_bins)
 
-    histogram_buckets: List[Bin] = []
+    histogram_buckets: list[Bin] = []
     for bucket_count in range(len(counts)):
         # Add any negative or positive infinities to the first and last
         # buckets in the histogram.

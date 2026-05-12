@@ -125,10 +125,10 @@ class ModelExchangeFormat:
 
 def verify_payload(
     task_dxo: DXO,
-    expected_type: Optional[str] = None,
-    expected_format: Optional[str] = None,
-    expected_encoding: Optional[str] = None,
-) -> Dict:
+    expected_type: str | None = None,
+    expected_format: str | None = None,
+    expected_encoding: str | None = None,
+) -> dict:
     """Verify that the task data payload follows the model exchange protocol.
 
     Args:

@@ -26,7 +26,7 @@ from nvflare.app_common.abstract.response_processor import ResponseProcessor
 class BroadcastAndProcess(Controller):
     def __init__(
         self,
-        processor: Union[str, ResponseProcessor],
+        processor: str | ResponseProcessor,
         task_name: str,
         min_responses_required: int = 0,
         wait_time_after_min_received: int = 10,

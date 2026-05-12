@@ -32,7 +32,7 @@ class _FedAvgValidator(BaseModel):
     num_rounds: int
     damping_factor: float
     num_features: PositiveInt
-    initial_ckpt: Optional[str] = None
+    initial_ckpt: str | None = None
     train_script: str
     train_args: str
     launch_external_process: bool = False
@@ -94,7 +94,7 @@ class FedAvgLrRecipe(Recipe):
         num_rounds: int = 2,
         damping_factor=0.8,
         num_features=13,
-        initial_ckpt: Optional[str] = None,
+        initial_ckpt: str | None = None,
         train_script: str,
         train_args: str = "",
         launch_external_process=False,
