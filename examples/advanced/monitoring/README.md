@@ -32,10 +32,8 @@ Clients will forward (stream) the metrics to the server site, and the server sit
 4. **Configure Prometheus** on the server site to scrape metrics from StatsD Exporter.
 5. **Set up Grafana** on the server site to visualize the metrics from Prometheus.
 
-The Kubernetes multicloud deploy example uses this setup so cross-cloud clients
-do not need direct network access to StatsD. See
-[`devops/multicloud/README.md`](../../../devops/multicloud/README.md) for the
-`monitoring.enabled` deployment flow.
+This setup is useful when clients cannot reach StatsD directly, because only
+the server site needs network access to the monitoring system.
 
 
 ### 3. Individual Monitoring Systems for Each Site
@@ -380,4 +378,3 @@ By following the steps outlined above, you can set up NVFLARE to publish metrics
 ## Job Example
 
 We are going to use hello-pt as an example and demonstrate the two setup scenarios. Please continue with the [Job Example](jobs/README.md).
-
