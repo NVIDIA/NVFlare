@@ -200,13 +200,13 @@ class Cell(StreamCell):
         self,
         channel: str,
         topic: str,
-        targets: Union[str, List[str]],
+        targets: str | list[str],
         request: Message,
         timeout=None,
         secure=False,
         optional=False,
         abort_signal: Signal = None,
-    ) -> Dict[str, Message]:
+    ) -> dict[str, Message]:
         """
         Send a message over a channel to specified destination cell(s), and wait for reply
 
@@ -264,11 +264,11 @@ class Cell(StreamCell):
         self,
         channel: str,
         topic: str,
-        targets: Union[str, List[str]],
+        targets: str | list[str],
         message: Message,
         secure=False,
         optional=False,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """
         Send a message over a channel to specified destination cell(s), and do not wait for replies.
 

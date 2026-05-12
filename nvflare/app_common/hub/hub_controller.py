@@ -77,7 +77,7 @@ class BcastOperator(OperatorSpec, FLComponent):
         task_data: Shareable,
         abort_signal: Signal,
         fl_ctx: FLContext,
-    ) -> Union[Shareable, None]:
+    ) -> Shareable | None:
         aggr = self._get_aggregator(op_description, fl_ctx)
 
         # reset the internal state of the aggregator for next round of aggregation
@@ -179,7 +179,7 @@ class RelayOperator(OperatorSpec, FLComponent):
         task_data: Shareable,
         abort_signal: Signal,
         fl_ctx: FLContext,
-    ) -> Union[None, Shareable]:
+    ) -> None | Shareable:
         current_round = task_data.get_header(AppConstants.CURRENT_ROUND, None)
         shareable_generator = self._get_shareable_generator(op_description, fl_ctx)
         persistor = self._get_persistor(op_description, fl_ctx)

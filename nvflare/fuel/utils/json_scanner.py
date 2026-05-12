@@ -21,7 +21,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
-class Node(object):
+class Node:
     def __init__(self, element):
         """A JSON element with additional data.
 
@@ -61,7 +61,7 @@ def _child_node(node: Node, key, pos, element) -> Node:
 
     child.key = key
     if pos > 0:
-        child.key = "#{}".format(pos)
+        child.key = f"#{pos}"
 
     child.paths.append(child.key)
     return child
@@ -80,7 +80,7 @@ class JsonObjectProcessor(ABC):
         pass
 
 
-class JsonScanner(object):
+class JsonScanner:
     def __init__(self, json_data: dict, location=None):
         """Scanner for processing JSON data.
 

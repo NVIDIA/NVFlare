@@ -38,7 +38,7 @@ if _version_not_supported:
     )
 
 
-class EdgeApiStub(object):
+class EdgeApiStub:
     """Interface exported by the server.
     """
 
@@ -55,7 +55,7 @@ class EdgeApiStub(object):
                 _registered_method=True)
 
 
-class EdgeApiServicer(object):
+class EdgeApiServicer:
     """Interface exported by the server.
     """
 
@@ -81,7 +81,7 @@ def add_EdgeApiServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class EdgeApi(object):
+class EdgeApi:
     """Interface exported by the server.
     """
 

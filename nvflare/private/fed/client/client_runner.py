@@ -76,7 +76,7 @@ class TaskRouter:
         return None
 
 
-class ClientRunnerConfig(object):
+class ClientRunnerConfig:
     def __init__(
         self,
         task_router: TaskRouter,
@@ -278,7 +278,7 @@ class ClientRunner(TBI):
         if not isinstance(peer_ctx, FLContext):
             self.log_error(
                 fl_ctx,
-                "bad peer context in Server task assignment: expects FLContext but got {}".format(type(peer_ctx)),
+                f"bad peer context in Server task assignment: expects FLContext but got {type(peer_ctx)}",
             )
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.BAD_PEER_CONTEXT),
@@ -338,9 +338,7 @@ class ClientRunner(TBI):
             )
 
         if not isinstance(task_data, Shareable):
-            self.log_error(
-                fl_ctx, "task data was converted to wrong type: expect Shareable but got {}".format(type(task_data))
-            )
+            self.log_error(fl_ctx, f"task data was converted to wrong type: expect Shareable but got {type(task_data)}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.TASK_DATA_FILTER_ERROR),
                 ref=server_audit_event_id,
@@ -456,9 +454,7 @@ class ClientRunner(TBI):
             )
 
         if not isinstance(reply, Shareable):
-            self.log_error(
-                fl_ctx, "task result was converted to wrong type: expect Shareable but got {}".format(type(reply))
-            )
+            self.log_error(fl_ctx, f"task result was converted to wrong type: expect Shareable but got {type(reply)}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR),
                 ref=server_audit_event_id,
@@ -471,9 +467,7 @@ class ClientRunner(TBI):
         self.log_info(fl_ctx, "finished processing task")
 
         if not isinstance(reply, Shareable):
-            self.log_error(
-                fl_ctx, "task processing error: expects result to be Shareable, but got {}".format(type(reply))
-            )
+            self.log_error(fl_ctx, f"task processing error: expects result to be Shareable, but got {type(reply)}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.EXECUTION_RESULT_ERROR),
                 ref=server_audit_event_id,
@@ -522,7 +516,7 @@ class ClientRunner(TBI):
         task = self.engine.get_task_assignment(fl_ctx, self.get_task_timeout)
 
         if not task:
-            self.log_debug(fl_ctx, "no task received - will try in {} secs".format(default_task_fetch_interval))
+            self.log_debug(fl_ctx, f"no task received - will try in {default_task_fetch_interval} secs")
             return default_task_fetch_interval, False
         elif task.name == SpecialTaskName.END_RUN:
             self.log_info(fl_ctx, "server asked to end the run")
@@ -533,13 +527,13 @@ class ClientRunner(TBI):
             task_fetch_interval = default_task_fetch_interval
             if task_data and isinstance(task_data, Shareable):
                 task_fetch_interval = task_data.get_header(TaskConstant.WAIT_TIME, task_fetch_interval)
-            self.log_debug(fl_ctx, "server asked to try again - will try in {} secs".format(task_fetch_interval))
+            self.log_debug(fl_ctx, f"server asked to try again - will try in {task_fetch_interval} secs")
             return task_fetch_interval, False
 
         self.log_info(fl_ctx, f"got task assignment: name={task.name}, id={task.task_id}")
         task_data = task.data
         if not isinstance(task_data, Shareable):
-            raise TypeError("task_data must be Shareable, but got {}".format(type(task_data)))
+            raise TypeError(f"task_data must be Shareable, but got {type(task_data)}")
         task_fetch_interval = task_data.get_header(TaskConstant.WAIT_TIME, default_task_fetch_interval)
 
         task_reply = self._process_task(task, fl_ctx)
@@ -806,7 +800,7 @@ class ClientRunner(TBI):
             collector = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR)
             if collector:
                 if not isinstance(collector, GroupInfoCollector):
-                    raise TypeError("collector must be GroupInfoCollector, but got {}".format(type(collector)))
+                    raise TypeError(f"collector must be GroupInfoCollector, but got {type(collector)}")
                 with self.task_lock:
                     current_tasks = []
                     for _, task in self.running_tasks.items():
@@ -819,7 +813,7 @@ class ClientRunner(TBI):
         elif event_type == EventType.FATAL_SYSTEM_ERROR:
             # This happens when a task calls system_panic().
             reason = fl_ctx.get_prop(key=FLContextKey.EVENT_DATA, default="")
-            self.log_error(fl_ctx, "Stopped ClientRunner due to FATAL_SYSTEM_ERROR: {}".format(reason))
+            self.log_error(fl_ctx, f"Stopped ClientRunner due to FATAL_SYSTEM_ERROR: {reason}")
             self.run_abort_signal.trigger(True)
 
     def _handle_end_run(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:

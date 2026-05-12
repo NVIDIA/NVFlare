@@ -41,7 +41,7 @@ class FlowerController(TieController):
         max_client_op_interval: float = TieConstant.MAX_CLIENT_OP_INTERVAL,
         progress_timeout: float = TieConstant.WORKFLOW_PROGRESS_TIMEOUT,
         int_client_grpc_options=None,
-        run_config: Optional[dict] = None,
+        run_config: dict | None = None,
         allow_runtime_dependency_installation: bool = False,
     ):
         """Constructor of FlowerController

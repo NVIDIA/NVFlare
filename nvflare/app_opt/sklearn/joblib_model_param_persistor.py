@@ -28,7 +28,7 @@ from nvflare.app_common.app_constant import AppConstants
 MODEL_PATH_KEY = "model_path"
 
 
-def validate_model_path(path: Optional[str]) -> None:
+def validate_model_path(path: str | None) -> None:
     """Require model_path to be absolute if provided.
 
     All sklearn recipes use this so construction fails fast instead of at runtime
@@ -44,9 +44,9 @@ def validate_model_path(path: Optional[str]) -> None:
 class JoblibModelParamPersistor(ModelPersistor):
     def __init__(
         self,
-        initial_params: Optional[Dict[str, Any]] = None,
+        initial_params: dict[str, Any] | None = None,
         save_name: str = "model_param.joblib",
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
     ):
         """Persist global model parameters from a dict to a joblib file.
 

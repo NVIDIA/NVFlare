@@ -24,7 +24,7 @@ from nvflare.apis.shareable import Shareable
 from .widget import Widget
 
 
-class GroupInfoCollector(object):
+class GroupInfoCollector:
     def __init__(self):
         """Records the information using a dict of dict.
 
@@ -97,7 +97,7 @@ class InfoCollector(Widget):
                 dxo = from_shareable(data)
             except:
                 self.log_exception(
-                    fl_ctx=fl_ctx, msg="invalid event data type for event {}".format(event_type), fire_event=False
+                    fl_ctx=fl_ctx, msg=f"invalid event data type for event {event_type}", fire_event=False
                 )
                 return
 

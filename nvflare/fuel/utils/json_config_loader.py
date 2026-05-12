@@ -21,13 +21,13 @@ from nvflare.security.logging import secure_format_exception
 
 
 class JsonConfig(Config):
-    def __init__(self, conf: Dict, file_path: Optional[str] = None):
-        super(JsonConfig, self).__init__(conf, ConfigFormat.JSON, file_path)
+    def __init__(self, conf: dict, file_path: str | None = None):
+        super().__init__(conf, ConfigFormat.JSON, file_path)
 
-    def to_dict(self, resolve: Optional[bool] = True) -> Dict:
+    def to_dict(self, resolve: bool | None = True) -> dict:
         return self.conf
 
-    def to_str(self, element: Optional[Dict] = None) -> str:
+    def to_str(self, element: dict | None = None) -> str:
         if element is None:
             return json.dumps(self.conf)
         else:
@@ -36,7 +36,7 @@ class JsonConfig(Config):
 
 class JsonConfigLoader(ConfigLoader):
     def __init__(self):
-        super(JsonConfigLoader, self).__init__(fmt=ConfigFormat.JSON)
+        super().__init__(fmt=ConfigFormat.JSON)
         self.logger = get_obj_logger(self)
 
     def load_config(self, file_path: str) -> Config:
@@ -48,16 +48,16 @@ class JsonConfigLoader(ConfigLoader):
             conf = json.loads(config_str)
             return JsonConfig(conf)
         except Exception as e:
-            self.logger.error("Error loading config {}: {}".format(config_str, secure_format_exception(e)))
+            self.logger.error(f"Error loading config {config_str}: {secure_format_exception(e)}")
             raise e
 
     def load_config_from_dict(self, config_dict: dict) -> Config:
         return JsonConfig(config_dict)
 
-    def _from_file(self, path) -> Dict:
-        with open(path, "r") as file:
+    def _from_file(self, path) -> dict:
+        with open(path) as file:
             try:
                 return json.load(file)
             except Exception as e:
-                self.logger.error("Error loading config file {}: {}".format(path, secure_format_exception(e)))
+                self.logger.error(f"Error loading config file {path}: {secure_format_exception(e)}")
                 raise e

@@ -21,7 +21,7 @@ from nvflare.apis.shareable import Shareable
 
 
 class DXOBlocker(DXOFilter):
-    def __init__(self, data_kinds: List[str], allow_data_kinds: bool = False):
+    def __init__(self, data_kinds: list[str], allow_data_kinds: bool = False):
         """Block certain kinds of DXO objects.
 
         Args:
@@ -39,7 +39,7 @@ class DXOBlocker(DXOFilter):
         self.configured_data_kinds = data_kinds
         self.allow_data_kinds = allow_data_kinds
 
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> None | DXO:
         """
         Args:
             dxo (DXO): DXO to be filtered.

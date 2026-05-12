@@ -38,8 +38,8 @@ class NPModelPersistor(ModelPersistor):
         self,
         model_dir="models",
         model_name="server.npy",
-        model: Optional[list] = None,
-        source_ckpt_file_full_name: Optional[str] = None,
+        model: list | None = None,
+        source_ckpt_file_full_name: str | None = None,
     ):
         """Model persistor for numpy arrays.
 

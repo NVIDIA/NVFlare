@@ -204,10 +204,10 @@ class SimpleJobDefManager(JobDefManagerSpec):
                 replace=True,
             )
 
-    def get_job_content_hash(self, uploaded_content: Union[str, bytes]) -> str:
+    def get_job_content_hash(self, uploaded_content: str | bytes) -> str:
         return canonical_job_content_hash(uploaded_content)
 
-    def get_submit_record(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> Optional[dict]:
+    def get_submit_record(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> dict | None:
         store = self._get_job_store(fl_ctx)
         try:
             return store.get_meta(self.submit_record_uri(study, submitter, submit_token))
@@ -238,7 +238,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
             self._upsert_submit_record_job_index(store, record)
         return record
 
-    def mark_submit_records_job_deleted(self, job_id: str, deleted_by, fl_ctx: FLContext) -> List[dict]:
+    def mark_submit_records_job_deleted(self, job_id: str, deleted_by, fl_ctx: FLContext) -> list[dict]:
         store = self._get_job_store(fl_ctx)
         index_uri = self._submit_record_job_index_uri(job_id)
         deleted_by_info = submitter_to_dict(deleted_by)
@@ -267,7 +267,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
                 updated_records.append(record)
         return updated_records
 
-    def get_job_by_submit_token(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> Optional[Job]:
+    def get_job_by_submit_token(self, study: str, submitter, submit_token: str, fl_ctx: FLContext) -> Job | None:
         record = self.get_submit_record(study, submitter, submit_token, fl_ctx)
         if not record:
             return None
@@ -303,7 +303,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
             SubmitRecordKey.SUBMIT_TIME.value: datetime.datetime.now().astimezone().isoformat(),
         }
 
-    def create(self, meta: dict, uploaded_content: Union[str, bytes], fl_ctx: FLContext) -> Dict[str, Any]:
+    def create(self, meta: dict, uploaded_content: str | bytes, fl_ctx: FLContext) -> dict[str, Any]:
         meta.pop(SubmitRecordKey.SUBMIT_TOKEN.value, None)
         # validate meta to make sure it has:
         jid = meta.get(JobMetaKey.JOB_ID.value, None)
@@ -324,7 +324,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         store.create_object(self.job_uri(jid), uploaded_content, meta, overwrite_existing=True)
         return meta
 
-    def clone(self, from_jid: str, meta: dict, fl_ctx: FLContext) -> Dict[str, Any]:
+    def clone(self, from_jid: str, meta: dict, fl_ctx: FLContext) -> dict[str, Any]:
         jid = meta.get(JobMetaKey.JOB_ID.value, None)
         if not jid:
             jid = new_job_id()
@@ -369,7 +369,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         """
         pass
 
-    def get_job(self, jid: str, fl_ctx: FLContext) -> Optional[Job]:
+    def get_job(self, jid: str, fl_ctx: FLContext) -> Job | None:
         store = self._get_job_store(fl_ctx)
         try:
             job_meta = store.get_meta(self.job_uri(jid))
@@ -401,7 +401,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         unzip_all_from_bytes(data_bytes, job_id_dir)
         return job_id_dir
 
-    def get_content(self, meta: dict, fl_ctx: FLContext) -> Optional[bytes]:
+    def get_content(self, meta: dict, fl_ctx: FLContext) -> bytes | None:
         store = self._get_job_store(fl_ctx)
         jid = meta.get(JobMetaKey.JOB_ID.value)
         if not jid:
@@ -419,12 +419,12 @@ class SimpleJobDefManager(JobDefManagerSpec):
         except StorageException:
             return None
 
-    def set_client_data(self, jid: str, data: Union[bytes, str], client_name: str, data_type: str, fl_ctx: FLContext):
+    def set_client_data(self, jid: str, data: bytes | str, client_name: str, data_type: str, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
         data_object_type = f"{data_type}_{client_name}"
         store.update_object(self.job_uri(jid), data, data_object_type)
 
-    def get_client_data(self, jid: str, client_name: str, data_type: str, fl_ctx: FLContext) -> Optional[bytes]:
+    def get_client_data(self, jid: str, client_name: str, data_type: str, fl_ctx: FLContext) -> bytes | None:
         store = self._get_job_store(fl_ctx)
         data_object_type = f"{data_type}_{client_name}"
         try:
@@ -433,7 +433,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         except StorageException:
             return None
 
-    def list_components(self, jid: str, fl_ctx: FLContext) -> List[str]:
+    def list_components(self, jid: str, fl_ctx: FLContext) -> list[str]:
         store = self._get_job_store(fl_ctx)
         self.log_debug(
             fl_ctx, f"list_components called for {jid}: {store.list_components_of_object(self.job_uri(jid))}"
@@ -483,12 +483,12 @@ class SimpleJobDefManager(JobDefManagerSpec):
         if meta:
             self.update_meta(job.job_id, meta, fl_ctx)
 
-    def get_all_jobs(self, fl_ctx: FLContext) -> List[Job]:
+    def get_all_jobs(self, fl_ctx: FLContext) -> list[Job]:
         job_filter = _AllJobsFilter()
         self._scan(job_filter, fl_ctx)
         return job_filter.result
 
-    def get_jobs_to_schedule(self, fl_ctx: FLContext) -> List[Job]:
+    def get_jobs_to_schedule(self, fl_ctx: FLContext) -> list[Job]:
         job_filter = _ScheduleJobFilter(self._get_job_store(fl_ctx))
         self._scan(job_filter, fl_ctx, skip_tag=_OBJ_TAG_SCHEDULED)
         return job_filter.result
@@ -509,7 +509,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
                 if not ok:
                     break
 
-    def get_jobs_by_status(self, status: Union[RunStatus, List[RunStatus]], fl_ctx: FLContext) -> List[Job]:
+    def get_jobs_by_status(self, status: RunStatus | list[RunStatus], fl_ctx: FLContext) -> list[Job]:
         """Get jobs that are in the specified status
 
         Args:
@@ -523,14 +523,14 @@ class SimpleJobDefManager(JobDefManagerSpec):
         self._scan(job_filter, fl_ctx)
         return job_filter.result
 
-    def get_jobs_waiting_for_review(self, reviewer_name: str, fl_ctx: FLContext) -> List[Job]:
+    def get_jobs_waiting_for_review(self, reviewer_name: str, fl_ctx: FLContext) -> list[Job]:
         job_filter = _ReviewerFilter(reviewer_name)
         self._scan(job_filter, fl_ctx)
         return job_filter.result
 
     def set_approval(
         self, jid: str, reviewer_name: str, approved: bool, note: str, fl_ctx: FLContext
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         meta = self.get_job(jid, fl_ctx).meta
         if meta:
             approvals = meta.get(JobMetaKey.APPROVALS)
@@ -543,7 +543,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
             store.update_meta(self.job_uri(jid), updated_meta, replace=False)
         return meta
 
-    def save_workspace(self, jid: str, data: Union[bytes, str, List[str]], fl_ctx: FLContext):
+    def save_workspace(self, jid: str, data: bytes | str | list[str], fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
         return store.update_object(self.job_uri(jid), data, WORKSPACE)
 

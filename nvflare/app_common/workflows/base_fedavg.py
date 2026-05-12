@@ -87,7 +87,7 @@ class BaseFedAvg(ModelController):
             cleanup_memory()
 
     @staticmethod
-    def _check_results(results: List[FLModel]):
+    def _check_results(results: list[FLModel]):
         empty_clients = []
         for _result in results:
             if not _result.params:
@@ -97,7 +97,7 @@ class BaseFedAvg(ModelController):
             raise ValueError(f"Result from client(s) {empty_clients} is empty!")
 
     @staticmethod
-    def aggregate_fn(results: List[FLModel]) -> FLModel:
+    def aggregate_fn(results: list[FLModel]) -> FLModel:
         """Aggregate model params and metrics across results with weighted averaging.
 
         Note:
@@ -142,7 +142,7 @@ class BaseFedAvg(ModelController):
         )
         return aggr_result
 
-    def aggregate(self, results: List[FLModel], aggregate_fn=None) -> FLModel:
+    def aggregate(self, results: list[FLModel], aggregate_fn=None) -> FLModel:
         """Called by the `run` routine to aggregate the training results of clients.
 
         Args:

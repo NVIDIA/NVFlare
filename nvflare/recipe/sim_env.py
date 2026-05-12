@@ -28,10 +28,10 @@ WORKSPACE_ROOT = "/tmp/nvflare/simulation"
 # Internal — not part of the public API
 class _SimEnvValidator(BaseModel):
     num_clients: int
-    clients: Optional[list[str]] = None
-    num_threads: Optional[int] = None
-    gpu_config: Optional[str] = None
-    log_config: Optional[str] = None
+    clients: list[str] | None = None
+    num_threads: int | None = None
+    gpu_config: str | None = None
+    log_config: str | None = None
     workspace_root: str = WORKSPACE_ROOT
 
     @model_validator(mode="after")
@@ -57,12 +57,12 @@ class SimEnv(ExecEnv):
         self,
         *,
         num_clients: int = 0,
-        clients: Optional[list[str]] = None,
-        num_threads: Optional[int] = None,
-        gpu_config: Optional[str] = None,
-        log_config: Optional[str] = None,
+        clients: list[str] | None = None,
+        num_threads: int | None = None,
+        gpu_config: str | None = None,
+        log_config: str | None = None,
         workspace_root: str = WORKSPACE_ROOT,
-        extra: Optional[dict] = None,
+        extra: dict | None = None,
     ):
         """Initialize simulation execution environment.
 
@@ -114,7 +114,7 @@ class SimEnv(ExecEnv):
         )
         return job.name
 
-    def get_job_status(self, job_id: str) -> Optional[str]:
+    def get_job_status(self, job_id: str) -> str | None:
         """Get job status - not supported in simulation environment."""
         print(
             f"Note, get_status returns None in SimEnv. The simulation logs can be found at {os.path.join(self.workspace_root, job_id)}"
@@ -125,7 +125,7 @@ class SimEnv(ExecEnv):
         """Abort job - not supported in simulation environment."""
         print("abort is not supported in a simulation environment, it will always run to completion.")
 
-    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
+    def get_job_result(self, job_id: str, timeout: float = 0.0) -> str | None:
         """Get job result workspace path."""
         if self.workspace_root is None:
             raise RuntimeError("Simulation workspace_root is None - SimEnv may not be properly initialized")

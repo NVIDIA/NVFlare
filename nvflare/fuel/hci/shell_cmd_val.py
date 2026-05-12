@@ -17,7 +17,7 @@ from typing import List
 from nvflare.fuel.hci.cmd_arg_utils import ArgValidator
 
 
-class ShellCommandValidator(object):
+class ShellCommandValidator:
     def __init__(self, arg_validator: ArgValidator):
         """Base class for validators to be called by command executors for shell commands.
 
@@ -26,7 +26,7 @@ class ShellCommandValidator(object):
         """
         self.arg_validator = arg_validator
 
-    def validate(self, args: List[str]):
+    def validate(self, args: list[str]):
         self.arg_validator.err = ""
         return self.arg_validator.validate(args)
 

@@ -34,7 +34,7 @@ class EventManager:
         """
         self.data_bus = data_bus
 
-    def fire_event(self, event_name: str, event_data: Optional[Any] = None) -> None:
+    def fire_event(self, event_name: str, event_data: Any | None = None) -> None:
         """
         Fire an event by publishing it to the DataBus.
 

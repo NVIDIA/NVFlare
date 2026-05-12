@@ -113,7 +113,7 @@ class FLCallback(Callback):
             update_fit_loop: whether to increase `trainer.fit_loop.max_epochs` and `trainer.fit_loop.epoch_loop.max_steps` each FL round.
                 Defaults to `True` which is suitable for most PyTorch Lightning applications.
         """
-        super(FLCallback, self).__init__()
+        super().__init__()
         init(rank=str(rank))
         self.train_with_evaluation = get_config().get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.TRAIN_WITH_EVAL, False)
         self.current_round = None
@@ -275,7 +275,7 @@ class FLCallback(Callback):
             raise RuntimeError(f"failed to send FL model: {e}")
 
 
-def _extract_metrics(metrics: Dict[str, Tensor]):
+def _extract_metrics(metrics: dict[str, Tensor]):
     result_metrics = {}
     for key, t in metrics.items():
         result_metrics[key] = t.item()

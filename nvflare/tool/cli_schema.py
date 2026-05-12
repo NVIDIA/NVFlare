@@ -44,14 +44,14 @@ def _infer_type(action: argparse.Action) -> str:
 def parser_to_schema(
     parser: argparse.ArgumentParser,
     command: str,
-    examples: Optional[List[str]] = None,
+    examples: list[str] | None = None,
     deprecated: bool = False,
     deprecated_message: str = "",
-    streaming: Optional[bool] = None,
-    output_modes: Optional[List[str]] = None,
-    mutating: Optional[bool] = None,
-    idempotent: Optional[bool] = None,
-    retry_token: Optional[dict] = None,
+    streaming: bool | None = None,
+    output_modes: list[str] | None = None,
+    mutating: bool | None = None,
+    idempotent: bool | None = None,
+    retry_token: dict | None = None,
 ) -> dict:
     """Serialize an argparse parser to a JSON-compatible schema dict."""
     # argparse exposes parser structure via the private _actions list; this is the standard
@@ -120,15 +120,15 @@ def parser_to_schema(
 def handle_schema_flag(
     parser: argparse.ArgumentParser,
     command: str,
-    examples: List[str],
-    args_list: List[str],
+    examples: list[str],
+    args_list: list[str],
     deprecated: bool = False,
     deprecated_message: str = "",
-    streaming: Optional[bool] = None,
-    output_modes: Optional[List[str]] = None,
-    mutating: Optional[bool] = None,
-    idempotent: Optional[bool] = None,
-    retry_token: Optional[dict] = None,
+    streaming: bool | None = None,
+    output_modes: list[str] | None = None,
+    mutating: bool | None = None,
+    idempotent: bool | None = None,
+    retry_token: dict | None = None,
 ) -> None:
     """Handle the pre-parse --schema fast path.
 

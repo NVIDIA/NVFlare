@@ -120,7 +120,7 @@ class FedEvalRecipe(Recipe):
         self,
         *,
         name: str = "eval",
-        model: Union[Any, Dict[str, Any]],
+        model: Any | dict[str, Any],
         eval_ckpt: str,
         min_clients: int,
         eval_script: str,
@@ -129,7 +129,7 @@ class FedEvalRecipe(Recipe):
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         validation_timeout: int = 6000,
-        per_site_config: Optional[Dict[str, Dict]] = None,
+        per_site_config: dict[str, dict] | None = None,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
     ):

@@ -26,7 +26,7 @@ class FedOpt(FedAvg):
     def __init__(
         self,
         *args,
-        source_model: Union[str, torch.nn.Module],
+        source_model: str | torch.nn.Module,
         optimizer_args: dict = {
             "class_path": "torch.optim.SGD",
             "args": {"lr": 1.0, "momentum": 0.6},

@@ -50,7 +50,7 @@ class _ChunkConsumer(BaseChunkConsumer):
         shareable: Shareable,
         stream_ctx: StreamContext,
         fl_ctx: FLContext,
-    ) -> Tuple[bool, Shareable]:
+    ) -> tuple[bool, Shareable]:
         data = shareable.get(KEY_DATA)
         data_size = shareable.get(KEY_DATA_SIZE)
         self._validate_chunk(data, data_size)
@@ -94,7 +94,7 @@ class _ChunkProducer(BaseChunkProducer):
         self,
         stream_ctx: StreamContext,
         fl_ctx: FLContext,
-    ) -> Tuple[Shareable, float]:
+    ) -> tuple[Shareable, float]:
         chunk = self.file.read(self.chunk_size)
         size = 0
         if chunk:
@@ -162,7 +162,7 @@ class FileStreamer(StreamerBase):
         channel: str,
         topic: str,
         stream_ctx: StreamContext,
-        targets: List[str],
+        targets: list[str],
         file_name: str,
         fl_ctx: FLContext,
         chunk_size=None,

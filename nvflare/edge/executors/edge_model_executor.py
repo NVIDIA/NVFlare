@@ -37,7 +37,7 @@ class EdgeModelExecutor(EdgeTaskExecutor):
     def __init__(
         self,
         aggr_factory_id: str,
-        max_model_versions: Optional[int] = None,
+        max_model_versions: int | None = None,
         update_timeout=60.0,
     ):
         EdgeTaskExecutor.__init__(self, "", update_timeout)
@@ -69,7 +69,7 @@ class EdgeModelExecutor(EdgeTaskExecutor):
 
     def _convert_device_result_to_model_update(
         self, result_report: ResultReport, current_task: TaskInfo, fl_ctx: FLContext
-    ) -> Optional[ModelUpdate]:
+    ) -> ModelUpdate | None:
         self.log_debug(fl_ctx, f"Converting result for task: {current_task.id}")
 
         assert isinstance(result_report.result, dict)

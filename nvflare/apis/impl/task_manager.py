@@ -28,7 +28,7 @@ class TaskCheckStatus(Enum):
     NO_BLOCK = 3  # do not send the task, and continue checking
 
 
-class TaskManager(object):
+class TaskManager:
     def __init__(self):
         """Manages tasks for clients.
 
@@ -69,7 +69,7 @@ class TaskManager(object):
         else:
             return TaskCheckStatus.NO_BLOCK
 
-    def check_task_exit(self, task: Task) -> Tuple[bool, TaskCompletionStatus]:
+    def check_task_exit(self, task: Task) -> tuple[bool, TaskCompletionStatus]:
         """Determine whether the task should exit.
 
         Args:

@@ -53,10 +53,10 @@ def _get_job_name_from_fl_ctx(fl_ctx: FLContext, default=None):
 class MLflowReceiver(AnalyticsReceiver):
     def __init__(
         self,
-        tracking_uri: Optional[str] = None,
-        kw_args: Optional[dict] = None,
-        artifact_location: Optional[str] = None,
-        events: Optional[List[str]] = None,
+        tracking_uri: str | None = None,
+        kw_args: dict | None = None,
+        artifact_location: str | None = None,
+        events: list[str] | None = None,
         buffer_flush_time=1,
     ):
         """MLflowReceiver receives log events from clients and deliver them to the MLflow tracking server.
@@ -91,7 +91,7 @@ class MLflowReceiver(AnalyticsReceiver):
 
         self.kw_args = kw_args if kw_args else {}
         self.tracking_uri = tracking_uri
-        self.mlflow_clients: Dict[str, MlflowClient] = {}
+        self.mlflow_clients: dict[str, MlflowClient] = {}
         self.experiment_id = None
         self.run_ids = {}
         self.buffer = {}
@@ -162,7 +162,7 @@ class MLflowReceiver(AnalyticsReceiver):
 
         self.log_info(fl_ctx, "MLflow tracking initialization completed successfully")
 
-    def _mlflow_setup(self, art_full_path, experiment_name, experiment_tags, site_names: List[str], fl_ctx: FLContext):
+    def _mlflow_setup(self, art_full_path, experiment_name, experiment_tags, site_names: list[str], fl_ctx: FLContext):
         """Set up an MlflowClient for each receiving site and create an experiment and run.
 
         Args:
@@ -189,7 +189,7 @@ class MLflowReceiver(AnalyticsReceiver):
                 run = mlflow_client.create_run(experiment_id=self.experiment_id, run_name=run_name, tags=tags)
                 self.run_ids[site_name] = run.info.run_id
 
-    def _init_buffer(self, site_names: List[str]):
+    def _init_buffer(self, site_names: list[str]):
         """For each site, create a buffer (dict) consisting of a list each for metrics, parameters, and tags."""
         for site_name in site_names:
             self.buffer[site_name] = {
@@ -239,8 +239,8 @@ class MLflowReceiver(AnalyticsReceiver):
         mlflow_client: MlflowClient,
         experiment_name: str,
         artifact_location: str,
-        experiment_tags: Optional[dict] = None,
-    ) -> Optional[str]:
+        experiment_tags: dict | None = None,
+    ) -> str | None:
         experiment_id = None
         experiment = mlflow_client.get_experiment_by_name(name=experiment_name)
         if not experiment:
@@ -353,7 +353,7 @@ class MLflowReceiver(AnalyticsReceiver):
         self.time_start = 0
         self.time_since_flush = 0
 
-    def flush_buffer(self, log_buffer: List):
+    def flush_buffer(self, log_buffer: list):
         item_arr = list(log_buffer)
         log_buffer.clear()
         return item_arr
@@ -368,7 +368,7 @@ class MLflowReceiver(AnalyticsReceiver):
             if run_id:
                 mlflow_client.set_terminated(run_id)
 
-    def get_run_id(self, site_id: str) -> Optional[str]:
+    def get_run_id(self, site_id: str) -> str | None:
         return self.run_ids.get(site_id, None)
 
     def get_mlflow_client(self, site_id: str) -> MlflowClient:

@@ -91,7 +91,7 @@ def _validate_flower_executable(executable_name: str, executable_path: str):
         raise RuntimeError(error_msg)
 
 
-@functools.lru_cache()
+@functools.lru_cache
 def _check_runtime_dependency_installation_support(logger):
     """Check if Flower version is >= MIN_FLWR_VERSION_FOR_RUNTIME_DEPS to support runtime dependency installation."""
     try:
@@ -236,7 +236,7 @@ class FlowerServerApplet(Applet):
         superlink_ready_timeout: float,
         superlink_grace_period=1.0,
         superlink_min_query_interval=10.0,
-        run_config: Optional[dict] = None,
+        run_config: dict | None = None,
         allow_runtime_dependency_installation: bool = False,
     ):
         """Constructor of FlowerServerApplet.
@@ -380,7 +380,7 @@ class FlowerServerApplet(Applet):
         self.logger.info(f"submitted Flower App and got run id {run_id}")
         self.run_id = run_id
 
-    def _build_flower_env(self, include_flwr_home: bool) -> Optional[dict]:
+    def _build_flower_env(self, include_flwr_home: bool) -> dict | None:
         python_bin_dir = os.path.dirname(sys.executable)
         current_path = os.environ.get("PATH", "")
         env = {}
@@ -449,7 +449,7 @@ class FlowerServerApplet(Applet):
 
         return " ".join(command_parts)
 
-    def _run_flower_command(self, command: str, cwd: Optional[str] = None):
+    def _run_flower_command(self, command: str, cwd: str | None = None):
         self.logger.debug(f"running flower command: {command}")
         cmd_desc = CommandDescriptor(cmd=command, env=self._build_flower_env(include_flwr_home=True), cwd=cwd)
         reply = run_command(cmd_desc)

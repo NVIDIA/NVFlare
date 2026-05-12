@@ -61,7 +61,7 @@ class ComponentBuilder:
             return None
 
         if not isinstance(config_dict, dict):
-            raise ConfigError("component config must be dict but got {}.".format(type(config_dict)))
+            raise ConfigError(f"component config must be dict but got {type(config_dict)}.")
 
         if config_dict.get("disabled") is True:
             return None

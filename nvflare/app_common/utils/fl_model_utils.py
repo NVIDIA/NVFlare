@@ -86,7 +86,7 @@ class FLModelUtils:
         return shareable
 
     @staticmethod
-    def from_shareable(shareable: Shareable, fl_ctx: Optional[FLContext] = None) -> FLModel:
+    def from_shareable(shareable: Shareable, fl_ctx: FLContext | None = None) -> FLModel:
         """From NVFlare side shareable to FLModel.
 
         This is a temporary solution to converts the shareable of existing style to FLModel,
@@ -215,7 +215,7 @@ class FLModelUtils:
         model.meta[key] = value
 
     @staticmethod
-    def get_configs(model: FLModel) -> Optional[dict]:
+    def get_configs(model: FLModel) -> dict | None:
         return FLModelUtils.get_meta_prop(model, MetaKey.CONFIGS)
 
     @staticmethod

@@ -15,7 +15,7 @@
 from nvflare.security.logging import secure_format_exception
 
 
-class State(object):
+class State:
     def __init__(self, name: str):
         if not isinstance(name, str):
             raise TypeError(f"name must be str but got {type(name)}")
@@ -35,7 +35,7 @@ class State(object):
         pass
 
 
-class FSM(object):
+class FSM:
 
     STATE_NAME_EXIT = "__exit__"
 

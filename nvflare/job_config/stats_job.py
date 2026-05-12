@@ -58,7 +58,7 @@ class StatsJob(FedJob):
         stats_writer = self.get_stats_output_writer()
         self.to(stats_writer, server_name, id=self.writer_id)
 
-    def setup_clients(self, sites: List[str]):
+    def setup_clients(self, sites: list[str]):
         # Client side job config
         # Add client site
         for site_id in sites:

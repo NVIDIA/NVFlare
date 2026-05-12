@@ -70,14 +70,14 @@ class _TaskContext:
 class FlareAgent:
     def __init__(
         self,
-        pipe: Optional[Pipe] = None,
+        pipe: Pipe | None = None,
         read_interval=0.1,
         heartbeat_interval=5.0,
         heartbeat_timeout=60.0,
         resend_interval=2.0,
         max_resends=None,
         submit_result_timeout=60.0,
-        metric_pipe: Optional[Pipe] = None,
+        metric_pipe: Pipe | None = None,
         task_channel_name: str = PipeChannelName.TASK,
         metric_channel_name: str = PipeChannelName.METRIC,
         close_pipe: bool = True,
@@ -233,7 +233,7 @@ class FlareAgent:
             self.logger.error(f"failed to extract DXO from shareable object: {ex}")
             raise ex
 
-    def get_task(self, timeout: Optional[float] = None) -> Optional[Task]:
+    def get_task(self, timeout: float | None = None) -> Task | None:
         """Get a task from FLARE. This is a blocking call.
 
         Args:
@@ -268,7 +268,7 @@ class FlareAgent:
                 self.logger.debug("get request timeout")
                 return None
 
-            req: Optional[Message] = self.pipe_handler.get_next()
+            req: Message | None = self.pipe_handler.get_next()
             if req is not None:
                 if not isinstance(req.data, Shareable):
                     self.logger.error(f"bad task: expect request data to be Shareable but got {type(req.data)}")

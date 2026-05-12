@@ -29,7 +29,7 @@ class TaskHandler(InitFinalComponent, ABC):
         super().__init__()
         self.fl_ctx = None
         self.local_comp_id = local_comp_id
-        self.local_comp: Optional[InitFinalComponent] = None
+        self.local_comp: InitFinalComponent | None = None
         self.target_local_comp_type: type = local_comp_type
 
     def initialize(self, fl_ctx: FLContext):

@@ -36,18 +36,18 @@ class BroadcastAndWait(FLComponent):
         self.task = None
 
         # [target, DXO]
-        self.results: Dict[str, DXO] = {}
+        self.results: dict[str, DXO] = {}
 
     def broadcast_and_wait(
         self,
         task_name: str,
         task_input: Shareable,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
-        task_props: Optional[Dict] = None,
+        targets: list[Client] | list[str] | None = None,
+        task_props: dict | None = None,
         min_responses: int = 1,
         abort_signal: Signal = None,
-    ) -> Dict[str, DXO]:
+    ) -> dict[str, DXO]:
         task = Task(name=task_name, data=task_input, result_received_cb=self.results_cb, props=task_props)
         self.controller.broadcast_and_wait(task, fl_ctx, targets, min_responses, 0, abort_signal)
         return self.results
@@ -55,13 +55,13 @@ class BroadcastAndWait(FLComponent):
     def multicasts_and_wait(
         self,
         task_name: str,
-        task_inputs: Dict[str, Shareable],
+        task_inputs: dict[str, Shareable],
         fl_ctx: FLContext,
         abort_signal: Signal = None,
         task_check_period: int = 0.5,
-    ) -> Dict[str, DXO]:
+    ) -> dict[str, DXO]:
 
-        tasks: Dict[str, Task] = self.get_tasks(task_name, task_inputs)
+        tasks: dict[str, Task] = self.get_tasks(task_name, task_inputs)
         for client_name in tasks:
             self.controller.send(task=tasks[client_name], fl_ctx=fl_ctx, targets=[client_name])
 
@@ -74,7 +74,7 @@ class BroadcastAndWait(FLComponent):
 
         return self.results
 
-    def get_tasks(self, task_name: str, task_inputs: Dict[str, Shareable]) -> Dict[str, Task]:
+    def get_tasks(self, task_name: str, task_inputs: dict[str, Shareable]) -> dict[str, Task]:
         tasks = {}
         for client_name in task_inputs:
             task = Task(name=task_name, data=task_inputs[client_name], result_received_cb=self.results_cb)

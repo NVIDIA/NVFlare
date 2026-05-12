@@ -52,7 +52,7 @@ class XGBModelPersistor(ModelPersistor):
 
         if os.path.exists(self.save_path):
             self.logger.info("Loading server model")
-            with open(self.save_path, "r") as json_file:
+            with open(self.save_path) as json_file:
                 model = json.load(json_file)
                 if not self.load_as_dict:
                     model = bytearray(json.dumps(model), "utf-8")

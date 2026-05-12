@@ -36,16 +36,16 @@ class _FedOptValidator(BaseModel):
 
     name: str
     model: Any
-    initial_ckpt: Optional[str] = None
+    initial_ckpt: str | None = None
     min_clients: int
     num_rounds: int
     train_script: str
     train_args: str
-    aggregator: Optional[Aggregator]
+    aggregator: Aggregator | None
     launch_external_process: bool = False
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
-    device: Optional[str] = None
+    device: str | None = None
     server_memory_gc_rounds: int = 1
     client_memory_gc_rounds: int = 0
     cuda_empty_cache: bool = False
@@ -122,20 +122,20 @@ class FedOptRecipe(Recipe):
         self,
         *,
         name: str = "fedopt",
-        model: Union[Any, dict[str, Any], None] = None,
-        initial_ckpt: Optional[str] = None,
+        model: Any | dict[str, Any] | None = None,
+        initial_ckpt: str | None = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
         train_args: str = "",
-        aggregator: Optional[Aggregator] = None,
+        aggregator: Aggregator | None = None,
         launch_external_process: bool = False,
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
-        device: Optional[str] = None,
+        device: str | None = None,
         source_model: str = "model",
-        optimizer_args: Optional[dict] = None,
-        lr_scheduler_args: Optional[dict] = None,
+        optimizer_args: dict | None = None,
+        lr_scheduler_args: dict | None = None,
         server_memory_gc_rounds: int = 1,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,

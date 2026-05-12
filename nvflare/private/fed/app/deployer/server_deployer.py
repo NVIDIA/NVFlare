@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """FL Server deployer."""
+
 import threading
 
 from nvflare.apis.event_type import EventType

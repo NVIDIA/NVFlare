@@ -30,8 +30,8 @@ class BaseDriver(Driver, ABC):
 
     def __init__(self):
         super().__init__()
-        self.connections: Dict[str, Connection] = {}
-        self.connector: Optional[ConnectorInfo] = None
+        self.connections: dict[str, Connection] = {}
+        self.connector: ConnectorInfo | None = None
         self.conn_lock = threading.Lock()
 
     def add_connection(self, conn: Connection):

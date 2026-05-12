@@ -35,10 +35,10 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class GlobalEvaluator(Widget):
     def __init__(
         self,
-        model_path: Union[str, nn.Module, Dict],
+        model_path: str | nn.Module | dict,
         eval_frequency: int = 1,
-        torchvision_dataset: Optional[Dict] = None,
-        custom_dataset: Optional[Dict] = None,
+        torchvision_dataset: dict | None = None,
+        custom_dataset: dict | None = None,
     ):
         """Initialize the evaluator with either a dataset path or custom dataset.
 
@@ -112,7 +112,7 @@ class GlobalEvaluator(Widget):
             )
             return None
 
-    def _instantiate_model(self, fl_ctx: FLContext) -> Optional[nn.Module]:
+    def _instantiate_model(self, fl_ctx: FLContext) -> nn.Module | None:
         """Instantiate model from model_path config.
 
         Args:
@@ -187,7 +187,7 @@ class GlobalEvaluator(Widget):
         else:
             return torch.tensor(v)
 
-    def _eval_model(self) -> Dict[str, float]:
+    def _eval_model(self) -> dict[str, float]:
         if self.data_loader is None:
             self.logger.warning("Data loader not available for evaluation")
             return {"accuracy": 0.0}
@@ -208,7 +208,7 @@ class GlobalEvaluator(Widget):
         accuracy = 100 * correct / total if total > 0 else 0.0
         return {"accuracy": accuracy}
 
-    def _evaluate_async(self, global_weights: Dict, current_round: int, evaluation_id: str):
+    def _evaluate_async(self, global_weights: dict, current_round: int, evaluation_id: str):
         """Run evaluation in a separate thread."""
         try:
             # Safety check for model

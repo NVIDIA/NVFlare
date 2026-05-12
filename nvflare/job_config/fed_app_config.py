@@ -31,7 +31,7 @@ class ClientAppConfig(BaseAppConfig):
         super().__init__()
         self.executors: [_ExecutorDef] = []
 
-    def add_executor(self, tasks: List[str], executor: Executor):
+    def add_executor(self, tasks: list[str], executor: Executor):
         if not isinstance(executor, Executor):
             raise RuntimeError(f"workflow must be type of Executor, but got {executor.__class__}")
 

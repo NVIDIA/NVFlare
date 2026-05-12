@@ -27,7 +27,7 @@ SERVER_SCRIPT = "nvflare.private.fed.app.server.server_train"
 def _get_server_fed_config(package_path: str):
     startup = os.path.join(package_path, "startup")
     fed_config_file = os.path.join(startup, NVFlareConfig.SERVER)
-    with open(fed_config_file, "r") as f:
+    with open(fed_config_file) as f:
         fed_config = json.load(f)
     return fed_config
 

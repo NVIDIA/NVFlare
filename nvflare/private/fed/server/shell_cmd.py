@@ -39,12 +39,12 @@ from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineI
 from nvflare.private.fed.utils.fed_utils import execute_command_directly
 
 
-class _CommandExecutor(object):
+class _CommandExecutor:
     def __init__(self, cmd_name: str, validator: ShellCommandValidator):
         self.cmd_name = cmd_name
         self.validator = validator
 
-    def authorize_command(self, conn: Connection, args: List[str]):
+    def authorize_command(self, conn: Connection, args: list[str]):
         if len(args) < 2:
             conn.append_error("syntax error: missing target")
             return PreAuthzReturnCode.ERROR
@@ -78,10 +78,10 @@ class _CommandExecutor(object):
             # client site authorization will be done by the client itself
             return PreAuthzReturnCode.OK
 
-    def validate_shell_command(self, args: List[str], parse_result) -> str:
+    def validate_shell_command(self, args: list[str], parse_result) -> str:
         return ""
 
-    def execute_command(self, conn: Connection, args: List[str]):
+    def execute_command(self, conn: Connection, args: list[str]):
         target = conn.get_prop("target_site")
         shell_cmd = conn.get_prop("shell_cmd")
         if target == SiteType.SERVER:
@@ -93,7 +93,7 @@ class _CommandExecutor(object):
 
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ServerEngineInternalSpec but got {type(engine)}")
         clients, invalid_inputs = engine.validate_targets([target])
         if len(invalid_inputs) > 0:
             msg = f"invalid target: {target}"
@@ -119,14 +119,14 @@ class _CommandExecutor(object):
             return
 
         if not isinstance(reply, ClientReply):
-            raise TypeError("reply must be ClientReply but got {}".format(type(reply)))
+            raise TypeError(f"reply must be ClientReply but got {type(reply)}")
         if reply.reply is None:
             conn.append_error(
                 "no reply from client - timed out", meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "client timeout")
             )
             return
         if not isinstance(reply.reply, Message):
-            raise TypeError("reply in ClientReply must be Message but got {}".format(type(reply.reply)))
+            raise TypeError(f"reply in ClientReply must be Message but got {type(reply.reply)}")
         conn.append_string(reply.reply.body)
 
     def get_usage(self):
@@ -140,7 +140,7 @@ class _NoArgCmdExecutor(_CommandExecutor):
     def __init__(self, cmd_name: str):
         _CommandExecutor.__init__(self, cmd_name, None)
 
-    def validate_shell_command(self, args: List[str], parse_result):
+    def validate_shell_command(self, args: list[str], parse_result):
         if len(args) != 1:
             return "this command does not accept extra args"
 
@@ -161,7 +161,7 @@ class _FileCmdExecutor(_CommandExecutor):
         self.single_file_only = single_file_only
         self.file_required = file_required
 
-    def validate_shell_command(self, args: List[str], parse_result):
+    def validate_shell_command(self, args: list[str], parse_result):
         if self.file_required or parse_result.files:
             if not hasattr(parse_result, "files"):
                 return "a file is required as an argument"
@@ -175,10 +175,10 @@ class _FileCmdExecutor(_CommandExecutor):
 
             for f in file_list:
                 if not isinstance(f, str):
-                    raise TypeError("file must be str but got {}".format(type(f)))
+                    raise TypeError(f"file must be str but got {type(f)}")
 
                 if not re.match("^[A-Za-z0-9-._/]*$", f):
-                    return "unsupported file {}".format(f)
+                    return f"unsupported file {f}"
 
                 if f.startswith("/"):
                     return "absolute path is not allowed"

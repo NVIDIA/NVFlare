@@ -46,12 +46,12 @@ class ClientLogger(Logger):
 
     @override
     @rank_zero_only
-    def log_hyperparams(self, params: Union[dict[str, Any], Namespace]) -> None:
+    def log_hyperparams(self, params: dict[str, Any] | Namespace) -> None:
         self._logger.warning("log_hyperparams is not supported.")
 
     @override
     @rank_zero_only
-    def log_metrics(self, metrics: Mapping[str, float], step: Optional[int] = None) -> None:
+    def log_metrics(self, metrics: Mapping[str, float], step: int | None = None) -> None:
         assert rank_zero_only.rank == 0, "experiment tried to log from global_rank != 0"
         metrics = dict(_add_prefix(metrics, self._prefix, self.LOGGER_JOIN_CHAR))
 
@@ -65,13 +65,13 @@ class ClientLogger(Logger):
 
     @property
     @override
-    def save_dir(self) -> Optional[str]:
+    def save_dir(self) -> str | None:
 
         return None
 
     @property
     @override
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         """Get the experiment id.
 
         Returns:
@@ -82,7 +82,7 @@ class ClientLogger(Logger):
 
     @property
     @override
-    def version(self) -> Optional[str]:
+    def version(self) -> str | None:
 
         return getattr(nvflare, "__version__", "unknown")
 

@@ -28,8 +28,8 @@ def repeat_to_length(string_to_expand, length):
     return (string_to_expand * (int(length / len(string_to_expand)) + 1))[:length]
 
 
-class Table(object):
-    def __init__(self, headers: Optional[List[str]] = None, meta_rows=None):
+class Table:
+    def __init__(self, headers: list[str] | None = None, meta_rows=None):
         """A structure with header and rows of records.
 
         Note:
@@ -51,7 +51,7 @@ class Table(object):
         self.rows = rows
         self.meta_rows = meta_rows
 
-    def add_row(self, row: List[str], meta: Optional[dict] = None):
+    def add_row(self, row: list[str], meta: dict | None = None):
         """Adds a record."""
         self.rows.append(row)
         if meta:
@@ -78,7 +78,7 @@ class Table(object):
             else:
                 extra = " "
 
-            col_fmt[i] = extra + "| {:" + "{}".format(col_len[i]) + "}"
+            col_fmt[i] = extra + "| {:" + f"{col_len[i]}" + "}"
             if i == num_cols - 1:
                 col_fmt[i] = col_fmt[i] + " |"
 

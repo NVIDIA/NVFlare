@@ -49,13 +49,13 @@ class InProcessClientAPIExecutor(Executor):
         self,
         task_script_path: str,
         task_script_args: str = "",
-        task_wait_time: Optional[float] = None,
+        task_wait_time: float | None = None,
         result_pull_interval: float = 0.5,
-        log_pull_interval: Optional[float] = None,
+        log_pull_interval: float | None = None,
         params_exchange_format: str = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
-        from_nvflare_converter_id: Optional[str] = None,
-        to_nvflare_converter_id: Optional[str] = None,
+        from_nvflare_converter_id: str | None = None,
+        to_nvflare_converter_id: str | None = None,
         train_with_evaluation: bool = False,
         train_task_name: str = AppConstants.TASK_TRAIN,
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
@@ -64,7 +64,7 @@ class InProcessClientAPIExecutor(Executor):
         memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
     ):
-        super(InProcessClientAPIExecutor, self).__init__()
+        super().__init__()
         self._memory_gc_rounds = memory_gc_rounds
         self._cuda_empty_cache = cuda_empty_cache
         self._abort = False
@@ -90,9 +90,9 @@ class InProcessClientAPIExecutor(Executor):
         self._submit_model_task_name = submit_model_task_name
 
         self._from_nvflare_converter_id = from_nvflare_converter_id
-        self._from_nvflare_converter: Optional[ParamsConverter] = None
+        self._from_nvflare_converter: ParamsConverter | None = None
         self._to_nvflare_converter_id = to_nvflare_converter_id
-        self._to_nvflare_converter: Optional[ParamsConverter] = None
+        self._to_nvflare_converter: ParamsConverter | None = None
 
         self._engine = None
         self._task_fn_thread = None

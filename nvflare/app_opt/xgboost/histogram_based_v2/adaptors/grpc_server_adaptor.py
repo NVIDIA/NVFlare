@@ -80,7 +80,7 @@ class GrpcServerAdaptor(XGBServerAdaptor):
         self._server_stopped = True
         self.stop_runner()
 
-    def _is_stopped(self) -> Tuple[bool, int]:
+    def _is_stopped(self) -> tuple[bool, int]:
         runner_stopped, ec = self.is_runner_stopped()
         if runner_stopped:
             return runner_stopped, ec

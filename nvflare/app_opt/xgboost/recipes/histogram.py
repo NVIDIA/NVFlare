@@ -125,11 +125,11 @@ class XGBHorizontalRecipe(Recipe):
         early_stopping_rounds: int = 2,
         use_gpus: bool = False,
         secure: bool = False,
-        client_ranks: Optional[dict] = None,
-        xgb_params: Optional[dict] = None,
+        client_ranks: dict | None = None,
+        xgb_params: dict | None = None,
         data_loader_id: str = "dataloader",
         metrics_writer_id: str = "metrics_writer",
-        per_site_config: Optional[dict[str, dict]] = None,
+        per_site_config: dict[str, dict] | None = None,
     ):
         # Set default XGBoost params if not provided
         if xgb_params is None:

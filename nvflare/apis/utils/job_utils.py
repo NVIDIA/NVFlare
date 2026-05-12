@@ -48,7 +48,7 @@ def convert_legacy_zipped_app_to_job(zip_data: bytes) -> bytes:
         The converted zip data
     """
 
-    meta: Optional[dict] = None
+    meta: dict | None = None
     reader = io.BytesIO(zip_data)
     with ZipFile(reader, "r") as in_zip:
         info_list = in_zip.infolist()

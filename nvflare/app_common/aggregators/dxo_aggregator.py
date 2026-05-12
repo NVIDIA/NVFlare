@@ -25,8 +25,8 @@ from nvflare.fuel.utils.log_utils import get_module_logger
 class DXOAggregator(FLComponent):
     def __init__(
         self,
-        exclude_vars: Optional[str] = None,
-        aggregation_weights: Optional[Dict[str, Any]] = None,
+        exclude_vars: str | None = None,
+        aggregation_weights: dict[str, Any] | None = None,
         expected_data_kind: DataKind = DataKind.WEIGHT_DIFF,
         name_postfix: str = "",
         weigh_by_local_iter: bool = True,
@@ -83,11 +83,11 @@ class DXOAggregator(FLComponent):
             return False
 
         if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.METRICS):
-            self.log_error(fl_ctx, "cannot handle data kind {}".format(dxo.data_kind))
+            self.log_error(fl_ctx, f"cannot handle data kind {dxo.data_kind}")
             return False
 
         if dxo.data_kind != self.expected_data_kind:
-            self.log_error(fl_ctx, "expected {} but got {}".format(self.expected_data_kind, dxo.data_kind))
+            self.log_error(fl_ctx, f"expected {self.expected_data_kind} but got {dxo.data_kind}")
             return False
 
         processed_algorithm = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)

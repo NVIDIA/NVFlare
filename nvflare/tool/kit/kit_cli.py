@@ -16,7 +16,8 @@
 
 import os
 import sys
-from typing import Callable, Dict
+from typing import Dict
+from collections.abc import Callable
 
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.tool.cli_output import is_json_mode, output_error_message, output_ok, print_human
@@ -54,7 +55,7 @@ def _emit_kit_error(e: StartupKitConfigError, exit_code: int = 4):
     output_error_message("INVALID_ARGS", str(e), hint=e.hint, exit_code=exit_code)
 
 
-def _metadata_for_output(path: str) -> Dict[str, str]:
+def _metadata_for_output(path: str) -> dict[str, str]:
     metadata = inspect_startup_kit_metadata(path)
     return {
         "identity": metadata.get("identity") or "-",
@@ -359,7 +360,7 @@ def cmd_kit_remove(args):
     output_ok(data)
 
 
-_KIT_HANDLERS: Dict[str, Callable] = {
+_KIT_HANDLERS: dict[str, Callable] = {
     CMD_KIT_ADD: cmd_kit_add,
     CMD_KIT_USE: cmd_kit_use,
     CMD_KIT_INSPECT: cmd_kit_inspect,

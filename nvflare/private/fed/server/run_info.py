@@ -17,7 +17,7 @@ import time
 from nvflare.apis.fl_constant import MachineStatus
 
 
-class RunInfo(object):
+class RunInfo:
     def __init__(self, job_id, app_path):
         """Information for a run."""
         self.job_id = job_id

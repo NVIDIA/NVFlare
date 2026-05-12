@@ -32,10 +32,10 @@ from nvflare.tool.job.job_client_const import (
 )
 
 
-def merge_configs_from_cli(cmd_args, app_names: List[str]) -> Tuple[Dict[str, Dict[str, tuple]], bool]:
-    app_indices: Dict[str, Dict[str, Tuple]] = build_config_file_indices(cmd_args.job_folder, app_names)
+def merge_configs_from_cli(cmd_args, app_names: list[str]) -> tuple[dict[str, dict[str, tuple]], bool]:
+    app_indices: dict[str, dict[str, tuple]] = build_config_file_indices(cmd_args.job_folder, app_names)
 
-    app_cli_config_dict: Dict[str, Dict[str, Dict[str, str]]] = get_cli_config(cmd_args, app_names)
+    app_cli_config_dict: dict[str, dict[str, dict[str, str]]] = get_cli_config(cmd_args, app_names)
     config_modified = False
     if app_cli_config_dict:
         config_modified = True
@@ -80,7 +80,7 @@ def extract_string_with_index(input_string):
     return result
 
 
-def filter_indices(app_indices_configs: Dict[str, Dict[str, Tuple]]) -> Dict[str, Dict[str, Dict[str, KeyIndex]]]:
+def filter_indices(app_indices_configs: dict[str, dict[str, tuple]]) -> dict[str, dict[str, dict[str, KeyIndex]]]:
     app_results = {}
     for app_name in app_indices_configs:
         indices_configs = app_indices_configs.get(app_name)
@@ -94,8 +94,8 @@ def filter_indices(app_indices_configs: Dict[str, Dict[str, Tuple]]) -> Dict[str
 
 
 def filter_config_name_and_values(
-    excluded_key_list: List[str], key_indices: Dict[str, List[KeyIndex]]
-) -> Dict[str, KeyIndex]:
+    excluded_key_list: list[str], key_indices: dict[str, list[KeyIndex]]
+) -> dict[str, KeyIndex]:
     temp_results = {}
     for key, key_index_list in key_indices.items():
         for key_index in key_index_list:
@@ -118,7 +118,7 @@ def _cast_type(key_index, cli_value):
     return new_value
 
 
-def split_array_key(key: str) -> Tuple:
+def split_array_key(key: str) -> tuple:
     if "[" not in key and "]" not in key:
         return None, None, key
 
@@ -171,7 +171,7 @@ def get_last_token(input_string):
         return input_string
 
 
-def handle_key_in_path_notation_or_new_key(file: str, key: str, cli_value: str, config: ConfigTree, key_indices: Dict):
+def handle_key_in_path_notation_or_new_key(file: str, key: str, cli_value: str, config: ConfigTree, key_indices: dict):
 
     key_value = None
     parent, index, key = split_array_key(key)
@@ -206,8 +206,8 @@ def handle_key_in_path_notation_or_new_key(file: str, key: str, cli_value: str, 
 
 
 def merge_configs(
-    app_indices_configs: Dict[str, Dict[str, tuple]], app_cli_file_configs: Dict[str, Dict[str, Dict]]
-) -> Dict[str, Dict[str, tuple]]:
+    app_indices_configs: dict[str, dict[str, tuple]], app_cli_file_configs: dict[str, dict[str, dict]]
+) -> dict[str, dict[str, tuple]]:
     """Merges configurations from indices_configs and cli_file_configs.
 
     Args:
@@ -261,7 +261,7 @@ def merge_configs(
     return app_merged
 
 
-def get_root_index(key_index: KeyIndex) -> Optional[KeyIndex]:
+def get_root_index(key_index: KeyIndex) -> KeyIndex | None:
     if key_index is None or key_index.parent_key is None:
         return key_index
 
@@ -274,7 +274,7 @@ def get_root_index(key_index: KeyIndex) -> Optional[KeyIndex]:
     return None
 
 
-def get_cli_config(cmd_args: Any, app_names: List[str]) -> Dict[str, Dict[str, Dict[str, str]]]:
+def get_cli_config(cmd_args: Any, app_names: list[str]) -> dict[str, dict[str, dict[str, str]]]:
     """Extracts configurations from command-line arguments and return them in a dictionary.
 
     Args:
@@ -319,8 +319,8 @@ def _is_meta_file(filename: str) -> bool:
 
 
 def _parse_cli_config(
-    job_folder: str, cli_configs: List[str], app_names: List[str]
-) -> Dict[str, Dict[str, Dict[str, str]]]:
+    job_folder: str, cli_configs: list[str], app_names: list[str]
+) -> dict[str, dict[str, dict[str, str]]]:
     """Extracts configurations from command-line arguments and return them in a dictionary.
 
     Args:
@@ -412,7 +412,7 @@ def get_config_file_path(app_name, input_file_path, job_folder):
     return config_file
 
 
-def build_config_file_indices(job_folder: str, app_names: List[str]) -> Dict[str, Dict[str, Tuple]]:
+def build_config_file_indices(job_folder: str, app_names: list[str]) -> dict[str, dict[str, tuple]]:
     config_included = APP_CONFIG_FILE_BASE_NAMES
     meta_base = JOB_META_BASE_NAME
     config_extensions = ConfigFormat.extensions()

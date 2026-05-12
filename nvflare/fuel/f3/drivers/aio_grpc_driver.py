@@ -296,7 +296,7 @@ class AioGrpcDriver(BaseDriver):
         self.closing = False
 
     @staticmethod
-    def supported_transports() -> List[str]:
+    def supported_transports() -> list[str]:
         should_use_aio = use_aio_grpc()
         if should_use_aio is None:
             # not specified
@@ -309,7 +309,7 @@ class AioGrpcDriver(BaseDriver):
             return []
 
     @staticmethod
-    def capabilities() -> Dict[str, Any]:
+    def capabilities() -> dict[str, Any]:
         return {DriverCap.SEND_HEARTBEAT.value: True, DriverCap.SUPPORT_SSL.value: True}
 
     async def _start_server(self, connector: ConnectorInfo, aio_ctx: AioContext, conn_ctx: _ConnCtx):

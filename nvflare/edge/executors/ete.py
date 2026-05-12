@@ -81,7 +81,7 @@ class EdgeTaskExecutor(HierarchicalUpdateGatherer):
     @abstractmethod
     def process_edge_task_request(
         self, request: TaskRequest, current_task: TaskInfo, fl_ctx: FLContext
-    ) -> Optional[TaskResponse]:
+    ) -> TaskResponse | None:
         """This is called to process an edge task request sent from the edge device.
 
         Args:
@@ -97,7 +97,7 @@ class EdgeTaskExecutor(HierarchicalUpdateGatherer):
     @abstractmethod
     def process_edge_selection_request(
         self, request: SelectionRequest, current_task: TaskInfo, fl_ctx: FLContext
-    ) -> Optional[SelectionResponse]:
+    ) -> SelectionResponse | None:
         """This is called to process an edge selection request sent from the edge device.
 
         Args:
@@ -113,7 +113,7 @@ class EdgeTaskExecutor(HierarchicalUpdateGatherer):
     @abstractmethod
     def process_edge_result_report(
         self, request: ResultReport, current_task: TaskInfo, fl_ctx: FLContext
-    ) -> Optional[ResultResponse]:
+    ) -> ResultResponse | None:
         """This is called to process an edge result report sent from the edge device.
 
         Args:

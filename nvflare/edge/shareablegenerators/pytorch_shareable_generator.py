@@ -64,7 +64,7 @@ class PytorchShareableGenerator(ShareableGenerator):
             ValueError: if data_kind is not `DataKind.WEIGHTS` and is not `DataKind.WEIGHT_DIFF`
         """
         if not isinstance(shareable, Shareable):
-            raise TypeError("shareable must be Shareable, but got {}.".format(type(shareable)))
+            raise TypeError(f"shareable must be Shareable, but got {type(shareable)}.")
 
         base_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
         result = shareable.get(MsgKey.RESULT)

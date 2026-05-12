@@ -71,11 +71,11 @@ class Visualization:
             else:
                 print(f"not supported plot type: '{plot_type}'")
 
-    def get_histogram_dataframes(self, data, display_format="sample_count", white_list_features=None) -> Dict:
+    def get_histogram_dataframes(self, data, display_format="sample_count", white_list_features=None) -> dict:
         if white_list_features is None:
             white_list_features = []
         display, pd = self.import_modules()
-        (hists, edges) = self._prepare_histogram_data(data, display_format, white_list_features)
+        hists, edges = self._prepare_histogram_data(data, display_format, white_list_features)
         all_features = [k for k in edges]
         target_features = self._get_target_features(all_features, white_list_features)
 

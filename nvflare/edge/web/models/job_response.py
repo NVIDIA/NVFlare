@@ -23,7 +23,7 @@ class JobResponse(BaseModel):
         job_id: str = None,
         job_name: str = None,
         method: str = None,
-        job_data: Optional[dict] = None,
+        job_data: dict | None = None,
         retry_wait: int = None,
         **kwargs,
     ):

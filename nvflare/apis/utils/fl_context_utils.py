@@ -86,7 +86,7 @@ def generate_log_message(fl_ctx: FLContext, msg: str):
     peer_ctx = fl_ctx.get_peer_context()
     if peer_ctx:
         if not isinstance(peer_ctx, FLContext):
-            raise TypeError("peer_ctx must be an instance of FLContext, but got {}".format(type(peer_ctx)))
+            raise TypeError(f"peer_ctx must be an instance of FLContext, but got {type(peer_ctx)}")
         peer_run = peer_ctx.get_job_id()
         if not peer_run:
             peer_run = "?"
@@ -122,7 +122,7 @@ def add_job_audit_event(fl_ctx: FLContext, ref: str = "", msg: str = "") -> str:
     )
 
 
-def get_client(client_name, fl_ctx: FLContext) -> Optional[Client]:
+def get_client(client_name, fl_ctx: FLContext) -> Client | None:
     """Get the Client object for the specified client name
 
     Args:

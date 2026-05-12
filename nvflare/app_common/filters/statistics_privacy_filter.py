@@ -24,11 +24,11 @@ from nvflare.fuel.utils import fobs
 
 
 class StatisticsPrivacyFilter(DXOFilter):
-    def __init__(self, result_cleanser_ids: List[str]):
+    def __init__(self, result_cleanser_ids: list[str]):
         super().__init__(supported_data_kinds=[DataKind.STATISTICS], data_kinds_to_filter=[DataKind.STATISTICS])
         self.result_cleanser_ids = result_cleanser_ids
 
-    def get_cleansers(self, result_checker_ids: List[str], fl_ctx: FLContext) -> List[StatisticsPrivacyCleanser]:
+    def get_cleansers(self, result_checker_ids: list[str], fl_ctx: FLContext) -> list[StatisticsPrivacyCleanser]:
         filters = []
         for cleanser_id in result_checker_ids:
             c = fl_ctx.get_engine().get_component(cleanser_id)
@@ -42,10 +42,10 @@ class StatisticsPrivacyFilter(DXOFilter):
                 filters.append(c)
         return filters
 
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> None | DXO:
         if dxo.data_kind == DataKind.STATISTICS:
             self.log_info(fl_ctx, "start StatisticsPrivacyFilter")
-            cleansers: List[StatisticsPrivacyCleanser] = self.get_cleansers(self.result_cleanser_ids, fl_ctx)
+            cleansers: list[StatisticsPrivacyCleanser] = self.get_cleansers(self.result_cleanser_ids, fl_ctx)
 
             client_name = fl_ctx.get_identity_name()
             self.log_info(fl_ctx, f"apply StatisticPrivacyFilter for client {client_name}")
@@ -54,14 +54,14 @@ class StatisticsPrivacyFilter(DXOFilter):
             return dxo1
 
     def filter_stats_statistics(
-        self, dxo: DXO, client_name: str, filters: List[StatisticsPrivacyCleanser]
-    ) -> Optional[DXO]:
+        self, dxo: DXO, client_name: str, filters: list[StatisticsPrivacyCleanser]
+    ) -> DXO | None:
         client_result = dxo.data
         statistics_task = client_result[StC.STATISTICS_TASK_KEY]
         statistics = fobs.loads(client_result[statistics_task])
         statistics_modified = False
         for f in filters:
-            (statistics, modified) = f.apply(statistics, client_name)
+            statistics, modified = f.apply(statistics, client_name)
             statistics_modified = statistics_modified or modified
 
         dxo1 = dxo

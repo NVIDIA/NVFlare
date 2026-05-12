@@ -105,11 +105,11 @@ class AsyncNumAssessor(Assessor):
 
         self.current_model = DXO(data_kind="number", data={"value": total})
 
-    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
+    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Shareable | None):
         with self.update_lock:
             return self._do_child_update(update, fl_ctx)
 
-    def _do_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
+    def _do_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Shareable | None):
         report = StateUpdateReport.from_shareable(update)
         if report.available_devices:
             self.available_devices.update(report.available_devices)

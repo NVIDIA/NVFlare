@@ -87,7 +87,7 @@ class MockDataConverter(DataConverter):
 
         self.groups = {}
 
-    def decode_gh_pairs(self, buffer: bytes, fl_ctx: FLContext) -> List[Tuple[int, int]]:
+    def decode_gh_pairs(self, buffer: bytes, fl_ctx: FLContext) -> list[tuple[int, int]]:
         """Decode the buffer to extract (g, h) pairs.
 
         Args:
@@ -141,7 +141,7 @@ class MockDataConverter(DataConverter):
         return aggr.aggregate(self.gh_pairs, ctx.sample_bin_assignment, ctx.num_bins, sample_ids)
 
     def encode_aggregation_result(
-        self, aggr_results: Dict[int, List[FeatureAggregationResult]], fl_ctx: FLContext
+        self, aggr_results: dict[int, list[FeatureAggregationResult]], fl_ctx: FLContext
     ) -> bytes:
         """Encode an individual rank's aggr result to a buffer based on XGB data structure
 

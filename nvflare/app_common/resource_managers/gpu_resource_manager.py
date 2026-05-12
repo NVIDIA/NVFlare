@@ -19,7 +19,7 @@ from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids, get_host_gpu_memory_t
 
 
 class GPUResource:
-    def __init__(self, gpu_id: int, gpu_memory: Union[int, float]):
+    def __init__(self, gpu_id: int, gpu_memory: int | float):
         self.id = gpu_id
         self.memory = gpu_memory
 
@@ -31,10 +31,10 @@ class GPUResourceManager(AutoCleanResourceManager):
     def __init__(
         self,
         num_of_gpus: int,
-        mem_per_gpu_in_GiB: Union[int, float],
+        mem_per_gpu_in_GiB: int | float,
         num_gpu_key: str = "num_of_gpus",
         gpu_mem_key: str = "mem_per_gpu_in_GiB",
-        expiration_period: Union[int, float] = 30,
+        expiration_period: int | float = 30,
         ignore_host: bool = False,
     ):
         """Resource manager for GPUs.

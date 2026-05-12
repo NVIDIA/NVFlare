@@ -56,7 +56,7 @@ class ProdEnv(ExecEnv):
         login_timeout: float = 5.0,
         username: str = DEFAULT_ADMIN_USER,
         study: str = DEFAULT_STUDY,
-        extra: Optional[dict] = None,
+        extra: dict | None = None,
     ):
         """Production execution environment for submitting and monitoring NVFlare jobs.
 
@@ -84,13 +84,13 @@ class ProdEnv(ExecEnv):
         self.study = v.study
         self._session_manager = None  # Lazy initialization
 
-    def get_job_status(self, job_id: str) -> Optional[str]:
+    def get_job_status(self, job_id: str) -> str | None:
         return self._get_session_manager().get_job_status(job_id)
 
     def abort_job(self, job_id: str) -> None:
         self._get_session_manager().abort_job(job_id)
 
-    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
+    def get_job_result(self, job_id: str, timeout: float = 0.0) -> str | None:
         return self._get_session_manager().get_job_result(job_id, timeout)
 
     def deploy(self, job: FedJob) -> str:

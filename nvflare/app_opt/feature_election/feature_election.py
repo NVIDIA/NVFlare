@@ -51,7 +51,7 @@ class FeatureElection:
         tuning_rounds: int = 5,
         eval_metric: str = "f1",
         wait_time_after_min_received: int = 10,
-        fs_params: Optional[Dict] = None,
+        fs_params: dict | None = None,
     ):
         if not 0 <= freedom_degree <= 1:
             raise ValueError("freedom_degree must be between 0 and 1")
@@ -84,8 +84,8 @@ class FeatureElection:
         output_dir: str = "jobs/feature_election",
         min_clients: int = 2,
         num_rounds: int = 5,
-        client_sites: Optional[List[str]] = None,
-    ) -> Dict[str, str]:
+        client_sites: list[str] | None = None,
+    ) -> dict[str, str]:
         """
         Generate FLARE job configuration.
         """
@@ -178,10 +178,10 @@ class FeatureElection:
         target_col: str,
         num_clients: int = 3,
         split_strategy: str = "stratified",
-        split_ratios: Optional[List[float]] = None,
+        split_ratios: list[float] | None = None,
         random_state: int = 42,
         dirichlet_alpha: float = 0.5,
-    ) -> List[Tuple[pd.DataFrame, pd.Series]]:
+    ) -> list[tuple[pd.DataFrame, pd.Series]]:
         """Prepare data splits for federated clients."""
         X = df.drop(columns=[target_col])
         y = df[target_col]
@@ -332,9 +332,9 @@ class FeatureElection:
 
     def simulate_election(
         self,
-        client_data: List[Tuple[Union[pd.DataFrame, np.ndarray], Union[pd.Series, np.ndarray]]],
-        feature_names: Optional[List[str]] = None,
-    ) -> Dict:
+        client_data: list[tuple[pd.DataFrame | np.ndarray, pd.Series | np.ndarray]],
+        feature_names: list[str] | None = None,
+    ) -> dict:
         """Simulate election locally."""
         # Local import to avoid circular dependency
         from .controller import FeatureElectionController
@@ -546,7 +546,7 @@ class FeatureElection:
 
         return self.election_stats
 
-    def apply_mask(self, X: Union[pd.DataFrame, np.ndarray]) -> Union[pd.DataFrame, np.ndarray]:
+    def apply_mask(self, X: pd.DataFrame | np.ndarray) -> pd.DataFrame | np.ndarray:
         """Apply global feature mask to new data."""
         if self.global_mask is None:
             raise ValueError("No global mask available. Run simulate_election() first.")
@@ -594,7 +594,7 @@ class FeatureElection:
 
     def load_results(self, filepath: str):
         """Load results from JSON."""
-        with open(filepath, "r") as f:
+        with open(filepath) as f:
             results = json.load(f)
 
         # Validate loaded parameters with the same guards used in __init__ so
@@ -669,7 +669,7 @@ def quick_election(
     fs_method: str = "lasso",
     split_strategy: str = "stratified",
     **kwargs,
-) -> Tuple[np.ndarray, Dict]:
+) -> tuple[np.ndarray, dict]:
     """
     Quick Feature Election for tabular data (one-line solution).
 
@@ -693,10 +693,10 @@ def quick_election(
     return fe.global_mask, stats
 
 
-def load_election_results(filepath: str) -> Dict:
+def load_election_results(filepath: str) -> dict:
     """
     Load election results from a JSON file.
     """
-    with open(filepath, "r") as f:
+    with open(filepath) as f:
         results = json.load(f)
     return results

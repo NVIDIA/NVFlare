@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Iterator, Optional, Union
+from typing import Optional, Union
+from collections.abc import Iterator
 
 import numpy as np
 import torch
@@ -85,7 +86,7 @@ def get_targets_from_ctx_and_prop_key(fl_ctx: FLContext, ctx_prop_key: str) -> l
         raise ValueError(f"Unsupported context property key: {ctx_prop_key}")
 
 
-def to_numpy_recursive(obj: Union[torch.Tensor, dict[str, torch.Tensor]]) -> Union[dict[str, np.ndarray], np.ndarray]:
+def to_numpy_recursive(obj: torch.Tensor | dict[str, torch.Tensor]) -> dict[str, np.ndarray] | np.ndarray:
     """Recursively convert torch tensors to numpy arrays with minimal memory duplication.
 
     Note: For CPU tensors, .numpy() returns a view sharing memory with the original tensor (zero-copy).
@@ -141,9 +142,9 @@ def get_dxo_from_ctx(fl_ctx: FLContext, ctx_prop_key: str, tasks: list[str]) -> 
 
 
 def chunk_tensors_from_params(
-    params: dict[str, Union[torch.Tensor, dict]],
-    parent_keys: Optional[list[str]] = None,
-    chunk_size: Optional[int] = 10,
+    params: dict[str, torch.Tensor | dict],
+    parent_keys: list[str] | None = None,
+    chunk_size: int | None = 10,
 ) -> Iterator[tuple[tuple[str], dict[str, torch.Tensor]]]:
     """
     Generator that yields tensors grouped by their immediate parent dictionary keys.

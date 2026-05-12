@@ -83,7 +83,7 @@ def _has_cross_site_eval_workflow(job: FedJob) -> bool:
 def add_experiment_tracking(
     recipe: Recipe,
     tracking_type: str,
-    tracking_config: Optional[dict] = None,
+    tracking_config: dict | None = None,
     client_side: bool = False,
     server_side: bool = True,
 ):
@@ -146,7 +146,7 @@ def add_cross_site_evaluation(
     recipe: Recipe,
     submit_model_timeout: int = 600,
     validation_timeout: int = 6000,
-    participating_clients: Optional[List[str]] = None,
+    participating_clients: list[str] | None = None,
 ):
     """Add cross-site evaluation to an existing recipe.
 
@@ -430,7 +430,7 @@ def _has_task_executor(job, task_name: str) -> bool:
     return False
 
 
-def collect_non_local_scripts(job: FedJob) -> List[str]:
+def collect_non_local_scripts(job: FedJob) -> list[str]:
     """Collect scripts that don't exist locally.
 
     This utility function is used by ExecEnv subclasses to validate script resources
@@ -451,7 +451,7 @@ def collect_non_local_scripts(job: FedJob) -> List[str]:
     return non_local_scripts
 
 
-def ensure_config_type_dict(config: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def ensure_config_type_dict(config: dict[str, Any] | None) -> dict[str, Any] | None:
     """Ensure a component config dict has config_type 'dict' and is normalized for the config layer.
 
     Used by FedOpt-style recipes for optimizer_args and lr_scheduler_args: those dicts have 'path' or
@@ -479,7 +479,7 @@ def ensure_config_type_dict(config: Optional[Dict[str, Any]]) -> Optional[Dict[s
     return out
 
 
-def validate_ckpt(ckpt: Optional[str]) -> None:
+def validate_ckpt(ckpt: str | None) -> None:
     """Validate a checkpoint path if provided.
 
     For absolute paths: no local existence check (file may be a server-side path).
@@ -501,7 +501,7 @@ def validate_ckpt(ckpt: Optional[str]) -> None:
                 )
 
 
-def prepare_initial_ckpt(initial_ckpt: Optional[str], job) -> Optional[str]:
+def prepare_initial_ckpt(initial_ckpt: str | None, job) -> str | None:
     """Prepare initial_ckpt for job deployment.
 
     - Relative path: treated as a local file. The file is bundled into the server
@@ -538,7 +538,7 @@ def extract_persistor_id(result: Any) -> str:
     return ""
 
 
-def resolve_initial_ckpt(initial_ckpt: Optional[str], prepared_initial_ckpt: Optional[str], job) -> Optional[str]:
+def resolve_initial_ckpt(initial_ckpt: str | None, prepared_initial_ckpt: str | None, job) -> str | None:
     if prepared_initial_ckpt is not None:
         return prepared_initial_ckpt
     return prepare_initial_ckpt(initial_ckpt, job)
@@ -572,7 +572,7 @@ def validate_dict_model_config(model: Any) -> None:
             raise ValueError(f"Dict model config 'class_path' must be a string, got: {type(class_path)}")
 
 
-def recipe_model_to_job_model(recipe_model: Dict[str, Any]) -> Dict[str, Any]:
+def recipe_model_to_job_model(recipe_model: dict[str, Any]) -> dict[str, Any]:
     """Validate and convert recipe model dict (class_path) to job/config format (path).
 
     Calls :func:`validate_dict_model_config` internally so callers do not need to

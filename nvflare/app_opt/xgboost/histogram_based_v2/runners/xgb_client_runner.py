@@ -247,5 +247,5 @@ class XGBClientRunner(AppRunner, FLComponent):
         # currently no way to stop the runner
         pass
 
-    def is_stopped(self) -> Tuple[bool, int]:
+    def is_stopped(self) -> tuple[bool, int]:
         return self._stopped, 0

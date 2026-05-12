@@ -66,10 +66,10 @@ class Histogram(NamedTuple):
     hist_type: HistogramType
 
     # A list of buckets in the histogram, sorted from lowest bucket to highest bucket.
-    bins: List[Bin]
+    bins: list[Bin]
 
     # An optional descriptive name of the histogram, to be used for labeling.
-    hist_name: Optional[str] = None
+    hist_name: str | None = None
 
 
 class Feature(NamedTuple):
@@ -100,9 +100,9 @@ class Statistics(InitFinalComponent, ABC):
 
     def pre_run(
         self,
-        statistics: List[str],
-        num_of_bins: Optional[Dict[str, Optional[int]]],
-        bin_ranges: Optional[Dict[str, Optional[List[float]]]],
+        statistics: list[str],
+        num_of_bins: dict[str, int | None] | None,
+        bin_ranges: dict[str, list[float] | None] | None,
     ):
         """This method is the initial hand-shake, where controller pass all the requested statistics configuration to client.
 
@@ -125,7 +125,7 @@ class Statistics(InitFinalComponent, ABC):
         return {}
 
     @abstractmethod
-    def features(self) -> Dict[str, List[Feature]]:
+    def features(self) -> dict[str, list[Feature]]:
         """Return Features for each dataset.
 
         For example, if we have training and test datasets,
@@ -318,7 +318,7 @@ class Statistics(InitFinalComponent, ABC):
         """
         return 0
 
-    def quantiles(self, dataset_name: str, feature_name: str, percentiles: List) -> Dict:
+    def quantiles(self, dataset_name: str, feature_name: str, percentiles: list) -> dict:
         """Return failed count for given dataset and feature.
 
         To perform data privacy min_count check, failure_count is always required.

@@ -86,7 +86,7 @@ def _create_client_config(config: str) -> ClientConfig:
     return client_config
 
 
-def _create_pipe_using_config(client_config: ClientConfig, section: str) -> Tuple[Pipe, str]:
+def _create_pipe_using_config(client_config: ClientConfig, section: str) -> tuple[Pipe, str]:
     pipe_class_name = client_config.get_pipe_class(section)
     module_name, _, class_name = pipe_class_name.rpartition(".")
     module = importlib.import_module(module_name)
@@ -154,7 +154,7 @@ class ExProcessClientAPI(APISpec):
             raise RuntimeError("needs to call init method first")
         return self.model_registry
 
-    def init(self, rank: Optional[str] = None):
+    def init(self, rank: str | None = None):
         """Initializes NVFlare Client API environment.
 
         Args:
@@ -247,7 +247,7 @@ class ExProcessClientAPI(APISpec):
             self.logger.error(f"flare.init failed: {e}")
             raise e
 
-    def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
+    def receive(self, timeout: float | None = None) -> FLModel | None:
         result = self.__receive()
         self.receive_called = True
         if result is not None:
@@ -256,7 +256,7 @@ class ExProcessClientAPI(APISpec):
             log_rss(f"CA s={self._mem_site} r={result.current_round} recv")
         return result
 
-    def __receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
+    def __receive(self, timeout: float | None = None) -> FLModel | None:
         model_registry = self.get_model_registry()
         return model_registry.get_model(timeout)
 
@@ -275,11 +275,11 @@ class ExProcessClientAPI(APISpec):
         self._maybe_cleanup_memory()
         log_rss(f"CA s={getattr(self, '_mem_site', '?')} r={getattr(self, '_mem_round', None)} send")
 
-    def system_info(self) -> Dict:
+    def system_info(self) -> dict:
         model_registry = self.get_model_registry()
         return model_registry.get_sys_info()
 
-    def get_config(self) -> Dict:
+    def get_config(self) -> dict:
         model_registry = self.get_model_registry()
         return model_registry.config.config
 

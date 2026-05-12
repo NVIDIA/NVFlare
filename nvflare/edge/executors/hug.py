@@ -78,7 +78,7 @@ class HierarchicalUpdateGatherer(Executor):
         self.register_event_handler(EventType.POST_TASK_ASSIGNMENT_SENT, self._handle_task_sent)
         self.register_event_handler(EventType.POST_TASK_RESULT_RECEIVED, self._handle_result_received)
 
-    def get_updater(self, fl_ctx: FLContext) -> Optional[Updater]:
+    def get_updater(self, fl_ctx: FLContext) -> Updater | None:
         return None
 
     def _hug_handle_start_run(self, event_type: str, fl_ctx: FLContext):
@@ -534,7 +534,7 @@ class HierarchicalUpdateGatherer(Executor):
         self.log_info(fl_ctx, f"accepted set_task_done for task_id {task_id}")
         return True
 
-    def get_current_task(self, fl_ctx: FLContext) -> Optional[TaskInfo]:
+    def get_current_task(self, fl_ctx: FLContext) -> TaskInfo | None:
         """Get the info of current task
 
         Returns: TaskInfo of current task or None if no current task

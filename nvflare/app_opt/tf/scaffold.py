@@ -60,7 +60,7 @@ def get_lr_values(optimizer):
     return optimizer.learning_rate
 
 
-class TFScaffoldHelper(object):
+class TFScaffoldHelper:
     """Helper to be used with SCAFFOLD components."""
 
     def __init__(self):
@@ -145,7 +145,7 @@ class TFScaffoldHelper(object):
 
 class ScaffoldCallback(tf.keras.callbacks.Callback):
     def __init__(self, scaffold_helper):
-        super(ScaffoldCallback, self).__init__()
+        super().__init__()
         self.scaffold_helper = scaffold_helper
         self.c_global_para, self.c_local_para = self.scaffold_helper.get_params()
 

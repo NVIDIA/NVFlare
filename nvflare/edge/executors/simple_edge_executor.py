@@ -91,5 +91,5 @@ class SimpleEdgeExecutor(EdgeTaskExecutor):
 
     def process_edge_selection_request(
         self, request: SelectionRequest, current_task: TaskInfo, fl_ctx: FLContext
-    ) -> Optional[SelectionResponse]:
+    ) -> SelectionResponse | None:
         return None

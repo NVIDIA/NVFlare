@@ -98,7 +98,7 @@ class FileWaiter(threading.Event):
         return self.stream_ctx
 
 
-class ResultKey(object):
+class ResultKey:
 
     STATUS = ProtoKey.STATUS
     DETAILS = ProtoKey.DETAILS
@@ -115,7 +115,7 @@ def _print_hci_message(msg: str):
         print(msg, file=sys.stderr)
 
 
-class _ServerReplyJsonProcessor(object):
+class _ServerReplyJsonProcessor:
     def __init__(self, ctx: CommandContext):
         if not isinstance(ctx, CommandContext):
             raise TypeError(f"ctx is not an instance of CommandContext. but get {type(ctx)}")
@@ -130,7 +130,7 @@ class _ServerReplyJsonProcessor(object):
             resp: The raw response that returns by the server.
         """
         api = self.ctx.get_api()
-        api.debug("Server Reply: {}".format(resp))
+        api.debug(f"Server Reply: {resp}")
 
         ctx = self.ctx
 
@@ -245,7 +245,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self,
         user_name: str,
         admin_config: dict,
-        cmd_modules: Optional[List] = None,
+        cmd_modules: list | None = None,
         debug: bool = False,
         auto_login_max_tries: int = 15,
         event_handlers=None,
@@ -267,13 +267,11 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             download_dir = admin_config.get(AdminConfigKey.DOWNLOAD_DIR, "transfer")
             cmd_modules = [FileTransferModule(upload_dir=upload_dir, download_dir=download_dir)]
         elif not isinstance(cmd_modules, list):
-            raise TypeError("cmd_modules must be a list, but got {}".format(type(cmd_modules)))
+            raise TypeError(f"cmd_modules must be a list, but got {type(cmd_modules)}")
         else:
             for m in cmd_modules:
                 if not isinstance(m, CommandModule):
-                    raise TypeError(
-                        "cmd_modules must be a list of CommandModule, but got element of type {}".format(type(m))
-                    )
+                    raise TypeError(f"cmd_modules must be a list of CommandModule, but got element of type {type(m)}")
 
         if not event_handlers:
             event_handlers = []
@@ -471,7 +469,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         )
 
     def _handle_aux_message(self, request: CellMessage) -> CellMessage:
-        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        assert isinstance(request, CellMessage), f"request must be CellMessage but got {type(request)}"
         data = request.payload
 
         topic = request.get_header(MessageHeaderKey.TOPIC)
@@ -1001,7 +999,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         channel: str,
         topic: str,
         stream_ctx: StreamContext,
-        targets: List[str],
+        targets: list[str],
         producer: ObjectProducer,
         fl_ctx: FLContext,
         optional=False,

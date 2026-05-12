@@ -43,8 +43,8 @@ _KEY_META = "meta"
 _KEY_DXO = "DXO"
 
 
-class DXO(object):
-    def __init__(self, data_kind: str, data: dict, meta: Optional[dict] = None):
+class DXO:
+    def __init__(self, data_kind: str, data: dict, meta: dict | None = None):
         """Init the DXO.
 
         The Data Exchange Object standardizes the data passed between communicating parties.
@@ -65,7 +65,7 @@ class DXO(object):
 
         err = self.validate()
         if err:
-            raise ValueError("invalid DXO: {}".format(err))
+            raise ValueError(f"invalid DXO: {err}")
 
     def get_meta_prop(self, key: str, default=None):
         if self.meta and isinstance(self.meta, dict):
@@ -77,7 +77,7 @@ class DXO(object):
             self.meta = {}
         self.meta[key] = value
 
-    def remove_meta_props(self, keys: List[str]):
+    def remove_meta_props(self, keys: list[str]):
         if self.meta and keys:
             for k in keys:
                 self.meta.pop(k, None)
@@ -131,14 +131,14 @@ class DXO(object):
             return "missing data"
 
         if self.data_kind != DataKind.APP_DEFINED and not isinstance(self.data, dict):
-            return "invalid data: expect dict but got {}".format(type(self.data))
+            return f"invalid data: expect dict but got {type(self.data)}"
 
         if self.meta is not None and not isinstance(self.meta, dict):
-            return "invalid props: expect dict but got {}".format(type(self.meta))
+            return f"invalid props: expect dict but got {type(self.meta)}"
 
         return ""
 
-    def add_filter_history(self, filter_name: Union[str, List[str]]):
+    def add_filter_history(self, filter_name: str | list[str]):
         if not filter_name:
             return
         hist = self.get_meta_prop(MetaKey.FILTER_HISTORY)
@@ -166,16 +166,14 @@ def from_shareable(s: Shareable) -> DXO:
     """
     content_type = s.get_header(ReservedHeaderKey.CONTENT_TYPE)
     if not content_type or content_type != "DXO":
-        raise ValueError("the shareable is not a valid DXO - expect content_type DXO but got {}".format(content_type))
+        raise ValueError(f"the shareable is not a valid DXO - expect content_type DXO but got {content_type}")
 
     encoded = s.get(_KEY_DXO, None)
     if not encoded:
         raise ValueError("the shareable is not a valid DXO - missing content")
 
     if not isinstance(encoded, dict):
-        raise ValueError(
-            "the shareable is not a valid DXO - should be encoded as dict but got {}".format(type(encoded))
-        )
+        raise ValueError(f"the shareable is not a valid DXO - should be encoded as dict but got {type(encoded)}")
 
     return from_dict(encoded)
 
@@ -202,7 +200,7 @@ def from_bytes(data: bytes) -> DXO:
     if isinstance(x, DXO):
         return x
     else:
-        raise ValueError("Data bytes are from type {} and do not represent a valid DXO instance.".format(type(x)))
+        raise ValueError(f"Data bytes are from type {type(x)} and do not represent a valid DXO instance.")
 
 
 def from_file(file_path: str) -> DXO:

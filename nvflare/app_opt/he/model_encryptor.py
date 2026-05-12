@@ -34,10 +34,10 @@ class HEModelEncryptor(DXOFilter):
     def __init__(
         self,
         tenseal_context_file: str = "client_context.tenseal",
-        encrypt_layers: Optional[Union[list[str], str]] = None,
-        aggregation_weights: Optional[dict[str, float]] = None,
+        encrypt_layers: list[str] | str | None = None,
+        aggregation_weights: dict[str, float] | None = None,
         weigh_by_local_iter: bool = True,
-        data_kinds: Optional[list[DataKind]] = None,
+        data_kinds: list[DataKind] | None = None,
     ):
         """Filter to encrypt Shareable object using homomorphic encryption (HE) with TenSEAL
            https://github.com/OpenMined/TenSEAL.
@@ -163,7 +163,7 @@ class HEModelEncryptor(DXOFilter):
         # encryption_dict: keys are layer names.  values are True for ckks_vectors, False elsewhere.
         return params, encryption_dict
 
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> None | DXO:
         """Filter process apply to the Shareable object.
 
         Args:

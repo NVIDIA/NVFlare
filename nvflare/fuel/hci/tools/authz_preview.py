@@ -85,9 +85,7 @@ class Commander(cmd.Cmd):
     def do_eval_right(self, arg):
         args = ["eval_right"] + self._split_to_args(arg)
         if len(args) < 4:
-            self.write_string(
-                "Usage: {} site_org right_name user_name:org:role [submitter_name:org:role]".format(args[0])
-            )
+            self.write_string(f"Usage: {args[0]} site_org right_name user_name:org:role [submitter_name:org:role]")
             return
 
         site_org = args[1]
@@ -143,7 +141,7 @@ def load_policy(policy_file_path):
         config = json.load(file)
         policy, err = parse_policy_config(config, COMMAND_CATEGORIES)
         if err:
-            print("Policy config error: {}".format(err))
+            print(f"Policy config error: {err}")
             sys.exit(1)
     return policy
 

@@ -1384,7 +1384,7 @@ class TestK8sJobLauncherLaunchJob:
             mount_names = {m["name"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
             assert vol_names == {"workspace-job", "startup-kit"}
             assert mount_names == {"workspace-job", "startup-kit"}
-            self.mock_open.assert_called_once_with("/fake/study_data.yaml", "rt")
+            self.mock_open.assert_called_once_with("/fake/study_data.yaml")
         finally:
             _exit_patches(patches)
 

@@ -160,7 +160,7 @@ class AdminServer:
         self.logger.debug(f"upload result: {result}")
         return result
 
-    def _process_admin_request(self, request: CellMessage) -> Union[None, CellMessage]:
+    def _process_admin_request(self, request: CellMessage) -> None | CellMessage:
         self.logger.debug(f"got admin_request: {request.payload}")
         ok, command, conn = self._create_conn(request.payload, request.headers)
         conn.set_prop(ConnProps.REQUEST, request)

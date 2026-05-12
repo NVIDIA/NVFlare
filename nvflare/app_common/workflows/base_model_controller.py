@@ -14,7 +14,8 @@
 
 import random
 from abc import ABC, abstractmethod
-from typing import Callable, List, Optional, Union
+from typing import List, Optional, Union
+from collections.abc import Callable
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, OperatorMethod, Task, TaskOperatorKey
@@ -39,7 +40,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
     def __init__(
         self,
         persistor_id: str = AppConstants.DEFAULT_PERSISTOR_ID,
-        ignore_result_error: Optional[bool] = None,
+        ignore_result_error: bool | None = None,
         allow_empty_global_weights: bool = False,
         task_check_period: float = 0.5,
     ):
@@ -110,13 +111,13 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self,
         data,
         task_name: str = AppConstants.TASK_TRAIN,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         min_responses: int = None,
         timeout: int = 0,
         wait_time_after_min_received: int = 0,
         blocking: bool = True,
         callback: Callable[[FLModel], None] = None,
-    ) -> List:
+    ) -> list:
         """Send a task with data to a list of targets.
 
         Args:
@@ -145,7 +146,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         check_non_negative_int("timeout", timeout)
         check_non_negative_int("wait_time_after_min_received", wait_time_after_min_received)
         if not blocking and not isinstance(callback, Callable):
-            raise TypeError("callback must be defined if blocking is False, but got {}".format(type(callback)))
+            raise TypeError(f"callback must be defined if blocking is False, but got {type(callback)}")
 
         # Store task context for dynamic ignore_result_error mode
         num_targets = len(targets) if targets else len(self.engine.get_clients())
@@ -450,7 +451,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         else:
             self.error("persistor not configured, model will not be saved")
 
-    def sample_clients(self, num_clients: int = None) -> List[str]:
+    def sample_clients(self, num_clients: int = None) -> list[str]:
         clients = [client.name for client in self.engine.get_clients()]
 
         if num_clients:

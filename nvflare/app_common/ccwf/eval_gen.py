@@ -35,7 +35,7 @@ def _check_names(arg_name, names_to_check):
         raise ValueError(f"expect {arg_name} to be a list of str but some items are not str")
 
 
-def parallel_eval_generator(evaluators: List[str], evaluatees: List[str], max_parallel_actions: int):
+def parallel_eval_generator(evaluators: list[str], evaluatees: list[str], max_parallel_actions: int):
     """Generates parallel evaluations to be performed.
 
     Args:

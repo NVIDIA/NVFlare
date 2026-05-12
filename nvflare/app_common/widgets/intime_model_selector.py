@@ -86,7 +86,7 @@ class IntimeModelSelector(Widget):
             return False
 
         if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.COLLECTION):
-            self.log_debug(fl_ctx, "cannot handle {}".format(dxo.data_kind))
+            self.log_debug(fl_ctx, f"cannot handle {dxo.data_kind}")
             return False
 
         if dxo.data is None:

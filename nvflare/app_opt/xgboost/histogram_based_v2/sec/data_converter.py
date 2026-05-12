@@ -24,19 +24,19 @@ class FeatureContext:
 
 
 class AggregationContext:
-    def __init__(self, features: List[FeatureContext], sample_groups: Dict[int, List[int]]):  # group_id => sample Ids
+    def __init__(self, features: list[FeatureContext], sample_groups: dict[int, list[int]]):  # group_id => sample Ids
         self.features = features
         self.sample_groups = sample_groups
 
 
 class FeatureAggregationResult:
-    def __init__(self, feature_id: int, aggregated_hist: List[Tuple[int, int]]):
+    def __init__(self, feature_id: int, aggregated_hist: list[tuple[int, int]]):
         self.feature_id = feature_id
         self.aggregated_hist = aggregated_hist  # list of (G, H) values, one for each bin of the feature
 
 
 class DataConverter:
-    def decode_gh_pairs(self, buffer: bytes, fl_ctx: FLContext) -> List[Tuple[int, int]]:
+    def decode_gh_pairs(self, buffer: bytes, fl_ctx: FLContext) -> list[tuple[int, int]]:
         """Decode the buffer to extract (g, h) pairs.
 
         Args:
@@ -63,7 +63,7 @@ class DataConverter:
         pass
 
     def encode_aggregation_result(
-        self, aggr_results: Dict[int, List[FeatureAggregationResult]], fl_ctx: FLContext
+        self, aggr_results: dict[int, list[FeatureAggregationResult]], fl_ctx: FLContext
     ) -> bytes:
         """Encode an individual rank's aggr result to a buffer based on XGB data structure
 
@@ -77,7 +77,7 @@ class DataConverter:
         """
         pass
 
-    def decode_histograms(self, buffer: bytes, fl_ctx: FLContext) -> List[float]:
+    def decode_histograms(self, buffer: bytes, fl_ctx: FLContext) -> list[float]:
         """Decode the buffer to extract flattened histograms
 
         Args:
@@ -90,7 +90,7 @@ class DataConverter:
         """
         pass
 
-    def encode_histograms_result(self, histograms: List[float], fl_ctx: FLContext) -> bytes:
+    def encode_histograms_result(self, histograms: list[float], fl_ctx: FLContext) -> bytes:
         """Encode flattened histograms to be sent back to XGBoost
 
         Args:

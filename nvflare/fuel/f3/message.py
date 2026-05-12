@@ -28,7 +28,7 @@ class AppIds:
 
 
 class Message:
-    def __init__(self, headers: Optional[dict] = None, payload: Any = None):
+    def __init__(self, headers: dict | None = None, payload: Any = None):
         """Construct an FCI message"""
 
         self.headers = headers

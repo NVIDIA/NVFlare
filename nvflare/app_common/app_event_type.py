@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-class AppEventType(object):
+class AppEventType:
     """Defines application events."""
 
     BEFORE_AGGREGATION = "_before_aggregation"

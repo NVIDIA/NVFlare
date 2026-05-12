@@ -111,7 +111,7 @@ class _UnsafeZipSourceError(Exception):
     pass
 
 
-def _validate_safe_cert_name(name: str, *, field_label: str, max_length: Optional[int] = 64) -> bool:
+def _validate_safe_cert_name(name: str, *, field_label: str, max_length: int | None = 64) -> bool:
     if not isinstance(name, str) or not name.strip():
         output_error(
             "INVALID_NAME", exit_code=4, name=name, reason=f"{field_label} must not be empty or whitespace only."
@@ -703,7 +703,7 @@ def _contains_private_key_material(content: bytes) -> bool:
     return any(marker in content for marker in _PEM_PRIVATE_KEY_MARKERS)
 
 
-def _read_zip_member_limited(zf: zipfile.ZipFile, member: str) -> Optional[bytes]:
+def _read_zip_member_limited(zf: zipfile.ZipFile, member: str) -> bytes | None:
     with zf.open(member) as member_file:
         content = member_file.read(_MAX_ZIP_MEMBER_SIZE + 1)
     if len(content) > _MAX_ZIP_MEMBER_SIZE:

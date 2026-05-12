@@ -63,14 +63,14 @@ class FedJobConfig:
         self.meta_props = meta_props
         self.app_packages = []
 
-        self.fed_apps: Dict[str, FedAppConfig] = {}
-        self.deploy_map: Dict[str, str] = {}
-        self.resource_specs: Dict[str, Dict] = {}
+        self.fed_apps: dict[str, FedAppConfig] = {}
+        self.deploy_map: dict[str, str] = {}
+        self.resource_specs: dict[str, dict] = {}
 
         self.custom_modules = []
         self.logger = get_obj_logger(self)
 
-    def set_app_packages(self, app_packages: List[str]):
+    def set_app_packages(self, app_packages: list[str]):
         """Set app packages.
         When generating job config, code from these packages will not be included into "custom" folder.
 
@@ -108,7 +108,7 @@ class FedJobConfig:
 
         self.deploy_map[site_name] = app_name
 
-    def add_resource_spec(self, site_name: str, resource_spec: Dict):
+    def add_resource_spec(self, site_name: str, resource_spec: dict):
         if site_name in self.resource_specs.keys():
             raise RuntimeError(f"{site_name} resource specs already exist.")
         if not isinstance(resource_spec, dict):
@@ -302,7 +302,7 @@ class FedJobConfig:
     def _copy_source_file(self, custom_dir, module, source_file, dest_file):
         os.makedirs(custom_dir, exist_ok=True)
         source_dir = os.path.dirname(source_file)
-        with open(source_file, "r") as sf:
+        with open(source_file) as sf:
             import_lines = list(self.locate_imports(sf, dest_file))
         for line in import_lines:
             import_module = line.split(" ")[1]

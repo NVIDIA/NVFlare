@@ -16,9 +16,9 @@ from typing import Any, Optional, Set
 
 
 def should_ignore_result_error(
-    ignore_result_error: Optional[bool],
+    ignore_result_error: bool | None,
     client_name: str,
-    failed_clients: Set[str],
+    failed_clients: set[str],
     num_targets: int,
     min_responses: int,
 ) -> bool:
@@ -62,12 +62,12 @@ def should_ignore_result_error(
 
 
 def get_error_handling_message(
-    ignore_result_error: Optional[bool],
+    ignore_result_error: bool | None,
     client_name: str,
     error_code: Any,
-    current_round: Optional[int],
+    current_round: int | None,
     controller_name: str,
-    failed_clients: Set[str],
+    failed_clients: set[str],
     num_targets: int,
     min_responses: int,
 ) -> str:

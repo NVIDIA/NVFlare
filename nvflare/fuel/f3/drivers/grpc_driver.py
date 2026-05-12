@@ -81,7 +81,7 @@ class StreamConnection(Connection):
                     self.logger.debug(f"exception closing GRPC channel: {secure_format_exception(ex)} ")
                 self.channel = None
 
-    def send_frame(self, frame: Union[bytes, bytearray, memoryview]):
+    def send_frame(self, frame: bytes | bytearray | memoryview):
         try:
             StreamConnection.seq_num += 1
             seq = StreamConnection.seq_num
@@ -222,7 +222,7 @@ class GrpcDriver(BaseDriver):
         self.logger.debug(f"GRPC Config: max_workers={self.max_workers}, options={self.options}")
 
     @staticmethod
-    def supported_transports() -> List[str]:
+    def supported_transports() -> list[str]:
         should_use_aio = use_aio_grpc()
         if should_use_aio is None:
             # not specified
@@ -235,7 +235,7 @@ class GrpcDriver(BaseDriver):
             return ["grpc", "grpcs", "agrpc", "agrpcs"]
 
     @staticmethod
-    def capabilities() -> Dict[str, Any]:
+    def capabilities() -> dict[str, Any]:
         return {DriverCap.SEND_HEARTBEAT.value: True, DriverCap.SUPPORT_SSL.value: True}
 
     def listen(self, connector: ConnectorInfo):

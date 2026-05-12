@@ -46,7 +46,7 @@ class ValidationJsonGenerator(Widget):
             results_dir (str, optional): Name of the results directory. Defaults to cross_site_val
             json_file_name (str, optional): Name of the json file. Defaults to cross_val_results.json
         """
-        super(ValidationJsonGenerator, self).__init__()
+        super().__init__()
 
         self._results_dir = results_dir
         self._val_results = {}

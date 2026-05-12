@@ -60,7 +60,7 @@ class TFFileModelLocator(ModelLocator):
                 f"but got: {type(self.model_persistor)}"
             )
 
-    def get_model_names(self, fl_ctx: FLContext) -> List[str]:
+    def get_model_names(self, fl_ctx: FLContext) -> list[str]:
         """Returns the list of model names that should be included from server in cross site validation.
 
         Args:

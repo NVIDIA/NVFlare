@@ -73,7 +73,7 @@ def experimental(reason):
                         stacklevel=2,
                     )
                     warnings.simplefilter("default", Warning)
-                    return super(ExperimentalClass, obj).__new__(obj)
+                    return super().__new__(obj)
 
             return ExperimentalClass
         else:  # function

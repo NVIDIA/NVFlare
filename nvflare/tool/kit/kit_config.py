@@ -152,7 +152,7 @@ def _decode_hocon_key(key: str) -> str:
     return key
 
 
-def _find_raw_entry_key(entries: ConfigTree, kit_id: str) -> Optional[str]:
+def _find_raw_entry_key(entries: ConfigTree, kit_id: str) -> str | None:
     for raw_key in entries.keys():
         if _decode_hocon_key(raw_key) == kit_id:
             return raw_key
@@ -175,7 +175,7 @@ def _normalize_kit_id(kit_id: str) -> str:
     return kit_id
 
 
-def get_startup_kit_entries(config: ConfigTree) -> Dict[str, str]:
+def get_startup_kit_entries(config: ConfigTree) -> dict[str, str]:
     """Return the startup kit registry as an ID-to-path mapping."""
     entries = config.get(STARTUP_KITS_ENTRIES_KEY, None)
     if not isinstance(entries, ConfigTree):
@@ -188,7 +188,7 @@ def get_startup_kit_entries(config: ConfigTree) -> Dict[str, str]:
     return result
 
 
-def get_active_startup_kit_id(config: ConfigTree) -> Optional[str]:
+def get_active_startup_kit_id(config: ConfigTree) -> str | None:
     active = config.get_string(STARTUP_KITS_ACTIVE_KEY, None) if config else None
     return active.strip() if active and active.strip() else None
 
@@ -236,7 +236,7 @@ def _has_required_files(startup_kit_dir: Path, required_files) -> bool:
     return all((startup_kit_dir / rel_path).is_file() for rel_path in required_files)
 
 
-def classify_startup_kit(path: str) -> Tuple[str, str]:
+def classify_startup_kit(path: str) -> tuple[str, str]:
     """Return (kind, normalized participant dir) for a generated startup kit."""
     startup_path = _as_existing_dir(path)
     startup_kit_dir = startup_path.parent if startup_path.name == "startup" else startup_path
@@ -328,7 +328,7 @@ def remove_startup_kit_entry(config: ConfigTree, kit_id: str) -> ConfigTree:
     return clear_active_if(config, {kit_id})
 
 
-def clear_active_if(config: ConfigTree, removed_ids: Set[str]) -> ConfigTree:
+def clear_active_if(config: ConfigTree, removed_ids: set[str]) -> ConfigTree:
     """Clear startup_kits.active when it points to a removed ID."""
     active = get_active_startup_kit_id(config)
     if active in removed_ids:
@@ -347,7 +347,7 @@ def _absolute_path(path: str) -> Path:
     return Path(path).expanduser().absolute()
 
 
-def _path_match_candidates(path: str) -> Tuple[Path, ...]:
+def _path_match_candidates(path: str) -> tuple[Path, ...]:
     """Return real-path and spelling-preserving variants for workspace containment checks."""
     canonical_path = _canonical_path(path)
     absolute_path = _absolute_path(path)
@@ -360,7 +360,7 @@ def _is_relative_to(path: Path, base: Path) -> bool:
     return path == base or path.is_relative_to(base)
 
 
-def remove_entries_under_workspace(config: ConfigTree, workspace: str) -> Tuple[ConfigTree, Set[str]]:
+def remove_entries_under_workspace(config: ConfigTree, workspace: str) -> tuple[ConfigTree, set[str]]:
     """Remove entries whose canonical or lexical paths are under the workspace path."""
     workspace_paths = _path_match_candidates(workspace)
     entries = _get_entries_tree(config)
@@ -382,14 +382,14 @@ def remove_entries_under_workspace(config: ConfigTree, workspace: str) -> Tuple[
     return config, removed
 
 
-def _finding(code: str, severity: str, message: str, hint: str = None) -> Dict[str, str]:
+def _finding(code: str, severity: str, message: str, hint: str = None) -> dict[str, str]:
     result = {"code": code, "severity": severity, "message": message}
     if hint:
         result["hint"] = hint
     return result
 
 
-def _empty_startup_kit_metadata(kind: str = None) -> Dict:
+def _empty_startup_kit_metadata(kind: str = None) -> dict:
     return {
         "identity": None,
         "cert_role": None,
@@ -402,12 +402,12 @@ def _empty_startup_kit_metadata(kind: str = None) -> Dict:
     }
 
 
-def _first_cert_subject_value(cert, oid) -> Optional[str]:
+def _first_cert_subject_value(cert, oid) -> str | None:
     attrs = cert.subject.get_attributes_for_oid(oid)
     return attrs[0].value if attrs else None
 
 
-def _first_cert_issuer_value(cert, oid) -> Optional[str]:
+def _first_cert_issuer_value(cert, oid) -> str | None:
     attrs = cert.issuer.get_attributes_for_oid(oid)
     return attrs[0].value if attrs else None
 
@@ -425,7 +425,7 @@ def _format_utc_timestamp(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _certificate_expiration_metadata(cert, cert_path: str) -> Tuple[Dict, list]:
+def _certificate_expiration_metadata(cert, cert_path: str) -> tuple[dict, list]:
     findings = []
     expires_at = _cert_not_valid_after(cert)
     now = datetime.now(timezone.utc)
@@ -465,7 +465,7 @@ def _certificate_expiration_metadata(cert, cert_path: str) -> Tuple[Dict, list]:
     )
 
 
-def _inspect_admin_cert_metadata(startup_dir: str, metadata: Dict) -> None:
+def _inspect_admin_cert_metadata(startup_dir: str, metadata: dict) -> None:
     cert_path = os.path.join(startup_dir, "client.crt")
     if not os.path.isfile(cert_path):
         metadata["findings"].append(
@@ -515,7 +515,7 @@ def _inspect_admin_cert_metadata(startup_dir: str, metadata: Dict) -> None:
     metadata["findings"].extend(cert_findings)
 
 
-def inspect_startup_kit_metadata(path: str) -> Dict:
+def inspect_startup_kit_metadata(path: str) -> dict:
     """Best-effort metadata inspection for display."""
     metadata = _empty_startup_kit_metadata()
     try:
@@ -544,7 +544,7 @@ def inspect_startup_kit_metadata(path: str) -> Dict:
 
 def get_startup_kit_status(
     path: str,
-) -> Tuple[str, Optional[str], Dict]:
+) -> tuple[str, str | None, dict]:
     """Return (status, normalized_path, metadata) without raising for stale entries."""
     path_obj = Path(path).expanduser() if path else Path("")
     if not path or not path_obj.exists():
@@ -631,7 +631,7 @@ def resolve_startup_kit_dir() -> str:
 
 def resolve_admin_user_and_dir_from_startup_kit(
     startup_kit_dir: str,
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     """Resolve admin username and normalized admin user dir from a startup kit path."""
     admin_user_dir = validate_admin_startup_kit(startup_kit_dir)
     startup_dir = os.path.join(admin_user_dir, "startup")

@@ -54,6 +54,7 @@ Rule: ``liveness_interval < idle_timeout``.  With the defaults (10 s and
 30 s) a healthy sender heartbeats every 10 s, so the receiver's 30 s timer
 is always reset well before it fires.
 """
+
 import os
 import threading
 import time
@@ -141,7 +142,7 @@ class _LogChunkConsumer(BaseChunkConsumer):
         shareable: Shareable,
         stream_ctx: StreamContext,
         fl_ctx: FLContext,
-    ) -> Tuple[bool, Shareable]:
+    ) -> tuple[bool, Shareable]:
         self._last_received_time = time.time()
         self._fl_ctx = fl_ctx
 
@@ -252,7 +253,7 @@ class _LogTailProducer(BaseChunkProducer):
         self,
         stream_ctx: StreamContext,
         fl_ctx: FLContext,
-    ) -> Tuple[Shareable, float]:
+    ) -> tuple[Shareable, float]:
         abort_signal = fl_ctx.get_run_abort_signal()
 
         while True:
@@ -375,7 +376,7 @@ class LogStreamer(StreamerBase):
         channel: str,
         topic: str,
         stream_ctx: StreamContext,
-        targets: List[str],
+        targets: list[str],
         file_name: str,
         fl_ctx: FLContext,
         stop_event: threading.Event = None,

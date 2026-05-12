@@ -53,7 +53,7 @@ class DeviceRunner(SimulationRunner):
         self.num_devices = num_devices
         self.num_workers = num_workers
 
-    def create_simulator(self, fl_ctx: FLContext) -> Optional[Simulator]:
+    def create_simulator(self, fl_ctx: FLContext) -> Simulator | None:
         engine = fl_ctx.get_engine()
         job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
         job_name = job_meta.get(JobMetaKey.JOB_NAME)

@@ -27,12 +27,12 @@ from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
-class SplitNNDataKind(object):
+class SplitNNDataKind:
     ACTIVATIONS = "_splitnn_activations_"
     GRADIENT = "_splitnn_gradient_"
 
 
-class SplitNNConstants(object):
+class SplitNNConstants:
     BATCH_INDICES = "_splitnn_batch_indices_"
     DATA = "_splitnn_data_"
     BATCH_SIZE = "_splitnn_batch_size_"
@@ -86,19 +86,19 @@ class SplitNNController(Controller):
 
         # Check arguments
         if not isinstance(num_rounds, int):
-            raise TypeError("`num_rounds` must be int but got {}".format(type(num_rounds)))
+            raise TypeError(f"`num_rounds` must be int but got {type(num_rounds)}")
         if not isinstance(start_round, int):
-            raise TypeError("`start_round` must be int but got {}".format(type(start_round)))
+            raise TypeError(f"`start_round` must be int but got {type(start_round)}")
         if not isinstance(task_timeout, int):
-            raise TypeError("`train_timeout` must be int but got {}".format(type(task_timeout)))
+            raise TypeError(f"`train_timeout` must be int but got {type(task_timeout)}")
         if not isinstance(persistor_id, str):
-            raise TypeError("`persistor_id` must be a string but got {}".format(type(persistor_id)))
+            raise TypeError(f"`persistor_id` must be a string but got {type(persistor_id)}")
         if not isinstance(shareable_generator_id, str):
-            raise TypeError("`shareable_generator_id` must be a string but got {}".format(type(shareable_generator_id)))
+            raise TypeError(f"`shareable_generator_id` must be a string but got {type(shareable_generator_id)}")
         if not isinstance(init_model_task_name, str):
-            raise TypeError("`init_model_task_name` must be a string but got {}".format(type(init_model_task_name)))
+            raise TypeError(f"`init_model_task_name` must be a string but got {type(init_model_task_name)}")
         if not isinstance(train_task_name, str):
-            raise TypeError("`train_task_name` must be a string but got {}".format(type(train_task_name)))
+            raise TypeError(f"`train_task_name` must be a string but got {type(train_task_name)}")
         if num_rounds < 0:
             raise ValueError("num_rounds must be greater than or equal to 0.")
         if start_round < 0:
@@ -280,7 +280,7 @@ class SplitNNController(Controller):
             collector = fl_ctx.get_prop(InfoCollector.CTX_KEY_STATS_COLLECTOR, None)
             if collector:
                 if not isinstance(collector, GroupInfoCollector):
-                    raise TypeError("collector must be GroupInfoCollector but got {}".format(type(collector)))
+                    raise TypeError(f"collector must be GroupInfoCollector but got {type(collector)}")
 
                 collector.add_info(
                     group_name=self._name,

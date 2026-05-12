@@ -29,13 +29,13 @@ from nvflare.private.fed.utils.fed_utils import get_scope_info
 
 
 class AbortAppProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
+    def get_topics(self) -> list[str]:
         return [TrainingTopic.ABORT]
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
-            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ClientEngineInternalSpec, but got {type(engine)}")
         job_id = req.get_header(RequestHeader.JOB_ID)
         result = engine.abort_app(job_id)
         if not result:
@@ -44,13 +44,13 @@ class AbortAppProcessor(RequestProcessor):
 
 
 class AbortTaskProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
+    def get_topics(self) -> list[str]:
         return [TrainingTopic.ABORT_TASK]
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
-            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ClientEngineInternalSpec, but got {type(engine)}")
         job_id = req.get_header(RequestHeader.JOB_ID)
         result = engine.abort_task(job_id)
         if not result:
@@ -59,13 +59,13 @@ class AbortTaskProcessor(RequestProcessor):
 
 
 class ShutdownClientProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
+    def get_topics(self) -> list[str]:
         return [TrainingTopic.SHUTDOWN]
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
-            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ClientEngineInternalSpec, but got {type(engine)}")
         result = engine.shutdown()
         if not result:
             result = "OK"
@@ -73,13 +73,13 @@ class ShutdownClientProcessor(RequestProcessor):
 
 
 class RestartClientProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
+    def get_topics(self) -> list[str]:
         return [TrainingTopic.RESTART]
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
-            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ClientEngineInternalSpec, but got {type(engine)}")
         result = engine.restart()
         if not result:
             result = "OK"
@@ -87,14 +87,14 @@ class RestartClientProcessor(RequestProcessor):
 
 
 class DeployProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
+    def get_topics(self) -> list[str]:
         return [TrainingTopic.DEPLOY]
 
     def process(self, req: Message, app_ctx) -> Message:
         # Note: this method executes in the Main process of the client
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
-            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ClientEngineInternalSpec, but got {type(engine)}")
         job_id = req.get_header(RequestHeader.JOB_ID)
         job_meta = req.get_header(RequestHeader.JOB_META)
         app_name = req.get_header(RequestHeader.APP_NAME)
@@ -129,13 +129,13 @@ class DeployProcessor(RequestProcessor):
 
 
 class DeleteRunNumberProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
+    def get_topics(self) -> list[str]:
         return [TrainingTopic.DELETE_RUN]
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
-            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ClientEngineInternalSpec, but got {type(engine)}")
         job_id = req.get_header(RequestHeader.JOB_ID)
         result = engine.delete_run(job_id)
         if not result:
@@ -144,13 +144,13 @@ class DeleteRunNumberProcessor(RequestProcessor):
 
 
 class ConfigureJobLogProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
+    def get_topics(self) -> list[str]:
         return [TrainingTopic.CONFIGURE_JOB_LOG]
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
-            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ClientEngineInternalSpec, but got {type(engine)}")
 
         fl_ctx = engine.new_context()
         site_name = fl_ctx.get_identity_name()
@@ -164,20 +164,20 @@ class ConfigureJobLogProcessor(RequestProcessor):
 
 
 class ClientStatusProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
+    def get_topics(self) -> list[str]:
         return [TrainingTopic.CHECK_STATUS]
 
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
-            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ClientEngineInternalSpec, but got {type(engine)}")
         result = engine.get_engine_status()
         result = json.dumps(result)
         return ok_reply(topic=f"reply_{req.topic}", body=result)
 
 
 class ScopeInfoProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
+    def get_topics(self) -> list[str]:
         return [TrainingTopic.GET_SCOPES]
 
     def process(self, req: Message, app_ctx) -> Message:
@@ -194,7 +194,7 @@ class NotifyJobStatusProcessor(RequestProcessor):
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
-            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ClientEngineInternalSpec, but got {type(engine)}")
         job_id = req.get_header(RequestHeader.JOB_ID)
         job_status = req.get_header(RequestHeader.JOB_STATUS)
         engine.notify_job_status(job_id, job_status)

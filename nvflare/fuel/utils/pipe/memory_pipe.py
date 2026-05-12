@@ -60,7 +60,7 @@ class MemoryPipe(Pipe):
         except Full:
             return False
 
-    def receive(self, timeout=None) -> Union[Message, None]:
+    def receive(self, timeout=None) -> Message | None:
         try:
             return self.get_queue.get(block=False, timeout=timeout)
         except Empty:

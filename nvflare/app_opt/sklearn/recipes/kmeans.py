@@ -30,7 +30,7 @@ class _KMeansValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     n_clusters: conint(gt=0)
-    model_path: Optional[str] = None
+    model_path: str | None = None
 
     @field_validator("model_path")
     @classmethod
@@ -133,12 +133,12 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
         min_clients: int,
         num_rounds: int = 5,
         n_clusters: int = 3,
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
         train_script: str,
         train_args: str = "",
         launch_external_process: bool = False,
         command: str = "python3 -u",
-        per_site_config: Optional[dict[str, dict]] = None,
+        per_site_config: dict[str, dict] | None = None,
         key_metric: str = "metrics",  # Matches client's metric key
     ):
         v = _KMeansValidator(n_clusters=n_clusters, model_path=model_path)

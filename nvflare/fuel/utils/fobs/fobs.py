@@ -60,8 +60,8 @@ MSGPACK_TYPES = (type(None), bool, int, float, str, bytes, bytearray, memoryview
 T = TypeVar("T")
 
 log = logging.getLogger(__name__)
-_decomposers: Dict[str, Decomposer] = {}
-_dot_handlers: Dict[int, Decomposer] = {}  # decomposers that handle Datum Object Types (DOT)
+_decomposers: dict[str, Decomposer] = {}
+_dot_handlers: dict[int, Decomposer] = {}  # decomposers that handle Datum Object Types (DOT)
 _decomposers_registered = False
 # If this is enabled, FOBS will try to register generic decomposers automatically
 _enum_auto_registration = True
@@ -71,7 +71,7 @@ _data_auto_registration = True
 _type_name_whitelist: set[str] = set(BUILTIN_TYPES)
 
 
-def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
+def register(decomposer: Decomposer | type[Decomposer]) -> None:
     """Register a decomposer. It does nothing if decomposer is already registered for the type
 
     Args:
@@ -224,7 +224,7 @@ def add_type_name_whitelist(*type_names: str) -> None:
     _type_name_whitelist.update(type_names)
 
 
-def register_data_classes(*data_classes: Type[T]) -> None:
+def register_data_classes(*data_classes: type[T]) -> None:
     """Register generic decomposers for data classes.
 
     Also adds each class to the type-name whitelist so that it can be lazily
@@ -241,7 +241,7 @@ def register_data_classes(*data_classes: Type[T]) -> None:
         _type_name_whitelist.add(get_class_name(data_class))
 
 
-def register_enum_types(*enum_types: Type[Enum]) -> None:
+def register_enum_types(*enum_types: type[Enum]) -> None:
     """Register generic decomposers for enum classes.
 
     Also adds each class to the type-name whitelist so that it can be lazily

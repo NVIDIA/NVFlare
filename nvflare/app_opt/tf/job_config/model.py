@@ -24,9 +24,9 @@ from nvflare.job_config.api import validate_object_for_job
 class TFModel:
     def __init__(
         self,
-        model: Union[tf.keras.Model, Dict[str, Any], None] = None,
-        persistor: Optional[ModelPersistor] = None,
-        initial_ckpt: Optional[str] = None,
+        model: tf.keras.Model | dict[str, Any] | None = None,
+        persistor: ModelPersistor | None = None,
+        initial_ckpt: str | None = None,
     ):
         """TensorFlow model wrapper.
 

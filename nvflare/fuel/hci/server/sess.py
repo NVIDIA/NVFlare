@@ -31,7 +31,7 @@ LIST_SESSIONS_CMD_NAME = InternalCommands.LIST_SESSIONS
 CHECK_SESSION_CMD_NAME = InternalCommands.CHECK_SESSION
 
 
-class Session(object):
+class Session:
     def __init__(self, sess_id, user_name, org, role, origin_fqcn, active_study=DEFAULT_STUDY):
         """Object keeping track of an admin client session with token and time data."""
         self.sess_id = sess_id
@@ -230,7 +230,7 @@ class SessionManager(CommandModule):
             ],
         )
 
-    def handle_list_sessions(self, conn: Connection, args: List[str]):
+    def handle_list_sessions(self, conn: Connection, args: list[str]):
         """Lists sessions and the details in a table.
 
         Registered in the FedAdminServer with ``cmd_reg.register_module(sess_mgr)``.
@@ -252,7 +252,7 @@ class SessionManager(CommandModule):
                 ]
             )
 
-    def handle_check_session(self, conn: Connection, args: List[str]):
+    def handle_check_session(self, conn: Connection, args: list[str]):
         token = conn.get_token()
         if not token:
             conn.append_error("invalid_session")
@@ -264,5 +264,5 @@ class SessionManager(CommandModule):
         else:
             conn.append_error(ReplyKeyword.SESSION_INACTIVE)
             conn.append_string(
-                "admin client session timed out after {} seconds of inactivity - logging out".format(self.idle_timeout)
+                f"admin client session timed out after {self.idle_timeout} seconds of inactivity - logging out"
             )

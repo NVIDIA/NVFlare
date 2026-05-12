@@ -19,7 +19,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.private.fed.utils.identity_utils import get_parent_site_name
 
 
-def determine_parent_name(client_config: dict) -> Optional[str]:
+def determine_parent_name(client_config: dict) -> str | None:
     """Determine the parent site name from the config of a client.
 
     Args:

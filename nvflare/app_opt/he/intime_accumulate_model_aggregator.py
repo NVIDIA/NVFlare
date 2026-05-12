@@ -26,9 +26,9 @@ from nvflare.app_opt.he import decomposers
 class HEInTimeAccumulateWeightedAggregator(InTimeAccumulateWeightedAggregator):
     def __init__(
         self,
-        exclude_vars: Union[str, Dict[str, str], None] = None,
-        aggregation_weights: Union[Dict[str, Any], Dict[str, Dict[str, Any]], None] = None,
-        expected_data_kind: Union[DataKind, Dict[str, DataKind]] = DataKind.WEIGHT_DIFF,
+        exclude_vars: str | dict[str, str] | None = None,
+        aggregation_weights: dict[str, Any] | dict[str, dict[str, Any]] | None = None,
+        expected_data_kind: DataKind | dict[str, DataKind] = DataKind.WEIGHT_DIFF,
         weigh_by_local_iter=False,
     ):
         """In time aggregator for `Shareables` encrypted using homomorphic encryption (HE) with TenSEAL https://github.com/OpenMined/TenSEAL.

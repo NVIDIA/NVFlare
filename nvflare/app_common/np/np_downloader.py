@@ -60,7 +60,7 @@ class ArrayConsumer(ItemConsumer):
                 result[k] = npz_obj[k]
         return result
 
-    def consume_items(self, items: List[Any], result: Any) -> Any:
+    def consume_items(self, items: list[Any], result: Any) -> Any:
         assert isinstance(items, list)
         if result is None:
             result = {}
@@ -110,7 +110,7 @@ def download_arrays(
     abort_signal=None,
     arrays_received_cb=None,
     **cb_kwargs,
-) -> Tuple[str, Optional[dict[str, np.ndarray]]]:
+) -> tuple[str, dict[str, np.ndarray] | None]:
     """Download the referenced arrays from the source.
 
     Args:

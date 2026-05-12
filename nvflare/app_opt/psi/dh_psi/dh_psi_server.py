@@ -23,7 +23,7 @@ class PSIServer:
     Class to represent the psi server in a two-party client, server PSI model.
     """
 
-    def __init__(self, items: List[str], fpr: float = 1e-9):
+    def __init__(self, items: list[str], fpr: float = 1e-9):
         """
         Args:
             items: the items provided by the server

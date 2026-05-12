@@ -33,7 +33,7 @@ class Decomposer(ABC):
     """
 
     @abstractmethod
-    def supported_type(self) -> Type[T]:
+    def supported_type(self) -> type[T]:
         """Returns the type/class supported by this decomposer.
 
         Returns:
@@ -41,7 +41,7 @@ class Decomposer(ABC):
         """
         pass
 
-    def supported_dots(self) -> Optional[List[int]]:
+    def supported_dots(self) -> list[int] | None:
         """Return the Datum Object Types supported by this decomposer.
         If a DOT is returned, this decomposer's process_datum method will be called for any datum whose DOT
         matches this DOT.
@@ -183,7 +183,7 @@ class Internalizer:
 class DictDecomposer(Decomposer):
     """Generic decomposer for subclasses of dict like Shareable"""
 
-    def __init__(self, dict_type: Type[dict]):
+    def __init__(self, dict_type: type[dict]):
         self.dict_type = dict_type
 
     def supported_type(self):
@@ -217,10 +217,10 @@ class DataClassDecomposer(Decomposer):
 
     """
 
-    def __init__(self, data_type: Type[T]):
+    def __init__(self, data_type: type[T]):
         self.data_type = data_type
 
-    def supported_type(self) -> Type[T]:
+    def supported_type(self) -> type[T]:
         return self.data_type
 
     def decompose(self, target: T, manager: DatumManager = None) -> Any:
@@ -251,13 +251,13 @@ class DataClassDecomposer(Decomposer):
 class EnumTypeDecomposer(Decomposer):
     """Generic decomposers for enum types."""
 
-    def __init__(self, data_type: Type[Enum]):
+    def __init__(self, data_type: type[Enum]):
         if not issubclass(data_type, Enum):
             raise TypeError(f"{data_type} is not an enum")
 
         self.data_type = data_type
 
-    def supported_type(self) -> Type[Enum]:
+    def supported_type(self) -> type[Enum]:
         return self.data_type
 
     def decompose(self, target: Enum, manager: DatumManager = None) -> Any:

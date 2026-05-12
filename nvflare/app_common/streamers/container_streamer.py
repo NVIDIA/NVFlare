@@ -47,7 +47,7 @@ class _EntryConsumer(ObjectConsumer):
         shareable: Shareable,
         stream_ctx: StreamContext,
         fl_ctx: FLContext,
-    ) -> Tuple[bool, Shareable]:
+    ) -> tuple[bool, Shareable]:
 
         entry = shareable.get(_KEY_ENTRY)
         try:
@@ -108,7 +108,7 @@ class _EntryProducer(ObjectProducer):
         self,
         stream_ctx: StreamContext,
         fl_ctx: FLContext,
-    ) -> Tuple[Shareable, float]:
+    ) -> tuple[Shareable, float]:
 
         try:
             entry = next(self.iterator)
@@ -126,7 +126,7 @@ class _EntryProducer(ObjectProducer):
 
     def process_replies(
         self,
-        replies: Dict[str, Shareable],
+        replies: dict[str, Shareable],
         stream_ctx: StreamContext,
         fl_ctx: FLContext,
     ) -> Any:
@@ -189,7 +189,7 @@ class ContainerStreamer(StreamerBase):
         channel: str,
         topic: str,
         stream_ctx: StreamContext,
-        targets: List[str],
+        targets: list[str],
         container: Any,
         fl_ctx: FLContext,
         entry_timeout=None,

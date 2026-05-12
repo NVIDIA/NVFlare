@@ -48,7 +48,7 @@ class TPORunner(SimulationRunner):
             raise ValueError(f"component {self.task_processor_id} should be DeviceTaskProcessor but got {type(tpo)}")
         self.tpo = tpo
 
-    def create_simulator(self, fl_ctx: FLContext) -> Optional[Simulator]:
+    def create_simulator(self, fl_ctx: FLContext) -> Simulator | None:
         self.log_info(fl_ctx, "TPO Create Simulator.")
         job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
         job_name = job_meta.get(JobMetaKey.JOB_NAME)

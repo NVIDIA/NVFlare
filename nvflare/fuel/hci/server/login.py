@@ -43,7 +43,7 @@ class LoginModule(CommandModule, CommandFilter):
             sess_mgr: SessionManager
         """
         if not isinstance(sess_mgr, SessionManager):
-            raise TypeError("sess_mgr must be SessionManager but got {}.".format(type(sess_mgr)))
+            raise TypeError(f"sess_mgr must be SessionManager but got {type(sess_mgr)}.")
 
         self.session_mgr = sess_mgr
         self.logger = get_obj_logger(self)
@@ -69,7 +69,7 @@ class LoginModule(CommandModule, CommandFilter):
             ],
         )
 
-    def handle_cert_login(self, conn: Connection, args: List[str]):
+    def handle_cert_login(self, conn: Connection, args: list[str]):
         def _reject(reason: str = "", code: str = ""):
             if code:
                 conn.append_string(f"REJECT: {code}: {reason}" if reason else f"REJECT: {code}")
@@ -156,14 +156,14 @@ class LoginModule(CommandModule, CommandFilter):
         conn.append_string("OK")
         conn.append_token(token)
 
-    def handle_logout(self, conn: Connection, args: List[str]):
+    def handle_logout(self, conn: Connection, args: list[str]):
         if self.session_mgr:
             token = conn.get_prop(ConnProps.TOKEN)
             if token:
                 self.session_mgr.end_session_by_token(token)
         conn.append_string("OK")
 
-    def pre_command(self, conn: Connection, args: List[str]):
+    def pre_command(self, conn: Connection, args: list[str]):
         if args[0] in [InternalCommands.CERT_LOGIN, InternalCommands.CHECK_SESSION]:
             # skip login and check session commands
             return True

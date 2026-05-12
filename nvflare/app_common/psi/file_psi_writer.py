@@ -40,7 +40,7 @@ class FilePSIWriter(PSIWriter):
 
     def save(
         self,
-        intersection: List[str],
+        intersection: list[str],
         overwrite_existing,
         fl_ctx: FLContext,
     ):
@@ -50,7 +50,7 @@ class FilePSIWriter(PSIWriter):
 
         data_exists = os.path.isfile(full_uri)
         if data_exists and not overwrite_existing:
-            raise StorageException("object {} already exists and overwrite_existing is False".format(full_uri))
+            raise StorageException(f"object {full_uri} already exists and overwrite_existing is False")
         self.log_info(fl_ctx, f"trying to save data to {full_uri}")
 
         with open(full_uri, "w") as fp:

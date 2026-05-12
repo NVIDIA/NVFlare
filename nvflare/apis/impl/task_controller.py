@@ -67,7 +67,7 @@ class TaskController(FLComponent, ControllerSpec):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         min_responses: int = 0,
         wait_time_after_min_received: int = 0,
     ):
@@ -77,7 +77,7 @@ class TaskController(FLComponent, ControllerSpec):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         min_responses: int = 0,
         wait_time_after_min_received: int = 0,
         abort_signal: Signal = None,
@@ -165,7 +165,7 @@ class TaskController(FLComponent, ControllerSpec):
                         except Exception as e:
                             self.log_exception(
                                 fl_ctx,
-                                "processing error in task result filter {}; ".format(secure_format_exception(e)),
+                                f"processing error in task result filter {secure_format_exception(e)}; ",
                             )
                             error_reply = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
                             client_task.result = error_reply
@@ -255,7 +255,7 @@ class TaskController(FLComponent, ControllerSpec):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
     ):
@@ -269,7 +269,7 @@ class TaskController(FLComponent, ControllerSpec):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
         abort_signal: Signal = None,

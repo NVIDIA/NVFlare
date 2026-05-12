@@ -36,7 +36,7 @@ class LoadResult(Enum):
     INVALID_CONTENT = "invalidContent"
 
 
-class SecurityContentManager(object):
+class SecurityContentManager:
     def __init__(self, content_folder, signature_filename="signature.json", root_cert="rootCA.pem"):
         """Content manager used by SecurityContentService to load secure content.
 
@@ -49,7 +49,7 @@ class SecurityContentManager(object):
         signature_path = os.path.join(self.content_folder, signature_filename)
         rootCA_cert_path = os.path.join(self.content_folder, root_cert)
         if os.path.exists(signature_path) and os.path.exists(rootCA_cert_path):
-            self.signature = json.load(open(signature_path, "rt"))
+            self.signature = json.load(open(signature_path))
             for k in self.signature:
                 self.signature[k] = b64decode(self.signature[k].encode("utf-8"))
             cert = x509.load_pem_x509_certificate(open(rootCA_cert_path, "rb").read(), default_backend())
@@ -108,7 +108,7 @@ class SecurityContentManager(object):
         return json_data, result
 
 
-class SecurityContentService(object):
+class SecurityContentService:
     """Uses SecurityContentManager to load secure content."""
 
     security_content_manager = None

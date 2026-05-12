@@ -17,7 +17,7 @@
 import argparse
 from typing import Optional
 
-_package_parser: Optional[argparse.ArgumentParser] = None
+_package_parser: argparse.ArgumentParser | None = None
 
 _PACKAGE_EXAMPLES = [
     "nvflare package hospital-1.signed.zip --fingerprint <expected_fingerprint>",

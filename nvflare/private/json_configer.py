@@ -27,7 +27,7 @@ from nvflare.fuel.utils.wfconf import resolve_var_refs
 from nvflare.security.logging import secure_format_exception
 
 
-class ConfigContext(object):
+class ConfigContext:
     def __init__(self):
         """To init thee ConfigContext."""
         self.config_json = None
@@ -37,9 +37,9 @@ class ConfigContext(object):
 class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
     def __init__(
         self,
-        config_file_name: Union[str, List[str]],
-        base_pkgs: List[str],
-        module_names: List[str],
+        config_file_name: str | list[str],
+        base_pkgs: list[str],
+        module_names: list[str],
         exclude_libs=True,
         num_passes=1,
         sys_vars=None,
@@ -85,7 +85,7 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
             try:
                 augment(to_dict=config_data, from_dict=data, from_override_to=False)
             except Exception as e:
-                raise RuntimeError("Error processing config file {}: {}".format(f, secure_format_exception(e)))
+                raise RuntimeError(f"Error processing config file {f}: {secure_format_exception(e)}")
 
         self.config_data = config_data
         self.json_scanner = JsonScanner(config_data, config_files)
@@ -146,7 +146,7 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
         try:
             self._do_configure()
         except Exception as e:
-            print("Error processing config {}: {}".format(self.config_file_names, secure_format_exception(e)))
+            print(f"Error processing config {self.config_file_names}: {secure_format_exception(e)}")
             raise e
 
     def process_element(self, node: Node):
@@ -179,9 +179,9 @@ def get_component_refs(component):
         raise ConfigError('component has no "path", "class_path", or "name"')
 
     if name is None or not isinstance(name, str):
-        raise ConfigError('component "{}" must be a non-null string, got {}'.format(key, type(name).__name__))
+        raise ConfigError(f'component "{key}" must be a non-null string, got {type(name).__name__}')
     if len(name) <= 0:
-        raise ConfigError('component "{}" must not be empty'.format(key))
+        raise ConfigError(f'component "{key}" must not be empty')
 
     parts = name.split("#")
     component[key] = parts[0]

@@ -72,7 +72,7 @@ class AggrUpdater(Updater):
                 update = None
         return update
 
-    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
+    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Shareable | None):
         # use the aggregator to accept the update
         self.log_info(fl_ctx, f"accepting child update by {type(self.aggregator)}")
         with self.aggr_lock:

@@ -24,7 +24,7 @@ _KEY_EVENT_DEPTH = "###event_depth"
 _MAX_EVENT_DEPTH = 20
 
 
-def fire_event_to_components(event: str, components: List[FLComponent], ctx: FLContext):
+def fire_event_to_components(event: str, components: list[FLComponent], ctx: FLContext):
     """Fires the specified event and invokes the list of handlers.
 
     Args:
@@ -43,7 +43,7 @@ def fire_event_to_components(event: str, components: List[FLComponent], ctx: FLC
     depth = ctx.get_prop(_KEY_EVENT_DEPTH, 0)
     if depth > _MAX_EVENT_DEPTH:
         # too many recursive event calls
-        raise RuntimeError("Recursive event calls too deep (>{})".format(_MAX_EVENT_DEPTH))
+        raise RuntimeError(f"Recursive event calls too deep (>{_MAX_EVENT_DEPTH})")
 
     ctx.set_prop(key=_KEY_EVENT_DEPTH, value=depth + 1, private=True, sticky=False)
 

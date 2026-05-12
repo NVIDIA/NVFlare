@@ -22,7 +22,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class ParamsConverter(ABC):
-    def __init__(self, supported_tasks: List[str] = None):
+    def __init__(self, supported_tasks: list[str] = None):
         self.supported_tasks = supported_tasks
         self.logger = get_obj_logger(self)
 

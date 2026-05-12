@@ -47,8 +47,8 @@ class Run:
         self.job_id = job_id
         self._lock = threading.Lock()
         self._stopped = False
-        self._cached_status: Optional[str] = None
-        self._cached_result: Optional[str] = None
+        self._cached_status: str | None = None
+        self._cached_result: str | None = None
         self.logger = get_obj_logger(self)
 
     def get_job_id(self) -> str:
@@ -59,7 +59,7 @@ class Run:
         """
         return self.job_id
 
-    def get_status(self) -> Optional[str]:
+    def get_status(self) -> str | None:
         """Get the status of the run.
 
         Returns:
@@ -74,7 +74,7 @@ class Run:
                 self.logger.warning(f"Failed to get job status: {e}")
                 return None
 
-    def get_result(self, timeout: float = 0.0, cleanup: bool = True) -> Optional[str]:
+    def get_result(self, timeout: float = 0.0, cleanup: bool = True) -> str | None:
         """Get the result workspace of the run.
 
         Waits for job to complete, caches status, then stops execution environment.

@@ -31,7 +31,7 @@ class ClientInfoProcessor(RequestProcessor):
     def process(self, req: Message, app_ctx) -> Message:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
-            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ClientEngineInternalSpec, but got {type(engine)}")
 
         job_id = req.get_header(RequestHeader.JOB_ID)
         if req.topic == InfoCollectorTopic.SHOW_STATS:
@@ -42,7 +42,7 @@ class ClientInfoProcessor(RequestProcessor):
             engine.reset_errors(job_id)
             result = {"status": "OK"}
         else:
-            result = {"error": "invalid topic {}".format(req.topic)}
+            result = {"error": f"invalid topic {req.topic}"}
 
         if not isinstance(result, dict):
             result = {}

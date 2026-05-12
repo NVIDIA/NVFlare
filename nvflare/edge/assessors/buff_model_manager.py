@@ -43,7 +43,7 @@ class BuffModelManager(ModelManager):
     def __init__(
         self,
         num_updates_for_model: int,
-        max_model_history: Optional[int] = None,
+        max_model_history: int | None = None,
         global_lr: float = 1.0,
         staleness_weight: bool = False,
     ):
@@ -75,7 +75,7 @@ class BuffModelManager(ModelManager):
         # updates is a dict of model version to _ModelState
         self.updates[self.current_model_version] = _ModelState(ModelUpdateDXOAggregator())
 
-    def prune_model_versions(self, versions_to_keep: Set[int], fl_ctx: FLContext) -> None:
+    def prune_model_versions(self, versions_to_keep: set[int], fl_ctx: FLContext) -> None:
         # go through all versions and remove the ones:
         # - either not in versions_to_keep
         # - or too old (current_model_version - v >= max_model_history)
@@ -159,7 +159,7 @@ class BuffModelManager(ModelManager):
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_model_version, private=True, sticky=True)
         self.fire_event(AppEventType.GLOBAL_WEIGHTS_UPDATED, fl_ctx)
 
-    def process_updates(self, model_updates: Dict[int, ModelUpdate], fl_ctx: FLContext) -> bool:
+    def process_updates(self, model_updates: dict[int, ModelUpdate], fl_ctx: FLContext) -> bool:
         accepted = True
         for model_version, model_update in model_updates.items():
             if model_version <= 0:

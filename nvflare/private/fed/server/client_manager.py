@@ -161,7 +161,7 @@ class ClientManager:
         for c in clients.values():
             self.name_to_clients[c.name] = c
 
-    def authenticate(self, request, fl_ctx: FLContext) -> Optional[Client]:
+    def authenticate(self, request, fl_ctx: FLContext) -> Client | None:
         client_type = request.get_header(CellMessageHeaderKeys.CLIENT_TYPE)
         client = self.login_client(request, fl_ctx, client_type)
         if not client:
@@ -201,7 +201,7 @@ class ClientManager:
             if client:
                 self.name_to_clients.pop(client.name, None)
                 self.logger.info(
-                    "Client Name:{} \tToken: {} left.  Total clients: {}".format(client.name, token, len(self.clients))
+                    f"Client Name:{client.name} \tToken: {token} left.  Total clients: {len(self.clients)}"
                 )
             else:
                 self.logger.warning("remove_client: unknown token %s", token)
@@ -251,7 +251,7 @@ class ClientManager:
     def _get_id_verifier(self, fl_ctx: FLContext):
         return self.cred_keeper.get_id_verifier(fl_ctx)
 
-    def authenticated_client(self, request, fl_ctx: FLContext, client_type) -> Optional[Client]:
+    def authenticated_client(self, request, fl_ctx: FLContext, client_type) -> Client | None:
         """Use SSL certificate for authenticate the client.
 
         Args:
@@ -397,7 +397,7 @@ class ClientManager:
                     if _client.name == client_name:
                         fl_ctx.set_prop(
                             FLContextKey.COMMUNICATION_ERROR,
-                            "Client ID already registered as a client: {}".format(client_name),
+                            f"Client ID already registered as a client: {client_name}",
                             sticky=False,
                         )
                         self.logger.info(

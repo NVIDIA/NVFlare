@@ -69,6 +69,6 @@ def is_log_streaming_allowed(fl_ctx: FLContext = None) -> bool:
     return bool(data.get(ALLOW_LOG_STREAMING_VAR, True))
 
 
-class Channels(object):
+class Channels:
     LOG_STREAMING_CHANNEL = "log_streaming"
     ERROR_LOG_LOG_TYPE = "ERRORLOG"

@@ -148,7 +148,7 @@ class JobInfo:
 
 
 class SystemInfo:
-    def __init__(self, server_info: ServerInfo, client_info: List[ClientInfo], job_info: List[JobInfo]):
+    def __init__(self, server_info: ServerInfo, client_info: list[ClientInfo], job_info: list[JobInfo]):
         self.server_info = server_info
         self.client_info = client_info
         self.job_info = job_info
@@ -205,13 +205,13 @@ class SessionSpec(ABC):
     def list_jobs(
         self,
         detailed: bool = False,
-        limit: Optional[int] = None,
-        id_prefix: Optional[str] = None,
-        name_prefix: Optional[str] = None,
+        limit: int | None = None,
+        id_prefix: str | None = None,
+        name_prefix: str | None = None,
         reverse: bool = False,
-        submit_token: Optional[str] = None,
+        submit_token: str | None = None,
         **kwargs,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Get the job info from the server
 
         Args:
@@ -247,7 +247,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def list_job_components(self, job_id: str) -> List[str]:
+    def list_job_components(self, job_id: str) -> list[str]:
         """Get the list of additional job components for the specified job.
 
         Args:
@@ -307,8 +307,8 @@ class SessionSpec(ABC):
         self,
         job_id: str,
         target: str = "server",
-        tail_lines: Optional[int] = None,
-        grep_pattern: Optional[str] = None,
+        tail_lines: int | None = None,
+        grep_pattern: str | None = None,
         log_file_name: str = "log.txt",
     ) -> dict:
         """Retrieve logs for the specified job.
@@ -399,7 +399,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def get_client_job_status(self, client_names: List[str] = None) -> List[dict]:
+    def get_client_job_status(self, client_names: list[str] = None) -> list[dict]:
         """Get job status info of specified FL clients
 
         Args:
@@ -416,7 +416,7 @@ class SessionSpec(ABC):
     def restart(
         self,
         target_type: str,
-        client_names: Optional[List[str]] = None,
+        client_names: list[str] | None = None,
         wait: bool = True,
         timeout: float = 30.0,
     ) -> dict:
@@ -440,7 +440,7 @@ class SessionSpec(ABC):
     def shutdown(
         self,
         target_type: TargetType,
-        client_names: Optional[List[str]] = None,
+        client_names: list[str] | None = None,
         wait: bool = True,
         timeout: float = 30.0,
     ) -> dict:
@@ -503,7 +503,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def ls_target(self, target: str, options: Optional[str] = None, path: Optional[str] = None) -> str:
+    def ls_target(self, target: str, options: str | None = None, path: str | None = None) -> str:
         """Run the "ls" command on the specified target and return result
 
         Args:
@@ -517,7 +517,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def cat_target(self, target: str, options: Optional[str] = None, file: Optional[str] = None) -> str:
+    def cat_target(self, target: str, options: str | None = None, file: str | None = None) -> str:
         """Run the "cat" command on the specified target and return result
 
         Args:
@@ -531,7 +531,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def tail_target(self, target: str, options: Optional[str] = None, file: Optional[str] = None) -> str:
+    def tail_target(self, target: str, options: str | None = None, file: str | None = None) -> str:
         """Run the "tail" command on the specified target and return result
 
         Args:
@@ -545,7 +545,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def tail_target_log(self, target: str, options: Optional[str] = None) -> str:
+    def tail_target_log(self, target: str, options: str | None = None) -> str:
         """Run the "tail log.txt" command on the specified target and return result
 
         Args:
@@ -558,7 +558,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def head_target(self, target: str, options: Optional[str] = None, file: Optional[str] = None) -> str:
+    def head_target(self, target: str, options: str | None = None, file: str | None = None) -> str:
         """Run the "head" command on the specified target and return result
 
         Args:
@@ -572,7 +572,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def head_target_log(self, target: str, options: Optional[str] = None) -> str:
+    def head_target_log(self, target: str, options: str | None = None) -> str:
         """Run the "head log.txt" command on the specified target and return result
 
         Args:
@@ -586,7 +586,7 @@ class SessionSpec(ABC):
 
     @abstractmethod
     def grep_target(
-        self, target: str, options: Optional[str] = None, pattern: Optional[str] = None, file: Optional[str] = None
+        self, target: str, options: str | None = None, pattern: str | None = None, file: str | None = None
     ) -> str:
         """Run the "grep" command on the specified target and return result
 
@@ -614,7 +614,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def show_stats(self, job_id: str, target_type: str, targets: Optional[List[str]] = None) -> dict:
+    def show_stats(self, job_id: str, target_type: str, targets: list[str] | None = None) -> dict:
         """Show processing stats of specified job on specified targets
 
         Args:
@@ -629,7 +629,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def show_errors(self, job_id: str, target_type: str, targets: Optional[List[str]] = None) -> dict:
+    def show_errors(self, job_id: str, target_type: str, targets: list[str] | None = None) -> dict:
         """Show processing errors of specified job on specified targets
 
         Args:
@@ -656,7 +656,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def get_connected_client_list(self) -> List[ClientInfo]:
+    def get_connected_client_list(self) -> list[ClientInfo]:
         """Get the list of connected clients
 
         Returns: a list of ClientInfo objects
@@ -665,7 +665,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def report_version(self, target_type: str, targets: Optional[List[str]] = None) -> dict:
+    def report_version(self, target_type: str, targets: list[str] | None = None) -> dict:
         """Report NVFlare version for specified system target(s).
 
         Args:
@@ -716,7 +716,7 @@ class SessionSpec(ABC):
     @abstractmethod
     def monitor_job_and_return_job_meta(
         self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs
-    ) -> (MonitorReturnCode, Optional[dict]):
+    ) -> (MonitorReturnCode, dict | None):
         """Monitor the job progress until one of the conditions occurs:
          - job is done
          - timeout
@@ -760,9 +760,7 @@ class SessionSpec(ABC):
         return rc
 
     @abstractmethod
-    def register_study(
-        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
-    ) -> dict:
+    def register_study(self, study: str, sites: list[str] | None = None, site_orgs: list[str] | None = None) -> dict:
         """Create or merge a study in the server registry.
 
         Exactly one of sites or site_orgs must be provided; passing both raises
@@ -779,9 +777,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def add_study_site(
-        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
-    ) -> dict:
+    def add_study_site(self, study: str, sites: list[str] | None = None, site_orgs: list[str] | None = None) -> dict:
         """Add sites to an existing study.
 
         Exactly one of sites or site_orgs must be provided; passing both raises
@@ -797,9 +793,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def remove_study_site(
-        self, study: str, sites: Optional[List[str]] = None, site_orgs: Optional[List[str]] = None
-    ) -> dict:
+    def remove_study_site(self, study: str, sites: list[str] | None = None, site_orgs: list[str] | None = None) -> dict:
         """Remove sites from an existing study.
 
         Exactly one of sites or site_orgs must be provided; passing both raises

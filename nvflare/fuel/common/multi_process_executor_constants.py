@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-class CommunicationMetaData(object):
+class CommunicationMetaData:
     COMMAND = "command"
     TASK_NAME = "task_name"
     FL_CTX = "fl_ctx"
@@ -31,7 +31,7 @@ class CommunicationMetaData(object):
     CHILD_PASSWORD = "client process secret password"
 
 
-class CommunicateData(object):
+class CommunicateData:
     EXECUTE = "execute"
     HANDLE_EVENT = "handle_event"
     CLOSE = "close"

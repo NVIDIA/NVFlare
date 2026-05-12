@@ -38,9 +38,9 @@ class DhPSIWorkFlow(PSIWorkflow):
         self.abort_signal = None
         self.fl_ctx = None
         self.controller = None
-        self.ordered_sites: List[SiteSize] = []
-        self.forward_processed: Dict[str, int] = {}
-        self.backward_processed: Dict[str, int] = {}
+        self.ordered_sites: list[SiteSize] = []
+        self.forward_processed: dict[str, int] = {}
+        self.backward_processed: dict[str, int] = {}
 
     def initialize(self, fl_ctx: FLContext, **kwargs):
         self.fl_ctx = fl_ctx
@@ -87,7 +87,7 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         self.log_pass_time_taken()
 
-    def check_processed_sites(self, last_site: SiteSize, processed_sites: Dict[str, int]):
+    def check_processed_sites(self, last_site: SiteSize, processed_sites: dict[str, int]):
         valid = all(value >= last_site.size for value in processed_sites.values())
         if not valid:
             raise RuntimeError(
@@ -120,7 +120,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         pass
 
     @staticmethod
-    def get_ordered_sites(results: Dict[str, DXO]):
+    def get_ordered_sites(results: dict[str, DXO]):
         def compare_fn(e):
             return e.size
 
@@ -139,7 +139,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         return site_sizes
 
     @measure_time
-    def forward_pass(self, ordered_sites: List[SiteSize], processed: Dict[str, int]) -> SiteSize:
+    def forward_pass(self, ordered_sites: list[SiteSize], processed: dict[str, int]) -> SiteSize:
         if self.abort_signal.triggered:
             return ordered_sites[0]
 
@@ -149,7 +149,7 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         return self.parallel_forward_pass(ordered_sites, processed)
 
-    def pairwise_setup(self, ordered_sites: List[SiteSize]):
+    def pairwise_setup(self, ordered_sites: list[SiteSize]):
         total_sites = len(ordered_sites)
         n = int(total_sites / 2)
         task_inputs = {}
@@ -167,7 +167,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         )
         return {site_name: results[site_name].data[PSIConst.SETUP_MSG] for site_name in results}
 
-    def pairwise_requests(self, ordered_sites: List[SiteSize], setup_msgs: Dict[str, str]):
+    def pairwise_requests(self, ordered_sites: list[SiteSize], setup_msgs: dict[str, str]):
         total_sites = len(ordered_sites)
         n = int(total_sites / 2)
         task_inputs = {}
@@ -185,7 +185,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         )
         return {site_name: results[site_name].data[PSIConst.REQUEST_MSG] for site_name in results}
 
-    def pairwise_responses(self, ordered_sites: List[SiteSize], request_msgs: Dict[str, str]):
+    def pairwise_responses(self, ordered_sites: list[SiteSize], request_msgs: dict[str, str]):
         total_sites = len(ordered_sites)
         n = int(total_sites / 2)
         task_inputs = {}
@@ -203,7 +203,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         )
         return {site_name: results[site_name].data[PSIConst.RESPONSE_MSG] for site_name in results}
 
-    def pairwise_intersect(self, ordered_sites: List[SiteSize], response_msg: Dict[str, str]):
+    def pairwise_intersect(self, ordered_sites: list[SiteSize], response_msg: dict[str, str]):
         total_sites = len(ordered_sites)
         n = int(total_sites / 2)
         task_inputs = {}
@@ -265,15 +265,15 @@ class DhPSIWorkFlow(PSIWorkflow):
         # todo: to all other sites, this avoid the backward pass of the intersection calculation
 
         s = intersect_site
-        other_site_sizes = set([site.size for site in other_sites])
-        setup_msgs: Dict[str, str] = self.prepare_setup_messages(s, other_site_sizes)
+        other_site_sizes = {site.size for site in other_sites}
+        setup_msgs: dict[str, str] = self.prepare_setup_messages(s, other_site_sizes)
 
         site_setup_msgs = {site.name: setup_msgs[str(site.size)] for site in other_sites}
-        request_msgs: Dict[str, str] = self.create_requests(site_setup_msgs)
-        response_msgs: Dict[str, str] = self.process_requests(s, request_msgs)
+        request_msgs: dict[str, str] = self.create_requests(site_setup_msgs)
+        response_msgs: dict[str, str] = self.process_requests(s, request_msgs)
         return self.calculate_intersections(response_msgs)
 
-    def calculate_intersections(self, response_msg) -> Dict[str, int]:
+    def calculate_intersections(self, response_msg) -> dict[str, int]:
         task_inputs = {}
         for client_name in response_msg:
             inputs = Shareable()
@@ -289,7 +289,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         self.log_info(self.fl_ctx, f"received intersections : {intersects} ")
         return intersects
 
-    def process_requests(self, s: SiteSize, request_msgs: Dict[str, str]) -> Dict[str, str]:
+    def process_requests(self, s: SiteSize, request_msgs: dict[str, str]) -> dict[str, str]:
         task_inputs = Shareable()
         task_inputs[PSIConst.TASK_KEY] = PSIConst.TASK_RESPONSE
         task_inputs[PSIConst.REQUEST_MSG_SET] = request_msgs
@@ -306,7 +306,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         response_msgs = dxo.data[PSIConst.RESPONSE_MSG]
         return response_msgs
 
-    def create_requests(self, site_setup_msgs) -> Dict[str, str]:
+    def create_requests(self, site_setup_msgs) -> dict[str, str]:
         task_inputs = {}
         for client_name in site_setup_msgs:
             inputs = Shareable()
@@ -354,7 +354,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         else:
             self.ordered_sites = self.get_ordered_sites(results)
 
-    def prepare_setup_messages(self, s: SiteSize, other_site_sizes: Set[int]) -> Dict[str, str]:
+    def prepare_setup_messages(self, s: SiteSize, other_site_sizes: set[int]) -> dict[str, str]:
         inputs = Shareable()
         inputs[PSIConst.TASK_KEY] = PSIConst.TASK_SETUP
         inputs[PSIConst.ITEMS_SIZE_SET] = other_site_sizes

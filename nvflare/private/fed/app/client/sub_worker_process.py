@@ -204,7 +204,7 @@ class SubWorkerExecutor(Runner):
         if not isinstance(self.executor, Executor):
             make_reply(
                 ReturnCode.INVALID_REQUEST,
-                "invalid executor {}: expect Executor but got {}".format(executor_id, type(self.executor)),
+                f"invalid executor {executor_id}: expect Executor but got {type(self.executor)}",
                 None,
             )
 

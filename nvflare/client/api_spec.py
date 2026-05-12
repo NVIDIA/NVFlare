@@ -54,7 +54,7 @@ class APISpec(ABC):
             self._memory_logger.info(f"Memory cleanup performed at round {self._round_count}")
 
     @abstractmethod
-    def init(self, rank: Optional[str] = None):
+    def init(self, rank: str | None = None):
         """Initializes NVFlare Client API environment.
 
         Args:
@@ -74,7 +74,7 @@ class APISpec(ABC):
         pass
 
     @abstractmethod
-    def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
+    def receive(self, timeout: float | None = None) -> FLModel | None:
         """Receives model from NVFlare side.
 
         Returns:
@@ -107,7 +107,7 @@ class APISpec(ABC):
         pass
 
     @abstractmethod
-    def system_info(self) -> Dict:
+    def system_info(self) -> dict:
         """Gets NVFlare system information.
 
         System information will be available after a valid FLModel is received.
@@ -129,7 +129,7 @@ class APISpec(ABC):
         pass
 
     @abstractmethod
-    def get_config(self) -> Dict:
+    def get_config(self) -> dict:
         """Gets the ClientConfig dictionary.
 
         Returns:

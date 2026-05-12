@@ -221,7 +221,7 @@ class XGBClientAdaptor(AppAdaptor, ABC):
             key=Constant.PARAM_KEY_DISABLE_VERSION_CHECK, value=self.disable_version_check, private=True, sticky=True
         )
 
-    def _send_request(self, op: str, req: Shareable) -> Tuple[bytes, Shareable]:
+    def _send_request(self, op: str, req: Shareable) -> tuple[bytes, Shareable]:
         """Send XGB operation request to the FL server via FLARE message.
 
         Args:
@@ -264,7 +264,7 @@ class XGBClientAdaptor(AppAdaptor, ABC):
         else:
             raise RuntimeError(f"invalid reply for op {op}: expect Shareable but got {type(reply)}")
 
-    def _send_all_gather(self, rank: int, seq: int, send_buf: bytes) -> Tuple[bytes, Shareable]:
+    def _send_all_gather(self, rank: int, seq: int, send_buf: bytes) -> tuple[bytes, Shareable]:
         """This method is called by a concrete client adaptor to send Allgather operation to the server.
 
         Args:
@@ -281,7 +281,7 @@ class XGBClientAdaptor(AppAdaptor, ABC):
         req[Constant.PARAM_KEY_SEND_BUF] = send_buf
         return self._send_request(Constant.OP_ALL_GATHER, req)
 
-    def _send_all_gather_v(self, rank: int, seq: int, send_buf: bytes, headers=None) -> Tuple[bytes, Shareable]:
+    def _send_all_gather_v(self, rank: int, seq: int, send_buf: bytes, headers=None) -> tuple[bytes, Shareable]:
         req = Shareable()
         self._add_headers(req, headers)
         req[Constant.PARAM_KEY_RANK] = rank
@@ -289,7 +289,7 @@ class XGBClientAdaptor(AppAdaptor, ABC):
         req[Constant.PARAM_KEY_SEND_BUF] = send_buf
         return self._send_request(Constant.OP_ALL_GATHER_V, req)
 
-    def _do_all_gather_v(self, rank: int, seq: int, send_buf: bytes) -> Tuple[bytes, Shareable]:
+    def _do_all_gather_v(self, rank: int, seq: int, send_buf: bytes) -> tuple[bytes, Shareable]:
         """This method is called by a concrete client adaptor to send AllgatherV operation to the server.
 
         Args:
@@ -342,7 +342,7 @@ class XGBClientAdaptor(AppAdaptor, ABC):
         req[Constant.PARAM_KEY_SEND_BUF] = send_buf
         return self._send_request(Constant.OP_ALL_REDUCE, req)
 
-    def _send_broadcast(self, rank: int, seq: int, root: int, send_buf: bytes, headers=None) -> Tuple[bytes, Shareable]:
+    def _send_broadcast(self, rank: int, seq: int, root: int, send_buf: bytes, headers=None) -> tuple[bytes, Shareable]:
         req = Shareable()
         self._add_headers(req, headers)
         req[Constant.PARAM_KEY_RANK] = rank

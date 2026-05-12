@@ -99,7 +99,7 @@ class _Packager(Packager):
         os.mkdir(script_dir)
         lcp_map_file_name = os.path.join(script_dir, LCP_MAP_BASENAME)
 
-        with open(lcp_map_file_name, "wt") as f:
+        with open(lcp_map_file_name, "w") as f:
             json.dump(self.lcp_map, f, indent=4)
 
         # copy CA cert to demo dir
@@ -138,7 +138,7 @@ class _Packager(Packager):
             },
         }
 
-        with open(os.path.join(script_dir, SIMULATION_CONFIG), "wt") as f:
+        with open(os.path.join(script_dir, SIMULATION_CONFIG), "w") as f:
             json.dump(sample_sim_config, f, indent=4)
 
 

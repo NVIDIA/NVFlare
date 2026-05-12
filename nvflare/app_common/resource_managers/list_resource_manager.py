@@ -30,7 +30,7 @@ class ListResourceManager(AutoCleanResourceManager):
 
     """
 
-    def __init__(self, resources: Dict[str, List], expiration_period: int = 30):
+    def __init__(self, resources: dict[str, list], expiration_period: int = 30):
         """Constructor
 
         Args:

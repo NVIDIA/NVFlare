@@ -62,14 +62,14 @@ class BaseFedJob(UnifiedBaseFedJob):
         initial_model: nn.Module = None,
         name: str = "fed_job",
         min_clients: int = 1,
-        mandatory_clients: Optional[List[str]] = None,
+        mandatory_clients: list[str] | None = None,
         key_metric: str = "accuracy",
-        validation_json_generator: Optional[ValidationJsonGenerator] = None,
-        model_selector: Optional[FLComponent] = None,
-        convert_to_fed_event: Optional[ConvertToFedEvent] = None,
-        analytics_receiver: Optional[AnalyticsReceiver] = None,
-        model_persistor: Optional[ModelPersistor] = None,
-        model_locator: Optional[ModelLocator] = None,
+        validation_json_generator: ValidationJsonGenerator | None = None,
+        model_selector: FLComponent | None = None,
+        convert_to_fed_event: ConvertToFedEvent | None = None,
+        analytics_receiver: AnalyticsReceiver | None = None,
+        model_persistor: ModelPersistor | None = None,
+        model_locator: ModelLocator | None = None,
     ):
         # Call the unified BaseFedJob
         super().__init__(
@@ -94,8 +94,8 @@ class BaseFedJob(UnifiedBaseFedJob):
     def _setup_pytorch_model(
         self,
         initial_model: nn.Module,
-        persistor: Optional[ModelPersistor] = None,
-        locator: Optional[ModelLocator] = None,
+        persistor: ModelPersistor | None = None,
+        locator: ModelLocator | None = None,
     ):
         """Setup PyTorch model with persistor and locator."""
         from nvflare.app_opt.pt.job_config.model import PTModel

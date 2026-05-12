@@ -215,7 +215,7 @@ class FeatureElectionController(Controller):
 
     def _broadcast_and_gather(
         self, task_data: Shareable, abort_signal: Signal, fl_ctx: FLContext, timeout: int = 0
-    ) -> Dict[str, Shareable]:
+    ) -> dict[str, Shareable]:
         """
         Helper to send tasks and collect results safely.
         Uses result_received_cb to properly collect results.
@@ -410,7 +410,7 @@ class FeatureElectionController(Controller):
     # HELPER METHODS
     # ==============================================================================
 
-    def _aggregate_weights(self, results: Dict[str, Shareable]):
+    def _aggregate_weights(self, results: dict[str, Shareable]):
         """FedAvg-style weight aggregation"""
         total_samples = 0
         weighted_weights = {}
@@ -456,7 +456,7 @@ class FeatureElectionController(Controller):
         else:
             logger.warning("Weight aggregation skipped: no clients returned valid parameters; global weights unchanged")
 
-    def _extract_client_data(self, results: Dict[str, Shareable]) -> Dict[str, Dict]:
+    def _extract_client_data(self, results: dict[str, Shareable]) -> dict[str, dict]:
         """Extract feature selection data from client results"""
         client_data = {}
         for key, contrib in results.items():
@@ -489,7 +489,7 @@ class FeatureElectionController(Controller):
                 logger.debug(f"Extracted {np.sum(contrib['selected_features'])} features from {key}")
         return client_data
 
-    def aggregate_selections(self, client_selections: Dict[str, Dict]) -> np.ndarray:
+    def aggregate_selections(self, client_selections: dict[str, dict]) -> np.ndarray:
         """
         Aggregate feature selections from all clients.
 

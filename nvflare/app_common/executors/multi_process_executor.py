@@ -76,7 +76,7 @@ class MultiProcessExecutor(Executor):
         self._build_components(components)
 
         if not isinstance(num_of_processes, int):
-            raise TypeError("{} must be an instance of int but got {}".format(num_of_processes, type(num_of_processes)))
+            raise TypeError(f"{num_of_processes} must be an instance of int but got {type(num_of_processes)}")
         if num_of_processes < 1:
             raise ValueError(f"{num_of_processes} must >= 1.")
         self.num_of_processes = num_of_processes
@@ -153,9 +153,7 @@ class MultiProcessExecutor(Executor):
     def initialize(self, fl_ctx: FLContext):
         self.executor = self.components.get(self.executor_id, None)
         if not isinstance(self.executor, Executor):
-            raise ValueError(
-                "invalid executor {}: expect Executor but got {}".format(self.executor_id, type(self.executor))
-            )
+            raise ValueError(f"invalid executor {self.executor_id}: expect Executor but got {type(self.executor)}")
         self._initialize_multi_process(fl_ctx)
 
     def _initialize_multi_process(self, fl_ctx: FLContext):
@@ -274,7 +272,7 @@ class MultiProcessExecutor(Executor):
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if not self.executor:
-            raise RuntimeError("There's no executor for task {}".format(task_name))
+            raise RuntimeError(f"There's no executor for task {task_name}")
 
         self.execute_complete = False
 

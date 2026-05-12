@@ -87,7 +87,7 @@ class Forest:
         self.nodes = {}  # name => Node
 
 
-def build_forest(objs: List[Any], get_name_f, get_fqn_f, **kwargs) -> Forest:
+def build_forest(objs: list[Any], get_name_f, get_fqn_f, **kwargs) -> Forest:
     """Builds a Forest from a list of objects.
     Each object must have a unique "name" and unique "fqn".
     This function builds trees based on the FQNs of the objects.

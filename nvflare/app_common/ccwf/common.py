@@ -200,7 +200,7 @@ def make_task_name(prefix: str, base_name: str) -> str:
 
 
 class NumberMetricComparator(MetricComparator):
-    def compare(self, a, b) -> Union[int, float]:
+    def compare(self, a, b) -> int | float:
         if not isinstance(a, (int, float)):
             raise ValueError(f"metric value must be a number but got {type(a)}")
 

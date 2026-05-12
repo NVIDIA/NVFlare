@@ -27,7 +27,7 @@ class WFCommSpec(ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         min_responses: int = 0,
         wait_time_after_min_received: int = 0,
     ):
@@ -76,7 +76,7 @@ class WFCommSpec(ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         min_responses: int = 0,
         wait_time_after_min_received: int = 0,
         abort_signal: Signal = None,
@@ -103,7 +103,7 @@ class WFCommSpec(ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
     ):
         """Schedule a broadcast task that never ends until timeout or explicitly cancelled.
 
@@ -124,7 +124,7 @@ class WFCommSpec(ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
     ):
@@ -156,7 +156,7 @@ class WFCommSpec(ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
         abort_signal: Signal = None,
@@ -182,7 +182,7 @@ class WFCommSpec(ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
         task_result_timeout: int = 0,
@@ -208,7 +208,7 @@ class WFCommSpec(ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order=SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
         task_result_timeout: int = 0,
@@ -230,7 +230,7 @@ class WFCommSpec(ABC):
         self,
         task: Task,
         completion_status: TaskCompletionStatus = TaskCompletionStatus.CANCELLED,
-        fl_ctx: Optional[FLContext] = None,
+        fl_ctx: FLContext | None = None,
     ):
         """Cancels the specified task.
 
@@ -247,7 +247,7 @@ class WFCommSpec(ABC):
         """
         raise NotImplementedError
 
-    def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
+    def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: FLContext | None = None):
         """Cancels all standing tasks.
 
         Args:
@@ -260,7 +260,7 @@ class WFCommSpec(ABC):
         """Checks if tasks should be exited."""
         raise NotImplementedError
 
-    def process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
+    def process_task_request(self, client: Client, fl_ctx: FLContext) -> tuple[str, str, Shareable]:
         """Called by the Engine when a task request is received from a client.
 
         Args:

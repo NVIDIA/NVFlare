@@ -67,6 +67,6 @@ class ClientRequestProcessors:
         from .admin import RequestProcessor
 
         if not isinstance(request_processor, RequestProcessor):
-            raise TypeError("request_processor must be RequestProcessor, but got {}".format(type(request_processor)))
+            raise TypeError(f"request_processor must be RequestProcessor, but got {type(request_processor)}")
 
         ClientRequestProcessors.request_processors.append(request_processor)

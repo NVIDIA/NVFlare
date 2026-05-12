@@ -36,7 +36,7 @@ class SimulationRunner(Widget):
         self.register_event_handler(EventType.END_RUN, self._sr_end_run)
 
     @abstractmethod
-    def create_simulator(self, fl_ctx: FLContext) -> Optional[Simulator]:
+    def create_simulator(self, fl_ctx: FLContext) -> Simulator | None:
         pass
 
     def _sr_start_run(self, event_type: str, fl_ctx: FLContext):

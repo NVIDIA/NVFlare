@@ -35,7 +35,7 @@ class CollectAndAssembleAggregator(Aggregator):
     def __init__(self, assembler_id: str):
         super().__init__()
         self.assembler_id = assembler_id
-        self.assembler: Optional[Assembler] = None
+        self.assembler: Assembler | None = None
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         if not self.assembler:
@@ -62,7 +62,7 @@ class CollectAndAssembleAggregator(Aggregator):
             accepted = False
         return accepted
 
-    def _get_contribution(self, shareable: Shareable, fl_ctx: FLContext) -> Optional[DXO]:
+    def _get_contribution(self, shareable: Shareable, fl_ctx: FLContext) -> DXO | None:
         contributor_name = shareable.get_peer_prop(key=ReservedKey.IDENTITY_NAME, default="?")
         try:
             dxo = from_shareable(shareable)
@@ -81,7 +81,7 @@ class CollectAndAssembleAggregator(Aggregator):
         if dxo.data_kind != expected_data_kind:
             self.log_error(
                 fl_ctx,
-                "expected {} but got {}".format(expected_data_kind, dxo.data_kind),
+                f"expected {expected_data_kind} but got {dxo.data_kind}",
             )
             return None
 

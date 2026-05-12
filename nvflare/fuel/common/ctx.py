@@ -15,7 +15,7 @@
 import threading
 
 
-class SimpleContext(object):
+class SimpleContext:
     def __init__(self):
         """A simple context containing a props dictionary of key value pairs and convenience methods."""
         self.props = {}

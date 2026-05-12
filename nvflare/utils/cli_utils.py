@@ -69,14 +69,14 @@ def get_hidden_nvflare_dir() -> pathlib.Path:
     return hidden_nvflare_dir
 
 
-def load_config(config_file_path) -> Optional[ConfigTree]:
+def load_config(config_file_path) -> ConfigTree | None:
     if os.path.isfile(config_file_path):
         return CF.parse_file(config_file_path)
     else:
         return None
 
 
-def find_startup_kit_config_keys(nvflare_config: ConfigTree) -> List[str]:
+def find_startup_kit_config_keys(nvflare_config: ConfigTree) -> list[str]:
     """Return old startup-kit config keys that should no longer be persisted."""
     if not nvflare_config:
         return []
@@ -104,14 +104,14 @@ def remove_startup_kit_config_keys(nvflare_config: ConfigTree) -> ConfigTree:
     return nvflare_config
 
 
-def load_hidden_config_state() -> Tuple[str, Optional[ConfigTree], bool]:
+def load_hidden_config_state() -> tuple[str, ConfigTree | None, bool]:
     hidden_dir = get_or_create_hidden_nvflare_dir()
     hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(hidden_dir))
     nvflare_config = load_config(hidden_nvflare_config_file)
     return hidden_nvflare_config_file, nvflare_config, False
 
 
-def backup_hidden_config_file(hidden_nvflare_config_file: str) -> Optional[str]:
+def backup_hidden_config_file(hidden_nvflare_config_file: str) -> str | None:
     if not os.path.exists(hidden_nvflare_config_file):
         return None
 
@@ -131,7 +131,7 @@ def load_hidden_config() -> ConfigTree:
     return nvflare_config
 
 
-def create_poc_workspace_config(nvflare_config: ConfigTree, poc_workspace_dir: Optional[str] = None) -> ConfigTree:
+def create_poc_workspace_config(nvflare_config: ConfigTree, poc_workspace_dir: str | None = None) -> ConfigTree:
     """
     Args:
         poc_workspace_dir: specified poc_workspace_dir
@@ -156,7 +156,7 @@ def create_poc_workspace_config(nvflare_config: ConfigTree, poc_workspace_dir: O
     return conf.with_fallback(nvflare_config)
 
 
-def create_job_template_config(nvflare_config: ConfigTree, job_templates_dir: Optional[str] = None) -> ConfigTree:
+def create_job_template_config(nvflare_config: ConfigTree, job_templates_dir: str | None = None) -> ConfigTree:
     """
     Args:
         job_templates_dir: specified job template directory
@@ -185,7 +185,7 @@ def check_dir(dir_path: str):
         raise ValueError(f"directory {dir_path} doesn't exists")
 
 
-def find_job_templates_location(job_templates_dir: Optional[str] = None):
+def find_job_templates_location(job_templates_dir: str | None = None):
     def check_job_templates_dir(job_temp_dir: str):
         if job_temp_dir:
             if not os.path.isdir(job_temp_dir):
@@ -245,7 +245,7 @@ def hocon_to_string(target_fmt: ConfigFormat, dst_config: ConfigTree):
         return omega_conf.to_str()
 
 
-def save_configs(app_configs: Dict[str, Tuple], keep_origin_format: bool = True):
+def save_configs(app_configs: dict[str, tuple], keep_origin_format: bool = True):
     for app_name, (dst_config, dst_path) in app_configs.items():
         save_config(dst_config, dst_path, keep_origin_format)
 
@@ -303,14 +303,14 @@ def print_hidden_config(dst_path: str, dst_config: ConfigTree):
     print(config_str)
 
 
-def find_in_list(arr: List, item) -> bool:
+def find_in_list(arr: list, item) -> bool:
     if arr is None:
         return False
 
     return any(a == item for a in arr)
 
 
-def append_if_not_in_list(arr: List, item) -> List:
+def append_if_not_in_list(arr: list, item) -> list:
     if item is None:
         return arr
 

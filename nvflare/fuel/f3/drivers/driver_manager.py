@@ -31,7 +31,7 @@ class DriverManager:
         self.drivers = {}
         self.class_cache = set()
 
-    def register(self, driver_class: Type[Driver]):
+    def register(self, driver_class: type[Driver]):
         """Register a driver with Driver Manager
 
         Args:
@@ -52,7 +52,7 @@ class DriverManager:
                 self.drivers[key] = driver_class
                 log.debug(f"Driver {driver_class.__name__} is registered for {scheme}")
 
-    def search_folder(self, folder: str, package: Optional[str]):
+    def search_folder(self, folder: str, package: str | None):
         """Search the folder recursively and register all drivers
 
         Args:
@@ -95,7 +95,7 @@ class DriverManager:
                     except Exception as e:
                         log.warning(f"Driver ignored. Error loading {module}: {e}")
 
-    def find_driver_class(self, scheme_or_url: str) -> Optional[Type[Driver]]:
+    def find_driver_class(self, scheme_or_url: str) -> type[Driver] | None:
         """Find the driver class based on scheme or URL
 
         Args:

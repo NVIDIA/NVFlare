@@ -87,7 +87,7 @@ class BaseServer(ABC):
         min_num_clients=2,
         max_num_clients=10,
         heart_beat_timeout=600,
-        handlers: Optional[List[FLComponent]] = None,
+        handlers: list[FLComponent] | None = None,
         shutdown_period=30.0,
     ):
         """Base server that provides the clients management and server deployment."""
@@ -118,7 +118,7 @@ class BaseServer(ABC):
 
         self.logger = get_obj_logger(self)
 
-    def get_all_clients(self) -> Dict[str, Client]:
+    def get_all_clients(self) -> dict[str, Client]:
         """Get the list of registered clients.
 
         Returns:
@@ -272,7 +272,7 @@ class FederatedServer(BaseServer):
         max_num_clients=10,
         cmd_modules=None,
         heart_beat_timeout=600,
-        handlers: Optional[List[FLComponent]] = None,
+        handlers: list[FLComponent] | None = None,
         args=None,
         secure_train=False,
         snapshot_persistor=None,
@@ -337,7 +337,7 @@ class FederatedServer(BaseServer):
         # Keyed by job_id -> set of client tokens.  Used by _sync_client_jobs() to require
         # a prior positive heartbeat before classifying a client's missing job as "dead".
         # Entries are cleaned up as soon as the job is no longer in run_processes.
-        self._job_reported_clients: Dict[str, set] = {}
+        self._job_reported_clients: dict[str, set] = {}
         self._job_reported_clients_lock = threading.Lock()
 
         # these are used when the server sends a message to itself.

@@ -126,7 +126,7 @@ class CheckServerAvailable(CheckRule):
             nvf_config = NVFlareConfig.ADMIN
 
         fed_config_file = os.path.join(startup, nvf_config)
-        with open(fed_config_file, "r") as f:
+        with open(fed_config_file) as f:
             fed_config = json.load(f)
 
         # Admin has a different config structure - handle separately

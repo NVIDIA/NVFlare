@@ -27,7 +27,7 @@ from nvflare.app_common.app_constant import ModelFormat
 from nvflare.app_opt.pt.utils import inspect_model_params
 
 
-class PTModelPersistenceFormatManager(object):
+class PTModelPersistenceFormatManager:
 
     PERSISTENCE_KEY_MODEL = "model"
     PERSISTENCE_KEY_TRAIN_CONF = "train_conf"
@@ -47,7 +47,7 @@ class PTModelPersistenceFormatManager(object):
             TypeError: when data is not a dictionary
         """
         if not isinstance(data, dict):
-            raise TypeError("data must be a dict but got {}".format(type(data)))
+            raise TypeError(f"data must be a dict but got {type(data)}")
 
         self.var_dict = None
         self.meta = None

@@ -93,7 +93,7 @@ class FedOpt(FedAvg):
 
         super().run()
 
-    def _to_tf_params_list(self, params: Dict, negate: bool = False):
+    def _to_tf_params_list(self, params: dict, negate: bool = False):
         """
         Convert FLModel params to a list of tf.Variables.
         Optionally negate the values of weights, needed

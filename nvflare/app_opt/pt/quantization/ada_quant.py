@@ -34,7 +34,7 @@ class AdaQuantizer:
         self.weight = weight
         self.compression = compression
 
-    def quantize(self, values_tensor: torch.Tensor) -> tuple[Union[torch.Tensor, np.ndarray], dict]:
+    def quantize(self, values_tensor: torch.Tensor) -> tuple[torch.Tensor | np.ndarray, dict]:
         old_values_tensor = values_tensor
         values_tensor = values_tensor.to(dtype=torch.float64).view(-1)
         offset = self.get_offset(values_tensor)
@@ -97,7 +97,7 @@ class AdaQuantizer:
 
     def get_number_of_quantization_levels(
         self, element_size: int, values_tensor: torch.Tensor
-    ) -> Optional[tuple[float, int, Any]]:
+    ) -> tuple[float, int, Any] | None:
         norm = values_tensor.max().item()
         element_bits = element_size * 8
         quantization_level = math.ceil(max(1, math.sqrt(norm * element_bits * math.log(4) / self.weight)))

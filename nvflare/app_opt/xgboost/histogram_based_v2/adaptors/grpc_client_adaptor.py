@@ -110,7 +110,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
         self._training_stopped = True
         self.stop_runner()
 
-    def _is_stopped(self) -> Tuple[bool, int]:
+    def _is_stopped(self) -> tuple[bool, int]:
         runner_stopped, ec = self.is_runner_stopped()
         if runner_stopped:
             return runner_stopped, ec
@@ -158,7 +158,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
     def Allgather(self, request: pb2.AllgatherRequest, context):
         try:
             if self._check_duplicate_seq("allgather", request.rank, request.sequence_number):
-                return pb2.AllgatherReply(receive_buffer=bytes())
+                return pb2.AllgatherReply(receive_buffer=b"")
 
             rcv_buf, _ = self._send_all_gather(
                 rank=request.rank,
@@ -178,7 +178,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
     def AllgatherV(self, request: pb2.AllgatherVRequest, context):
         try:
             if self._check_duplicate_seq("allgatherv", request.rank, request.sequence_number):
-                return pb2.AllgatherVReply(receive_buffer=bytes())
+                return pb2.AllgatherVReply(receive_buffer=b"")
 
             rcv_buf = self._do_all_gather_v(
                 rank=request.rank,
@@ -198,7 +198,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
     def Allreduce(self, request: pb2.AllreduceRequest, context):
         try:
             if self._check_duplicate_seq("allreduce", request.rank, request.sequence_number):
-                return pb2.AllreduceReply(receive_buffer=bytes())
+                return pb2.AllreduceReply(receive_buffer=b"")
 
             rcv_buf, _ = self._send_all_reduce(
                 rank=request.rank,
@@ -220,7 +220,7 @@ class GrpcClientAdaptor(XGBClientAdaptor, FederatedServicer):
     def Broadcast(self, request: pb2.BroadcastRequest, context):
         try:
             if self._check_duplicate_seq("broadcast", request.rank, request.sequence_number):
-                return pb2.BroadcastReply(receive_buffer=bytes())
+                return pb2.BroadcastReply(receive_buffer=b"")
 
             rcv_buf = self._do_broadcast(
                 rank=request.rank,

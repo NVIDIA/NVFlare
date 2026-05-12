@@ -36,7 +36,7 @@ class _ConverterContext:
     def get_prop(self, key: str, default=None):
         return self._props.get(key, default)
 
-    def set_prop(self, key: str, value: Any, private: Optional[bool] = None, sticky: Optional[bool] = None):
+    def set_prop(self, key: str, value: Any, private: bool | None = None, sticky: bool | None = None):
         _ = private
         _ = sticky
         self._props[key] = value
@@ -46,8 +46,8 @@ class FlareAgentWithFLModel(FlareAgent):
     def __init__(
         self,
         *args,
-        from_nvflare_converter: Optional[ParamsConverter] = None,
-        to_nvflare_converter: Optional[ParamsConverter] = None,
+        from_nvflare_converter: ParamsConverter | None = None,
+        to_nvflare_converter: ParamsConverter | None = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)

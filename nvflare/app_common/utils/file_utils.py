@@ -30,7 +30,7 @@ def get_file_format(input_path: str) -> str:
     return get_ext_format(ext)
 
 
-def get_file_ext(input_path: str) -> Optional[str]:
+def get_file_ext(input_path: str) -> str | None:
     ext = pathlib.Path(input_path).suffix
     if ext.startswith("."):
         return ext[1:]

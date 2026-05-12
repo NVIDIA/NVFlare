@@ -155,11 +155,11 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
         return result
 
-    def shutdown(self, conn: Connection, args: List[str]):
+    def shutdown(self, conn: Connection, args: list[str]):
         target_type = args[1]
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngine):
-            raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ServerEngine but got {type(engine)}")
 
         for _, job in engine.job_runner.running_jobs.items():
             if not job.run_aborted:
@@ -202,10 +202,10 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         conn.append_success("")
 
     # Remove Clients
-    def remove_client(self, conn: Connection, args: List[str]):
+    def remove_client(self, conn: Connection, args: list[str]):
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ServerEngineInternalSpec but got {type(engine)}")
         clients = conn.get_prop(self.TARGET_CLIENT_TOKENS)
         err = engine.remove_clients(clients)
         if err:
@@ -213,16 +213,16 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             return
         conn.append_success("")
 
-    def _client_names_from_args(self, conn: Connection, args: List[str]) -> List[str]:
+    def _client_names_from_args(self, conn: Connection, args: list[str]) -> list[str]:
         if len(args) < 2:
             conn.append_error("missing client name", meta=make_meta(MetaStatusValue.SYNTAX_ERROR))
             return []
         return args[1:]
 
-    def disable_client(self, conn: Connection, args: List[str]):
+    def disable_client(self, conn: Connection, args: list[str]):
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ServerEngineInternalSpec but got {type(engine)}")
         client_names = self._client_names_from_args(conn, args)
         if not client_names:
             return
@@ -233,10 +233,10 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             return
         conn.append_dict(result, meta=make_meta(MetaStatusValue.OK))
 
-    def enable_client(self, conn: Connection, args: List[str]):
+    def enable_client(self, conn: Connection, args: list[str]):
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ServerEngineInternalSpec but got {type(engine)}")
         client_names = self._client_names_from_args(conn, args)
         if not client_names:
             return
@@ -251,16 +251,16 @@ class TrainingCommandModule(CommandModule, CommandUtil):
     def _restart_clients(self, conn) -> str:
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ServerEngineInternalSpec but got {type(engine)}")
         message = new_message(conn, topic=TrainingTopic.RESTART, body="", require_authz=True)
         replies = self.send_request_to_clients(conn, message)
         # engine.remove_clients(clients)
         return self._process_replies_to_string(conn, replies)
 
-    def restart(self, conn: Connection, args: List[str]):
+    def restart(self, conn: Connection, args: list[str]):
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngine):
-            raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ServerEngine but got {type(engine)}")
 
         if engine.job_runner.running_jobs:
             msg = "There are still jobs running. Please let them finish or abort_job before restart."
@@ -303,11 +303,11 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         conn.append_success("")
 
     # Check status
-    def check_status(self, conn: Connection, args: List[str]):
+    def check_status(self, conn: Connection, args: list[str]):
         # TODO:: Need more discussion on what status to be shown
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ServerEngineInternalSpec but got {type(engine)}")
         dst = args[1]
 
         if dst in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
@@ -328,7 +328,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 table.add_row([job_id, app_name], meta={MetaKey.APP_NAME: app_name, MetaKey.JOB_ID: job_id})
 
             clients = engine.get_clients()
-            conn.append_string("Registered clients: {} ".format(len(clients)))
+            conn.append_string(f"Registered clients: {len(clients)} ")
 
             if clients:
                 table = conn.append_table(
@@ -337,7 +337,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
                 for c in clients:
                     if not isinstance(c, Client):
-                        raise TypeError("c must be Client but got {}".format(type(c)))
+                        raise TypeError(f"c must be Client but got {type(c)}")
                     fqcn = c.get_fqcn()
                     fqsn = c.get_fqsn()
                     leaf = c.get_is_leaf()
@@ -411,7 +411,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                     meta={MetaKey.CLIENT_NAME: client_name, MetaKey.STATUS: MetaStatusValue.NO_REPLY},
                 )
 
-    def _add_scope_info(self, table, site_name, scope_names: List[str], default_scope: str):
+    def _add_scope_info(self, table, site_name, scope_names: list[str], default_scope: str):
         if not scope_names:
             names = ""
         else:
@@ -446,10 +446,10 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             else:
                 self._add_scope_info(table, client_name, [], "no reply")
 
-    def show_scopes(self, conn: Connection, args: List[str]):
+    def show_scopes(self, conn: Connection, args: list[str]):
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ServerEngineInternalSpec but got {type(engine)}")
 
         dst = args[1]
         table = conn.append_table(["site", "scopes", "default"])

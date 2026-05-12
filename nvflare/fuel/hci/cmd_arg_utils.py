@@ -20,7 +20,7 @@ import shlex
 from typing import List
 
 
-def _split_unquoted_args(line: str) -> List[str]:
+def _split_unquoted_args(line: str) -> list[str]:
     line = re.sub(" +", " ", line)
     return line.split(" ")
 
@@ -29,7 +29,7 @@ def _has_quotes(line: str) -> bool:
     return '"' in line or "'" in line
 
 
-def _split_quoted_args(line: str) -> List[str]:
+def _split_quoted_args(line: str) -> list[str]:
     """Split HCI command args for quoted input, honoring shell quotes.
 
     Fall back to the unquoted whitespace splitter for malformed quoting so we
@@ -42,13 +42,13 @@ def _split_quoted_args(line: str) -> List[str]:
         return _split_unquoted_args(line)
 
 
-def split_to_args(line: str) -> List[str]:
+def split_to_args(line: str) -> list[str]:
     if _has_quotes(line):
         return _split_quoted_args(line)
     return _split_unquoted_args(line)
 
 
-def parse_command_line(line: str) -> (str, List[str], str):
+def parse_command_line(line: str) -> (str, list[str], str):
     """Parse the command line and extract command args and command props, if any
 
     Args:
@@ -67,7 +67,7 @@ def parse_command_line(line: str) -> (str, List[str], str):
     return line, _split_unquoted_args(line), props
 
 
-def join_args(segs: List[str]) -> str:
+def join_args(segs: list[str]) -> str:
     result = ""
     sep = ""
     for a in segs:
@@ -111,7 +111,7 @@ class ArgValidator(argparse.ArgumentParser):
         return usage_output
 
 
-def process_targets_into_str(targets: List[str]) -> str:
+def process_targets_into_str(targets: list[str]) -> str:
     if not isinstance(targets, list):
         raise SyntaxError("targets is not a list.")
     if not all(isinstance(t, str) for t in targets):
@@ -149,7 +149,7 @@ def validate_path_string(path: str) -> str:
     if not isinstance(path, str):
         raise SyntaxError("path is not str.")
     if not re.match("^[A-Za-z0-9-._/]*$", path):
-        raise SyntaxError("unsupported characters in path {}".format(path))
+        raise SyntaxError(f"unsupported characters in path {path}")
     if os.path.isabs(path):
         raise SyntaxError("absolute path is not allowed")
     paths = path.split(os.path.sep)

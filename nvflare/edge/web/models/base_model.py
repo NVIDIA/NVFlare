@@ -48,7 +48,7 @@ class BaseModel(dict):
     def to_query_string(self) -> str:
         return urlencode(self, doseq=True)
 
-    def get_device_id(self) -> Optional[str]:
+    def get_device_id(self) -> str | None:
         device_info = self.get("device_info")
         if not device_info:
             return None
@@ -56,7 +56,7 @@ class BaseModel(dict):
         return device_info.get("device_id")
 
     @staticmethod
-    def check_keys(d: dict, keys: Union[str, List[str]]) -> str:
+    def check_keys(d: dict, keys: str | list[str]) -> str:
         if isinstance(keys, str):
             keys = [keys]
         for key in keys:

@@ -67,19 +67,19 @@ class ConnManager(ConnMonitor):
         self.local_endpoint = local_endpoint
 
         # Active connectors
-        self.connectors: Dict[str, ConnectorInfo] = {}
+        self.connectors: dict[str, ConnectorInfo] = {}
 
         # A dict of SFM connections, key is connection name
-        self.sfm_conns: Dict[str, SfmConnection] = {}
+        self.sfm_conns: dict[str, SfmConnection] = {}
 
         # A dict of SfmEndpoint for finding endpoint by name
-        self.sfm_endpoints: Dict[str, SfmEndpoint] = {}
+        self.sfm_endpoints: dict[str, SfmEndpoint] = {}
 
         # A list of Endpoint monitors
-        self.monitors: List[EndpointMonitor] = []
+        self.monitors: list[EndpointMonitor] = []
 
         # App/receiver mapping
-        self.receivers: Dict[int, MessageReceiver] = {}
+        self.receivers: dict[int, MessageReceiver] = {}
 
         self.started = False
         self.stopped = False
@@ -157,7 +157,7 @@ class ConnManager(ConnMonitor):
         self.conn_mgr_executor.shutdown(True)
         self.frame_mgr_executor.shutdown(True)
 
-    def find_endpoint(self, name: str) -> Optional[Endpoint]:
+    def find_endpoint(self, name: str) -> Endpoint | None:
 
         sfm_endpoint = self.sfm_endpoints.get(name)
         if not sfm_endpoint:
@@ -179,7 +179,7 @@ class ConnManager(ConnMonitor):
         self.sfm_endpoints.pop(name)
         log.debug(f"Endpoint {name} is removed")
 
-    def get_connections(self, name: str) -> Optional[List[SfmConnection]]:
+    def get_connections(self, name: str) -> list[SfmConnection] | None:
 
         sfm_endpoint = self.sfm_endpoints.get(name)
         if not sfm_endpoint:
@@ -188,7 +188,7 @@ class ConnManager(ConnMonitor):
 
         return sfm_endpoint.connections
 
-    def send_message(self, endpoint: Endpoint, app_id: int, headers: Optional[dict], payload: BytesAlike):
+    def send_message(self, endpoint: Endpoint, app_id: int, headers: dict | None, payload: BytesAlike):
         """Send a message to endpoint for app
 
         The message is asynchronous, no response is expected.
@@ -472,7 +472,7 @@ class ConnManager(ConnMonitor):
             if old_state != state:
                 self.notify_monitors(sfm_endpoint.endpoint)
 
-    def send_loopback_message(self, endpoint: Endpoint, app_id: int, headers: Optional[dict], payload: BytesAlike):
+    def send_loopback_message(self, endpoint: Endpoint, app_id: int, headers: dict | None, payload: BytesAlike):
         """Send message to itself"""
 
         if self.stopped:
@@ -484,7 +484,7 @@ class ConnManager(ConnMonitor):
         except RuntimeError as e:
             log.debug(f"Loopback submit skipped: {e}")
 
-    def loopback_message_task(self, endpoint: Endpoint, app_id: int, headers: Optional[dict], payload: BytesAlike):
+    def loopback_message_task(self, endpoint: Endpoint, app_id: int, headers: dict | None, payload: BytesAlike):
 
         receiver = self.receivers.get(app_id)
         if not receiver:

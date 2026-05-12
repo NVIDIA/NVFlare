@@ -31,7 +31,7 @@ class _CyclicValidator(BaseModel):
 
     name: str
     model: Any
-    initial_ckpt: Optional[str] = None
+    initial_ckpt: str | None = None
     num_rounds: int
     min_clients: conint(ge=2)
     train_script: str
@@ -102,8 +102,8 @@ class CyclicRecipe(Recipe):
         self,
         *,
         name: str = "cyclic",
-        model: Union[Any, Dict[str, Any], None] = None,
-        initial_ckpt: Optional[str] = None,
+        model: Any | dict[str, Any] | None = None,
+        initial_ckpt: str | None = None,
         num_rounds: int = 2,
         min_clients: int = 2,
         train_script: str,

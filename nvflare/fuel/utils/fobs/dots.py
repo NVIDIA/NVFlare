@@ -16,6 +16,7 @@
 All DOTs (Datum Object Type) must be unique.
 This file is used as the global DOT registry to ensure that all DOTs are unique.
 """
+
 NUMPY_BYTES = 1
 NUMPY_FILE = 2
 NUMPY_DOWNLOAD = 3

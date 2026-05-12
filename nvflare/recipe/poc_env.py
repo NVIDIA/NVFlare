@@ -47,11 +47,11 @@ DEFAULT_ADMIN_USER = "admin@nvidia.com"
 
 # Internal — not part of the public API
 class _PocEnvValidator(BaseModel):
-    num_clients: Optional[conint(gt=0)] = None
-    clients: Optional[list[str]] = None
-    gpu_ids: Optional[list[int]] = None
+    num_clients: conint(gt=0) | None = None
+    clients: list[str] | None = None
+    gpu_ids: list[int] | None = None
     use_he: bool = False
-    docker_image: Optional[str] = None
+    docker_image: str | None = None
     project_conf_path: str = ""
     username: str = DEFAULT_ADMIN_USER
     study: str = DEFAULT_STUDY
@@ -90,15 +90,15 @@ class PocEnv(ExecEnv):
     def __init__(
         self,
         *,
-        num_clients: Optional[int] = 2,
-        clients: Optional[list[str]] = None,
-        gpu_ids: Optional[list[int]] = None,
+        num_clients: int | None = 2,
+        clients: list[str] | None = None,
+        gpu_ids: list[int] | None = None,
         use_he: bool = False,
-        docker_image: Optional[str] = None,
+        docker_image: str | None = None,
         project_conf_path: str = "",
         username: str = DEFAULT_ADMIN_USER,
         study: str = DEFAULT_STUDY,
-        extra: Optional[dict] = None,
+        extra: dict | None = None,
     ):
         """Initialize POC execution environment.
 
@@ -259,7 +259,7 @@ class PocEnv(ExecEnv):
         finally:
             self._session_manager = None  # Clear stale session manager
 
-    def get_job_status(self, job_id: str) -> Optional[str]:
+    def get_job_status(self, job_id: str) -> str | None:
         """Get the status of a job.
 
         Args:
@@ -278,7 +278,7 @@ class PocEnv(ExecEnv):
         """
         self._get_session_manager().abort_job(job_id)
 
-    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
+    def get_job_result(self, job_id: str, timeout: float = 0.0) -> str | None:
         """Get the result workspace of a job.
 
         Args:

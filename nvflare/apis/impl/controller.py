@@ -56,7 +56,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         min_responses: int = 1,
         wait_time_after_min_received: int = 0,
     ):
@@ -66,23 +66,23 @@ class Controller(FLComponent, ControllerSpec, ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         min_responses: int = 1,
         wait_time_after_min_received: int = 0,
-        abort_signal: Optional[Signal] = None,
+        abort_signal: Signal | None = None,
     ):
         return self.communicator.broadcast_and_wait(
             task, fl_ctx, targets, min_responses, wait_time_after_min_received, abort_signal
         )
 
-    def broadcast_forever(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None):
+    def broadcast_forever(self, task: Task, fl_ctx: FLContext, targets: list[Client] | list[str] | None = None):
         return self.communicator.broadcast_forever(task, fl_ctx, targets)
 
     def send(
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
     ):
@@ -92,7 +92,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
         abort_signal: Signal = None,
@@ -103,7 +103,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
         task_result_timeout: int = 0,
@@ -117,12 +117,12 @@ class Controller(FLComponent, ControllerSpec, ABC):
         self,
         task: Task,
         fl_ctx: FLContext,
-        targets: Union[List[Client], List[str], None] = None,
+        targets: list[Client] | list[str] | None = None,
         send_order=SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
         task_result_timeout: int = 0,
         dynamic_targets: bool = True,
-        abort_signal: Optional[Signal] = None,
+        abort_signal: Signal | None = None,
     ):
         return self.communicator.relay_and_wait(
             task,
@@ -143,11 +143,11 @@ class Controller(FLComponent, ControllerSpec, ABC):
             return None
 
     def cancel_task(
-        self, task: Task, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None
+        self, task: Task, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: FLContext | None = None
     ):
         self.communicator.cancel_task(task, completion_status, fl_ctx)
 
-    def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
+    def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: FLContext | None = None):
         try:
             self.communicator.cancel_all_tasks(completion_status, fl_ctx)
         except Exception as e:

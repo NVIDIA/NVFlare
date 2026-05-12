@@ -33,7 +33,7 @@ def _update_log_filenames(config, new_log_root: str = "/applog"):
 
 
 def _change_log_dir(log_config_path: str):
-    with open(log_config_path, "r") as f:
+    with open(log_config_path) as f:
         config = json.load(f)
 
     updated_config = _update_log_filenames(config)

@@ -21,7 +21,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
 
 
-class PTDittoHelper(object):
+class PTDittoHelper:
     def __init__(
         self, criterion, model, optimizer, device, app_dir: str, ditto_lambda: float = 0.1, model_epochs: int = 1
     ):

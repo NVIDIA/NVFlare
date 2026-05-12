@@ -96,7 +96,7 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def update_object(self, uri: str, data: Union[bytes, str, List[str]], component_name: str) -> str:
+    def update_object(self, uri: str, data: bytes | str | list[str], component_name: str) -> str:
         """Update the object
 
         Args:
@@ -129,7 +129,7 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def list_objects(self, path: str, without_tag=None) -> List[str]:
+    def list_objects(self, path: str, without_tag=None) -> list[str]:
         """Lists all objects in the specified path.
 
         Args:
@@ -160,7 +160,7 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def list_components_of_object(self, uri: str) -> List[str]:
+    def list_components_of_object(self, uri: str) -> list[str]:
         """Gets all components of the specified object.
 
         Args:
@@ -194,7 +194,7 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def get_data_for_download(self, uri: str, component_name: str = DATA, download_file: Optional[str] = None):
+    def get_data_for_download(self, uri: str, component_name: str = DATA, download_file: str | None = None):
         """Gets data of the specified object.
 
         Args:
@@ -209,7 +209,7 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def get_detail(self, uri: str) -> Tuple[dict, bytes]:
+    def get_detail(self, uri: str) -> tuple[dict, bytes]:
         """Gets both data and meta of the specified object.
 
         Args:

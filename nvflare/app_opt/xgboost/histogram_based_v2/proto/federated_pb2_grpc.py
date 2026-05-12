@@ -22,7 +22,7 @@ import grpc
 
 import nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2 as federated__pb2
 
-class FederatedStub(object):
+class FederatedStub:
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -53,7 +53,7 @@ class FederatedStub(object):
                 )
 
 
-class FederatedServicer(object):
+class FederatedServicer:
     """Missing associated documentation comment in .proto file."""
 
     def Allgather(self, request, context):
@@ -110,7 +110,7 @@ def add_FederatedServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class Federated(object):
+class Federated:
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod

@@ -128,7 +128,7 @@ class OnPremPackager(Packager):
         return tar_file_path
 
     def _add_startup_kit_to_cc_config(self, cc_config_path: str, startup_kit_path: str):
-        with open(cc_config_path, "r") as f:
+        with open(cc_config_path) as f:
             data = yaml.safe_load(f)
 
             user_config = data.get("user_config", {})

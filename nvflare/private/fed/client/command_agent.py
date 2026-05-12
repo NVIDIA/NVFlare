@@ -24,7 +24,7 @@ from nvflare.private.defs import CellChannel, new_cell_message
 from .admin_commands import AdminCommands
 
 
-class CommandAgent(object):
+class CommandAgent:
     def __init__(self, federated_client) -> None:
         """To init the CommandAgent.
 
@@ -56,7 +56,7 @@ class CommandAgent(object):
 
     def execute_command(self, request: CellMessage) -> CellMessage:
 
-        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        assert isinstance(request, CellMessage), f"request must be CellMessage but got {type(request)}"
 
         command_name = request.get_header(MessageHeaderKey.TOPIC)
         data = request.payload
@@ -75,7 +75,7 @@ class CommandAgent(object):
 
     def aux_communication(self, request: CellMessage) -> CellMessage:
 
-        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        assert isinstance(request, CellMessage), f"request must be CellMessage but got {type(request)}"
         shareable = request.payload
 
         with self.engine.new_context() as fl_ctx:

@@ -28,7 +28,7 @@ context_dict = {}
 default_context = None
 
 
-def get_context(ctx: Optional[APIContext] = None) -> APIContext:
+def get_context(ctx: APIContext | None = None) -> APIContext:
     """Gets an APIContext.
 
     Args:
@@ -49,7 +49,7 @@ def get_context(ctx: Optional[APIContext] = None) -> APIContext:
         raise RuntimeError("APIContext is None. Did you call flare.init() before using the Client API?")
 
 
-def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = None) -> APIContext:
+def init(rank: str | int | None = None, config_file: str | None = None) -> APIContext:
     """Initializes NVFlare Client API environment.
 
     Args:
@@ -86,7 +86,7 @@ def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = No
         return local_ctx
 
 
-def receive(timeout: Optional[float] = None, ctx: Optional[APIContext] = None) -> Optional[FLModel]:
+def receive(timeout: float | None = None, ctx: APIContext | None = None) -> FLModel | None:
     """Receives model from NVFlare side.
 
     Returns:
@@ -96,7 +96,7 @@ def receive(timeout: Optional[float] = None, ctx: Optional[APIContext] = None) -
     return local_ctx.api.receive(timeout)
 
 
-def send(model: FLModel, clear_cache: bool = True, ctx: Optional[APIContext] = None) -> None:
+def send(model: FLModel, clear_cache: bool = True, ctx: APIContext | None = None) -> None:
     """Sends the model to NVFlare side.
 
     Args:
@@ -109,7 +109,7 @@ def send(model: FLModel, clear_cache: bool = True, ctx: Optional[APIContext] = N
     return local_ctx.api.send(model, clear_cache)
 
 
-def system_info(ctx: Optional[APIContext] = None) -> Dict:
+def system_info(ctx: APIContext | None = None) -> dict:
     """Gets NVFlare system information.
 
     System information will be available after a valid FLModel is received.
@@ -126,7 +126,7 @@ def system_info(ctx: Optional[APIContext] = None) -> Dict:
     return local_ctx.api.system_info()
 
 
-def get_config(ctx: Optional[APIContext] = None) -> Dict:
+def get_config(ctx: APIContext | None = None) -> dict:
     """Gets the ClientConfig dictionary.
 
     Returns:
@@ -136,7 +136,7 @@ def get_config(ctx: Optional[APIContext] = None) -> Dict:
     return local_ctx.api.get_config()
 
 
-def get_job_id(ctx: Optional[APIContext] = None) -> str:
+def get_job_id(ctx: APIContext | None = None) -> str:
     """Gets job id.
 
     Returns:
@@ -146,7 +146,7 @@ def get_job_id(ctx: Optional[APIContext] = None) -> str:
     return local_ctx.api.get_job_id()
 
 
-def get_site_name(ctx: Optional[APIContext] = None) -> str:
+def get_site_name(ctx: APIContext | None = None) -> str:
     """Gets site name.
 
     Returns:
@@ -156,7 +156,7 @@ def get_site_name(ctx: Optional[APIContext] = None) -> str:
     return local_ctx.api.get_site_name()
 
 
-def get_task_name(ctx: Optional[APIContext] = None) -> str:
+def get_task_name(ctx: APIContext | None = None) -> str:
     """Gets task name.
 
     Returns:
@@ -166,7 +166,7 @@ def get_task_name(ctx: Optional[APIContext] = None) -> str:
     return local_ctx.api.get_task_name()
 
 
-def is_running(ctx: Optional[APIContext] = None) -> bool:
+def is_running(ctx: APIContext | None = None) -> bool:
     """Returns whether the NVFlare system is up and running.
 
     Returns:
@@ -176,7 +176,7 @@ def is_running(ctx: Optional[APIContext] = None) -> bool:
     return local_ctx.api.is_running()
 
 
-def is_train(ctx: Optional[APIContext] = None) -> bool:
+def is_train(ctx: APIContext | None = None) -> bool:
     """Returns whether the current task is a training task.
 
     Returns:
@@ -186,7 +186,7 @@ def is_train(ctx: Optional[APIContext] = None) -> bool:
     return local_ctx.api.is_train()
 
 
-def is_evaluate(ctx: Optional[APIContext] = None) -> bool:
+def is_evaluate(ctx: APIContext | None = None) -> bool:
     """Returns whether the current task is an evaluate task.
 
     Returns:
@@ -196,7 +196,7 @@ def is_evaluate(ctx: Optional[APIContext] = None) -> bool:
     return local_ctx.api.is_evaluate()
 
 
-def is_submit_model(ctx: Optional[APIContext] = None) -> bool:
+def is_submit_model(ctx: APIContext | None = None) -> bool:
     """Returns whether the current task is a submit_model task.
 
     Returns:
@@ -206,7 +206,7 @@ def is_submit_model(ctx: Optional[APIContext] = None) -> bool:
     return local_ctx.api.is_submit_model()
 
 
-def log(key: str, value: Any, data_type: AnalyticsDataType, ctx: Optional[APIContext] = None, **kwargs):
+def log(key: str, value: Any, data_type: AnalyticsDataType, ctx: APIContext | None = None, **kwargs):
     """Logs a key value pair.
 
     We suggest users use the high-level APIs in nvflare/client/tracking.py
@@ -224,13 +224,13 @@ def log(key: str, value: Any, data_type: AnalyticsDataType, ctx: Optional[APICon
     return local_ctx.api.log(key, value, data_type, **kwargs)
 
 
-def clear(ctx: Optional[APIContext] = None):
+def clear(ctx: APIContext | None = None):
     """Clears the cache."""
     local_ctx = get_context(ctx)
     return local_ctx.api.clear()
 
 
-def shutdown(ctx: Optional[APIContext] = None):
+def shutdown(ctx: APIContext | None = None):
     """Releases all threads and resources used by the API and stops operation."""
     local_ctx = get_context(ctx)
     return local_ctx.api.shutdown()

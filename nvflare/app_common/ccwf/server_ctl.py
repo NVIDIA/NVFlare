@@ -69,7 +69,7 @@ class ServerSideController(Controller):
         starting_client: str = "",
         starting_client_policy: str = DefaultValuePolicy.ANY,
         participating_clients=None,
-        result_clients: List[str] = None,
+        result_clients: list[str] = None,
         result_clients_policy: str = DefaultValuePolicy.ALL,
         max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,

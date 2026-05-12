@@ -29,7 +29,7 @@ from nvflare.fuel.utils.validation_utils import (
 from nvflare.security.logging import secure_format_exception
 
 
-class PipeHandler(object):
+class PipeHandler:
     """Monitors a pipe for messages from the peer.
 
     PipeHandler reads the pipe periodically and puts received data
@@ -231,7 +231,7 @@ class PipeHandler(object):
         finally:
             pipe.release_send_cache(msg)
 
-    def _is_stopped_or_aborted(self, abort_signal: Optional[Signal] = None):
+    def _is_stopped_or_aborted(self, abort_signal: Signal | None = None):
         if self.asked_to_stop:
             return True
 
@@ -416,7 +416,7 @@ class PipeHandler(object):
             time.sleep(self._check_interval)
         self.heartbeat_sender = None
 
-    def get_next(self) -> Optional[Message]:
+    def get_next(self) -> Message | None:
         """Gets the next message from the message queue.
 
         Returns:

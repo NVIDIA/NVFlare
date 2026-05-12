@@ -38,9 +38,9 @@ class PSI(InitFinalComponent, ABC):
         """
         super().__init__()
         self.psi_writer_id = psi_writer_id
-        self.psi_writer: Optional[PSIWriter] = None
+        self.psi_writer: PSIWriter | None = None
         self.fl_ctx = None
-        self.intersection: Optional[List[str]] = None
+        self.intersection: list[str] | None = None
 
     def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
@@ -50,7 +50,7 @@ class PSI(InitFinalComponent, ABC):
         self.psi_writer = psi_writer
 
     @abstractmethod
-    def load_items(self) -> List[str]:
+    def load_items(self) -> list[str]:
         """This method needs to be implemented to provide the list of items to PSI algorithm in order to
         calculate intersection.
 
@@ -59,14 +59,14 @@ class PSI(InitFinalComponent, ABC):
         """
         pass
 
-    def get_intersection(self) -> Optional[List[str]]:
+    def get_intersection(self) -> list[str] | None:
         """This method will return the calculated intersection once PSI job is completed and successful.
 
         Returns: Intersection result or None
         """
         return self.intersection
 
-    def save(self, intersection: List[str]):
+    def save(self, intersection: list[str]):
         self.intersection = intersection
         if self.psi_writer:
             self.psi_writer.save(intersection=intersection, overwrite_existing=True, fl_ctx=self.fl_ctx)

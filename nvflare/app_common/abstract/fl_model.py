@@ -42,14 +42,14 @@ class MetaKey(FLMetaKey):
 class FLModel:
     def __init__(
         self,
-        params_type: Union[None, str, ParamsType] = None,
+        params_type: None | str | ParamsType = None,
         params: Any = None,
         optimizer_params: Any = None,
-        metrics: Optional[Dict] = None,
-        start_round: Optional[int] = 0,
-        current_round: Optional[int] = None,
-        total_rounds: Optional[int] = None,
-        meta: Optional[Dict] = None,
+        metrics: dict | None = None,
+        start_round: int | None = 0,
+        current_round: int | None = None,
+        total_rounds: int | None = None,
+        meta: dict | None = None,
     ):
         """FLModel is a standardize data structure for NVFlare to communicate with external systems.
 
@@ -101,7 +101,7 @@ class FLModel:
         self.meta = meta
         self._summary: dict = {}
 
-    def _add_to_summary(self, kvs: Dict):
+    def _add_to_summary(self, kvs: dict):
         for key, value in kvs.items():
             if value:
                 if isinstance(value, dict):

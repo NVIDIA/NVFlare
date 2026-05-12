@@ -18,7 +18,7 @@ from datetime import datetime
 from . import db
 
 
-class CommonMixin(object):
+class CommonMixin:
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(512), default="")
     description = db.Column(db.String(512), default="")

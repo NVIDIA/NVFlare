@@ -22,17 +22,17 @@ from nvflare.security.logging import secure_format_exception, secure_log_traceba
 from .constants import ConnProps
 
 
-class CommandFilter(object):
+class CommandFilter:
     """Base class for filters to run before or after commands."""
 
-    def pre_command(self, conn: Connection, args: List[str]) -> bool:
+    def pre_command(self, conn: Connection, args: list[str]) -> bool:
         """Code to execute before executing a command.
 
         Returns: True to continue filter chain or False to not
         """
         return True
 
-    def post_command(self, conn: Connection, args: List[str]) -> bool:
+    def post_command(self, conn: Connection, args: list[str]) -> bool:
         """Code to execute after executing a command."""
         pass
 
@@ -73,17 +73,17 @@ class ServerCommandRegister(CommandRegister):
         cmd_name = args[0]
         entries = self.get_command_entries(cmd_name)
         if len(entries) <= 0:
-            conn.append_error('Unknown command "{}"'.format(cmd_name))
+            conn.append_error(f'Unknown command "{cmd_name}"')
             return
         elif len(entries) == 1:
             conn.set_prop(ConnProps.CMD_ENTRY, entries[0])
             handler = entries[0].handler
         else:
-            conn.append_error('Command "{}" exists in multiple scopes. Please use full command name'.format(cmd_name))
+            conn.append_error(f'Command "{cmd_name}" exists in multiple scopes. Please use full command name')
             return
 
         if handler is None:
-            conn.append_error('Unknown command "{}"'.format(cmd_name))
+            conn.append_error(f'Unknown command "{cmd_name}"')
             return
 
         # invoke pre filters

@@ -89,7 +89,7 @@ class StudyRegistry:
     def has_user(self, user_name: str, study: str) -> bool:
         return user_name in self._admins.get(study, set())
 
-    def get_sites(self, study: str) -> Optional[set]:
+    def get_sites(self, study: str) -> set | None:
         return self._sites.get(study)
 
     def has_study(self, study: str) -> bool:
@@ -98,28 +98,28 @@ class StudyRegistry:
     def has_org(self, study: str, org: str) -> bool:
         return org in self._site_orgs.get(study, {})
 
-    def get_site_orgs(self, study: str) -> Optional[dict]:
+    def get_site_orgs(self, study: str) -> dict | None:
         site_orgs = self._site_orgs.get(study)
         return deepcopy(site_orgs) if site_orgs is not None else None
 
-    def get_studies(self) -> Dict[str, dict]:
+    def get_studies(self) -> dict[str, dict]:
         return deepcopy(self._studies)
 
-    def get_study(self, study: str) -> Optional[dict]:
+    def get_study(self, study: str) -> dict | None:
         study_def = self._studies.get(study)
         return deepcopy(study_def) if study_def is not None else None
 
 
 class StudyRegistryService:
-    _registry: Optional[StudyRegistry] = None
+    _registry: StudyRegistry | None = None
     _mutation_lock = threading.Lock()
 
     @staticmethod
-    def initialize(registry: Optional[StudyRegistry]):
+    def initialize(registry: StudyRegistry | None):
         StudyRegistryService._registry = registry
 
     @staticmethod
-    def get_registry() -> Optional[StudyRegistry]:
+    def get_registry() -> StudyRegistry | None:
         return StudyRegistryService._registry
 
     @staticmethod

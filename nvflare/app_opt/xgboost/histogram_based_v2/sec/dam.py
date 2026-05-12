@@ -31,10 +31,10 @@ class DamEncoder:
         self.entries = []
         self.buffer = BytesIO()
 
-    def add_int_array(self, value: List[int]):
+    def add_int_array(self, value: list[int]):
         self.entries.append((DATA_TYPE_INT_ARRAY, value))
 
-    def add_float_array(self, value: List[float]):
+    def add_float_array(self, value: list[float]):
         self.entries.append((DATA_TYPE_FLOAT_ARRAY, value))
 
     def finish(self) -> bytes:
@@ -89,7 +89,7 @@ class DamDecoder:
     def get_data_set_id(self):
         return self.data_set_id
 
-    def decode_int_array(self) -> List[int]:
+    def decode_int_array(self) -> list[int]:
         data_type = self.read_int64()
         if data_type != DATA_TYPE_INT_ARRAY:
             raise RuntimeError("Invalid data type for int array")

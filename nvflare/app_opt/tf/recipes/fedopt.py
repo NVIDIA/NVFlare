@@ -30,7 +30,7 @@ class _FedOptValidator(BaseModel):
 
     name: str = "fedopt"
     model: Any = None
-    initial_ckpt: Optional[str] = None
+    initial_ckpt: str | None = None
     min_clients: int
     num_rounds: int = 2
     train_script: str
@@ -39,8 +39,8 @@ class _FedOptValidator(BaseModel):
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
-    optimizer_args: Optional[dict] = None
-    lr_scheduler_args: Optional[dict] = None
+    optimizer_args: dict | None = None
+    lr_scheduler_args: dict | None = None
     server_memory_gc_rounds: int = 0
     client_memory_gc_rounds: int = 0
 
@@ -118,8 +118,8 @@ class FedOptRecipe(Recipe):
         self,
         *,
         name: str = "fedopt",
-        model: Union[Any, dict[str, Any], None] = None,
-        initial_ckpt: Optional[str] = None,
+        model: Any | dict[str, Any] | None = None,
+        initial_ckpt: str | None = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -128,8 +128,8 @@ class FedOptRecipe(Recipe):
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
-        optimizer_args: Optional[dict] = None,
-        lr_scheduler_args: Optional[dict] = None,
+        optimizer_args: dict | None = None,
+        lr_scheduler_args: dict | None = None,
         server_memory_gc_rounds: int = 0,
         client_memory_gc_rounds: int = 0,
     ):

@@ -18,7 +18,7 @@ from nvflare.apis.fl_context import FLContext
 from .widget import Widget
 
 
-class CallInfo(object):
+class CallInfo:
     def __init__(self, target: str, action: str, params: dict):
         """Required information to call a component.
 

@@ -13,7 +13,8 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Callable, List, Union
+from typing import List, Union
+from collections.abc import Callable
 
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AppConstants
@@ -43,10 +44,10 @@ class ModelController(BaseModelController, ABC):
         self,
         task_name: str = "train",
         data: FLModel = None,
-        targets: Union[List[str], None] = None,
+        targets: list[str] | None = None,
         min_responses: int = None,
         timeout: int = 0,
-    ) -> List[FLModel]:
+    ) -> list[FLModel]:
         """Send a task with data to targets and wait for results.
 
         Returns list of FLModel results from clients once task is completed (min_responses received or timed out).
@@ -75,7 +76,7 @@ class ModelController(BaseModelController, ABC):
         self,
         task_name: str = "train",
         data: FLModel = None,
-        targets: Union[List[str], None] = None,
+        targets: list[str] | None = None,
         min_responses: int = None,
         timeout: int = 0,
         callback: Callable[[FLModel], None] = None,
@@ -123,7 +124,7 @@ class ModelController(BaseModelController, ABC):
         """
         super().save_model(model)
 
-    def sample_clients(self, num_clients: int = None) -> List[str]:
+    def sample_clients(self, num_clients: int = None) -> list[str]:
         """Returns a list of `num_clients` clients.
 
         Args:

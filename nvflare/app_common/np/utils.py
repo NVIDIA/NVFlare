@@ -15,7 +15,8 @@
 """Utility functions for numpy model handling."""
 
 import os
-from typing import Callable, Optional
+from typing import Optional
+from collections.abc import Callable
 
 import numpy as np
 
@@ -26,7 +27,7 @@ from nvflare.security.logging import secure_format_exception
 def load_numpy_model(
     fl_ctx: FLContext,
     logger: object,
-    source_ckpt_file_full_name: Optional[str],
+    source_ckpt_file_full_name: str | None,
     model_file_path: str,
     get_fallback_data: Callable[[], np.ndarray],
 ) -> np.ndarray:

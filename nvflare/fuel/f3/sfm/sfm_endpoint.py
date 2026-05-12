@@ -32,7 +32,7 @@ class SfmEndpoint:
         self.endpoint = endpoint
         self.stream_id: int = RESERVED_STREAM_ID
         self.lock = threading.Lock()
-        self.connections: List[SfmConnection] = []
+        self.connections: list[SfmConnection] = []
 
     def add_connection(self, sfm_conn: SfmConnection):
 
@@ -68,7 +68,7 @@ class SfmEndpoint:
             else:
                 log.debug(f"Connection {sfm_conn.get_name()} is already removed from endpoint {self.endpoint.name}")
 
-    def get_connection(self, stream_id: int) -> Optional[SfmConnection]:
+    def get_connection(self, stream_id: int) -> SfmConnection | None:
         if not self.connections:
             return None
 

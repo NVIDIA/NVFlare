@@ -57,14 +57,14 @@ class CCBuilder(Builder):
         self,
         cc_mgr_id="cc_manager",
     ):
-        self.project_name: Optional[str] = None
-        self.project: Optional[Project] = None
-        self.cc_config: Optional[Dict[str, Any]] = None
+        self.project_name: str | None = None
+        self.project: Project | None = None
+        self.cc_config: dict[str, Any] | None = None
         # CC Manager specific
         self._cc_mgr_id = cc_mgr_id
         self._cc_enabled_sites = []
         # Map of compute environment to its builder class
-        self._cc_builders: Dict[str, Type[Builder]] = {}
+        self._cc_builders: dict[str, type[Builder]] = {}
 
     def _load_and_validate_cc_config(self, config_path):
         """Load CC configuration from YAML file."""
@@ -144,7 +144,7 @@ class CCBuilder(Builder):
             )
 
         all_cc_authorizers = ctx.get(CC_AUTHORIZERS_KEY, [])
-        cc_verifier_ids = set([])
+        cc_verifier_ids = set()
         for authorizer in all_cc_authorizers:
             attestation_config = cc_config.get(CCConfigKey.CC_ATTESTATION_CONFIG)
             if attestation_config:

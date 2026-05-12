@@ -29,7 +29,7 @@ from .constants import NPConstants
 class NPModelLocator(ModelLocator):
     SERVER_MODEL_NAME = "server"
 
-    def __init__(self, model_dir="models", model_name: Union[str, Dict[str, str]] = "server.npy"):
+    def __init__(self, model_dir="models", model_name: str | dict[str, str] = "server.npy"):
         """The ModelLocator's job is to find the models to be included for cross site evaluation
         located on server. This NPModelLocator finds and extracts "server" model that is saved during training.
 
@@ -56,7 +56,7 @@ class NPModelLocator(ModelLocator):
         else:
             raise ValueError(f"model_name must be a str, or a Dict[str, str]. But got: {type(model_name)}")
 
-    def get_model_names(self, fl_ctx: FLContext) -> List[str]:
+    def get_model_names(self, fl_ctx: FLContext) -> list[str]:
         """Returns the list of model names that should be included from server in cross site validation.add()
 
         Args:

@@ -126,7 +126,7 @@ class EdgeTaskDispatcher(Widget):
             device_config_file = os.path.join(config_dir, EdgeConfigFile.DEVICE_CONFIG)
             device_config = None
             if os.path.exists(device_config_file):
-                with open(device_config_file, "r") as f:
+                with open(device_config_file) as f:
                     device_config = json.load(f)
 
             self.job_metas[job_id] = job_meta

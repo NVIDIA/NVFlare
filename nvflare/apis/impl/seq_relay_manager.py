@@ -67,7 +67,7 @@ class SequentialRelayTaskManager(TaskManager):
             if task.targets is None:
                 task.targets = []
             if client_name not in task.targets:
-                self.logger.debug("client_name: {} added to task.targets".format(client_name))
+                self.logger.debug(f"client_name: {client_name} added to task.targets")
                 task.targets.append(client_name)
 
         # is this client eligible?
@@ -77,7 +77,7 @@ class SequentialRelayTaskManager(TaskManager):
 
         # adjust client window
         win_start_idx, win_end_idx = self._determine_window(task)
-        self.logger.debug("win_start_idx={}, win_end_idx={}".format(win_start_idx, win_end_idx))
+        self.logger.debug(f"win_start_idx={win_start_idx}, win_end_idx={win_end_idx}")
         if win_start_idx < 0:
             # wait for this task to end by the monitor
             return TaskCheckStatus.BLOCK
@@ -86,14 +86,14 @@ class SequentialRelayTaskManager(TaskManager):
         for i in range(win_start_idx, win_end_idx):
             if client_name == task.targets[i]:
                 # this client is in the window!
-                self.logger.debug("last_send_idx={}".format(i))
+                self.logger.debug(f"last_send_idx={i}")
                 task.props[_KEY_LAST_SEND_IDX] = i
                 return TaskCheckStatus.SEND
 
         # this client is not in the window
         return TaskCheckStatus.NO_BLOCK
 
-    def _determine_window(self, task: Task) -> Tuple[int, int]:
+    def _determine_window(self, task: Task) -> tuple[int, int]:
         """Returns two indexes (starting/ending) of a window of client candidates.
 
         When starting is negative and ending is 0, the window is closed and the task should exit
@@ -114,7 +114,7 @@ class SequentialRelayTaskManager(TaskManager):
         if last_send_idx >= 0 and last_send_target in task.last_client_task_map:
             # see whether the result has been received
             last_task = task.last_client_task_map[last_send_target]
-            self.logger.debug("last_task={}".format(last_task))
+            self.logger.debug(f"last_task={last_task}")
 
             if last_task.result_received_time is None:
                 # result has not been received
@@ -131,22 +131,18 @@ class SequentialRelayTaskManager(TaskManager):
                     )
                 else:
                     # continue to wait
-                    self.logger.debug("keep waiting on task={}".format(task))
+                    self.logger.debug(f"keep waiting on task={task}")
                     return -1, -1
             else:
                 # result has been received!
                 win_start_idx = last_send_idx + 1
                 win_start_time = last_task.result_received_time
-                self.logger.debug(
-                    "result received. win_start_idx={}, win_start_time={}".format(win_start_idx, win_start_time)
-                )
+                self.logger.debug(f"result received. win_start_idx={win_start_idx}, win_start_time={win_start_time}")
         else:
             # nothing has been sent
             win_start_idx = 0
             win_start_time = task.schedule_time
-            self.logger.debug(
-                "nothing has been sent. win_start_idx={}, win_start_time={}".format(win_start_idx, win_start_time)
-            )
+            self.logger.debug(f"nothing has been sent. win_start_idx={win_start_idx}, win_start_time={win_start_time}")
 
         num_targets = 0 if task.targets is None else len(task.targets)
         if num_targets and win_start_idx >= num_targets:
@@ -160,7 +156,7 @@ class SequentialRelayTaskManager(TaskManager):
         else:
             win_size = 1
 
-        self.logger.debug("win_size={}".format(win_size))
+        self.logger.debug(f"win_size={win_size}")
         win_end_idx = win_start_idx + win_size
 
         # Should exit if win extends past the entire target list + 1
@@ -169,10 +165,10 @@ class SequentialRelayTaskManager(TaskManager):
         if win_end_idx > num_targets:
             win_end_idx = num_targets
 
-        self.logger.debug("win_end_idx={}".format(win_end_idx))
+        self.logger.debug(f"win_end_idx={win_end_idx}")
         return win_start_idx, win_end_idx
 
-    def check_task_exit(self, task: Task) -> Tuple[bool, TaskCompletionStatus]:
+    def check_task_exit(self, task: Task) -> tuple[bool, TaskCompletionStatus]:
         """Determine whether the task should exit.
 
         Args:
@@ -186,7 +182,7 @@ class SequentialRelayTaskManager(TaskManager):
         # are we waiting for any client?
         win_start_idx, win_end_idx = self._determine_window(task)
 
-        self.logger.debug("check_task_exit: win_start_idx={}, win_end_idx={}".format(win_start_idx, win_end_idx))
+        self.logger.debug(f"check_task_exit: win_start_idx={win_start_idx}, win_end_idx={win_end_idx}")
         if win_start_idx < 0 and win_end_idx == 0:
             last_send_idx = task.props[_KEY_LAST_SEND_IDX]
             last_send_target = task.targets[last_send_idx]

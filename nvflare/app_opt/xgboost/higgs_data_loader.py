@@ -42,7 +42,7 @@ class HIGGSDataLoader(XGBDataLoader):
         self.data_split_filename = data_split_filename
 
     def load_data(self):
-        with open(self.data_split_filename, "r") as file:
+        with open(self.data_split_filename) as file:
             data_split = json.load(file)
 
         data_path = data_split["data_path"]

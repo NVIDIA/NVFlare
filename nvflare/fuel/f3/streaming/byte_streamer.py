@@ -14,7 +14,8 @@
 import logging
 import threading
 import time
-from typing import Callable, Optional
+from typing import Optional
+from collections.abc import Callable
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -68,7 +69,7 @@ class TxTask(StreamTaskSpec):
         self.sid = gen_stream_id()
         self.buffer = wrap_view(bytearray(chunk_size))
         # Optimization to send the original buffer without copying
-        self.direct_buf: Optional[bytes] = None
+        self.direct_buf: bytes | None = None
         self.buffer_size = 0
         self.channel = channel
         self.topic = topic
@@ -196,7 +197,7 @@ class TxTask(StreamTaskSpec):
         # Update future
         self.stream_future.set_progress(self.offset)
 
-    def stop(self, error: Optional[StreamError] = None, notify=True):
+    def stop(self, error: StreamError | None = None, notify=True):
 
         if self.stopped:
             return

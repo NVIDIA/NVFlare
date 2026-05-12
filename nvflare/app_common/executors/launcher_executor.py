@@ -38,12 +38,12 @@ class LauncherExecutor(TaskExchanger):
     def __init__(
         self,
         pipe_id: str,
-        launcher_id: Optional[str] = None,
-        launch_timeout: Optional[float] = None,
-        task_wait_timeout: Optional[float] = None,
+        launcher_id: str | None = None,
+        launch_timeout: float | None = None,
+        task_wait_timeout: float | None = None,
         last_result_transfer_timeout: float = 300.0,
         external_pre_init_timeout: float = 60.0,
-        peer_read_timeout: Optional[float] = 60.0,
+        peer_read_timeout: float | None = 60.0,
         monitor_interval: float = 0.1,
         read_interval: float = 0.5,
         heartbeat_interval: float = 5.0,
@@ -53,8 +53,8 @@ class LauncherExecutor(TaskExchanger):
         train_task_name: str = AppConstants.TASK_TRAIN,
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
-        from_nvflare_converter_id: Optional[str] = None,
-        to_nvflare_converter_id: Optional[str] = None,
+        from_nvflare_converter_id: str | None = None,
+        to_nvflare_converter_id: str | None = None,
     ) -> None:
         """Initializes the LauncherExecutor.
 
@@ -90,7 +90,7 @@ class LauncherExecutor(TaskExchanger):
             peer_read_timeout=peer_read_timeout,
             task_wait_time=task_wait_timeout,
         )
-        self.launcher: Optional[Launcher] = None
+        self.launcher: Launcher | None = None
         self._launcher_id = launcher_id
         self._launch_timeout = launch_timeout
 
@@ -112,9 +112,9 @@ class LauncherExecutor(TaskExchanger):
         self._submit_model_task_name = submit_model_task_name
 
         self._from_nvflare_converter_id = from_nvflare_converter_id
-        self._from_nvflare_converter: Optional[ParamsConverter] = None
+        self._from_nvflare_converter: ParamsConverter | None = None
         self._to_nvflare_converter_id = to_nvflare_converter_id
-        self._to_nvflare_converter: Optional[ParamsConverter] = None
+        self._to_nvflare_converter: ParamsConverter | None = None
 
         self._monitor_launcher_thread = None
         self._abort_signal = None

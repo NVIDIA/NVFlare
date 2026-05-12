@@ -25,7 +25,7 @@ from nvflare.metrics.metrics_publisher import publish_app_metrics
 
 
 class RemoteMetricsReceiver(FLComponent):
-    def __init__(self, events: Optional[List[str]] = None):
+    def __init__(self, events: list[str] | None = None):
         """Receives metrics data from client sites and publishes it to the local data bus.
         Args:
             events (optional, List[str]): A list of event that this receiver will handle.

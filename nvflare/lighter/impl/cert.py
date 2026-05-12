@@ -45,7 +45,7 @@ class _CertState:
         cert_file = os.path.join(state_dir, self.CERT_STATE_FILE)
         if os.path.exists(cert_file):
             self.is_available = True
-            with open(cert_file, "rt") as f:
+            with open(cert_file) as f:
                 self.content.update(json.load(f))
 
     def get_root_cert(self):
@@ -90,7 +90,7 @@ class _CertState:
 
     def persist(self):
         cert_file = os.path.join(self.state_dir, self.CERT_STATE_FILE)
-        with open(cert_file, "wt") as f:
+        with open(cert_file, "w") as f:
             json.dump(self.content, f)
 
 

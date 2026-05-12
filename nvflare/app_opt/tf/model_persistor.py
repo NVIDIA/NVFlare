@@ -28,10 +28,10 @@ from nvflare.app_opt.tf.utils import flat_layer_weights_dict, unflat_layer_weigh
 class TFModelPersistor(ModelPersistor):
     def __init__(
         self,
-        model: Optional[Union[tf.keras.Model, Dict[str, Any]]] = None,
+        model: tf.keras.Model | dict[str, Any] | None = None,
         save_name: str = "tf_model.weights.h5",
-        filter_id: Optional[str] = None,
-        source_ckpt_file_full_name: Optional[str] = None,
+        filter_id: str | None = None,
+        source_ckpt_file_full_name: str | None = None,
     ):
         """Persist TensorFlow/Keras model to/from file system.
 
@@ -249,7 +249,7 @@ class TFModelPersistor(ModelPersistor):
             self.log_exception(fl_ctx, f"Error loading TensorFlow model from {location}: {e}")
             return None
 
-    def get_model_inventory(self, fl_ctx: FLContext) -> Dict[str, ModelDescriptor]:
+    def get_model_inventory(self, fl_ctx: FLContext) -> dict[str, ModelDescriptor]:
         """Get inventory of available models for cross-site evaluation.
 
         Args:

@@ -41,7 +41,7 @@ def get_job_config_value(fl_ctx: FLContext, config_file: str, key: str, default:
         config_file_path = os.path.join(config_dir, config_file)
 
         if os.path.exists(config_file_path):
-            with open(config_file_path, "r") as f:
+            with open(config_file_path) as f:
                 config_data = json.load(f)
                 return config_data.get(key, default)
     except Exception:

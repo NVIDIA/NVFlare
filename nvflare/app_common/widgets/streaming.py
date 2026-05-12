@@ -49,7 +49,7 @@ class AnalyticsSender(Widget):
         if event_type == EventType.ABOUT_TO_START_RUN:
             self.engine = fl_ctx.get_engine()
 
-    def add(self, tag: str, value, data_type: AnalyticsDataType, global_step: Optional[int] = None, **kwargs):
+    def add(self, tag: str, value, data_type: AnalyticsDataType, global_step: int | None = None, **kwargs):
         """Create and send a DXO by firing an event.
 
         Args:
@@ -77,7 +77,7 @@ class AnalyticsSender(Widget):
 
 
 class AnalyticsReceiver(Widget, ABC):
-    def __init__(self, events: Optional[List[str]] = None):
+    def __init__(self, events: list[str] | None = None):
         """Receives analytic data.
 
         Args:
@@ -179,7 +179,7 @@ class AnalyticsReceiver(Widget, ABC):
                 # catch the exception so the job can continue
                 self.log_error(fl_ctx, f"Receiver finalize failed with {e}.", fire_event=False)
 
-    def _get_record_origin(self, fl_ctx: FLContext, data: Shareable) -> Optional[str]:
+    def _get_record_origin(self, fl_ctx: FLContext, data: Shareable) -> str | None:
         if fl_ctx.get_prop(FLContextKey.EVENT_SCOPE) == EventScope.FEDERATION:
             return data.get_peer_prop(ReservedKey.IDENTITY_NAME, None)
         else:

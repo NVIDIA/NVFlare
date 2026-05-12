@@ -17,7 +17,7 @@ from nvflare.apis.client import Client
 from nvflare.fuel.utils.tree_utils import build_forest
 
 
-def build_client_hierarchy(clients: List[Client]):
+def build_client_hierarchy(clients: list[Client]):
     """Build client hierarchy from a list of clients based on their FQSNs.
 
     Args:

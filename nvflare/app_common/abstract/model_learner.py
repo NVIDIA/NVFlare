@@ -24,7 +24,7 @@ class ModelLearner(FLComponentWrapper):
     def __init__(self):
         super().__init__()
 
-    def train(self, model: FLModel) -> Union[str, FLModel]:
+    def train(self, model: FLModel) -> str | FLModel:
         """Called by the framework to perform training. Can be called many times during the lifetime of the Learner.
 
         Args:
@@ -35,7 +35,7 @@ class ModelLearner(FLComponentWrapper):
         """
         pass
 
-    def get_model(self, model_name: str) -> Union[str, FLModel]:
+    def get_model(self, model_name: str) -> str | FLModel:
         """Called by the framework to return the trained model from the Learner.
 
         Args:
@@ -46,7 +46,7 @@ class ModelLearner(FLComponentWrapper):
         """
         pass
 
-    def validate(self, model: FLModel) -> Union[str, FLModel]:
+    def validate(self, model: FLModel) -> str | FLModel:
         """Called by the framework to validate the model with the specified weights in dxo
 
         Args:

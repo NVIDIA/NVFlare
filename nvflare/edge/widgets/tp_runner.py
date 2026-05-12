@@ -26,7 +26,7 @@ class TPRunner(SimulationRunner):
         SimulationRunner.__init__(self)
         self.config_file = config_file
 
-    def create_simulator(self, fl_ctx: FLContext) -> Optional[Simulator]:
+    def create_simulator(self, fl_ctx: FLContext) -> Simulator | None:
         parser = ConfigParser(self.config_file)
         return Simulator(
             job_name=parser.get_job_name(),

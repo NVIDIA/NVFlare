@@ -60,7 +60,7 @@ class MLflowWriter(LogWriter):
         """
         self.write(tag="params", value=values, data_type=AnalyticsDataType.PARAMETERS)
 
-    def log_metric(self, key: str, value: float, step: Optional[int] = None) -> None:
+    def log_metric(self, key: str, value: float, step: int | None = None) -> None:
         """Log a metric under the current run.
 
         Args:
@@ -75,7 +75,7 @@ class MLflowWriter(LogWriter):
         """
         self.write(tag=key, value=value, data_type=AnalyticsDataType.METRIC, global_step=step)
 
-    def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None) -> None:
+    def log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
         """Log multiple metrics for the current run.
 
         Args:

@@ -24,7 +24,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.widgets.widget import Widget
 
 
-class TaskAssignment(object):
+class TaskAssignment:
     def __init__(self, name: str, task_id: str, data: Shareable):
         """Init TaskAssignment.
 
@@ -87,7 +87,7 @@ class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
     @abstractmethod
     def send_aux_request(
         self,
-        targets: Union[None, str, List[str]],
+        targets: None | str | list[str],
         topic: str,
         request: Shareable,
         timeout: float,
@@ -119,7 +119,7 @@ class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
     def multicast_aux_requests(
         self,
         topic: str,
-        target_requests: Dict[str, Shareable],
+        target_requests: dict[str, Shareable],
         timeout: float,
         fl_ctx: FLContext,
         optional: bool = False,

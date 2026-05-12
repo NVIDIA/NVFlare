@@ -33,7 +33,7 @@ class TBWriter(LogWriter):
     def get_default_metric_data_type(self) -> AnalyticsDataType:
         return AnalyticsDataType.SCALARS
 
-    def add_scalar(self, tag: str, scalar: float, global_step: Optional[int] = None, **kwargs):
+    def add_scalar(self, tag: str, scalar: float, global_step: int | None = None, **kwargs):
         """Sends a scalar.
 
         Args:
@@ -44,7 +44,7 @@ class TBWriter(LogWriter):
         """
         self.write(tag=tag, value=scalar, data_type=AnalyticsDataType.SCALAR, global_step=global_step, **kwargs)
 
-    def add_scalars(self, tag: str, scalars: dict, global_step: Optional[int] = None, **kwargs):
+    def add_scalars(self, tag: str, scalars: dict, global_step: int | None = None, **kwargs):
         """Sends scalars.
 
         Args:

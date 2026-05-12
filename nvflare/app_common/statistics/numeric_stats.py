@@ -26,11 +26,11 @@ logger = get_module_logger(name=__name__)
 
 
 def get_global_feature_data_types(
-    client_feature_dts: Dict[str, Dict[str, List[Feature]]],
-) -> Dict[str, Dict[str, DataType]]:
+    client_feature_dts: dict[str, dict[str, list[Feature]]],
+) -> dict[str, dict[str, DataType]]:
     global_feature_data_types = {}
     for client_name in client_feature_dts:
-        ds_features: Dict[str, List[Feature]] = client_feature_dts[client_name]
+        ds_features: dict[str, list[Feature]] = client_feature_dts[client_name]
         for ds_name in ds_features:
             global_feature_data_types[ds_name] = {}
             features = ds_features[ds_name]
@@ -42,7 +42,7 @@ def get_global_feature_data_types(
 
 
 def get_global_stats(
-    global_metrics: dict, client_metrics: dict, metric_task: str, statistic_configs: Dict[str, dict], precision: int = 4
+    global_metrics: dict, client_metrics: dict, metric_task: str, statistic_configs: dict[str, dict], precision: int = 4
 ) -> dict:
     # we need to calculate the metrics in specified order
     ordered_target_metrics = StC.ordered_statistics[metric_task]
@@ -156,7 +156,7 @@ def get_min_or_max_values(metrics: dict, global_metrics: dict, fn2, precision: i
     return global_metrics
 
 
-def bins_to_dict(bins: List[Bin]) -> Dict[BinRange, float]:
+def bins_to_dict(bins: list[Bin]) -> dict[BinRange, float]:
     buckets = {}
     for bucket in bins:
         bucket_range = BinRange(bucket.low_value, bucket.high_value)
@@ -165,8 +165,8 @@ def bins_to_dict(bins: List[Bin]) -> Dict[BinRange, float]:
 
 
 def accumulate_hists(
-    metrics: Dict[str, Dict[str, Histogram]], global_hists: Dict[str, Dict[str, Histogram]], precision: int = 4
-) -> Dict[str, Dict[str, Histogram]]:
+    metrics: dict[str, dict[str, Histogram]], global_hists: dict[str, dict[str, Histogram]], precision: int = 4
+) -> dict[str, dict[str, Histogram]]:
     for ds_name in metrics:
         feature_hists = metrics[ds_name]
         if ds_name not in global_hists:
@@ -218,10 +218,10 @@ def get_means(sums: dict, counts: dict, precision: int = 4) -> dict:
     return means
 
 
-def filter_numeric_features(ds_features: Dict[str, List[Feature]]) -> Dict[str, List[Feature]]:
+def filter_numeric_features(ds_features: dict[str, list[Feature]]) -> dict[str, list[Feature]]:
     numeric_ds_features = {}
     for ds_name in ds_features:
-        features: List[Feature] = ds_features[ds_name]
+        features: list[Feature] = ds_features[ds_name]
         n_features = [f for f in features if (f.data_type == DataType.INT or f.data_type == DataType.FLOAT)]
         numeric_ds_features[ds_name] = n_features
 

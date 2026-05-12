@@ -24,7 +24,7 @@ from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import WidgetID
 
 
-class CommandProcessor(object):
+class CommandProcessor:
     """The CommandProcessor is responsible for processing a command from parent process."""
 
     def get_command_name(self) -> str:
@@ -153,7 +153,7 @@ class ShowStatsCommand(CommandProcessor):
             result = {"error": "no info collector"}
         else:
             if not isinstance(collector, InfoCollector):
-                raise TypeError("collector must be an instance of InfoCollector, but got {}".format(type(collector)))
+                raise TypeError(f"collector must be an instance of InfoCollector, but got {type(collector)}")
 
             result = collector.get_run_stats()
 
@@ -189,7 +189,7 @@ class ShowErrorsCommand(CommandProcessor):
             result = {"error": "no info collector"}
         else:
             if not isinstance(collector, InfoCollector):
-                raise TypeError("collector must be an instance of InfoCollector, but got {}".format(type(collector)))
+                raise TypeError(f"collector must be an instance of InfoCollector, but got {type(collector)}")
 
             result = collector.get_errors()
 
@@ -281,7 +281,7 @@ class ConfigureJobLogCommand(CommandProcessor):
             return secure_format_exception(e)
 
 
-class AdminCommands(object):
+class AdminCommands:
     """AdminCommands contains all the commands for processing the commands from the parent process."""
 
     commands = [
@@ -320,7 +320,7 @@ class AdminCommands(object):
         """
         if not isinstance(command_processor, CommandProcessor):
             raise TypeError(
-                "command_processor must be an instance of CommandProcessor, but got {}".format(type(command_processor))
+                f"command_processor must be an instance of CommandProcessor, but got {type(command_processor)}"
             )
 
         AdminCommands.commands.append(command_processor)

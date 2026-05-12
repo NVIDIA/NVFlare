@@ -24,7 +24,7 @@ _POSIX_SPAWN_SUPPORTED = hasattr(os, "posix_spawn") and os.name == "posix"
 
 
 class ProcessAdapter:
-    def __init__(self, process: Optional[subprocess.Popen] = None, pid: Optional[int] = None):
+    def __init__(self, process: subprocess.Popen | None = None, pid: int | None = None):
         """Adapter to manage a process, whether created via subprocess.Popen or os.posix_spawn.
 
         Args:
@@ -34,7 +34,7 @@ class ProcessAdapter:
         self.process = process
         self.pid = pid if pid is not None else (process.pid if process else None)
         self.logger = logging.getLogger(self.__class__.__name__)
-        self._return_code: Optional[int] = None
+        self._return_code: int | None = None
 
         if self.pid is None:
             raise ValueError("ProcessAdapter requires either a process object or a pid.")
@@ -47,7 +47,7 @@ class ProcessAdapter:
         """
         self._kill_process_group()
 
-    def poll(self) -> Optional[int]:
+    def poll(self) -> int | None:
         """Check if the process has terminated.
 
         Returns:
@@ -74,7 +74,7 @@ class ProcessAdapter:
             except ChildProcessError:
                 pass
 
-    def _poll_pid(self) -> Optional[int]:
+    def _poll_pid(self) -> int | None:
         if self.pid is None:
             return None
 
@@ -132,7 +132,7 @@ class ProcessAdapter:
             self.logger.warning("Failed to kill process group %s (%s)", pgid, exc)
 
 
-def spawn_process(cmd_args: List[str], env: dict) -> ProcessAdapter:
+def spawn_process(cmd_args: list[str], env: dict) -> ProcessAdapter:
     """Launch a process using posix_spawn if available, falling back to subprocess.Popen.
 
     This method attempts to use os.posix_spawn with setsid=True to avoid fork() related issues

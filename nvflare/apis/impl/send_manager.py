@@ -90,7 +90,7 @@ class SendTaskManager(TaskManager):
             # since this client is involved in the task, we need to wait until this task is resolved!
             return TaskCheckStatus.BLOCK
 
-    def check_task_exit(self, task: Task) -> Tuple[bool, TaskCompletionStatus]:
+    def check_task_exit(self, task: Task) -> tuple[bool, TaskCompletionStatus]:
         """Determine whether the task should exit.
 
         Args:

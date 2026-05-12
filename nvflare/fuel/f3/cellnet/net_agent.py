@@ -73,7 +73,7 @@ class _Member:
 
 
 class SubnetMonitor(ABC):
-    def __init__(self, subnet_id: str, member_cells: List[str], trouble_alert_threshold: float):
+    def __init__(self, subnet_id: str, member_cells: list[str], trouble_alert_threshold: float):
         if not member_cells:
             raise ValueError("member cells must not be empty")
         self.agent = None
@@ -339,7 +339,7 @@ class NetAgent:
                 self._check_monitor(m)
             time.sleep(0.5)
 
-    def _do_heartbeat(self, request: Message) -> Union[None, Message]:
+    def _do_heartbeat(self, request: Message) -> None | Message:
         origin = request.get_header(MessageHeaderKey.ORIGIN, "?")
         if not self.monitors:
             self.logger.warning(f"got subnet heartbeat from {origin} but no monitors")
@@ -361,18 +361,18 @@ class NetAgent:
 
         m.put_member_online(member)
 
-    def _do_stop(self, request: Message) -> Union[None, Message]:
+    def _do_stop(self, request: Message) -> None | Message:
         self.stop()
         return None
 
-    def _do_stop_cell(self, request: Message) -> Union[None, Message]:
+    def _do_stop_cell(self, request: Message) -> None | Message:
         self.stop()
         return Message()
 
-    def _do_route(self, request: Message) -> Union[None, Message]:
+    def _do_route(self, request: Message) -> None | Message:
         return Message(payload=dict(request.headers))
 
-    def _do_start_route(self, request: Message) -> Union[None, Message]:
+    def _do_start_route(self, request: Message) -> None | Message:
         target_fqcn = request.payload
         err = FQCN.validate(target_fqcn)
         if err:
@@ -381,10 +381,10 @@ class NetAgent:
         reply_headers, req_headers = self.get_route_info(target_fqcn)
         return Message(payload={"request": dict(req_headers), "reply": dict(reply_headers)})
 
-    def _do_peers(self, request: Message) -> Union[None, Message]:
+    def _do_peers(self, request: Message) -> None | Message:
         return Message(payload=list(self.cell.agents.keys()))
 
-    def get_peers(self, target_fqcn: str) -> (Union[None, dict], List[str]):
+    def get_peers(self, target_fqcn: str) -> (None | dict, list[str]):
         reply = self.cell.send_request(
             channel=_CHANNEL, topic=_TOPIC_PEERS, target=target_fqcn, timeout=1.0, request=Message()
         )
@@ -433,7 +433,7 @@ class NetAgent:
             result["adhoc_connectors"] = conns
         return result
 
-    def _do_connectors(self, request: Message) -> Union[None, Message]:
+    def _do_connectors(self, request: Message) -> None | Message:
         return Message(payload=self._get_connectors())
 
     def get_connectors(self, target_fqcn: str) -> (dict, dict):
@@ -455,7 +455,7 @@ class NetAgent:
         else:
             return {"error": "processing error", "reply": reply.headers}, {}
 
-    def request_cells_info(self) -> (str, List[str]):
+    def request_cells_info(self) -> (str, list[str]):
         result = [self.cell.get_fqcn()]
         err = ""
         replies = self._broadcast_to_subs(topic=_TOPIC_CELLS)
@@ -503,7 +503,7 @@ class NetAgent:
                 result[t] = f"error {rc}"
         return result
 
-    def _do_url_use(self, request: Message) -> Union[None, Message]:
+    def _do_url_use(self, request: Message) -> None | Message:
         results = self.get_url_use(request.payload)
         return Message(payload=results)
 
@@ -544,7 +544,7 @@ class NetAgent:
             reply_headers = reply.headers
         return err, reply_headers, req_headers
 
-    def _do_report_cells(self, request: Message) -> Union[None, Message]:
+    def _do_report_cells(self, request: Message) -> None | Message:
         _, results = self.request_cells_info()
         return Message(payload=results)
 
@@ -620,7 +620,7 @@ class NetAgent:
             }
         )
 
-    def _do_speed(self, request: Message) -> Union[None, Message]:
+    def _do_speed(self, request: Message) -> None | Message:
         params = request.payload
         if not isinstance(params, dict):
             return make_reply(ReturnCode.INVALID_REQUEST, f"request body must be dict but got {type(params)}")
@@ -638,7 +638,7 @@ class NetAgent:
             num = 100
         return self._request_speed_test(to_fqcn, num, size)
 
-    def _do_echo(self, request: Message) -> Union[None, Message]:
+    def _do_echo(self, request: Message) -> None | Message:
         return Message(payload=request.payload)
 
     def _do_stress_test(self, params):
@@ -688,7 +688,7 @@ class NetAgent:
         end = time.perf_counter()
         return {"counts": counts, "errors": errors, "time": end - start}
 
-    def _do_stress(self, request: Message) -> Union[None, Message]:
+    def _do_stress(self, request: Message) -> None | Message:
         params = request.payload
         result = self._do_stress_test(params)
         return Message(payload=result)
@@ -752,7 +752,7 @@ class NetAgent:
     def change_root(self, new_root_url: str):
         self._broadcast_to_subs(topic=_TOPIC_CHANGE_ROOT, message=Message(payload=new_root_url), timeout=0.0)
 
-    def _do_change_root(self, request: Message) -> Union[None, Message]:
+    def _do_change_root(self, request: Message) -> None | Message:
         new_root_url = request.payload
         assert isinstance(new_root_url, str)
         self.change_root(new_root_url)
@@ -785,7 +785,7 @@ class NetAgent:
                 result[t] = r.payload
         return result
 
-    def _do_bulk_test(self, request: Message) -> Union[None, Message]:
+    def _do_bulk_test(self, request: Message) -> None | Message:
         size = request.payload
         assert isinstance(size, int)
         nums = []
@@ -801,7 +801,7 @@ class NetAgent:
             )
         return Message(payload=f"queued: {nums}")
 
-    def _do_bulk_item(self, request: Message) -> Union[None, Message]:
+    def _do_bulk_item(self, request: Message) -> None | Message:
         num = request.payload
         origin = request.get_header(MessageHeaderKey.ORIGIN)
         self.cell.logger.info(f"{self.cell.get_fqcn()}: got {num} from {origin}")
@@ -820,7 +820,7 @@ class NetAgent:
             return f"error: {rc}"
         return reply.payload
 
-    def _do_msg_stats(self, request: Message) -> Union[None, Message]:
+    def _do_msg_stats(self, request: Message) -> None | Message:
         p = request.payload
         assert isinstance(p, dict)
         mode = p.get("mode")
@@ -838,7 +838,7 @@ class NetAgent:
             return f"{rc}: {err}"
         return reply.payload
 
-    def _do_list_pools(self, request: Message) -> Union[None, Message]:
+    def _do_list_pools(self, request: Message) -> None | Message:
         headers, rows = StatsPoolManager.get_table()
         reply = {"headers": headers, "rows": rows}
         return Message(payload=reply)
@@ -857,7 +857,7 @@ class NetAgent:
             return f"{rc}: {err}"
         return reply.payload
 
-    def _do_show_pool(self, request: Message) -> Union[None, Message]:
+    def _do_show_pool(self, request: Message) -> None | Message:
         p = request.payload
         assert isinstance(p, dict)
         pool_name = p.get("pool", "")
@@ -904,15 +904,15 @@ class NetAgent:
             return f"{rc}: {err}"
         return reply.payload
 
-    def _do_comm_config(self, request: Message) -> Union[None, Message]:
+    def _do_comm_config(self, request: Message) -> None | Message:
         info = self.cell.connector_manager.get_config_info()
         return Message(payload=info)
 
-    def _do_config_vars(self, request: Message) -> Union[None, Message]:
+    def _do_config_vars(self, request: Message) -> None | Message:
         info = ConfigService.get_var_values()
         return Message(payload=info)
 
-    def _do_process_info(self, request: Message) -> Union[None, Message]:
+    def _do_process_info(self, request: Message) -> None | Message:
 
         usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         rows = [

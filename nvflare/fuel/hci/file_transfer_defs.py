@@ -13,5 +13,6 @@
 # limitations under the License.
 
 """Constants for file transfer command module."""
+
 PUSH_FOLDER_FQN = "file_transfer.push_folder"
 PULL_FOLDER_FQN = "file_transfer.pull_folder"

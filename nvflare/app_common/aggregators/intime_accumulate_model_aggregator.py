@@ -46,9 +46,9 @@ def _get_missing_keys(ref_dict: dict, dict_to_check: dict):
 class InTimeAccumulateWeightedAggregator(Aggregator):
     def __init__(
         self,
-        exclude_vars: Union[str, Dict[str, str], None] = None,
-        aggregation_weights: Union[Dict[str, Any], Dict[str, Dict[str, Any]], None] = None,
-        expected_data_kind: Union[DataKind, Dict[str, DataKind]] = DataKind.WEIGHT_DIFF,
+        exclude_vars: str | dict[str, str] | None = None,
+        aggregation_weights: dict[str, Any] | dict[str, dict[str, Any]] | None = None,
+        expected_data_kind: DataKind | dict[str, DataKind] = DataKind.WEIGHT_DIFF,
         weigh_by_local_iter: bool = True,
     ):
         """Perform accumulated weighted aggregation.

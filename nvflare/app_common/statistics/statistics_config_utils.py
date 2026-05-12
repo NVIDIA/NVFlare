@@ -17,7 +17,7 @@ from typing import List, Optional
 from nvflare.app_common.app_constant import StatisticsConstants as StC
 
 
-def get_feature_bin_range(feature_name: str, hist_config: dict) -> Optional[List[float]]:
+def get_feature_bin_range(feature_name: str, hist_config: dict) -> list[float] | None:
     bin_range = None
     if feature_name in hist_config:
         if StC.STATS_BIN_RANGE in hist_config[feature_name]:

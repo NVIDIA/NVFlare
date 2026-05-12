@@ -19,7 +19,8 @@ import os
 import posixpath
 import re
 import zipfile
-from typing import Iterable, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
+from collections.abc import Iterable
 
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
 
@@ -48,7 +49,7 @@ def submitter_to_dict(submitter) -> dict:
     }
 
 
-def submit_record_scope_hashes(study: str, submitter, submit_token: str) -> Tuple[str, str, str]:
+def submit_record_scope_hashes(study: str, submitter, submit_token: str) -> tuple[str, str, str]:
     return (
         canonical_json_hash(study or ""),
         canonical_json_hash(submitter_to_dict(submitter)),
@@ -56,7 +57,7 @@ def submit_record_scope_hashes(study: str, submitter, submit_token: str) -> Tupl
     )
 
 
-def validate_submit_token(submit_token: Optional[str]) -> Optional[str]:
+def validate_submit_token(submit_token: str | None) -> str | None:
     if submit_token is None:
         return None
     if not isinstance(submit_token, str) or not SUBMIT_TOKEN_PATTERN.fullmatch(submit_token):
@@ -64,7 +65,7 @@ def validate_submit_token(submit_token: Optional[str]) -> Optional[str]:
     return submit_token
 
 
-def canonical_job_content_hash(job_content: Union[str, bytes], exclude_names: Iterable[str] = None) -> str:
+def canonical_job_content_hash(job_content: str | bytes, exclude_names: Iterable[str] = None) -> str:
     """Hash the canonical submitted job content used for submit-token retry validation.
 
     The caller must provide the job content root. Directory input is hashed exactly relative
@@ -84,7 +85,7 @@ def canonical_job_content_hash(job_content: Union[str, bytes], exclude_names: It
     return f"sha256:{digest.hexdigest()}"
 
 
-def _iter_canonical_job_files(job_content: Union[str, bytes], exclude_names: set):
+def _iter_canonical_job_files(job_content: str | bytes, exclude_names: set):
     if isinstance(job_content, bytes):
         yield from _iter_zip_bytes(job_content, exclude_names)
         return

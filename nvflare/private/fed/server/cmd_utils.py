@@ -25,7 +25,7 @@ from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.security.study_registry import StudyRegistryService
 
 
-class CommandUtil(object):
+class CommandUtil:
 
     TARGET_CLIENTS = "target_clients"
     TARGET_CLIENT_TOKENS = "target_client_tokens"
@@ -51,12 +51,12 @@ class CommandUtil(object):
         # the effective role for study-scoped authorization, so there is nothing to substitute here.
         return True
 
-    def command_authz_required(self, conn: Connection, args: List[str]) -> PreAuthzReturnCode:
+    def command_authz_required(self, conn: Connection, args: list[str]) -> PreAuthzReturnCode:
         if not self._apply_study_role_for_authz(conn):
             return PreAuthzReturnCode.ERROR
         return PreAuthzReturnCode.REQUIRE_AUTHZ
 
-    def authorize_client_operation(self, conn: Connection, args: List[str]) -> PreAuthzReturnCode:
+    def authorize_client_operation(self, conn: Connection, args: list[str]) -> PreAuthzReturnCode:
         auth_args = [args[0], self.TARGET_TYPE_CLIENT]
         auth_args.extend(args[1:])
 
@@ -70,7 +70,7 @@ class CommandUtil(object):
 
         return PreAuthzReturnCode.REQUIRE_AUTHZ
 
-    def validate_command_targets(self, conn: Connection, args: List[str]) -> str:
+    def validate_command_targets(self, conn: Connection, args: list[str]) -> str:
         """Validate specified args and determine and set target type and target names in the Connection.
 
         The args must be like this:
@@ -101,11 +101,11 @@ class CommandUtil(object):
         elif target_type == self.TARGET_TYPE_ALL:
             client_names = []
         else:
-            return "unknown target type {}".format(target_type)
+            return f"unknown target type {target_type}"
 
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineSpec):
-            raise TypeError("engine must be ServerEngineSpec but got {}".format(type(engine)))
+            raise TypeError(f"engine must be ServerEngineSpec but got {type(engine)}")
         if len(client_names) == 0:
             # get all clients
             clients = engine.get_clients()
@@ -167,7 +167,7 @@ class CommandUtil(object):
         conn.set_prop(self.TARGET_CLIENTS, filtered_clients)
         return ""
 
-    def must_be_project_admin(self, conn: Connection, args: List[str]):
+    def must_be_project_admin(self, conn: Connection, args: list[str]):
         # This helper intentionally checks the certificate role. project_admin-only operations
         # must stay scoped to the cert/global role.
         role = conn.get_prop(ConnProps.USER_ROLE, "")
@@ -179,7 +179,7 @@ class CommandUtil(object):
         else:
             return PreAuthzReturnCode.OK
 
-    def authorize_server_operation(self, conn: Connection, args: List[str]):
+    def authorize_server_operation(self, conn: Connection, args: list[str]):
         err = self.validate_command_targets(conn, args[1:])
         if err:
             conn.append_error(err, meta=make_meta(MetaStatusValue.INVALID_TARGET, info=err))

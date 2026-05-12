@@ -21,7 +21,7 @@ from nvflare.app_common.abstract.params_converter import ParamsConverter
 
 
 class NumpyToPTParamsConverter(ParamsConverter):
-    def convert(self, params: Dict, fl_ctx) -> Dict:
+    def convert(self, params: dict, fl_ctx) -> dict:
         tensor_shapes = fl_ctx.get_prop("tensor_shapes")
         exclude_vars = fl_ctx.get_prop("exclude_vars")
 
@@ -42,7 +42,7 @@ class NumpyToPTParamsConverter(ParamsConverter):
 
 
 class PTToNumpyParamsConverter(ParamsConverter):
-    def convert(self, params: Dict, fl_ctx) -> Dict:
+    def convert(self, params: dict, fl_ctx) -> dict:
         return_tensors = {}
         tensor_shapes = {}
         exclude_vars = {}

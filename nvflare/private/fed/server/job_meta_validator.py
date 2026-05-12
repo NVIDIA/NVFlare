@@ -49,7 +49,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
         self._validate_mandatory_clients(job_name, meta, clients)
         return meta
 
-    def validate(self, job_name: str, job_data: bytes) -> Tuple[bool, str, dict]:
+    def validate(self, job_name: str, job_data: bytes) -> tuple[bool, str, dict]:
         """Validate job
 
         Args:
@@ -77,7 +77,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
         return True, "", meta
 
     @staticmethod
-    def _validate_meta(job_name: str, zf: ZipFile) -> Optional[dict]:
+    def _validate_meta(job_name: str, zf: ZipFile) -> dict | None:
         base_meta_file = f"{job_name}/{JobConstants.META}"
         logger.debug(f"validate file {base_meta_file}.[json|conf|yml] exists for job {job_name}")
 
@@ -250,12 +250,12 @@ class JobMetaValidator(JobMetaValidatorSpec):
                     raise ValueError(f"launcher_spec['{site}']['{mode}'] for job {job_name} must be a dict")
 
     @staticmethod
-    def _get_all_clients(site_list: Optional[list]) -> Set[str]:
+    def _get_all_clients(site_list: list | None) -> set[str]:
 
         if site_list[0] == ALL_SITES:
             return {ALL_SITES}
 
-        return set([site for site in site_list if site != SERVER_SITE_NAME])
+        return {site for site in site_list if site != SERVER_SITE_NAME}
 
     @staticmethod
     def _entry_exists(zip_file: ZipFile, path: str) -> bool:

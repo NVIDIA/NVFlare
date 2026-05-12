@@ -14,7 +14,8 @@
 import logging
 import threading
 from collections import deque
-from typing import Callable, Deque, Dict, Optional, Tuple
+from typing import Deque, Dict, Optional, Tuple
+from collections.abc import Callable
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -51,7 +52,7 @@ RESULT_EOS = 2
 class RxTask:
     """Receiving task for ByteStream"""
 
-    rx_task_map: Dict[Tuple[str, int], "RxTask"] = {}
+    rx_task_map: dict[tuple[str, int], "RxTask"] = {}
     map_lock = threading.Lock()
 
     def __init__(self, sid: int, origin: str, cell: CoreCell):
@@ -65,11 +66,11 @@ class RxTask:
         self.size = 0
 
         # The reassembled chunks in a double-ended queue
-        self.chunks: Deque[Tuple[bool, BytesAlike]] = deque()
+        self.chunks: Deque[tuple[bool, BytesAlike]] = deque()
         self.chunk_offset = 0  # Start of the remaining data for partially read left-most chunk
 
         # Out-of-sequence chunks to be assembled
-        self.out_seq_chunks: Dict[int, Tuple[bool, BytesAlike]] = {}
+        self.out_seq_chunks: dict[int, tuple[bool, BytesAlike]] = {}
         self.stream_future = None
         self.next_seq = 0
         self.offset = 0
@@ -230,7 +231,7 @@ class RxTask:
             )
             self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
 
-    def _try_to_read(self, size: int) -> Tuple[int, Optional[BytesAlike]]:
+    def _try_to_read(self, size: int) -> tuple[int, BytesAlike | None]:
 
         with self.lock:
             if self.eos:
@@ -282,7 +283,7 @@ class RxTask:
 
             return RESULT_DATA, result
 
-    def _append(self, buf: Tuple[bool, BytesAlike]):
+    def _append(self, buf: tuple[bool, BytesAlike]):
         if self.eos:
             log.error(f"{self} Data after EOS is ignored")
             return

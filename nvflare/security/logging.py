@@ -37,7 +37,7 @@ def is_secure() -> bool:
         return False
 
 
-class _Frame(object):
+class _Frame:
     def __init__(self, line_text):
         self.line_text = line_text
         self.count = 1

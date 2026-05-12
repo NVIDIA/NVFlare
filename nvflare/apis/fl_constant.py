@@ -23,7 +23,7 @@ SUBMIT_TOKEN_CONFLICT_STATUS = "submit_token_conflict"
 SUBMIT_TOKEN_JOB_DELETED_STATUS = "submit_token_job_deleted"
 
 
-class ReturnCode(object):
+class ReturnCode:
 
     OK = "OK"
 
@@ -66,7 +66,7 @@ class MachineStatus(Enum):
     STOPPED = "stopped"
 
 
-class ReservedKey(object):
+class ReservedKey:
 
     MANAGER = "__manager__"
     ENGINE = "__engine__"
@@ -120,7 +120,7 @@ class ReservedKey(object):
     TASK_IS_READY = "__task_is_ready__"
 
 
-class FLContextKey(object):
+class FLContextKey:
 
     TASK_NAME = ReservedKey.TASK_NAME
     TASK_DATA = ReservedKey.TASK_DATA
@@ -216,7 +216,7 @@ class ProcessType:
     CLIENT_JOB = "CJ"
 
 
-class ReservedTopic(object):
+class ReservedTopic:
 
     END_RUN = "__end_run__"
     ABORT_ASK = "__abort_task__"
@@ -230,7 +230,7 @@ class ReservedTopic(object):
     STOP_CELLNET = "__stop_cellnet__"
 
 
-class AdminCommandNames(object):
+class AdminCommandNames:
 
     REGISTER_STUDY = "register_study"
     ADD_STUDY_SITE = "add_study_site"
@@ -285,7 +285,7 @@ class AdminCommandNames(object):
     CONFIGURE_SITE_LOG = "configure_site_log"
 
 
-class ServerCommandNames(object):
+class ServerCommandNames:
 
     GET_RUN_INFO = "get_run_info"
     GET_TASK = "get_task"
@@ -303,7 +303,7 @@ class ServerCommandNames(object):
     APP_COMMAND = "app_command"
 
 
-class ServerCommandKey(object):
+class ServerCommandKey:
 
     COMMAND = "command"
     DATA = "data"
@@ -324,7 +324,7 @@ class ServerCommandKey(object):
     MIN_GET_TASK_TIMEOUT = "min_get_task_timeout"
 
 
-class FedEventHeader(object):
+class FedEventHeader:
 
     TIMESTAMP = "_timestamp"
     EVENT_TYPE = "_event_type"
@@ -333,13 +333,13 @@ class FedEventHeader(object):
     TARGETS = "_targets"
 
 
-class EventScope(object):
+class EventScope:
 
     FEDERATION = "federation"
     LOCAL = "local"
 
 
-class NonSerializableKeys(object):
+class NonSerializableKeys:
 
     KEYS = [
         ReservedKey.ENGINE,
@@ -353,7 +353,7 @@ class NonSerializableKeys(object):
     ]
 
 
-class LogMessageTag(object):
+class LogMessageTag:
 
     DEBUG = "log/debug"
     ERROR = "log/error"
@@ -364,7 +364,7 @@ class LogMessageTag(object):
     LOG_RECORD = "log_record"
 
 
-class SnapshotKey(object):
+class SnapshotKey:
 
     FL_CONTEXT = "fl_context"
     SERVER_RUNNER = "_Server_Runner"
@@ -374,7 +374,7 @@ class SnapshotKey(object):
     JOB_CLIENTS = "_job_clients"
 
 
-class RunProcessKey(object):
+class RunProcessKey:
     LISTEN_PORT = "_listen_port"
     CONNECTION = "_conn"
     JOB_HANDLE = "_job_launcher"
@@ -386,7 +386,7 @@ class RunProcessKey(object):
     PROCESS_RETURN_CODE = "_process_return_code"
 
 
-class SystemComponents(object):
+class SystemComponents:
 
     JOB_SCHEDULER = "job_scheduler"
     JOB_MANAGER = "job_manager"

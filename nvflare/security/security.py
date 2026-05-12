@@ -18,7 +18,7 @@ from nvflare.apis.fl_constant import AdminCommandNames as AC
 from nvflare.fuel.sec.authz import Authorizer, AuthzContext
 
 
-class CommandCategory(object):
+class CommandCategory:
 
     MANAGE_JOB = "manage_job"
     OPERATE = "operate"
@@ -69,16 +69,16 @@ class FLAuthorizer(Authorizer):
         based on authorization.json file.
 
         """
-        assert isinstance(policy_config, dict), "policy_config must be a dict but got {}".format(type(policy_config))
+        assert isinstance(policy_config, dict), f"policy_config must be a dict but got {type(policy_config)}"
         Authorizer.__init__(self, for_org, COMMAND_CATEGORIES)
         err = self.load_policy(policy_config)
         if err:
-            raise SyntaxError("invalid policy config: {}".format(err))
+            raise SyntaxError(f"invalid policy config: {err}")
 
 
 class EmptyAuthorizer(Authorizer):
     def __init__(self):
         Authorizer.__init__(self, "dummy")
 
-    def authorize(self, ctx: AuthzContext) -> Tuple[bool, str]:
+    def authorize(self, ctx: AuthzContext) -> tuple[bool, str]:
         return True, ""

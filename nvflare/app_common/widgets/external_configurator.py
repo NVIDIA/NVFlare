@@ -29,7 +29,7 @@ from nvflare.widgets.widget import Widget
 class ExternalConfigurator(Widget):
     def __init__(
         self,
-        component_ids: List[str],
+        component_ids: list[str],
         config_file_name: str = CLIENT_API_CONFIG,
     ):
         """Prepares any external configuration files.

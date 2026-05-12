@@ -63,16 +63,16 @@ class BaseFedJob(UnifiedBaseFedJob):
     def __init__(
         self,
         initial_model: tf.keras.Model = None,
-        initial_ckpt: Optional[str] = None,
+        initial_ckpt: str | None = None,
         name: str = "fed_job",
         min_clients: int = 1,
-        mandatory_clients: Optional[List[str]] = None,
+        mandatory_clients: list[str] | None = None,
         key_metric: str = "accuracy",
-        validation_json_generator: Optional[ValidationJsonGenerator] = None,
-        model_selector: Optional[FLComponent] = None,
-        convert_to_fed_event: Optional[ConvertToFedEvent] = None,
-        analytics_receiver: Optional[AnalyticsReceiver] = None,
-        model_persistor: Optional[ModelPersistor] = None,
+        validation_json_generator: ValidationJsonGenerator | None = None,
+        model_selector: FLComponent | None = None,
+        convert_to_fed_event: ConvertToFedEvent | None = None,
+        analytics_receiver: AnalyticsReceiver | None = None,
+        model_persistor: ModelPersistor | None = None,
     ):
         # Call the unified BaseFedJob
         super().__init__(
@@ -93,9 +93,9 @@ class BaseFedJob(UnifiedBaseFedJob):
 
     def _setup_tensorflow_model(
         self,
-        initial_model: Optional[tf.keras.Model],
-        initial_ckpt: Optional[str],
-        persistor: Optional[ModelPersistor] = None,
+        initial_model: tf.keras.Model | None,
+        initial_ckpt: str | None,
+        persistor: ModelPersistor | None = None,
     ):
         """Setup TensorFlow model with persistor."""
         from nvflare.app_opt.tf.job_config.model import TFModel

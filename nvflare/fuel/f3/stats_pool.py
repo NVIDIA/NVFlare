@@ -134,7 +134,7 @@ class RecordWriter:
 
 
 class HistPool(StatsPool):
-    def __init__(self, name: str, description: str, marks: Union[List[float], Tuple], unit: str, record_writer=None):
+    def __init__(self, name: str, description: str, marks: list[float] | tuple, unit: str, record_writer=None):
         if record_writer:
             if not isinstance(record_writer, RecordWriter):
                 raise TypeError(f"record_writer must be RecordWriter but got {type(record_writer)}")
@@ -286,7 +286,7 @@ class HistPool(StatsPool):
 
 
 class CounterPool(StatsPool):
-    def __init__(self, name: str, description: str, counter_names: List[str], dynamic_counter_name=True):
+    def __init__(self, name: str, description: str, counter_names: list[str], dynamic_counter_name=True):
         if not counter_names and not dynamic_counter_name:
             raise ValueError("counter_names cannot be empty")
         StatsPool.__init__(self, name, description)

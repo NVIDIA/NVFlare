@@ -230,11 +230,9 @@ def create_job(cmd_args):
         if real_config_path and not cmd_args.force:
             from nvflare.tool.cli_output import print_human
 
-            print_human(
-                f"""\nwarning: configuration files:\n
+            print_human(f"""\nwarning: configuration files:\n
                     {"config_fed_server.[json|conf|yml]"} already exists.
-                \nNot generating the config files. If you would like to overwrite, use -force option"""
-            )
+                \nNot generating the config files. If you would like to overwrite, use -force option""")
             return
 
         template_srcs = {}
@@ -271,7 +269,7 @@ def get_src_template_by_name(cmd_args):
     return template_src
 
 
-def get_src_template(cmd_args) -> Optional[str]:
+def get_src_template(cmd_args) -> str | None:
     target_template = os.path.abspath(cmd_args.template)
     if os.path.isdir(target_template):
         info_file = os.path.join(target_template, JOB_INFO_CONF)
@@ -568,7 +566,7 @@ def submit_job(cmd_args):
 
 def _resolve_admin_user_and_dir_from_startup_kit(
     startup_kit_dir: str,
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     from nvflare.tool.kit.kit_config import resolve_admin_user_and_dir_from_startup_kit
 
     return resolve_admin_user_and_dir_from_startup_kit(startup_kit_dir)
@@ -828,7 +826,7 @@ def define_create_job_parser(job_subparser):
     job_sub_cmd_parser[CMD_CREATE_JOB] = create_parser
 
 
-def prepare_job_config(cmd_args, app_names: List[str], tmp_job_dir: Optional[str] = None):
+def prepare_job_config(cmd_args, app_names: list[str], tmp_job_dir: str | None = None):
     merged_conf, config_modified = merge_configs_from_cli(cmd_args, app_names)
     need_save_config = config_modified is True or tmp_job_dir is not None
 
@@ -915,7 +913,7 @@ def dst_config_path(job_folder, config_filename, app_name: str = "app"):
     return dst_path
 
 
-def get_config_dirs(job_folder: str, app_names: List[str]) -> List[str]:
+def get_config_dirs(job_folder: str, app_names: list[str]) -> list[str]:
     config_dirs = []
     if app_names:
         for app_name in app_names:
@@ -932,7 +930,7 @@ def get_config_dir(job_folder: str, app_name: str) -> str:
     return config_dir
 
 
-def convert_args_list_to_dict(kvs: Optional[List[str]] = None) -> dict:
+def convert_args_list_to_dict(kvs: list[str] | None = None) -> dict:
     """
     Convert a list of key-value strings to a dictionary.
 
@@ -972,10 +970,8 @@ def prepare_job_folder(cmd_args):
         else:
             from nvflare.tool.cli_output import print_human
 
-            print_human(
-                """\nwarning: app directory already exists.
-                \nIf you would like to overwrite, use -force option"""
-            )
+            print_human("""\nwarning: app directory already exists.
+                \nIf you would like to overwrite, use -force option""")
 
 
 def is_subdir(path, directory):
@@ -1000,7 +996,7 @@ def prepare_app_scripts(job_folder, app_custom_dirs, cmd_args):
                 raise ValueError(f"{cmd_args.script_dir} doesn't exists")
 
 
-def prepare_app_dirs(job_folder: str, app_names: List[str]) -> List[str]:
+def prepare_app_dirs(job_folder: str, app_names: list[str]) -> list[str]:
     app_names = ["app"] if not app_names else app_names
     app_custom_dirs = []
     for app_name in app_names:
@@ -1094,7 +1090,7 @@ def _job_session_for_args(cmd_args=None, study="default"):
     return _session()
 
 
-def _job_download_destination(job_id: str, output_dir: Optional[str]) -> str:
+def _job_download_destination(job_id: str, output_dir: str | None) -> str:
     if not output_dir:
         # download_job_result treats destination as the parent directory and moves
         # the downloaded job folder under it. Passing cwd gives the default
@@ -1107,7 +1103,7 @@ def _is_remote_download_location(location: str) -> bool:
     return bool(location and re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", location))
 
 
-def _local_download_path(location: str) -> Optional[str]:
+def _local_download_path(location: str) -> str | None:
     if not location:
         return None
     location = str(location)
@@ -1144,11 +1140,11 @@ def _iter_files_under(path: str):
     return None
 
 
-def _is_identifiable_server_log(rel_parts: List[str]) -> bool:
+def _is_identifiable_server_log(rel_parts: list[str]) -> bool:
     return any(part.lower() in {"server", "app_server"} for part in rel_parts[:-1])
 
 
-def _site_name_from_log_path(download_path: str, log_path: str) -> Optional[str]:
+def _site_name_from_log_path(download_path: str, log_path: str) -> str | None:
     try:
         rel_path = os.path.relpath(log_path, download_path)
     except ValueError:
@@ -1173,7 +1169,7 @@ def _site_name_from_log_path(download_path: str, log_path: str) -> Optional[str]
     return parent
 
 
-def _discover_job_download_artifacts(download_path: str) -> Tuple[dict, List[str]]:
+def _discover_job_download_artifacts(download_path: str) -> tuple[dict, list[str]]:
     artifacts = {}
     client_logs = {}
 

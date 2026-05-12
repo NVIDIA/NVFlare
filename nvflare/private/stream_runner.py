@@ -334,7 +334,7 @@ class ObjectStreamer(FLComponent):
 
     def _notify_abort_streaming(
         self,
-        targets: List[AuxMsgTarget],
+        targets: list[AuxMsgTarget],
         tx_id: str,
         secure: bool,
         fl_ctx: FLContext,
@@ -367,12 +367,12 @@ class ObjectStreamer(FLComponent):
         channel: str,
         topic: str,
         stream_ctx: StreamContext,
-        targets: List[AuxMsgTarget],
+        targets: list[AuxMsgTarget],
         producer: ObjectProducer,
         fl_ctx: FLContext,
         secure=False,
         optional=False,
-    ) -> Tuple[str, Any]:
+    ) -> tuple[str, Any]:
         if not stream_ctx:
             stream_ctx = StreamContext()
 
@@ -479,7 +479,7 @@ class ObjectStreamer(FLComponent):
         channel: str,
         topic: str,
         stream_ctx: StreamContext,
-        targets: List[AuxMsgTarget],
+        targets: list[AuxMsgTarget],
         producer: ObjectProducer,
         fl_ctx: FLContext,
         secure=False,

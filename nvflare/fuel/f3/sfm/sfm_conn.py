@@ -89,7 +89,7 @@ class SfmConnection:
 
         self.send_dict(frame_type, 1, data)
 
-    def send_heartbeat(self, frame_type: int, data: Optional[dict] = None):
+    def send_heartbeat(self, frame_type: int, data: dict | None = None):
         """Send Ping or Pong"""
 
         if frame_type not in (Types.PING, Types.PONG):
@@ -103,7 +103,7 @@ class SfmConnection:
         stream_id = self.sfm_endpoint.next_stream_id()
         self.send_dict(frame_type, stream_id, data)
 
-    def send_data(self, app_id: int, stream_id: int, headers: Optional[dict], payload: BytesAlike):
+    def send_data(self, app_id: int, stream_id: int, headers: dict | None, payload: BytesAlike):
         """Send user data"""
 
         prefix = Prefix(0, 0, Types.DATA, 0, 0, app_id, stream_id, 0)
@@ -117,7 +117,7 @@ class SfmConnection:
         payload = msgpack.packb(data)
         self.send_frame(prefix, None, payload)
 
-    def send_frame(self, prefix: Prefix, headers: Optional[dict], payload: Optional[BytesAlike]):
+    def send_frame(self, prefix: Prefix, headers: dict | None, payload: BytesAlike | None):
 
         headers_bytes = self.headers_to_bytes(headers)
         header_len = len(headers_bytes) if headers_bytes else 0
@@ -162,7 +162,7 @@ class SfmConnection:
             return time.monotonic() - self.send_started_at
 
     @staticmethod
-    def headers_to_bytes(headers: Optional[dict]) -> Optional[bytes]:
+    def headers_to_bytes(headers: dict | None) -> bytes | None:
         if headers:
             return msgpack.packb(headers)
         else:

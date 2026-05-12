@@ -44,7 +44,7 @@ class SessionManager:
     Implements session caching to avoid multiple login/logout cycles.
     """
 
-    def __init__(self, session_params: Dict[str, any]):
+    def __init__(self, session_params: dict[str, any]):
         self.session_params = session_params
 
     def _get_session(self):
@@ -63,7 +63,7 @@ class SessionManager:
             print(f"Submitted job '{job.name}' with ID: {job_id}")
             return job_id
 
-    def get_job_status(self, job_id: str) -> Optional[str]:
+    def get_job_status(self, job_id: str) -> str | None:
         """Get the status of the job."""
         sess = self._get_session()
         status = sess.get_job_status(job_id)
@@ -77,7 +77,7 @@ class SessionManager:
         print(f"Job {job_id} aborted successfully with message: {msg}")
         sess.close()
 
-    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
+    def get_job_result(self, job_id: str, timeout: float = 0.0) -> str | None:
         """Get the result workspace of the job."""
         sess = self._get_session()
         cb_run_counter = {"count": 0}

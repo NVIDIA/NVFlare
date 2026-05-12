@@ -22,7 +22,7 @@ def apply_enable_tensor_disk_offload(
     engine,
     enabled: bool,
     root_dir: str = None,
-) -> Tuple[Any, bool]:
+) -> tuple[Any, bool]:
     """Apply enable_tensor_disk_offload to cell FOBS context.
 
     Returns:
