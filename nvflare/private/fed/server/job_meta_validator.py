@@ -22,6 +22,7 @@ from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.apis.job_meta_validator_spec import JobMetaValidatorSpec
+from nvflare.apis.utils.format_check import check_job_app_name, check_job_id
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.private.fed.utils.fed_utils import extract_participants
@@ -89,6 +90,10 @@ class JobMetaValidator(JobMetaValidatorSpec):
                 meta_data = zf.read(meta_file)
                 meta = config_loader.load_config_from_str(meta_data.decode()).to_dict()
                 break
+        if meta:
+            job_id = meta.get(JobMetaKey.JOB_ID.value)
+            if job_id:
+                check_job_id(job_id)
         return meta
 
     @staticmethod
@@ -102,9 +107,12 @@ class JobMetaValidator(JobMetaValidatorSpec):
         deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value)
         if not deploy_map:
             raise ValueError(f"deploy_map is empty for job {job_name}")
+        if not isinstance(deploy_map, dict):
+            raise ValueError(f"deploy_map must be a dictionary for job {job_name}")
 
         site_list = []
-        for deployments in deploy_map.values():
+        for app, deployments in deploy_map.items():
+            check_job_app_name(app)
             if isinstance(deployments, list):
                 for item in deployments:
                     if isinstance(item, dict):
