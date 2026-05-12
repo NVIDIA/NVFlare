@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import AdminCommandNames, SUBMIT_TOKEN_JOB_DELETED_STATUS
+from nvflare.apis.fl_constant import SUBMIT_TOKEN_JOB_DELETED_STATUS, AdminCommandNames
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.flare_api.api_spec import (
