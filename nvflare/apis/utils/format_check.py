@@ -43,6 +43,22 @@ def name_check(name: str, entity_type: str):
         )
 
 
+def check_job_id(job_id: str):
+    if not isinstance(job_id, str) or not job_id:
+        raise ValueError("job_id must be a non-empty string")
+    invalid, message = name_check(job_id, "job_name")
+    if invalid:
+        raise ValueError(f"invalid job_id '{job_id}': {message}")
+
+
+def check_job_app_name(app_name: str):
+    if not isinstance(app_name, str) or not app_name:
+        raise ValueError("job app name must be a non-empty string")
+    invalid, message = name_check(app_name, "job_name")
+    if invalid:
+        raise ValueError(f"invalid job app name '{app_name}': {message}")
+
+
 def validate_class_methods_args(cls):
     for name, method in inspect.getmembers(cls, inspect.isfunction):
         if name != "__init_subclass__":
