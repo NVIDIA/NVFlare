@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import io
+import json
 import os
 import sys
 import zipfile
@@ -70,6 +71,9 @@ META_WITH_VALID_DEPLOY_MAP = [
 
 META_WITH_INVALID_DEPLOY_MAP = [
     pytest.param({"deploy_map": {"app1": ["@ALL", "server"]}}, id="all_other"),
+    pytest.param({"deploy_map": {"/tmp/app": ["server"]}}, id="absolute_app"),
+    pytest.param({"deploy_map": {"../app": ["server"]}}, id="traversing_app"),
+    pytest.param({"deploy_map": {"app/sub": ["server"]}}, id="nested_app"),
     pytest.param({"deploy_map": {"app1": ["@ALL"], "app2": ["@all"]}}, id="dup_all"),
     pytest.param({"deploy_map": {"app1": ["server", "site-1", "site-2"], "app2": ["site-2"]}}, id="dup_client"),
     pytest.param({"deploy_map": {"app1": ["server", "site-1"], "app2": ["server", "site-2"]}}, id="dup_server"),
@@ -145,6 +149,26 @@ class TestJobMetaValidator:
         }}
         """
         self._assert_invalid(job_name, meta)
+
+    @pytest.mark.parametrize(
+        "job_id",
+        [
+            pytest.param("../outside", id="relative_traversal"),
+            pytest.param("good/../../outside", id="nested_traversal"),
+            pytest.param("/tmp/outside", id="absolute_path"),
+            pytest.param("bad\\id", id="windows_separator"),
+        ],
+    )
+    def test_invalid_job_id(self, job_id):
+        meta = f"""
+        {{
+            "job_id": {json.dumps(job_id)},
+            "name": "sag",
+            "resource_spec": {{}},
+            "deploy_map": {{"sag": ["server", "site-1", "site-2"]}}
+        }}
+        """
+        self._assert_invalid("valid_job", meta)
 
     def _assert_valid(self, job_name: str):
         data = _zip_job_with_meta(job_name, "")
