@@ -386,7 +386,7 @@ def _generate_test_config_for_one_job(
     ]
     if example.prepare_data_script is not None:
         setup.append(f"bash {example.prepare_data_script}")
-    setup.append(f"python convert_to_test_job.py --job {job_dir} --post {postfix}")
+    setup.append(f"python tools/convert_to_test_job.py --job {job_dir} --postfix {postfix}")
     setup.append(f"rm -f {new_requirements_file}")
 
     config = {

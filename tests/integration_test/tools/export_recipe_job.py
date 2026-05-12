@@ -19,10 +19,10 @@ This script imports the actual job.py from examples and patches the recipe's
 execute() method to export instead, ensuring consistency with the examples.
 
 Usage:
-    python export_recipe_job.py --recipe_dir <path_to_recipe_dir> --output_dir <output_job_dir> [options]
+    python tools/export_recipe_job.py --recipe_dir <path_to_recipe_dir> --output_dir <output_job_dir> [options]
 
 Example:
-    python export_recipe_job.py \
+    python tools/export_recipe_job.py \
         --recipe_dir ../../examples/advanced/cifar10/pt/cifar10-sim/cifar10_fedavg \
         --output_dir ./exported_jobs/cifar10_fedavg_test \
         --recipe_args "--n_clients 2 --num_rounds 2"
@@ -40,9 +40,10 @@ from unittest.mock import patch
 
 def ensure_nvflare_on_path():
     """Ensure the NVFlare package root is on sys.path so the recipe patch target can be imported."""
-    # Infer repo root from this script's location: .../tests/integration_test/export_recipe_job.py
+    # Infer repo root from this script's location: .../tests/integration_test/tools/export_recipe_job.py
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    repo_root = os.path.dirname(os.path.dirname(script_dir))
+    integration_test_root = os.path.dirname(script_dir)
+    repo_root = os.path.dirname(os.path.dirname(integration_test_root))
     nvflare_dir = os.path.join(repo_root, "nvflare")
     if os.path.isdir(nvflare_dir) and repo_root not in sys.path:
         sys.path.insert(0, repo_root)

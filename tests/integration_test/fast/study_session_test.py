@@ -61,13 +61,13 @@ from nvflare.recipe import ProdEnv
 from tests.integration_test.src import NVFTestDriver, ProvisionSiteLauncher
 from tests.integration_test.src.utils import _get_job_store_path_from_workspace, get_job_meta
 
-JOBS_ROOT_DIR = os.path.join(os.path.dirname(__file__), "data", "jobs")
+INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
+
+JOBS_ROOT_DIR = os.path.join(INTEGRATION_TEST_ROOT, "data", "jobs")
 JOB_NAME = "hello-numpy-sag"
 JOB_DIR = os.path.join(JOBS_ROOT_DIR, JOB_NAME)
-NO_STUDIES_PROJECT_YAML = os.path.join(os.path.dirname(__file__), "data", "projects", "study_session_no_studies.yml")
-WITH_STUDIES_PROJECT_YAML = os.path.join(
-    os.path.dirname(__file__), "data", "projects", "study_session_with_studies.yml"
-)
+NO_STUDIES_PROJECT_YAML = os.path.join(INTEGRATION_TEST_ROOT, "data", "projects", "study_session_no_studies.yml")
+WITH_STUDIES_PROJECT_YAML = os.path.join(INTEGRATION_TEST_ROOT, "data", "projects", "study_session_with_studies.yml")
 
 MAIN_ADMIN = "admin@nvidia.com"
 LEAD_ADMIN = "lead@nvidia.com"
@@ -162,7 +162,7 @@ def _make_numpy_recipe(name: str, min_clients: int = MIN_CLIENTS) -> NumpyFedAvg
         min_clients=min_clients,
         num_rounds=1,
         model=np.array([0.0] * 10),
-        train_script=os.path.join(os.path.dirname(__file__), "client.py"),
+        train_script=os.path.join(INTEGRATION_TEST_ROOT, "client.py"),
     )
 
 
