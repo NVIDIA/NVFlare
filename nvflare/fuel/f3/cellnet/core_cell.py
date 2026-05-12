@@ -28,6 +28,8 @@ from nvflare.fuel.f3.cellnet.credential_manager import CredentialManager
 from nvflare.fuel.f3.cellnet.defs import (
     AbortRun,
     AuthenticationError,
+    CellChannel,
+    CellChannelTopic,
     CellPropertyKey,
     InvalidRequest,
     InvalidSession,
@@ -54,9 +56,7 @@ from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
-_CHANNEL = "cellnet.channel"
 _TOPIC_BULK = "bulk"
-_TOPIC_BYE = "bye"
 _SM_CHANNEL = "credential_manager"
 _SM_TOPIC = "key_exchange"
 
@@ -191,7 +191,7 @@ class _BulkSender:
         tms = [m.to_dict() for m in messages_to_send]
         bulk_msg = Message(None, tms)
         send_errs = self.cell.fire_and_forget(
-            channel=_CHANNEL, topic=_TOPIC_BULK, targets=[self.target], message=bulk_msg
+            channel=CellChannel.CELLNET, topic=_TOPIC_BULK, targets=[self.target], message=bulk_msg
         )
         if send_errs[self.target]:
             log_messaging_error(
@@ -462,8 +462,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.adhoc_connector_lock = threading.Lock()
         self.root_change_lock = threading.Lock()
 
-        self.register_request_cb(channel=_CHANNEL, topic=_TOPIC_BULK, cb=self._receive_bulk_message)
-        self.register_request_cb(channel=_CHANNEL, topic=_TOPIC_BYE, cb=self._peer_goodbye)
+        self.register_request_cb(channel=CellChannel.CELLNET, topic=_TOPIC_BULK, cb=self._receive_bulk_message)
+        self.register_request_cb(channel=CellChannel.CELLNET, topic=CellChannelTopic.Bye, cb=self._peer_goodbye)
 
         self.cleanup_waiter = None
         self.msg_stats_pool = StatsPoolManager.add_time_hist_pool(
@@ -920,8 +920,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 targets = [peer_name for peer_name in self.agents.keys()]
                 self.logger.debug(f"broadcasting goodbye to {targets}")
                 self.broadcast_request(
-                    channel=_CHANNEL,
-                    topic=_TOPIC_BYE,
+                    channel=CellChannel.CELLNET,
+                    topic=CellChannelTopic.Bye,
                     targets=targets,
                     request=Message(),
                     timeout=0.5,

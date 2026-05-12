@@ -93,7 +93,8 @@ GPUResourceManager (:mod:`nvflare.app_common.resource_managers.gpu_resource_mana
 GPUResourceManager and GPUResourceConsumer
 ==========================================
 
-During initialization, the GPUResourceManager will detect automatically (using nvidia-smi) if the system's GPU count and memory is enough. (i.e. larger than what specified in arguments).
+During initialization, the GPUResourceManager will detect automatically (using nvidia-smi) if the managed GPU count
+and memory are enough. When ``CUDA_VISIBLE_DEVICES`` contains GPU IDs, the startup check is restricted to those GPUs.
 
 NOTE that the current implementation of GPUResourceManager will NOT keep updating the GPU count and memory usage. This means that it just checks using nvidia-smi at init time and then virtually assumes it has this much resources on site.
 
