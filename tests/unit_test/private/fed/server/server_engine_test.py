@@ -191,15 +191,25 @@ def _make_abort_engine(job_handle):
     return engine
 
 
-def test_abort_app_on_server_waits_for_cleanup_after_in_band_abort():
+def test_abort_app_on_server_schedules_cleanup_in_background_after_in_band_abort():
+    """Cleanup must run in a background thread so the admin reply returns within the
+    CLI's default cmd_timeout (5.0s) — a synchronous max_wait of 10.0s would exceed it.
+    """
     job_handle = MagicMock()
     engine = _make_abort_engine(job_handle)
     engine._remove_run_processes = MagicMock()
 
-    result = engine.abort_app_on_server("job-1")
+    with patch("nvflare.private.fed.server.server_engine.threading.Thread") as thread_cls:
+        result = engine.abort_app_on_server("job-1")
 
     assert result == ""
-    engine._remove_run_processes.assert_called_once_with("job-1", job_handle=job_handle, max_wait=10.0)
+    thread_cls.assert_called_once_with(
+        target=engine._remove_run_processes,
+        kwargs={"job_id": "job-1", "job_handle": job_handle, "max_wait": 10.0},
+        daemon=True,
+    )
+    thread_cls.return_value.start.assert_called_once()
+    engine._remove_run_processes.assert_not_called()
 
 
 def test_abort_app_on_server_skips_graceful_wait_when_in_band_abort_fails():
@@ -208,10 +218,16 @@ def test_abort_app_on_server_skips_graceful_wait_when_in_band_abort_fails():
     engine.send_command_to_child_runner_process.side_effect = RuntimeError("child unavailable")
     engine._remove_run_processes = MagicMock()
 
-    result = engine.abort_app_on_server("job-1")
+    with patch("nvflare.private.fed.server.server_engine.threading.Thread") as thread_cls:
+        result = engine.abort_app_on_server("job-1")
 
     assert result == ""
-    engine._remove_run_processes.assert_called_once_with("job-1", job_handle=job_handle, max_wait=0.0)
+    thread_cls.assert_called_once_with(
+        target=engine._remove_run_processes,
+        kwargs={"job_id": "job-1", "job_handle": job_handle, "max_wait": 0.0},
+        daemon=True,
+    )
+    thread_cls.return_value.start.assert_called_once()
 
 
 def test_remove_run_processes_terminates_job_handle_when_graceful_wait_expires():
