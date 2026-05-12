@@ -27,8 +27,8 @@ from nvflare.tool.deploy.deploy_commands import (
     GPU_RESOURCE_CONSUMER,
     GPU_RESOURCE_MANAGER,
     HELM_RELEASE_NAME_MAX_LENGTH,
-    PROCESS_CLIENT_LAUNCHER,
     K8S_PARENT_PYTHON_PATH,
+    PROCESS_CLIENT_LAUNCHER,
     _k8s_release_name,
     prepare_deployment,
 )
@@ -417,6 +417,7 @@ def test_prepare_server_warns_when_snapshot_persistor_shape_is_unexpected(tmp_pa
     assert "args" not in resources["snapshot_persistor"]["args"]["storage"]
     assert _component(resources, "job_manager")["args"]["uri_root"] == "/var/tmp/nvflare/workspace/jobs-storage"
 
+
 def test_prepare_k8s_server_uses_parent_python_path_for_chart_command(tmp_path, capsys):
     kit = _make_server_kit(tmp_path)
     output = tmp_path / "server-k8s"
@@ -474,6 +475,7 @@ def test_prepare_k8s_launcher_default_python_path_matches_parent_default(tmp_pat
     values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
     assert launcher["args"]["default_python_path"] == K8S_PARENT_PYTHON_PATH
     assert values["command"] == [K8S_PARENT_PYTHON_PATH]
+
 
 def test_prepare_docker_reads_org_from_cert_without_sub_start(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
