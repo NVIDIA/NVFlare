@@ -18,6 +18,9 @@ from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE
 
 class Constant:
 
+    # Authorization right for server-predeployed Flower app mode
+    RIGHT_SERVER_PREDEPLOYED_FLWR = "server-predeployed-flwr"
+
     # task name defaults
     CONFIG_TASK_NAME = TieConstant.CONFIG_TASK_NAME
     START_TASK_NAME = TieConstant.START_TASK_NAME

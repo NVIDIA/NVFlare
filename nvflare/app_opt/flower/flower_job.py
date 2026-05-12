@@ -15,6 +15,7 @@
 import os.path
 from typing import List, Optional
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.app_common.tie.defs import Constant
 from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.metric_relay import MetricRelay
@@ -69,7 +70,7 @@ class FlowerJob(FedJob):
             allow_runtime_dependency_installation (bool, optional): whether to allow dynamic dependency installation. Defaults to False. (only flwr>=1.29)
         """
         if flower_content and flower_app_path:
-            raise ValueError("Specify either 'flower_content' (BYOC) or 'flower_app_path' " "(pre-deployed), not both.")
+            raise ValueError("Specify either 'flower_content' (BYOC) or 'flower_app_path' (pre-deployed), not both.")
         if not flower_content and not flower_app_path:
             raise ValueError("One of 'flower_content' or 'flower_app_path' must be provided.")
 
@@ -77,7 +78,17 @@ class FlowerJob(FedJob):
             if not os.path.isdir(flower_content):
                 raise ValueError(f"{flower_content} is not a valid directory")
 
-        super().__init__(name=name, min_clients=min_clients, mandatory_clients=mandatory_clients)
+        # Mark pre-deployed jobs in meta.json.
+        extra_meta = {}
+        if flower_app_path:
+            extra_meta[AppValidationKey.FLOWER_PREDEPLOYED] = True
+
+        super().__init__(
+            name=name,
+            min_clients=min_clients,
+            mandatory_clients=mandatory_clients,
+            meta_props=extra_meta if extra_meta else None,
+        )
 
         controller = FlowerController(
             database=database,

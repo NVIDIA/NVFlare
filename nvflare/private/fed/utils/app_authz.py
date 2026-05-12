@@ -16,6 +16,7 @@ from nvflare.apis.app_validation import AppValidationKey, AppValidator
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 
 _RIGHT_BYOC = "byoc"
+_RIGHT_FLOWER_PREDEPLOYED = "server-predeployed-flwr"
 
 
 class AppAuthzService(object):
@@ -34,6 +35,7 @@ class AppAuthzService(object):
         submitter_name: str,
         submitter_org: str,
         submitter_role: str,
+        job_meta: dict = None,
     ) -> (bool, str):
         if not AppAuthzService.app_validator:
             return True, ""
@@ -43,17 +45,32 @@ class AppAuthzService(object):
             return False, err
 
         app_has_custom_code = app_info.get(AppValidationKey.BYOC, False)
-        if not app_has_custom_code:
-            return True, ""
+        if app_has_custom_code:
+            ctx = AuthzContext(
+                user=Person(submitter_name, submitter_org, submitter_role),
+                submitter=Person(submitter_name, submitter_org, submitter_role),
+                right=_RIGHT_BYOC,
+            )
+            authorized, err = AuthorizationService.authorize(ctx)
+            if not authorized:
+                return False, "BYOC not permitted"
 
-        ctx = AuthzContext(
-            user=Person(submitter_name, submitter_org, submitter_role),
-            submitter=Person(submitter_name, submitter_org, submitter_role),
-            right=_RIGHT_BYOC,
-        )
+        # Guard for server-predeployed Flower app mode.
+        # If job_meta is provided, check the flag directly.
+        is_flower_predeployed = job_meta.get(AppValidationKey.FLOWER_PREDEPLOYED, False) if job_meta else False
 
-        authorized, err = AuthorizationService.authorize(ctx)
-        if not authorized:
-            return False, "BYOC not permitted"
+        if is_flower_predeployed:
+            ctx = AuthzContext(
+                user=Person(submitter_name, submitter_org, submitter_role),
+                submitter=Person(submitter_name, submitter_org, submitter_role),
+                right=_RIGHT_FLOWER_PREDEPLOYED,
+            )
+            authorized, err = AuthorizationService.authorize(ctx)
+            if not authorized:
+                return False, (
+                    "Server-predeployed Flower app mode is not permitted on this site. "
+                    "A site admin must grant the 'server-predeployed-flwr' right in "
+                    "authorization.json to enable this mode."
+                )
 
         return True, ""

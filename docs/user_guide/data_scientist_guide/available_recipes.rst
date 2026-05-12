@@ -735,6 +735,52 @@ Run Flower-based federated learning jobs.
 
 - `examples/hello-world/hello-flower <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-flower>`_
 
+Server-Predeployed Flower App Mode
+----------------------------------
+
+For production deployments where BYOC (Bring Your Own Code) is restricted, you can use 
+server-predeployed Flower apps. In this mode, the Flower application code is pre-deployed 
+on the server at a known path, and NVFlare distributes it to clients via Flower's FAB 
+(Flower Application Bundle) mechanism. This eliminates the need for BYOC authorization.
+
+.. code-block:: python
+
+    from nvflare.app_opt.flower.recipe import FlowerRecipe
+    from nvflare.recipe import ProdEnv
+
+    recipe = FlowerRecipe(
+        name="flower-job",
+        min_clients=2,
+        flower_app_path="/opt/flower_apps/my_app",  # Pre-deployed on server
+        run_config={"num-server-rounds": 5},
+    )
+    env = ProdEnv(startup_kit_location="/path/to/startup_kit")
+    run = recipe.execute(env)
+
+**Key Differences:**
+
+- ``flower_content``: Packages Flower app in job ZIP (requires BYOC authorization)
+- ``flower_app_path``: References pre-deployed app on server (no BYOC needed)
+
+**Authorization Requirements:**
+
+Sites using ``flower_app_path`` must have the ``server-predeployed-flwr`` permission 
+granted in their ``authorization.json``. By default, this permission is set to ``"none"`` 
+(denied) for all roles. To enable:
+
+.. code-block:: json
+
+    {
+      "format_version": "1.0",
+      "permissions": {
+        "lead": {
+          "server-predeployed-flwr": "any"
+        }
+      }
+    }
+
+See :ref:`site_policy_management` for details on site authorization policies.
+
 
 Swarm Learning
 ==============

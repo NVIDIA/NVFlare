@@ -123,6 +123,32 @@ First, check real-world deployment guide: https://nvflare.readthedocs.io/en/main
 
 You can run the job in a production environment by changing from `SimEnv` to `ProdEnv` in the `job.py` script.
 
+### Production Deployment Note
+
+For production environments where BYOC is restricted, you can use server-predeployed 
+mode by replacing `flower_content` with `flower_app_path` in your job recipe:
+
+```python
+# Instead of:
+recipe = FlowerRecipe(
+    name="hello-flower",
+    min_clients=n_clients,
+    flower_content=content_dir,  # Requires BYOC
+    ...
+)
+
+# Use:
+recipe = FlowerRecipe(
+    name="hello-flower",
+    min_clients=n_clients,
+    flower_app_path="/opt/flower_apps/flwr-pt",  # No BYOC needed
+    ...
+)
+```
+
+Ensure your site's `authorization.json` grants the `server-predeployed-flwr` permission.
+See the [NVFlare documentation](https://nvflare.readthedocs.io/) for details.
+
 ## Output summary
 
 ### Initialization

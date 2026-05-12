@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+import os
 import tempfile
+import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.app_opt.flower.flower_job import FlowerJob
 
 
@@ -96,3 +100,56 @@ class TestFlowerJob:
             )
             call_kwargs = mock_controller.call_args.kwargs
             assert call_kwargs["flower_app_path"] == "/opt/flower_apps/my_app"
+
+    def test_flower_job_meta_contains_predeployed_flag(self):
+        """flower_app_path sets FLOWER_PREDEPLOYED in meta_props."""
+        with tempfile.TemporaryDirectory() as app_dir:
+            job = FlowerJob(
+                name="test_predeployed_job",
+                flower_app_path=app_dir,
+                min_clients=1,
+            )
+            assert hasattr(job, 'job')
+            assert hasattr(job.job, 'meta_props') or hasattr(job.job, 'meta')
+            meta = job.job.meta_props or job.job.meta
+            assert AppValidationKey.FLOWER_PREDEPLOYED in meta
+            assert meta[AppValidationKey.FLOWER_PREDEPLOYED] is True
+
+    def test_flower_job_meta_no_predeployed_flag(self):
+        """flower_content does NOT set FLOWER_PREDEPLOYED flag."""
+        with tempfile.TemporaryDirectory() as flower_content_dir:
+            with open(os.path.join(flower_content_dir, "pyproject.toml"), "w") as f:
+                f.write("[project]\nname = 'test'\n")
+            
+            job = FlowerJob(
+                name="test_byoc_job",
+                flower_content=flower_content_dir,
+                min_clients=1,
+            )
+            # When flower_content is used, meta_props is None
+            assert job.job.meta_props is None
+
+    def test_flower_job_meta_props_exported_to_zip(self):
+        """Exported job ZIP contains meta.json with FLOWER_PREDEPLOYED flag."""
+        with tempfile.TemporaryDirectory() as app_dir:
+            with tempfile.TemporaryDirectory() as job_root:
+                job = FlowerJob(
+                    name="test_export_job",
+                    flower_app_path=app_dir,
+                    min_clients=1,
+                )
+                job.export_job(job_root)
+                
+                job_dir = os.path.join(job_root, "test_export_job")
+                assert os.path.isdir(job_dir)
+                
+                import json
+                for root, dirs, files in os.walk(job_dir):
+                    for file in files:
+                        if file.endswith(".zip"):
+                            zip_path = os.path.join(root, file)
+                            with zipfile.ZipFile(zip_path, 'r') as z:
+                                with z.open("meta.json") as f:
+                                    meta = json.load(f)
+                                    assert AppValidationKey.FLOWER_PREDEPLOYED in meta
+                                    assert meta[AppValidationKey.FLOWER_PREDEPLOYED] is True
