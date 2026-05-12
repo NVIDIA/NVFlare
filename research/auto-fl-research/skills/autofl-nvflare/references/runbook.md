@@ -8,8 +8,8 @@
 5. Before validation, smoke tests, baseline, or candidates, run `bash scripts/init_run.sh <tag>` and verify `git branch --show-current` starts with `autoresearch/`. Do not run experiments on `main`, `upstream/main`, the starter branch, or a shared feature branch.
 6. Propose one small mutation or a small same-budget candidate batch.
 7. Edit the smallest possible set of files.
-8. Run validation.
-9. Run a smoke test.
+8. Run the validation command named by the active task profile, with `TASK_DIR` set to the active task.
+9. Run the smoke command named by the active task profile. For non-CIFAR tasks, pass task-specific `SMOKE_ARGS` or use `scripts/run_iteration.sh` with the active task budget.
 10. Follow the active task profile's local hardware and candidate-width rules. For the default CIFAR-10/H100 profile, launch up to `PARALLEL_CANDIDATES=4` same-budget candidates concurrently on one local H100 when memory allows, and reduce the width if candidates hit CUDA OOM or host contention.
 11. Use the active task profile's default candidate budget unless told otherwise. For the default CIFAR-10/H100 profile, that budget is 8 clients, 20 communication rounds, 4 local epochs, `local_train_steps=0`, training batch size 64, eval batch size 1024, alpha 0.5, seed 0, `model_arch=moderate_cnn`, `max_model_params=5000000`, weighted aggregation, deterministic client training, final global evaluation on site-1, and a 1200-second timeout. Local epochs or `local_train_steps` may be swept under that runtime cap, but do not vary both in the same narrow sweep.
 12. Use unique `RUN_LOG` and `--name` values for every candidate. If the active profile requires one local GPU, pin each run with `CUDA_VISIBLE_DEVICES=0` instead of spreading candidates across devices.

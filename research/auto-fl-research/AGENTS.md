@@ -40,7 +40,7 @@ You must preserve all of the following unless a human explicitly asks for a prot
 
 ## Required workflow after every edit
 
-1. Run `make validate`
-2. Run either `make smoke` or `bash scripts/run_iteration.sh ...`
+1. Run the active task profile's validation command, with `TASK_DIR` set to the active task.
+2. Run the active task profile's smoke command. For non-CIFAR tasks, pass the task-specific `SMOKE_ARGS` or run `bash scripts/run_iteration.sh ...` with the active task budget.
 3. Record the mutation in `results.tsv`
 4. Summarize the mutation in `templates/mutation_report.md`
