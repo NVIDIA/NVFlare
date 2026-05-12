@@ -802,7 +802,7 @@ class FederatedServer(BaseServer):
 
         code = payload.get(JobFailureMsgKey.CODE)
         reason = payload.get(JobFailureMsgKey.REASON, "?")
-        if code in (ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION, JobReturnCode.EXECUTION_ERROR):
+        if code in (ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION):
             with self.engine.new_context() as fl_ctx:
                 self.logger.info(f"Failing job {job_id} due to reported failure from {client}: {reason}")
                 self.engine.job_runner.fail_run(job_id, ProcessExitCode.EXCEPTION, fl_ctx)
