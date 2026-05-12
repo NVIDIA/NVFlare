@@ -572,7 +572,7 @@ study-alpha:
     mode: rw
 ```
 
-For K8s, each dataset `source` is a trusted PVC claim name that is inserted into the pod manifest. The multicloud deploy tool validates generated values against `pvc_config`; manually edited runtime files are trusted site-operator input. For Docker, the same YAML shape is used but `source` is a trusted host path instead of a PVC claim name.
+For K8s, each dataset `source` is a trusted PVC claim name that is inserted into the pod manifest. For Docker, the same YAML shape is used but `source` is a trusted host path instead of a PVC claim name. Site operators should validate these site-local values before running jobs.
 
 ---
 
