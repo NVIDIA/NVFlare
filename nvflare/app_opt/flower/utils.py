@@ -66,3 +66,38 @@ def shareable_to_msg_container(s: Shareable) -> pb2.MessageContainer:
 
 def reply_should_exit() -> pb2.MessageContainer:
     return pb2.MessageContainer(metadata={"should-exit": "true"})
+
+
+def validate_flower_app_path(path: str, allow_symlinks: bool = True) -> None:
+    """Validate flower_app_path format and security.
+
+    Args:
+        path: The flower_app_path value to validate
+        allow_symlinks: Whether to allow symbolic links (default True).
+                        If False, it will check the filesystem and raise ValueError if a link is found.
+
+    Raises:
+        ValueError: If path is invalid or unsafe
+    """
+    if not path.startswith("local/custom/"):
+        raise ValueError(
+            f"flower_app_path must start with 'local/custom/', got '{path}'. "
+            "Pre-deployed apps must be in the workspace's local/custom directory."
+        )
+
+    # Check for path traversal attempts (both Unix and Windows styles)
+    # Normalize separators for consistent checking
+    normalized = path.replace("\\", "/")
+
+    # Check for .. at any position
+    if ".." in normalized:
+        raise ValueError(f"flower_app_path contains invalid path traversal: '{path}'")
+
+    if not allow_symlinks:
+        import os
+
+        if os.path.islink(path.rstrip(os.sep)):
+            raise ValueError(
+                f"flower_app_path '{path}' is a symbolic link. "
+                "For security, pre-deployed app paths must be real directories, not links."
+            )

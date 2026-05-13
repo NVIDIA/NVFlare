@@ -109,25 +109,29 @@ class TestStaticFileBuilder:
     def test_master_template_includes_server_predeployed_flwr_right(self):
         """master_template.yml's default_authz contains server-predeployed-flwr right."""
         import os
+
         import yaml
-        
+
         template_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-            "nvflare", "lighter", "templates", "master_template.yml"
+            "nvflare",
+            "lighter",
+            "templates",
+            "master_template.yml",
         )
         assert os.path.exists(template_path)
-        
+
         with open(template_path, "r") as f:
             template = yaml.safe_load(f)
-            
+
         assert "default_authz" in template
         authz = json.loads(template["default_authz"])
-        
+
         assert "permissions" in authz
         org_admin = authz["permissions"]["org_admin"]
         assert "server-predeployed-flwr" in org_admin
         assert org_admin["server-predeployed-flwr"] == "none"
-        
+
         lead = authz["permissions"]["lead"]
         assert "server-predeployed-flwr" in lead
         assert lead["server-predeployed-flwr"] == "none"

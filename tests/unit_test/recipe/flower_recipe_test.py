@@ -124,25 +124,22 @@ def test_flower_job_no_byoc_when_predeployed():
     """Verify that a FlowerJob with flower_app_path exports without any custom/ content (no BYOC)."""
     from nvflare.app_opt.flower.flower_job import FlowerJob
 
-    with tempfile.TemporaryDirectory() as app_dir:
-        with tempfile.TemporaryDirectory() as job_root:
-            job = FlowerJob(
-                name="test_no_byoc_job",
-                flower_app_path=app_dir,
-                min_clients=1,
-            )
-            job.export_job(job_root)
+    with tempfile.TemporaryDirectory() as job_root:
+        job = FlowerJob(
+            name="test_no_byoc_job",
+            flower_app_path="local/custom/flwr_pt_tb",
+            min_clients=1,
+        )
+        job.export_job(job_root)
 
-            job_dir = os.path.join(job_root, "test_no_byoc_job")
-            assert os.path.isdir(job_dir), "Job directory was not created"
+        job_dir = os.path.join(job_root, "test_no_byoc_job")
+        assert os.path.isdir(job_dir), "Job directory was not created"
 
-            for app_name in os.listdir(job_dir):
-                custom_dir = os.path.join(job_dir, app_name, "custom")
-                if os.path.isdir(custom_dir):
-                    custom_contents = os.listdir(custom_dir)
-                    assert (
-                        len(custom_contents) == 0
-                    ), f"Expected empty custom/ in {app_name}, but found: {custom_contents}"
+        for app_name in os.listdir(job_dir):
+            custom_dir = os.path.join(job_dir, app_name, "custom")
+            if os.path.isdir(custom_dir):
+                custom_contents = os.listdir(custom_dir)
+                assert len(custom_contents) == 0, f"Expected empty custom/ in {app_name}, but found: {custom_contents}"
 
 
 def test_flower_job_has_byoc_when_content_provided():

@@ -30,6 +30,8 @@ from nvflare.app_opt.flower.defs import Constant
 from nvflare.fuel.utils.grpc_utils import create_channel
 from nvflare.security.logging import secure_format_exception
 
+from .utils import validate_flower_app_path
+
 # Flower CLI executable names
 FLOWER_SUPERLINK = "flower-superlink"
 FLOWER_SUPERNODE = "flower-supernode"
@@ -323,6 +325,13 @@ class FlowerServerApplet(Applet):
             raise RuntimeError("invalid workspace")
 
         if self.flower_app_path:
+            # Validate path format and security (disallowing symlinks on the server)
+            try:
+                validate_flower_app_path(self.flower_app_path, allow_symlinks=False)
+            except ValueError as e:
+                raise RuntimeError(str(e))
+
+            # Check filesystem existence
             if not os.path.isdir(self.flower_app_path):
                 raise RuntimeError(
                     f"flower_app_path '{self.flower_app_path}' does not exist on this host. "

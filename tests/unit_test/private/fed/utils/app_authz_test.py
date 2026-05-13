@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from nvflare.apis.app_validation import AppValidationKey, AppValidator
 from nvflare.fuel.sec.authz import AuthorizationService
@@ -23,10 +24,10 @@ from nvflare.security.security import EmptyAuthorizer
 
 class _MockAppValidator(AppValidator):
     """Mock AppValidator for testing."""
-    
+
     def __init__(self, validate_return=("", {})):
         self.validate_return = validate_return
-    
+
     def validate(self, app_folder: str):
         return self.validate_return
 
@@ -45,12 +46,12 @@ class TestAppAuthzService:
         """Predeployed mode with granted right -> succeeds."""
         app_path = str(tmp_path / "app")
         (tmp_path / "app").mkdir()
-        
+
         mock_validator = _MockAppValidator(validate_return=("", {}))
-        
+
         AppAuthzService.initialize(mock_validator)
-        
-        with patch.object(AuthorizationService, 'authorize', return_value=(True, "")):
+
+        with patch.object(AuthorizationService, "authorize", return_value=(True, "")):
             authorized, error = AppAuthzService.authorize(
                 app_path=app_path,
                 submitter_name="test_user",
@@ -58,7 +59,7 @@ class TestAppAuthzService:
                 submitter_role="org_admin",
                 job_meta={AppValidationKey.FLOWER_PREDEPLOYED: True},
             )
-        
+
         assert authorized
         assert error == ""
 
@@ -66,12 +67,12 @@ class TestAppAuthzService:
         """Predeployed mode with denied right -> fails with clear error."""
         app_path = str(tmp_path / "app")
         (tmp_path / "app").mkdir()
-        
+
         mock_validator = _MockAppValidator(validate_return=("", {}))
-        
+
         AppAuthzService.initialize(mock_validator)
-        
-        with patch.object(AuthorizationService, 'authorize', return_value=(False, "not permitted")):
+
+        with patch.object(AuthorizationService, "authorize", return_value=(False, "not permitted")):
             authorized, error = AppAuthzService.authorize(
                 app_path=app_path,
                 submitter_name="test_user",
@@ -79,7 +80,7 @@ class TestAppAuthzService:
                 submitter_role="org_admin",
                 job_meta={AppValidationKey.FLOWER_PREDEPLOYED: True},
             )
-        
+
         assert not authorized
         assert "Server-predeployed Flower app mode is not permitted" in error
         assert "server-predeployed-flwr" in error
@@ -88,19 +89,19 @@ class TestAppAuthzService:
         """Predeployed mode without job_meta -> skips check (backward compatibility)."""
         app_path = str(tmp_path / "app")
         (tmp_path / "app").mkdir()
-        
+
         mock_validator = _MockAppValidator(validate_return=("", {}))
-        
+
         AppAuthzService.initialize(mock_validator)
-        
-        with patch.object(AuthorizationService, 'authorize') as mock_auth:
+
+        with patch.object(AuthorizationService, "authorize") as mock_auth:
             authorized, error = AppAuthzService.authorize(
                 app_path=app_path,
                 submitter_name="test_user",
                 submitter_org="test_org",
                 submitter_role="org_admin",
             )
-        
+
         assert authorized
         assert error == ""
 
@@ -108,12 +109,12 @@ class TestAppAuthzService:
         """Existing BYOC functionality unchanged."""
         app_path = str(tmp_path / "app")
         (tmp_path / "app").mkdir()
-        
+
         mock_validator = _MockAppValidator(validate_return=("", {AppValidationKey.BYOC: True}))
-        
+
         AppAuthzService.initialize(mock_validator)
-        
-        with patch.object(AuthorizationService, 'authorize', return_value=(True, "")):
+
+        with patch.object(AuthorizationService, "authorize", return_value=(True, "")):
             authorized, error = AppAuthzService.authorize(
                 app_path=app_path,
                 submitter_name="test_user",
@@ -121,7 +122,7 @@ class TestAppAuthzService:
                 submitter_role="org_admin",
                 job_meta={},
             )
-        
+
         assert authorized
         assert error == ""
 
@@ -129,12 +130,12 @@ class TestAppAuthzService:
         """Both BYOC and predeployed flags -> both checks run."""
         app_path = str(tmp_path / "app")
         (tmp_path / "app").mkdir()
-        
+
         mock_validator = _MockAppValidator(validate_return=("", {AppValidationKey.BYOC: True}))
-        
+
         AppAuthzService.initialize(mock_validator)
-        
-        with patch.object(AuthorizationService, 'authorize', return_value=(True, "")) as mock_auth:
+
+        with patch.object(AuthorizationService, "authorize", return_value=(True, "")) as mock_auth:
             authorized, error = AppAuthzService.authorize(
                 app_path=app_path,
                 submitter_name="test_user",
@@ -142,7 +143,7 @@ class TestAppAuthzService:
                 submitter_role="org_admin",
                 job_meta={AppValidationKey.FLOWER_PREDEPLOYED: True},
             )
-        
+
         assert authorized
         assert mock_auth.call_count == 2
         assert error == ""
@@ -151,12 +152,12 @@ class TestAppAuthzService:
         """No custom code, no predeployed flag -> succeeds without auth check."""
         app_path = str(tmp_path / "app")
         (tmp_path / "app").mkdir()
-        
+
         mock_validator = _MockAppValidator(validate_return=("", {}))
-        
+
         AppAuthzService.initialize(mock_validator)
-        
-        with patch.object(AuthorizationService, 'authorize') as mock_auth:
+
+        with patch.object(AuthorizationService, "authorize") as mock_auth:
             authorized, error = AppAuthzService.authorize(
                 app_path=app_path,
                 submitter_name="test_user",
@@ -164,7 +165,7 @@ class TestAppAuthzService:
                 submitter_role="org_admin",
                 job_meta={},
             )
-        
+
         assert authorized
         assert error == ""
         mock_auth.assert_not_called()

@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
-
 from nvflare.apis.app_validation import AppValidationKey
 
 
@@ -22,7 +20,7 @@ class TestAppValidationKey:
 
     def test_flower_predeployed_constant_exists(self):
         """FLOWER_PREDEPLOYED constant is defined."""
-        assert hasattr(AppValidationKey, 'FLOWER_PREDEPLOYED')
+        assert hasattr(AppValidationKey, "FLOWER_PREDEPLOYED")
 
     def test_flower_predeployed_constant_value(self):
         """FLOWER_PREDEPLOYED constant has correct value."""

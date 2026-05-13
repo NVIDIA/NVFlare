@@ -24,6 +24,7 @@ from nvflare.job_config.api import FedJob
 
 from .controller import FlowerController
 from .executor import FlowerExecutor
+from .utils import validate_flower_app_path
 
 
 class FlowerJob(FedJob):
@@ -77,6 +78,10 @@ class FlowerJob(FedJob):
         if flower_content:
             if not os.path.isdir(flower_content):
                 raise ValueError(f"{flower_content} is not a valid directory")
+
+        # Validate flower_app_path format and security
+        if flower_app_path:
+            validate_flower_app_path(flower_app_path)
 
         # Mark pre-deployed jobs in meta.json.
         extra_meta = {}
