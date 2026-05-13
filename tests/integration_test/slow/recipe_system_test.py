@@ -19,7 +19,7 @@ They test basic recipe workflow with SimEnv and PocEnv.
 
 To run manually:
     cd tests/integration_test
-    pytest recipe_system_test.py -v
+    pytest slow/recipe_system_test.py -v
 
 TODO: Decide if these should be added to an existing test category or run in a separate suite.
 """
@@ -32,6 +32,9 @@ from nvflare.app_common.np.recipes import NumpyCrossSiteEvalRecipe, NumpyFedAvgR
 from nvflare.recipe import PocEnv, SimEnv
 from nvflare.recipe.utils import add_cross_site_evaluation
 
+INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
+REPO_ROOT = os.path.dirname(os.path.dirname(INTEGRATION_TEST_ROOT))
+
 
 class TestRecipeSystemIntegration:
     """Integration tests for the entire recipe system workflow."""
@@ -39,8 +42,7 @@ class TestRecipeSystemIntegration:
     @property
     def client_script_path(self):
         """Get absolute path to client.py script."""
-        test_dir = os.path.dirname(__file__)
-        return os.path.join(test_dir, "client.py")
+        return os.path.join(INTEGRATION_TEST_ROOT, "client.py")
 
     def test_end_to_end_simulation_workflow(self):
         """Test complete workflow with simulation environment."""
@@ -75,9 +77,7 @@ class TestRecipeSystemIntegration:
         Uses tmp_path for workspace so it works on Windows, sandboxed CI, and custom temp dirs.
         Requires simulator to bind ports (run with permissions that allow network/socket bind).
         """
-        examples_dir = os.path.join(
-            os.path.dirname(__file__), "..", "..", "examples", "hello-world", "hello-numpy-cross-val"
-        )
+        examples_dir = os.path.join(REPO_ROOT, "examples", "hello-world", "hello-numpy-cross-val")
         client_script = os.path.abspath(os.path.join(examples_dir, "client.py"))
         workspace_root = str(tmp_path / "hello_numpy_cse")
         env = SimEnv(num_clients=2, workspace_root=workspace_root)
@@ -145,7 +145,7 @@ class TestRecipeSystemIntegration:
             pytest.skip("PyTorch not available")
 
         # Add hello-pt example to path for model import
-        examples_dir = os.path.join(os.path.dirname(__file__), "..", "..", "examples", "hello-world", "hello-pt")
+        examples_dir = os.path.join(REPO_ROOT, "examples", "hello-world", "hello-pt")
         sys.path.insert(0, examples_dir)
 
         from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe

@@ -19,7 +19,7 @@ federation and verifies the resulting startup kits are self-consistent and
 structurally equivalent to what `nvflare provision` would produce.
 
 Run with:
-    python3 -m pytest tests/integration_test/distributed_provisioning_test.py -v
+    python3 -m pytest tests/integration_test/slow/distributed_provisioning_test.py -v
 """
 
 import json
@@ -40,6 +40,8 @@ import yaml
 from nvflare.lighter.provision import provision
 from nvflare.tool.cert.cert_commands import handle_cert_approve, handle_cert_init, handle_cert_request
 from nvflare.tool.package.package_commands import handle_package
+
+INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
 
 
 def _tcp_bind_available() -> bool:
@@ -494,7 +496,7 @@ class TestDistributedProvisioningE2E:
 
         assert ensure_admin_api_logged_in(admin_api, timeout=60), "Admin API did not log in within 60 s"
 
-        job_dir = os.path.join(os.path.dirname(__file__), "data", "jobs", "hello-numpy-sag")
+        job_dir = os.path.join(INTEGRATION_TEST_ROOT, "data", "jobs", "hello-numpy-sag")
         job_id = admin_api.submit_job(job_dir)
         assert isinstance(job_id, str) and job_id, f"Job submit failed: {job_id!r}"
 
