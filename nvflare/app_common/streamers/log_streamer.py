@@ -345,16 +345,16 @@ class _LogTailProducer(BaseChunkProducer):
 
     def process_replies(self, replies, stream_ctx, fl_ctx):
         # Tolerate a bounded number of bootstrap misses at job startup. The
-        # receiver registers its handler on ABOUT_TO_START_RUN in the server's
-        # job subprocess; if the client's first chunk arrives before that
-        # handler is wired up, the server replies EXECUTION_EXCEPTION. Without
-        # this guard the base class logs an ERROR and tears the stream down for
-        # the rest of the job. Instead, until we see the first OK reply, treat
-        # a small number of uniform EXECUTION_EXCEPTION replies as transient:
-        # roll the file offset back so the bytes are re-emitted on the next
-        # produce(), log at debug, and keep the stream alive. After the retry
-        # budget is exhausted, or after the first OK reply, fall through to the
-        # base behavior so genuine receiver failures are still surfaced.
+        # receiver registers its handler on START_RUN in the server's job
+        # subprocess; if the client's first chunk arrives before that handler is
+        # wired up, the server replies EXECUTION_EXCEPTION. Without this guard
+        # the base class logs an ERROR and tears the stream down for the rest of
+        # the job. Instead, until we see the first OK reply, treat a small number
+        # of uniform EXECUTION_EXCEPTION replies as transient: roll the file
+        # offset back so the bytes are re-emitted on the next produce(), log at
+        # debug, and keep the stream alive. After the retry budget is exhausted,
+        # or after the first OK reply, fall through to the base behavior so
+        # genuine receiver failures are still surfaced.
         if not self._first_ok_received and replies:
             transient = all(
                 reply.get_return_code(ReturnCode.OK) == ReturnCode.EXECUTION_EXCEPTION for reply in replies.values()
