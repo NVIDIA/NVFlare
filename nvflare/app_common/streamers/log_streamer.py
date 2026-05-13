@@ -344,6 +344,9 @@ class _LogTailProducer(BaseChunkProducer):
             self.file = None
 
     def process_replies(self, replies, stream_ctx, fl_ctx):
+        if not replies:
+            return {} if self.eof else None
+
         # Tolerate a bounded number of bootstrap misses at job startup. The
         # receiver registers its handler on START_RUN in the server's job
         # subprocess; if the client's first chunk arrives before that handler is
@@ -372,7 +375,7 @@ class _LogTailProducer(BaseChunkProducer):
                 )
                 return None  # keep producing — receiver should be ready by next send
 
-        if any(reply.get_return_code(ReturnCode.OK) == ReturnCode.OK for reply in replies.values()):
+        if replies and any(reply.get_return_code(ReturnCode.OK) == ReturnCode.OK for reply in replies.values()):
             self._first_ok_received = True
             self._bootstrap_miss_count = 0
 
