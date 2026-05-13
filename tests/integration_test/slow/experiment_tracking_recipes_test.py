@@ -29,7 +29,7 @@ They use CIFAR-10 dataset and run real training.
 
 To run manually:
     cd tests/integration_test
-    pytest experiment_tracking_recipes_test.py -v
+    pytest slow/experiment_tracking_recipes_test.py -v
 
 TODO: Decide if these should be added to an existing test category (e.g., CIFAR integration tests)
 or run in a separate recipe test suite (takes ~1-2 minutes).
@@ -40,6 +40,9 @@ import os
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_experiment_tracking
+
+INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
+REPO_ROOT = os.path.dirname(os.path.dirname(INTEGRATION_TEST_ROOT))
 
 
 class TestExperimentTrackingRecipes:
@@ -52,10 +55,7 @@ class TestExperimentTrackingRecipes:
     @property
     def client_script_path(self):
         """Get absolute path to client.py script from tensorboard example."""
-        # Use the tensorboard example's client script for testing
-        test_dir = os.path.dirname(__file__)
-        repo_root = os.path.dirname(os.path.dirname(test_dir))
-        return os.path.join(repo_root, "examples/advanced/experiment-tracking/tensorboard/client.py")
+        return os.path.join(REPO_ROOT, "examples/advanced/experiment-tracking/tensorboard/client.py")
 
     @property
     def client_script_dir(self):
