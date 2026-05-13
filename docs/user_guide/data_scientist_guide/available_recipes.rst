@@ -50,6 +50,30 @@ Most training recipes accept the following model-related parameters:
 
 See :ref:`job_recipe` for detailed explanations of these options.
 
+Fed Task
+==============
+
+For one-round workflows that do not have a global model lifecycle, use ``FedTaskRecipe``.
+This is useful for client-side embedding extraction, preprocessing, feature generation, local evaluation,
+or other federated tasks that only need the server to coordinate one script execution across clients.
+
+.. code-block:: python
+
+    from nvflare.recipe import FedTaskRecipe, SimEnv
+
+    recipe = FedTaskRecipe(
+        name="extract-embeddings",
+        task_name="embed",
+        min_clients=2,
+        task_script="client.py",
+        task_args="--data-root /data --output-root /tmp/embeddings",
+    )
+    env = SimEnv(num_clients=2)
+    run = recipe.execute(env)
+
+``FedTaskRecipe`` sends one ``FLModel`` task to the selected clients and waits for their results.
+It does not require ``model``, ``initial_ckpt``, or ``model_persistor``.
+
 Federated Averaging (FedAvg)
 ============================
 

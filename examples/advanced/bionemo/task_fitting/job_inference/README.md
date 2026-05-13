@@ -15,9 +15,8 @@ No model training occurs in this job - it's purely inference-based.
 
 ```bash
 job_inference/
-├── bionemo_inference_recipe.py  # Local one-round inference recipe
 ├── client.py    # Client script for ESM2 inference
-├── job.py       # Job configuration using BioNeMoInferenceRecipe
+├── job.py       # Job configuration using FedTaskRecipe
 └── README.md    # This file
 ```
 
@@ -78,13 +77,14 @@ subprocess.run(command)
 
 ## Job Recipe
 
-The job uses a local `BioNeMoInferenceRecipe` because this is a one-round inference task without a global model:
+The job uses `FedTaskRecipe` because this is a one-round task without a global model:
 
 ```python
-from bionemo_inference_recipe import BioNeMoInferenceRecipe
+from nvflare.recipe import FedTaskRecipe
 
-recipe = BioNeMoInferenceRecipe(
+recipe = FedTaskRecipe(
     name="esm2_embeddings",
+    task_name="infer",
     min_clients=n_clients,
     task_script="client.py",
     task_args=script_args,
