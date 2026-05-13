@@ -467,6 +467,7 @@ class WorkspaceConstants:
 
 class SiteType:
     SERVER = "server"
+    SERVER_PARENT = "server_parent"
     CLIENT = "client"
     ALL = "@ALL"
 
