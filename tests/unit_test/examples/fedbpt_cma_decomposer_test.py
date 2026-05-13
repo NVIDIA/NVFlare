@@ -45,8 +45,12 @@ def test_cma_evolution_strategy_roundtrip_after_fobs_reset():
         register_decomposers()
         restored = fobs.loads(data)
     finally:
-        fobs.reset()
-        sys.path.pop(0)
+        try:
+            fobs.reset()
+        finally:
+            if fedbpt_src in sys.path:
+                sys.path.remove(fedbpt_src)
+            sys.modules.pop("cma_decomposer", None)
 
     assert isinstance(restored, cma.CMAEvolutionStrategy)
     assert isinstance(restored._stoptolxstagnation, cma.evolution_strategy._StopTolXStagnation)
