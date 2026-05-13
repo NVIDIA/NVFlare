@@ -1,18 +1,18 @@
 # Runbook
 
 ## Recommended loop
-1. Read `program.md` first when present.
-2. Set and use `PYTHON=.venv/bin/python` by default, unless the human explicitly provides a different `PYTHON` value. Treat the selected value as authoritative, verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version; print(sys.executable)"`, and do not search for alternate interpreters with glob or discovery commands such as `ls /usr/bin/python*`, `ls /workspace/.venv*/bin/python*`, or `which python`.
-3. Do not create virtual environments or install dependencies unless the user explicitly asks. If `.venv/bin/python` is missing, invalid, or not Python 3.12 and no override was provided, tell the user to rerun the README preflight in this directory with `python3.12` instead of guessing.
+1. Read `program.md` first when present, then read the active task profile. Use `tasks/cifar10/profile.md` by default.
+2. Use the interpreter and dependency rules from the active task profile. For the default CIFAR-10 profile, set and use `PYTHON=.venv/bin/python` by default, unless the human explicitly provides a different `PYTHON` value. Treat the selected value as authoritative, verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version; print(sys.executable)"`, and do not search for alternate interpreters with glob or discovery commands such as `ls /usr/bin/python*`, `ls /workspace/.venv*/bin/python*`, or `which python`.
+3. Do not create virtual environments or install dependencies unless the user explicitly asks. If the active profile's interpreter is missing or invalid and no override was provided, tell the user to rerun that profile's preflight instead of guessing.
 4. When initializing a campaign, use a descriptive branch tag with the pattern `<node>-<campaign-topic>-YYYYMMDD`, such as `h100-fedavgm-20260430` or `h100-archsearch-20260430`; never use date-only branch names.
 5. Before validation, smoke tests, baseline, or candidates, run `bash scripts/init_run.sh <tag>` and verify `git branch --show-current` starts with `autoresearch/`. Do not run experiments on `main`, `upstream/main`, the starter branch, or a shared feature branch.
 6. Propose one small mutation or a small same-budget candidate batch.
 7. Edit the smallest possible set of files.
-8. Run validation.
-9. Run a smoke test.
-10. Assume one local 80 GB H100; launch up to `PARALLEL_CANDIDATES` same-budget candidates concurrently on that one GPU when memory allows, default to `PARALLEL_CANDIDATES=4`, and reduce the width if candidates hit CUDA OOM or host contention.
-11. Use the default H100 candidate budget unless told otherwise: 8 clients, 20 communication rounds, 4 local epochs, `local_train_steps=0`, training batch size 64, eval batch size 1024, alpha 0.5, seed 0, `model_arch=moderate_cnn`, `max_model_params=5000000`, weighted aggregation, deterministic client training, final global evaluation on site-1, 1200-second timeout. Local epochs or `local_train_steps` may be swept under that runtime cap, but do not vary both in the same narrow sweep.
-12. Use unique `RUN_LOG` and `--name` values for every candidate. If the environment exposes multiple GPUs but this campaign should use the local H100 only, pin each run with `CUDA_VISIBLE_DEVICES=0` instead of spreading candidates across devices.
+8. Run the validation command named by the active task profile, with `TASK_DIR` set to the active task.
+9. Run the smoke command named by the active task profile. For non-CIFAR tasks, pass task-specific `SMOKE_ARGS` or use `scripts/run_iteration.sh` with the active task budget.
+10. Follow the active task profile's local hardware and candidate-width rules. For the default CIFAR-10/H100 profile, launch up to `PARALLEL_CANDIDATES=4` same-budget candidates concurrently on one local H100 when memory allows, and reduce the width if candidates hit CUDA OOM or host contention.
+11. Use the active task profile's default candidate budget unless told otherwise. For the default CIFAR-10/H100 profile, that budget is 8 clients, 20 communication rounds, 4 local epochs, `local_train_steps=0`, training batch size 64, eval batch size 1024, alpha 0.5, seed 0, `model_arch=moderate_cnn`, `max_model_params=5000000`, weighted aggregation, deterministic client training, final global evaluation on site-1, and a 1200-second timeout. Local epochs or `local_train_steps` may be swept under that runtime cap, but do not vary both in the same narrow sweep.
+12. Use unique `RUN_LOG` and `--name` values for every candidate. If the active profile requires one local GPU, pin each run with `CUDA_VISIBLE_DEVICES=0` instead of spreading candidates across devices.
 13. Record each result in `results.tsv`. `run_iteration.sh` initializes the header before launching logged runs; successful runs are appended as `candidate`, which means unreviewed.
 14. Rank the completed batch with `"${PYTHON}" scripts/summarize_results.py results.tsv --status candidate --top "${PARALLEL_CANDIDATES:-4}"`.
 15. Decide whether to keep, narrow, or revert after the batch finishes. Rank primarily by score; use runtime as a coarse secondary signal and prefer the faster/simpler candidate when scores are within noise.
@@ -25,7 +25,7 @@
 22. Summarize the result when interrupted or when reporting a checkpoint.
 
 ## Single-H100 mode
-Run same-budget candidate batches on the one local H100 via `PYTHON=.venv/bin/python bash scripts/run_iteration.sh`, with unique `RUN_LOG` and `--name` values for each concurrent candidate. Default to `PARALLEL_CANDIDATES=4`, and reduce the width if CUDA memory or host contention appears.
+For the default CIFAR-10/H100 profile, run same-budget candidate batches via `PYTHON=.venv/bin/python TASK_DIR=tasks/cifar10 bash scripts/run_iteration.sh`, with unique `RUN_LOG` and `--name` values for each concurrent candidate. Default to `PARALLEL_CANDIDATES=4`, and reduce the width if CUDA memory or host contention appears. For other profiles, use that profile's hardware, environment, and candidate-width rules.
 
 ## Report format
 - Hypothesis

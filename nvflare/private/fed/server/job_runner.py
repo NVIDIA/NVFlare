@@ -32,8 +32,10 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
+from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
@@ -402,11 +404,14 @@ class JobRunner(FLComponent):
                     job = self.running_jobs.get(job_id)
                     if job:
                         with engine.new_context() as completion_ctx:
+                            status = None
                             if not job.run_aborted:
-                                self._update_job_status(engine, job, job_manager, completion_ctx)
+                                status = self._update_job_status(engine, job, job_manager, completion_ctx)
                             with self.lock:
                                 del self.running_jobs[job_id]
                             completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
+                            if status == RunStatus.FINISHED_ABORTED:
+                                self.fire_event(EventType.JOB_ABORTED, completion_ctx)
                             self.fire_event(EventType.JOB_COMPLETED, completion_ctx)
                             self.log_debug(completion_ctx, f"Finished running job:{job.job_id}")
                     engine.remove_exception_process(job_id)
@@ -426,7 +431,19 @@ class JobRunner(FLComponent):
             self.abort_client_run(job.job_id, active_client_sites_names, fl_ctx)
 
             finished = run_process.get(RunProcessKey.PROCESS_FINISHED, False)
-            if finished:
+            process_return_code = run_process.get(RunProcessKey.PROCESS_RETURN_CODE)
+            if process_return_code == JobReturnCode.ABORTED:
+                status = RunStatus.FINISHED_ABORTED
+            elif process_return_code in (
+                ProcessExitCode.CONFIG_ERROR,
+                ProcessExitCode.EXCEPTION,
+                JobReturnCode.EXECUTION_ERROR,
+            ):
+                # An external failure (e.g. launcher resource timeout) marked
+                # the run as exception. Preserve that even if the SJ later
+                # reported a clean shutdown via UPDATE_RUN_STATUS.
+                status = RunStatus.FINISHED_EXECUTION_EXCEPTION
+            elif finished:
                 # job status is already reported from the Job cell!
                 exe_err = run_process.get(RunProcessKey.PROCESS_EXE_ERROR, False)
                 if exe_err:
@@ -435,7 +452,6 @@ class JobRunner(FLComponent):
                     status = RunStatus.FINISHED_COMPLETED
             else:
                 # never got job status report from job cell
-                process_return_code = run_process.get(RunProcessKey.PROCESS_RETURN_CODE)
                 if process_return_code == -9:
                     status = RunStatus.FINISHED_ABNORMAL
                 else:
@@ -443,6 +459,7 @@ class JobRunner(FLComponent):
         else:
             status = RunStatus.FINISHED_COMPLETED
         job_manager.set_status(job.job_id, status, fl_ctx)
+        return status
 
     def _save_workspace(self, fl_ctx: FLContext):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
@@ -649,6 +666,29 @@ class JobRunner(FLComponent):
             return ""
         else:
             self.log_error(fl_ctx, f"Job {job_id} is not running. It can not be stopped.")
+            return f"Job {job_id} is not running."
+
+    def fail_run(self, job_id: str, process_return_code: int, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        with engine.lock:
+            # Keep this synchronized with ServerEngine.wait_for_complete(), which
+            # may record the SJ's own exit code at the same time.
+            run_process = engine.exception_run_processes.get(job_id)
+            if run_process is None:
+                run_process = engine.run_processes.get(job_id)
+            if run_process is None:
+                run_process = {RunProcessKey.PARTICIPANTS: {}}
+            run_process[RunProcessKey.PROCESS_RETURN_CODE] = process_return_code
+            engine.exception_run_processes[job_id] = run_process
+        self._stop_run(job_id, fl_ctx)
+
+        job = self.running_jobs.get(job_id)
+        if job:
+            self.log_info(fl_ctx, f"Fail the job run: {job_id}")
+            fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
+            return ""
+        else:
+            self.log_error(fl_ctx, f"Job {job_id} is not running. It can not be failed.")
             return f"Job {job_id} is not running."
 
     def stop_all_runs(self, fl_ctx: FLContext):

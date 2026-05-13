@@ -1,0 +1,16 @@
+nvflare[PT]>=2.7.2
+numpy
+matplotlib
+torch
+tensorboard
+pyyaml
+transformers>=4.57.0
+datasets
+huggingface_hub
+accelerate
+peft
+sentencepiece
+tokenizers
+safetensors
+Pillow
+qwen-vl-utils
