@@ -26,7 +26,7 @@ LIVE_LOG_TOPIC = "live_log"
 
 # Resources.json var name. Default is True (streaming is allowed). To disable
 # live log streaming at a site, set this to False in the site's resources.json:
-# JobLogStreamer will no-op, SystemLogStreamer will skip injection and strip
+# JobLogStreamer will no-op, SiteLogStreamer will skip injection and strip
 # any pre-declared JobLogStreamer, and the server-side JobLogReceiver will log
 # an error if a stream still arrives from this site.
 ALLOW_LOG_STREAMING_VAR = "allow_log_streaming"
