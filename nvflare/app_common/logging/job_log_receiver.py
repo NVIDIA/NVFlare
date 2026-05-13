@@ -55,8 +55,9 @@ class JobLogReceiver(Widget):
     **Job-level configuration** (``config_fed_server.json``)
         Add it via ``job.to_server(JobLogReceiver())`` in the Job API, or
         declare it in the job's server config.  In this mode the handler is
-        registered on ``START_RUN``, which fires when the job begins.  The
-        widget is only active for that specific job.
+        registered on ``ABOUT_TO_START_RUN``, which fires immediately before
+        ``START_RUN`` so that the stream handler is wired up before any client
+        chunk can arrive.  The widget is only active for that specific job.
 
     **System-level resources** (``resources.json`` on the server)
         Declare it as a system component so it is instantiated when the server
@@ -85,7 +86,13 @@ class JobLogReceiver(Widget):
         # lock so the check-then-add is atomic across concurrent stream chunks.
         self._unauthorized_logged: OrderedDict = OrderedDict()
         self._unauthorized_lock = threading.Lock()
-        self.register_event_handler([EventType.SYSTEM_START, EventType.START_RUN], self._register)
+        # Register on ABOUT_TO_START_RUN rather than START_RUN so the handler
+        # is wired up before the client's JobLogStreamer (which fires on its
+        # own START_RUN) can send the first chunk. Combined with the
+        # bootstrap-tolerant retry in _LogTailProducer, this closes the
+        # cross-process race that produced "EXECUTION_EXCEPTION" ERROR lines
+        # at every job start.
+        self.register_event_handler([EventType.SYSTEM_START, EventType.ABOUT_TO_START_RUN], self._register)
 
     def _effective_dest_dir(self) -> str:
         return self._dest_dir or tempfile.gettempdir()
