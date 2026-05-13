@@ -35,8 +35,8 @@ from nvflare.widgets.widget import Widget
 _LOG_STREAMER_PATH = "nvflare.app_common.logging.job_log_streamer.JobLogStreamer"
 
 
-class SystemLogStreamer(Widget):
-    """System-level widget that injects a :class:`JobLogStreamer` into every job
+class SiteLogStreamer(Widget):
+    """Site-level widget that injects a :class:`JobLogStreamer` into every job
     that does not already declare one.
 
     Place this in the client's ``resources.json`` so that live log streaming is
@@ -44,13 +44,13 @@ class SystemLogStreamer(Widget):
     a ``JobLogStreamer`` in its own configuration.
 
     On ``BEFORE_JOB_LAUNCH`` (after the job config is deployed to disk but
-    before the job subprocess starts) ``SystemLogStreamer`` reads the deployed
+    before the job subprocess starts) ``SiteLogStreamer`` reads the deployed
     ``config_fed_client.json``.  If no ``JobLogStreamer`` component is found, it
     appends one with the configured parameters and writes the file back.  The
     job subprocess then picks up the modified config and ``JobLogStreamer`` runs
     inside the job as if the user had declared it explicitly.
 
-    When configured for ``error_log.txt``, ``SystemLogStreamer`` also uploads a
+    When configured for ``error_log.txt``, ``SiteLogStreamer`` also uploads a
     post-run snapshot from ``CLIENT_PARENT`` on ``JOB_COMPLETED``. This preserves
     error-log delivery for launch/config/bootstrap failures where the job
     subprocess never reaches ``START_RUN`` and therefore never loads the
@@ -144,8 +144,13 @@ class SystemLogStreamer(Widget):
                 self.log_debug(fl_ctx, f"Job {job_id} already has JobLogStreamer; skipping injection")
                 return
 
-        # Build the component entry with non-default args only.
+        # Build the component entry.
         args = {}
+        # This streamer is injected by a site-level component, and its receiver
+        # lives in the server parent resources. Keep explicit job-level
+        # JobLogStreamer instances scoped to server.<job_id>, but send this
+        # injected stream to the parent JobLogReceiver.
+        args["target_parent_server"] = True
         if self._log_file_name != WorkspaceConstants.LOG_FILE_NAME:
             args["log_file_name"] = self._log_file_name
         if self._liveness_interval != 10.0:
