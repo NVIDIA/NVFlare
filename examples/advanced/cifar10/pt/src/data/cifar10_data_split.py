@@ -50,6 +50,59 @@ import os
 import numpy as np
 from data.cifar10_data_utils import get_site_class_summary, load_cifar10_data
 
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_context import FLContext
+
+
+class Cifar10DataSplitter(FLComponent):
+    def __init__(self, split_dir: str = None, num_sites: int = 8, alpha: float = 0.5, seed: int = 0):
+        super().__init__()
+        self.split_dir = split_dir
+        self.num_sites = num_sites
+        self.alpha = alpha
+        self.seed = seed
+
+        if self.split_dir is None:
+            raise ValueError("You need to define a valid `split_dir` for splitting the data.")
+        if not os.path.isabs(self.split_dir):
+            raise ValueError("`split_dir` needs to be absolute path.")
+        if alpha < 0.0:
+            raise ValueError(f"Alpha should be larger or equal 0.0 but was {alpha}!")
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.START_RUN:
+            self.split(fl_ctx)
+
+    def split(self, fl_ctx: FLContext):
+        self.log_info(
+            fl_ctx,
+            f"Partitioning CIFAR-10 dataset into {self.num_sites} sites with Dirichlet sampling under alpha "
+            f"{self.alpha}",
+        )
+
+        site_idx, class_sum = partition_data(self.num_sites, self.alpha, self.seed)
+
+        if not os.path.isdir(self.split_dir):
+            os.makedirs(self.split_dir)
+            self.log_info(fl_ctx, f"Created directory: {self.split_dir}")
+
+        sum_file_name = os.path.join(self.split_dir, "summary.txt")
+        with open(sum_file_name, "w") as sum_file:
+            sum_file.write(f"Number of clients: {self.num_sites} \n")
+            sum_file.write(f"Dirichlet sampling parameter: {self.alpha} \n")
+            sum_file.write("Class counts for each client: \n")
+            sum_file.write(json.dumps(class_sum, indent=2))
+        self.log_info(fl_ctx, f"Saved summary to: {sum_file_name}")
+
+        site_file_path = os.path.join(self.split_dir, "site-")
+        for site in range(self.num_sites):
+            site_file_name = site_file_path + str(site + 1) + ".npy"
+            np.save(site_file_name, np.array(site_idx[site]))
+            self.log_info(fl_ctx, f"Saved site {site + 1} data ({len(site_idx[site])} samples) to: {site_file_name}")
+
+        self.log_info(fl_ctx, f"Split data saved to: {self.split_dir}")
+
 
 def partition_data(num_sites, alpha, seed):
     """
