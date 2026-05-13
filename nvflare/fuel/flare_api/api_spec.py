@@ -679,13 +679,16 @@ class SessionSpec(ABC):
 
     @abstractmethod
     def remove_client(self, client_name: str) -> None:
-        """Remove a connected client from the system.
+        """Release a connected client's active token.
 
         Args:
-            client_name: name of the client to remove
+            client_name: name of the client whose active token should be released
 
         Returns: None
 
+        Note:
+            This does not stop the client, revoke credentials, or prevent reconnect.
+            Use disable_client to prevent a client from reconnecting.
         """
         pass
 

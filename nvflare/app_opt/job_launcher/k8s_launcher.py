@@ -163,6 +163,7 @@ class K8sJobHandle(JobHandleSpec):
         self.pod_name = pod_name if pod_name is not None else job_id
         self.timeout = timeout
         self.terminal_state = None
+        self.terminal_return_code = None
         self.workspace_transfer = workspace_transfer
         self.workspace_job_id = workspace_job_id
         self.api_instance = api_instance
@@ -253,9 +254,13 @@ class K8sJobHandle(JobHandleSpec):
         if not all([isinstance(js, JobState) for js in job_states_to_enter]):
             raise ValueError(f"expect job_states_to_enter with valid values, but get {job_states_to_enter}")
         while True:
+            if self.terminal_state is not None:
+                return False
             pod_phase = self._query_phase()
+            if self.terminal_state is not None:
+                return False
             if self._stuck_in_pending(pod_phase):
-                self.terminate()
+                self._terminate_for_timeout("timed out waiting for pod to leave Pending/Unknown phase")
                 return False
             job_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
             if job_state in job_states_to_enter:
@@ -265,7 +270,7 @@ class K8sJobHandle(JobHandleSpec):
                 self._remove_workspace_job()
                 return False
             elif self.timeout is not None and time.time() - starting_time > self.timeout:
-                self.terminate()
+                self._terminate_for_timeout(f"timed out waiting for pod to enter {job_states_to_enter}")
                 return False
             time.sleep(1)
 
@@ -284,7 +289,11 @@ class K8sJobHandle(JobHandleSpec):
             self.terminal_state = JobState.TERMINATED
         except ApiException as e:
             if getattr(e, "status", None) == 404:
-                self.logger.info(
+                # Expected when terminate() runs as an idempotent cleanup after the
+                # pod already exited gracefully (e.g. server abort path where the SJ
+                # left on its own before the safety-net terminate fires). Not an
+                # event of interest for operators monitoring logs.
+                self.logger.debug(
                     f"job {self.job_id} pod {self.pod_name} not found during termination; assuming terminated"
                 )
             else:
@@ -296,16 +305,26 @@ class K8sJobHandle(JobHandleSpec):
         self._remove_workspace_job()
         return None
 
+    def _terminate_for_timeout(self, reason: str):
+        self.logger.warning(f"job {self.job_id} pod {self.pod_name}: {reason}")
+        self.terminate()
+        self.terminal_return_code = JobReturnCode.EXCEPTION
+
+    def _get_return_code(self, job_state):
+        if self.terminal_return_code is not None:
+            return self.terminal_return_code
+        return JOB_RETURN_CODE_MAPPING.get(job_state)
+
     def poll(self):
         if self.terminal_state is not None:
-            return JOB_RETURN_CODE_MAPPING.get(self.terminal_state)
+            return self._get_return_code(self.terminal_state)
         job_state = self._query_state()
         if self.terminal_state is not None:
-            return JOB_RETURN_CODE_MAPPING.get(self.terminal_state)
+            return self._get_return_code(self.terminal_state)
         if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
             self.terminal_state = job_state
             self._remove_workspace_job()
-        return JOB_RETURN_CODE_MAPPING.get(job_state, JobReturnCode.UNKNOWN)
+        return self._get_return_code(job_state)
 
     def _query_phase(self):
         from kubernetes.client.rest import ApiException
@@ -319,12 +338,13 @@ class K8sJobHandle(JobHandleSpec):
                 )
                 self.terminal_state = JobState.TERMINATED
                 self._remove_workspace_job()
+                return PodPhase.UNKNOWN.value
             else:
                 self.logger.warning(f"failed to query pod phase for job {self.job_id} pod {self.pod_name}: {e}")
-            return PodPhase.UNKNOWN.value
+            return None  # no pod phase was observed
         except Exception as e:
             self.logger.warning(f"unexpected error querying pod phase for job {self.job_id} pod {self.pod_name}: {e}")
-            return PodPhase.UNKNOWN.value
+            return None  # no pod phase was observed
         return resp.status.phase
 
     def _query_state(self):
@@ -332,7 +352,9 @@ class K8sJobHandle(JobHandleSpec):
         return POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
 
     def _stuck_in_pending(self, current_phase):
-        if current_phase == PodPhase.PENDING.value:
+        if current_phase is None:
+            return False
+        if current_phase in (PodPhase.PENDING.value, PodPhase.UNKNOWN.value):
             self._stuck_count += 1
             if self._max_stuck_count is not None and self._stuck_count >= self._max_stuck_count:
                 return True
@@ -345,6 +367,8 @@ class K8sJobHandle(JobHandleSpec):
             if self.terminal_state is not None:
                 return
             job_state = self._query_state()
+            if self.terminal_state is not None:
+                return
             if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
                 self.terminal_state = job_state  # persist so poll() stays accurate
                 self._remove_workspace_job()
@@ -364,6 +388,7 @@ class K8sJobLauncher(JobLauncherSpec):
         security_context: dict = None,
         ephemeral_storage: str = DEFAULT_EPHEMERAL_STORAGE,
         default_python_path: str = None,
+        workspace_mount_path: str = WORKSPACE_MOUNT_PATH,
     ):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -381,6 +406,9 @@ class K8sJobLauncher(JobLauncherSpec):
         if not isinstance(ephemeral_storage, str) or not ephemeral_storage:
             raise ValueError("ephemeral_storage must be a non-empty string")
         self.ephemeral_storage = ephemeral_storage
+        if not isinstance(workspace_mount_path, str) or not workspace_mount_path:
+            raise ValueError("workspace_mount_path must be a non-empty string")
+        self.workspace_mount_path = workspace_mount_path
         self.study_data_pvc_dict = None
         self.core_v1 = None
 
@@ -469,8 +497,10 @@ class K8sJobLauncher(JobLauncherSpec):
         data_mounts = []
         if should_mount_study_data(study):
             if self.study_data_pvc_dict is None:
-                self.study_data_pvc_dict = load_study_data_file(self.study_data_pvc_file_path)
-            data_mounts = resolve_study_dataset_mounts(self.study_data_pvc_dict, study, self.study_data_pvc_file_path)
+                self.study_data_pvc_dict = load_study_data_file(self.study_data_pvc_file_path, logger=self.logger)
+            data_mounts = resolve_study_dataset_mounts(
+                self.study_data_pvc_dict, study, self.study_data_pvc_file_path, logger=self.logger
+            )
         site_resources = (job_meta.get(JobMetaKey.RESOURCE_SPEC.value) or {}).get(site_name) or {}
         flat_gpu_count = (
             0
@@ -495,7 +525,7 @@ class K8sJobLauncher(JobLauncherSpec):
             if os.path.commonpath([workspace_root_abs, custom_folder_abs]) != workspace_root_abs:
                 raise RuntimeError(f"custom folder {app_custom_folder} is not under workspace {workspace_root}")
             env["PYTHONPATH"] = os.path.join(
-                WORKSPACE_MOUNT_PATH, os.path.relpath(custom_folder_abs, workspace_root_abs)
+                self.workspace_mount_path, os.path.relpath(custom_folder_abs, workspace_root_abs)
             )
 
         startup_dir = workspace_obj.get_startup_kit_dir()
@@ -517,8 +547,12 @@ class K8sJobLauncher(JobLauncherSpec):
                 {"name": "startup-kit", "secret": {"secretName": startup_secret_name}},
             ]
             volume_mount_list = [
-                {"name": "workspace-job", "mountPath": WORKSPACE_MOUNT_PATH},
-                {"name": "startup-kit", "mountPath": f"{WORKSPACE_MOUNT_PATH}/startup", "readOnly": True},
+                {"name": "workspace-job", "mountPath": self.workspace_mount_path},
+                {
+                    "name": "startup-kit",
+                    "mountPath": os.path.join(self.workspace_mount_path, "startup"),
+                    "readOnly": True,
+                },
             ]
             for dataset_mount in data_mounts:
                 volume_name = study_dataset_volume_name(dataset_mount.study, dataset_mount.dataset)

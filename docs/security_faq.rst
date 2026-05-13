@@ -22,7 +22,7 @@ In both cases, the aggregator can be a locked-down machine using current securit
 What's the IRB number?
 ========================
 
-The IRB process is outside the scope of NVIDIA FLARE; consortium participants will need to handle this separately.
+Consortium participants handle IRB processes according to their own institutional requirements.
 
 What do we need to install locally?
 ======================================

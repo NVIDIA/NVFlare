@@ -148,10 +148,10 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
 
     @abstractmethod
     def remove_clients(self, clients: [str]) -> str:
-        """Remove specified clients.
+        """Remove active client-token entries for specified clients.
 
         Args:
-            clients: clients to be removed
+            clients: client tokens to be removed
 
         Returns:
              An error message. An empty string if successful.
