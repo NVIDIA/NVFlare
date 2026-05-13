@@ -257,6 +257,28 @@ def test_execution_exception_after_first_ok_still_ends_stream():
         os.unlink(path)
 
 
+def test_process_replies_tolerates_falsy_replies_after_first_ok():
+    producer = _LogTailProducer(
+        file_name="/nonexistent/log/path",
+        chunk_size=1024,
+        chunk_timeout=5.0,
+        poll_interval=0.5,
+        stop_event=threading.Event(),
+        liveness_interval=10.0,
+    )
+    try:
+        producer._first_ok_received = True
+
+        assert producer.process_replies(None, {}, Mock(spec=FLContext)) is None
+        assert producer.process_replies({}, {}, Mock(spec=FLContext)) is None
+
+        producer.eof = True
+        assert producer.process_replies(None, {}, Mock(spec=FLContext)) == {}
+        assert producer.process_replies({}, {}, Mock(spec=FLContext)) == {}
+    finally:
+        producer.close()
+
+
 def test_persistent_bootstrap_execution_exception_is_capped():
     """A receiver that never acks OK should eventually surface as a real
     failure instead of retrying the same first chunk forever."""

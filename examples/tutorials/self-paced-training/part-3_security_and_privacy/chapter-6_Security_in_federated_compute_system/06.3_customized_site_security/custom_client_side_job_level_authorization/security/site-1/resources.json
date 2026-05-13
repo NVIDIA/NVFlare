@@ -24,8 +24,8 @@
       "args": {}
     },
     {
-        "id": "system_log_streamer",
-        "path": "nvflare.app_common.logging.system_log_streamer.SystemLogStreamer",
+        "id": "site_log_streamer",
+        "path": "nvflare.app_common.logging.site_log_streamer.SiteLogStreamer",
         "args": {
             "log_file_name": "error_log.txt"
         }
