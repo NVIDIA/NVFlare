@@ -1677,7 +1677,7 @@ def cmd_job_download(cmd_args):
 
 
 def cmd_job_delete(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotDone, JobNotFound, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1689,6 +1689,10 @@ def cmd_job_delete(cmd_args):
     )
 
     study = get_arg_value(cmd_args, "study", "default")
+    job_abort_hint = (
+        f"Use 'nvflare job abort {cmd_args.job_id} --study {study}' to stop the job first, "
+        "or wait/monitor until it finishes before deleting."
+    )
     if not cmd_args.force:
         if not sys.stdin.isatty():
             output_error(
@@ -1712,6 +1716,15 @@ def cmd_job_delete(cmd_args):
             job_id=cmd_args.job_id,
             detail=f"searched study '{study}'",
             hint=_job_not_found_hint(study),
+        )
+        return
+    except JobNotDone as e:
+        output_error(
+            "JOB_NOT_DONE",
+            exit_code=4,
+            job_id=cmd_args.job_id,
+            detail=f"{e}; searched study '{study}'",
+            hint=job_abort_hint,
         )
         return
     except AuthenticationError:
