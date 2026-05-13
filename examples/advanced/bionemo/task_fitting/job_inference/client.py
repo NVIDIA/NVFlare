@@ -51,10 +51,11 @@ def main():
         input_model = flare.receive()
         print(f"\n[Site={site_name}] Received task at round {input_model.current_round}\n")
 
-        # Validate that this is a single-round inference job
-        assert (
-            input_model.total_rounds == 1
-        ), f"Inference should be a single round but server requested {input_model.total_rounds} rounds!"
+        # CmdTaskController sends a one-shot task and may leave round metadata unset.
+        if input_model.total_rounds is not None and input_model.total_rounds != 1:
+            raise ValueError(
+                f"Inference should be a single round but server requested {input_model.total_rounds} rounds!"
+            )
 
         # Build the inference command
         command = [
@@ -99,11 +100,8 @@ def main():
                 n_sequences = len(results["embeddings"])
                 print(f"[Site={site_name}] Extracted {n_sequences} embeddings")
 
-                # For FedAvgRecipe, send back the same model we received (no training occurred)
-                # Attach inference metadata to the meta field
                 result = flare.FLModel(
-                    params={"success": True},
-                    params_type=input_model.params_type,
+                    metrics={"success": 1.0, "num_sequences": n_sequences},
                     meta={
                         "num_sequences": n_sequences,
                         "result_shapes": result_shapes,
@@ -112,8 +110,7 @@ def main():
             else:
                 print(f"[Site={site_name}] Warning: {results_file} doesn't exist!")
                 result = flare.FLModel(
-                    params={"success": False},
-                    params_type=input_model.params_type,
+                    metrics={"success": 0.0},
                     meta={"num_sequences": "n/a", "result_shapes": "n/a", "error": "Results file not found"},
                 )
         else:
@@ -121,16 +118,14 @@ def main():
             print(f"STDOUT: {subprocess_result.stdout}")
             print(f"STDERR: {subprocess_result.stderr}")
 
-            # Send failure status but still return the model params
             result = flare.FLModel(
-                params={"success": False},
-                params_type=input_model.params_type,
+                metrics={"success": 0.0},
                 meta={
                     "error": f"Inference failed with return code {subprocess_result.returncode}",
                 },
             )
 
-        print(f"[Site={site_name}] Sending meta information back to server")
+        print(f"[Site={site_name}] Sending inference result back to server")
         flare.send(result)
 
 
