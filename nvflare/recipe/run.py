@@ -74,13 +74,19 @@ class Run:
                 self.logger.warning(f"Failed to get job status: {e}")
                 return None
 
-    def get_result(self, timeout: float = 0.0) -> Optional[str]:
+    def get_result(self, timeout: float = 0.0, cleanup: bool = True) -> Optional[str]:
         """Get the result workspace of the run.
 
         Waits for job to complete, caches status, then stops execution environment.
 
         Args:
             timeout (float, optional): Timeout for job completion. Defaults to 0.0 (no timeout).
+            cleanup (bool, optional): Whether to remove the execution-environment workspace
+                (e.g. the POC workspace) when stopping. Defaults to True, preserving the
+                existing "each run is independent" behavior. Pass ``cleanup=False`` to keep
+                the workspace on disk after the run so server/client log files (including
+                the per-service ``poc_console.log`` introduced in #4500) remain available
+                for debugging or test assertions.
 
         Returns:
             Optional[str]: Result workspace path, or None if job not finished or on error.
@@ -104,7 +110,7 @@ class Run:
                 self._cached_status = None
 
             try:
-                self.exec_env.stop(clean_up=True)
+                self.exec_env.stop(clean_up=cleanup)
             except Exception as e:
                 self.logger.warning(f"Failed to stop execution environment: {e}")
             finally:

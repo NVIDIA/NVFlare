@@ -411,8 +411,6 @@ own requirements:
         │   │   ├── startup
         │   │   └── transfer
         │   ├── nvflare_compose
-        │   ├── nvflare_hc
-        │   │   └── templates
         │   ├── server1
         │   │   ├── local
         │   │   ├── startup

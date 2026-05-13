@@ -1290,7 +1290,7 @@ class TestPocOutput:
         args = root.parse_args(["poc", "start", "-p", "admin@nvidia.com", "--study", "cancer_research"])
         assert args.study == "cancer_research"
 
-    def test_is_docker_run_returns_false_without_static_file_builder(self):
+    def test_is_docker_run_returns_false_without_docker_builder(self):
         from nvflare.tool.poc.poc_commands import is_docker_run
 
         project_config = {
@@ -1303,6 +1303,15 @@ class TestPocOutput:
         }
 
         assert is_docker_run(project_config) is False
+
+    def test_is_docker_run_returns_true_with_poc_docker_runtime(self):
+        from nvflare.tool.poc.poc_commands import is_docker_run
+
+        project_config = {
+            "poc_runtime": {"runtime": "docker", "docker_image": "nvflare/site:latest"},
+        }
+
+        assert is_docker_run(project_config) is True
 
     def test_get_service_command_adds_study_only_for_admin_start(self):
         from nvflare.tool.poc.poc_commands import get_service_command

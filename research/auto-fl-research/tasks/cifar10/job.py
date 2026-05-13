@@ -25,9 +25,14 @@ Provenance:
 import argparse
 import os
 import shlex
+import sys
 from pathlib import Path
 
-from custom_aggregators import (
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(1, str(REPO_ROOT))
+
+from tasks.shared.custom_aggregators import (
     FedAdamAggregator,
     FedAvgAggregator,
     FedAvgMAggregator,
@@ -82,6 +87,12 @@ def define_parser():
         help="Maximum allowed model parameters for architecture-search campaigns. Use 0 to disable.",
     )
     parser.add_argument("--aggregation_epochs", type=int, default=4)
+    parser.add_argument(
+        "--local_train_steps",
+        type=int,
+        default=0,
+        help="Exact optimizer steps per client per round. Use 0 for epoch-based training with --aggregation_epochs.",
+    )
     parser.add_argument("--lr", type=float, default=5e-2)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument(
@@ -276,6 +287,10 @@ def main():
 
     if args.alpha <= 0.0:
         raise ValueError("alpha must be > 0 for federated CIFAR10 splits")
+    if args.aggregation_epochs <= 0:
+        raise ValueError("aggregation_epochs must be > 0")
+    if args.local_train_steps < 0:
+        raise ValueError("local_train_steps must be >= 0")
 
     if args.name:
         job_name = args.name
@@ -320,6 +335,8 @@ def main():
         args.eval_batch_size,
         "--aggregation_epochs",
         args.aggregation_epochs,
+        "--local_train_steps",
+        args.local_train_steps,
         "--momentum",
         args.momentum,
         "--weight_decay",

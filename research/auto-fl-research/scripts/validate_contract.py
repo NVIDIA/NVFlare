@@ -28,7 +28,7 @@ REQUIRED_CHECKS = [
     "compute_model_diff(...)",
     "FLModel(..., params_type=ParamsType.DIFF, ...)",
     'meta includes "NUM_STEPS_CURRENT_ROUND"',
-    "flare.is_evaluate() branch sends ParamsType.DIFF",
+    "flare.is_evaluate() branch sends FLModel with metrics",
 ]
 
 
@@ -55,9 +55,11 @@ def is_params_type_diff(node):
     return isinstance(node, ast.Attribute) and node.attr == "DIFF" and is_name(node.value, "ParamsType")
 
 
-def call_has_keyword(call, keyword_name, predicate):
+def call_has_keyword(call, keyword_name, predicate=None):
     for keyword in call.keywords:
-        if keyword.arg == keyword_name and predicate(keyword.value):
+        if keyword.arg != keyword_name:
+            continue
+        if predicate is None or predicate(keyword.value):
             return True
     return False
 
@@ -81,6 +83,17 @@ def contains_diff_flmodel(node):
     return False
 
 
+def contains_metrics_flmodel(node):
+    for child in ast.walk(node):
+        if not isinstance(child, ast.Call):
+            continue
+        if call_name(child.func) not in {"flare.FLModel", "FLModel"}:
+            continue
+        if call_has_keyword(child, "metrics"):
+            return True
+    return False
+
+
 class ClientContractVisitor(ast.NodeVisitor):
     def __init__(self):
         self.has_flare_init = False
@@ -90,7 +103,7 @@ class ClientContractVisitor(ast.NodeVisitor):
         self.has_compute_model_diff = False
         self.has_diff_flmodel = False
         self.has_num_steps = False
-        self.has_eval_diff_send = False
+        self.has_eval_metrics_send = False
 
     def visit_Call(self, node):
         name = call_name(node.func)
@@ -117,7 +130,7 @@ class ClientContractVisitor(ast.NodeVisitor):
 
     def visit_If(self, node):
         if contains_call(node.test, "flare.is_evaluate"):
-            self.has_eval_diff_send = self.has_eval_diff_send or contains_diff_flmodel(
+            self.has_eval_metrics_send = self.has_eval_metrics_send or contains_metrics_flmodel(
                 ast.Module(body=node.body, type_ignores=[])
             )
         self.generic_visit(node)
@@ -131,14 +144,14 @@ class ClientContractVisitor(ast.NodeVisitor):
             (self.has_compute_model_diff, REQUIRED_CHECKS[4]),
             (self.has_diff_flmodel, REQUIRED_CHECKS[5]),
             (self.has_num_steps, REQUIRED_CHECKS[6]),
-            (self.has_eval_diff_send, REQUIRED_CHECKS[7]),
+            (self.has_eval_metrics_send, REQUIRED_CHECKS[7]),
         ]
         return [label for ok, label in checks if not ok]
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("path", nargs="?", default="client.py")
+    parser.add_argument("path", nargs="?", default="tasks/cifar10/client.py")
     args = parser.parse_args()
 
     path = Path(args.path)

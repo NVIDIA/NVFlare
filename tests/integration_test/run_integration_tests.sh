@@ -48,10 +48,57 @@ while getopts ":m:dc" option; do
 done
 [[ "$no_args" == "true" ]] && usage
 cmd="$base_cmd"
+hosts_backup=""
+
+has_localhost_aliases()
+{
+    python - <<'PY'
+import socket
+import sys
+
+for host in ("localhost0", "localhost1"):
+    try:
+        addresses = {info[4][0] for info in socket.getaddrinfo(host, None)}
+    except OSError:
+        sys.exit(1)
+    if "127.0.0.1" not in addresses:
+        sys.exit(1)
+PY
+}
+
+restore_localhost_aliases()
+{
+    if [[ -n "$hosts_backup" && -f "$hosts_backup" ]]; then
+        echo "Restoring original /etc/hosts file."
+        cp "$hosts_backup" /etc/hosts
+        rm -f "$hosts_backup"
+    fi
+}
+
+ensure_localhost_aliases()
+{
+    if has_localhost_aliases; then
+        return
+    fi
+
+    if [[ ! -w /etc/hosts ]]; then
+        echo "ERROR: localhost0 and localhost1 must resolve to 127.0.0.1 before running integration tests."
+        echo "Run ci/run_integration.sh, or add this line to /etc/hosts before running this script directly:"
+        echo "127.0.0.1 localhost0 localhost1"
+        exit 1
+    fi
+
+    echo "Adding DNS entries for integration test localhost aliases."
+    hosts_backup=$(mktemp)
+    cp /etc/hosts "$hosts_backup"
+    trap restore_localhost_aliases EXIT
+    echo "127.0.0.1 localhost0 localhost1" >> /etc/hosts
+}
 
 run_preflight_check_test()
 {
     echo "Running preflight check integration tests."
+    ensure_localhost_aliases
     cmd="$cmd --junitxml=./integration_test.xml preflight_check_test.py"
     echo "$cmd"
     eval "$cmd"

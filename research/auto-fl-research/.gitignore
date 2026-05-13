@@ -8,7 +8,8 @@ results/
 runs/
 artifacts/
 /tmp/
-results.tsv
 run.log
 *.log
 .DS_Store
+.venv
+progress.png

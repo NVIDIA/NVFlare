@@ -68,6 +68,13 @@ class MockXGBDataLoader(XGBDataLoader):
         return dtrain, dval
 
 
+def _make_horizontal_per_site_config(num_clients, n_samples=50, n_features=5):
+    return {
+        f"site-{site_id}": {"data_loader": MockXGBDataLoader(n_samples=n_samples, n_features=n_features)}
+        for site_id in range(1, num_clients + 1)
+    }
+
+
 class TestXGBHorizontalRecipe:
     """Smoke tests for XGBHorizontalRecipe.
 
@@ -78,13 +85,8 @@ class TestXGBHorizontalRecipe:
     def test_histogram_algorithm(self):
         """Test histogram algorithm completes successfully."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            env = SimEnv(num_clients=2, workspace_root=os.path.join(tmpdir, "test_histogram"))
-
-            # Configure per-site data loaders
-            per_site_config = {
-                f"site-{site_id}": {"data_loader": MockXGBDataLoader(n_samples=50, n_features=5)}
-                for site_id in range(1, 3)
-            }
+            per_site_config = _make_horizontal_per_site_config(num_clients=2)
+            env = SimEnv(clients=list(per_site_config), workspace_root=os.path.join(tmpdir, "test_histogram"))
 
             recipe = XGBHorizontalRecipe(
                 name="test_histogram",
@@ -108,8 +110,6 @@ class TestXGBHorizontalRecipe:
     def test_custom_xgb_params(self):
         """Test that custom XGBoost parameters are accepted."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            env = SimEnv(num_clients=2, workspace_root=os.path.join(tmpdir, "test_custom_params"))
-
             custom_params = {
                 "max_depth": 5,
                 "eta": 0.05,
@@ -119,11 +119,8 @@ class TestXGBHorizontalRecipe:
                 "nthread": 4,
             }
 
-            # Configure per-site data loaders
-            per_site_config = {
-                f"site-{site_id}": {"data_loader": MockXGBDataLoader(n_samples=50, n_features=5)}
-                for site_id in range(1, 3)
-            }
+            per_site_config = _make_horizontal_per_site_config(num_clients=2)
+            env = SimEnv(clients=list(per_site_config), workspace_root=os.path.join(tmpdir, "test_custom_params"))
 
             recipe = XGBHorizontalRecipe(
                 name="test_custom_params",
@@ -143,13 +140,8 @@ class TestXGBHorizontalRecipe:
         """Test recipe works with more than 2 clients."""
         with tempfile.TemporaryDirectory() as tmpdir:
             num_clients = 5
-            env = SimEnv(num_clients=num_clients, workspace_root=os.path.join(tmpdir, "test_multi_client"))
-
-            # Configure per-site data loaders
-            per_site_config = {
-                f"site-{site_id}": {"data_loader": MockXGBDataLoader(n_samples=30, n_features=5)}
-                for site_id in range(1, num_clients + 1)
-            }
+            per_site_config = _make_horizontal_per_site_config(num_clients=num_clients, n_samples=30)
+            env = SimEnv(clients=list(per_site_config), workspace_root=os.path.join(tmpdir, "test_multi_client"))
 
             recipe = XGBHorizontalRecipe(
                 name="test_multi_client",

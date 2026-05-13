@@ -2,19 +2,34 @@
 set -euo pipefail
 
 PYTHON=${PYTHON:-python3}
+TASK_DIR=${TASK_DIR:-tasks/cifar10}
+CLIENT_CONTRACT_PATH=${CLIENT_CONTRACT_PATH:-${TASK_DIR}/client.py}
 PYTHONPYCACHEPREFIX=${PYTHONPYCACHEPREFIX:-/tmp/auto-fl-pycache}
-export PYTHONPYCACHEPREFIX
+export PYTHONPYCACHEPREFIX TASK_DIR
 
-"${PYTHON}" scripts/validate_contract.py client.py
+"${PYTHON}" scripts/validate_contract.py "${CLIENT_CONTRACT_PATH}"
 "${PYTHON}" scripts/pycompile_sources.py .
 
-if "${PYTHON}" - <<'PY'
-import importlib.util, sys
+SMOKE_ARGS_TEXT=${SMOKE_ARGS:-}
+if [[ -z "${SMOKE_ARGS_TEXT}" && "${TASK_DIR}" == "tasks/cifar10" ]]; then
+  SMOKE_ARGS_TEXT="--n_clients 2 --num_rounds 1 --aggregation_epochs 1 --batch_size 32 --alpha 0.5 --seed 0 --aggregator weighted --name smoke_autofl"
+fi
 
+if [[ -z "${SMOKE_ARGS_TEXT}" ]]; then
+  echo "ERROR: no default runtime smoke budget is defined for TASK_DIR=${TASK_DIR}." >&2
+  echo "Set SMOKE_ARGS to run a task-specific no-ledger smoke through scripts/run_iteration.sh." >&2
+  exit 2
+fi
+
+if "${PYTHON}" - <<'PY'
+import importlib.util
+import os
+import sys
+
+task_dir = os.environ.get('TASK_DIR', 'tasks/cifar10')
 mods = [
     'numpy',
     'torch',
-    'torchvision',
     'nvflare',
     'nvflare.app_common.abstract.fl_model',
     'nvflare.app_common.aggregators.model_aggregator',
@@ -23,6 +38,22 @@ mods = [
     'nvflare.recipe',
     'nvflare.recipe.utils',
 ]
+if task_dir == 'tasks/cifar10':
+    mods.append('torchvision')
+elif task_dir == 'tasks/vlm_med':
+    mods.extend([
+        'accelerate',
+        'datasets',
+        'huggingface_hub',
+        'peft',
+        'PIL',
+        'qwen_vl_utils',
+        'safetensors',
+        'sentencepiece',
+        'tokenizers',
+        'transformers',
+    ])
+
 missing = []
 for mod in mods:
     try:
@@ -37,16 +68,17 @@ for mod in mods:
 if missing:
     print('missing or incompatible:', ', '.join(missing))
     sys.exit(1)
-print('all required runtime modules present')
+print(f'all required runtime modules present for {task_dir}')
 PY
 then
+  read -r -a SMOKE_ARGS_ARRAY <<< "${SMOKE_ARGS_TEXT}"
   RUN_ITERATION_REQUIRE_SCORE=0 bash scripts/run_iteration.sh \
     --no-log-results \
     --description "smoke" \
-    --target client.py \
-    -- --n_clients 2 --num_rounds 1 --aggregation_epochs 1 --batch_size 32 --alpha 0.5 --seed 0 --aggregator weighted --name smoke_autofl
+    --target "${CLIENT_CONTRACT_PATH}" \
+    -- "${SMOKE_ARGS_ARRAY[@]}"
 else
   echo "Skipping runtime smoke test because the active environment does not have the required NVFlare API paths or other runtime modules installed."
   echo "Run this later in a proper NVFlare environment:"
-  echo "bash scripts/run_iteration.sh --no-log-results --description \"smoke\" --target client.py -- --n_clients 2 --num_rounds 1 --aggregation_epochs 1 --batch_size 32 --alpha 0.5 --seed 0 --aggregator weighted --name smoke_autofl"
+  echo "bash scripts/run_iteration.sh --no-log-results --description \"smoke\" --target \"${CLIENT_CONTRACT_PATH}\" -- ${SMOKE_ARGS_TEXT}"
 fi

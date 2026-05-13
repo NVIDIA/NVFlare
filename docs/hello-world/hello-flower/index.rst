@@ -34,6 +34,17 @@ Install the dependencies:
 
    pip install -r requirements.txt
 
+.. warning::
+
+   This ``main`` branch example uses Flower 1.26+ and the newer Flower SuperLink
+   configuration flow. Use the NVFlare 2.8 release candidate line
+   (``nvflare~=2.8.0rc``), or install NVFlare from this repository if that
+   package is not available from PyPI yet.
+
+   If you are using released NVFlare 2.7.x, switch to the 2.7 branch or tag of
+   this example and use ``flwr>=1.16,<1.26``. NVFlare 2.7.x still uses Flower's
+   legacy ``--federation-config`` CLI option, which Flower 1.26+ ignores.
+
 Code Structure
 --------------
 

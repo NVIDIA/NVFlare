@@ -25,21 +25,28 @@ fi
 
 BRANCH="autoresearch/${TAG}"
 
-if git rev-parse --git-dir >/dev/null 2>&1; then
-  if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
-    current_branch=$(git branch --show-current)
-    if [[ "${current_branch}" == "${BRANCH}" ]]; then
-      echo "Branch ${BRANCH} already checked out"
-    else
-      git checkout "${BRANCH}"
-      echo "Switched to existing branch ${BRANCH}"
-    fi
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  echo "ERROR: init_run.sh must run inside a git clone so experiments have branch and commit provenance" >&2
+  exit 2
+fi
+
+if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
+  current_branch=$(git branch --show-current)
+  if [[ "${current_branch}" == "${BRANCH}" ]]; then
+    echo "Branch ${BRANCH} already checked out"
   else
-    git checkout -b "${BRANCH}"
-    echo "Created branch ${BRANCH}"
+    git checkout "${BRANCH}"
+    echo "Switched to existing branch ${BRANCH}"
   fi
 else
-  echo "WARNING: not inside a git repo; skipping branch creation"
+  git checkout -b "${BRANCH}"
+  echo "Created branch ${BRANCH}"
+fi
+
+current_branch=$(git branch --show-current)
+if [[ "${current_branch}" != "${BRANCH}" ]]; then
+  echo "ERROR: expected to be on ${BRANCH}, but current branch is ${current_branch}" >&2
+  exit 2
 fi
 
 if [[ ! -f results.tsv ]]; then
@@ -49,7 +56,14 @@ else
   echo "results.tsv already exists; leaving it unchanged"
 fi
 
+TASK_DIR=${TASK_DIR:-tasks/cifar10}
+CLIENT_CONTRACT_PATH=${CLIENT_CONTRACT_PATH:-${TASK_DIR}/client.py}
+
 echo "Run initialized. Next steps:"
-echo "  make validate"
-echo "  make smoke"
-echo "  bash scripts/run_iteration.sh --description \"baseline\" --target client.py -- <budget args>"
+echo "  TASK_DIR=${TASK_DIR} make validate"
+if [[ "${TASK_DIR}" == "tasks/cifar10" ]]; then
+  echo "  TASK_DIR=${TASK_DIR} make smoke"
+else
+  echo "  TASK_DIR=${TASK_DIR} SMOKE_ARGS=\"<task smoke args>\" make smoke"
+fi
+echo "  TASK_DIR=${TASK_DIR} bash scripts/run_iteration.sh --description \"baseline\" --target ${CLIENT_CONTRACT_PATH} -- <budget args>"
