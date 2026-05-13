@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 from nvflare.private.fed.server import training_cmds as training_cmds_module
 from nvflare.private.fed.server.training_cmds import TrainingCommandModule
@@ -68,3 +69,15 @@ def test_enable_client_reports_engine_exception_as_structured_error(monkeypatch)
     assert len(conn.errors) == 1
     assert "persist failed" in conn.errors[0][0]
     assert conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.INTERNAL_ERROR
+
+
+def test_remove_client_is_hidden_and_described_as_token_cleanup():
+    spec = TrainingCommandModule().get_spec()
+    commands = {cmd.name: cmd for cmd in spec.cmd_specs}
+
+    remove_cmd = commands[AdminCommandNames.REMOVE_CLIENT]
+
+    assert remove_cmd.visible is False
+    assert remove_cmd.usage == "remove_client <client-name>"
+    assert "active token" in remove_cmd.description
+    assert "register again" in remove_cmd.description

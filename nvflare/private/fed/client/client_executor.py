@@ -39,7 +39,6 @@ REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: PROCESS_EXIT_REASON[ProcessExitCode.EXCEPTION],
     ProcessExitCode.UNSAFE_COMPONENT: PROCESS_EXIT_REASON[ProcessExitCode.UNSAFE_COMPONENT],
     ProcessExitCode.CONFIG_ERROR: PROCESS_EXIT_REASON[ProcessExitCode.CONFIG_ERROR],
-    JobReturnCode.EXECUTION_ERROR: "execution error",
     JobReturnCode.ABORTED: "aborted",
 }
 

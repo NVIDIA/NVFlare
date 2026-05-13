@@ -81,6 +81,7 @@ NVIDIA FLARE
    Distributed Provisioning <user_guide/nvflare_cli/distributed_provisioning>
    user_guide/admin_guide/deployment/dashboard_ui
    user_guide/admin_guide/deployment/cloud_deployment
+   Deploy Prepare <user_guide/nvflare_cli/deploy_command>
    Running FLARE in Docker <user_guide/admin_guide/deployment/containerized_deployment>
    Running FLARE in Kubernetes <user_guide/admin_guide/deployment/helm_chart>
    Brev Scripted Deployment Quickstart <user_guide/admin_guide/deployment/brev_scripted_deployment>

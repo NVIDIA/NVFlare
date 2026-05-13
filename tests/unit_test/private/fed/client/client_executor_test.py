@@ -28,7 +28,6 @@ EXPECTED_REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: "exception",
     ProcessExitCode.UNSAFE_COMPONENT: "unsafe component",
     ProcessExitCode.CONFIG_ERROR: "config error",
-    JobReturnCode.EXECUTION_ERROR: "execution error",
     JobReturnCode.ABORTED: "aborted",
 }
 
@@ -84,7 +83,7 @@ def test_wait_child_process_reports_failure_return_code_to_server(return_code, r
     engine.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, fl_ctx)
 
 
-@pytest.mark.parametrize("return_code", [JobReturnCode.SUCCESS, JobReturnCode.UNKNOWN])
+@pytest.mark.parametrize("return_code", [JobReturnCode.SUCCESS, JobReturnCode.UNKNOWN, JobReturnCode.EXECUTION_ERROR])
 def test_wait_child_process_does_not_report_non_failure_return_code(return_code):
     client = MagicMock()
     client.client_name = "site-1"

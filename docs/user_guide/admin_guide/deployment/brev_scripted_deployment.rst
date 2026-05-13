@@ -23,8 +23,9 @@ What the Scripts Do
 
 * creates a simple three-participant ``project.yml`` unless you provide one;
 * runs ``nvflare provision``;
-* runs ``nvflare deploy prepare`` for ``server``, ``site-1``, and ``site-2``;
-* packages the prepared participant folders;
+* runs ``nvflare deploy prepare`` for K8s on the generated ``server``,
+  ``site-1``, and ``site-2`` startup kits;
+* packages the prepared participant kits;
 * copies the matching archive and launch script to each Brev environment with
   ``brev copy``.
 

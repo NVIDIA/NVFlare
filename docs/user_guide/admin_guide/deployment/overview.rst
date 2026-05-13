@@ -82,7 +82,7 @@ For advanced users, you can customize your provision with additional behavior th
 
     - **Zip**: To create password protected zip archives for the startup kits, see :ref:`distribution_builder`
     - **Docker-compose** *(deprecated)*: Previously used for launching NVIDIA FLARE via docker containers. See :ref:`containerized_deployment` for the current approach.
-    - **Docker/Kubernetes runtime packaging**: Provision normal startup kits first, then run ``nvflare deploy prepare`` for Docker or Kubernetes runtime files. See :ref:`containerized_deployment` and :ref:`helm_chart`.
+    - **Docker and Kubernetes runtime preparation**: Prepare existing server or client startup kits with :ref:`deploy_prepare_command`. For runtime-specific deployment steps, see :ref:`containerized_deployment` and :ref:`helm_chart`.
     - **CUSTOM**: you can build custom builders specific to your needs like in :ref:`distribution_builder`.
 
 Package distribution
@@ -267,14 +267,14 @@ the participant. As such, please safeguard its private key, client.key.
 Working with Docker
 ===================
 Depending on skill set or preference, some data scientists like to work with pip install; where others prefer to use docker.
-For example, assume a docker image with python and nvflare installed, optional python dependency requirements needed for the workload
-you can the provision with docker name, optionally add docker_requirements.txt, which will install the dependencies inside the docker
+For example, assume a Docker image with Python, NVFlare, and optional workload
+dependencies already installed. To run a provisioned server or client startup
+kit in Docker mode, prepare the existing kit with ``nvflare deploy prepare``.
+The prepared kit contains ``startup/start_docker.sh`` and launcher
+configuration for per-job Docker containers.
 
-If the docker name is specified, then add docker builder in provision project.ymal file, the provision
-process will generate docker.sh, which can be used to start each side.
-
-The docker.sh scripts are executable files that provide a convenient way to run NVIDIA FLARE components in containerized
-environments, with proper volume mounts, networking, and security configurations automatically handled by the provisioning system.
+See :ref:`deploy_prepare_command` for Docker runtime preparation and
+:ref:`launcher_spec` for job-level Docker image settings.
 
 .. note::
 
