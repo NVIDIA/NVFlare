@@ -16,7 +16,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nvflare.apis.fl_constant import ProcessType, ReservedKey, SiteType
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.private.aux_runner import AuxRunner
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
 
 
@@ -53,3 +56,16 @@ def test_get_job_clients_accepts_empty_list():
 
     assert run_manager.all_clients == []
     fl_ctx.set_prop.assert_called_once()
+
+
+def test_server_parent_target_is_not_job_scoped():
+    run_manager = _DummyRunManager()
+    fl_ctx = FLContext()
+    fl_ctx.put(key=ReservedKey.PROCESS_TYPE, value=ProcessType.CLIENT_JOB, private=True, sticky=False)
+    fl_ctx.put(key=ReservedKey.RUN_NUM, value="job-1", private=False, sticky=False)
+
+    scoped_target = ClientRunManager._get_aux_msg_target(run_manager, SiteType.SERVER)
+    parent_target = ClientRunManager._get_aux_msg_target(run_manager, SiteType.SERVER_PARENT)
+
+    assert AuxRunner._get_target_fqcn(scoped_target, fl_ctx) == "server.job-1"
+    assert AuxRunner._get_target_fqcn(parent_target, fl_ctx) == "server"

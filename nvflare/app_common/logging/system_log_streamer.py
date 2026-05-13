@@ -144,8 +144,13 @@ class SystemLogStreamer(Widget):
                 self.log_debug(fl_ctx, f"Job {job_id} already has JobLogStreamer; skipping injection")
                 return
 
-        # Build the component entry with non-default args only.
+        # Build the component entry.
         args = {}
+        # This streamer is injected by a system component, and its receiver
+        # lives in the server parent resources. Keep explicit job-level
+        # JobLogStreamer instances scoped to server.<job_id>, but send this
+        # injected stream to the parent JobLogReceiver.
+        args["target_parent_server"] = True
         if self._log_file_name != WorkspaceConstants.LOG_FILE_NAME:
             args["log_file_name"] = self._log_file_name
         if self._liveness_interval != 10.0:

@@ -237,3 +237,7 @@ def test_before_job_launch_injects_when_enabled(tmp_path):
         cfg = json.load(f)
     paths = [c["path"] for c in cfg["components"]]
     assert "nvflare.app_common.logging.job_log_streamer.JobLogStreamer" in paths
+    injected = next(
+        c for c in cfg["components"] if c["path"] == "nvflare.app_common.logging.job_log_streamer.JobLogStreamer"
+    )
+    assert injected["args"]["target_parent_server"] is True
