@@ -699,6 +699,9 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         )
 
     def _get_aux_msg_target(self, name: str):
+        if name.lower() == SiteType.SERVER_PARENT:
+            return AuxMsgTarget.server_parent_target()
+
         if name.lower() == SiteType.SERVER:
             return AuxMsgTarget.server_target()
 

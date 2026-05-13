@@ -18,7 +18,7 @@ import threading
 import time
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ReservedKey, StreamCtxKey, WorkspaceConstants
+from nvflare.apis.fl_constant import ReservedKey, SiteType, StreamCtxKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 from nvflare.app_common.logging.constants import (
@@ -64,6 +64,7 @@ class JobLogStreamer(Widget):
         log_file_name: str = WorkspaceConstants.LOG_FILE_NAME,
         liveness_interval: float = 10.0,
         poll_interval: float = 0.5,
+        target_parent_server: bool = False,
     ):
         super().__init__()
         if os.path.isabs(log_file_name):
@@ -73,6 +74,7 @@ class JobLogStreamer(Widget):
         self._log_file_name = log_file_name
         self._liveness_interval = liveness_interval
         self._poll_interval = poll_interval
+        self._target_parent_server = target_parent_server
         self._stop_event: threading.Event = None
         self._stream_thread: threading.Thread = None
         # Streaming is gated per-site by allow_log_streaming in resources.json.
@@ -95,7 +97,7 @@ class JobLogStreamer(Widget):
                 return os.path.join(os.path.dirname(handler.baseFilename), self._log_file_name)
         return None
 
-    def _do_stream(self, log_path: str, client_name: str, job_id: str, fl_ctx: FLContext):
+    def _do_stream(self, log_path: str, client_name: str, job_id: str, fl_ctx: FLContext, targets):
         stop_event = self._stop_event
         if stop_event is None:
             self.log_warning(fl_ctx, "_do_stream called without an active stop_event; skipping")
@@ -119,7 +121,7 @@ class JobLogStreamer(Widget):
                     StreamCtxKey.CLIENT_NAME: client_name,
                     StreamCtxKey.JOB_ID: job_id,
                 },
-                targets=["server"],
+                targets=targets,
                 file_name=log_path,
                 fl_ctx=fl_ctx,
                 stop_event=stop_event,
@@ -158,11 +160,12 @@ class JobLogStreamer(Widget):
         # a non-sticky local prop immediately without consulting ctx_manager, so our fresh Signal is
         # always returned — the original triggered signal never leaks back in.
         stream_fl_ctx.put(key=ReservedKey.RUN_ABORT_SIGNAL, value=Signal(), private=True, sticky=False)
+        targets = [SiteType.SERVER_PARENT] if self._target_parent_server else [SiteType.SERVER]
 
         self._stop_event = threading.Event()
         self._stream_thread = threading.Thread(
             target=self._do_stream,
-            args=(log_path, client_name, job_id, stream_fl_ctx),
+            args=(log_path, client_name, job_id, stream_fl_ctx, targets),
             name=f"log_streamer_{next(_thread_counter)}",
             daemon=True,
         )
