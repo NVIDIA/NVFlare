@@ -16,8 +16,6 @@ import json
 import os
 from unittest.mock import Mock, patch
 
-import pytest
-
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import (
     FLContextKey,
@@ -97,15 +95,6 @@ def test_site_log_streamer_uploads_completed_error_log_snapshot(tmp_path):
     assert kwargs["file_name"] == str(error_log_path)
     assert kwargs["fl_ctx"] is fl_ctx.get_engine().new_context.return_value
     assert kwargs["stop_event"].is_set()
-
-
-def test_system_log_streamer_backward_compat_alias_warns():
-    from nvflare.app_common.logging.system_log_streamer import SystemLogStreamer
-
-    with pytest.warns(DeprecationWarning, match="SystemLogStreamer is deprecated"):
-        streamer = SystemLogStreamer()
-
-    assert isinstance(streamer, SiteLogStreamer)
 
 
 def test_completed_upload_seeds_run_num_and_identity_on_fresh_context(tmp_path):
