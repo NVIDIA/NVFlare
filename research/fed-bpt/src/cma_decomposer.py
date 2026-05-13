@@ -19,7 +19,7 @@ import cma
 import numpy as np
 from cma import CMADataLogger, CMAOptions
 from cma.constraints_handler import BoundNone
-from cma.evolution_strategy import _CMAParameters, _CMASolutionDict_functional, _CMAStopDict
+from cma.evolution_strategy import _CMAParameters, _CMASolutionDict_functional, _CMAStopDict, _StopTolXStagnation
 from cma.optimization_tools import BestSolution
 from cma.recombination_weights import RecombinationWeights
 from cma.sampler import GaussFullSampler
@@ -164,6 +164,7 @@ def register_decomposers():
         DictFromTagsInString,
         ElapsedWCTime,
         _CMAStopDict,
+        _StopTolXStagnation,
         MoreToWrite,
     )
 
