@@ -74,30 +74,66 @@ class Cifar10DataSplitter(FLComponent):
         if event_type == EventType.START_RUN:
             self.split(fl_ctx)
 
-    def split(self, fl_ctx: FLContext):
-        self.log_info(
-            fl_ctx,
-            f"Partitioning CIFAR-10 dataset into {self.num_sites} sites with Dirichlet sampling under alpha "
-            f"{self.alpha}",
-        )
+    def _summary_matches_config(self, sum_file_name: str, fl_ctx: FLContext) -> bool:
+        if not os.path.isfile(sum_file_name):
+            return False
 
-        site_idx, class_sum = partition_data(self.num_sites, self.alpha, self.seed)
+        try:
+            with open(sum_file_name) as sum_file:
+                summary = sum_file.read()
+        except OSError as e:
+            self.log_warning(fl_ctx, f"Could not read split summary {sum_file_name}: {e}")
+            return False
+
+        if f"Number of clients: {self.num_sites}" not in summary:
+            return False
+        if f"Dirichlet sampling parameter: {self.alpha}" not in summary:
+            return False
+
+        seed_line = f"Seed: {self.seed}"
+        return seed_line in summary or ("Seed:" not in summary and self.seed == 0)
+
+    def split(self, fl_ctx: FLContext):
+        sum_file_name = os.path.join(self.split_dir, "summary.txt")
+        site_file_names = [os.path.join(self.split_dir, f"site-{site + 1}.npy") for site in range(self.num_sites)]
+        existing_site_file_count = sum(os.path.isfile(site_file_name) for site_file_name in site_file_names)
+
+        if existing_site_file_count == self.num_sites:
+            if self._summary_matches_config(sum_file_name, fl_ctx):
+                self.log_info(fl_ctx, f"Split data already exists at {self.split_dir}, skipping re-split.")
+                return
+            self.log_warning(
+                fl_ctx,
+                f"Found existing split data at {self.split_dir}, but the summary does not match the requested "
+                "configuration. Regenerating and overwriting existing site files.",
+            )
+        elif existing_site_file_count > 0:
+            self.log_warning(
+                fl_ctx,
+                f"Found incomplete split data at {self.split_dir}. Regenerating and overwriting "
+                f"{existing_site_file_count} existing site file(s).",
+            )
 
         if not os.path.isdir(self.split_dir):
             os.makedirs(self.split_dir)
             self.log_info(fl_ctx, f"Created directory: {self.split_dir}")
 
-        sum_file_name = os.path.join(self.split_dir, "summary.txt")
+        self.log_info(
+            fl_ctx,
+            f"Partitioning CIFAR-10 dataset into {self.num_sites} sites with Dirichlet sampling under alpha "
+            f"{self.alpha}",
+        )
+        site_idx, class_sum = partition_data(self.num_sites, self.alpha, self.seed)
+
         with open(sum_file_name, "w") as sum_file:
             sum_file.write(f"Number of clients: {self.num_sites} \n")
             sum_file.write(f"Dirichlet sampling parameter: {self.alpha} \n")
+            sum_file.write(f"Seed: {self.seed} \n")
             sum_file.write("Class counts for each client: \n")
             sum_file.write(json.dumps(class_sum, indent=2))
         self.log_info(fl_ctx, f"Saved summary to: {sum_file_name}")
 
-        site_file_path = os.path.join(self.split_dir, "site-")
-        for site in range(self.num_sites):
-            site_file_name = site_file_path + str(site + 1) + ".npy"
+        for site, site_file_name in enumerate(site_file_names):
             np.save(site_file_name, np.array(site_idx[site]))
             self.log_info(fl_ctx, f"Saved site {site + 1} data ({len(site_idx[site])} samples) to: {site_file_name}")
 
