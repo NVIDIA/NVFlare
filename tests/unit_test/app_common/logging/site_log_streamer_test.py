@@ -28,13 +28,13 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels
-from nvflare.app_common.logging.system_log_streamer import SystemLogStreamer
+from nvflare.app_common.logging.site_log_streamer import SiteLogStreamer
 
 
 def _allow_streaming(value: bool):
-    """Patch is_log_streaming_allowed inside system_log_streamer to return ``value``."""
+    """Patch is_log_streaming_allowed inside site_log_streamer to return ``value``."""
     return patch(
-        "nvflare.app_common.logging.system_log_streamer.is_log_streaming_allowed",
+        "nvflare.app_common.logging.site_log_streamer.is_log_streaming_allowed",
         return_value=value,
     )
 
@@ -64,7 +64,7 @@ def _make_fl_ctx(tmp_path):
     return fl_ctx
 
 
-def test_system_log_streamer_uploads_completed_error_log_snapshot(tmp_path):
+def test_site_log_streamer_uploads_completed_error_log_snapshot(tmp_path):
     os.makedirs(tmp_path / "startup", exist_ok=True)
     os.makedirs(tmp_path / "local", exist_ok=True)
     workspace = Workspace(root_dir=str(tmp_path), site_name="site-1")
@@ -74,12 +74,12 @@ def test_system_log_streamer_uploads_completed_error_log_snapshot(tmp_path):
         f.write("boom\n")
 
     fl_ctx = _make_fl_ctx(tmp_path)
-    streamer = SystemLogStreamer(log_file_name=WorkspaceConstants.ERROR_LOG_FILE_NAME)
+    streamer = SiteLogStreamer(log_file_name=WorkspaceConstants.ERROR_LOG_FILE_NAME)
 
     with (
         _allow_streaming(True),
-        patch("nvflare.app_common.logging.system_log_streamer.threading.Thread", _ImmediateThread),
-        patch("nvflare.app_common.logging.system_log_streamer.LogStreamer.stream_log") as stream_log,
+        patch("nvflare.app_common.logging.site_log_streamer.threading.Thread", _ImmediateThread),
+        patch("nvflare.app_common.logging.site_log_streamer.LogStreamer.stream_log") as stream_log,
     ):
         streamer._on_job_completed(EventType.JOB_COMPLETED, fl_ctx)
 
@@ -120,11 +120,11 @@ def test_completed_upload_seeds_run_num_and_identity_on_fresh_context(tmp_path):
     assert ReservedKey.RUN_NUM not in stream_fl_ctx.get_all_public_props()
     assert ReservedKey.IDENTITY_NAME not in stream_fl_ctx.get_all_public_props()
 
-    streamer = SystemLogStreamer(log_file_name=WorkspaceConstants.ERROR_LOG_FILE_NAME)
+    streamer = SiteLogStreamer(log_file_name=WorkspaceConstants.ERROR_LOG_FILE_NAME)
     with (
         _allow_streaming(True),
-        patch("nvflare.app_common.logging.system_log_streamer.threading.Thread", _ImmediateThread),
-        patch("nvflare.app_common.logging.system_log_streamer.LogStreamer.stream_log"),
+        patch("nvflare.app_common.logging.site_log_streamer.threading.Thread", _ImmediateThread),
+        patch("nvflare.app_common.logging.site_log_streamer.LogStreamer.stream_log"),
     ):
         streamer._on_job_completed(EventType.JOB_COMPLETED, fl_ctx)
 
@@ -139,11 +139,11 @@ def test_completed_upload_seeds_run_num_and_identity_on_fresh_context(tmp_path):
     assert peer_ctx.get_identity_name() == "site-1"
 
 
-def test_system_log_streamer_skips_completed_upload_for_non_error_logs(tmp_path):
+def test_site_log_streamer_skips_completed_upload_for_non_error_logs(tmp_path):
     fl_ctx = _make_fl_ctx(tmp_path)
-    streamer = SystemLogStreamer(log_file_name=WorkspaceConstants.LOG_FILE_NAME)
+    streamer = SiteLogStreamer(log_file_name=WorkspaceConstants.LOG_FILE_NAME)
 
-    with patch("nvflare.app_common.logging.system_log_streamer.LogStreamer.stream_log") as stream_log:
+    with patch("nvflare.app_common.logging.site_log_streamer.LogStreamer.stream_log") as stream_log:
         streamer._on_job_completed(EventType.JOB_COMPLETED, fl_ctx)
 
     stream_log.assert_not_called()
@@ -159,11 +159,11 @@ def test_on_job_completed_skips_upload_when_streaming_disabled(tmp_path):
         f.write("boom\n")
 
     fl_ctx = _make_fl_ctx(tmp_path)
-    streamer = SystemLogStreamer(log_file_name=WorkspaceConstants.ERROR_LOG_FILE_NAME)
+    streamer = SiteLogStreamer(log_file_name=WorkspaceConstants.ERROR_LOG_FILE_NAME)
 
     with (
         _allow_streaming(False),
-        patch("nvflare.app_common.logging.system_log_streamer.LogStreamer.stream_log") as stream_log,
+        patch("nvflare.app_common.logging.site_log_streamer.LogStreamer.stream_log") as stream_log,
     ):
         streamer._on_job_completed(EventType.JOB_COMPLETED, fl_ctx)
 
@@ -199,7 +199,7 @@ def test_before_job_launch_strips_existing_streamer_when_disabled(tmp_path):
         ],
     )
     fl_ctx = _make_launch_fl_ctx(tmp_path)
-    streamer = SystemLogStreamer()
+    streamer = SiteLogStreamer()
 
     with _allow_streaming(False):
         streamer._on_before_job_launch(EventType.BEFORE_JOB_LAUNCH, fl_ctx)
@@ -214,7 +214,7 @@ def test_before_job_launch_strips_existing_streamer_when_disabled(tmp_path):
 def test_before_job_launch_skips_injection_when_disabled(tmp_path):
     cfg_path = _write_job_config(tmp_path, [{"id": "other", "path": "nvflare.something.Else"}])
     fl_ctx = _make_launch_fl_ctx(tmp_path)
-    streamer = SystemLogStreamer()
+    streamer = SiteLogStreamer()
 
     with _allow_streaming(False):
         streamer._on_before_job_launch(EventType.BEFORE_JOB_LAUNCH, fl_ctx)
@@ -228,7 +228,7 @@ def test_before_job_launch_skips_injection_when_disabled(tmp_path):
 def test_before_job_launch_injects_when_enabled(tmp_path):
     cfg_path = _write_job_config(tmp_path, [])
     fl_ctx = _make_launch_fl_ctx(tmp_path)
-    streamer = SystemLogStreamer()
+    streamer = SiteLogStreamer()
 
     with _allow_streaming(True):
         streamer._on_before_job_launch(EventType.BEFORE_JOB_LAUNCH, fl_ctx)
@@ -237,3 +237,7 @@ def test_before_job_launch_injects_when_enabled(tmp_path):
         cfg = json.load(f)
     paths = [c["path"] for c in cfg["components"]]
     assert "nvflare.app_common.logging.job_log_streamer.JobLogStreamer" in paths
+    injected = next(
+        c for c in cfg["components"] if c["path"] == "nvflare.app_common.logging.job_log_streamer.JobLogStreamer"
+    )
+    assert injected["args"]["target_parent_server"] is True
