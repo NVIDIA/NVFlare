@@ -84,9 +84,14 @@ class FakeClock:
     def advance(self, seconds):
         with self._lock:
             self._now += seconds
-        # Allow the controller's monitor/wait threads (sleeping ~1 ms each iteration under
-        # the patched sleep) to observe the new time and run check_tasks.
-        _real_sleep(0.05)
+
+    def wait_until(self, predicate, timeout=5.0, interval=0.001):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            _real_sleep(interval)
+        return predicate()
 
 
 def create_task(name, data=None, timeout=0, before_task_sent_cb=None, result_received_cb=None, task_done_cb=None):
@@ -1234,6 +1239,9 @@ class TestBasic(TestController):
 
         assert controller.get_num_standing_tasks() == 1
         self.clock.advance(timeout + 1)
+        assert self.clock.wait_until(
+            lambda: controller.get_num_standing_tasks() == 0 and task.completion_status == TaskCompletionStatus.TIMEOUT
+        ), "controller did not process task timeout"
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.TIMEOUT
         launch_thread.join()
@@ -2026,6 +2034,11 @@ class TestRelayBehavior(TestController):
         get_ready(launch_thread)
         assert controller.get_num_standing_tasks() == 1
         self.clock.advance(time_before_first_request)
+        if dynamic_targets and not expected_to_get_task and time_before_first_request > task_assignment_timeout:
+            assert self.clock.wait_until(
+                lambda: controller.get_num_standing_tasks() == 0
+                and task.completion_status == TaskCompletionStatus.TIMEOUT
+            ), "controller did not process dynamic target assignment timeout"
 
         task_name, task_id, data = controller.communicator.process_task_request(client=request_client, fl_ctx=fl_ctx)
         client_get_a_task = True if task_name == "__test_task" else False
@@ -2268,6 +2281,10 @@ class TestRelayBehavior(TestController):
             self.clock.advance(task_result_timeout + 1)
 
         if send_order == SendOrder.SEQUENTIAL:
+            assert self.clock.wait_until(
+                lambda: controller.get_num_standing_tasks() == 0
+                and task.completion_status == TaskCompletionStatus.TIMEOUT
+            ), "controller did not process sequential task timeout"
             assert task.completion_status == TaskCompletionStatus.TIMEOUT
             assert controller.get_num_standing_tasks() == 0
         elif send_order == SendOrder.ANY:

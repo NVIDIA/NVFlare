@@ -60,25 +60,25 @@ class TestStatisticsController:
             else:
                 assert mc.config == {"*": {"bins": 10}, "Age": {"bins": 5, "range": [0, 120]}}
 
-    def test_wait_for_all_results(self):
-
-        # waiting for 1 more client
+    def test_wait_for_all_results_stops_after_missing_results_arrive(self):
         client_statistics = {
             "count": {"site-1": {}},
-            "mean": {"site-2": {}},
-            "sum": {"site-3": {}},
-            "stddev": {"site-4": {}},
         }
 
-        with patch("nvflare.app_common.workflows.statistics_controller.time.sleep") as mock_sleep:
+        def receive_remaining_results(seconds):
+            assert seconds == 0.1
+            client_statistics["count"].update({"site-2": {}, "site-3": {}})
+
+        with patch(
+            "nvflare.app_common.workflows.statistics_controller.time.sleep", side_effect=receive_remaining_results
+        ) as mock_sleep:
             result = StatisticsController._wait_for_all_results(
                 self.stats_controller.logger, 0.5, 3, client_statistics, 0.1
             )
 
         assert result is True
-        # Four statistics, each with a 0.5 second timeout and 0.1 second sleep interval.
-        assert mock_sleep.call_count == 20
-        mock_sleep.assert_called_with(0.1)
+        assert set(client_statistics["count"]) == {"site-1", "site-2", "site-3"}
+        mock_sleep.assert_called_once_with(0.1)
 
     def test_prepare_input(self):
         xs = self.stats_controller._prepare_inputs(SC.STATS_1st_STATISTICS)

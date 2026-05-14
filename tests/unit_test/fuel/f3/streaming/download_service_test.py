@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
 from typing import Any, Tuple
 from unittest.mock import Mock, patch
 
@@ -250,34 +249,49 @@ class TestDownloadService:
         assert transaction_id == tx_id
         assert status == TransactionDoneStatus.DELETED
 
-    def test_transaction_done_on_timeout(self, cell):
+    def test_transaction_done_on_timeout(self):
         """Test that transaction times out after inactivity."""
-        # Use very short timeout for testing
-        tx_id = DownloadService.new_transaction(cell=cell, timeout=0.1, num_receivers=2)
-
-        data_chunks = [b"chunk1"]
-        obj = MockDownloadable(data_chunks)
-        DownloadService.add_object(tx_id, obj)
-
-        # The monitor thread runs every 5 seconds; simulate an expired clock and trigger its timeout path manually.
+        from nvflare.fuel.f3.streaming import download_service as download_service_module
         from nvflare.fuel.f3.streaming.download_service import _Transaction
 
-        with DownloadService._tx_lock:
-            tx = DownloadService._tx_table.get(tx_id)
-            if tx:
-                assert isinstance(tx, _Transaction)
-                expired_time = tx.last_active_time + tx.timeout + 1.0
-                with patch("time.time", return_value=expired_time):
-                    assert time.time() - tx.last_active_time > tx.timeout
-                    # Simulate what monitor does
-                    tx.transaction_done(TransactionDoneStatus.TIMEOUT)
-                    DownloadService._delete_tx(tx)
+        class MonitorIterationDone(Exception):
+            pass
 
-        # Verify transaction_done was called with TIMEOUT status
-        assert len(obj.transaction_done_calls) == 1
-        transaction_id, status = obj.transaction_done_calls[0]
-        assert transaction_id == tx_id
-        assert status == TransactionDoneStatus.TIMEOUT
+        def run_monitor_once(now):
+            with (
+                patch.object(download_service_module.time, "time", return_value=now),
+                patch.object(download_service_module.time, "sleep", side_effect=MonitorIterationDone),
+            ):
+                with pytest.raises(MonitorIterationDone):
+                    DownloadService._monitor_tx()
+
+        fake_start_time = 1_000_000_000_000.0
+        timeout = 1.0
+        data_chunks = [b"chunk1"]
+        obj = MockDownloadable(data_chunks)
+        with patch.object(download_service_module.time, "time", return_value=fake_start_time):
+            tx = _Transaction(timeout=timeout, num_receivers=2)
+        ref = tx.add_object(obj)
+
+        assert isinstance(tx, _Transaction)
+        with DownloadService._tx_lock:
+            DownloadService._tx_table[tx.tid] = tx
+            DownloadService._ref_table[ref.rid] = ref
+
+        try:
+            run_monitor_once(fake_start_time + timeout)
+            assert obj.transaction_done_calls == []
+            assert tx.tid in DownloadService._tx_table
+            assert ref.rid in DownloadService._ref_table
+
+            run_monitor_once(fake_start_time + timeout + 0.001)
+            assert obj.transaction_done_calls == [(tx.tid, TransactionDoneStatus.TIMEOUT)]
+            assert tx.tid not in DownloadService._tx_table
+            assert ref.rid not in DownloadService._ref_table
+        finally:
+            with DownloadService._tx_lock:
+                DownloadService._tx_table.pop(tx.tid, None)
+                DownloadService._ref_table.pop(ref.rid, None)
 
     def test_transaction_done_on_completion(self, cell):
         """Test that transaction_done is called when all objects downloaded to all receivers."""
