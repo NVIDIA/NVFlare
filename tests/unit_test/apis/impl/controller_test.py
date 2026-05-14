@@ -1053,6 +1053,103 @@ class TestBasic(TestController):
         launch_thread.join()
         self.teardown_system(controller, fl_ctx)
 
+    def test_process_submission_rejects_unassigned_client_task_id(self):
+        controller, fl_ctx, clients = self.setup_system(num_of_clients=2)
+        assigned_client, other_client = clients
+        task = create_task("__test_task")
+        launch_thread = threading.Thread(
+            target=launch_task,
+            kwargs={
+                "controller": controller,
+                "task": task,
+                "method": "send",
+                "fl_ctx": fl_ctx,
+                "kwargs": {"targets": [assigned_client]},
+            },
+        )
+        get_ready(launch_thread)
+
+        task_name_out, client_task_id, _ = controller.communicator.process_task_request(assigned_client, fl_ctx)
+        assert task_name_out == "__test_task"
+
+        forged_result = Shareable()
+        forged_result["result"] = "forged"
+        controller.communicator.process_submission(
+            client=other_client,
+            task_name="__test_task",
+            task_id=client_task_id,
+            fl_ctx=fl_ctx,
+            result=forged_result,
+        )
+
+        client_task = task.last_client_task_map[assigned_client.name]
+        assert client_task.result is None
+        assert client_task.result_received_time is None
+
+        result = Shareable()
+        result["result"] = "result"
+        controller.communicator.process_submission(
+            client=assigned_client,
+            task_name="__test_task",
+            task_id=client_task_id,
+            fl_ctx=fl_ctx,
+            result=result,
+        )
+        assert client_task.result == result
+        launch_thread.join()
+        self.teardown_system(controller, fl_ctx)
+
+    def test_process_submission_drops_duplicate_result(self):
+        result_count = 0
+
+        def result_received_cb(client_task: ClientTask, **kwargs):
+            nonlocal result_count
+            result_count += 1
+
+        controller, fl_ctx, clients = self.setup_system()
+        client = clients[0]
+        task = create_task("__test_task", result_received_cb=result_received_cb)
+        launch_thread = threading.Thread(
+            target=launch_task,
+            kwargs={
+                "controller": controller,
+                "task": task,
+                "method": "send",
+                "fl_ctx": fl_ctx,
+                "kwargs": {"targets": [client]},
+            },
+        )
+        get_ready(launch_thread)
+
+        task_name_out, client_task_id, _ = controller.communicator.process_task_request(client, fl_ctx)
+        assert task_name_out == "__test_task"
+
+        result = Shareable()
+        result["result"] = "first"
+        controller.communicator.process_submission(
+            client=client,
+            task_name="__test_task",
+            task_id=client_task_id,
+            fl_ctx=fl_ctx,
+            result=result,
+        )
+
+        duplicate_result = Shareable()
+        duplicate_result["result"] = "duplicate"
+        controller.communicator.process_submission(
+            client=client,
+            task_name="__test_task",
+            task_id=client_task_id,
+            fl_ctx=fl_ctx,
+            result=duplicate_result,
+        )
+
+        client_task = task.last_client_task_map[client.name]
+        assert result_count == 1
+        assert client_task.result == result
+        launch_thread.join()
+        self.teardown_system(controller, fl_ctx)
+
     @pytest.mark.parametrize("method", TestController.ALL_APIS)
     @pytest.mark.parametrize("timeout", [1, 2])
     def test_task_timeout(self, method, timeout):
