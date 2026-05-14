@@ -658,34 +658,6 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert (output / "helm_chart" / "templates" / "client-deployment.yaml").exists()
 
 
-def test_prepare_k8s_client_patches_server_target_when_service_name_is_configured(tmp_path, capsys):
-    kit = _make_client_kit(tmp_path)
-    fed_client_path = kit / "startup" / "fed_client.json"
-    fed_client = json.loads(fed_client_path.read_text())
-    fed_client["servers"][0]["service"]["target"] = "provisioned.example.com:8002"
-    _write_json(fed_client_path, fed_client)
-    output = tmp_path / "site-1-k8s"
-
-    _run_prepare(
-        kit,
-        output,
-        {
-            "runtime": "k8s",
-            "server_service_name": "custom-nvflare-server",
-            "parent": {"docker_image": "repo/nvflare:dev"},
-        },
-    )
-    capsys.readouterr()
-
-    patched_fed_client = json.loads((output / "startup" / "fed_client.json").read_text())
-    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
-    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
-
-    assert patched_fed_client["servers"][0]["service"]["target"] == "custom-nvflare-server:8002"
-    assert comm_config["internal"]["resources"]["host"] == "site-1"
-    assert values["serviceName"] == "site-1"
-
-
 @pytest.mark.parametrize("namespace", ["nvflare", "1abc", "2026-prod"])
 def test_prepare_k8s_accepts_valid_namespace(tmp_path, capsys, namespace):
     kit = _make_client_kit(tmp_path)

@@ -285,8 +285,6 @@ def _prepare_k8s(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) 
 
     _patch_resources(kit_info.kit_dir, "k8s_launcher", launcher_path, launcher_args)
     _patch_comm_config_for_k8s(kit_info.kit_dir, kit_info.role, kit_info.name, parent_port, server_service_name)
-    if kit_info.role == ROLE_CLIENT and "server_service_name" in config:
-        _patch_client_server_target_for_k8s(kit_info.kit_dir, server_service_name)
     _ensure_study_data_template(kit_info.kit_dir)
     if kit_info.role == ROLE_SERVER:
         _relocate_server_storage_to_workspace(kit_info.kit_dir, workspace_mount_path)
@@ -580,7 +578,11 @@ def _patch_comm_config_for_docker(kit_dir: Path) -> None:
 
 
 def _patch_comm_config_for_k8s(
-    kit_dir: Path, role: str, site_name: str, parent_port: int, server_service_name: str
+    kit_dir: Path,
+    role: str,
+    site_name: str,
+    parent_port: int,
+    server_service_name: str = DEFAULT_K8S_SERVER_SERVICE_NAME,
 ) -> None:
     comm_config_path = kit_dir / "local" / COMM_CONFIG_JSON
     comm_config = _load_or_default_comm_config(comm_config_path)
@@ -619,30 +621,6 @@ def _internal_resources(comm_config: dict[str, Any]) -> dict[str, Any]:
     return resources
 
 
-def _patch_client_server_target_for_k8s(kit_dir: Path, server_service_name: str) -> None:
-    fed_client_path = kit_dir / "startup" / FED_CLIENT_JSON
-    fed_client = _load_json_file(fed_client_path, FED_CLIENT_JSON)
-    servers = fed_client.get("servers")
-    if not isinstance(servers, list):
-        _fail("INVALID_KIT", "fed_client.json servers must be a list.", "Fix the startup kit client config.")
-
-    for server in servers:
-        if not isinstance(server, dict):
-            _fail(
-                "INVALID_KIT", "fed_client.json servers entries must be mappings.", "Fix the startup kit client config."
-            )
-        service = server.get("service")
-        if not isinstance(service, dict):
-            continue
-        target = service.get("target")
-        if isinstance(target, str) and ":" in target:
-            port = target.rsplit(":", 1)[-1]
-            if port:
-                service["target"] = f"{server_service_name}:{port}"
-
-    _write_json(fed_client_path, fed_client)
-
-
 def _ensure_study_data_template(kit_dir: Path) -> None:
     path = kit_dir / "local" / STUDY_DATA_YAML
     if not path.exists():
@@ -659,7 +637,9 @@ def _remove_start_scripts(kit_dir: Path, keep: set[str]) -> None:
             path.unlink()
 
 
-def _k8s_parent_service_name(role: str, site_name: str, server_service_name: str) -> str:
+def _k8s_parent_service_name(
+    role: str, site_name: str, server_service_name: str = DEFAULT_K8S_SERVER_SERVICE_NAME
+) -> str:
     if role == ROLE_SERVER:
         return server_service_name
     return _k8s_service_name(site_name)
@@ -911,7 +891,7 @@ def _write_client_helm_chart(
     values = {
         "name": kit_info.name,
         "siteName": kit_info.name,
-        "serviceName": _k8s_service_name(kit_info.name),
+        "serviceName": _k8s_parent_service_name(kit_info.role, kit_info.name),
         "image": {"repository": repo, "tag": tag, "pullPolicy": "Always"},
         "serviceAccount": {"create": True, "annotations": {}, "automountServiceAccountToken": True},
         "podAnnotations": {},

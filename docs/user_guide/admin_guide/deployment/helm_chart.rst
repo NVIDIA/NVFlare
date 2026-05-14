@@ -97,11 +97,7 @@ The runtime config controls site-level Kubernetes settings:
 
 * ``namespace`` is where the parent pod and dynamically launched job pods run.
 * ``server_service_name`` sets the FL server Kubernetes Service name. It defaults
-  to ``nvflare-server``. For server kits, this value is rendered into the
-  generated server chart and TCP-services config. For client kits, set this only
-  when the client should connect to the server through in-cluster Service DNS; if
-  the provisioned ``project.yml`` server target already points to the desired
-  external IP or DNS name, omit this field when preparing the client kit.
+  to ``nvflare-server``.
 * ``parent`` values are rendered into the Helm chart. They set the parent image,
   Python executable, workspace PVC, parent service port, parent pod resources,
   and optional parent pod security context. ``parent.python_path`` controls the
@@ -300,17 +296,17 @@ server ports with the mechanism that matches your Kubernetes environment:
      helm upgrade --install server server-k8s/helm_chart \
          --namespace "$NAMESPACE" \
          --set service.type=LoadBalancer
-     kubectl -n "$NAMESPACE" get svc custom-nvflare-server
+     kubectl -n "$NAMESPACE" get svc nvflare-server
 
 * For local testing from the same machine, use port forwarding:
 
   .. code-block:: bash
 
-     kubectl -n "$NAMESPACE" port-forward svc/custom-nvflare-server 8002:8002 8003:8003
+     kubectl -n "$NAMESPACE" port-forward svc/nvflare-server 8002:8002 8003:8003
 
 * For single-node or ingress-based clusters, configure your cluster's TCP
   routing, firewall rules, or host ports so the FL and admin ports from
-  ``project.yml`` reach the configured server Service.
+  ``project.yml`` reach the ``nvflare-server`` Service.
 
 Make sure the server host name used during provisioning resolves to the exposed
 address. For example, update DNS or ``/etc/hosts`` for the admin console and for
