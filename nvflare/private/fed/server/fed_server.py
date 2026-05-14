@@ -46,9 +46,9 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import Message
 from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
-from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey, MessageType
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
@@ -419,6 +419,17 @@ class FederatedServer(BaseServer):
             message: the message to validate
         Returns:
         """
+        destination = message.get_header(MessageHeaderKey.DESTINATION)
+        # Peer replies can transit the server after reply auth headers are suppressed to avoid credential leaks.
+        # Peer requests still carry auth headers and are validated below before forwarding.
+        if (
+            message.get_header(MessageHeaderKey.MSG_TYPE) == MessageType.REPLY
+            and destination
+            and not FqcnInfo(destination).is_on_server
+        ):
+            self.logger.debug(f"skip auth validation for transit reply to {destination}")
+            return None
+
         id_asserter = self._get_id_asserter()
         if not id_asserter:
             return None

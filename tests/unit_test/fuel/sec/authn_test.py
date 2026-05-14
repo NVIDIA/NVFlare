@@ -12,16 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
 from nvflare.apis.fl_constant import CellMessageAuthHeaderKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
+from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
+from nvflare.private.fed.server.fed_server import FederatedServer
 
 AUTH_HEADERS = [
     CellMessageAuthHeaderKey.CLIENT_NAME,
@@ -56,6 +60,37 @@ def _auth_header_values(message):
     return {k: message.get_header(k) for k in AUTH_HEADERS}
 
 
+class _TokenVerifier:
+    def verify(self, _client_name, _token, _signature):
+        return True
+
+
+class _Cert:
+    def public_key(self):
+        return None
+
+
+def _make_server_auth_filter(monkeypatch):
+    server_auth = FederatedServer.__new__(FederatedServer)
+    server_auth.logger = logging.getLogger(__name__)
+    server_auth._get_id_asserter = lambda: SimpleNamespace(cert=_Cert())
+    server_auth._resolve_client_fqcn_for_auth = lambda client_name, _token: client_name
+    monkeypatch.setattr("nvflare.private.fed.server.fed_server.TokenVerifier", lambda _cert: _TokenVerifier())
+    return server_auth._validate_auth_headers
+
+
+def _make_routed_message(destination: str, msg_type: str):
+    return Message(
+        headers={
+            MessageHeaderKey.CHANNEL: "peer",
+            MessageHeaderKey.TOPIC: "ping",
+            MessageHeaderKey.ORIGIN: "site-a",
+            MessageHeaderKey.DESTINATION: destination,
+            MessageHeaderKey.MSG_TYPE: msg_type,
+        }
+    )
+
+
 def test_auth_filter_does_not_add_client_credentials_to_peer_replies():
     victim = _make_running_cell(_unique_fqcn("victim"))
     peer = _make_running_cell(_unique_fqcn("peer"))
@@ -72,6 +107,52 @@ def test_auth_filter_does_not_add_client_credentials_to_peer_replies():
         CellMessageAuthHeaderKey.TOKEN_SIGNATURE: None,
         CellMessageAuthHeaderKey.SSID: None,
     }
+
+
+def test_client_to_client_reply_routed_through_server_is_not_blocked_by_server_auth(monkeypatch):
+    server = _make_running_cell("server")
+    site_a = _make_running_cell(_unique_fqcn("site_a"))
+    site_b = _make_running_cell(_unique_fqcn("site_b"))
+    server.core_cell.add_incoming_filter(channel="*", topic="*", cb=_make_server_auth_filter(monkeypatch))
+    set_add_auth_headers_filters(site_a, site_a.get_fqcn(), "tok-a", "sig-a")
+    set_add_auth_headers_filters(site_b, site_b.get_fqcn(), "tok-b", "sig-b")
+    site_b.core_cell.register_request_cb("peer", "ping", lambda _request: Message(payload="pong"))
+
+    original_find_ep = site_a.core_cell._try_find_ep
+
+    def _route_site_b_via_server(target_fqcn, for_msg):
+        if target_fqcn == site_b.get_fqcn():
+            return Endpoint(server.get_fqcn())
+        return original_find_ep(target_fqcn, for_msg)
+
+    monkeypatch.setattr(site_a.core_cell, "_try_find_ep", _route_site_b_via_server)
+
+    reply = site_a.send_request("peer", "ping", site_b.get_fqcn(), Message(payload="hello"), timeout=0.2)
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+    assert reply.payload == "pong"
+
+
+def test_server_auth_filter_allows_unauthenticated_client_reply_transit(monkeypatch):
+    auth_filter = _make_server_auth_filter(monkeypatch)
+
+    assert auth_filter(_make_routed_message("site-b", MessageType.REPLY)) is None
+
+
+def test_server_auth_filter_still_rejects_unauthenticated_client_request_transit(monkeypatch):
+    auth_filter = _make_server_auth_filter(monkeypatch)
+
+    reply = auth_filter(_make_routed_message("site-b", MessageType.REQ))
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+
+
+def test_server_auth_filter_still_rejects_unauthenticated_server_destination(monkeypatch):
+    auth_filter = _make_server_auth_filter(monkeypatch)
+
+    reply = auth_filter(_make_routed_message("server.job-1", MessageType.REPLY))
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
 
 
 def test_auth_filter_keeps_auth_on_outgoing_requests():
