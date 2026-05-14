@@ -224,10 +224,11 @@ def test_start_run_sets_job_clients_meta_before_start_client_job(mock_get_bool, 
     assert seen_job_clients_meta["value"] == [{"name": "site-1"}, {"name": "site-2"}]
 
 
-def test_job_complete_process_uses_fresh_context_for_completion_events():
+def test_job_complete_process_saves_workspace_before_publishing_aborted_status():
     runner = JobRunner(workspace_root="/tmp")
     runner.fire_event = MagicMock()
     runner.log_debug = MagicMock()
+    runner._save_workspace = MagicMock()
     runner.ask_to_stop = False
 
     engine = MagicMock()
@@ -245,6 +246,11 @@ def test_job_complete_process_uses_fresh_context_for_completion_events():
     job.run_aborted = True
     runner.running_jobs = {"job-1": job}
 
+    parent = MagicMock()
+    parent.attach_mock(runner._save_workspace, "save_workspace")
+    parent.attach_mock(job_manager.set_status, "set_status")
+    parent.attach_mock(runner.fire_event, "fire_event")
+
     def _stop_after_first_pass(_):
         runner.ask_to_stop = True
 
@@ -252,12 +258,17 @@ def test_job_complete_process_uses_fresh_context_for_completion_events():
         runner._job_complete_process(engine)
 
     completion_ctx.set_prop.assert_called_once_with(FLContextKey.CURRENT_JOB_ID, "job-1")
-    runner.fire_event.assert_called_once_with(EventType.JOB_COMPLETED, completion_ctx)
+    assert parent.mock_calls == [
+        call.save_workspace(completion_ctx),
+        call.set_status("job-1", RunStatus.FINISHED_ABORTED, completion_ctx),
+        call.fire_event(EventType.JOB_ABORTED, completion_ctx),
+        call.fire_event(EventType.JOB_COMPLETED, completion_ctx),
+    ]
     engine.remove_exception_process.assert_called_once_with("job-1")
     assert "job-1" not in runner.running_jobs
 
 
-def test_update_job_status_maps_aborted_launcher_return_code_to_finished_aborted():
+def test_get_finished_job_status_maps_aborted_launcher_return_code_to_finished_aborted():
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
     runner.abort_client_run = MagicMock()
@@ -276,10 +287,10 @@ def test_update_job_status_maps_aborted_launcher_return_code_to_finished_aborted
     job_manager = MagicMock()
     fl_ctx = MagicMock()
 
-    status = runner._update_job_status(engine, job, job_manager, fl_ctx)
+    status = runner._get_finished_job_status(engine, job, fl_ctx)
 
     assert status == RunStatus.FINISHED_ABORTED
-    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, fl_ctx)
+    job_manager.set_status.assert_not_called()
     runner.abort_client_run.assert_called_once_with("job-1", [], fl_ctx)
 
 
@@ -287,7 +298,7 @@ def test_update_job_status_maps_aborted_launcher_return_code_to_finished_aborted
     "failure_code",
     [ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION, JobReturnCode.EXECUTION_ERROR],
 )
-def test_update_job_status_maps_exception_return_code_to_finished_execution_exception(failure_code):
+def test_get_finished_job_status_maps_exception_return_code_to_finished_execution_exception(failure_code):
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
     runner.abort_client_run = MagicMock()
@@ -306,10 +317,10 @@ def test_update_job_status_maps_exception_return_code_to_finished_execution_exce
     job_manager = MagicMock()
     fl_ctx = MagicMock()
 
-    status = runner._update_job_status(engine, job, job_manager, fl_ctx)
+    status = runner._get_finished_job_status(engine, job, fl_ctx)
 
     assert status == RunStatus.FINISHED_EXECUTION_EXCEPTION
-    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
+    job_manager.set_status.assert_not_called()
     runner.abort_client_run.assert_called_once_with("job-1", [], fl_ctx)
 
 
@@ -317,7 +328,7 @@ def test_update_job_status_maps_exception_return_code_to_finished_execution_exce
     "failure_code",
     [ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION, JobReturnCode.EXECUTION_ERROR],
 )
-def test_update_job_status_exception_return_code_overrides_clean_sj_finish(failure_code):
+def test_get_finished_job_status_exception_return_code_overrides_clean_sj_finish(failure_code):
     """fail_run sets PROCESS_RETURN_CODE=EXCEPTION before _stop_run aborts the SJ.
     The SJ's finally clause then sends UPDATE_RUN_STATUS with execution_error=False
     and PROCESS_FINISHED=True. The EXCEPTION code must still win so list_jobs shows
@@ -343,10 +354,10 @@ def test_update_job_status_exception_return_code_overrides_clean_sj_finish(failu
     job_manager = MagicMock()
     fl_ctx = MagicMock()
 
-    status = runner._update_job_status(engine, job, job_manager, fl_ctx)
+    status = runner._get_finished_job_status(engine, job, fl_ctx)
 
     assert status == RunStatus.FINISHED_EXECUTION_EXCEPTION
-    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
+    job_manager.set_status.assert_not_called()
 
 
 def test_fail_run_records_exception_process_without_setting_aborted_status():
@@ -402,12 +413,34 @@ def test_fail_run_preserves_existing_exception_process_entry_under_engine_lock()
     assert live_run_process.get(RunProcessKey.PROCESS_RETURN_CODE) is None
 
 
+def test_stop_run_does_not_publish_terminal_status_before_completion():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.log_info = MagicMock()
+    runner.fire_event = MagicMock()
+    runner._stop_run = MagicMock()
+
+    fl_ctx = MagicMock()
+
+    job = MagicMock()
+    job.job_id = "job-1"
+    job.run_aborted = False
+    runner.running_jobs = {"job-1": job}
+
+    assert runner.stop_run("job-1", fl_ctx) == ""
+
+    runner._stop_run.assert_called_once_with("job-1", fl_ctx)
+    assert job.run_aborted is True
+    fl_ctx.get_engine.assert_not_called()
+    runner.fire_event.assert_not_called()
+
+
 def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code():
     runner = JobRunner(workspace_root="/tmp")
     runner.fire_event = MagicMock()
     runner.log_debug = MagicMock()
     runner.log_info = MagicMock()
     runner.abort_client_run = MagicMock()
+    runner._save_workspace = MagicMock()
     runner.ask_to_stop = False
 
     engine = MagicMock()
@@ -437,6 +470,7 @@ def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code
     with patch("nvflare.private.fed.server.job_runner.time.sleep", side_effect=_stop_after_first_pass):
         runner._job_complete_process(engine)
 
+    runner._save_workspace.assert_called_once_with(completion_ctx)
     job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, completion_ctx)
     assert runner.fire_event.call_args_list == [
         call(EventType.JOB_ABORTED, completion_ctx),
@@ -444,6 +478,107 @@ def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code
     ]
     engine.remove_exception_process.assert_called_once_with("job-1")
     assert "job-1" not in runner.running_jobs
+
+
+def test_job_complete_process_keeps_processing_jobs_when_save_workspace_fails():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.fire_event = MagicMock()
+    runner.log_debug = MagicMock()
+    runner.log_exception = MagicMock()
+    runner._save_workspace = MagicMock(side_effect=[RuntimeError("storage unavailable"), None])
+    runner.ask_to_stop = False
+
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
+
+    job_manager = MagicMock()
+    engine.get_component.return_value = job_manager
+
+    first_ctx = MagicMock()
+    second_ctx = MagicMock()
+    engine.new_context.side_effect = [nullcontext(first_ctx), nullcontext(second_ctx)]
+
+    first_job = MagicMock()
+    first_job.job_id = "job-1"
+    first_job.run_aborted = True
+    second_job = MagicMock()
+    second_job.job_id = "job-2"
+    second_job.run_aborted = True
+    runner.running_jobs = {"job-1": first_job, "job-2": second_job}
+
+    def _stop_after_first_pass(_):
+        runner.ask_to_stop = True
+
+    with patch("nvflare.private.fed.server.job_runner.time.sleep", side_effect=_stop_after_first_pass):
+        runner._job_complete_process(engine)
+
+    assert runner._save_workspace.call_args_list == [call(first_ctx), call(second_ctx)]
+    runner.log_exception.assert_called_once()
+    job_manager.set_status.assert_called_once_with("job-2", RunStatus.FINISHED_ABORTED, second_ctx)
+    assert runner.fire_event.call_args_list == [
+        call(EventType.JOB_ABORTED, second_ctx),
+        call(EventType.JOB_COMPLETED, second_ctx),
+    ]
+    engine.remove_exception_process.assert_called_once_with("job-2")
+    assert "job-1" in runner.running_jobs
+    assert "job-2" not in runner.running_jobs
+
+
+def test_job_complete_process_retries_save_without_recomputing_finished_status():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.fire_event = MagicMock()
+    runner.log_debug = MagicMock()
+    runner.log_info = MagicMock()
+    runner.log_exception = MagicMock()
+    runner.abort_client_run = MagicMock()
+    runner._save_workspace = MagicMock(side_effect=[RuntimeError("storage unavailable"), None])
+    runner.ask_to_stop = False
+
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.client_manager.clients = {}
+    engine.exception_run_processes = {
+        "job-1": {
+            RunProcessKey.PARTICIPANTS: {},
+            RunProcessKey.PROCESS_RETURN_CODE: JobReturnCode.ABORTED,
+        }
+    }
+
+    job_manager = MagicMock()
+    engine.get_component.return_value = job_manager
+
+    first_ctx = MagicMock()
+    second_ctx = MagicMock()
+    engine.new_context.side_effect = [nullcontext(first_ctx), nullcontext(second_ctx)]
+
+    job = MagicMock()
+    job.job_id = "job-1"
+    job.run_aborted = False
+    runner.running_jobs = {"job-1": job}
+
+    sleep_count = 0
+
+    def _stop_after_second_pass(_):
+        nonlocal sleep_count
+        sleep_count += 1
+        if sleep_count == 2:
+            runner.ask_to_stop = True
+
+    with patch("nvflare.private.fed.server.job_runner.time.sleep", side_effect=_stop_after_second_pass):
+        runner._job_complete_process(engine)
+
+    assert runner._save_workspace.call_args_list == [call(first_ctx), call(second_ctx)]
+    runner.abort_client_run.assert_called_once_with("job-1", [], first_ctx)
+    runner.log_exception.assert_called_once()
+    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, second_ctx)
+    assert runner.fire_event.call_args_list == [
+        call(EventType.JOB_ABORTED, second_ctx),
+        call(EventType.JOB_COMPLETED, second_ctx),
+    ]
+    engine.remove_exception_process.assert_called_once_with("job-1")
+    assert "job-1" not in runner.running_jobs
+    assert "job-1" not in runner._finished_job_statuses
 
 
 @patch("nvflare.private.fed.server.job_runner.check_client_replies")
