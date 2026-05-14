@@ -401,6 +401,9 @@ own requirements:
     - :class:`CertBuilder<nvflare.lighter.impl.cert.CertBuilder>`
     - :class:`SignatureBuilder<nvflare.lighter.impl.signature.SignatureBuilder>`
 
+Docker and Kubernetes runtime launch preparation is handled after startup kits
+are created with ``nvflare deploy prepare``.
+
 ::
 
     workspace structure

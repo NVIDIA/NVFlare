@@ -80,14 +80,14 @@ nvflare package --project-file site-project.yml ...
 ```
 
 with a site-local full project YAML containing one participant and optional
-runtime builders.
+runtime preparation entries.
 
 That approach worked mechanically, but it made runtime preparation depend on
 provisioning concepts:
 
 - the site had to write a project-style YAML even though the startup kit already
   existed
-- runtime choice was expressed through `Builder` classes
+- runtime choice was expressed through provisioning extension classes
 - `nvflare package` had to carry deployment behavior
 - centrally provisioned kits needed cert/key material staged back into package
   input form
@@ -283,6 +283,7 @@ parent:
   parent_port: 8102
   workspace_pvc: nvflws
   workspace_mount_path: /var/tmp/nvflare/workspace
+  python_path: /usr/local/bin/python3
   resources:
     requests:
       cpu: "2"
@@ -292,7 +293,7 @@ parent:
 job_launcher:
   config_file_path: null
   pending_timeout: null
-  default_python_path: /usr/local/bin/python
+  default_python_path: /usr/local/bin/python3
   job_pod_security_context: {}
 ```
 
@@ -332,7 +333,17 @@ Supported `parent` keys:
 - `workspace_mount_path`
   - Required: no
   - Default: `/var/tmp/nvflare/workspace`
-  - Description: in-container mount path for the workspace PVC.
+  - Description: in-container mount path for the parent workspace PVC. This is
+    also passed to `K8sJobLauncher` so dynamically launched job pods mount the
+    job workspace and startup kit at the same path.
+
+- `python_path`
+  - Required: no
+  - Default: `/usr/local/bin/python3`
+  - Description: Python executable used by the parent server/client pod command
+    in the generated Helm chart. This controls SP/CP parent pods; dynamically
+    launched job pods can still override the job launcher default with
+    `launcher_spec[<site>][k8s].python_path`.
 
 - `resources`
   - Required: no
@@ -360,9 +371,11 @@ Supported `job_launcher` keys:
 
 - `default_python_path`
   - Required: no
-  - Default: `/usr/local/bin/python`
+  - Default: `/usr/local/bin/python3`
   - Description: Default Python executable used in job pods. Individual jobs
-    can override it with `launcher_spec[<site>][k8s].python_path`.
+    can override it with `launcher_spec[<site>][k8s].python_path`. This value
+    does not control the SP/CP parent pod command; use `parent.python_path` for
+    that command.
 
 - `job_pod_security_context`
   - Required: no
@@ -481,38 +494,37 @@ The detailed study data schema follows [Study Dataset Mapping](https://docs.goog
 
 Job-image-specific settings for Docker and K8s job containers should continue
 to use job launcher metadata instead of deployment-prepare-only configuration
-fields.
+fields. Resource requests, including `num_of_gpus`, stay in `resource_spec` as
+they did before container launchers.
 
 For Docker job containers, `DockerJobLauncher` uses job metadata for settings
-that belong to the selected job image:
+that belong to the selected job image and container runtime:
 
-- `launcher_spec[<site>][docker].num_of_gpus`
+- `launcher_spec[<site>][docker].image`
 - `launcher_spec[<site>][docker].python_path`
-- legacy `resource_spec[<site>][docker].num_of_gpus`
-- legacy flat `resource_spec[<site>].num_of_gpus`
+- `launcher_spec[<site>][docker].shm_size` and similar Docker SDK kwargs
+- `resource_spec[<site>].num_of_gpus`
 - explicit Docker SDK `device_requests` in the Docker launcher spec
 
-`DockerJobLauncher` translates `num_of_gpus` into Docker SDK
-`device_requests`, and job-level settings take precedence over site-level
-defaults. Site-local defaults can still be supplied through
-`default_job_container_kwargs` in `docker.yaml` when needed.
+`DockerJobLauncher` translates `resource_spec[<site>].num_of_gpus` into Docker
+SDK `device_requests`. Job-level launcher settings take precedence over
+site-level defaults supplied through `default_job_container_kwargs` in
+`docker.yaml`.
 `launcher_spec[<site>][docker].python_path` overrides
 `job_launcher.default_python_path` for jobs whose image uses a different Python
 location.
 
 For K8s job pods, `K8sJobLauncher` already supports GPU and basic resource
-limits through job metadata, and it uses the same metadata path for
-image-specific Python overrides:
+limits through job metadata:
 
-- `launcher_spec[<site>][k8s].num_of_gpus`
 - `launcher_spec[<site>][k8s].python_path`
 - `launcher_spec[<site>][k8s].ephemeral_storage`
-- legacy `resource_spec[<site>][k8s].num_of_gpus`
 - `launcher_spec[<site>][k8s].cpu`
 - `launcher_spec[<site>][k8s].memory`
+- `resource_spec[<site>].num_of_gpus`
 
-`K8sJobLauncher` maps `num_of_gpus` to the pod container limit
-`nvidia.com/gpu`.
+`K8sJobLauncher` maps `resource_spec[<site>].num_of_gpus` to the pod container
+limit `nvidia.com/gpu`.
 `launcher_spec[<site>][k8s].ephemeral_storage` maps to the job workspace
 `emptyDir.sizeLimit` and the pod container `ephemeral-storage` request/limit.
 `launcher_spec[<site>][k8s].python_path` overrides
@@ -602,8 +614,9 @@ Shared helpers can handle:
 - reporting next steps
 
 Runtime preparation should not depend on provisioning `Builder` classes or
-`lighter` templates. Docker/K8s deployment preparation should use the deploy
-command rather than requiring a site-local `project.yml` builder entry.
+`lighter` templates. Docker and K8s deployment preparation is owned by
+`nvflare deploy prepare`; startup kits stay runtime-neutral until each site
+runs that command with its local runtime config.
 
 ## Workflow Summary
 

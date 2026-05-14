@@ -82,6 +82,22 @@ _LEGACY_TERMINAL_JOB_STATUSES = {
     "ABANDONED",
     "FAILED",
 }
+_CONNECTION_RETRY_COMMANDS = {AdminCommandNames.ABORT_JOB, AdminCommandNames.SHUTDOWN}
+_CONNECTION_RETRY_ATTEMPTS = 3
+_CONNECTION_RETRY_BACKOFF = 0.5
+
+
+def _command_name(command: str) -> str:
+    parts = command.split(maxsplit=1)
+    return parts[0] if parts else ""
+
+
+def _should_retry_connection_failure(command: str, result: dict) -> bool:
+    return (
+        _command_name(command) in _CONNECTION_RETRY_COMMANDS
+        and isinstance(result, dict)
+        and result.get(ResultKey.STATUS) == APIStatus.ERROR_SERVER_CONNECTION
+    )
 
 
 def _is_terminal_job_status(status: str) -> bool:
@@ -208,7 +224,13 @@ class Session(SessionSpec):
         if self.api.closed:
             raise SessionClosed("session closed")
 
-        result = self.api.do_command(command, props=props)
+        result = None
+        for attempt in range(_CONNECTION_RETRY_ATTEMPTS):
+            result = self.api.do_command(command, props=props)
+            if not _should_retry_connection_failure(command, result) or attempt >= _CONNECTION_RETRY_ATTEMPTS - 1:
+                break
+            time.sleep(_CONNECTION_RETRY_BACKOFF * (attempt + 1))
+
         if not isinstance(result, dict):
             raise InternalError(f"result from server must be dict but got {type(result)}")
 
@@ -1323,13 +1345,16 @@ class Session(SessionSpec):
         return self._get_dict_data(reply)
 
     def remove_client(self, client_name: str) -> None:
-        """Remove a client from the system.
+        """Release a connected client's active token.
 
         Args:
-            client_name (str): name of the client to remove
+            client_name (str): name of the client whose active token should be released
 
         Returns: None
 
+        Note:
+            This does not stop the client, revoke credentials, or prevent reconnect.
+            Use disable_client to prevent a client from reconnecting.
         """
         if not client_name or not isinstance(client_name, str):
             raise ValueError("client_name must be a non-empty str")
