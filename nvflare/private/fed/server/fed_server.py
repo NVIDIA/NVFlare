@@ -66,7 +66,7 @@ from nvflare.private.defs import (
     JobFailureMsgKey,
     new_cell_message,
 )
-from nvflare.private.fed.authenticator import validate_auth_headers
+from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN, validate_auth_headers
 from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
@@ -435,7 +435,7 @@ class FederatedServer(BaseServer):
     def _resolve_client_fqcn_for_auth(self, client_name: str, token: str):
         client = self.client_manager.clients.get(token)
         if client and client.name == client_name:
-            return client.get_fqcn()
+            return client.get_fqcn() or MISSING_CLIENT_FQCN
         return None
 
     def sign_auth_token(self, client_name: str, token: str):

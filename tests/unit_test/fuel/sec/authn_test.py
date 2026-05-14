@@ -19,6 +19,7 @@ import pytest
 from nvflare.apis.fl_constant import CellMessageAuthHeaderKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
 
@@ -103,4 +104,26 @@ def test_auth_filter_keeps_client_reply_auth_on_server_path():
         CellMessageAuthHeaderKey.TOKEN: "tok-victim",
         CellMessageAuthHeaderKey.TOKEN_SIGNATURE: "sig-victim",
         CellMessageAuthHeaderKey.SSID: "ssid-victim",
+    }
+
+
+def test_auth_filter_keeps_auth_on_replies_from_server_path_origin():
+    server = _make_running_cell(f"server.{_unique_fqcn('job')}")
+    client = _make_running_cell(_unique_fqcn("client"))
+    set_add_auth_headers_filters(server, "server-job", "tok-server", "sig-server", "ssid-server")
+
+    def _reply(_request):
+        return Message(payload="pong")
+
+    server.core_cell.register_request_cb("probe", "ping", _reply)
+
+    reply = client.send_request("probe", "ping", server.get_fqcn(), Message(payload="hello"), timeout=1.0)
+
+    assert reply.payload == "pong"
+    assert reply.get_header(MessageHeaderKey.ORIGIN) == server.get_fqcn()
+    assert _auth_header_values(reply) == {
+        CellMessageAuthHeaderKey.CLIENT_NAME: "server-job",
+        CellMessageAuthHeaderKey.TOKEN: "tok-server",
+        CellMessageAuthHeaderKey.TOKEN_SIGNATURE: "sig-server",
+        CellMessageAuthHeaderKey.SSID: "ssid-server",
     }

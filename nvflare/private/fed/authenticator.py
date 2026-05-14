@@ -33,6 +33,8 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, ClientRegMsgKey, new_cell_message
 from nvflare.private.fed.utils.identity_utils import IdentityAsserter, IdentityVerifier, TokenVerifier, load_crt_bytes
 
+MISSING_CLIENT_FQCN = ""
+
 
 def _get_client_ip():
     """Return localhost IP.
@@ -301,7 +303,7 @@ class Authenticator:
 
 
 def _origin_matches_fqcn(origin: str, fqcn: str) -> bool:
-    return bool(origin) and (origin == fqcn or FQCN.is_ancestor(fqcn, origin))
+    return bool(origin) and bool(fqcn) and (origin == fqcn or FQCN.is_ancestor(fqcn, origin))
 
 
 def validate_auth_headers(
@@ -315,7 +317,9 @@ def validate_auth_headers(
     Args:
         message: the message to validate
         token_verifier: the TokenVerifier to be used to verify the token and signature
-        client_fqcn_resolver: optional resolver used to bind a client token to its registered CellNet origin
+        client_fqcn_resolver: optional resolver used to bind a client token to its registered CellNet origin.
+            Return None only when the token/name cannot be resolved; return MISSING_CLIENT_FQCN for a registered
+            client with no stored origin so validation fails closed.
 
     Returns:
     """
@@ -357,8 +361,12 @@ def validate_auth_headers(
 
     if client_fqcn_resolver:
         client_fqcn = client_fqcn_resolver(client_name, token)
-        if client_fqcn and not _origin_matches_fqcn(origin, client_fqcn):
-            err = f"auth token for client {client_name} does not match message origin {origin}"
+        if client_fqcn is not None and not _origin_matches_fqcn(origin, client_fqcn):
+            registered_origin = client_fqcn or "<missing>"
+            err = (
+                f"auth token for client {client_name} is bound to origin {registered_origin}, "
+                f"not message origin {origin}"
+            )
             logger.error(f"{err_text}: {err}")
             return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)
 

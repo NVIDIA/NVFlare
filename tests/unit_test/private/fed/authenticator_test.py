@@ -20,7 +20,7 @@ from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.private.defs import CellMessageHeaderKeys
-from nvflare.private.fed.authenticator import validate_auth_headers
+from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN, validate_auth_headers
 
 
 class _TokenVerifier:
@@ -57,6 +57,12 @@ def test_validate_auth_headers_accepts_token_from_registered_origin(origin):
 
 def test_validate_auth_headers_rejects_token_from_different_origin():
     reply = _validate("site-b", lambda _client_name, _token: "site-a")
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+
+
+def test_validate_auth_headers_rejects_registered_token_with_missing_origin_binding():
+    reply = _validate("site-a", lambda _client_name, _token: MISSING_CLIENT_FQCN)
 
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
 

@@ -51,6 +51,7 @@ def add_server_path_reply_authentication_headers(
 ):
     origin = msg.get_header(MessageHeaderKey.ORIGIN)
     destination = msg.get_header(MessageHeaderKey.DESTINATION)
+    # This filter is also used by server-owned job/transfer cells: keep auth on replies from or to server paths.
     if _is_server_fqcn(origin) or _is_server_fqcn(destination):
         add_authentication_headers(msg, client_name, auth_token, token_signature, ssid)
 
