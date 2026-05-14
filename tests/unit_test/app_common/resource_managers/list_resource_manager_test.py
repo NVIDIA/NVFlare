@@ -17,7 +17,6 @@ from unittest.mock import patch
 
 import pytest
 
-from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.app_common.resource_managers.list_resource_manager import ListResourceManager
 
