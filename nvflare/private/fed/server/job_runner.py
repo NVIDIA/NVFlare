@@ -16,6 +16,7 @@ import os
 import shutil
 import threading
 import time
+from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
 from nvflare.apis.client import Client
@@ -46,6 +47,12 @@ from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import extract_participants, require_signed_jobs, set_message_security_data
 from nvflare.security.logging import secure_format_exception
+
+
+@dataclass
+class _FinishedJobState:
+    status: RunStatus
+    workspace_saved: bool = False
 
 
 def _send_to_clients(admin_server, client_sites: List[str], engine, message, timeout=None, optional=False):
@@ -91,7 +98,7 @@ class JobRunner(FLComponent):
         self.ask_to_stop = False
         self.scheduler = None
         self.running_jobs = {}
-        self._finished_job_statuses = {}
+        self._finished_job_states = {}
         self.lock = threading.Lock()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
@@ -406,26 +413,38 @@ class JobRunner(FLComponent):
                     if job:
                         with engine.new_context() as completion_ctx:
                             completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
-                            status = self._finished_job_statuses.get(job.job_id)
-                            if status is None:
+                            finished_state = self._finished_job_states.get(job.job_id)
+                            if finished_state is None:
                                 if job.run_aborted:
                                     status = RunStatus.FINISHED_ABORTED
                                 else:
                                     status = self._get_finished_job_status(engine, job, completion_ctx)
-                                self._finished_job_statuses[job.job_id] = status
+                                finished_state = _FinishedJobState(status=status)
+                                self._finished_job_states[job.job_id] = finished_state
+                            status = finished_state.status
                             # Publish terminal status only after artifacts are ready for download.
+                            if not finished_state.workspace_saved:
+                                try:
+                                    self._save_workspace(completion_ctx)
+                                    with self.lock:
+                                        finished_state.workspace_saved = True
+                                except Exception as e:
+                                    self.log_exception(
+                                        completion_ctx,
+                                        f"Failed to save workspace for finished job ({job.job_id}): {secure_format_exception(e)}",
+                                    )
+                                    continue
                             try:
-                                self._save_workspace(completion_ctx)
+                                job_manager.set_status(job.job_id, status, completion_ctx)
                             except Exception as e:
                                 self.log_exception(
                                     completion_ctx,
-                                    f"Failed to save workspace for finished job ({job.job_id}): {secure_format_exception(e)}",
+                                    f"Failed to publish finished status for job ({job.job_id}): {secure_format_exception(e)}",
                                 )
                                 continue
-                            job_manager.set_status(job.job_id, status, completion_ctx)
                             with self.lock:
                                 del self.running_jobs[job_id]
-                                self._finished_job_statuses.pop(job_id, None)
+                                self._finished_job_states.pop(job_id, None)
                             if status == RunStatus.FINISHED_ABORTED:
                                 self.fire_event(EventType.JOB_ABORTED, completion_ctx)
                             self.fire_event(EventType.JOB_COMPLETED, completion_ctx)
@@ -668,7 +687,9 @@ class JobRunner(FLComponent):
 
     def stop_run(self, job_id: str, fl_ctx: FLContext):
         self._stop_run(job_id, fl_ctx)
+        return self.mark_run_aborted(job_id, fl_ctx)
 
+    def mark_run_aborted(self, job_id: str, fl_ctx: FLContext):
         job = self.running_jobs.get(job_id)
         if job:
             self.log_info(fl_ctx, f"Stop the job run: {job_id}")

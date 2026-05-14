@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.apis.fl_constant import RunProcessKey
+from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.common.exit_codes import ProcessExitCode
@@ -71,6 +72,24 @@ class TestFederatedServer:
 
             result = server.client_heartbeat(request)
             assert result.get_header(CellMessageHeaderKeys.ABORT_JOBS, []) == expected
+
+    def test_set_job_aborted_marks_runner_without_publishing_status(self):
+        server = object.__new__(FederatedServer)
+        server.logger = MagicMock()
+        server.engine = MagicMock()
+
+        job_manager = MagicMock()
+        server.engine.get_component.return_value = job_manager
+        job_manager.get_job.return_value = MagicMock(meta={JobMetaKey.STATUS: RunStatus.RUNNING})
+
+        fl_ctx = MagicMock()
+        server.engine.new_context.return_value = nullcontext(fl_ctx)
+        server.engine.job_runner.mark_run_aborted.return_value = ""
+
+        server._set_job_aborted("job-1")
+
+        server.engine.job_runner.mark_run_aborted.assert_called_once_with("job-1", fl_ctx)
+        job_manager.set_status.assert_not_called()
 
     def test_sync_client_jobs_legacy_reports_missing_immediately(self):
         with (

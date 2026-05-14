@@ -528,7 +528,9 @@ class FederatedServer(BaseServer):
         with self.engine.new_context() as fl_ctx:
             job = job_manager.get_job(job_id, fl_ctx)
             if job.meta.get(JobMetaKey.STATUS) == RunStatus.RUNNING:
-                job_manager.set_status(job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
+                error = self.engine.job_runner.mark_run_aborted(job_id, fl_ctx)
+                if error:
+                    self.logger.warning(error)
 
     def _create_server_engine(self, args, snapshot_persistor):
         return ServerEngine(
