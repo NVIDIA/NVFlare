@@ -119,7 +119,6 @@ Example ``k8s.yaml``:
 
    runtime: k8s
    namespace: nvflare
-   server_service_name: custom-nvflare-server
 
    parent:
      docker_image: registry.example.com/nvflare-site:2.8
@@ -147,9 +146,10 @@ Top-level keys:
 - ``server_service_name``: optional Kubernetes Service name for the FL server.
   Defaults to ``nvflare-server``. When preparing a server kit, this value is
   rendered into ``values.yaml`` and the generated Service and TCP-services
-  templates. When preparing a client kit, this value replaces the host portion of
-  existing server targets in ``startup/fed_client.json`` while preserving their
-  configured ports.
+  templates. When preparing a client kit, set this only when the client should
+  connect to the server through in-cluster Service DNS; if present, it replaces
+  the host portion of existing server targets in ``startup/fed_client.json``
+  while preserving their configured ports.
 - ``parent``: required mapping for the generated parent Helm chart.
 - ``job_launcher``: optional mapping for dynamically launched job pods.
 
@@ -195,8 +195,10 @@ mounts that PVC at ``workspace_mount_path``.
 ``nvflare deploy prepare`` also patches the prepared kit's internal
 communication settings so dynamically launched job pods connect to the generated
 parent Kubernetes Service on ``parent_port``. Use ``server_service_name`` before
-preparing server and client kits when the FL server Service should not use the
-default ``nvflare-server`` name.
+preparing the server kit when the FL server Service should not use the default
+``nvflare-server`` name. Also set it for client kits only when those clients
+should use the in-cluster Service name instead of the server target provisioned
+from ``project.yml``.
 
 The command writes:
 

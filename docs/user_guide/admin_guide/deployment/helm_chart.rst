@@ -78,7 +78,6 @@ Example ``k8s.yaml``:
 
    runtime: k8s
    namespace: nvflare
-   server_service_name: custom-nvflare-server
    parent:
      docker_image: registry.example.com/nvflare:dev
      parent_port: 8102
@@ -98,9 +97,11 @@ The runtime config controls site-level Kubernetes settings:
 
 * ``namespace`` is where the parent pod and dynamically launched job pods run.
 * ``server_service_name`` sets the FL server Kubernetes Service name. It defaults
-  to ``nvflare-server``. Set the same value when preparing server and client kits
-  that share a namespace so the generated server chart, TCP-services config, and
-  client server targets agree.
+  to ``nvflare-server``. For server kits, this value is rendered into the
+  generated server chart and TCP-services config. For client kits, set this only
+  when the client should connect to the server through in-cluster Service DNS; if
+  the provisioned ``project.yml`` server target already points to the desired
+  external IP or DNS name, omit this field when preparing the client kit.
 * ``parent`` values are rendered into the Helm chart. They set the parent image,
   Python executable, workspace PVC, parent service port, parent pod resources,
   and optional parent pod security context. ``parent.python_path`` controls the
