@@ -130,6 +130,30 @@ def test_persistence_manager_bootstraps_empty_checkpoint_from_first_update():
         )
 
 
+def test_persistence_manager_bootstraps_empty_complex_checkpoint_from_first_update():
+    """Complex persistence dicts with an empty model section can be bootstrapped."""
+    model = SimpleNet()
+    data = {
+        PTModelPersistenceFormatManager.PERSISTENCE_KEY_MODEL: {},
+        PTModelPersistenceFormatManager.PERSISTENCE_KEY_TRAIN_CONF: {"train": {"model": "SimpleNet"}},
+        "extra_prop": "kept",
+    }
+    manager = PTModelPersistenceFormatManager(data)
+    weights = _clone_state_dict(model)
+
+    manager.update(make_model_learnable(weights=weights, meta_props={}))
+
+    assert manager.var_dict is data[PTModelPersistenceFormatManager.PERSISTENCE_KEY_MODEL]
+    assert set(manager.var_dict) == set(weights)
+    persistence_dict = manager.to_persistence_dict()
+    assert set(persistence_dict[PTModelPersistenceFormatManager.PERSISTENCE_KEY_MODEL]) == set(weights)
+    assert (
+        persistence_dict[PTModelPersistenceFormatManager.PERSISTENCE_KEY_TRAIN_CONF]
+        == data[PTModelPersistenceFormatManager.PERSISTENCE_KEY_TRAIN_CONF]
+    )
+    assert persistence_dict["extra_prop"] == "kept"
+
+
 def test_persistence_manager_rejects_client_keys_outside_server_schema():
     """Client updates may not introduce keys outside the server checkpoint schema."""
     model = SimpleNet()

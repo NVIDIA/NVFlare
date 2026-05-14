@@ -127,6 +127,10 @@ class PTModelPersistenceFormatManager(object):
                 persistence_dict[k] = v
         return persistence_dict
 
+    def _update_var_dict(self, learned_weights: dict):
+        for k, v in learned_weights.items():
+            self.var_dict[k] = v
+
     def update(self, ml: ModelLearnable):
         """Update the persistence data with the learned values.
 
@@ -156,8 +160,7 @@ class PTModelPersistenceFormatManager(object):
         # note that the original weights that are not learned are still kept!
         learned_weights = ml.get(ModelLearnableKey.WEIGHTS, {})
         if learned_weights and not self.var_dict:
-            for k, v in learned_weights.items():
-                self.var_dict[k] = v
+            self._update_var_dict(learned_weights)
             return
 
         report = inspect_model_params(self.var_dict, learned_weights)
@@ -171,8 +174,7 @@ class PTModelPersistenceFormatManager(object):
         if report.unexpected_keys:
             raise ValueError(report.format_unexpected_keys_error())
 
-        for k, v in learned_weights.items():
-            self.var_dict[k] = v
+        self._update_var_dict(learned_weights)
 
     @staticmethod
     def get_persist_model_format():
