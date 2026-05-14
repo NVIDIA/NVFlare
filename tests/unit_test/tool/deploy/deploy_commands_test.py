@@ -376,7 +376,7 @@ def test_prepare_k8s_server_uses_configured_service_name(tmp_path, capsys):
         {
             "runtime": "k8s",
             "namespace": "nvflare",
-            "server_service_name": "fa1-nvflare-server",
+            "server_service_name": "custom-nvflare-server",
             "parent": {"docker_image": "repo/nvflare:dev"},
         },
     )
@@ -387,8 +387,8 @@ def test_prepare_k8s_server_uses_configured_service_name(tmp_path, capsys):
     service = (output / "helm_chart" / "templates" / "server-service.yaml").read_text()
     tcp_services = (output / "helm_chart" / "templates" / "server-tcp-services.yaml").read_text()
 
-    assert values["serviceName"] == "fa1-nvflare-server"
-    assert comm_config["internal"]["resources"]["host"] == "fa1-nvflare-server"
+    assert values["serviceName"] == "custom-nvflare-server"
+    assert comm_config["internal"]["resources"]["host"] == "custom-nvflare-server"
     assert "name: {{ .Values.serviceName }}" in service
     assert "nvflare-server:%v" not in tcp_services
     assert ".Values.serviceName" in tcp_services
@@ -671,7 +671,7 @@ def test_prepare_k8s_client_patches_server_target_when_service_name_is_configure
         output,
         {
             "runtime": "k8s",
-            "server_service_name": "fa1-nvflare-server",
+            "server_service_name": "custom-nvflare-server",
             "parent": {"docker_image": "repo/nvflare:dev"},
         },
     )
@@ -681,7 +681,7 @@ def test_prepare_k8s_client_patches_server_target_when_service_name_is_configure
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
 
-    assert patched_fed_client["servers"][0]["service"]["target"] == "fa1-nvflare-server:8002"
+    assert patched_fed_client["servers"][0]["service"]["target"] == "custom-nvflare-server:8002"
     assert comm_config["internal"]["resources"]["host"] == "site-1"
     assert values["serviceName"] == "site-1"
 

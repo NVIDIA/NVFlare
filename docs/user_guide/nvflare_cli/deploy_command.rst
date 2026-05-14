@@ -119,7 +119,7 @@ Example ``k8s.yaml``:
 
    runtime: k8s
    namespace: nvflare
-   server_service_name: fa1-nvflare-server
+   server_service_name: custom-nvflare-server
 
    parent:
      docker_image: registry.example.com/nvflare-site:2.8

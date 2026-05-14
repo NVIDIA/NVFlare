@@ -78,7 +78,7 @@ Example ``k8s.yaml``:
 
    runtime: k8s
    namespace: nvflare
-   server_service_name: fa1-nvflare-server
+   server_service_name: custom-nvflare-server
    parent:
      docker_image: registry.example.com/nvflare:dev
      parent_port: 8102
@@ -299,13 +299,13 @@ server ports with the mechanism that matches your Kubernetes environment:
      helm upgrade --install server server-k8s/helm_chart \
          --namespace "$NAMESPACE" \
          --set service.type=LoadBalancer
-     kubectl -n "$NAMESPACE" get svc fa1-nvflare-server
+     kubectl -n "$NAMESPACE" get svc custom-nvflare-server
 
 * For local testing from the same machine, use port forwarding:
 
   .. code-block:: bash
 
-     kubectl -n "$NAMESPACE" port-forward svc/fa1-nvflare-server 8002:8002 8003:8003
+     kubectl -n "$NAMESPACE" port-forward svc/custom-nvflare-server 8002:8002 8003:8003
 
 * For single-node or ingress-based clusters, configure your cluster's TCP
   routing, firewall rules, or host ports so the FL and admin ports from
