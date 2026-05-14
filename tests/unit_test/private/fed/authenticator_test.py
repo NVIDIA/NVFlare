@@ -50,8 +50,9 @@ def _validate(origin, client_fqcn_resolver):
     )
 
 
-@pytest.mark.parametrize("origin", ["site-a", "site-a.job-1"])
+@pytest.mark.parametrize("origin", ["site-a", "site-a.job-1", "site-a.site-a-child.job-1"])
 def test_validate_auth_headers_accepts_token_from_registered_origin(origin):
+    # Job and hierarchical child cells under a registered site are still part of that site's trust boundary.
     assert _validate(origin, lambda _client_name, _token: "site-a") is None
 
 

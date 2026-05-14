@@ -14,13 +14,13 @@
 from nvflare.apis.fl_constant import CellMessageAuthHeaderKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.validation_utils import check_object_type, check_str
 
 
 def _is_server_fqcn(fqcn: str) -> bool:
-    return bool(fqcn) and (fqcn == FQCN.ROOT_SERVER or FQCN.is_ancestor(FQCN.ROOT_SERVER, fqcn))
+    return bool(fqcn) and FqcnInfo(fqcn).is_on_server
 
 
 def add_authentication_headers(msg: Message, client_name: str, auth_token, token_signature, ssid=None):
