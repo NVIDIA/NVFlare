@@ -137,13 +137,15 @@ class PTModelPersistenceFormatManager(object):
             ValueError: if the incoming learnable is invalid, if any matching key
                 has a shape mismatch, if a non-empty update has zero compatible
                 matches with the persisted checkpoint, or if the update would
-                introduce keys that do not already exist in the checkpoint.
+                introduce keys that do not already exist in the checkpoint after
+                the checkpoint schema has been initialized.
 
         Notes:
             The persisted checkpoint is the server schema for client updates.
             Partial updates are supported: learned weights only need to cover a
             subset of checkpoint keys that the client actually trained. New
-            client keys outside the server schema are rejected.
+            client keys outside the server schema are rejected. If no persisted
+            checkpoint exists yet, the first non-empty learnable initializes it.
         """
         err = validate_model_learnable(ml)
         if err:
@@ -153,6 +155,11 @@ class PTModelPersistenceFormatManager(object):
         # update with value of the model learnable
         # note that the original weights that are not learned are still kept!
         learned_weights = ml.get(ModelLearnableKey.WEIGHTS, {})
+        if learned_weights and not self.var_dict:
+            for k, v in learned_weights.items():
+                self.var_dict[k] = v
+            return
+
         report = inspect_model_params(self.var_dict, learned_weights)
 
         if report.shape_mismatches:

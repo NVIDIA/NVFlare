@@ -109,6 +109,27 @@ def test_persistence_manager_accepts_partial_known_updates():
     assert torch.equal(manager.var_dict["fc.bias"], model.state_dict()["fc.bias"])
 
 
+def test_persistence_manager_bootstraps_empty_checkpoint_from_first_update():
+    """InitializeGlobalWeights can seed the server checkpoint from the first client model."""
+    model = SimpleNet()
+    manager = PTModelPersistenceFormatManager({})
+    weights = _clone_state_dict(model)
+
+    manager.update(make_model_learnable(weights=weights, meta_props={}))
+
+    assert set(manager.var_dict) == set(weights)
+    for key, value in weights.items():
+        assert torch.equal(manager.var_dict[key], value)
+
+    with pytest.raises(ValueError, match=r"None of the 1 incoming model parameter\(s\) matched"):
+        manager.update(
+            make_model_learnable(
+                weights={"model.fc.weight": torch.ones_like(model.state_dict()["fc.weight"])},
+                meta_props={},
+            )
+        )
+
+
 def test_persistence_manager_rejects_client_keys_outside_server_schema():
     """Client updates may not introduce keys outside the server checkpoint schema."""
     model = SimpleNet()
