@@ -172,7 +172,7 @@ runtime: k8s
 namespace: ${NAMESPACE}
 parent:
   docker_image: "${IMAGE}"
-  service_name: ${SERVER_SERVICE_NAME}
+  service_name: "${SERVER_SERVICE_NAME}"
   parent_port: ${PARENT_PORT}
   workspace_pvc: ${WORKSPACE_PVC}
   workspace_mount_path: ${WORKSPACE_MOUNT_PATH}

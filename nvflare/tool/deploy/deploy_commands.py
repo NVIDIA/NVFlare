@@ -268,7 +268,10 @@ def _prepare_k8s(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) 
     job_launcher = config.get("job_launcher") or {}
     parent_port = parent.get("parent_port", 8102)
     workspace_mount_path = parent.get("workspace_mount_path", WORKSPACE_MOUNT_PATH)
-    service_name = _k8s_parent_service_name(kit_info.role, kit_info.name, parent.get("service_name"))
+    server_service_name = None
+    if kit_info.role == ROLE_SERVER:
+        server_service_name = _optional_k8s_service_name(parent, "service_name", "parent")
+    service_name = _k8s_parent_service_name(kit_info.role, kit_info.name, server_service_name)
 
     launcher_path = K8S_SERVER_LAUNCHER if kit_info.role == ROLE_SERVER else K8S_CLIENT_LAUNCHER
     launcher_args = {
@@ -372,7 +375,6 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
         _required_str(parent, "docker_image", "parent")
         if "namespace" in config:
             _validate_k8s_namespace(config, "namespace", "k8s config")
-        _optional_k8s_service_name(parent, "service_name", "parent")
         _optional_int(parent, "parent_port", "parent")
         _optional_str(parent, "workspace_pvc", "parent")
         _optional_str(parent, "workspace_mount_path", "parent")

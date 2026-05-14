@@ -712,7 +712,7 @@ def test_prepare_k8s_rejects_invalid_namespace(tmp_path, capsys, namespace):
     assert not output.exists()
 
 
-@pytest.mark.parametrize("service_name", ["MyService", "service_", "-bad", "bad-", "bad.name", "", "1bad", "a" * 64])
+@pytest.mark.parametrize("service_name", ["MyService", "service_", "-bad", "bad-", "bad.name", "", "1bad", "a" * 64, 7])
 def test_prepare_k8s_rejects_invalid_service_name(tmp_path, capsys, service_name):
     kit = _make_server_kit(tmp_path)
     output = tmp_path / "prepared"
@@ -731,6 +731,26 @@ def test_prepare_k8s_rejects_invalid_service_name(tmp_path, capsys, service_name
     assert "INVALID_CONFIG" in err
     assert "parent.service_name" in err
     assert not output.exists()
+
+
+def test_prepare_k8s_client_ignores_server_service_name(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev", "service_name": 7},
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    assert values["serviceName"] == "site-1"
+    assert comm_config["internal"]["resources"]["host"] == "site-1"
 
 
 def test_prepare_warns_when_replacing_custom_resource_and_launcher_config(tmp_path, capsys):
@@ -913,10 +933,6 @@ def test_prepare_rejects_admin_kit_without_writing_output(tmp_path, capsys):
         (
             {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev", "workspace_mount_path": []}},
             "parent.workspace_mount_path",
-        ),
-        (
-            {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev", "service_name": 7}},
-            "parent.service_name",
         ),
         (
             {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev", "python_path": 7}},
