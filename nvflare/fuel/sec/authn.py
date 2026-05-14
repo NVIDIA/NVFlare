@@ -51,8 +51,11 @@ def add_server_path_reply_authentication_headers(
 ):
     origin = msg.get_header(MessageHeaderKey.ORIGIN)
     destination = msg.get_header(MessageHeaderKey.DESTINATION)
-    # This filter is also used by server-owned job/transfer cells: keep auth on replies from or to server paths.
-    if _is_server_fqcn(origin) or _is_server_fqcn(destination):
+    to_cell = msg.get_header(MessageHeaderKey.TO_CELL)
+    # Auth headers are for the server trust boundary, not for peer clients. A peer reply routed through the server
+    # must authenticate to the server on the next hop, and the server strips these headers before forwarding to peer.
+    # Server-owned job/transfer cells also keep auth on replies from or to server paths.
+    if _is_server_fqcn(origin) or _is_server_fqcn(destination) or _is_server_fqcn(to_cell):
         add_authentication_headers(msg, client_name, auth_token, token_signature, ssid)
 
 

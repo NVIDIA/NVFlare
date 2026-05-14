@@ -80,8 +80,6 @@ from .server_engine import ServerEngine
 from .server_state import ABORT_RUN, ACTION, MESSAGE, NIS, HotState, ServerState
 from .server_status import ServerStatus
 
-_PEER_TRANSIT_REPLY_AUTH_TTL = 3600
-
 
 class BaseServer(ABC):
     def __init__(
@@ -324,8 +322,6 @@ class FederatedServer(BaseServer):
         self.processors = {}
         self.runner_config = None
         self.secure_train = secure_train
-        self._peer_transit_reply_auth_lock = Lock()
-        self._peer_transit_reply_auth_keys = {}
 
         self.workspace = args.workspace
         if isinstance(self.workspace, str):
@@ -417,53 +413,23 @@ class FederatedServer(BaseServer):
         )
         self.logger.debug(f"added auth headers:  {origin=} {dest=} {channel=} {topic=}")
 
-    def _peer_transit_reply_key(self, origin: str, destination: str, req_id: str):
-        if not origin or not destination or not req_id:
-            return None
-
-        if FqcnInfo(origin).is_on_server or FqcnInfo(destination).is_on_server:
-            return None
-
-        return origin, destination, req_id
-
-    def _prune_peer_transit_reply_auth_keys(self, now: float):
-        expired_keys = [key for key, expires_at in self._peer_transit_reply_auth_keys.items() if expires_at <= now]
-        for key in expired_keys:
-            self._peer_transit_reply_auth_keys.pop(key, None)
-
-    def _track_peer_transit_reply_for_auth(self, message: Message):
-        if message.get_header(MessageHeaderKey.MSG_TYPE) != MessageType.REQ:
-            return
-
-        origin = message.get_header(MessageHeaderKey.ORIGIN)
-        destination = message.get_header(MessageHeaderKey.DESTINATION)
-        req_id = message.get_header(MessageHeaderKey.REQ_ID)
-        key = self._peer_transit_reply_key(destination, origin, req_id)
-        if not key:
-            return
-
-        now = time.time()
-        with self._peer_transit_reply_auth_lock:
-            self._prune_peer_transit_reply_auth_keys(now)
-            self._peer_transit_reply_auth_keys[key] = now + _PEER_TRANSIT_REPLY_AUTH_TTL
-
-    def _is_expected_peer_transit_reply(self, message: Message):
+    def _strip_peer_transit_reply_auth_headers(self, message: Message):
         if message.get_header(MessageHeaderKey.MSG_TYPE) != MessageType.REPLY:
-            return False
+            return
 
-        origin = message.get_header(MessageHeaderKey.ORIGIN)
         destination = message.get_header(MessageHeaderKey.DESTINATION)
-        req_id = message.get_header(MessageHeaderKey.REQ_ID)
-        key = self._peer_transit_reply_key(origin, destination, req_id)
-        if not key:
-            return False
+        if not destination or FqcnInfo(destination).is_on_server:
+            return
 
-        now = time.time()
-        with self._peer_transit_reply_auth_lock:
-            self._prune_peer_transit_reply_auth_keys(now)
-            expires_at = self._peer_transit_reply_auth_keys.pop(key, None)
-
-        return bool(expires_at and expires_at > now)
+        # Model: peer replies authenticate to the server if the server is the next hop, but peer clients must not
+        # receive another client's bearer material. This runs after successful server validation and before forwarding.
+        for key in [
+            CellMessageHeaderKeys.CLIENT_NAME,
+            CellMessageHeaderKeys.TOKEN,
+            CellMessageHeaderKeys.TOKEN_SIGNATURE,
+            CellMessageHeaderKeys.SSID,
+        ]:
+            message.remove_header(key)
 
     def _validate_auth_headers(self, message: Message):
         """Validate auth headers from messages that go through the server.
@@ -471,14 +437,6 @@ class FederatedServer(BaseServer):
             message: the message to validate
         Returns:
         """
-        # Peer replies carry no auth headers to avoid credential leaks. Only skip validation for the reverse leg of
-        # a peer request that the server already validated and tracked; sender-controlled MSG_TYPE alone is not enough.
-        if self._is_expected_peer_transit_reply(message):
-            self.logger.debug(
-                f"skip auth validation for expected transit reply to {message.get_header(MessageHeaderKey.DESTINATION)}"
-            )
-            return None
-
         id_asserter = self._get_id_asserter()
         if not id_asserter:
             return None
@@ -492,7 +450,7 @@ class FederatedServer(BaseServer):
             client_fqcn_resolver=self._resolve_client_fqcn_for_auth,
         )
         if not reply:
-            self._track_peer_transit_reply_for_auth(message)
+            self._strip_peer_transit_reply_auth_headers(message)
         return reply
 
     def _resolve_client_fqcn_for_auth(self, client_name: str, token: str):
