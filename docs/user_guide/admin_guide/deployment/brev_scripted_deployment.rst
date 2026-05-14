@@ -149,7 +149,7 @@ Useful Overrides
 
 Common optional environment variables:
 
-``NAMESPACE``, ``PARENT_PORT``, ``WORKSPACE_PVC``, and
+``NAMESPACE``, ``SERVER_SERVICE_NAME``, ``PARENT_PORT``, ``WORKSPACE_PVC``, and
 ``WORKSPACE_MOUNT_PATH`` are deploy-prepare inputs that are embedded into the
 prepared resources and ``helm_chart/``. Set them when running
 ``prepare_brev_startup_kits.sh``. Do not change them only at launch time; rerun
@@ -176,6 +176,9 @@ Prepare-only overrides:
 * ``PARENT_PORT``: in-cluster parent service port written by
   ``nvflare deploy prepare``, default ``8102``. The launch script reads the
   prepared Helm chart and launcher config; it does not read this variable.
+* ``SERVER_SERVICE_NAME``: server Kubernetes Service name written by
+  ``nvflare deploy prepare``, default ``nvflare-server``. The same value is
+  written into the server chart and server ``local/comm_config.json``.
 * ``WORKSPACE_MOUNT_PATH``: parent and job pod workspace path written by
   ``nvflare deploy prepare``, default ``/var/tmp/nvflare/workspace``. The
   launch script verifies the prepared value from ``resources.json.default``; it

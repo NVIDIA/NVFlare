@@ -28,6 +28,7 @@ Defaults:
   SITE_1_PARTICIPANT=site-1
   SITE_2_PARTICIPANT=site-2
   NAMESPACE=nvflare
+  SERVER_SERVICE_NAME=nvflare-server
   FED_LEARN_PORT=8002
   PARENT_PORT=8102
   WORKSPACE_PVC=nvflws
@@ -171,6 +172,7 @@ runtime: k8s
 namespace: ${NAMESPACE}
 parent:
   docker_image: "${IMAGE}"
+  service_name: ${SERVER_SERVICE_NAME}
   parent_port: ${PARENT_PORT}
   workspace_pvc: ${WORKSPACE_PVC}
   workspace_mount_path: ${WORKSPACE_MOUNT_PATH}
@@ -308,6 +310,7 @@ PREPARE_CONFIG="${PREPARE_CONFIG:-${KIT_DIR}/deploy-prepare-k8s.yaml}"
 FED_LEARN_PORT="${FED_LEARN_PORT:-8002}"
 PARENT_PORT="${PARENT_PORT:-8102}"
 NAMESPACE="${NAMESPACE:-nvflare}"
+SERVER_SERVICE_NAME="${SERVER_SERVICE_NAME:-nvflare-server}"
 WORKSPACE_PVC="${WORKSPACE_PVC:-nvflws}"
 WORKSPACE_MOUNT_PATH="${WORKSPACE_MOUNT_PATH:-/var/tmp/nvflare/workspace}"
 ORG="${ORG:-nvidia}"

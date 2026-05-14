@@ -419,6 +419,7 @@ Prepare the server and client startup kits for Kubernetes:
    namespace: nvflare
    parent:
      docker_image: registry.example.com/nvflare:dev
+     service_name: nvflare-server
      parent_port: 8102
      workspace_pvc: nvflws
      workspace_mount_path: /var/tmp/nvflare/workspace
@@ -432,12 +433,13 @@ Prepare the server and client startup kits for Kubernetes:
    nvflare deploy prepare "$PROD_DIR/server1" --output /tmp/nvflare-prepared/server1 --config /tmp/nvflare-k8s.yaml
    nvflare deploy prepare "$PROD_DIR/site-1" --output /tmp/nvflare-prepared/site-1 --config /tmp/nvflare-k8s.yaml
 
-The example above only sets the keys this guide needs. ``parent`` also accepts
-optional ``resources`` (parent pod CPU/memory requests and limits) and
-``pod_security_context``, and ``job_launcher`` accepts optional
-``job_pod_security_context``. See :ref:`deploy_prepare_command` for the full
-runtime config schema and :ref:`helm_chart` for how the prepared chart is
-installed.
+The example above only sets the keys this guide needs. ``parent.service_name``
+sets the server Kubernetes Service name and is ignored when the same config is
+used to prepare client kits. ``parent`` also accepts optional ``resources``
+(parent pod CPU/memory requests and limits) and ``pod_security_context``, and
+``job_launcher`` accepts optional ``job_pod_security_context``. See
+:ref:`deploy_prepare_command` for the full runtime config schema and
+:ref:`helm_chart` for how the prepared chart is installed.
 
 The prepared folders should contain one ``helm_chart`` directory under the
 server and client:

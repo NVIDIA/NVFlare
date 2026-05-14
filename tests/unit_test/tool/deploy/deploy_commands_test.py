@@ -360,10 +360,48 @@ def test_prepare_k8s_server_exposes_admin_port_only_when_distinct(tmp_path, caps
     assert values["fedLearnPort"] == 8002
     assert values["adminPort"] == expected_admin_port
     assert values["command"] == ["/usr/local/bin/python3"]
+    assert values["serviceName"] == "nvflare-server"
+
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    assert comm_config["internal"]["resources"]["host"] == "nvflare-server"
 
     tcp_services = (output / "helm_chart" / "templates" / "server-tcp-services.yaml").read_text()
     assert ".Values.fedLearnPort" in tcp_services
     assert ".Values.adminPort" in tcp_services
+    assert 'include "nvflare-server.serviceName"' in tcp_services
+
+
+def test_prepare_k8s_server_uses_configured_service_name(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev", "service_name": "team-flare-server"},
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["serviceName"] == "team-flare-server"
+
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    assert comm_config["internal"]["resources"] == {
+        "host": "team-flare-server",
+        "port": 8102,
+        "connection_security": "clear",
+    }
+
+    service_template = (output / "helm_chart" / "templates" / "server-service.yaml").read_text()
+    assert 'name: {{ include "nvflare-server.serviceName" . }}' in service_template
+    assert "name: nvflare-server" not in service_template
+
+    tcp_services = (output / "helm_chart" / "templates" / "server-tcp-services.yaml").read_text()
+    assert 'include "nvflare-server.serviceName"' in tcp_services
+    assert "/nvflare-server:" not in tcp_services
 
 
 def test_prepare_k8s_server_uses_parent_python_path_for_chart_command(tmp_path, capsys):
@@ -576,6 +614,7 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
             "namespace": "flare",
             "parent": {
                 "docker_image": "repo/nvflare:dev",
+                "service_name": "server-in-shared-config",
                 "parent_port": 9102,
                 "workspace_pvc": "nvflws.team.example.com",
                 "workspace_mount_path": "/workspace",
@@ -670,6 +709,27 @@ def test_prepare_k8s_rejects_invalid_namespace(tmp_path, capsys, namespace):
     err = capsys.readouterr().err
     assert "INVALID_CONFIG" in err
     assert "k8s config.namespace" in err
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("service_name", ["MyService", "service_", "-bad", "bad-", "bad.name", "", "1bad", "a" * 64])
+def test_prepare_k8s_rejects_invalid_service_name(tmp_path, capsys, service_name):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "parent": {"docker_image": "repo/nvflare:dev", "service_name": service_name},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert "parent.service_name" in err
     assert not output.exists()
 
 
@@ -853,6 +913,10 @@ def test_prepare_rejects_admin_kit_without_writing_output(tmp_path, capsys):
         (
             {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev", "workspace_mount_path": []}},
             "parent.workspace_mount_path",
+        ),
+        (
+            {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev", "service_name": 7}},
+            "parent.service_name",
         ),
         (
             {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev", "python_path": 7}},

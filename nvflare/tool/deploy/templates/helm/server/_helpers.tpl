@@ -5,6 +5,10 @@ NVFlare server chart helpers
 {{- default .Chart.Name .Values.name | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{- define "nvflare-server.serviceName" -}}
+{{- default "nvflare-server" .Values.serviceName | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
 {{- define "nvflare-server.labels" -}}
 app.kubernetes.io/name: {{ include "nvflare-server.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}

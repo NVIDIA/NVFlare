@@ -60,6 +60,7 @@ DOCKER_START_SH = "start_docker.sh"
 WORKSPACE_MOUNT_PATH = "/var/tmp/nvflare/workspace"
 WORKSPACE_VOLUME_NAME = "workspace"
 K8S_PARENT_PYTHON_PATH = "/usr/local/bin/python3"
+K8S_SERVER_SERVICE_NAME = "nvflare-server"
 HELM_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates" / "helm"
 
 PASSTHROUGH_RESOURCE_MANAGER = (
@@ -267,6 +268,7 @@ def _prepare_k8s(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) 
     job_launcher = config.get("job_launcher") or {}
     parent_port = parent.get("parent_port", 8102)
     workspace_mount_path = parent.get("workspace_mount_path", WORKSPACE_MOUNT_PATH)
+    service_name = _k8s_parent_service_name(kit_info.role, kit_info.name, parent.get("service_name"))
 
     launcher_path = K8S_SERVER_LAUNCHER if kit_info.role == ROLE_SERVER else K8S_CLIENT_LAUNCHER
     launcher_args = {
@@ -282,12 +284,12 @@ def _prepare_k8s(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) 
         launcher_args["security_context"] = job_launcher["job_pod_security_context"]
 
     _patch_resources(kit_info.kit_dir, "k8s_launcher", launcher_path, launcher_args)
-    _patch_comm_config_for_k8s(kit_info.kit_dir, kit_info.role, kit_info.name, parent_port)
+    _patch_comm_config_for_k8s(kit_info.kit_dir, service_name, parent_port)
     _ensure_study_data_template(kit_info.kit_dir)
     if kit_info.role == ROLE_SERVER:
         _relocate_server_storage_to_workspace(kit_info.kit_dir, workspace_mount_path)
     _remove_start_scripts(kit_info.kit_dir, keep=set())
-    _write_helm_chart(kit_info, config)
+    _write_helm_chart(kit_info, config, service_name)
 
     release_name = _k8s_release_name(kit_info.name)
     final_chart_dir = final_output / HELM_CHART_DIR
@@ -352,6 +354,7 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
             parent,
             {
                 "docker_image",
+                "service_name",
                 "parent_port",
                 "workspace_pvc",
                 "workspace_mount_path",
@@ -369,6 +372,7 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
         _required_str(parent, "docker_image", "parent")
         if "namespace" in config:
             _validate_k8s_namespace(config, "namespace", "k8s config")
+        _optional_k8s_service_name(parent, "service_name", "parent")
         _optional_int(parent, "parent_port", "parent")
         _optional_str(parent, "workspace_pvc", "parent")
         _optional_str(parent, "workspace_mount_path", "parent")
@@ -569,13 +573,13 @@ def _patch_comm_config_for_docker(kit_dir: Path) -> None:
     _write_json(comm_config_path, comm_config)
 
 
-def _patch_comm_config_for_k8s(kit_dir: Path, role: str, site_name: str, parent_port: int) -> None:
+def _patch_comm_config_for_k8s(kit_dir: Path, service_name: str, parent_port: int) -> None:
     comm_config_path = kit_dir / "local" / COMM_CONFIG_JSON
     comm_config = _load_or_default_comm_config(comm_config_path)
     resources = _internal_resources(comm_config)
     resources.update(
         {
-            "host": _k8s_parent_service_name(role, site_name),
+            "host": service_name,
             "port": parent_port,
             "connection_security": "clear",
         }
@@ -623,9 +627,9 @@ def _remove_start_scripts(kit_dir: Path, keep: set[str]) -> None:
             path.unlink()
 
 
-def _k8s_parent_service_name(role: str, site_name: str) -> str:
+def _k8s_parent_service_name(role: str, site_name: str, server_service_name: str | None = None) -> str:
     if role == ROLE_SERVER:
-        return "nvflare-server"
+        return server_service_name or K8S_SERVER_SERVICE_NAME
     return _k8s_service_name(site_name)
 
 
@@ -739,7 +743,7 @@ def _docker_parent_command(kit_info: KitInfo) -> str:
     return " \\\n    ".join(shlex.quote(arg) for arg in command)
 
 
-def _write_helm_chart(kit_info: KitInfo, config: dict[str, Any]) -> Path:
+def _write_helm_chart(kit_info: KitInfo, config: dict[str, Any], service_name: str) -> Path:
     parent = config.get("parent") or {}
     docker_image = parent["docker_image"]
     parent_port = parent.get("parent_port", 8102)
@@ -761,6 +765,7 @@ def _write_helm_chart(kit_info: KitInfo, config: dict[str, Any]) -> Path:
             workspace_pvc,
             workspace_mount_path,
             parent_python_path,
+            service_name,
             parent,
         )
         _copy_helm_templates("server", templates_dir)
@@ -773,6 +778,7 @@ def _write_helm_chart(kit_info: KitInfo, config: dict[str, Any]) -> Path:
             workspace_pvc,
             workspace_mount_path,
             parent_python_path,
+            service_name,
             parent,
         )
         _copy_helm_templates("client", templates_dir)
@@ -787,6 +793,7 @@ def _write_server_helm_chart(
     workspace_pvc: str,
     workspace_mount_path: str,
     parent_python_path: str,
+    service_name: str,
     parent: dict[str, Any],
 ) -> None:
     repo, tag = _split_image(docker_image)
@@ -807,7 +814,7 @@ def _write_server_helm_chart(
     admin_port = kit_info.admin_port if kit_info.admin_port != fed_learn_port else None
     values = {
         "name": kit_info.name,
-        "serviceName": _k8s_parent_service_name(kit_info.role, kit_info.name),
+        "serviceName": service_name,
         "image": {"repository": repo, "tag": tag, "pullPolicy": "IfNotPresent"},
         "serviceAccount": {"create": True, "annotations": {}, "automountServiceAccountToken": True},
         "podAnnotations": {},
@@ -853,6 +860,7 @@ def _write_client_helm_chart(
     workspace_pvc: str,
     workspace_mount_path: str,
     parent_python_path: str,
+    service_name: str,
     parent: dict[str, Any],
 ) -> None:
     repo, tag = _split_image(docker_image)
@@ -872,7 +880,7 @@ def _write_client_helm_chart(
     values = {
         "name": kit_info.name,
         "siteName": kit_info.name,
-        "serviceName": _k8s_parent_service_name(kit_info.role, kit_info.name),
+        "serviceName": service_name,
         "image": {"repository": repo, "tag": tag, "pullPolicy": "Always"},
         "serviceAccount": {"create": True, "annotations": {}, "automountServiceAccountToken": True},
         "podAnnotations": {},
@@ -999,6 +1007,20 @@ def _validate_k8s_namespace(data: dict[str, Any], key: str, where: str) -> None:
             "Use lower case alphanumeric characters or '-', start and end with an alphanumeric character, "
             f"and keep length <= {K8S_NAMESPACE_MAX_LENGTH}.",
         )
+
+
+def _optional_k8s_service_name(data: dict[str, Any], key: str, where: str) -> str | None:
+    service_name = _optional_str(data, key, where)
+    if service_name is None:
+        return None
+    if len(service_name) > K8S_SERVICE_NAME_MAX_LENGTH or not K8S_NAME_PATTERN.match(service_name):
+        _fail(
+            "INVALID_CONFIG",
+            f"{where}.{key} must be a valid Kubernetes Service name (DNS-1035 label): {service_name!r}.",
+            "Use lower case alphanumeric characters or '-', start with a letter, end with an alphanumeric "
+            f"character, and keep length <= {K8S_SERVICE_NAME_MAX_LENGTH}.",
+        )
+    return service_name
 
 
 def _optional_str(data: dict[str, Any], key: str, where: str) -> str | None:

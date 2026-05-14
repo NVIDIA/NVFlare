@@ -280,6 +280,7 @@ namespace: default
 
 parent:
   docker_image: nvflare-site:latest
+  service_name: nvflare-server
   parent_port: 8102
   workspace_pvc: nvflws
   workspace_mount_path: /var/tmp/nvflare/workspace
@@ -317,6 +318,14 @@ Supported `parent` keys:
   - Default: none
   - Description: image used by the parent server/client pod in the generated
     Helm chart.
+
+- `service_name`
+  - Required: no
+  - Default: `nvflare-server` for server kits; ignored for client kits
+  - Description: Kubernetes Service name for the parent server pod. This value
+    is rendered into the server Helm chart and written into
+    `local/comm_config.json` so dynamically launched server job pods connect to
+    the same Service host.
 
 - `parent_port`
   - Required: no

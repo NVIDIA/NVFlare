@@ -122,6 +122,7 @@ Example ``k8s.yaml``:
 
    parent:
      docker_image: registry.example.com/nvflare-site:2.8
+     service_name: nvflare-server
      parent_port: 8102
      workspace_pvc: nvflws
      workspace_mount_path: /var/tmp/nvflare/workspace
@@ -149,6 +150,9 @@ Top-level keys:
 ``parent`` keys:
 
 - ``docker_image``: required parent image used by the Helm chart.
+- ``service_name``: Kubernetes Service name for a server kit. Defaults to
+  ``nvflare-server``. This key is ignored for client kits, whose Service name
+  is derived from the client site name.
 - ``parent_port``: port that job pods use to reach the parent pod's FLARE
   process.
   Defaults to ``8102``.
@@ -187,9 +191,9 @@ mounts that PVC at ``workspace_mount_path``.
 
 ``nvflare deploy prepare`` also patches the prepared kit's internal
 communication settings so dynamically launched job pods connect to the generated
-parent Kubernetes Service on ``parent_port``. If you customize the chart's
-Service name or port, keep that Service endpoint consistent with the prepared
-kit.
+parent Kubernetes Service on ``parent_port``. For server kits, setting
+``parent.service_name`` writes the same Service host into
+``local/comm_config.json`` and the generated Helm chart.
 
 The command writes:
 

@@ -30,9 +30,9 @@ Role/RoleBinding that allow the launcher to create job pods.
 The parent Service is the stable in-cluster address for dynamically launched job
 pods. ``nvflare deploy prepare`` patches the prepared kit's internal
 communication settings to use the generated Service name and ``parent_port``, so
-job pods do not depend on the parent pod IP. If you rename or replace the
-Service, keep the Service name, Service port, and prepared kit communication
-settings consistent.
+job pods do not depend on the parent pod IP. For server kits, configure
+``parent.service_name`` in ``k8s.yaml`` before preparation if the Service should
+not be named ``nvflare-server``.
 
 Each prepared participant folder contains its own chart:
 
@@ -80,6 +80,7 @@ Example ``k8s.yaml``:
    namespace: nvflare
    parent:
      docker_image: registry.example.com/nvflare:dev
+     service_name: nvflare-server
      parent_port: 8102
      workspace_pvc: nvflws
      workspace_mount_path: /var/tmp/nvflare/workspace
@@ -97,8 +98,11 @@ The runtime config controls site-level Kubernetes settings:
 
 * ``namespace`` is where the parent pod and dynamically launched job pods run.
 * ``parent`` values are rendered into the Helm chart. They set the parent image,
-  Python executable, workspace PVC, parent service port, parent pod resources,
-  and optional parent pod security context. ``parent.python_path`` controls the
+  Python executable, workspace PVC, parent service name and port, parent pod
+  resources, and optional parent pod security context. For server kits,
+  ``parent.service_name`` defaults to ``nvflare-server`` and is also written to
+  ``local/comm_config.json`` so dynamically launched job pods use the same
+  Service host. ``parent.python_path`` controls the
   long-lived SP/CP parent pod command. ``parent.workspace_mount_path`` is also
   written into the K8s launcher config so spawned SJ/CJ job pods mount their job
   workspace and startup kit at the same in-container path.
@@ -284,6 +288,10 @@ Expose FL Traffic
 
 The generated server chart creates a Kubernetes Service for the FL server. The
 service defaults to ``ClusterIP``, which is reachable only inside the cluster.
+The server Service name defaults to ``nvflare-server`` and can be changed with
+``parent.service_name`` in the server ``k8s.yaml`` before running
+``nvflare deploy prepare``. If you change it, replace ``nvflare-server`` in
+the commands below with your configured Service name.
 If clients or admin consoles connect from outside the cluster, expose the FL
 server ports with the mechanism that matches your Kubernetes environment:
 
@@ -304,7 +312,7 @@ server ports with the mechanism that matches your Kubernetes environment:
 
 * For single-node or ingress-based clusters, configure your cluster's TCP
   routing, firewall rules, or host ports so the FL and admin ports from
-  ``project.yml`` reach the ``nvflare-server`` Service.
+  ``project.yml`` reach the configured server Service.
 
 Make sure the server host name used during provisioning resolves to the exposed
 address. For example, update DNS or ``/etc/hosts`` for the admin console and for
