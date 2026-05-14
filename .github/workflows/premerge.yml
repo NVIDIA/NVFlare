@@ -21,6 +21,17 @@ on:
   workflow_dispatch:
 
 jobs:
+  license-check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Run license check
+        run: python3 ci/check_license_header.py
+
   style-check:
     runs-on: ubuntu-24.04
     steps:
