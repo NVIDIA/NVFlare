@@ -1056,6 +1056,20 @@ def test_list_jobs_by_submit_token_returns_deleted_status(monkeypatch):
     assert conn.tables == []
 
 
+def test_list_job_components_returns_empty_list_when_no_additional_components(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([])
+    engine.job_def_manager.list_components = MagicMock(return_value=["workspace", "meta", "scheduled", "data"])
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+
+    JobCommandModule().list_job_components(conn, ["list_job", "job-1"])
+
+    assert conn.errors == []
+    assert conn.successes == [
+        ("", {MetaKey.STATUS: MetaStatusValue.OK, MetaKey.INFO: "", MetaKey.JOB_COMPONENTS: []})
+    ]
+
+
 def test_clone_job_preserves_source_study(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)

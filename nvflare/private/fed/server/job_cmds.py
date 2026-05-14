@@ -1024,10 +1024,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                         "", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_COMPONENTS: filtered_data})
                     )
                 else:
-                    conn.append_error(
-                        "No additional job components found.",
-                        meta=make_meta(MetaStatusValue.NO_JOB_COMPONENTS, "No additional job components found."),
-                    )
+                    conn.append_success("", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_COMPONENTS: []}))
             else:
                 conn.append_error(
                     f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)

@@ -82,6 +82,18 @@ class TestListJobs:
             session.list_jobs(unknown_filter="x")
 
 
+class TestListJobComponents:
+    def test_returns_empty_list(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result({MetaKey.JOB_COMPONENTS: []})):
+            result = session.list_job_components("job-1")
+        assert result == []
+
+
+def test_no_job_components_status_is_spelled_correctly():
+    assert MetaStatusValue.NO_JOB_COMPONENTS == "no_job_components"
+
+
 class TestGetJobMeta:
     def test_sends_get_job_meta_command(self):
         session = _make_session()
