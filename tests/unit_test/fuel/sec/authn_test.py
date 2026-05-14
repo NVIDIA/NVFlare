@@ -14,6 +14,7 @@
 
 import logging
 import uuid
+from threading import Lock
 from types import SimpleNamespace
 
 import pytest
@@ -73,22 +74,34 @@ class _Cert:
 def _make_server_auth_filter(monkeypatch):
     server_auth = FederatedServer.__new__(FederatedServer)
     server_auth.logger = logging.getLogger(__name__)
+    server_auth._peer_transit_reply_auth_lock = Lock()
+    server_auth._peer_transit_reply_auth_keys = {}
     server_auth._get_id_asserter = lambda: SimpleNamespace(cert=_Cert())
     server_auth._resolve_client_fqcn_for_auth = lambda client_name, _token: client_name
     monkeypatch.setattr("nvflare.private.fed.server.fed_server.TokenVerifier", lambda _cert: _TokenVerifier())
     return server_auth._validate_auth_headers
 
 
-def _make_routed_message(destination: str, msg_type: str):
-    return Message(
-        headers={
-            MessageHeaderKey.CHANNEL: "peer",
-            MessageHeaderKey.TOPIC: "ping",
-            MessageHeaderKey.ORIGIN: "site-a",
-            MessageHeaderKey.DESTINATION: destination,
-            MessageHeaderKey.MSG_TYPE: msg_type,
-        }
-    )
+def _make_routed_message(
+    destination: str, msg_type: str, origin: str = "site-a", req_id: str = "req-1", with_auth: bool = False
+):
+    headers = {
+        MessageHeaderKey.CHANNEL: "peer",
+        MessageHeaderKey.TOPIC: "ping",
+        MessageHeaderKey.ORIGIN: origin,
+        MessageHeaderKey.DESTINATION: destination,
+        MessageHeaderKey.MSG_TYPE: msg_type,
+        MessageHeaderKey.REQ_ID: req_id,
+    }
+    if with_auth:
+        headers.update(
+            {
+                CellMessageAuthHeaderKey.CLIENT_NAME: origin,
+                CellMessageAuthHeaderKey.TOKEN: f"token-{origin}",
+                CellMessageAuthHeaderKey.TOKEN_SIGNATURE: f"sig-{origin}",
+            }
+        )
+    return Message(headers=headers)
 
 
 def test_auth_filter_does_not_add_client_credentials_to_peer_replies():
@@ -133,10 +146,30 @@ def test_client_to_client_reply_routed_through_server_is_not_blocked_by_server_a
     assert reply.payload == "pong"
 
 
-def test_server_auth_filter_allows_unauthenticated_client_reply_transit(monkeypatch):
+def test_server_auth_filter_allows_matching_unauthenticated_client_reply_transit(monkeypatch):
     auth_filter = _make_server_auth_filter(monkeypatch)
 
-    assert auth_filter(_make_routed_message("site-b", MessageType.REPLY)) is None
+    assert auth_filter(_make_routed_message("site-b", MessageType.REQ, with_auth=True)) is None
+    assert auth_filter(_make_routed_message("site-a", MessageType.REPLY, origin="site-b")) is None
+
+
+def test_server_auth_filter_rejects_untracked_unauthenticated_client_reply_transit(monkeypatch):
+    auth_filter = _make_server_auth_filter(monkeypatch)
+
+    reply = auth_filter(_make_routed_message("site-a", MessageType.REPLY, origin="site-b"))
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+
+
+def test_server_auth_filter_consumes_tracked_client_reply_transit(monkeypatch):
+    auth_filter = _make_server_auth_filter(monkeypatch)
+    transit_reply = _make_routed_message("site-a", MessageType.REPLY, origin="site-b")
+
+    assert auth_filter(_make_routed_message("site-b", MessageType.REQ, with_auth=True)) is None
+    assert auth_filter(transit_reply) is None
+    rejected_reply = auth_filter(transit_reply)
+
+    assert rejected_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
 
 
 def test_server_auth_filter_still_rejects_unauthenticated_client_request_transit(monkeypatch):
