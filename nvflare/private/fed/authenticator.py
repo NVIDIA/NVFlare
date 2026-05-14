@@ -15,6 +15,7 @@ import socket
 import time
 import traceback
 import uuid
+from typing import Callable, Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
@@ -299,12 +300,22 @@ class Authenticator:
         return token, token_signature, ssid, token_verifier
 
 
-def validate_auth_headers(message: CellMessage, token_verifier: TokenVerifier, logger):
+def _origin_matches_fqcn(origin: str, fqcn: str) -> bool:
+    return bool(origin) and (origin == fqcn or FQCN.is_ancestor(fqcn, origin))
+
+
+def validate_auth_headers(
+    message: CellMessage,
+    token_verifier: TokenVerifier,
+    logger,
+    client_fqcn_resolver: Optional[Callable[[str, str], Optional[str]]] = None,
+):
     """Validate auth headers from messages that go through the server.
 
     Args:
         message: the message to validate
         token_verifier: the TokenVerifier to be used to verify the token and signature
+        client_fqcn_resolver: optional resolver used to bind a client token to its registered CellNet origin
 
     Returns:
     """
@@ -343,6 +354,13 @@ def validate_auth_headers(message: CellMessage, token_verifier: TokenVerifier, l
         err = "invalid auth token signature"
         logger.error(f"{err_text}: {err}")
         return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)
+
+    if client_fqcn_resolver:
+        client_fqcn = client_fqcn_resolver(client_name, token)
+        if client_fqcn and not _origin_matches_fqcn(origin, client_fqcn):
+            err = f"auth token for client {client_name} does not match message origin {origin}"
+            logger.error(f"{err_text}: {err}")
+            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)
 
     # all good
     logger.debug(f"auth headers valid from {origin}: {topic=} {channel=}")

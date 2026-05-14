@@ -13,8 +13,14 @@
 # limitations under the License.
 from nvflare.apis.fl_constant import CellMessageAuthHeaderKey
 from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.validation_utils import check_object_type, check_str
+
+
+def _is_server_fqcn(fqcn: str) -> bool:
+    return bool(fqcn) and (fqcn == FQCN.ROOT_SERVER or FQCN.is_ancestor(FQCN.ROOT_SERVER, fqcn))
 
 
 def add_authentication_headers(msg: Message, client_name: str, auth_token, token_signature, ssid=None):
@@ -40,8 +46,17 @@ def add_authentication_headers(msg: Message, client_name: str, auth_token, token
     msg.set_header(CellMessageAuthHeaderKey.TOKEN_SIGNATURE, token_signature if token_signature else "NA")
 
 
+def add_server_path_reply_authentication_headers(
+    msg: Message, client_name: str, auth_token, token_signature, ssid=None
+):
+    origin = msg.get_header(MessageHeaderKey.ORIGIN)
+    destination = msg.get_header(MessageHeaderKey.DESTINATION)
+    if _is_server_fqcn(origin) or _is_server_fqcn(destination):
+        add_authentication_headers(msg, client_name, auth_token, token_signature, ssid)
+
+
 def set_add_auth_headers_filters(cell: Cell, client_name: str, auth_token: str, token_signature: str, ssid=None):
-    """Set filters for adding auth headers.
+    """Set filters for adding auth headers to outgoing requests and server-path replies.
 
     Args:
         cell: the cell to add the filters to.
@@ -67,7 +82,7 @@ def set_add_auth_headers_filters(cell: Cell, client_name: str, auth_token: str, 
     cell.core_cell.add_outgoing_reply_filter(
         channel="*",
         topic="*",
-        cb=add_authentication_headers,
+        cb=add_server_path_reply_authentication_headers,
         client_name=client_name,
         auth_token=auth_token,
         token_signature=token_signature,

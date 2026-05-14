@@ -428,7 +428,14 @@ class FederatedServer(BaseServer):
             message=message,
             token_verifier=token_verifier,
             logger=self.logger,
+            client_fqcn_resolver=self._resolve_client_fqcn_for_auth,
         )
+
+    def _resolve_client_fqcn_for_auth(self, client_name: str, token: str):
+        client = self.client_manager.clients.get(token)
+        if client and client.name == client_name:
+            return client.get_fqcn()
+        return None
 
     def sign_auth_token(self, client_name: str, token: str):
         id_asserter = self._get_id_asserter()
@@ -1060,7 +1067,6 @@ class FederatedServer(BaseServer):
                 cb=self._validate_auth_headers,
             )
 
-            # set filter to add additional auth headers
             core_cell.add_outgoing_reply_filter(channel="*", topic="*", cb=self._add_auth_headers)
             core_cell.add_outgoing_request_filter(channel="*", topic="*", cb=self._add_auth_headers)
 
