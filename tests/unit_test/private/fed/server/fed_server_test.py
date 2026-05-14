@@ -24,11 +24,22 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.private.defs import CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
+from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState
 
 
 class TestFederatedServer:
+    def test_resolve_client_fqcn_for_auth_fails_closed_for_registered_client_with_missing_fqcn(self):
+        server = object.__new__(FederatedServer)
+        client = MagicMock()
+        client.name = "site-a"
+        client.get_fqcn.return_value = None
+        server.client_manager = MagicMock()
+        server.client_manager.clients = {"token-a": client}
+
+        assert server._resolve_client_fqcn_for_auth("site-a", "token-a") == MISSING_CLIENT_FQCN
+
     def test_hot_state_defaults_to_non_empty_session_id(self):
         assert HotState().ssid == DEFAULT_SERVICE_SESSION_ID
 
