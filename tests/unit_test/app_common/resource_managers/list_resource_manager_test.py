@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
 from collections import deque
+from unittest.mock import patch
 
 import pytest
 
-from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.app_common.resource_managers.list_resource_manager import ListResourceManager
 
@@ -167,21 +166,23 @@ class TestListResourceManager:
         assert result == {"gpu": ["gpu_0", "gpu_1", "gpu_2", "gpu_3"]}
 
     def test_check_and_timeout(self):
-        timeout = 5
         engine = MockEngine()
         list_resource_manager = ListResourceManager(
-            resources={"gpu": [f"gpu_{i}" for i in range(4)]}, expiration_period=timeout
+            resources={"gpu": [f"gpu_{i}" for i in range(4)]}, expiration_period=1
         )
         resource_requirement = {"gpu": 1}
 
         with engine.new_context() as fl_ctx:
-            list_resource_manager.handle_event(event_type=EventType.SYSTEM_START, fl_ctx=fl_ctx)
             check_result, token = list_resource_manager.check_resources(
                 resource_requirement=resource_requirement, fl_ctx=fl_ctx
             )
             assert {"gpu": ["gpu_0"]} == list_resource_manager.reserved_resources[token][0]
-        time.sleep(timeout + 1)
-        with engine.new_context() as fl_ctx:
-            list_resource_manager.handle_event(event_type=EventType.SYSTEM_END, fl_ctx=fl_ctx)
+
+        with patch(
+            "nvflare.app_common.resource_managers.auto_clean_resource_manager.time.sleep",
+            side_effect=lambda _: list_resource_manager._stop_event.set(),
+        ):
+            list_resource_manager._check_expired()
+
         assert list_resource_manager.reserved_resources == {}
         assert list_resource_manager.resources == {"gpu": deque(["gpu_0", "gpu_1", "gpu_2", "gpu_3"])}
