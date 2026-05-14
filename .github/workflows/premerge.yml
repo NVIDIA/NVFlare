@@ -52,13 +52,14 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
       - name: Install dependencies
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install --no-cache-dir -e .[dev]
-          python3 -m pip install --no-cache-dir --no-deps "flwr>=1.16,<1.26"
+          uv pip install --system -e ".[dev]"
+          uv pip install --system --no-deps "flwr>=1.16,<1.26"
       - name: Run unit test
-        run: ./runtest.sh --numprocesses=16 -u
+        run: ./runtest.sh --numprocesses=auto -u
 
   wheel-build:
     runs-on: ${{ matrix.os }}
