@@ -91,13 +91,14 @@ class JobRunner(FLComponent):
         self.ask_to_stop = False
         self.scheduler = None
         self.running_jobs = {}
+        self._finished_job_statuses = {}
         self.lock = threading.Lock()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_START:
             engine = fl_ctx.get_engine()
             self.scheduler = engine.get_component(SystemComponents.JOB_SCHEDULER)
-        elif event_type in [EventType.JOB_COMPLETED, EventType.END_RUN]:
+        elif event_type == EventType.END_RUN:
             self._save_workspace(fl_ctx)
         elif event_type == EventType.SYSTEM_END:
             self.stop()
@@ -404,12 +405,27 @@ class JobRunner(FLComponent):
                     job = self.running_jobs.get(job_id)
                     if job:
                         with engine.new_context() as completion_ctx:
-                            status = None
-                            if not job.run_aborted:
-                                status = self._update_job_status(engine, job, job_manager, completion_ctx)
+                            completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
+                            status = self._finished_job_statuses.get(job.job_id)
+                            if status is None:
+                                if job.run_aborted:
+                                    status = RunStatus.FINISHED_ABORTED
+                                else:
+                                    status = self._get_finished_job_status(engine, job, completion_ctx)
+                                self._finished_job_statuses[job.job_id] = status
+                            # Publish terminal status only after artifacts are ready for download.
+                            try:
+                                self._save_workspace(completion_ctx)
+                            except Exception as e:
+                                self.log_exception(
+                                    completion_ctx,
+                                    f"Failed to save workspace for finished job ({job.job_id}): {secure_format_exception(e)}",
+                                )
+                                continue
+                            job_manager.set_status(job.job_id, status, completion_ctx)
                             with self.lock:
                                 del self.running_jobs[job_id]
-                            completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
+                                self._finished_job_statuses.pop(job_id, None)
                             if status == RunStatus.FINISHED_ABORTED:
                                 self.fire_event(EventType.JOB_ABORTED, completion_ctx)
                             self.fire_event(EventType.JOB_COMPLETED, completion_ctx)
@@ -417,7 +433,7 @@ class JobRunner(FLComponent):
                     engine.remove_exception_process(job_id)
             time.sleep(1.0)
 
-    def _update_job_status(self, engine, job, job_manager, fl_ctx):
+    def _get_finished_job_status(self, engine, job, fl_ctx):
         exception_run_processes = engine.exception_run_processes
         if job.job_id in exception_run_processes:
             self.log_info(fl_ctx, f"Try to abort job ({job.job_id}) on clients ...")
@@ -458,7 +474,6 @@ class JobRunner(FLComponent):
                     status = RunStatus.FINISHED_EXECUTION_EXCEPTION
         else:
             status = RunStatus.FINISHED_COMPLETED
-        job_manager.set_status(job.job_id, status, fl_ctx)
         return status
 
     def _save_workspace(self, fl_ctx: FLContext):
@@ -652,8 +667,6 @@ class JobRunner(FLComponent):
         return job_manager.get_jobs_by_status([RunStatus.RUNNING, RunStatus.DISPATCHED], fl_ctx)
 
     def stop_run(self, job_id: str, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         self._stop_run(job_id, fl_ctx)
 
         job = self.running_jobs.get(job_id)
@@ -661,8 +674,6 @@ class JobRunner(FLComponent):
             self.log_info(fl_ctx, f"Stop the job run: {job_id}")
             fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
             job.run_aborted = True
-            job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
-            self.fire_event(EventType.JOB_ABORTED, fl_ctx)
             return ""
         else:
             self.log_error(fl_ctx, f"Job {job_id} is not running. It can not be stopped.")
