@@ -120,7 +120,7 @@ def test_auth_filter_does_not_add_client_credentials_to_peer_replies():
 
 
 def test_client_to_client_reply_routed_through_server_is_not_blocked_by_server_auth(monkeypatch):
-    server = _make_running_cell("server")
+    server = _make_running_cell(f"server.{_unique_fqcn('auth_server')}")
     site_a = _make_running_cell(_unique_fqcn("site_a"))
     site_b = _make_running_cell(_unique_fqcn("site_b"))
     server.core_cell.add_incoming_filter(channel="*", topic="*", cb=_make_server_auth_filter(monkeypatch))
