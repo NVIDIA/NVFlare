@@ -13,6 +13,8 @@
 # limitations under the License.
 
 
+from unittest.mock import patch
+
 from nvflare.app_common.abstract.statistics_spec import StatisticConfig
 from nvflare.app_common.app_constant import StatisticsConstants as SC
 from nvflare.app_common.workflows.statistics_controller import StatisticsController
@@ -67,14 +69,16 @@ class TestStatisticsController:
             "sum": {"site-3": {}},
             "stddev": {"site-4": {}},
         }
-        import time
 
-        t0 = time.time()
-        StatisticsController._wait_for_all_results(self.stats_controller.logger, 0.5, 3, client_statistics, 0.1)
-        t = time.time()
-        second_spent = t - t0
-        # for 4 statistic, each have 0.5 second timeout
-        assert second_spent > 0.5 * 4
+        with patch("nvflare.app_common.workflows.statistics_controller.time.sleep") as mock_sleep:
+            result = StatisticsController._wait_for_all_results(
+                self.stats_controller.logger, 0.5, 3, client_statistics, 0.1
+            )
+
+        assert result is True
+        # Four statistics, each with a 0.5 second timeout and 0.1 second sleep interval.
+        assert mock_sleep.call_count == 20
+        mock_sleep.assert_called_with(0.1)
 
     def test_prepare_input(self):
         xs = self.stats_controller._prepare_inputs(SC.STATS_1st_STATISTICS)

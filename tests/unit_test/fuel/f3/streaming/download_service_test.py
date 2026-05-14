@@ -14,7 +14,7 @@
 
 import time
 from typing import Any, Tuple
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -259,21 +259,19 @@ class TestDownloadService:
         obj = MockDownloadable(data_chunks)
         DownloadService.add_object(tx_id, obj)
 
-        # Wait for timeout (with buffer)
-        time.sleep(0.5)
-
-        # Wait for monitor thread to process (it runs every 5 seconds, but processes expired ones)
-        # Since we can't wait 5 seconds, we'll manually trigger timeout check
+        # The monitor thread runs every 5 seconds; simulate an expired clock and trigger its timeout path manually.
         from nvflare.fuel.f3.streaming.download_service import _Transaction
 
         with DownloadService._tx_lock:
             tx = DownloadService._tx_table.get(tx_id)
             if tx:
                 assert isinstance(tx, _Transaction)
-                assert time.time() - tx.last_active_time > tx.timeout
-                # Simulate what monitor does
-                tx.transaction_done(TransactionDoneStatus.TIMEOUT)
-                DownloadService._delete_tx(tx)
+                expired_time = tx.last_active_time + tx.timeout + 1.0
+                with patch("time.time", return_value=expired_time):
+                    assert time.time() - tx.last_active_time > tx.timeout
+                    # Simulate what monitor does
+                    tx.transaction_done(TransactionDoneStatus.TIMEOUT)
+                    DownloadService._delete_tx(tx)
 
         # Verify transaction_done was called with TIMEOUT status
         assert len(obj.transaction_done_calls) == 1
