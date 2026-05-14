@@ -313,11 +313,10 @@ class TestDownloadService:
         # Check if transaction is finished
         with DownloadService._tx_lock:
             tx = DownloadService._tx_table.get(tx_id)
-            if tx:
-                assert isinstance(tx, _Transaction)
-                if tx.is_finished():
-                    tx.transaction_done(TransactionDoneStatus.FINISHED)
-                    DownloadService._delete_tx(tx)
+            assert isinstance(tx, _Transaction)
+            assert tx.is_finished()
+            tx.transaction_done(TransactionDoneStatus.FINISHED)
+            DownloadService._delete_tx(tx)
 
         # Verify transaction_done was called
         assert len(obj.transaction_done_calls) == 1
