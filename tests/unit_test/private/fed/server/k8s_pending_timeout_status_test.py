@@ -23,14 +23,14 @@ chains them so a single regression test covers the full pipeline:
     K8sJobHandle (Pending → terminate)
       → poll() == JobReturnCode.EXCEPTION
       → ServerEngine.wait_for_complete records exception_run_processes
-      → JobRunner._update_job_status → set_status(FINISHED_EXECUTION_EXCEPTION)
+      → JobRunner._get_finished_job_status → FINISHED_EXECUTION_EXCEPTION
 
   Client scenario:
     K8sJobHandle (Pending → terminate)
       → poll() == JobReturnCode.EXCEPTION
       → ClientExecutor.REPORTABLE_JOB_FAILURES has reason for code
       → FederatedServer.process_job_failure → JobRunner.fail_run
-      → JobRunner._update_job_status → set_status(FINISHED_EXECUTION_EXCEPTION)
+      → JobRunner._get_finished_job_status → FINISHED_EXECUTION_EXCEPTION
 """
 
 import threading
@@ -93,7 +93,7 @@ def test_server_side_pending_timeout_reports_finished_execution_exception(_mock_
     """Server's SJ pod stuck pending → list_jobs shows FINISHED:EXECUTION_EXCEPTION.
 
     Wires the real K8sJobHandle through ServerEngine.wait_for_complete and
-    JobRunner._update_job_status, then asserts the JobManager status set call.
+    JobRunner._get_finished_job_status, then asserts the finished status value.
     """
     # 1. K8s pod stuck pending → poll() = EXCEPTION (101).
     handle = _stuck_pending_handle(pending_timeout=2)
@@ -129,22 +129,19 @@ def test_server_side_pending_timeout_reports_finished_execution_exception(_mock_
     assert engine.exception_run_processes["job-1"][RunProcessKey.PROCESS_RETURN_CODE] == JobReturnCode.EXCEPTION
     assert "job-1" not in engine.run_processes  # popped after wait
 
-    # 3. JobRunner._update_job_status maps EXCEPTION → FINISHED_EXECUTION_EXCEPTION
-    #    and persists it via JobManager.set_status — this is what list_jobs
-    #    surfaces.
+    # 3. JobRunner._get_finished_job_status maps EXCEPTION → FINISHED_EXECUTION_EXCEPTION.
+    #    The completion loop persists this status after saving workspace.
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
     runner.abort_client_run = MagicMock()
 
     job = MagicMock()
     job.job_id = "job-1"
-    job_manager = MagicMock()
     fl_ctx = MagicMock()
 
-    status = runner._update_job_status(engine, job, job_manager, fl_ctx)
+    status = runner._get_finished_job_status(engine, job, fl_ctx)
 
     assert status == RunStatus.FINISHED_EXECUTION_EXCEPTION
-    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
 
 
 @patch("nvflare.app_opt.job_launcher.k8s_launcher.time.sleep")
@@ -153,8 +150,8 @@ def test_client_side_pending_timeout_reports_finished_execution_exception(_mock_
 
     Wires the real K8sJobHandle through the client's REPORTABLE_JOB_FAILURES
     contract, the server's process_job_failure dispatch, JobRunner.fail_run,
-    and finally JobRunner._update_job_status. Asserts the JobManager status
-    set call.
+    and finally JobRunner._get_finished_job_status. Asserts the finished
+    status value.
     """
     # 1. K8s CJ pod stuck pending → poll() = EXCEPTION (101).
     handle = _stuck_pending_handle(pending_timeout=2)
@@ -209,11 +206,9 @@ def test_client_side_pending_timeout_reports_finished_execution_exception(_mock_
     engine.exception_run_processes["job-1"][RunProcessKey.PROCESS_FINISHED] = True
     engine.exception_run_processes["job-1"][RunProcessKey.PROCESS_EXE_ERROR] = False
 
-    job_manager = MagicMock()
-    status = runner._update_job_status(engine, job, job_manager, fl_ctx)
+    status = runner._get_finished_job_status(engine, job, fl_ctx)
 
     assert status == RunStatus.FINISHED_EXECUTION_EXCEPTION
-    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
 
 
 @pytest.mark.parametrize(
@@ -268,9 +263,7 @@ def test_sj_exit_after_fail_run_does_not_clobber_exception_status(_mock_sleep, s
 
     assert engine.exception_run_processes["job-1"][RunProcessKey.PROCESS_RETURN_CODE] == ProcessExitCode.EXCEPTION
 
-    # Step 3: _update_job_status persists FINISHED_EXECUTION_EXCEPTION.
-    job_manager = MagicMock()
-    status = runner._update_job_status(engine, job, job_manager, fl_ctx)
+    # Step 3: _get_finished_job_status preserves FINISHED_EXECUTION_EXCEPTION.
+    status = runner._get_finished_job_status(engine, job, fl_ctx)
 
     assert status == RunStatus.FINISHED_EXECUTION_EXCEPTION
-    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
