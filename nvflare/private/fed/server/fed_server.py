@@ -46,9 +46,9 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import Message
 from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
-from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey, MessageType
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
@@ -66,7 +66,7 @@ from nvflare.private.defs import (
     JobFailureMsgKey,
     new_cell_message,
 )
-from nvflare.private.fed.authenticator import validate_auth_headers
+from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN, validate_auth_headers
 from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
@@ -413,6 +413,24 @@ class FederatedServer(BaseServer):
         )
         self.logger.debug(f"added auth headers:  {origin=} {dest=} {channel=} {topic=}")
 
+    def _strip_peer_transit_reply_auth_headers(self, message: Message):
+        if message.get_header(MessageHeaderKey.MSG_TYPE) != MessageType.REPLY:
+            return
+
+        destination = message.get_header(MessageHeaderKey.DESTINATION)
+        if not destination or FqcnInfo(destination).is_on_server:
+            return
+
+        # Model: peer replies authenticate to the server if the server is the next hop, but peer clients must not
+        # receive another client's bearer material. This runs after successful server validation and before forwarding.
+        for key in [
+            CellMessageHeaderKeys.CLIENT_NAME,
+            CellMessageHeaderKeys.TOKEN,
+            CellMessageHeaderKeys.TOKEN_SIGNATURE,
+            CellMessageHeaderKeys.SSID,
+        ]:
+            message.remove_header(key)
+
     def _validate_auth_headers(self, message: Message):
         """Validate auth headers from messages that go through the server.
         Args:
@@ -425,11 +443,21 @@ class FederatedServer(BaseServer):
 
         token_verifier = TokenVerifier(id_asserter.cert)
 
-        return validate_auth_headers(
+        reply = validate_auth_headers(
             message=message,
             token_verifier=token_verifier,
             logger=self.logger,
+            client_fqcn_resolver=self._resolve_client_fqcn_for_auth,
         )
+        if not reply:
+            self._strip_peer_transit_reply_auth_headers(message)
+        return reply
+
+    def _resolve_client_fqcn_for_auth(self, client_name: str, token: str):
+        client = self.client_manager.clients.get(token)
+        if client and client.name == client_name:
+            return client.get_fqcn() or MISSING_CLIENT_FQCN
+        return None
 
     def sign_auth_token(self, client_name: str, token: str):
         id_asserter = self._get_id_asserter()
@@ -1065,7 +1093,6 @@ class FederatedServer(BaseServer):
                 cb=self._validate_auth_headers,
             )
 
-            # set filter to add additional auth headers
             core_cell.add_outgoing_reply_filter(channel="*", topic="*", cb=self._add_auth_headers)
             core_cell.add_outgoing_request_filter(channel="*", topic="*", cb=self._add_auth_headers)
 
