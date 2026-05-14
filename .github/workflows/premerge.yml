@@ -58,7 +58,7 @@ jobs:
           python3 -m pip install --no-cache-dir -e .[dev]
           python3 -m pip install --no-cache-dir --no-deps "flwr>=1.16,<1.26"
       - name: Run unit test
-        run: ./runtest.sh --numprocesses=auto -u
+        run: ./runtest.sh --numprocesses=16 -u
 
   wheel-build:
     runs-on: ${{ matrix.os }}
