@@ -15,12 +15,15 @@
 import unittest
 
 import numpy as np
+import pytest
 import torch
 
-from nvflare.apis.dxo import DXO, DataKind, MetaKey
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
-from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer
+pytest.importorskip("bitsandbytes")
+
+from nvflare.apis.dxo import DXO, DataKind, MetaKey  # noqa: E402
+from nvflare.apis.fl_context import FLContext  # noqa: E402
+from nvflare.apis.shareable import Shareable  # noqa: E402
+from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer  # noqa: E402
 
 
 class TestModelQuantizer(unittest.TestCase):

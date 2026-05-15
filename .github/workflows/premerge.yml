@@ -37,7 +37,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Run style checks
-        run: ./runtest.sh -s
+        run: ./runtest.sh --torch-backend=cpu -s
 
   unit-tests:
     runs-on: ${{ matrix.os }}
@@ -58,10 +58,10 @@ jobs:
           version: "0.11.14"
       - name: Install dependencies
         run: |
-          uv pip install --system -e ".[dev]"
+          ./runtest.sh --torch-backend=cpu -p
           uv pip install --system --no-deps "flwr>=1.16,<1.26"
       - name: Run unit test
-        run: ./runtest.sh --numprocesses=auto -u
+        run: ./runtest.sh --skip-install --numprocesses=auto -u
 
   wheel-build:
     runs-on: ${{ matrix.os }}
@@ -82,8 +82,8 @@ jobs:
           version: "0.11.14"
       - name: Install dependencies
         run: |
-          uv pip install --system -e ".[dev]"
+          ./runtest.sh --torch-backend=cpu -p
           uv pip install --system --no-deps "flwr>=1.16,<1.26"
-          uv pip install --system build twine torch torchvision
+          uv pip install --system build twine
       - name: Run wheel build
         run: python3 -m build --wheel
