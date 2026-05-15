@@ -470,7 +470,7 @@ class AdminClient(cmd.Cmd, EventHandler):
             self.api.close()
 
     @staticmethod
-    def _format_login_failure(result: dict) -> str:
+    def _format_login_failure(result) -> str:
         if not isinstance(result, dict):
             return "Login failed: no login response"
 
