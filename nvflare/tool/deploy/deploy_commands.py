@@ -1024,6 +1024,7 @@ def _validate_k8s_service_name(data: dict[str, Any], key: str, where: str) -> No
     service_name = data.get(key)
     if not isinstance(service_name, str) or not service_name:
         _fail("INVALID_CONFIG", f"{where}.{key} must be a non-empty string.", "Fix the runtime config.")
+        return
     if len(service_name) > K8S_SERVICE_NAME_MAX_LENGTH or not K8S_NAME_PATTERN.fullmatch(service_name):
         _fail(
             "INVALID_CONFIG",
