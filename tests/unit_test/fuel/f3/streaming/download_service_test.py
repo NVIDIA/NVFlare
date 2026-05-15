@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
 from typing import Any, Tuple
 from unittest.mock import Mock, patch
 
@@ -95,6 +96,43 @@ class MockConsumer(Consumer):
         self.ref_id = ref_id
         self.failed = True
         self.failure_reason = reason
+
+
+def _make_isolated_download_service():
+    class IsolatedDownloadService(DownloadService):
+        _tx_table = {}
+        _ref_table = {}
+        _tx_lock = threading.Lock()
+
+    return IsolatedDownloadService
+
+
+def _run_monitor_once(service_cls, now):
+    from nvflare.fuel.f3.streaming import download_service as download_service_module
+
+    class MonitorIterationDone(Exception):
+        pass
+
+    monitor_thread = threading.current_thread()
+    real_time = download_service_module.time.time
+    real_sleep = download_service_module.time.sleep
+
+    def test_thread_time():
+        if threading.current_thread() is monitor_thread:
+            return now
+        return real_time()
+
+    def test_thread_sleep(seconds):
+        if threading.current_thread() is monitor_thread:
+            raise MonitorIterationDone
+        real_sleep(seconds)
+
+    with (
+        patch.object(download_service_module.time, "time", side_effect=test_thread_time),
+        patch.object(download_service_module.time, "sleep", side_effect=test_thread_sleep),
+    ):
+        with pytest.raises(MonitorIterationDone):
+            service_cls._monitor_tx()
 
 
 class TestDownloadService:
@@ -251,72 +289,67 @@ class TestDownloadService:
 
     def test_transaction_done_on_timeout(self):
         """Test that transaction times out after inactivity."""
-        from nvflare.fuel.f3.streaming import download_service as download_service_module
         from nvflare.fuel.f3.streaming.download_service import _Transaction
 
-        class MonitorIterationDone(Exception):
-            pass
-
-        def run_monitor_once(now):
-            with (
-                patch.object(download_service_module.time, "time", return_value=now),
-                patch.object(download_service_module.time, "sleep", side_effect=MonitorIterationDone),
-            ):
-                with pytest.raises(MonitorIterationDone):
-                    DownloadService._monitor_tx()
-
+        service = _make_isolated_download_service()
         fake_start_time = 1_000_000_000_000.0
         timeout = 1.0
         data_chunks = [b"chunk1"]
         obj = MockDownloadable(data_chunks)
-        with patch.object(download_service_module.time, "time", return_value=fake_start_time):
-            tx = _Transaction(timeout=timeout, num_receivers=2)
+        tx = _Transaction(timeout=timeout, num_receivers=2)
+        tx.last_active_time = fake_start_time
+        tx.start_time = fake_start_time
         ref = tx.add_object(obj)
 
         assert isinstance(tx, _Transaction)
-        with DownloadService._tx_lock:
-            DownloadService._tx_table[tx.tid] = tx
-            DownloadService._ref_table[ref.rid] = ref
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
 
         try:
-            run_monitor_once(fake_start_time + timeout)
+            _run_monitor_once(service, fake_start_time + timeout)
             assert obj.transaction_done_calls == []
-            assert tx.tid in DownloadService._tx_table
-            assert ref.rid in DownloadService._ref_table
+            assert tx.tid in service._tx_table
+            assert ref.rid in service._ref_table
 
-            run_monitor_once(fake_start_time + timeout + 0.001)
+            _run_monitor_once(service, fake_start_time + timeout + 0.001)
             assert obj.transaction_done_calls == [(tx.tid, TransactionDoneStatus.TIMEOUT)]
-            assert tx.tid not in DownloadService._tx_table
-            assert ref.rid not in DownloadService._ref_table
+            assert tx.tid not in service._tx_table
+            assert ref.rid not in service._ref_table
         finally:
-            with DownloadService._tx_lock:
-                DownloadService._tx_table.pop(tx.tid, None)
-                DownloadService._ref_table.pop(ref.rid, None)
+            with service._tx_lock:
+                service._tx_table.pop(tx.tid, None)
+                service._ref_table.pop(ref.rid, None)
 
-    def test_transaction_done_on_completion(self, cell):
+    def test_transaction_done_on_completion(self):
         """Test that transaction_done is called when all objects downloaded to all receivers."""
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
         num_receivers = 2
-        tx_id = DownloadService.new_transaction(cell=cell, timeout=10.0, num_receivers=num_receivers)
 
         data_chunks = [b"chunk1"]
         obj = MockDownloadable(data_chunks)
-        ref_id = DownloadService.add_object(tx_id, obj)
+        tx = _Transaction(timeout=10.0, num_receivers=num_receivers)
+        ref = tx.add_object(obj)
+        tx_id = tx.tid
 
-        from nvflare.fuel.f3.streaming.download_service import _Transaction
-
-        ref = DownloadService._ref_table.get(ref_id)
-
-        # Simulate all receivers downloading
-        for i in range(num_receivers):
-            ref.obj_downloaded(to_receiver=f"receiver{i}", status=DownloadStatus.SUCCESS)
-
-        # Check if transaction is finished
-        with DownloadService._tx_lock:
-            tx = DownloadService._tx_table.get(tx_id)
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
             assert isinstance(tx, _Transaction)
+
+            # Simulate all receivers downloading while the synthetic transaction
+            # is under the same lock used by the monitor.
+            for i in range(num_receivers):
+                ref.obj_downloaded(to_receiver=f"receiver{i}", status=DownloadStatus.SUCCESS)
+
             assert tx.is_finished()
             tx.transaction_done(TransactionDoneStatus.FINISHED)
-            DownloadService._delete_tx(tx)
+            service._delete_tx(tx)
+
+            assert tx.tid not in service._tx_table
+            assert ref.rid not in service._ref_table
 
         # Verify transaction_done was called
         assert len(obj.transaction_done_calls) == 1
