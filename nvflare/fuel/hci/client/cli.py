@@ -36,7 +36,7 @@ from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegist
 from nvflare.fuel.hci.table import Table
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from .api import AdminAPI, CommandInfo
+from .api import AdminAPI, CommandInfo, ResultKey
 from .api_spec import AdminConfigKey, UidSource
 from .api_status import APIStatus
 from .event import EventContext, EventHandler, EventPropKey, EventType
@@ -450,7 +450,11 @@ class AdminClient(cmd.Cmd, EventHandler):
     def run(self):
         try:
             self.api.connect(self.login_timeout)
-            self.api.login()
+            login_result = self.api.login()
+            if not isinstance(login_result, dict) or login_result.get(ResultKey.STATUS) != APIStatus.SUCCESS:
+                self.write_string(self._format_login_failure(login_result))
+                return
+
             self.last_active_time = time.time()
             monitor = threading.Thread(target=self._monitor_user, daemon=True)
             monitor.start()
@@ -464,6 +468,20 @@ class AdminClient(cmd.Cmd, EventHandler):
         finally:
             self.stopped = True
             self.api.close()
+
+    @staticmethod
+    def _format_login_failure(result) -> str:
+        if not isinstance(result, dict):
+            return "Login failed: no login response"
+
+        details = result.get(ResultKey.DETAILS) or "login failed"
+        auth_code = result.get(ResultKey.AUTH_CODE)
+        if auth_code:
+            details = f"{auth_code}: {details}"
+
+        if result.get(ResultKey.STATUS) == APIStatus.ERROR_AUTHENTICATION:
+            return f"Login rejected: {details}"
+        return f"Login failed: {details}"
 
     def print_resp(self, resp: dict):
         """Prints the server response
