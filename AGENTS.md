@@ -4,6 +4,7 @@
 - Prefer `rg` and `rg --files` for fast codebase search.
 - Keep edits scoped to the task; do not modify unrelated files in a dirty worktree.
 - Start with targeted tests for changed files, then run broader checks as needed.
+- Before pushing or opening a PR, run the project style check (`./runtest.sh -s`, or the closest scoped equivalent when justified). If it cannot be run, state that clearly before pushing.
 - Read `CLAUDE.md` for shared repo guidance such as project overview, architecture notes, commands, package layout, and style/testing conventions. Keep `AGENTS.md` limited to agent-specific addenda.
 
 ## Main Branch Versioning
