@@ -1243,6 +1243,19 @@ def test_get_job_meta_uses_canonical_missing_job_message(monkeypatch):
     assert conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.INVALID_JOB_ID
 
 
+def test_list_job_components_uses_canonical_missing_job_message(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    job_id = "123e4567-e89b-42d3-a456-426614174000"
+    engine = _FakeServerEngine(_FakeWorkspace(tmp_path))
+    engine.job_def_manager.list_components.return_value = []
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: job_id})
+
+    JobCommandModule().list_job_components(conn, ["list_job_components", job_id])
+
+    assert conn.errors and conn.errors[0][0] == f"no such job: {job_id}"
+    assert conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.INVALID_JOB_ID
+
+
 def test_get_job_log_client_target_returns_persisted_log(tmp_path, monkeypatch):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
