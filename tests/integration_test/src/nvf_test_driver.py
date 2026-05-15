@@ -49,6 +49,47 @@ class NVFTestError(Exception):
     pass
 
 
+DEFAULT_EVENT_SEQUENCE_TIMEOUT = 1800
+EVENT_SEQUENCE_TIMEOUT_ENV = "NVFLARE_EVENT_SEQUENCE_TIMEOUT"
+
+
+def _is_terminal_run_status(job_run_status: str) -> bool:
+    return isinstance(job_run_status, str) and job_run_status.startswith("FINISHED:")
+
+
+def _is_failed_terminal_run_status(job_run_status: str) -> bool:
+    return _is_terminal_run_status(job_run_status) and job_run_status != RunStatus.FINISHED_COMPLETED.value
+
+
+def _expects_successful_run_state(result_or_trigger: dict) -> bool:
+    return (
+        isinstance(result_or_trigger, dict)
+        and result_or_trigger.get("type") == "run_state"
+        and result_or_trigger.get("data", {}).get("run_finished") is True
+    )
+
+
+def _event_waits_for_successful_run(event: dict, event_triggered: bool) -> bool:
+    if not event_triggered and _expects_successful_run_state(event.get("trigger")):
+        return True
+    return event_triggered and _expects_successful_run_state(event.get("result"))
+
+
+def _resolve_event_sequence_timeout(event_sequence_timeout):
+    env_timeout = os.environ.get(EVENT_SEQUENCE_TIMEOUT_ENV)
+    if env_timeout not in ("", None):
+        event_sequence_timeout = env_timeout
+    elif event_sequence_timeout is None:
+        event_sequence_timeout = DEFAULT_EVENT_SEQUENCE_TIMEOUT
+    if event_sequence_timeout in ("", None):
+        return None
+
+    event_sequence_timeout = float(event_sequence_timeout)
+    if event_sequence_timeout <= 0:
+        return None
+    return event_sequence_timeout
+
+
 def _parse_workflow_states(stats_message: dict):
     # {
     #     'ScatterAndGather':
@@ -115,13 +156,21 @@ def _update_run_state(stats: dict, run_state: dict, job_run_status: str):
     if stats and isinstance(stats, dict) and isinstance(stats.get("server"), dict):
         run_state["workflows"] = _parse_workflow_states(stats_message=stats["server"])
 
+    run_state["job_status"] = job_run_status
+    run_state["job_terminal"] = _is_terminal_run_status(job_run_status)
     run_state["run_finished"] = job_run_status == RunStatus.FINISHED_COMPLETED.value
 
     return run_state != prev_run_state, run_state
 
 
 class NVFTestDriver:
-    def __init__(self, download_root_dir: str, site_launcher: SiteLauncher, poll_period=1):
+    def __init__(
+        self,
+        download_root_dir: str,
+        site_launcher: SiteLauncher,
+        poll_period=1,
+        event_sequence_timeout=None,
+    ):
         """FL system test driver.
 
         Args:
@@ -129,10 +178,12 @@ class NVFTestDriver:
             site_launcher (SiteLauncher): a SiteLauncher object
             poll_period (int): note that this value can't be too small,
                 otherwise will have resource issue
+            event_sequence_timeout: max seconds to wait for a test event sequence.
         """
         self.download_root_dir = download_root_dir
         self.site_launcher = site_launcher
         self.poll_period = poll_period
+        self.event_sequence_timeout = _resolve_event_sequence_timeout(event_sequence_timeout)
 
         self.super_admin_api = None
         self.super_admin_user_name = None
@@ -172,7 +223,7 @@ class NVFTestDriver:
             )
             login_result = ensure_admin_api_logged_in(admin_api)
         except Exception as e:
-            raise NVFTestError(f"create and login to admin failed: {e}")
+            raise NVFTestError(f"create and login to admin failed: {e}") from e
         if not login_result:
             raise NVFTestError(f"initialize_super_user {super_user_name} failed.")
 
@@ -192,7 +243,7 @@ class NVFTestDriver:
                 login_result = ensure_admin_api_logged_in(admin_api)
             except Exception as e:
                 self.admin_apis = None
-                raise NVFTestError(f"create and login to admin failed: {e}")
+                raise NVFTestError(f"create and login to admin failed: {e}") from e
             if not login_result:
                 self.admin_apis = None
                 raise NVFTestError(f"initialize_admin_users {user_name} failed.")
@@ -283,8 +334,39 @@ class NVFTestDriver:
             except (JobNotFound, JobNotRunning, ConnectionError, SessionClosed):
                 stats = None
             # update run_state
-            changed, run_state = _update_run_state(stats=stats, run_state=run_state, job_run_status=job_run_status)
+            _, run_state = _update_run_state(stats=stats, run_state=run_state, job_run_status=job_run_status)
         return run_state
+
+    def _build_event_sequence_error(self, message: str, run_state: dict, event_idx: int, event_triggered: list) -> str:
+        return (
+            f"{message} "
+            f"event_idx={event_idx}, event_triggered={event_triggered}, "
+            f"job_id={self.job_id!r}, job_name={self.last_job_name!r}, "
+            f"run_state={run_state}, server_status={self.server_status()}, client_status={self.client_status()}"
+        )
+
+    def _check_for_failed_terminal_job(
+        self,
+        event: dict,
+        event_is_triggered: bool,
+        run_state: dict,
+        event_idx: int,
+        event_triggered: list,
+    ):
+        job_status = run_state.get("job_status")
+        if not _is_failed_terminal_run_status(job_status):
+            return
+        if not _event_waits_for_successful_run(event=event, event_triggered=event_is_triggered):
+            return
+
+        raise NVFTestError(
+            self._build_event_sequence_error(
+                message=f"Job reached terminal status {job_status!r} while waiting for run_finished=True.",
+                run_state=run_state,
+                event_idx=event_idx,
+                event_triggered=event_triggered,
+            )
+        )
 
     def reset_test_info(self, reset_job_info=False):
         self.test_done = False
@@ -294,7 +376,8 @@ class NVFTestDriver:
             self.last_job_name = None
 
     def run_event_sequence(self, event_sequence):
-        run_state = {"run_finished": None, "workflows": None}
+        run_state = {"job_status": None, "job_terminal": None, "run_finished": None, "workflows": None}
+        start_time = time.time()
 
         event_idx = 0
         # whether event has been successfully triggered
@@ -306,6 +389,13 @@ class NVFTestDriver:
             run_state = self._get_run_state(run_state)
 
             if event_idx < len(event_sequence):
+                self._check_for_failed_terminal_job(
+                    event=event_sequence[event_idx],
+                    event_is_triggered=event_triggered[event_idx],
+                    run_state=run_state,
+                    event_idx=event_idx,
+                    event_triggered=event_triggered,
+                )
                 if not event_triggered[event_idx]:
                     # check if event is triggered -> then execute the corresponding actions
                     event_trigger = event_sequence[event_idx]["trigger"]
@@ -335,7 +425,7 @@ class NVFTestDriver:
                     if _check_event_trigger(
                         event_trigger=trigger_data, string_to_check=strings_to_check, run_state=run_state
                     ):
-                        print(f"EVENT TRIGGER '{trigger_data}' is TRIGGERED.")
+                        print(f"EVENT TRIGGER {trigger_data!r} is TRIGGERED.")
                         event_triggered[event_idx] = True
                         self.execute_actions(
                             actions=event_sequence[event_idx]["actions"],
@@ -354,14 +444,30 @@ class NVFTestDriver:
                     elif result["type"] == "admin_api_response":
                         if self.admin_api_response is None:
                             raise NVFTestError("Missing admin_api_response.")
-                        assert (
-                            self.admin_api_response == result["data"]
-                        ), f"Failed: admin_api_response: {self.admin_api_response} does not equal to result {result['data']}"
+                        msg = (
+                            f"Failed: admin_api_response: {self.admin_api_response} "
+                            f"does not equal to result {result['data']}"
+                        )
+                        assert self.admin_api_response == result["data"], msg
                         event_idx += 1
                     elif result["type"] == "job_submit_success":
                         if self.job_id is None or self.last_job_name is None:
                             raise NVFTestError(f"Job submission failed with: {self.admin_api_response}")
                         event_idx += 1
+
+            elapsed = time.time() - start_time
+            if self.event_sequence_timeout and elapsed > self.event_sequence_timeout:
+                raise NVFTestError(
+                    self._build_event_sequence_error(
+                        message=(
+                            f"Event sequence timed out after {self.event_sequence_timeout:.1f} seconds "
+                            f"while waiting for event {event_idx}."
+                        ),
+                        run_state=run_state,
+                        event_idx=event_idx,
+                        event_triggered=event_triggered,
+                    )
+                )
 
             time.sleep(self.poll_period)
 

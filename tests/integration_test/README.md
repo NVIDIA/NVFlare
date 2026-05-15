@@ -3,7 +3,7 @@
 ## Setup
 
 Some integration test configs use local host aliases when provisioning the test system.
-That requires `localhost0` and `localhost1` to map to `127.0.0.1`.
+That requires `localhost0` to map to `127.0.0.1`.
 You need to either modify the `/etc/hosts` file before running the test,
 or, if you are running in a docker container, use `--add-host localhost0:127.0.0.1`.
 
@@ -26,6 +26,10 @@ python -m pytest -v --log-cli-level=INFO --capture=no fast
 python -m pytest -v --log-cli-level=INFO --capture=no slow
 ```
 
+The slow suite includes XGBoost recipe tests that require the federated XGBoost wheel. CI installs it
+through `ci/run_integration.sh slow`. For direct local pytest runs, install the wheel from
+`examples/advanced/xgboost/requirements.txt` first, or run the suite through `ci/run_integration.sh slow`.
+
 Run one direct pytest suite:
 
 ```bash
@@ -46,6 +50,10 @@ NVFLARE_TEST_FRAMEWORK=client_api python -m pytest -v --log-cli-level=INFO --cap
 ```
 
 Add `--junitxml=./integration_test.xml` to any command when you need a JUnit report.
+
+Config-driven `system_test.py` event sequences time out after 1800 seconds by default.
+Set `NVFLARE_EVENT_SEQUENCE_TIMEOUT` to override this globally, or set `event_sequence_timeout`
+in a test config YAML. Use `0` to disable the harness timeout.
 
 CI uses `ci/run_integration.sh` for environment setup and mode dispatch. This directory intentionally
 does not provide a second local wrapper script.
@@ -93,6 +101,11 @@ An example would be `tests/integration_test/data/test_configs/one_job/test_hello
 | `jobs_root_dir` | The directory that contains the job folders to upload                                  |
 | `tests`         | The test cases to run                                                                  |
 
+Optional attributes for both config types:
+
+| Attributes                 | Description                                                              |
+|----------------------------|--------------------------------------------------------------------------|
+| `event_sequence_timeout`   | Max seconds to wait for one event sequence. (Default to 1800 seconds.)   |
 
 An example would be `tests/integration_test/data/test_configs/authorization/list_job.yml`.
 
