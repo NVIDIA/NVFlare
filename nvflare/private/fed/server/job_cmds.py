@@ -1695,9 +1695,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             if require_finished:
                 job = job_def_manager.get_job(job_id, fl_ctx)
                 if not job:
-                    conn.append_error(
-                        f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
-                    )
+                    _append_no_such_job_error(conn, job_id)
                     return
                 job_status = job.meta.get(JobMetaKey.STATUS)
                 if not job_status or not job_status.startswith("FINISHED:"):

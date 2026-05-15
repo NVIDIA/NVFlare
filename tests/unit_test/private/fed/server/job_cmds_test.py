@@ -1854,6 +1854,20 @@ def test_download_job_rejects_unfinished_job_before_packaging(monkeypatch, tmp_p
     engine.job_def_manager.get_storage_for_download.assert_not_called()
 
 
+def test_download_job_uses_canonical_missing_job_message(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    job_id = "123e4567-e89b-42d3-a456-426614174000"
+    engine = _FakeListEngine([])
+    engine.job_def_manager.get_storage_for_download = MagicMock()
+    conn = _MockConnection(app_ctx=engine, props={ConnProps.DOWNLOAD_DIR: str(tmp_path)})
+
+    JobCommandModule().download_job(conn, ["download_job", job_id])
+
+    assert conn.errors and conn.errors[0][0] == f"no such job: {job_id}"
+    assert conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.INVALID_JOB_ID
+    engine.job_def_manager.get_storage_for_download.assert_not_called()
+
+
 def test_download_job_packages_all_default_components_for_finished_job(monkeypatch, tmp_path):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
     engine = _FakeListEngine(
