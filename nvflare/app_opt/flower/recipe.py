@@ -83,14 +83,14 @@ class FlowerRecipe(Recipe):
         # Pre-deployed mode (no BYOC needed):
         recipe = FlowerRecipe(
             name="my_flower_job",
-            flower_app_path="/opt/flower_apps/my_app",
+            flower_app_path="local/custom/my_app",
             min_clients=2,
         )
         ```
 
     Args:
         flower_content (str, optional): Local directory path containing Flower app code (BYOC mode).
-        flower_app_path (str, optional): Absolute path to pre-deployed Flower app on the server (pre-deployed mode, no BYOC needed). The server distributes the app to clients via Flower's FAB mechanism.
+        flower_app_path (str, optional): Relative path to pre-deployed Flower app under workspace's local/custom/ directory (pre-deployed mode, no BYOC needed). The server distributes the app to clients via Flower's FAB mechanism.
         name (str): Name of the job. Defaults to "flower_job".
         min_clients (int, optional): The minimum number of clients for the job. Defaults to 1.
         mandatory_clients (List[str], optional): List of mandatory clients for the job. Defaults to None.

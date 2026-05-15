@@ -125,7 +125,7 @@ The Job Recipe contains the Flower app configuration and deploys it within NVFla
         name="hello-flower",
         min_clients=n_clients,
         num_rounds=num_rounds,
-        flower_app_path="/opt/flower_apps/flwr-pt",  # Absolute path on the server
+        flower_app_path="local/custom/flwr-pt", # local/custom is the mandatory location for flower apps.
         stream_metrics=stream_metrics,
     )
 

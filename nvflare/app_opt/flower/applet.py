@@ -331,14 +331,17 @@ class FlowerServerApplet(Applet):
             except ValueError as e:
                 raise RuntimeError(str(e))
 
+            # Resolve relative path to absolute path relative to workspace root
+            workspace_root = ws.get_root_dir()
+            self.flower_app_dir = os.path.abspath(os.path.join(workspace_root, self.flower_app_path))
+
             # Check filesystem existence
-            if not os.path.isdir(self.flower_app_path):
+            if not os.path.isdir(self.flower_app_dir):
                 raise RuntimeError(
                     f"flower_app_path '{self.flower_app_path}' does not exist on this host. "
                     "Ensure the Flower app is pre-deployed on the server. "
                     "(Clients receive the app from the server via Flower's FAB distribution)."
                 )
-            self.flower_app_dir = self.flower_app_path
         else:
             custom_dir = ws.get_app_custom_dir(fl_ctx.get_job_id())
             self.flower_app_dir = custom_dir
