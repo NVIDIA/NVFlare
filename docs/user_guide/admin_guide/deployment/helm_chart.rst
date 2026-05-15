@@ -96,6 +96,8 @@ Example ``k8s.yaml``:
 The runtime config controls site-level Kubernetes settings:
 
 * ``namespace`` is where the parent pod and dynamically launched job pods run.
+* ``server_service_name`` sets the FL server Kubernetes Service name. It defaults
+  to ``nvflare-server``.
 * ``parent`` values are rendered into the Helm chart. They set the parent image,
   Python executable, workspace PVC, parent service port, parent pod resources,
   and optional parent pod security context. ``parent.python_path`` controls the

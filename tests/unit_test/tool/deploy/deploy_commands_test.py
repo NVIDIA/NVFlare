@@ -366,6 +366,34 @@ def test_prepare_k8s_server_exposes_admin_port_only_when_distinct(tmp_path, caps
     assert ".Values.adminPort" in tcp_services
 
 
+def test_prepare_k8s_server_uses_configured_service_name(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path, fed_learn_port=8002, admin_port=8003)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "namespace": "nvflare",
+            "server_service_name": "custom-nvflare-server",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    service = (output / "helm_chart" / "templates" / "server-service.yaml").read_text()
+    tcp_services = (output / "helm_chart" / "templates" / "server-tcp-services.yaml").read_text()
+
+    assert values["serviceName"] == "custom-nvflare-server"
+    assert comm_config["internal"]["resources"]["host"] == "custom-nvflare-server"
+    assert "name: {{ .Values.serviceName }}" in service
+    assert "nvflare-server:%v" not in tcp_services
+    assert ".Values.serviceName" in tcp_services
+
+
 def test_prepare_k8s_server_uses_parent_python_path_for_chart_command(tmp_path, capsys):
     kit = _make_server_kit(tmp_path)
     output = tmp_path / "server-k8s"
@@ -670,6 +698,31 @@ def test_prepare_k8s_rejects_invalid_namespace(tmp_path, capsys, namespace):
     err = capsys.readouterr().err
     assert "INVALID_CONFIG" in err
     assert "k8s config.namespace" in err
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "service_name",
+    ["Nvflare", "server_name", "server.name", "-server", "server-", "1server", "", "a" * 64, None, 7],
+)
+def test_prepare_k8s_rejects_invalid_server_service_name(tmp_path, capsys, service_name):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "server_service_name": service_name,
+                "parent": {"docker_image": "repo/nvflare:dev"},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert "k8s config.server_service_name" in err
     assert not output.exists()
 
 
