@@ -37,12 +37,25 @@ or run in a separate recipe test suite (takes ~1-2 minutes).
 
 import os
 
+import pytest
+
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_experiment_tracking
 
 INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(INTEGRATION_TEST_ROOT))
+
+
+@pytest.fixture(scope="module")
+def cifar10_data_root(tmp_path_factory):
+    """Download CIFAR-10 once so simulated clients do not race on the same download/extract path."""
+    from torchvision.datasets import CIFAR10
+
+    data_root = str(tmp_path_factory.mktemp("cifar10_data"))
+    CIFAR10(root=data_root, train=True, download=True)
+    CIFAR10(root=data_root, train=False, download=True)
+    return data_root
 
 
 class TestExperimentTrackingRecipes:
@@ -69,7 +82,19 @@ class TestExperimentTrackingRecipes:
         recipe.job.add_file_to_server(self.model_path)
         recipe.job.add_file_to_clients(self.model_path)
 
-    def test_tensorboard_tracking_integration(self):
+    def _per_site_config(self, dataset_path: str, model_dir: str) -> dict[str, dict[str, str]]:
+        return {
+            site_name: {
+                "train_args": (
+                    f"--dataset_path {dataset_path} "
+                    f"--model_path {os.path.join(model_dir, site_name + '_cifar_net.pth')} "
+                    "--batch_size 512 --num_workers 0 --local_epochs 1"
+                )
+            }
+            for site_name in ("site-1", "site-2")
+        }
+
+    def test_tensorboard_tracking_integration(self, cifar10_data_root):
         """Test TensorBoard tracking can be added and job completes."""
         import tempfile
 
@@ -81,6 +106,7 @@ class TestExperimentTrackingRecipes:
                 num_rounds=1,
                 model={"class_path": "model.SimpleNetwork", "args": {}},
                 train_script=self.client_script_path,
+                per_site_config=self._per_site_config(cifar10_data_root, tmpdir),
             )
             self._add_model_to_apps(recipe)
 
@@ -92,7 +118,7 @@ class TestExperimentTrackingRecipes:
             assert run.get_result() is not None
             assert os.path.exists(run.get_result())
 
-    def test_mlflow_tracking_integration(self):
+    def test_mlflow_tracking_integration(self, cifar10_data_root):
         """Test MLflow tracking can be added and job completes."""
         import tempfile
 
@@ -105,6 +131,7 @@ class TestExperimentTrackingRecipes:
                 num_rounds=1,
                 model={"class_path": "model.SimpleNetwork", "args": {}},
                 train_script=self.client_script_path,
+                per_site_config=self._per_site_config(cifar10_data_root, tmpdir),
             )
             self._add_model_to_apps(recipe)
 

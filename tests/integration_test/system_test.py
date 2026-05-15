@@ -101,6 +101,7 @@ def setup_and_teardown_system(request):
     cleanup = test_config["cleanup"]
     has_project_yaml = "project_yaml" in test_config
     poll_period = test_config.get("poll_period", 5)
+    event_sequence_timeout = test_config.get("event_sequence_timeout")
     additional_python_paths = [
         _resolve_test_config_path(suite_root, p) for p in test_config.get("additional_python_paths", [])
     ]
@@ -150,7 +151,10 @@ def setup_and_teardown_system(request):
         download_root_dir = os.path.join(test_temp_dir, "download_result")
         os.mkdir(download_root_dir)
         test_driver = NVFTestDriver(
-            site_launcher=site_launcher, download_root_dir=download_root_dir, poll_period=poll_period
+            site_launcher=site_launcher,
+            download_root_dir=download_root_dir,
+            poll_period=poll_period,
+            event_sequence_timeout=event_sequence_timeout,
         )
         test_driver.initialize_super_user(
             workspace_root_dir=workspace_root, upload_root_dir=jobs_root_dir, super_user_name=super_user_name
@@ -199,12 +203,12 @@ class TestSystem:
 
             test_driver.run_event_sequence(event_sequence)
 
-            job_result = None
-            if test_driver.job_id is not None:
-                job_result = test_driver.get_job_result(test_driver.job_id)
-
             # Get the job validator
             if validators:
+                job_result = None
+                if test_driver.job_id is not None:
+                    job_result = test_driver.get_job_result(test_driver.job_id)
+
                 validate_result = True
                 for validator in validators:
                     validator_module = validator["path"]
@@ -227,7 +231,7 @@ class TestSystem:
                 validate_result = "No Validators"
             test_validate_results.append((test_name, validate_result))
 
-            print(f"Finished running test '{test_name}' in {time.time() - start_time} seconds.")
+            print(f"Finished running test {test_name!r} in {time.time() - start_time} seconds.")
             for command in teardown:
                 print(f"Running teardown command: {command}")
                 process = run_command_in_subprocess(command)
