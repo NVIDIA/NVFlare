@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
+
 import flwr.proto.grpcadapter_pb2 as pb2
 
 from nvflare.apis.shareable import Shareable
@@ -68,13 +70,11 @@ def reply_should_exit() -> pb2.MessageContainer:
     return pb2.MessageContainer(metadata={"should-exit": "true"})
 
 
-def validate_flower_app_path(path: str, allow_symlinks: bool = True) -> None:
-    """Validate flower_app_path format and security.
+def validate_flower_app_path(path: str) -> None:
+    """Validate flower_app_path format.
 
     Args:
         path: The flower_app_path value to validate
-        allow_symlinks: Whether to allow symbolic links (default True).
-                        If False, it will check the filesystem and raise ValueError if a link is found.
 
     Raises:
         ValueError: If path is invalid or unsafe
@@ -93,11 +93,21 @@ def validate_flower_app_path(path: str, allow_symlinks: bool = True) -> None:
     if ".." in normalized:
         raise ValueError(f"flower_app_path contains invalid path traversal: '{path}'")
 
-    if not allow_symlinks:
-        import os
 
-        if os.path.islink(path.rstrip(os.sep)):
-            raise ValueError(
-                f"flower_app_path '{path}' is a symbolic link. "
-                "For security, pre-deployed app paths must be real directories, not links."
-            )
+def validate_flower_app_path_no_symlinks(app_dir: str) -> None:
+    """Validate that the resolved flower app directory is not a symbolic link.
+
+    This check is performed on the resolved absolute path to ensure security
+    by preventing pre-deployed apps from being loaded via symbolic links.
+
+    Args:
+        app_dir: The resolved absolute path to the Flower app directory
+
+    Raises:
+        RuntimeError: If the path is a symbolic link
+    """
+    if os.path.islink(app_dir):
+        raise RuntimeError(
+            f"flower_app_path resolves to a symbolic link. "
+            "For security, pre-deployed app paths must be real directories, not links."
+        )

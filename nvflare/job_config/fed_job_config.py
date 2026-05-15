@@ -246,6 +246,7 @@ class FedJobConfig:
             if os.path.isfile(src_path):
                 base_name = os.path.basename(src_path)
                 dest_file = os.path.join(dest_path, base_name)
+                os.makedirs(dest_path, exist_ok=True)
                 shutil.copy(src_path, dest_file)
             else:
                 # this is a dir
