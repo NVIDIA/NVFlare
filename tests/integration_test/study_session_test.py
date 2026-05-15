@@ -57,6 +57,7 @@ from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.hci.client.api import APIStatus, ResultKey
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey
 from nvflare.fuel.hci.client.config import secure_load_admin_config
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 from nvflare.recipe import ProdEnv
 from tests.integration_test.src import NVFTestDriver, ProvisionSiteLauncher
 from tests.integration_test.src.utils import _get_job_store_path_from_workspace, get_job_meta
@@ -176,6 +177,14 @@ def _extract_table_rows(response: dict) -> list[list[str]]:
         if isinstance(item, dict) and item.get("type") == "table":
             return item.get("rows", [])
     raise AssertionError(f"No table rows found in response: {response}")
+
+
+def _extract_error_messages(response: dict) -> list[str]:
+    return [
+        item.get("data")
+        for item in response.get("data", [])
+        if isinstance(item, dict) and item.get("type") == "error"
+    ]
 
 
 def _extract_client_names_from_check_status(response: dict) -> set[str]:
@@ -453,6 +462,12 @@ class TestMultiStudySessionIntegration:
             study_b_session.clone_job(job_id)
         with pytest.raises(JobNotFound):
             default_session.get_job_meta(job_id)
+
+        abort_response = study_b_session.do_command(f"abort_job {job_id}")
+        assert abort_response[ResultKey.STATUS] == APIStatus.SUCCESS
+        assert abort_response[ResultKey.META][MetaKey.STATUS] == MetaStatusValue.INVALID_JOB_ID
+        assert abort_response[ResultKey.META][MetaKey.INFO] == job_id
+        assert _extract_error_messages(abort_response) == [f"no such job: {job_id}"]
 
     def test_multistudy_membership_does_not_override_certificate_role(self, multi_study_system):
         lead_admin_root = multi_study_system["admin_roots"][LEAD_ADMIN]
