@@ -198,3 +198,26 @@ class TestCmdTaskController:
         assert captured["data"].total_rounds == 1
         assert captured["min_responses"] == 1
         assert captured["timeout"] == 10
+
+    def test_run_rejects_unreachable_min_responses(self):
+        controller = CmdTaskController(
+            task_name="infer",
+            min_responses=3,
+            timeout=0,
+            persistor_id="",
+        )
+        captured = {}
+
+        controller.info = lambda _msg: None
+        controller.panic = lambda msg: captured.setdefault("panic", msg)
+        controller.sample_clients = lambda num_clients=None: ["site-1", "site-2"]
+
+        def fail_send_task_and_wait(*_args, **_kwargs):
+            raise AssertionError("send_task_and_wait should not be called")
+
+        controller.send_task_and_wait = fail_send_task_and_wait
+
+        with pytest.raises(RuntimeError, match="min_responses=3 exceeds sampled clients=2"):
+            controller.run()
+
+        assert "min_responses=3 exceeds sampled clients=2" in captured["panic"]

@@ -44,6 +44,11 @@ class CmdTaskController(ModelController):
         try:
             task = FLModel(params=self.task_data, meta=self.task_meta, current_round=0, total_rounds=1)
             clients = self.sample_clients(self.num_clients)
+            if self.min_responses is not None and self.min_responses > len(clients):
+                raise RuntimeError(
+                    f"min_responses={self.min_responses} exceeds sampled clients={len(clients)}; "
+                    "either lower min_responses, increase num_clients, or set a non-zero timeout."
+                )
             self.send_task_and_wait(
                 task_name=self.task_name,
                 targets=clients,
