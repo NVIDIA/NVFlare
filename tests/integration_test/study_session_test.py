@@ -181,9 +181,7 @@ def _extract_table_rows(response: dict) -> list[list[str]]:
 
 def _extract_error_messages(response: dict) -> list[str]:
     return [
-        item.get("data")
-        for item in response.get("data", [])
-        if isinstance(item, dict) and item.get("type") == "error"
+        item.get("data") for item in response.get("data", []) if isinstance(item, dict) and item.get("type") == "error"
     ]
 
 
