@@ -106,6 +106,10 @@ def _active_study_from_conn(conn: Connection) -> str:
     return conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY) or DEFAULT_STUDY
 
 
+def _append_no_such_job_error(conn: Connection, job_id: str):
+    conn.append_error(f"no such job: {job_id}", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id))
+
+
 def _create_list_job_cmd_parser():
     parser = SafeArgumentParser(prog=AdminCommandNames.LIST_JOBS)
     parser.add_argument("job_id", nargs="?", help="Job ID prefix")
@@ -288,16 +292,12 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             job = job_def_manager.get_job(job_id, fl_ctx)
 
         if not job:
-            conn.append_error(
-                f"Job with ID {job_id} doesn't exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
-            )
+            _append_no_such_job_error(conn, job_id)
             return PreAuthzReturnCode.ERROR
 
         requested_study = _active_study_from_conn(conn)
         if requested_study and get_job_meta_study(job.meta) != requested_study:
-            conn.append_error(
-                f"Job with ID {job_id} doesn't exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
-            )
+            _append_no_such_job_error(conn, job_id)
             return PreAuthzReturnCode.ERROR
 
         conn.set_prop(self.JOB, job)
@@ -534,9 +534,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     normalized_meta, meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_META: normalized_meta})
                 )
             else:
-                conn.append_error(
-                    f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
-                )
+                _append_no_such_job_error(conn, job_id)
 
     def get_job_log(self, conn: Connection, args: List[str]):
         try:
@@ -1015,9 +1013,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         with engine.new_context() as fl_ctx:
             list_of_data = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx)
             if not list_of_data:
-                conn.append_error(
-                    f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
-                )
+                _append_no_such_job_error(conn, job_id)
                 return
 
             system_components = {"workspace", "meta", "scheduled", "data"}

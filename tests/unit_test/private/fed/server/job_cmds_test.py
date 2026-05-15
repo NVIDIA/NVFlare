@@ -1232,6 +1232,17 @@ def test_get_job_meta_normalizes_legacy_job_study(monkeypatch):
     assert conn.dicts[0][0][JobMetaKey.STUDY.value] == "default"
 
 
+def test_get_job_meta_uses_canonical_missing_job_message(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    job_id = "123e4567-e89b-42d3-a456-426614174000"
+    conn = _MockConnection(app_ctx=_FakeListEngine([]), props={JobCommandModule.JOB_ID: job_id})
+
+    JobCommandModule().get_job_meta(conn, ["get_job_meta", job_id])
+
+    assert conn.errors and conn.errors[0][0] == f"no such job: {job_id}"
+    assert conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.INVALID_JOB_ID
+
+
 def test_get_job_log_client_target_returns_persisted_log(tmp_path, monkeypatch):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
@@ -1676,7 +1687,7 @@ def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):
     rc = JobCommandModule().authorize_job_id(conn, ["authorize_job_id", job_id])
 
     assert rc == PreAuthzReturnCode.ERROR
-    assert conn.errors and conn.errors[0][0] == f"Job with ID {job_id} doesn't exist"
+    assert conn.errors and conn.errors[0][0] == f"no such job: {job_id}"
     assert conn.get_prop(JobCommandModule.JOB) is None
     assert conn.get_prop(ConnProps.SUBMITTER_ROLE) is None
 
@@ -1705,7 +1716,7 @@ def test_authorize_job_id_hides_non_default_jobs_from_default_session_without_re
     rc = JobCommandModule().authorize_job_id(conn, ["authorize_job_id", job_id])
 
     assert rc == PreAuthzReturnCode.ERROR
-    assert conn.errors and conn.errors[0][0] == f"Job with ID {job_id} doesn't exist"
+    assert conn.errors and conn.errors[0][0] == f"no such job: {job_id}"
     assert conn.get_prop(JobCommandModule.JOB) is None
     assert conn.get_prop(ConnProps.SUBMITTER_ROLE) is None
 
