@@ -14,7 +14,7 @@
 
 from typing import Optional
 
-from pydantic import BaseModel, conint
+from pydantic import BaseModel, conint, model_validator
 
 from nvflare import FedJob
 from nvflare.app_common.workflows.cmd_task_controller import CmdTaskController
@@ -47,6 +47,15 @@ class _FedTaskValidator(BaseModel):
     shutdown_timeout: float = 0.0
     client_memory_gc_rounds: int = 0
     cuda_empty_cache: bool = False
+
+    @model_validator(mode="after")
+    def check_response_count(self):
+        if self.num_clients is not None and self.min_responses is not None and self.min_responses > self.num_clients:
+            raise ValueError(
+                f"min_responses={self.min_responses} cannot exceed num_clients={self.num_clients}; "
+                "otherwise the task may wait for responses from clients that were not selected."
+            )
+        return self
 
 
 class FedTaskRecipe(Recipe):

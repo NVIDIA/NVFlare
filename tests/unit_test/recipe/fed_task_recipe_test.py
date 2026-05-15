@@ -123,6 +123,7 @@ class TestFedTaskRecipe:
             {"min_clients": 0},
             {"min_clients": 1, "num_clients": 0},
             {"min_clients": 1, "min_responses": 0},
+            {"min_clients": 1, "num_clients": 2, "min_responses": 3},
             {"min_clients": 1, "timeout": -1},
         ],
     )
