@@ -1839,6 +1839,38 @@ def test_submit_job_rejects_deploy_map_sites_outside_study(monkeypatch):
     assert "site 'site3' is not enrolled in study 'cancer-research'" in conn.errors[0][0]
 
 
+def test_download_job_rejects_unfinished_job_before_packaging(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine(
+        [_FakeListedJob({JobMetaKey.JOB_ID.value: "job-1", JobMetaKey.STATUS.value: RunStatus.RUNNING.value})]
+    )
+    engine.job_def_manager.get_storage_for_download = MagicMock()
+    conn = _MockConnection(app_ctx=engine, props={ConnProps.DOWNLOAD_DIR: str(tmp_path)})
+
+    JobCommandModule().download_job(conn, ["download_job", "job-1"])
+
+    assert conn.errors
+    assert conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.JOB_RUNNING
+    engine.job_def_manager.get_storage_for_download.assert_not_called()
+
+
+def test_download_job_packages_all_default_components_for_finished_job(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine(
+        [_FakeListedJob({JobMetaKey.JOB_ID.value: "job-1", JobMetaKey.STATUS.value: RunStatus.FINISHED_ABORTED.value})]
+    )
+    engine.job_def_manager.get_storage_for_download = MagicMock()
+    conn = _MockConnection(app_ctx=engine, props={ConnProps.DOWNLOAD_DIR: str(tmp_path)})
+    module = JobCommandModule()
+    module.download_folder = MagicMock()
+
+    module.download_job(conn, ["download_job", "job-1"])
+
+    assert conn.errors == []
+    assert engine.job_def_manager.get_storage_for_download.call_count == 3
+    module.download_folder.assert_called_once()
+
+
 def test_get_job_log_returns_server_log(monkeypatch, tmp_path):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
 

@@ -19,6 +19,7 @@ import re
 import tempfile
 import threading
 import time
+import types
 import uuid
 import weakref
 from itertools import permutations
@@ -26,6 +27,12 @@ from unittest.mock import Mock
 
 import pytest
 
+import nvflare.apis.controller_spec as _controller_spec_mod
+import nvflare.apis.impl.any_relay_manager as _any_relay_manager_mod
+import nvflare.apis.impl.bcast_manager as _bcast_manager_mod
+import nvflare.apis.impl.send_manager as _send_manager_mod
+import nvflare.apis.impl.seq_relay_manager as _seq_relay_manager_mod
+import nvflare.apis.impl.wf_comm_server as _wf_comm_server_mod
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, SendOrder, Task, TaskCompletionStatus
 from nvflare.apis.fl_context import FLContext, FLContextManager
@@ -37,6 +44,54 @@ from nvflare.apis.signal import Signal
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
+
+_real_sleep = time.sleep
+
+# Production modules whose `time` reference is replaced with a FakeClock-backed namespace.
+# Each module imports `time` at the top, so we patch the module-level attribute.
+_TIME_PATCHED_MODULES = (
+    _controller_spec_mod,
+    _wf_comm_server_mod,
+    _send_manager_mod,
+    _seq_relay_manager_mod,
+    _any_relay_manager_mod,
+    _bcast_manager_mod,
+)
+
+
+class FakeClock:
+    """Controllable clock that replaces real time in the controller runtime modules.
+
+    Production code reads time via the patched ``time.time``; this returns the fake "now".
+    Production code's ``time.sleep`` calls are converted to brief real yields (1 ms) that
+    do NOT advance the fake clock — so monitor threads still spin cooperatively but cannot
+    trigger timeouts on their own. Tests advance the fake clock explicitly via ``advance()``.
+    """
+
+    def __init__(self, start: float = 1_000_000.0):
+        self._now = start
+        self._lock = threading.Lock()
+
+    def time(self):
+        with self._lock:
+            return self._now
+
+    def sleep(self, seconds):
+        # Yield to other threads but do not advance the fake clock.
+        # Tests control time progression via `advance()`.
+        _real_sleep(0.001)
+
+    def advance(self, seconds):
+        with self._lock:
+            self._now += seconds
+
+    def wait_until(self, predicate, timeout=5.0, interval=0.001):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            _real_sleep(interval)
+        return predicate()
 
 
 def create_task(name, data=None, timeout=0, before_task_sent_cb=None, result_received_cb=None, task_done_cb=None):
@@ -187,6 +242,17 @@ class TestController:
     # Non-broadcast methods - for tests where per-client data modification is needed
     # (broadcast uses _broadcast_data which is copied before callbacks run)
     NON_BROADCAST = ["send", "send_and_wait", "relay", "relay_and_wait"]
+
+    @pytest.fixture(autouse=True)
+    def _install_fake_clock(self, monkeypatch):
+        # Replace the `time` module reference inside the controller runtime modules
+        # with a FakeClock-backed namespace. Tests advance time via `self.clock.advance()`
+        # instead of blocking on `time.sleep(...)`.
+        clock = FakeClock()
+        fake_time = types.SimpleNamespace(time=clock.time, sleep=clock.sleep)
+        for mod in _TIME_PATCHED_MODULES:
+            monkeypatch.setattr(mod, "time", fake_time)
+        self.clock = clock
 
     @staticmethod
     def setup_system(num_of_clients=1):
@@ -341,7 +407,7 @@ class TestTaskManagement(TestController):
         task_name_out, client_task_id, data = controller.communicator.process_task_request(client, fl_ctx)
         controller.cancel_task(task)
         assert task.completion_status == TaskCompletionStatus.CANCELLED
-        time.sleep(1)
+        time.sleep(0.1)
         print(controller.communicator._tasks)
 
         # in here we make up client results:
@@ -745,7 +811,7 @@ class TestCallback(TestController):
                         client=client, task_name="__test_task", task_id=client_task_id, fl_ctx=fl_ctx, result=result
                     )
         if task_complete == "timeout":
-            time.sleep(timeout)
+            self.clock.advance(timeout)
             controller.communicator.check_tasks()
             assert task.completion_status == TaskCompletionStatus.TIMEOUT
         elif task_complete == "cancel":
@@ -934,7 +1000,9 @@ class TestCallback(TestController):
         self.teardown_system(controller, ctx)
 
     def test_broadcast_schedule_task_in_result_received_cb(self):
-        num_of_clients = 100
+        # 20 clients still exercises the recursive scheduling (20 outer + 20*20 inner tasks)
+        # without the quadratic blowup of the original 100 (which dominated the suite at ~13s).
+        num_of_clients = 20
         controller, ctx, clients = self.setup_system(num_of_clients=num_of_clients)
 
         # callback needs to have args name client_task and fl_ctx
@@ -1053,6 +1121,103 @@ class TestBasic(TestController):
         launch_thread.join()
         self.teardown_system(controller, fl_ctx)
 
+    def test_process_submission_rejects_unassigned_client_task_id(self):
+        controller, fl_ctx, clients = self.setup_system(num_of_clients=2)
+        assigned_client, other_client = clients
+        task = create_task("__test_task")
+        launch_thread = threading.Thread(
+            target=launch_task,
+            kwargs={
+                "controller": controller,
+                "task": task,
+                "method": "send",
+                "fl_ctx": fl_ctx,
+                "kwargs": {"targets": [assigned_client]},
+            },
+        )
+        get_ready(launch_thread)
+
+        task_name_out, client_task_id, _ = controller.communicator.process_task_request(assigned_client, fl_ctx)
+        assert task_name_out == "__test_task"
+
+        forged_result = Shareable()
+        forged_result["result"] = "forged"
+        controller.communicator.process_submission(
+            client=other_client,
+            task_name="__test_task",
+            task_id=client_task_id,
+            fl_ctx=fl_ctx,
+            result=forged_result,
+        )
+
+        client_task = task.last_client_task_map[assigned_client.name]
+        assert client_task.result is None
+        assert client_task.result_received_time is None
+
+        result = Shareable()
+        result["result"] = "result"
+        controller.communicator.process_submission(
+            client=assigned_client,
+            task_name="__test_task",
+            task_id=client_task_id,
+            fl_ctx=fl_ctx,
+            result=result,
+        )
+        assert client_task.result == result
+        launch_thread.join()
+        self.teardown_system(controller, fl_ctx)
+
+    def test_process_submission_drops_duplicate_result(self):
+        result_count = 0
+
+        def result_received_cb(client_task: ClientTask, **kwargs):
+            nonlocal result_count
+            result_count += 1
+
+        controller, fl_ctx, clients = self.setup_system()
+        client = clients[0]
+        task = create_task("__test_task", result_received_cb=result_received_cb)
+        launch_thread = threading.Thread(
+            target=launch_task,
+            kwargs={
+                "controller": controller,
+                "task": task,
+                "method": "send",
+                "fl_ctx": fl_ctx,
+                "kwargs": {"targets": [client]},
+            },
+        )
+        get_ready(launch_thread)
+
+        task_name_out, client_task_id, _ = controller.communicator.process_task_request(client, fl_ctx)
+        assert task_name_out == "__test_task"
+
+        result = Shareable()
+        result["result"] = "first"
+        controller.communicator.process_submission(
+            client=client,
+            task_name="__test_task",
+            task_id=client_task_id,
+            fl_ctx=fl_ctx,
+            result=result,
+        )
+
+        duplicate_result = Shareable()
+        duplicate_result["result"] = "duplicate"
+        controller.communicator.process_submission(
+            client=client,
+            task_name="__test_task",
+            task_id=client_task_id,
+            fl_ctx=fl_ctx,
+            result=duplicate_result,
+        )
+
+        client_task = task.last_client_task_map[client.name]
+        assert result_count == 1
+        assert client_task.result == result
+        launch_thread.join()
+        self.teardown_system(controller, fl_ctx)
+
     @pytest.mark.parametrize("method", TestController.ALL_APIS)
     @pytest.mark.parametrize("timeout", [1, 2])
     def test_task_timeout(self, method, timeout):
@@ -1073,7 +1238,10 @@ class TestBasic(TestController):
         get_ready(launch_thread)
 
         assert controller.get_num_standing_tasks() == 1
-        time.sleep(timeout + 1)
+        self.clock.advance(timeout + 1)
+        assert self.clock.wait_until(
+            lambda: controller.get_num_standing_tasks() == 0 and task.completion_status == TaskCompletionStatus.TIMEOUT
+        ), "controller did not process task timeout"
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.TIMEOUT
         launch_thread.join()
@@ -1819,7 +1987,7 @@ class TestRelayBehavior(TestController):
         get_ready(launch_thread)
         assert controller.get_num_standing_tasks() == 1
 
-        time.sleep(task_assignment_timeout + 1)
+        self.clock.advance(task_assignment_timeout + 1)
 
         for client in clients[1:]:
             task_name_out, client_task_id, data = controller.communicator.process_task_request(client, fl_ctx)
@@ -1865,7 +2033,12 @@ class TestRelayBehavior(TestController):
         )
         get_ready(launch_thread)
         assert controller.get_num_standing_tasks() == 1
-        time.sleep(time_before_first_request)
+        self.clock.advance(time_before_first_request)
+        if dynamic_targets and not expected_to_get_task and time_before_first_request > task_assignment_timeout:
+            assert self.clock.wait_until(
+                lambda: controller.get_num_standing_tasks() == 0
+                and task.completion_status == TaskCompletionStatus.TIMEOUT
+            ), "controller did not process dynamic target assignment timeout"
 
         task_name, task_id, data = controller.communicator.process_task_request(client=request_client, fl_ctx=fl_ctx)
         client_get_a_task = True if task_name == "__test_task" else False
@@ -1958,7 +2131,7 @@ class TestRelayBehavior(TestController):
         get_ready(launch_thread)
         assert controller.get_num_standing_tasks() == 1
 
-        time.sleep(time_before_first_request)
+        self.clock.advance(time_before_first_request)
 
         for request_order, expected_client_to_get_task in zip(request_orders, expected_clients_to_get_task):
             task_name_out = ""
@@ -2036,14 +2209,14 @@ class TestRelayBehavior(TestController):
         assert_task_data_valid(data, input_data, method)
         assert task.last_client_task_map[clients[0].name].task_send_count == 1
 
-        time.sleep(task_result_timeout + 1)
+        self.clock.advance(task_result_timeout + 1)
 
         # same client ask should get the same task
         task_name_out, client_task_id, data = controller.communicator.process_task_request(clients[0], fl_ctx)
         assert client_task_id == old_client_task_id
         assert task.last_client_task_map[clients[0].name].task_send_count == 2
 
-        time.sleep(task_result_timeout + 1)
+        self.clock.advance(task_result_timeout + 1)
 
         # second client ask should get a task since task_result_timeout passed
         task_name_out, client_task_id_1, data = controller.communicator.process_task_request(clients[1], fl_ctx)
@@ -2105,9 +2278,13 @@ class TestRelayBehavior(TestController):
             assert_task_data_valid(data, input_data, method)
             assert task.last_client_task_map[client.name].task_send_count == 1
 
-            time.sleep(task_result_timeout + 1)
+            self.clock.advance(task_result_timeout + 1)
 
         if send_order == SendOrder.SEQUENTIAL:
+            assert self.clock.wait_until(
+                lambda: controller.get_num_standing_tasks() == 0
+                and task.completion_status == TaskCompletionStatus.TIMEOUT
+            ), "controller did not process sequential task timeout"
             assert task.completion_status == TaskCompletionStatus.TIMEOUT
             assert controller.get_num_standing_tasks() == 0
         elif send_order == SendOrder.ANY:
@@ -2282,7 +2459,7 @@ class TestSendBehavior(TestController):
         get_ready(launch_thread)
         assert controller.get_num_standing_tasks() == 1
 
-        time.sleep(time_before_first_request)
+        self.clock.advance(time_before_first_request)
 
         for client in request_order:
             data = None
