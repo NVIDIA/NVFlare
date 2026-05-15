@@ -1014,24 +1014,18 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             )
         with engine.new_context() as fl_ctx:
             list_of_data = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx)
-            if list_of_data:
-                system_components = {"workspace", "meta", "scheduled", "data"}
-                filtered_data = [item for item in list_of_data if item not in system_components]
-                if filtered_data:
-                    data_str = ", ".join(filtered_data)
-                    conn.append_string(data_str)
-                    conn.append_success(
-                        "", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_COMPONENTS: filtered_data})
-                    )
-                else:
-                    conn.append_error(
-                        "No additional job components found.",
-                        meta=make_meta(MetaStatusValue.NO_JOB_COMPONENTS, "No additional job components found."),
-                    )
-            else:
+            if not list_of_data:
                 conn.append_error(
                     f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
                 )
+                return
+
+            system_components = {"workspace", "meta", "scheduled", "data"}
+            filtered_data = [item for item in list_of_data if item not in system_components]
+            if filtered_data:
+                data_str = ", ".join(filtered_data)
+                conn.append_string(data_str)
+            conn.append_success("", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_COMPONENTS: filtered_data}))
 
     def abort_job(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
