@@ -5,8 +5,8 @@ metadata:
   name: nginx-ingress-microk8s-conf
   namespace: ingress
 data:
-  {{ .Values.fedLearnPort | quote }}: {{ printf "%s/nvflare-server:%v" .Release.Namespace .Values.fedLearnPort | quote }}
+  {{ .Values.fedLearnPort | quote }}: {{ printf "%s/%s:%v" .Release.Namespace .Values.serviceName .Values.fedLearnPort | quote }}
   {{- if .Values.adminPort }}
-  {{ .Values.adminPort | quote }}: {{ printf "%s/nvflare-server:%v" .Release.Namespace .Values.adminPort | quote }}
+  {{ .Values.adminPort | quote }}: {{ printf "%s/%s:%v" .Release.Namespace .Values.serviceName .Values.adminPort | quote }}
   {{- end }}
 {{- end }}

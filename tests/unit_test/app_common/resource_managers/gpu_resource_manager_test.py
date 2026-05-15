@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
 from unittest.mock import patch
 
 import pytest
 
-from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 
@@ -311,20 +309,22 @@ class TestGPUResourceManager:
         assert result == {0: 8, 1: 8, 2: 8, 3: 8}
 
     def test_check_and_timeout(self):
-        timeout = 5
         engine = MockEngine()
-        gpu_resource_manager = GPUResourceManager(num_of_gpus=4, mem_per_gpu_in_GiB=16, expiration_period=timeout)
+        gpu_resource_manager = GPUResourceManager(num_of_gpus=4, mem_per_gpu_in_GiB=16, expiration_period=1)
         resource_requirement = _gen_requirement(1, 8)
 
         with engine.new_context() as fl_ctx:
-            gpu_resource_manager.handle_event(event_type=EventType.SYSTEM_START, fl_ctx=fl_ctx)
             check_result, token = gpu_resource_manager.check_resources(
                 resource_requirement=resource_requirement, fl_ctx=fl_ctx
             )
             assert {0: 8} == gpu_resource_manager.reserved_resources[token][0]
-        time.sleep(timeout + 1)
-        with engine.new_context() as fl_ctx:
-            gpu_resource_manager.handle_event(event_type=EventType.SYSTEM_END, fl_ctx=fl_ctx)
+
+        with patch(
+            "nvflare.app_common.resource_managers.auto_clean_resource_manager.time.sleep",
+            side_effect=lambda _: gpu_resource_manager._stop_event.set(),
+        ):
+            gpu_resource_manager._check_expired()
+
         assert gpu_resource_manager.reserved_resources == {}
         for r, v in gpu_resource_manager.resources.items():
             assert v.memory == 16
