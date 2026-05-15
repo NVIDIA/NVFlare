@@ -143,6 +143,7 @@ Top-level keys:
 - ``runtime``: required, must be ``k8s``.
 - ``namespace``: Kubernetes namespace for parent and job pods. Defaults to
   ``default``.
+- ``server_service_name``: optional Kubernetes Service name for the FL server.
 - ``parent``: required mapping for the generated parent Helm chart.
 - ``job_launcher``: optional mapping for dynamically launched job pods.
 

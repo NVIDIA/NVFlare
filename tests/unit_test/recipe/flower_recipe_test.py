@@ -55,6 +55,19 @@ def test_flower_recipe_accepts_compatible_flwr_version(flwr_version):
     assert kwargs["extra_env"] == {CLIENT_API_TYPE_KEY: ClientAPIType.EX_PROCESS_API.value}
 
 
+def test_flower_recipe_forwards_run_config():
+    fake_job = object()
+    run_config = {"learning-rate": 0.01, "momentum": 0.9}
+
+    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.26.0"):
+        with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job) as mock_flower_job:
+            recipe = FlowerRecipe(flower_content="mock_flower_content", run_config=run_config)
+
+    assert recipe.job is fake_job
+    kwargs = mock_flower_job.call_args.kwargs
+    assert kwargs["run_config"] == run_config
+
+
 @pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])
 def test_flower_recipe_merges_extra_env(flwr_version):
     fake_job = object()

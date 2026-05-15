@@ -439,12 +439,24 @@ class WFCommServer(FLComponent, WFCommSpec):
 
         task = client_task.task
         with task.cb_lock:
+            if client_task.client.name != client.name:
+                self.log_warning(
+                    fl_ctx,
+                    f"submission client mismatch for {task_name}:{task_id} - got {client.name} "
+                    f"but task is assigned to {client_task.client.name}",
+                )
+                return
+
             if task.name != task_name:
                 raise ValueError("client specified task name {} doesn't match {}".format(task_name, task.name))
 
             if task.completion_status is not None:
                 # the task is already finished - drop the result
                 self.log_info(fl_ctx, "task is already finished - submission dropped")
+                return
+
+            if client_task.result_received_time is not None:
+                self.log_info(fl_ctx, "client task result is already received - submission dropped")
                 return
 
             # do client task CB processing outside the lock
