@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
+
 import flwr.proto.grpcadapter_pb2 as pb2
 
 from nvflare.apis.shareable import Shareable
@@ -66,3 +68,46 @@ def shareable_to_msg_container(s: Shareable) -> pb2.MessageContainer:
 
 def reply_should_exit() -> pb2.MessageContainer:
     return pb2.MessageContainer(metadata={"should-exit": "true"})
+
+
+def validate_flower_app_path(path: str) -> None:
+    """Validate flower_app_path format.
+
+    Args:
+        path: The flower_app_path value to validate
+
+    Raises:
+        ValueError: If path is invalid or unsafe
+    """
+    if not path.startswith("local/custom/"):
+        raise ValueError(
+            f"flower_app_path must start with 'local/custom/', got '{path}'. "
+            "Pre-deployed apps must be in the workspace's local/custom directory."
+        )
+
+    # Check for path traversal attempts (both Unix and Windows styles)
+    # Normalize separators for consistent checking
+    normalized = path.replace("\\", "/")
+
+    # Check for .. at any position
+    if ".." in normalized:
+        raise ValueError(f"flower_app_path contains invalid path traversal: '{path}'")
+
+
+def validate_flower_app_path_no_symlinks(app_dir: str) -> None:
+    """Validate that the resolved flower app directory is not a symbolic link.
+
+    This check is performed on the resolved absolute path to ensure security
+    by preventing pre-deployed apps from being loaded via symbolic links.
+
+    Args:
+        app_dir: The resolved absolute path to the Flower app directory
+
+    Raises:
+        RuntimeError: If the path is a symbolic link
+    """
+    if os.path.islink(app_dir):
+        raise RuntimeError(
+            f"flower_app_path resolves to a symbolic link. "
+            "For security, pre-deployed app paths must be real directories, not links."
+        )

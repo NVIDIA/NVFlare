@@ -102,13 +102,30 @@ Job Recipe Code
 
 The Job Recipe contains the Flower app configuration and deploys it within NVFlare.
 
+**BYOC Mode** (package Flower app in job ZIP):
+
 .. code-block:: python
 
     recipe = FlowerRecipe(
         name="hello-flower",
         min_clients=n_clients,
         num_rounds=num_rounds,
-        content_dir=content_dir,
+        flower_content="./flwr-pt",  # Local directory path
+        stream_metrics=stream_metrics,
+    )
+
+    env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+    recipe.execute(env=env)
+
+**Pre-deployed Mode** (Flower app already on the server):
+
+.. code-block:: python
+
+    recipe = FlowerRecipe(
+        name="hello-flower",
+        min_clients=n_clients,
+        num_rounds=num_rounds,
+        flower_app_path="local/custom/flwr-pt", # local/custom is the mandatory location for flower apps.
         stream_metrics=stream_metrics,
     )
 
@@ -120,14 +137,23 @@ Run Job
 
 From the terminal, run the code:
 
-Run ``flwr-pt`` with NVFlare Simulation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Run ``flwr-pt`` with NVFlare Simulation (BYOC Mode)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This runs 2 Flower clients and a Flower server in parallel using NVFlare's simulator.
 
 .. code-block:: bash
 
    python job.py --job_name "flwr-pt" --content_dir "./flwr-pt"
+
+Run ``flwr-pt`` with NVFlare Simulation (Pre-deployed Mode)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If the Flower app is pre-deployed on the server (clients receive it via Flower's FAB distribution):
+
+.. code-block:: bash
+
+   python job.py --job_name "flwr-pt" --flower_app_path "/opt/flower_apps/flwr-pt"
 
 Run ``flwr-pt`` with NVFlare Simulation and TensorBoard Streaming
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

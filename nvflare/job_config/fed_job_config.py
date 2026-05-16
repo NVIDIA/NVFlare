@@ -157,7 +157,7 @@ class FedJobConfig:
             config_dir = os.path.join(job_dir, app_name, CONFIG)
             custom_dir = os.path.join(job_dir, app_name, CUSTOM)
             os.makedirs(config_dir, exist_ok=True)
-            os.makedirs(custom_dir, exist_ok=True)
+            # custom_dir will be created on-demand if custom code is added.
 
             if fed_app.server_app:
                 self._get_server_app(config_dir, custom_dir, fed_app)
@@ -246,6 +246,7 @@ class FedJobConfig:
             if os.path.isfile(src_path):
                 base_name = os.path.basename(src_path)
                 dest_file = os.path.join(dest_path, base_name)
+                os.makedirs(dest_path, exist_ok=True)
                 shutil.copy(src_path, dest_file)
             else:
                 # this is a dir

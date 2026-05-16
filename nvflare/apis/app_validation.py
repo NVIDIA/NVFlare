@@ -19,6 +19,7 @@ from typing import Dict, Tuple
 class AppValidationKey(object):
 
     BYOC = "byoc"
+    FLOWER_PREDEPLOYED = "flower_predeployed"
 
 
 class AppValidator(ABC):
