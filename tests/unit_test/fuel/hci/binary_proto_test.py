@@ -16,8 +16,20 @@ import os
 import random
 import tempfile
 import uuid
+from pathlib import Path
 
-from nvflare.fuel.hci.binary_proto import CT_BINARY, Receiver, Sender, receive_all, send_binary_file
+import pytest
+
+from nvflare.fuel.hci.binary_proto import (
+    CT_BINARY,
+    GenerateDataFromFile,
+    Receiver,
+    Sender,
+    receive_all,
+    send_binary_data,
+    send_binary_file,
+)
+from nvflare.fuel.hci.proto import MAX_BLOCK_SIZE
 
 
 class MySender(Sender):
@@ -97,3 +109,41 @@ class TestBinaryProto:
 
     def test_send_1g(self):
         self.send_and_receive("meta", 1024 * 1024 * 1024)
+
+
+class FailingSender(Sender):
+    def __init__(self, fail_after: int):
+        self.calls = 0
+        self.fail_after = fail_after
+
+    def sendall(self, data):
+        self.calls += 1
+        if self.calls > self.fail_after:
+            raise IOError("simulated mid-stream sender failure")
+
+
+class TestGenerateDataFromFile:
+    def test_fd_closed_on_success(self, tmp_path: Path):
+        path = tmp_path / "ok.bin"
+        path.write_bytes(b"hello world")
+        gen = GenerateDataFromFile(str(path))
+        send_binary_data(MySender(), gen, meta="m")
+        assert gen.file.closed
+
+    def test_fd_closed_on_sender_failure_midstream(self, tmp_path: Path):
+        path = tmp_path / "big.bin"
+        path.write_bytes(b"x" * (MAX_BLOCK_SIZE * 3))
+        gen = GenerateDataFromFile(str(path))
+        # fail after marker+header+meta sends, before any body chunk
+        with pytest.raises(IOError):
+            send_binary_data(FailingSender(fail_after=3), gen, meta="m")
+        assert gen.file.closed
+
+    def test_fd_closed_on_body_size_mismatch(self, tmp_path: Path):
+        path = tmp_path / "trunc.bin"
+        path.write_bytes(b"abcdef")
+        gen = GenerateDataFromFile(str(path))
+        gen.size = 999_999  # lie to trigger post-loop size check
+        with pytest.raises(RuntimeError, match="body size"):
+            send_binary_data(MySender(), gen, meta="")
+        assert gen.file.closed

@@ -42,6 +42,7 @@ import struct
 import tempfile
 import uuid
 from abc import ABC, abstractmethod
+from contextlib import closing
 
 from .checksum import Checksum
 from .proto import ALL_END, LINE_END, MAX_BLOCK_SIZE
@@ -360,6 +361,9 @@ class DataGenerator(ABC):
         """
         pass
 
+    def close(self):  # noqa: B027 - optional override; must be idempotent
+        pass
+
 
 class Sender(ABC):
     @abstractmethod
@@ -387,36 +391,34 @@ def send_binary_data(sender: Sender, generator: DataGenerator, meta: str) -> int
     Returns: number of body bytes sent
 
     """
-    body_size = generator.data_size()
-    meta_size = 0
-    meta_bytes = None
-    if meta:
-        meta_bytes = bytes(meta, "utf-8")
+    with closing(generator):
+        body_size = generator.data_size()
+        meta_bytes = meta.encode("utf-8") if meta else b""
         meta_size = len(meta_bytes)
 
-    header_bytes = binary_header(meta_size, body_size)
-    sender.sendall(bytes([BINARY_MARKER]))  # add binary marker at the beginning!
-    sender.sendall(header_bytes)
+        header_bytes = binary_header(meta_size, body_size)
+        sender.sendall(bytes([BINARY_MARKER]))  # add binary marker at the beginning!
+        sender.sendall(header_bytes)
 
-    if meta_bytes:
-        sender.sendall(meta_bytes)
+        if meta_bytes:
+            sender.sendall(meta_bytes)
 
-    sent_body_size = 0
-    checksum = Checksum()
-    while True:
-        data = generator.generate()
-        if not data:
-            break
-        sent_body_size += len(data)
-        checksum.update(data)
-        sender.sendall(data)
-    if sent_body_size != body_size:
-        raise RuntimeError(f"generated body size {sent_body_size} != expected body size {body_size}")
+        sent_body_size = 0
+        checksum = Checksum()
+        while True:
+            data = generator.generate()
+            if not data:
+                break
+            sent_body_size += len(data)
+            checksum.update(data)
+            sender.sendall(data)
+        if sent_body_size != body_size:
+            raise RuntimeError(f"generated body size {sent_body_size} != expected body size {body_size}")
 
-    # add footer
-    footer_bytes = binary_footer(checksum.result())
-    sender.sendall(footer_bytes)
-    return sent_body_size
+        # add footer
+        footer_bytes = binary_footer(checksum.result())
+        sender.sendall(footer_bytes)
+        return sent_body_size
 
 
 class GenerateDataFromFile(DataGenerator):
@@ -425,18 +427,17 @@ class GenerateDataFromFile(DataGenerator):
     """
 
     def __init__(self, file_name: str):
-        file_stats = os.stat(file_name)
-        self.size = file_stats.st_size
         self.file = open(file_name, "rb")
+        self.size = os.fstat(self.file.fileno()).st_size
 
     def data_size(self) -> int:
         return self.size
 
     def generate(self) -> bytes:
-        data = self.file.read(MAX_BLOCK_SIZE)
-        if not data:
-            self.file.close()
-        return data
+        return self.file.read(MAX_BLOCK_SIZE)
+
+    def close(self):
+        self.file.close()
 
 
 def send_binary_file(sender: Sender, file_name: str, meta: str) -> int:
