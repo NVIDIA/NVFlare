@@ -30,17 +30,24 @@ function install_deps {
     local extras
     if [[ $(uname) == "Darwin" ]]; then
       extras=".[dev_mac]"
+    elif [[ "${torch_backend}" == "cpu" ]]; then
+      extras=".[dev_cpu]"
     else
       extras=".[dev]"
     fi
 
+    if [[ "${torch_backend}" == "cpu" && $(uname) != "Darwin" ]]; then
+      export UV_TORCH_BACKEND=cpu
+      bash "${WORK_DIR}/ci/install_cpu_torch.sh"
+    fi
+
     if command -v uv >/dev/null 2>&1; then
       echo "Installing dependencies with uv..."
-      if [[ -n "${VIRTUAL_ENV:-}" ]]; then
-        uv pip install -e "${extras}"
-      else
-        uv pip install --system -e "${extras}"
+      local uv_system_flag=""
+      if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+        uv_system_flag="--system"
       fi
+      uv pip install ${uv_system_flag} -e "${extras}"
     else
       echo "Installing dependencies with pip..."
       python3 -m pip install -e "${extras}"
@@ -288,6 +295,8 @@ function help() {
     echo "    -p | --dependencies           : only install dependencies"
     echo "    -c | --coverage               : used with -u command, turn on coverage flag,  It has no effect without -u "
     echo "         --numprocesses=<N|auto>  : number of parallel pytest workers (default: 8)"
+    echo "         --torch-backend=cpu      : install CPU-only PyTorch wheels on Linux"
+    echo "         --skip-install           : skip dependency installation before running the selected command"
     echo "    -v | --verbose                : verbose output (adds -v to pytest)"
     echo "    -d | --dry-run                : set dry run flag, print out command"
     echo "         --clean                  : clean py and other artifacts generated"
@@ -310,6 +319,8 @@ unit_test_report=false
 dry_run_flag=false
 pytest_numprocesses=8
 verbose_flag=false
+torch_backend=""
+skip_install=false
 
 # notebook test defaults
 nb_timeout=1200
@@ -396,6 +407,18 @@ do
             pytest_numprocesses="${key#*=}"
         ;;
 
+        --torch-backend=*)
+            torch_backend="${key#*=}"
+            if [[ "${torch_backend}" != "cpu" ]]; then
+                echo "${red}Error: --torch-backend currently supports only 'cpu'. Got: '${torch_backend}'${noColor}"
+                exit 1
+            fi
+        ;;
+
+        --skip-install)
+            skip_install=true
+        ;;
+
         -v|--verbose)
             verbose_flag=true
         ;;
@@ -448,7 +471,11 @@ echo "                 "
 if [[ $dry_run_flag = "true" ]]; then
     dry_run "$cmd"
 else
-    install_deps
+    if [[ "${skip_install}" != "true" ]]; then
+        install_deps
+    else
+        echo "Skipping dependency installation"
+    fi
     eval "$cmd"
 fi
 echo "Done"
