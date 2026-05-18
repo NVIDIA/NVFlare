@@ -121,8 +121,8 @@ What is New in 2.8.0
 ====================
 
 NVIDIA FLARE 2.8.0 expands deployment automation, CLI operations,
-multi-study support, and production hardening while adding native Docker and
-Kubernetes job execution for on-premises and cloud environments plus new
+multi-study support, and production hardening while adding Docker and
+Kubernetes job launchers for on-premises and cloud environments plus new
 multimodal and research examples.
 
 **Highlights:**
@@ -133,7 +133,7 @@ multimodal and research examples.
 - **Distributed Provisioning**: participant-managed certificate requests keep
   private keys local while Project Admins approve signed packages and root CA
   trust
-- **Native Docker and Kubernetes Job Execution**: sites can configure process,
+- **Docker and Kubernetes Job Launchers**: sites can configure process,
   Docker, or Kubernetes job launchers for subprocess jobs, job containers, or
   isolated job pods with study-scoped dataset mounts, including Kubernetes
   deployments on AWS, Azure, and GCP

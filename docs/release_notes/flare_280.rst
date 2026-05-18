@@ -4,7 +4,7 @@ What's New in FLARE v2.8.0
 
 NVIDIA FLARE 2.8.0 focuses on making production federated learning easier to
 operate across organizations, studies, and runtime environments. The release
-adds native Docker and Kubernetes job execution, a broader automation-friendly
+adds Docker and Kubernetes job launchers, a broader automation-friendly
 CLI, distributed provisioning, multi-study support, stronger observability, and
 additional production hardening. It also adds new examples and research bundles
 for multimodal, language-model, Docker, Kubernetes, and privacy-oriented
@@ -26,11 +26,11 @@ Release Highlights
   flow packages existing startup kits for Docker and Kubernetes runtimes,
   including Kubernetes environments on AWS, Azure, and GCP, so provisioning and
   runtime packaging can be handled as separate repeatable steps.
-- **Native Docker and Kubernetes job execution**: each site can configure a
+- **Docker and Kubernetes job launchers**: each site can configure a
   process, Docker, or Kubernetes job launcher. With the matching launcher
   configured, host-based jobs run as subprocesses, Docker-based jobs run as job
   containers, and Kubernetes-based jobs run as separate job pods, giving
-  production sites runtime-native isolation and resource handling plus
+  production sites Docker/Kubernetes isolation and resource handling plus
   study-scoped dataset mounts for stronger data isolation.
 - **Multi-study support**: study definitions in ``project.yml``, study-scoped
   sessions, study-aware admin operations, and study CLI commands let one FLARE
@@ -112,10 +112,10 @@ the provisioning model.
 
 See :ref:`deploy_prepare_command`.
 
-Native Kubernetes and Docker Job Execution
-------------------------------------------
+Docker and Kubernetes Job Execution
+-----------------------------------
 
-FLARE 2.8.0 adds native Docker and Kubernetes job execution so sites can align
+FLARE 2.8.0 adds Docker and Kubernetes job launchers so sites can align
 FLARE jobs with the runtime isolation and resource controls they already use.
 Each site must be configured with the matching job launcher for the intended
 runtime. With that launcher configured, the pattern is:
@@ -126,7 +126,7 @@ runtime. With that launcher configured, the pattern is:
 - Kubernetes job launcher for a Kubernetes-based parent pod: jobs run as
   separate Kubernetes job pods.
 
-This matters because Docker and Kubernetes deployments can now use runtime-native
+This matters because Docker and Kubernetes deployments can now use their runtime
 isolation instead of treating every job as a local subprocess. Study-dataset
 mapping is also carried into containers and pods, so each job sees only the
 datasets configured for its study scope, reducing cross-study data exposure.
@@ -274,11 +274,6 @@ Compatibility and Migration Notes
 - The deprecated FLAdminAPI surface has been removed. Use the FLARE API,
   Recipe environments, and ``nvflare`` CLI workflows for new automation.
 - HA/Overseer code has been removed from the 2.8 branch.
-- Runtime provisioning builder paths have been removed in favor of explicit
-  provision and deploy-prepare workflows.
-- The recommended command-line workflow is now startup-kit registration through
-  ``nvflare config`` plus server-connected command groups such as ``job``,
-  ``system``, and ``study``.
 
 See the :ref:`migration_guide` for additional API and configuration migration
 notes.
