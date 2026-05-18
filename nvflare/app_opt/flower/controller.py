@@ -18,7 +18,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tie.controller import TieController
 from nvflare.app_common.tie.defs import Constant as TieConstant
 from nvflare.app_opt.flower.applet import FlowerServerApplet
-from nvflare.app_opt.flower.connectors.grpc_server_connector import GrpcServerConnector
 from nvflare.fuel.utils.validation_utils import check_positive_number
 
 from .defs import Constant
@@ -93,6 +92,8 @@ class FlowerController(TieController):
         self.flower_app_path = flower_app_path
 
     def get_connector(self, fl_ctx: FLContext):
+        from nvflare.app_opt.flower.connectors.grpc_server_connector import GrpcServerConnector
+
         return GrpcServerConnector(
             int_client_grpc_options=self.int_client_grpc_options,
             monitor_interval=self.monitor_interval,
