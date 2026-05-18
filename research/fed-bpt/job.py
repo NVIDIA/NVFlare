@@ -77,7 +77,10 @@ def define_parser():
 
 
 def _quote_args(args: Iterable[object]) -> str:
-    return " ".join(shlex.quote(str(arg)) for arg in args if arg is not None)
+    args = list(args)
+    if any(arg is None for arg in args):
+        raise ValueError(f"None value encountered in train args list: {args}")
+    return " ".join(shlex.quote(str(arg)) for arg in args)
 
 
 def _make_train_args(args, extra_train_args: list[str]) -> str:
@@ -164,7 +167,7 @@ def create_recipe(args, extra_train_args: list[str] | None = None):
     launcher = SubprocessLauncher(
         script=f"python3 -u custom/fedbpt_train.py {train_args}",
         launch_once=True,
-        shutdown_timeout=0.0,
+        shutdown_timeout=10.0,
     )
     runner = BaseScriptRunner(
         script=TRAIN_SCRIPT,
