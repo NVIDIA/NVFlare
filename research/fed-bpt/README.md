@@ -26,6 +26,7 @@ We utilize the [SST-2 dataset](https://huggingface.co/datasets/stanfordnlp/sst2)
 ```commandline
 N_CLIENTS=10
 SEED=1234
+K_SHOT=200
 python job.py \
   --num_clients ${N_CLIENTS} \
   --num_rounds 200 \
@@ -33,7 +34,7 @@ python job.py \
   --task_name sst2 \
   --n_prompt_tokens 50 \
   --intrinsic_dim 500 \
-  --k_shot 200 \
+  --k_shot ${K_SHOT} \
   --device cuda:0 \
   --loss_type ce \
   --cat_or_add add \
