@@ -117,21 +117,33 @@ Key Features
   communication backends without changing application code
 - **Rich Examples** -- Extensive library of FL algorithms, workflows, and application examples to build from
 
-What is New in 2.7.2
+What is New in 2.8.0
 ====================
 
-NVIDIA FLARE 2.7.2 brings the Job Recipe API to general availability, introduces the Tensor-based Downloader for
-efficient large model handling, and adds comprehensive timeout and memory management documentation.
+NVIDIA FLARE 2.8.0 expands deployment automation, CLI operations,
+multi-study support, and production hardening while adding Docker and
+Kubernetes job launchers for on-premises and cloud environments plus new
+multimodal and research examples.
 
 **Highlights:**
 
-- **Job Recipe API -- Generally Available**: Unified recipe architecture covering FedAvg, FedOpt, SCAFFOLD, Cyclic, XGBoost, and more across all major frameworks
-- **Tensor-based Downloader**: Memory-efficient pull-based model transfer using safetensors format for large model training
-- **Server-Side Memory Cleanup**: Automatic garbage collection and heap trimming to prevent RSS growth in long-running jobs
-- **Edge Development**: New hierarchical architecture with EDIP protocol, mobile SDKs, and device simulation for FL at scale
-- **Confidential Computing**: End-to-end IP protection with AMD SEV-SNP + NVIDIA GPU TEEs
+- **Modern NVFlare CLI**: expanded ``job``, ``system``, ``config``,
+  ``recipe``, ``cert``, ``package``, and ``deploy`` command groups with JSON
+  output and schema support for automation
+- **Distributed Provisioning**: participant-managed certificate requests keep
+  private keys local while Project Admins approve signed packages and root CA
+  trust
+- **Docker and Kubernetes Job Launchers**: sites can configure process,
+  Docker, or Kubernetes job launchers for subprocess jobs, job containers, or
+  isolated job pods with study-scoped dataset mounts, including Kubernetes
+  deployments on AWS, Azure, and GCP
+- **Multi-Study Support**: study-scoped sessions, authorization, CLI commands,
+  and local PoC workflows let one deployment host multiple collaborations
+  without mixing operational or data-access context
+- **Live Log Streaming**: client job logs stream to the server while jobs are
+  running, shortening remote debugging loops
 
-See :doc:`release_notes/flare_272` for full release notes.
+See :doc:`release_notes/flare_280` for full release notes.
 See :doc:`release_notes/previous` for previous releases.
 
 Real-World Use Cases & FLARE Day
