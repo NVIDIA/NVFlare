@@ -19,10 +19,14 @@
 #   BUILD_TYPE: tests to execute, default = numpy
 
 set -ex
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_TYPE=numpy
 TEST_FOLDER="tests/integration_test"
 PYTHON_BIN=(python)
 PYTEST_ARGS=(-v --log-cli-level=INFO --capture=no)
+XGBOOST_REQUIREMENTS_FILE="${REPO_ROOT}/examples/advanced/xgboost/requirements.txt"
+XGBOOST_FEDERATED_WHEEL_URL="${XGBOOST_FEDERATED_WHEEL_URL:-}"
 
 # CRITICAL: Set gRPC environment variables before ANY imports that might use gRPC.
 # See: https://github.com/grpc/grpc/issues/28557
@@ -78,7 +82,7 @@ integration_test_tf() {
 add_dns_entries() {
     echo "adding DNS entries for integration test cases"
     cp /etc/hosts /etc/hosts_bak
-    echo "127.0.0.1 localhost0 localhost1" | tee -a /etc/hosts > /dev/null
+    echo "127.0.0.1 localhost0" | tee -a /etc/hosts > /dev/null
 }
 
 remove_dns_entries() {
@@ -92,6 +96,35 @@ clean_up_snapshot_and_job() {
 
 run_pytest() {
     "${PYTHON_BIN[@]}" -m pytest "${PYTEST_ARGS[@]}" --junitxml=./integration_test.xml "$@"
+}
+
+resolve_xgboost_federated_wheel_url() {
+    if [[ -n "${XGBOOST_FEDERATED_WHEEL_URL}" ]]; then
+        echo "${XGBOOST_FEDERATED_WHEEL_URL}"
+        return
+    fi
+
+    local wheel_url
+    wheel_url=$(grep -E '^https://.*xgboost.*\.whl$' "${XGBOOST_REQUIREMENTS_FILE}" | tail -n 1)
+    if [[ -z "${wheel_url}" ]]; then
+        echo "ERROR: could not find federated XGBoost wheel URL in ${XGBOOST_REQUIREMENTS_FILE}" >&2
+        return 1
+    fi
+    echo "${wheel_url}"
+}
+
+install_xgboost_federated_wheel() {
+    local wheel_url
+    wheel_url=$(resolve_xgboost_federated_wheel_url)
+    echo "Installing federated XGBoost wheel for XGBoost recipe tests..."
+    "${PYTHON_BIN[@]}" -m pip install --force-reinstall "${wheel_url}"
+    "${PYTHON_BIN[@]}" - <<'PY'
+import xgboost
+import xgboost.federated
+
+print("XGBoost version is " + xgboost.__version__)
+print("xgboost.federated import succeeded")
+PY
 }
 
 run_system_test() {
@@ -127,25 +160,8 @@ run_pytest_mode() {
             run_pytest fast
             ;;
         slow)
+            install_xgboost_federated_wheel
             run_pytest slow
-            ;;
-        study_session)
-            run_pytest fast/study_session_test.py
-            ;;
-        preflight)
-            run_pytest slow/preflight_check_test.py
-            ;;
-        tracking)
-            run_pytest slow/experiment_tracking_recipes_test.py
-            ;;
-        provisioning)
-            run_pytest slow/distributed_provisioning_test.py
-            ;;
-        recipe_system)
-            run_pytest slow/recipe_system_test.py
-            ;;
-        xgb_recipe)
-            run_pytest slow/xgb_histogram_recipe_test.py slow/xgb_vertical_recipe_test.py
             ;;
         auto)
             echo "The legacy auto example discovery mode is currently disabled; no tests to run."
