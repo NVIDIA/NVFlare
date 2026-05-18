@@ -5,4 +5,3 @@ cma==3.4.0
 scikit-learn
 tensorboard
 cvxopt
-nvflare~=2.5.1rc
