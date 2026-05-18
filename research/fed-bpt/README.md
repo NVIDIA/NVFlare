@@ -25,44 +25,14 @@ The example uses `job.py` to create and run the NVFlare job without registering 
 We utilize the [SST-2 dataset](https://huggingface.co/datasets/stanfordnlp/sst2) and the RoBerTa-large model for training.
 ```commandline
 N_CLIENTS=10
-SEED=1234
-K_SHOT=200
-python job.py \
-  --num_clients ${N_CLIENTS} \
-  --num_rounds 200 \
-  --seed ${SEED} \
-  --task_name sst2 \
-  --n_prompt_tokens 50 \
-  --intrinsic_dim 500 \
-  --k_shot ${K_SHOT} \
-  --device cuda:0 \
-  --loss_type ce \
-  --cat_or_add add \
-  --local_iter 8 \
-  --num_users ${N_CLIENTS} \
-  --iid 1 \
-  --local_popsize 5 \
-  --perturb 1 \
-  --model_name roberta-large \
-  --eval_clients site-1 \
-  --llama_causal 1
+python job.py --num_clients ${N_CLIENTS}
 ```
-By default, we only evaluate the global model on client `site-1` as in our setting, the global test set is shared by clients.
+The command uses the default FedBPT settings for SST-2, RoBERTa-large, 200 global rounds, and 200 shots per class. By default, we only evaluate the global model on client `site-1` as in our setting, the global test set is shared by clients.
 
 The following setting requires a GPU with at least 24 GB memory and enough system memory to run the clients in parallel (we recommend at least 40 GB).
 For a system with less resources, you can set `--threads` to be a lower number and simulate the clients running sequentially.
 ```commandline
-python job.py --num_clients ${N_CLIENTS} --num_rounds 200 --seed ${SEED} \
-  --k_shot ${K_SHOT} \
-  --task_name sst2 \
-  --local_popsize 20 \
-  --local_iter 50 \
-  --aggregation_epochs 50 \
-  --sigma0 1 \
-  --perturb 1 \
-  --model_name roberta-large \
-  --eval_clients site-1 \
-  --llama_causal 1 \
+python job.py --num_clients ${N_CLIENTS} \
   --threads 2 \
   --gpu 0 \
   --workspace /tmp/nvflare/fedbpt
@@ -71,7 +41,7 @@ If you have more GPUs available on your system, you can use `--gpu` to run clien
 
 To export the job without running the simulator, add `--export`:
 ```commandline
-python job.py --export --export-dir ./jobs --num_clients ${N_CLIENTS} --num_rounds 200 --seed ${SEED}
+python job.py --export --export-dir ./jobs --num_clients ${N_CLIENTS}
 ```
 This writes the job to `./jobs/fedbpt`.
 
