@@ -115,9 +115,9 @@ resolve_xgboost_federated_wheel_url() {
 
 install_xgboost_federated_wheel() {
     local wheel_url
-    wheel_url=$(resolve_xgboost_federated_wheel_url)
+    wheel_url=$(resolve_xgboost_federated_wheel_url) || return $?
     echo "Installing federated XGBoost wheel for XGBoost recipe tests..."
-    "${PYTHON_BIN[@]}" -m pip install --force-reinstall "${wheel_url}"
+    "${PYTHON_BIN[@]}" -m pip install --force-reinstall "${wheel_url}" || return $?
     "${PYTHON_BIN[@]}" - <<'PY'
 import xgboost
 import xgboost.federated
@@ -160,7 +160,7 @@ run_pytest_mode() {
             run_pytest fast
             ;;
         slow)
-            install_xgboost_federated_wheel
+            install_xgboost_federated_wheel || return $?
             run_pytest slow
             ;;
         auto)
