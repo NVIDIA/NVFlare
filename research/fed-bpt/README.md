@@ -51,7 +51,20 @@ By default, we only evaluate the global model on client `site-1` as in our setti
 The following setting requires a GPU with at least 24 GB memory and enough system memory to run the clients in parallel (we recommend at least 40 GB).
 For a system with less resources, you can set `--threads` to be a lower number and simulate the clients running sequentially.
 ```commandline
-python job.py --num_clients ${N_CLIENTS} --threads 2 --gpu 0 --workspace /tmp/nvflare/fedbpt
+python job.py --num_clients ${N_CLIENTS} --num_rounds 200 --seed ${SEED} \
+  --k_shot ${K_SHOT} \
+  --task_name sst2 \
+  --local_popsize 20 \
+  --local_iter 50 \
+  --aggregation_epochs 50 \
+  --sigma0 1 \
+  --perturb 1 \
+  --model_name roberta-large \
+  --eval_clients site-1 \
+  --llama_causal 1 \
+  --threads 2 \
+  --gpu 0 \
+  --workspace /tmp/nvflare/fedbpt
 ```
 If you have more GPUs available on your system, you can use `--gpu` to run clients on different GPUs in parallel.
 
