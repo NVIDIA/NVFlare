@@ -19,7 +19,7 @@ import pytest
 
 from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.apis.job_def import DEFAULT_STUDY
-from nvflare.fuel.hci.client.api import CommandInfo
+from nvflare.fuel.hci.client.api import CommandInfo, ResultKey
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey, UidSource
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.cli import AdminClient
@@ -189,3 +189,40 @@ def test_admin_client_passes_study_to_admin_api(tmp_path):
         )
 
     assert captured["study"] == "cancer-research"
+
+
+def test_admin_client_run_reports_login_rejection_and_skips_cmdloop():
+    calls = []
+    output = []
+    client = AdminClient.__new__(AdminClient)
+
+    class _FakeAPI:
+        @staticmethod
+        def connect(timeout):
+            calls.append(("connect", timeout))
+
+        @staticmethod
+        def login():
+            calls.append(("login",))
+            return {
+                ResultKey.STATUS: APIStatus.ERROR_AUTHENTICATION,
+                ResultKey.DETAILS: "unknown study 'study-a'",
+                ResultKey.AUTH_CODE: "AUTH_UNKNOWN_STUDY",
+            }
+
+        @staticmethod
+        def close():
+            calls.append(("close",))
+
+    client.api = _FakeAPI()
+    client.login_timeout = 5.0
+    client.debug = False
+    client.stopped = False
+    client.write_string = output.append
+    client.cmdloop = lambda *_args, **_kwargs: calls.append(("cmdloop",))
+
+    client.run()
+
+    assert output == ["Login rejected: AUTH_UNKNOWN_STUDY: unknown study 'study-a'"]
+    assert calls == [("connect", 5.0), ("login",), ("close",)]
+    assert client.stopped is True

@@ -578,7 +578,57 @@ def test_job_complete_process_retries_save_without_recomputing_finished_status()
     ]
     engine.remove_exception_process.assert_called_once_with("job-1")
     assert "job-1" not in runner.running_jobs
-    assert "job-1" not in runner._finished_job_statuses
+    assert "job-1" not in runner._finished_job_states
+
+
+def test_job_complete_process_retries_status_publish_without_resaving_workspace():
+    runner = JobRunner(workspace_root="/tmp")
+    runner.fire_event = MagicMock()
+    runner.log_debug = MagicMock()
+    runner.log_exception = MagicMock()
+    runner._save_workspace = MagicMock()
+    runner.ask_to_stop = False
+
+    engine = MagicMock()
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
+
+    job_manager = MagicMock()
+    job_manager.set_status.side_effect = [RuntimeError("storage unavailable"), None]
+    engine.get_component.return_value = job_manager
+
+    first_ctx = MagicMock()
+    second_ctx = MagicMock()
+    engine.new_context.side_effect = [nullcontext(first_ctx), nullcontext(second_ctx)]
+
+    job = MagicMock()
+    job.job_id = "job-1"
+    job.run_aborted = True
+    runner.running_jobs = {"job-1": job}
+
+    sleep_count = 0
+
+    def _stop_after_second_pass(_):
+        nonlocal sleep_count
+        sleep_count += 1
+        if sleep_count == 2:
+            runner.ask_to_stop = True
+
+    with patch("nvflare.private.fed.server.job_runner.time.sleep", side_effect=_stop_after_second_pass):
+        runner._job_complete_process(engine)
+
+    runner._save_workspace.assert_called_once_with(first_ctx)
+    assert job_manager.set_status.call_args_list == [
+        call("job-1", RunStatus.FINISHED_ABORTED, first_ctx),
+        call("job-1", RunStatus.FINISHED_ABORTED, second_ctx),
+    ]
+    runner.log_exception.assert_called_once()
+    assert runner.fire_event.call_args_list == [
+        call(EventType.JOB_ABORTED, second_ctx),
+        call(EventType.JOB_COMPLETED, second_ctx),
+    ]
+    assert "job-1" not in runner.running_jobs
+    assert "job-1" not in runner._finished_job_states
 
 
 @patch("nvflare.private.fed.server.job_runner.check_client_replies")
