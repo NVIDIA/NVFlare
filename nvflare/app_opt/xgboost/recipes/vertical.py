@@ -80,10 +80,11 @@ class XGBVerticalRecipe(Recipe):
         use_gpus (bool, optional): Whether to use GPUs for training. Default is False.
         secure (bool, optional): Enable secure training with Homomorphic Encryption (HE). Default is False.
             Requires encryption plugins to be installed and configured.
-            When secure=True, client_ranks must be provided.
-        client_ranks (dict, optional): Mapping of client names to ranks for secure training.
-            Required when secure=True. Maps each client name to a unique rank (0-indexed).
+        client_ranks (dict, optional): Mapping of client names to unique ranks (0-indexed).
             Example: {"site-1": 0, "site-2": 1, "site-3": 2}.
+            In vertical mode, the label owner must be assigned rank 0. If client_ranks is omitted,
+            the recipe assigns the label owner rank 0 and assigns the remaining clients by name.
+            For secure training, provide client_ranks when a stable secure-rank mapping is required.
         xgb_params (dict, optional): XGBoost parameters passed to xgboost.train(). If None, uses default params.
             Default params: max_depth=8, eta=0.1, objective='binary:logistic', eval_metric='auc',
             tree_method='hist', nthread=16.
@@ -214,6 +215,23 @@ class XGBVerticalRecipe(Recipe):
                 "Each site must specify a 'data_loader' in the config dictionary."
             )
 
+        if self.label_owner not in per_site_config:
+            raise ValueError(f"label_owner {self.label_owner!r} must be included in per_site_config")
+
+        if self.client_ranks:
+            expected_clients = set(per_site_config)
+            ranked_clients = set(self.client_ranks)
+            if ranked_clients != expected_clients:
+                raise ValueError(
+                    f"client_ranks must include exactly the per_site_config clients: expected "
+                    f"{sorted(expected_clients)}, got {sorted(ranked_clients)}"
+                )
+            if self.client_ranks.get(self.label_owner) != 0:
+                raise ValueError("label_owner must be assigned rank 0 for vertical XGBoost")
+        else:
+            ranked_clients = [self.label_owner] + sorted(c for c in per_site_config if c != self.label_owner)
+            self.client_ranks = {client_name: rank for rank, client_name in enumerate(ranked_clients)}
+
         # Configure the job
         self.job = self.configure()
         Recipe.__init__(self, self.job)
@@ -231,11 +249,11 @@ class XGBVerticalRecipe(Recipe):
             "secure_training": self.secure,
             "xgb_options": {"early_stopping_rounds": self.early_stopping_rounds, "use_gpus": self.use_gpus},
             "xgb_params": self.xgb_params,
+            "client_ranks": self.client_ranks,
         }
 
-        # Add client_ranks if secure training is enabled
-        if self.secure and self.client_ranks:
-            controller_kwargs["client_ranks"] = self.client_ranks
+        # In-process execution is required for secure training.
+        if self.secure:
             controller_kwargs["in_process"] = True  # Required for secure training
 
         controller = XGBFedController(**controller_kwargs)
@@ -252,7 +270,7 @@ class XGBVerticalRecipe(Recipe):
         for site_name, site_config in self.per_site_config.items():
             data_loader = site_config.get("data_loader")
             if data_loader is None:
-                raise ValueError(f"per_site_config for '{site_name}' must include 'data_loader' key")
+                raise ValueError(f"per_site_config for {site_name!r} must include 'data_loader' key")
 
             # Add executor
             executor = FedXGBHistogramExecutor(
