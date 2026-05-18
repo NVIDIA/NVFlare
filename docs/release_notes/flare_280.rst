@@ -43,11 +43,15 @@ Release Highlights
   handling, stricter private-key file permissions, safer loading paths, stronger
   job metadata validation, and additional dashboard/API hardening reduce common
   operational risk in federated deployments.
-- **New examples, contributed research, and feature selection**: MedGemma,
-  Qwen3-VL, Codon-FM, FedUMM, financial-services fraud detection, feature
-  election, Docker job examples, distributed provisioning examples, Hello JAX,
-  and Hello log streaming help teams start from working patterns instead of
-  assembling production and research workflows from scratch.
+- **Feature election**: a new federated feature selection workflow lets clients
+  perform local feature selection for tabular datasets and share feature scores,
+  not raw data, so FLARE can aggregate a global feature mask for downstream
+  training.
+- **New examples and contributed research**: MedGemma, Qwen3-VL, Codon-FM,
+  FedUMM, financial-services fraud detection, Docker job examples, distributed
+  provisioning examples, Hello JAX, and Hello log streaming help teams start
+  from working patterns instead of assembling production and research workflows
+  from scratch.
 
 NVFlare CLI and Automation
 ==========================
@@ -226,6 +230,17 @@ For tutorial examples, see the
 :github_nvflare_link:`Hello FLARE API notebook <examples/tutorials/flare_api.ipynb>`
 and :github_nvflare_link:`Job Recipe notebook <examples/tutorials/job_recipe.ipynb>`.
 
+Feature Election
+----------------
+
+FLARE 2.8.0 adds feature election, a federated feature selection workflow for
+tabular datasets. Clients perform local feature selection and share selected
+features and scores rather than raw data; FLARE aggregates the results into a
+global feature mask that can be used for downstream federated training.
+
+For a runnable workflow, see the
+:github_nvflare_link:`feature election example <examples/advanced/feature_election>`.
+
 Large Models and LLM Workflows
 ==============================
 
@@ -280,18 +295,13 @@ coverage.
 New Examples and Research
 =========================
 
-2.8.0 adds or updates a wide range of examples, contributed research
-implementations, and application features.
+2.8.0 adds or updates a wide range of examples and contributed research
+implementations.
 
 These assets matter because they turn new platform capabilities into runnable
 starting points for teams evaluating FLARE in concrete domains, including
 containerized operations, multimodal models, financial services, and
 privacy-oriented research.
-
-Feature election adds a federated feature selection workflow for tabular
-datasets. Clients perform local feature selection and share selected features
-and scores rather than raw data; FLARE aggregates the results into a global
-feature mask that can be used for downstream federated training.
 
 Research updates in 2.8.0 include:
 
