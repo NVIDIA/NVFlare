@@ -76,15 +76,21 @@ def _event_waits_for_successful_run(event: dict, event_triggered: bool) -> bool:
 
 
 def _resolve_event_sequence_timeout(event_sequence_timeout):
+    timeout_source = "event_sequence_timeout"
     env_timeout = os.environ.get(EVENT_SEQUENCE_TIMEOUT_ENV)
     if env_timeout not in ("", None):
         event_sequence_timeout = env_timeout
+        timeout_source = EVENT_SEQUENCE_TIMEOUT_ENV
     elif event_sequence_timeout is None:
         event_sequence_timeout = DEFAULT_EVENT_SEQUENCE_TIMEOUT
+        timeout_source = "default event_sequence_timeout"
     if event_sequence_timeout in ("", None):
         return None
 
-    event_sequence_timeout = float(event_sequence_timeout)
+    try:
+        event_sequence_timeout = float(event_sequence_timeout)
+    except (TypeError, ValueError) as e:
+        raise NVFTestError(f"Invalid {timeout_source} value {event_sequence_timeout!r}: must be a number") from e
     if event_sequence_timeout <= 0:
         return None
     return event_sequence_timeout

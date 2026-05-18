@@ -105,7 +105,7 @@ Optional attributes for both config types:
 
 | Attributes                 | Description                                                              |
 |----------------------------|--------------------------------------------------------------------------|
-| `event_sequence_timeout`   | Max seconds to wait for one event sequence. (Default to 1800 seconds.)   |
+| `event_sequence_timeout`   | Max seconds to wait for one event sequence. (Defaults to 1800 seconds.)  |
 
 An example would be `tests/integration_test/data/test_configs/authorization/list_job.yml`.
 

@@ -19,11 +19,14 @@
 #   BUILD_TYPE: tests to execute, default = numpy
 
 set -ex
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_TYPE=numpy
 TEST_FOLDER="tests/integration_test"
 PYTHON_BIN=(python)
 PYTEST_ARGS=(-v --log-cli-level=INFO --capture=no)
-XGBOOST_FEDERATED_WHEEL_URL="https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/federated-secure/xgboost-2.2.0.dev0%2B4601688195708f7c31fcceeb0e0ac735e7311e61-py3-none-manylinux_2_28_x86_64.whl"
+XGBOOST_REQUIREMENTS_FILE="${REPO_ROOT}/examples/advanced/xgboost/requirements.txt"
+XGBOOST_FEDERATED_WHEEL_URL="${XGBOOST_FEDERATED_WHEEL_URL:-}"
 
 # CRITICAL: Set gRPC environment variables before ANY imports that might use gRPC.
 # See: https://github.com/grpc/grpc/issues/28557
@@ -95,9 +98,26 @@ run_pytest() {
     "${PYTHON_BIN[@]}" -m pytest "${PYTEST_ARGS[@]}" --junitxml=./integration_test.xml "$@"
 }
 
+resolve_xgboost_federated_wheel_url() {
+    if [[ -n "${XGBOOST_FEDERATED_WHEEL_URL}" ]]; then
+        echo "${XGBOOST_FEDERATED_WHEEL_URL}"
+        return
+    fi
+
+    local wheel_url
+    wheel_url=$(grep -E '^https://.*xgboost.*\.whl$' "${XGBOOST_REQUIREMENTS_FILE}" | tail -n 1)
+    if [[ -z "${wheel_url}" ]]; then
+        echo "ERROR: could not find federated XGBoost wheel URL in ${XGBOOST_REQUIREMENTS_FILE}" >&2
+        return 1
+    fi
+    echo "${wheel_url}"
+}
+
 install_xgboost_federated_wheel() {
+    local wheel_url
+    wheel_url=$(resolve_xgboost_federated_wheel_url)
     echo "Installing federated XGBoost wheel for XGBoost recipe tests..."
-    "${PYTHON_BIN[@]}" -m pip install --force-reinstall --no-deps "${XGBOOST_FEDERATED_WHEEL_URL}"
+    "${PYTHON_BIN[@]}" -m pip install --force-reinstall "${wheel_url}"
     "${PYTHON_BIN[@]}" - <<'PY'
 import xgboost
 import xgboost.federated

@@ -80,12 +80,11 @@ class XGBVerticalRecipe(Recipe):
         use_gpus (bool, optional): Whether to use GPUs for training. Default is False.
         secure (bool, optional): Enable secure training with Homomorphic Encryption (HE). Default is False.
             Requires encryption plugins to be installed and configured.
-            When secure=True, client_ranks must be provided.
-        client_ranks (dict, optional): Mapping of client names to ranks for secure training.
-            Required when secure=True. Maps each client name to a unique rank (0-indexed).
+        client_ranks (dict, optional): Mapping of client names to unique ranks (0-indexed).
             Example: {"site-1": 0, "site-2": 1, "site-3": 2}.
             In vertical mode, the label owner must be assigned rank 0. If client_ranks is omitted,
             the recipe assigns the label owner rank 0 and assigns the remaining clients by name.
+            For secure training, provide client_ranks when a stable secure-rank mapping is required.
         xgb_params (dict, optional): XGBoost parameters passed to xgboost.train(). If None, uses default params.
             Default params: max_depth=8, eta=0.1, objective='binary:logistic', eval_metric='auc',
             tree_method='hist', nthread=16.

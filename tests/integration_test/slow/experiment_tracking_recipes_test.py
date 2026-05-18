@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Integration tests for experiment tracking with recipes.
+"""Slow integration tests for experiment tracking with recipes.
 
 These are smoke tests to verify that add_experiment_tracking() works with recipes without errors.
 Tests verify:
@@ -24,15 +24,11 @@ Tests do NOT verify:
 - Metrics are logged correctly
 - Tracking output content or format
 
-NOTE: These tests are currently NOT triggered by any automated test suite.
-They use CIFAR-10 dataset and run real training.
+These tests use the CIFAR-10 dataset and run real training.
 
 To run manually:
     cd tests/integration_test
     pytest slow/experiment_tracking_recipes_test.py -v
-
-TODO: Decide if these should be added to an existing test category (e.g., CIFAR integration tests)
-or run in a separate recipe test suite (takes ~1-2 minutes).
 """
 
 import os
