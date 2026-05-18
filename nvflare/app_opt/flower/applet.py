@@ -330,10 +330,7 @@ class FlowerServerApplet(Applet):
             self.flower_app_dir = os.path.abspath(os.path.join(workspace_root, self.flower_app_path))
 
             # Validate path format
-            try:
-                validate_flower_app_path(self.flower_app_path)
-            except ValueError as e:
-                raise RuntimeError(str(e))
+            validate_flower_app_path(self.flower_app_path)
             
             # Check for symlinks on the resolved absolute path
             validate_flower_app_path_no_symlinks(self.flower_app_dir)

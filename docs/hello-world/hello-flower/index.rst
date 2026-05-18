@@ -153,7 +153,7 @@ If the Flower app is pre-deployed on the server (clients receive it via Flower's
 
 .. code-block:: bash
 
-   python job.py --job_name "flwr-pt" --flower_app_path "/opt/flower_apps/flwr-pt"
+   python job.py --job_name "flwr-pt" --flower_app_path "local/custom/flwr-pt"
 
 Run ``flwr-pt`` with NVFlare Simulation and TensorBoard Streaming
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
