@@ -226,6 +226,20 @@ class XGBVerticalRecipe(Recipe):
                     f"client_ranks must include exactly the per_site_config clients: expected "
                     f"{sorted(expected_clients)}, got {sorted(ranked_clients)}"
                 )
+            non_integer_ranks = {
+                client_name: rank
+                for client_name, rank in self.client_ranks.items()
+                if not isinstance(rank, int) or isinstance(rank, bool)
+            }
+            if non_integer_ranks:
+                raise ValueError(f"client_ranks values must be integers, got {non_integer_ranks}")
+            expected_ranks = set(range(len(per_site_config)))
+            actual_ranks = set(self.client_ranks.values())
+            if actual_ranks != expected_ranks:
+                raise ValueError(
+                    f"client_ranks values must be unique and consecutive from 0 to {len(per_site_config) - 1}: "
+                    f"got {self.client_ranks}"
+                )
             if self.client_ranks.get(self.label_owner) != 0:
                 raise ValueError("label_owner must be assigned rank 0 for vertical XGBoost")
         else:
