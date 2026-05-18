@@ -17,47 +17,33 @@ with the addition of installing NVFlare for running federated learning and some 
 conda create --name fedbpt python=3.12
 conda activate fedbpt
 pip install -r requirements.txt
+pip install -e ../..
 ```
 
 ## 2. Run a federated learning experiment
-First, we set the location of NVFlare job templates directory.
-```commandline
-nvflare config -jt ./job_templates
-```
-Next, we generate a job configuration from the template to run FL on `N_CLIENTS` clients. 
+The example uses `job.py` to create and run the NVFlare job without registering global job templates.
 We utilize the [SST-2 dataset](https://huggingface.co/datasets/stanfordnlp/sst2) and the RoBerTa-large model for training.
 ```commandline
 N_CLIENTS=10
-SEED=1234
-nvflare job create -force -j "./jobs/fedbpt" -w "fedbpt" -sd "./src" \
--f app/config/config_fed_client.conf app_script="fedbpt_train.py" app_config="--task_name sst2 \
---n_prompt_tokens 50 \
---intrinsic_dim 500 \
---k_shot 200 \
---device cuda:0 \
---seed ${SEED} \
---loss_type ce \
---cat_or_add add \
---local_iter 8 \
---num_users ${N_CLIENTS} \
---iid 1 \
---local_popsize 5 \
---perturb 1 \
---model_name roberta-large \
---eval_clients site-1 \
---llama_causal 1" \
--f app/config/config_fed_server.conf min_clients=${N_CLIENTS} num_rounds=200 seed=${SEED}
+python job.py --num_clients ${N_CLIENTS}
 ```
-By default, we only evaluate the global model on client `site-1` as in our setting, the global test set is shared by clients.
+The command uses the default FedBPT settings for SST-2, RoBERTa-large, 200 global rounds, and 200 shots per class. By default, we only evaluate the global model on client `site-1` as in our setting, the global test set is shared by clients.
 
-Start the FL simulator with `N_CLIENTS` clients in parallel.
 The following setting requires a GPU with at least 24 GB memory and enough system memory to run the clients in parallel (we recommend at least 40 GB).
-For a system with less resources, you can set -t to be a lower number and simulate the clients running sequentially.
+For a system with less resources, you can set `--threads` to be a lower number and simulate the clients running sequentially.
 ```commandline
-OUT_DIR="/tmp/nvflare/fedbpt"
-nvflare simulator ./jobs/fedbpt -n ${N_CLIENTS} -t ${N_CLIENTS} -w ${OUT_DIR}
+python job.py --num_clients ${N_CLIENTS} \
+  --threads 2 \
+  --gpu 0 \
+  --workspace /tmp/nvflare/fedbpt
 ```
-If you have more GPUs available on your system, you can use the `--gpu` argument of the simulator to run clients on different GPUs in parallel.
+If you have more GPUs available on your system, you can use `--gpu` to run clients on different GPUs in parallel.
+
+To export the job without running the simulator, add `--export`:
+```commandline
+python job.py --export --export-dir ./jobs --num_clients ${N_CLIENTS}
+```
+This writes the job to `./jobs/fedbpt`.
 
 ## 3. Example results
 The training results showing the global testing accuracy over 200 rounds is shown below. 
