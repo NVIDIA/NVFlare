@@ -293,9 +293,19 @@ datasets. Clients perform local feature selection and share selected features
 and scores rather than raw data; FLARE aggregates the results into a global
 feature mask that can be used for downstream federated training.
 
-The ``research`` folder also includes contributed research implementations that
-help users reproduce and extend domain-specific federated learning workflows,
-including unified multimodal learning and financial-services fraud detection.
+Research updates in 2.8.0 include:
+
+- :github_nvflare_link:`FedUMM <research/fedumm>`: a new federated learning
+  implementation for unified multimodal models, using parameter-efficient LoRA
+  adapter federation for multimodal foundation-model workflows.
+- :github_nvflare_link:`financial-services fraud detection <research/fsi-fraud-detection>`:
+  a new privacy-preserving federated fraud detection implementation with
+  synthetic payment transaction generation, heterogeneous site configurations,
+  federated analytics, federated training, interpretability, and differential
+  privacy experimentation.
+- :github_nvflare_link:`FedBPT <research/fed-bpt>`: an updated federated
+  black-box prompt tuning implementation with a Job API entry point for running
+  and exporting FLARE jobs.
 
 Examples and research assets include:
 
