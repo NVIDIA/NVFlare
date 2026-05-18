@@ -303,9 +303,8 @@ Research updates in 2.8.0 include:
   synthetic payment transaction generation, heterogeneous site configurations,
   federated analytics, federated training, interpretability, and differential
   privacy experimentation.
-- :github_nvflare_link:`FedBPT <research/fed-bpt>`: an updated federated
-  black-box prompt tuning implementation with a Job API entry point for running
-  and exporting FLARE jobs.
+- Existing :github_nvflare_link:`FedBPT <research/fed-bpt>` research was
+  updated with a Job API entry point for running and exporting FLARE jobs.
 
 Examples and research assets include:
 
