@@ -15,6 +15,7 @@
 import importlib.util
 import json
 import os
+import sys
 
 import pytest
 
@@ -78,3 +79,27 @@ def test_fedbpt_job_exports_recipe_config(tmp_path):
     assert any(c["path"] == "decomposer_widget.RegisterDecomposer" for c in server["components"])
     assert any(c["path"] == "decomposer_widget.RegisterDecomposer" for c in client["components"])
     assert any("custom/fedbpt_train.py" in c["args"].get("script", "") for c in client["components"])
+
+
+def test_fedbpt_cma_decomposer_serializes_range_state():
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    src_dir = os.path.join(repo_root, "research", "fed-bpt", "src")
+    sys.path.insert(0, src_dir)
+    try:
+        import cma
+        from cma_decomposer import register_decomposers
+
+        from nvflare.fuel.utils import fobs
+    finally:
+        sys.path.remove(src_dir)
+
+    register_decomposers()
+
+    decoded_range = fobs.loads(fobs.dumps(range(1, 5, 2)))
+    assert list(decoded_range) == [1, 3]
+
+    strategy = cma.CMAEvolutionStrategy(4 * [5], 1, {"ftarget": 1e-9, "seed": 5})
+    decoded_strategy = fobs.loads(fobs.dumps(strategy))
+
+    assert decoded_strategy.N == strategy.N
+    assert decoded_strategy.sigma == strategy.sigma
