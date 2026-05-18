@@ -71,6 +71,9 @@ and operational tooling.
 For details, see :ref:`nvflare_cli`, :ref:`job_cli`, :ref:`system_command`,
 :ref:`config_command`, and :ref:`recipe_command`.
 
+For a hands-on CLI workflow, see the
+:github_nvflare_link:`Job CLI tutorial <examples/tutorials/job_cli.ipynb>`.
+
 Deployment and Provisioning
 ===========================
 
@@ -95,6 +98,9 @@ participant-controlled certificate requests are important.
 
 See :ref:`distributed_provisioning`, :ref:`cert_command`, and
 :ref:`package_command`.
+
+For a runnable walkthrough, see the
+:github_nvflare_link:`distributed provisioning example <examples/advanced/distributed_provision>`.
 
 Deploy Prepare
 --------------
@@ -149,6 +155,9 @@ Highlights:
 See :ref:`helm_chart`, :ref:`containerized_deployment`,
 :ref:`brev_deployment`, and :ref:`brev_scripted_deployment`.
 
+For a runnable Docker workflow using ``nvflare deploy prepare``, see the
+:github_nvflare_link:`Docker job launcher example <examples/docker>`.
+
 Multi-Study and Runtime Operations
 ==================================
 
@@ -191,6 +200,9 @@ client machine.
 
 See :ref:`live_log_streaming` and :ref:`site_config`.
 
+For a runnable job example, see
+:github_nvflare_link:`Hello log streaming <examples/hello-world/hello-log-streaming>`.
+
 Recipes, APIs, and ML Features
 ==============================
 
@@ -206,6 +218,10 @@ through 3.14.
 
 See :ref:`job_recipe`, :ref:`available_recipes`, :ref:`flare_api`, and
 :ref:`api_evolution`.
+
+For tutorial examples, see the
+:github_nvflare_link:`Hello FLARE API notebook <examples/tutorials/flare_api.ipynb>`
+and :github_nvflare_link:`Job Recipe notebook <examples/tutorials/job_recipe.ipynb>`.
 
 Large Models and LLM Workflows
 ==============================
@@ -224,6 +240,12 @@ MedGemma, and Codon-FM workflows.
 For large-model operations, see :ref:`notes_on_large_models`,
 :doc:`/programming_guide/tensor_downloader`, and
 :doc:`/programming_guide/memory_management`.
+
+Corresponding examples include
+:github_nvflare_link:`BioNeMo <examples/advanced/bionemo>`,
+:github_nvflare_link:`Qwen3-VL <examples/advanced/qwen3-vl>`,
+:github_nvflare_link:`MedGemma <examples/advanced/medgemma>`, and
+:github_nvflare_link:`Codon-FM <examples/advanced/codon-fm>`.
 
 Security and Hardening
 ======================
@@ -262,9 +284,18 @@ starting points for teams evaluating FLARE in concrete domains, including
 containerized operations, multimodal models, financial services, and
 privacy-oriented research.
 
-Additions include Hello JAX, Hello log streaming, Docker job execution,
-distributed provisioning, feature election, MedGemma, Qwen3-VL, Codon-FM,
-FedUMM, and financial-services fraud detection examples and research assets.
+Examples and research assets include:
+
+- :github_nvflare_link:`Hello JAX <examples/hello-world/hello-jax>`.
+- :github_nvflare_link:`Hello log streaming <examples/hello-world/hello-log-streaming>`.
+- :github_nvflare_link:`Docker job execution <examples/docker>`.
+- :github_nvflare_link:`distributed provisioning <examples/advanced/distributed_provision>`.
+- :github_nvflare_link:`feature election <examples/advanced/feature_election>`.
+- :github_nvflare_link:`MedGemma <examples/advanced/medgemma>`.
+- :github_nvflare_link:`Qwen3-VL <examples/advanced/qwen3-vl>`.
+- :github_nvflare_link:`Codon-FM <examples/advanced/codon-fm>`.
+- :github_nvflare_link:`FedUMM <research/fedumm>`.
+- :github_nvflare_link:`financial-services fraud detection <research/fsi-fraud-detection>`.
 
 Compatibility and Migration Notes
 =================================
