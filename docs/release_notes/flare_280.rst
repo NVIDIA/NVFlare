@@ -116,7 +116,8 @@ can be reused across runtime-specific packaging flows. Teams can prepare a
 startup kit once, then produce Docker or Kubernetes artifacts without changing
 the provisioning model.
 
-See :ref:`deploy_prepare_command`.
+See the :ref:`deploy_prepare_command` user guide for Docker and Kubernetes
+runtime preparation.
 
 Docker and Kubernetes Job Execution
 -----------------------------------
@@ -152,8 +153,10 @@ Highlights:
   Kubernetes support, and Brev scripted deployment guides make these modes
   easier to try and operate across AWS, Azure, and GCP environments.
 
-See :ref:`helm_chart`, :ref:`containerized_deployment`,
-:ref:`brev_deployment`, and :ref:`brev_scripted_deployment`.
+For deployment details, see the :ref:`deploy_prepare_command` user guide and
+the :ref:`helm_chart` Kubernetes deployment guide. Additional references include
+:ref:`containerized_deployment`, :ref:`brev_deployment`, and
+:ref:`brev_scripted_deployment`.
 
 For a runnable Docker workflow using ``nvflare deploy prepare``, see the
 :github_nvflare_link:`Docker job launcher example <examples/docker>`.
