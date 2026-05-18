@@ -43,11 +43,11 @@ Release Highlights
   handling, stricter private-key file permissions, safer loading paths, stronger
   job metadata validation, and additional dashboard/API hardening reduce common
   operational risk in federated deployments.
-- **New examples and research assets**: MedGemma, Qwen3-VL, Codon-FM,
-  FedUMM, financial-services fraud detection, feature election, Docker job
-  examples, distributed provisioning examples, Hello JAX, and Hello log
-  streaming help teams start from working patterns instead of assembling
-  production and research workflows from scratch.
+- **New examples, contributed research, and feature selection**: MedGemma,
+  Qwen3-VL, Codon-FM, FedUMM, financial-services fraud detection, feature
+  election, Docker job examples, distributed provisioning examples, Hello JAX,
+  and Hello log streaming help teams start from working patterns instead of
+  assembling production and research workflows from scratch.
 
 NVFlare CLI and Automation
 ==========================
@@ -280,12 +280,22 @@ coverage.
 New Examples and Research
 =========================
 
-2.8.0 adds or updates a wide range of examples and research bundles.
+2.8.0 adds or updates a wide range of examples, contributed research
+implementations, and application features.
 
 These assets matter because they turn new platform capabilities into runnable
 starting points for teams evaluating FLARE in concrete domains, including
 containerized operations, multimodal models, financial services, and
 privacy-oriented research.
+
+Feature election adds a federated feature selection workflow for tabular
+datasets. Clients perform local feature selection and share selected features
+and scores rather than raw data; FLARE aggregates the results into a global
+feature mask that can be used for downstream federated training.
+
+The ``research`` folder also includes contributed research implementations that
+help users reproduce and extend domain-specific federated learning workflows,
+including unified multimodal learning and financial-services fraud detection.
 
 Examples and research assets include:
 
