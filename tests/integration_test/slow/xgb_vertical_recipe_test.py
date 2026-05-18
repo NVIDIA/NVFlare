@@ -156,6 +156,40 @@ class TestXGBVerticalRecipe:
                 per_site_config=_make_vertical_per_site_config(label_owner="site-2"),
             )
 
+    def test_client_ranks_validation(self):
+        """Test that client_ranks validation catches malformed rank mappings."""
+        per_site_config = _make_vertical_per_site_config(num_clients=3)
+
+        with pytest.raises(ValueError, match="client_ranks values must be integers"):
+            XGBVerticalRecipe(
+                name="test_non_integer_ranks",
+                min_clients=3,
+                num_rounds=1,
+                label_owner="site-1",
+                client_ranks={"site-1": 0, "site-2": "1", "site-3": 2},
+                per_site_config=per_site_config,
+            )
+
+        with pytest.raises(ValueError, match="client_ranks values must be unique and consecutive"):
+            XGBVerticalRecipe(
+                name="test_duplicate_ranks",
+                min_clients=3,
+                num_rounds=1,
+                label_owner="site-1",
+                client_ranks={"site-1": 0, "site-2": 1, "site-3": 1},
+                per_site_config=per_site_config,
+            )
+
+        with pytest.raises(ValueError, match="client_ranks values must be unique and consecutive"):
+            XGBVerticalRecipe(
+                name="test_non_consecutive_ranks",
+                min_clients=3,
+                num_rounds=1,
+                label_owner="site-1",
+                client_ranks={"site-1": 0, "site-2": 1, "site-3": 3},
+                per_site_config=per_site_config,
+            )
+
     def test_custom_xgb_params(self):
         """Test that custom XGBoost parameters are accepted."""
         custom_params = {
