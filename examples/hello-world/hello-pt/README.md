@@ -184,6 +184,20 @@ The cross-site evaluation results can be viewed with:
 cat /tmp/nvflare/simulation/hello-pt/server/simulate_job/cross_site_val/cross_val_results.json
 ```
 
+To export the job folder for submission to a running FL system, use the standard Recipe API export flags:
+
+```
+python job.py --export --export-dir /tmp/nvflare/jobs/job_config
+```
+
+The exported job is written to `/tmp/nvflare/jobs/job_config/hello-pt`. You can combine the export flags with the example-specific arguments, for example:
+
+```
+python job.py --export --export-dir /tmp/nvflare/jobs/job_config \
+    --enable_log_streaming --synthetic_data --train_size 2048 --test_size 256 \
+    --num_rounds 2 --epochs 1 --batch_size 64 --num_workers 0
+```
+
 > **Note:** Depending on the number of clients, you might run into errors if several clients try to download the data at the same time. It is suggested to pre-download the data to avoid such errors.
 
 ## Notebook
