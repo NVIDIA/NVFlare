@@ -14,7 +14,6 @@
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tie.executor import TieExecutor
 from nvflare.app_opt.flower.applet import FlowerClientApplet
-from nvflare.app_opt.flower.connectors.grpc_client_connector import GrpcClientConnector
 from nvflare.fuel.utils.validation_utils import check_object_type
 
 from .defs import Constant
@@ -60,6 +59,8 @@ class FlowerExecutor(TieExecutor):
         self.allow_runtime_dependency_installation = allow_runtime_dependency_installation
 
     def get_connector(self, fl_ctx: FLContext):
+        from nvflare.app_opt.flower.connectors.grpc_client_connector import GrpcClientConnector
+
         return GrpcClientConnector(
             int_server_grpc_options=self.int_server_grpc_options,
             per_msg_timeout=self.per_msg_timeout,

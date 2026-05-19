@@ -320,7 +320,8 @@ default_authz: |
         "view": "any",
         "operate": "o:site",
         "shell_commands": "o:site",
-        "byoc": "none"
+        "byoc": "none",
+        "server-predeployed-flwr": "none"
       },
       "lead": {
         "submit_job": "any",
@@ -330,7 +331,8 @@ default_authz: |
         "view": "any",
         "operate": "o:site",
         "shell_commands": "o:site",
-        "byoc": "any"
+        "byoc": "any",
+        "server-predeployed-flwr": "none"
       },
       "member": {
         "view": "any"
@@ -351,7 +353,8 @@ cc_authz: |
         "view": "any",
         "operate": "none",
         "shell_commands": "none",
-        "byoc": "none"
+        "byoc": "none",
+        "server-predeployed-flwr": "none"
       },
       "lead": {
         "submit_job": "any",
@@ -361,7 +364,8 @@ cc_authz: |
         "view": "any",
         "operate": "none",
         "shell_commands": "none",
-        "byoc": "none"
+        "byoc": "none",
+        "server-predeployed-flwr": "none"
       },
       "member": {
         "view": "any"

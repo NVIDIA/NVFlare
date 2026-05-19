@@ -31,7 +31,7 @@ They require XGBoost and use synthetic data for testing.
 
 To run manually:
     cd tests/integration_test
-    pytest test_xgb_histogram_recipe.py -v
+    pytest slow/xgb_histogram_recipe_test.py -v
 """
 
 import os

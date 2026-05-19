@@ -30,7 +30,7 @@ They require XGBoost and use synthetic data for testing.
 
 To run manually:
     cd tests/integration_test
-    pytest test_xgb_vertical_recipe.py -v
+    pytest slow/xgb_vertical_recipe_test.py -v
 """
 
 import os
@@ -57,8 +57,8 @@ class MockVerticalDataLoader(XGBDataLoader):
     def load_data(self):
         """Generate synthetic vertical data (features split across clients)."""
         # Generate random features for this client
-        X_train = np.random.rand(self.n_samples, self.n_features)
-        X_val = np.random.rand(self.n_samples // 4, self.n_features)
+        x_train = np.random.rand(self.n_samples, self.n_features)
+        x_val = np.random.rand(self.n_samples // 4, self.n_features)
 
         if self.has_labels:
             # Only label owner has labels
@@ -70,8 +70,8 @@ class MockVerticalDataLoader(XGBDataLoader):
             y_val = None
 
         # Create DMatrix objects with data_split_mode=1 (vertical/column mode)
-        dtrain = xgb.DMatrix(X_train, label=y_train, data_split_mode=self.data_split_mode)
-        dval = xgb.DMatrix(X_val, label=y_val, data_split_mode=self.data_split_mode)
+        dtrain = xgb.DMatrix(x_train, label=y_train, data_split_mode=self.data_split_mode)
+        dval = xgb.DMatrix(x_val, label=y_val, data_split_mode=self.data_split_mode)
 
         return dtrain, dval
 
@@ -133,6 +133,7 @@ class TestXGBVerticalRecipe:
             per_site_config=_make_vertical_per_site_config(),
         )
         assert recipe.label_owner == "site-1"
+        assert recipe.client_ranks["site-1"] == 0
 
         # Invalid format should raise error
         with pytest.raises(ValueError, match="label_owner must be in format 'site-X'"):
@@ -142,6 +143,51 @@ class TestXGBVerticalRecipe:
                 num_rounds=1,
                 label_owner="client1",  # Invalid format
                 per_site_config=_make_vertical_per_site_config(),
+            )
+
+        # Label owner must be rank 0 for vertical XGBoost.
+        with pytest.raises(ValueError, match="label_owner must be assigned rank 0"):
+            XGBVerticalRecipe(
+                name="test_invalid_rank",
+                min_clients=2,
+                num_rounds=1,
+                label_owner="site-2",
+                client_ranks={"site-1": 0, "site-2": 1},
+                per_site_config=_make_vertical_per_site_config(label_owner="site-2"),
+            )
+
+    def test_client_ranks_validation(self):
+        """Test that client_ranks validation catches malformed rank mappings."""
+        per_site_config = _make_vertical_per_site_config(num_clients=3)
+
+        with pytest.raises(ValueError, match="client_ranks values must be integers"):
+            XGBVerticalRecipe(
+                name="test_non_integer_ranks",
+                min_clients=3,
+                num_rounds=1,
+                label_owner="site-1",
+                client_ranks={"site-1": 0, "site-2": "1", "site-3": 2},
+                per_site_config=per_site_config,
+            )
+
+        with pytest.raises(ValueError, match="client_ranks values must be unique and consecutive"):
+            XGBVerticalRecipe(
+                name="test_duplicate_ranks",
+                min_clients=3,
+                num_rounds=1,
+                label_owner="site-1",
+                client_ranks={"site-1": 0, "site-2": 1, "site-3": 1},
+                per_site_config=per_site_config,
+            )
+
+        with pytest.raises(ValueError, match="client_ranks values must be unique and consecutive"):
+            XGBVerticalRecipe(
+                name="test_non_consecutive_ranks",
+                min_clients=3,
+                num_rounds=1,
+                label_owner="site-1",
+                client_ranks={"site-1": 0, "site-2": 1, "site-3": 3},
+                per_site_config=per_site_config,
             )
 
     def test_custom_xgb_params(self):
@@ -183,6 +229,7 @@ class TestXGBVerticalRecipe:
                 label_owner="site-2",  # site-2 has labels
                 per_site_config=per_site_config,
             )
+            assert recipe.client_ranks["site-2"] == 0
 
             run = recipe.execute(env)
             assert run.get_result() is not None

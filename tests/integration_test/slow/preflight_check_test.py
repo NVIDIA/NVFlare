@@ -26,8 +26,13 @@ import pytest
 from tests.integration_test.src import ProvisionSiteLauncher
 from tests.integration_test.src.constants import PREFLIGHT_CHECK_SCRIPT
 
+INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
+
 TEST_CASES = [
-    {"project_yaml": "data/projects/dummy.yml", "admin_name": "super@test.org"},
+    {
+        "project_yaml": os.path.join(INTEGRATION_TEST_ROOT, "data", "projects", "dummy.yml"),
+        "admin_name": "super@test.org",
+    },
 ]
 
 
