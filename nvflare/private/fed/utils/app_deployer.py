@@ -71,6 +71,7 @@ class AppDeployer(AppDeployerSpec):
                 submitter_name=submitter_name,
                 submitter_org=submitter_org,
                 submitter_role=submitter_role,
+                job_meta=job_meta,
             )
             if err or not authorized:
                 if os.path.exists(run_dir):
