@@ -17,6 +17,7 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.apis.app_validation import AppValidationKey, AppValidator
+from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.sec.authz import AuthorizationService
 from nvflare.private.fed.utils.app_authz import AppAuthzService
 from nvflare.security.security import EmptyAuthorizer
@@ -57,7 +58,7 @@ class TestAppAuthzService:
                 submitter_name="test_user",
                 submitter_org="test_org",
                 submitter_role="org_admin",
-                job_meta={AppValidationKey.FLOWER_PREDEPLOYED: True},
+                job_meta={FlowerConstant.FLOWER_PREDEPLOYED: True},
             )
 
         assert authorized
@@ -78,7 +79,7 @@ class TestAppAuthzService:
                 submitter_name="test_user",
                 submitter_org="test_org",
                 submitter_role="org_admin",
-                job_meta={AppValidationKey.FLOWER_PREDEPLOYED: True},
+                job_meta={FlowerConstant.FLOWER_PREDEPLOYED: True},
             )
 
         assert not authorized
@@ -141,7 +142,7 @@ class TestAppAuthzService:
                 submitter_name="test_user",
                 submitter_org="test_org",
                 submitter_role="org_admin",
-                job_meta={AppValidationKey.FLOWER_PREDEPLOYED: True},
+                job_meta={FlowerConstant.FLOWER_PREDEPLOYED: True},
             )
 
         assert authorized

@@ -21,8 +21,8 @@ from zipfile import ZipFile
 
 import pytest
 
-from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.fl_constant import JobConstants
+from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.utils.zip_utils import get_all_file_paths, normpath_for_zip, split_path
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 
@@ -208,7 +208,7 @@ class TestJobMetaValidator:
 
         assert valid
         assert error == ""
-        assert meta[AppValidationKey.FLOWER_PREDEPLOYED] is True
+        assert meta[FlowerConstant.FLOWER_PREDEPLOYED] is True
 
     def test_user_supplied_flower_predeployed_flag_is_removed_without_server_config_path(self):
         job_name = "non_flower_job"
@@ -216,7 +216,7 @@ class TestJobMetaValidator:
             folder_name=job_name,
             meta={
                 "deploy_map": {"app": ["server", "site-1"]},
-                AppValidationKey.FLOWER_PREDEPLOYED: True,
+                FlowerConstant.FLOWER_PREDEPLOYED: True,
             },
             server_config={
                 "format_version": 2,
@@ -233,7 +233,7 @@ class TestJobMetaValidator:
 
         assert valid
         assert error == ""
-        assert AppValidationKey.FLOWER_PREDEPLOYED not in meta
+        assert FlowerConstant.FLOWER_PREDEPLOYED not in meta
 
     def _assert_valid(self, job_name: str):
         data = _zip_job_with_meta(job_name, "")

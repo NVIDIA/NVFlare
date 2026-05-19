@@ -15,10 +15,9 @@
 import os.path
 from typing import List, Optional
 
-from nvflare.apis.app_validation import AppValidationKey
-from nvflare.app_common.tie.defs import Constant
 from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.metric_relay import MetricRelay
+from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.job_config.api import FedJob
 
@@ -37,10 +36,10 @@ class FlowerJob(FedJob):
         mandatory_clients: Optional[List[str]] = None,
         database: str = "",
         superlink_ready_timeout: float = 10.0,
-        configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
-        start_task_timeout=Constant.START_TASK_TIMEOUT,
-        max_client_op_interval: float = Constant.MAX_CLIENT_OP_INTERVAL,
-        progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
+        configure_task_timeout=FlowerConstant.CONFIG_TASK_TIMEOUT,
+        start_task_timeout=FlowerConstant.START_TASK_TIMEOUT,
+        max_client_op_interval: float = FlowerConstant.MAX_CLIENT_OP_INTERVAL,
+        progress_timeout: float = FlowerConstant.WORKFLOW_PROGRESS_TIMEOUT,
         per_msg_timeout=10.0,
         tx_timeout=100.0,
         client_shutdown_timeout=5.0,
@@ -86,7 +85,7 @@ class FlowerJob(FedJob):
         # Mark pre-deployed jobs in meta.json.
         extra_meta = {}
         if flower_app_path:
-            extra_meta[AppValidationKey.FLOWER_PREDEPLOYED] = True
+            extra_meta[FlowerConstant.FLOWER_PREDEPLOYED] = True
 
         super().__init__(
             name=name,

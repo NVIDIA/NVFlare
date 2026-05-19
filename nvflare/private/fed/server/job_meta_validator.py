@@ -23,6 +23,7 @@ from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.apis.job_meta_validator_spec import JobMetaValidatorSpec
 from nvflare.apis.utils.format_check import check_job_app_name, check_job_id
+from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.private.fed.utils.fed_utils import extract_participants
@@ -183,9 +184,9 @@ class JobMetaValidator(JobMetaValidatorSpec):
         if has_byoc:
             meta[AppValidationKey.BYOC] = True
         if has_flower_predeployed:
-            meta[AppValidationKey.FLOWER_PREDEPLOYED] = True
+            meta[FlowerConstant.FLOWER_PREDEPLOYED] = True
         else:
-            meta.pop(AppValidationKey.FLOWER_PREDEPLOYED, None)
+            meta.pop(FlowerConstant.FLOWER_PREDEPLOYED, None)
 
     @staticmethod
     def _load_config(zip_file: ZipFile, zip_folder: str, init_config_path: str) -> Optional[dict]:

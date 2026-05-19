@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.apis.app_validation import AppValidationKey
+from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.app_opt.flower.flower_job import FlowerJob
 
 
@@ -111,8 +111,8 @@ class TestFlowerJob:
         assert hasattr(job, "job")
         assert hasattr(job.job, "meta_props") or hasattr(job.job, "meta")
         meta = job.job.meta_props or job.job.meta
-        assert AppValidationKey.FLOWER_PREDEPLOYED in meta
-        assert meta[AppValidationKey.FLOWER_PREDEPLOYED] is True
+        assert FlowerConstant.FLOWER_PREDEPLOYED in meta
+        assert meta[FlowerConstant.FLOWER_PREDEPLOYED] is True
 
     def test_flower_job_meta_no_predeployed_flag(self):
         """flower_content does NOT set FLOWER_PREDEPLOYED flag."""
@@ -148,8 +148,8 @@ class TestFlowerJob:
                         with zipfile.ZipFile(zip_path, "r") as z:
                             with z.open("meta.json") as f:
                                 meta = json.load(f)
-                                assert AppValidationKey.FLOWER_PREDEPLOYED in meta
-                                assert meta[AppValidationKey.FLOWER_PREDEPLOYED] is True
+                                assert FlowerConstant.FLOWER_PREDEPLOYED in meta
+                                assert meta[FlowerConstant.FLOWER_PREDEPLOYED] is True
 
     def test_flower_job_accepts_local_custom_path(self):
         """Valid local/custom/ paths should be accepted."""

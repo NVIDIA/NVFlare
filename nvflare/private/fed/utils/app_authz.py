@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from nvflare.apis.app_validation import AppValidationKey, AppValidator
+from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 
 _RIGHT_BYOC = "byoc"
@@ -57,7 +58,7 @@ class AppAuthzService(object):
 
         # Guard for server-predeployed Flower app mode.
         # If job_meta is provided, check the flag directly.
-        is_flower_predeployed = job_meta.get(AppValidationKey.FLOWER_PREDEPLOYED, False) if job_meta else False
+        is_flower_predeployed = job_meta.get(FlowerConstant.FLOWER_PREDEPLOYED, False) if job_meta else False
 
         if is_flower_predeployed:
             ctx = AuthzContext(

@@ -18,14 +18,6 @@ from nvflare.apis.app_validation import AppValidationKey
 class TestAppValidationKey:
     """Test AppValidationKey constants."""
 
-    def test_flower_predeployed_constant_exists(self):
-        """FLOWER_PREDEPLOYED constant is defined."""
-        assert hasattr(AppValidationKey, "FLOWER_PREDEPLOYED")
-
-    def test_flower_predeployed_constant_value(self):
-        """FLOWER_PREDEPLOYED constant has correct value."""
-        assert AppValidationKey.FLOWER_PREDEPLOYED == "flower_predeployed"
-
     def test_byoc_constant_unchanged(self):
         """BYOC constant still exists and unchanged."""
         assert AppValidationKey.BYOC == "byoc"
