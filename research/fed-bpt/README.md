@@ -22,12 +22,12 @@ pip install -e ../..
 
 ## 2. Run a federated learning experiment
 The example uses `job.py` to create and run the NVFlare job without registering global job templates.
-We utilize the [SST-2 dataset](https://huggingface.co/datasets/stanfordnlp/sst2) and the RoBerTa-large model for training.
+We utilize the [SST-2 dataset](https://huggingface.co/datasets/stanfordnlp/sst2) and the RoBERTa-Large model for training.
 ```commandline
 N_CLIENTS=10
 python job.py --num_clients ${N_CLIENTS}
 ```
-The command uses the default FedBPT settings for SST-2, RoBERTa-large, 200 global rounds, and 200 shots per class. By default, we only evaluate the global model on client `site-1` as in our setting, the global test set is shared by clients.
+The command uses the default FedBPT settings for SST-2, RoBERTa-Large, 200 global rounds, and 200 shots per class. By default, we only evaluate the global model on client `site-1` as in our setting, the global test set is shared by clients.
 
 The following setting requires a GPU with at least 24 GB memory and enough system memory to run the clients in parallel (we recommend at least 40 GB).
 For a system with less resources, you can set `--threads` to be a lower number and simulate the clients running sequentially.
