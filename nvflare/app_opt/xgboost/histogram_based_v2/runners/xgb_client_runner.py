@@ -222,12 +222,14 @@ class XGBClientRunner(AppRunner, FLComponent):
             bst.save_model(os.path.join(self._model_dir, self.model_file_name))
             xgb.collective.communicator_print("Finished training\n")
 
-            if self._data_split_mode == 0:
+            enable_explainability = self._xgb_options.get("enable_explainability", True)
+            if self._data_split_mode == 0 and enable_explainability:
                 # Save explainability outputs based on val_data
                 try:
                     import matplotlib.pyplot as plt
                     import shap
 
+                    xgb.collective.communicator_print("Generating explainability plots\n")
                     explainer = shap.TreeExplainer(bst)
                     explanation = explainer(val_data)
 
@@ -236,10 +238,13 @@ class XGBClientRunner(AppRunner, FLComponent):
                     img = plt.gcf()
                     img.subplots_adjust(left=0.3, right=0.9, bottom=0.3, top=0.9)
                     img.savefig(os.path.join(self._model_dir, "shap_beeswarm.png"), bbox_inches="tight")
+                    xgb.collective.communicator_print("Finished explainability plots\n")
                 except ImportError:
                     xgb.collective.communicator_print(
                         "Warning: shap and/or matplotlib not installed. Skipping explainability plots.\n"
                     )
+            elif self._data_split_mode == 0:
+                xgb.collective.communicator_print("Skipping explainability plots\n")
 
         self._stopped = True
 

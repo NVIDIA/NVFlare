@@ -15,10 +15,10 @@
 """Install requirements from a file, optionally excluding specific packages.
 
 Usage:
-    python install_requirements.py <requirements_file> [--exclude <pkg1,pkg2,...>] [--quiet]
+    python tools/install_requirements.py <requirements_file> [--exclude <pkg1,pkg2,...>] [--quiet]
 
 Example:
-    python install_requirements.py requirements.txt --exclude nvflare --quiet
+    python tools/install_requirements.py requirements.txt --exclude nvflare --quiet
 """
 
 import argparse
