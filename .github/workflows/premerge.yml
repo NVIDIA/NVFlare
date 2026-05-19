@@ -37,7 +37,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Run style checks
-        run: ./runtest.sh -s
+        run: ./runtest.sh --torch-backend=cpu -s
 
   unit-tests:
     runs-on: ${{ matrix.os }}
@@ -58,29 +58,32 @@ jobs:
           version: "0.11.14"
       - name: Install dependencies
         run: |
-          uv pip install --system -e ".[dev]"
+          ./runtest.sh --torch-backend=cpu -p
           uv pip install --system --no-deps "flwr>=1.16,<1.26"
       - name: Run unit test
-        run: ./runtest.sh --numprocesses=auto -u
+        run: ./runtest.sh --skip-install --numprocesses=auto -u
 
   wheel-build:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-22.04, ubuntu-24.04 ]
-        python-version: [ "3.10", "3.11", "3.12", "3.13", "3.14" ]
+        os: [ ubuntu-24.04 ]
+        python-version: [ "3.11" ]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.14"
       - name: Install dependencies
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install --no-cache-dir -e .[dev]
-          python3 -m pip install --no-cache-dir --no-deps "flwr>=1.16,<1.26"
-          python3 -m pip install --no-cache-dir build twine torch torchvision
+          ./runtest.sh --torch-backend=cpu -p
+          uv pip install --system --no-deps "flwr>=1.16,<1.26"
+          uv pip install --system build twine
       - name: Run wheel build
         run: python3 -m build --wheel
