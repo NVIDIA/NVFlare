@@ -30,7 +30,7 @@ from nvflare.app_opt.flower.defs import Constant
 from nvflare.fuel.utils.grpc_utils import create_channel
 from nvflare.security.logging import secure_format_exception
 
-from .utils import validate_flower_app_path, validate_flower_app_path_no_symlinks
+from .path_utils import validate_flower_app_path, validate_flower_app_path_no_symlinks
 
 # Flower CLI executable names
 FLOWER_SUPERLINK = "flower-superlink"
@@ -331,10 +331,10 @@ class FlowerServerApplet(Applet):
 
             # Validate path format
             validate_flower_app_path(self.flower_app_path)
-            
+
             # Check for symlinks on the resolved absolute path
             validate_flower_app_path_no_symlinks(self.flower_app_dir)
-                
+
             # Check filesystem existence
             if not os.path.isdir(self.flower_app_dir):
                 raise RuntimeError(

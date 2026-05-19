@@ -12,16 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-
 import pytest
 
-import pytest
-
-from nvflare.app_opt.flower.utils import (
-    validate_flower_app_path,
-    validate_flower_app_path_no_symlinks,
-)
+from nvflare.app_opt.flower.path_utils import validate_flower_app_path, validate_flower_app_path_no_symlinks
 
 
 class TestValidateFlowerAppPath:

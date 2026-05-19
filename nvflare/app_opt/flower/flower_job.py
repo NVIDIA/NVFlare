@@ -24,7 +24,7 @@ from nvflare.job_config.api import FedJob
 
 from .controller import FlowerController
 from .executor import FlowerExecutor
-from .utils import validate_flower_app_path
+from .path_utils import validate_flower_app_path
 
 
 class FlowerJob(FedJob):
