@@ -18,6 +18,7 @@
                 },
                 "xgb_options": {
                     "early_stopping_rounds": 2,
+                    "enable_explainability": false,
                     "use_gpus": false
                 }
             }
