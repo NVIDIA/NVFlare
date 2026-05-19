@@ -20,7 +20,7 @@ import sys
 import pytest
 
 HAS_FEDBPT_EXPORT_DEPS = importlib.util.find_spec("cma") is not None and importlib.util.find_spec("torch") is not None
-pytestmark = pytest.mark.skipif(not HAS_FEDBPT_EXPORT_DEPS, reason="FedBPT job export dependencies are not installed")
+HAS_CMA = importlib.util.find_spec("cma") is not None
 
 
 def _load_fedbpt_job_module():
@@ -32,6 +32,7 @@ def _load_fedbpt_job_module():
     return module
 
 
+@pytest.mark.skipif(not HAS_FEDBPT_EXPORT_DEPS, reason="FedBPT job export dependencies are not installed")
 def test_fedbpt_job_exports_recipe_config(tmp_path):
     job_module = _load_fedbpt_job_module()
     parser = job_module.define_parser()
@@ -56,6 +57,8 @@ def test_fedbpt_job_exports_recipe_config(tmp_path):
         ]
     )
 
+    src_dir = os.path.join(job_module.FEDBPT_DIR, "src")
+    src_path_count = sys.path.count(src_dir)
     recipe = job_module.create_recipe(args, extra_args)
     recipe.export(str(tmp_path))
 
@@ -79,8 +82,10 @@ def test_fedbpt_job_exports_recipe_config(tmp_path):
     assert any(c["path"] == "decomposer_widget.RegisterDecomposer" for c in server["components"])
     assert any(c["path"] == "decomposer_widget.RegisterDecomposer" for c in client["components"])
     assert any("custom/fedbpt_train.py" in c["args"].get("script", "") for c in client["components"])
+    assert sys.path.count(src_dir) == src_path_count
 
 
+@pytest.mark.skipif(not HAS_CMA, reason="cma is not installed")
 def test_fedbpt_cma_decomposer_serializes_range_state():
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
     src_dir = os.path.join(repo_root, "research", "fed-bpt", "src")

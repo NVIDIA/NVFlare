@@ -16,6 +16,7 @@ import argparse
 import os
 import shlex
 import sys
+from contextlib import contextmanager
 from typing import Iterable
 
 FEDBPT_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -31,6 +32,18 @@ from nvflare.client.config import ExchangeFormat, TransferType  # noqa: E402
 from nvflare.fuel.utils.constants import FrameworkType  # noqa: E402
 from nvflare.job_config.api import FedJob  # noqa: E402
 from nvflare.job_config.script_runner import BaseScriptRunner  # noqa: E402
+
+
+@contextmanager
+def _temporary_sys_path(path: str):
+    added_path = path not in sys.path
+    if added_path:
+        sys.path.insert(0, path)
+    try:
+        yield
+    finally:
+        if added_path:
+            sys.path.remove(path)
 
 
 def define_parser():
@@ -128,19 +141,31 @@ def _make_train_args(args, extra_train_args: list[str]) -> str:
 
 
 def _load_fedbpt_components():
-    if SRC_DIR not in sys.path:
-        sys.path.insert(0, SRC_DIR)
-
-    from decomposer_widget import RegisterDecomposer
-    from global_es import GlobalES
+    with _temporary_sys_path(SRC_DIR):
+        from decomposer_widget import RegisterDecomposer
+        from global_es import GlobalES
 
     return GlobalES, RegisterDecomposer
+
+
+def _create_fedbpt_recipe(job):
+    from nvflare.recipe.spec import Recipe
+
+    class FedBPTRecipe(Recipe):
+        def export(self, *args, **kwargs):
+            with _temporary_sys_path(SRC_DIR):
+                return super().export(*args, **kwargs)
+
+        def run(self, *args, **kwargs):
+            with _temporary_sys_path(SRC_DIR):
+                return super().run(*args, **kwargs)
+
+    return FedBPTRecipe(job)
 
 
 def create_recipe(args, extra_train_args: list[str] | None = None):
     from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
     from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-    from nvflare.recipe.spec import Recipe
 
     GlobalES, RegisterDecomposer = _load_fedbpt_components()
 
@@ -179,7 +204,7 @@ def create_recipe(args, extra_train_args: list[str] | None = None):
     )
     job.to_clients(runner, tasks=["train"])
     job.to_clients(RegisterDecomposer(), id="register_decomposer")
-    return Recipe(job)
+    return _create_fedbpt_recipe(job)
 
 
 def main():
