@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, JobNotRunning, NoConnection
 from nvflare.tool import cli_output
 
 
@@ -116,6 +116,25 @@ class TestJobStats:
         assert envelope["status"] == "error"
         assert envelope["error_code"] == "CONNECTION_FAILED"
         assert envelope["exit_code"] == 2
+
+    def test_stats_job_not_running_exits_1(self, capsys):
+        """JobNotRunning maps to JOB_NOT_RUNNING, exit 1."""
+        from nvflare.tool.job.job_cli import cmd_job_stats
+
+        mock_sess = MagicMock()
+        mock_sess.show_stats.side_effect = JobNotRunning("job is not running")
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_stats(_make_args(job_id="abc123"))
+        assert exc_info.value.code == 1
+
+        captured = capsys.readouterr()
+        envelope = json.loads(captured.out)
+        assert envelope["status"] == "error"
+        assert envelope["error_code"] == "JOB_NOT_RUNNING"
+        assert envelope["exit_code"] == 1
+        assert "abc123" in envelope["message"]
 
     def test_stats_authentication_error_propagates(self):
         from nvflare.tool.job.job_cli import cmd_job_stats

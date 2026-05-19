@@ -45,14 +45,19 @@ def evaluate(net, data_loader, device):
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
-        print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
-    return 100 * correct // total
+        accuracy = 100 * correct // total
+        print(f"Accuracy of the network on {total} test images: {accuracy} %")
+    return accuracy
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--num_workers", type=int, default=2)
+    parser.add_argument("--synthetic_data", action="store_true")
+    parser.add_argument("--train_size", type=int, default=50000)
+    parser.add_argument("--test_size", type=int, default=10000)
     args = parser.parse_args()
     batch_size = args.batch_size
     epochs = args.epochs
@@ -70,11 +75,23 @@ def main():
     )
 
     # Load datasets
-    train_set = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
-    train_loader = torch.utils.data.DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=2)
+    if args.synthetic_data:
+        train_set = torchvision.datasets.FakeData(
+            size=args.train_size, image_size=(3, 32, 32), num_classes=10, transform=transform
+        )
+        test_set = torchvision.datasets.FakeData(
+            size=args.test_size, image_size=(3, 32, 32), num_classes=10, transform=transform
+        )
+    else:
+        train_set = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
+        test_set = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=False, download=True, transform=transform)
 
-    test_set = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=False, download=True, transform=transform)
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=2)
+    train_loader = torch.utils.data.DataLoader(
+        train_set, batch_size=batch_size, shuffle=True, num_workers=args.num_workers
+    )
+    test_loader = torch.utils.data.DataLoader(
+        test_set, batch_size=batch_size, shuffle=False, num_workers=args.num_workers
+    )
 
     # (3) initializes NVFlare client API
     flare.init()

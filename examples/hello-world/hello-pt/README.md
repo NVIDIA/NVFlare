@@ -42,6 +42,12 @@ You can download the CIFAR10 dataset from the Internet via torchvision’s datas
 You can split the datasets for different clients, so that each client has its own dataset.
 Here, for simplicity's sake, we will be using the same dataset on each client.
 
+For quick smoke tests or offline environments, the job can use synthetic CIFAR-shaped data:
+
+```
+python job.py --synthetic_data --train_size 128 --test_size 64 --num_rounds 2 --epochs 1
+```
+
 ## Model
 In PyTorch, neural networks are implemented by defining a class (e.g., SimpleNetwork) that extends `nn.Module`.
 The network’s architecture is set up in the __init__ method, while the forward method determines how input data flows
@@ -130,7 +136,7 @@ recipe = FedAvgRecipe(
     num_rounds=num_rounds,
     model=SimpleNetwork(),
     train_script="client.py",
-    train_args=f"--batch_size {batch_size}",
+    train_args=f"--batch_size {batch_size} --epochs {epochs}",
 )
 
 env = SimEnv(num_clients=n_clients, num_threads=n_clients)

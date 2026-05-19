@@ -29,8 +29,15 @@ def define_parser():
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=2)
     parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--epochs", type=int, default=2)
+    parser.add_argument("--num_workers", type=int, default=2)
+    parser.add_argument("--synthetic_data", action="store_true")
+    parser.add_argument("--train_size", type=int, default=50000)
+    parser.add_argument("--test_size", type=int, default=10000)
     parser.add_argument("--train_script", type=str, default="client.py")
     parser.add_argument("--cross_site_eval", action="store_true")
+    parser.add_argument("--export_config", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--enable_log_streaming", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument(
         "--launch_external_process",
         action="store_true",
@@ -52,6 +59,10 @@ def main():
     n_clients = args.n_clients
     num_rounds = args.num_rounds
     batch_size = args.batch_size
+    epochs = args.epochs
+    train_args = f"--batch_size {batch_size} --epochs {epochs} --num_workers {args.num_workers}"
+    if args.synthetic_data:
+        train_args += f" --synthetic_data --train_size {args.train_size} --test_size {args.test_size}"
 
     recipe = FedAvgRecipe(
         name="hello-pt",
@@ -62,7 +73,7 @@ def main():
         # Alternative: model={"class_path": "model.SimpleNetwork", "args": {}},
         # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
         train_script=args.train_script,
-        train_args=f"--batch_size {batch_size}",
+        train_args=train_args,
         launch_external_process=args.launch_external_process,
         client_memory_gc_rounds=args.client_memory_gc_rounds,
     )
@@ -71,13 +82,21 @@ def main():
     if args.cross_site_eval:
         add_cross_site_evaluation(recipe)
 
-    # Run FL simulation
-    env = SimEnv(num_clients=n_clients)
-    run = recipe.execute(env)
-    print()
-    print("Job Status is:", run.get_status())
-    print("Result can be found in :", run.get_result())
-    print()
+    if args.enable_log_streaming:
+        recipe.enable_log_streaming()
+
+    if args.export_config:
+        job_dir = "/tmp/nvflare/jobs/job_config"
+        recipe.export(job_dir)
+        print(f"Job config exported to {job_dir}")
+    else:
+        # Run FL simulation
+        env = SimEnv(num_clients=n_clients)
+        run = recipe.execute(env)
+        print()
+        print("Job Status is:", run.get_status())
+        print("Result can be found in :", run.get_result())
+        print()
 
 
 if __name__ == "__main__":

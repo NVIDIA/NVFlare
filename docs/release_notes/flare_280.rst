@@ -76,7 +76,7 @@ For details, see :ref:`nvflare_cli`, :ref:`job_cli`, :ref:`system_command`,
 :ref:`config_command`, and :ref:`recipe_command`.
 
 For a hands-on CLI workflow, see the
-:github_nvflare_link:`Job CLI tutorial <examples/tutorials/job_cli.ipynb>`.
+:github_nvflare_link:`NVFlare CLI tutorial <examples/tutorials/nvflare_cli.ipynb>`.
 
 Deployment and Provisioning
 ===========================

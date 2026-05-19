@@ -1838,7 +1838,7 @@ def _is_terminal_job_status(status: str) -> bool:
 
 
 def cmd_job_stats(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, NoConnection
+    from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, JobNotRunning, NoConnection
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -1875,6 +1875,9 @@ def cmd_job_stats(cmd_args):
             detail=f"searched study '{study}'",
             hint=_job_not_found_hint(study),
         )
+        return
+    except JobNotRunning:
+        output_error("JOB_NOT_RUNNING", job_id=cmd_args.job_id)
         return
     except AuthenticationError:
         raise
