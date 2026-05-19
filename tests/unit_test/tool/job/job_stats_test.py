@@ -135,6 +135,7 @@ class TestJobStats:
         assert envelope["error_code"] == "JOB_NOT_RUNNING"
         assert envelope["exit_code"] == 1
         assert "abc123" in envelope["message"]
+        assert "stats are available only while the job is running" in envelope["message"]
 
     def test_stats_authentication_error_propagates(self):
         from nvflare.tool.job.job_cli import cmd_job_stats

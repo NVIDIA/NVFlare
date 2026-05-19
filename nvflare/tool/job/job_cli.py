@@ -1516,7 +1516,11 @@ def cmd_job_abort(cmd_args):
         )
         return
     except JobNotRunning:
-        output_error("JOB_NOT_RUNNING", job_id=cmd_args.job_id)
+        output_error(
+            "JOB_NOT_RUNNING",
+            job_id=cmd_args.job_id,
+            detail="abort is available only while the job is running",
+        )
         return
     except AuthenticationError:
         raise
@@ -1877,7 +1881,11 @@ def cmd_job_stats(cmd_args):
         )
         return
     except JobNotRunning:
-        output_error("JOB_NOT_RUNNING", job_id=cmd_args.job_id)
+        output_error(
+            "JOB_NOT_RUNNING",
+            job_id=cmd_args.job_id,
+            detail="stats are available only while the job is running",
+        )
         return
     except AuthenticationError:
         raise

@@ -45,6 +45,8 @@ def evaluate(net, data_loader, device):
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
+        if total == 0:
+            raise ValueError("Evaluation data_loader produced no samples; check data preparation and --test_size.")
         accuracy = 100 * correct // total
         print(f"Accuracy of the network on {total} test images: {accuracy} %")
     return accuracy
