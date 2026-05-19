@@ -39,6 +39,7 @@ class TFInProcessClientAPIExecutor(InProcessClientAPIExecutor):
         server_expected_format=ExchangeFormat.NUMPY,
         memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        task_exchange_config: Optional[dict] = None,
     ):
         super(TFInProcessClientAPIExecutor, self).__init__(
             task_script_path=task_script_path,
@@ -57,6 +58,7 @@ class TFInProcessClientAPIExecutor(InProcessClientAPIExecutor):
             server_expected_format=server_expected_format,
             memory_gc_rounds=memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            task_exchange_config=task_exchange_config,
         )
 
         from_nvflare_converter, to_nvflare_converter = create_default_params_converters(

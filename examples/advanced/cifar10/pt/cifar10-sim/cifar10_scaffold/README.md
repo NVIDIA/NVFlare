@@ -106,7 +106,32 @@ python job.py --n_clients 16 --num_rounds 100 --alpha 0.1 --aggregation_epochs 2
 
 ### Client Implementation
 
-The implementation in `client.py` uses NVFlare's `PTScaffoldHelper`:
+`ScaffoldRecipe` supports two client-side modes.
+
+For a standard PyTorch Client API script, use Auto-SCAFFOLD mode in `job.py`. NVFlare detects the model loaded from
+`input_model.params`, applies SCAFFOLD correction after each `optimizer.step()`, and adds the control-variate update
+before `flare.send(...)`.
+
+```python
+recipe = ScaffoldRecipe(
+    name=job_name,
+    min_clients=n_clients,
+    num_rounds=num_rounds,
+    model=ModerateCNN(),
+    train_script="client.py",
+    auto_scaffold=True,
+)
+```
+
+Auto-SCAFFOLD works best when `client.py` follows the normal FedAvg-style shape:
+
+- `input_model = flare.receive()`
+- `model.load_state_dict(input_model.params)`
+- `optimizer.step()` inside the local training loop
+- `flare.send(output_model)` where `output_model` contains params
+
+For custom training loops, leave `auto_scaffold` unset and use NVFlare's lower-level `PTScaffoldHelper`. The manual
+implementation in `client.py` uses this mode:
 
 ```python
 # Initialize SCAFFOLD helper (first round)
@@ -170,7 +195,7 @@ SCAFFOLD's control variates correct for the drift caused by heterogeneous client
 
 ## Trade-offs
 
-⚠️ **More complex**: Requires client-side changes and state tracking  
+⚠️ **More complex**: Requires Auto-SCAFFOLD hooks or manual helper calls
 ⚠️ **More memory**: Stores control variates (same size as model)  
 ⚠️ **More communication**: Sends control variate updates  
 

@@ -60,6 +60,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         submit_result_timeout: float = 300.0,
         max_resends: int = 3,
         download_complete_timeout: float = 1800.0,
+        task_exchange_config: Optional[dict] = None,
     ) -> None:
         """Initializes the ClientAPILauncherExecutor.
 
@@ -104,6 +105,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 this gate, the subprocess may exit before the download completes and the server gets
                 "no ref found".  Defaults to 1800 s.  Configurable via
                 recipe.add_client_config({"download_complete_timeout": N}).
+            task_exchange_config (Optional[dict]): Additional Client API task exchange configuration.
         """
         LauncherExecutor.__init__(
             self,
@@ -136,6 +138,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._submit_result_timeout = submit_result_timeout
         self._max_resends = max_resends
         self._download_complete_timeout = download_complete_timeout
+        self._task_exchange_config = dict(task_exchange_config) if task_exchange_config else {}
         self._cj_round_count = 0
 
         # Allow the subprocess to exit naturally after Fix 16's download_done.wait()
@@ -352,6 +355,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT: self._download_complete_timeout,
             ConfigKey.LAUNCH_ONCE: self._resolve_launch_once(fl_ctx),
         }
+        task_exchange_attributes.update(self._task_exchange_config)
 
         config_data = {
             ConfigKey.TASK_EXCHANGE: task_exchange_attributes,

@@ -64,6 +64,7 @@ class BaseScriptRunner:
         shutdown_timeout: float = 0.0,
         memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        task_exchange_config: Optional[dict] = None,
     ):
         """BaseScriptRunner is used with FedJob API to run or launch a script.
 
@@ -116,6 +117,7 @@ class BaseScriptRunner:
 
             shutdown_timeout (float): If provided, will wait for this number of seconds before shutdown.
                 Only used if `launch_external_process` is True. Defaults to 0.0.
+            task_exchange_config (Optional[dict]): Additional Client API task exchange configuration.
         """
         self._script = script
         self._script_args = script_args
@@ -127,6 +129,7 @@ class BaseScriptRunner:
         self._pipe_connect_type = pipe_connect_type
         self._launch_once = launch_once
         self._shutdown_timeout = shutdown_timeout
+        self._task_exchange_config = dict(task_exchange_config) if task_exchange_config else {}
 
         self._params_exchange_format = None
 
@@ -236,6 +239,7 @@ class BaseScriptRunner:
                     server_expected_format=self._server_expected_format,
                     memory_gc_rounds=self._memory_gc_rounds,
                     cuda_empty_cache=self._cuda_empty_cache,
+                    task_exchange_config=self._task_exchange_config,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
@@ -272,6 +276,7 @@ class BaseScriptRunner:
                     server_expected_format=self._server_expected_format,
                     memory_gc_rounds=self._memory_gc_rounds,
                     cuda_empty_cache=self._cuda_empty_cache,
+                    task_exchange_config=self._task_exchange_config,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
@@ -320,6 +325,7 @@ class ScriptRunner(BaseScriptRunner):
         shutdown_timeout: float = 0.0,
         memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        task_exchange_config: Optional[dict] = None,
     ):
         """ScriptRunner is used with FedJob API to run or launch a script.
 
@@ -343,6 +349,7 @@ class ScriptRunner(BaseScriptRunner):
                 or on each task. Only used if `launch_external_process` is True. Defaults to True.
             shutdown_timeout (float): If provided, will wait for this number of seconds before shutdown.
                 Only used if `launch_external_process` is True. Defaults to 0.0.
+            task_exchange_config (Optional[dict]): Additional Client API task exchange configuration.
         """
         super().__init__(
             script=script,
@@ -358,4 +365,5 @@ class ScriptRunner(BaseScriptRunner):
             shutdown_timeout=shutdown_timeout,
             memory_gc_rounds=memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            task_exchange_config=task_exchange_config,
         )

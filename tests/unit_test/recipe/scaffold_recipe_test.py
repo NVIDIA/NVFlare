@@ -136,6 +136,55 @@ class TestPTScaffoldRecipe:
                 **base_recipe_params,
             )
 
+    def test_manual_script_runner_mode_is_unchanged(self, mock_file_system, base_recipe_params, simple_model):
+        """Test that ScaffoldRecipe keeps the existing ScriptRunner-based client executor."""
+        from nvflare.apis.job_def import ALL_SITES
+        from nvflare.app_opt.pt.in_process_client_api_executor import PTInProcessClientAPIExecutor
+        from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
+
+        recipe = ScaffoldRecipe(
+            name="test_scaffold_manual_mode",
+            model=simple_model,
+            **base_recipe_params,
+        )
+
+        client_app = recipe.job._deploy_map[ALL_SITES]
+        executors = client_app.get_app_config().executors
+        assert len(executors) == 1
+        assert isinstance(executors[0].executor, PTInProcessClientAPIExecutor)
+        assert executors[0].executor._task_exchange_config == {}
+
+    def test_auto_scaffold_adds_task_exchange_flag(self, mock_file_system, base_recipe_params, simple_model):
+        """Test that auto_scaffold writes the Client API runtime flag."""
+        from nvflare.apis.job_def import ALL_SITES
+        from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
+        from nvflare.app_opt.pt.scaffold_auto_patch import PT_SCAFFOLD_AUTO_PATCH
+
+        recipe = ScaffoldRecipe(
+            name="test_scaffold_auto_mode",
+            model=simple_model,
+            auto_scaffold=True,
+            **base_recipe_params,
+        )
+
+        client_app = recipe.job._deploy_map[ALL_SITES]
+        executors = client_app.get_app_config().executors
+        assert executors[0].executor._task_exchange_config == {PT_SCAFFOLD_AUTO_PATCH: True}
+
+    def test_auto_scaffold_rejects_external_launch_per_round(self, mock_file_system, base_recipe_params, simple_model):
+        """Test that auto_scaffold does not allow external per-round processes."""
+        from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
+
+        with pytest.raises(ValueError, match="launch_once=True"):
+            ScaffoldRecipe(
+                name="test_scaffold_auto_external_per_round",
+                model=simple_model,
+                launch_external_process=True,
+                launch_once=False,
+                auto_scaffold=True,
+                **base_recipe_params,
+            )
+
 
 class TestTFScaffoldRecipe:
     """Test cases for TensorFlow ScaffoldRecipe."""

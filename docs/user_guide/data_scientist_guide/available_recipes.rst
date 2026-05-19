@@ -321,6 +321,9 @@ SCAFFOLD algorithm for handling data heterogeneity with control variates.
 PyTorch SCAFFOLD
 ----------------
 
+For standard PyTorch Client API scripts, start with Auto-SCAFFOLD mode. It lets an existing FedAvg-style
+``client.py`` work with SCAFFOLD without adding control-variate code to the training loop.
+
 .. code-block:: python
 
     from nvflare.app_opt.pt.recipes import ScaffoldRecipe
@@ -332,9 +335,21 @@ PyTorch SCAFFOLD
         num_rounds=5,
         model=MyModel(),
         train_script="client.py",
+        auto_scaffold=True,
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
+
+Auto-SCAFFOLD expects the training script to use the common PyTorch Client API pattern:
+
+- call ``flare.receive()`` to get the input ``FLModel``
+- call ``model.load_state_dict(input_model.params)``
+- use a ``torch.optim.Optimizer`` and call ``optimizer.step()`` during training
+- call ``flare.send(...)`` with an output ``FLModel`` containing model params
+- use one learning rate across optimizer parameter groups
+
+For custom loops, multiple models, unusual optimizers, or framework wrappers, keep ``auto_scaffold=False`` and call
+:class:`PTScaffoldHelper <nvflare.app_opt.pt.scaffold.PTScaffoldHelper>` directly.
 
 **Examples:**
 

@@ -63,6 +63,7 @@ class InProcessClientAPIExecutor(Executor):
         server_expected_format: str = ExchangeFormat.NUMPY,
         memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        task_exchange_config: Optional[dict] = None,
     ):
         super(InProcessClientAPIExecutor, self).__init__()
         self._memory_gc_rounds = memory_gc_rounds
@@ -74,6 +75,7 @@ class InProcessClientAPIExecutor(Executor):
         self._params_exchange_format = params_exchange_format
         self._server_expected_format = server_expected_format
         self._params_transfer_type = params_transfer_type
+        self._task_exchange_config = dict(task_exchange_config) if task_exchange_config else {}
 
         if not task_script_path or not task_script_path.endswith(".py"):
             raise ValueError(f"invalid task_script_path '{task_script_path}'")
@@ -203,6 +205,7 @@ class InProcessClientAPIExecutor(Executor):
                 ConfigKey.SUBMIT_MODEL_TASK_NAME: self._submit_model_task_name,
             },
         }
+        meta[ConfigKey.TASK_EXCHANGE].update(self._task_exchange_config)
         return meta
 
     def send_data_to_peer(self, shareable, fl_ctx: FLContext):

@@ -65,6 +65,7 @@ class InProcessClientAPI(APISpec):
         self.stop = False
         self.rank = None
         self.receive_called = False  # to check if users have call received for a new model
+        self._scaffold_auto_patch_manager = None
 
     def init(self, rank: Optional[str] = None, config: Optional[Dict] = None):
         """Initializes NVFlare Client API environment.
@@ -85,6 +86,12 @@ class InProcessClientAPI(APISpec):
         for k, v in self.client_config.config.items():
             if k in SYS_ATTRS:
                 self.sys_info[k] = v
+
+        task_exchange_config = self.client_config.get_config().get(ConfigKey.TASK_EXCHANGE, {})
+        if task_exchange_config.get("pt_scaffold_auto_patch"):
+            from nvflare.app_opt.pt.scaffold_auto_patch import maybe_enable_pt_scaffold_auto_patch
+
+            self._scaffold_auto_patch_manager = maybe_enable_pt_scaffold_auto_patch(self.client_config)
 
     def prepare_client_config(self, config):
         if isinstance(config, dict):
@@ -120,6 +127,12 @@ class InProcessClientAPI(APISpec):
             self._mem_round = result.current_round
             self._mem_site = self.get_site_name()
             log_rss(f"CA s={self._mem_site} r={result.current_round} recv")
+        if self._scaffold_auto_patch_manager is not None:
+            self._scaffold_auto_patch_manager.on_receive(
+                result,
+                task_name=self.meta.get(ConfigKey.TASK_NAME),
+                train_task_name=self.client_config.get_train_task(),
+            )
         return result
 
     def __receive(self) -> Optional[FLModel]:
@@ -144,6 +157,9 @@ class InProcessClientAPI(APISpec):
 
         if not self.receive_called:
             raise RuntimeError('"receive" needs to be called before sending model!')
+
+        if self._scaffold_auto_patch_manager is not None:
+            model = self._scaffold_auto_patch_manager.on_send(model)
 
         if self.client_config.get_transfer_type() == TransferType.DIFF:
             model = self._prepare_param_diff(model)
@@ -269,6 +285,9 @@ class InProcessClientAPI(APISpec):
         return True
 
     def shutdown(self):
+        if self._scaffold_auto_patch_manager is not None:
+            self._scaffold_auto_patch_manager.disable()
+            self._scaffold_auto_patch_manager = None
         self.stop = True
         self.event_manager.fire_event(TOPIC_STOP)
         self.stop_reason = "API shutdown called."

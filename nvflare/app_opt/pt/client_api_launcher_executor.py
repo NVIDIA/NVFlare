@@ -53,6 +53,7 @@ class PTClientAPILauncherExecutor(ClientAPILauncherExecutor):
         submit_result_timeout: float = 300.0,
         max_resends: int = 3,
         download_complete_timeout: float = 1800.0,
+        task_exchange_config: Optional[dict] = None,
     ) -> None:
         ClientAPILauncherExecutor.__init__(
             self,
@@ -83,6 +84,7 @@ class PTClientAPILauncherExecutor(ClientAPILauncherExecutor):
             submit_result_timeout=submit_result_timeout,
             max_resends=max_resends,
             download_complete_timeout=download_complete_timeout,
+            task_exchange_config=task_exchange_config,
         )
 
     def _decomposer_prefix(self) -> str:

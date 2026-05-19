@@ -47,6 +47,7 @@ class TFClientAPILauncherExecutor(ClientAPILauncherExecutor):
         config_file_name: str = CLIENT_API_CONFIG,
         memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        task_exchange_config: Optional[dict] = None,
     ) -> None:
         ClientAPILauncherExecutor.__init__(
             self,
@@ -74,4 +75,5 @@ class TFClientAPILauncherExecutor(ClientAPILauncherExecutor):
             config_file_name=config_file_name,
             memory_gc_rounds=memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            task_exchange_config=task_exchange_config,
         )

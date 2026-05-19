@@ -70,6 +70,10 @@ class TaskScriptRunner:
             self.event_manager.fire_event(TOPIC_ABORT, f"'{self.script_full_path}' is aborted, {msg}")
             raise e
         finally:
+            if "nvflare.app_opt.pt.scaffold_auto_patch" in sys.modules:
+                from nvflare.app_opt.pt.scaffold_auto_patch import disable_pt_scaffold_auto_patch
+
+                disable_pt_scaffold_auto_patch()
             builtins.print = print_fn
 
     def get_sys_argv(self):

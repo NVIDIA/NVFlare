@@ -115,6 +115,7 @@ class ExProcessClientAPI(APISpec):
         self.receive_called = False
         self.config_file = config_file
         self.flare_agent = None
+        self._scaffold_auto_patch_manager = None
         # Memory settings will be read from config in init()
 
     def _configure_subprocess_logging(self, client_config: ClientConfig) -> None:
@@ -229,6 +230,11 @@ class ExProcessClientAPI(APISpec):
 
             self.model_registry = ModelRegistry(client_config, rank, flare_agent)
             self.flare_agent = flare_agent
+            task_exchange_config = client_config.get_config().get(ConfigKey.TASK_EXCHANGE, {})
+            if task_exchange_config.get("pt_scaffold_auto_patch"):
+                from nvflare.app_opt.pt.scaffold_auto_patch import maybe_enable_pt_scaffold_auto_patch
+
+                self._scaffold_auto_patch_manager = maybe_enable_pt_scaffold_auto_patch(client_config)
 
             # Read memory management settings from config (with env var override)
             task_exchange = client_config.config.get(ConfigKey.TASK_EXCHANGE, {})
@@ -254,6 +260,13 @@ class ExProcessClientAPI(APISpec):
             self._mem_round = result.current_round
             self._mem_site = self.get_site_name()
             log_rss(f"CA s={self._mem_site} r={result.current_round} recv")
+        if self._scaffold_auto_patch_manager is not None:
+            model_registry = self.get_model_registry()
+            self._scaffold_auto_patch_manager.on_receive(
+                result,
+                task_name=model_registry.task_name,
+                train_task_name=model_registry.config.get_train_task(),
+            )
         return result
 
     def __receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
@@ -264,6 +277,8 @@ class ExProcessClientAPI(APISpec):
         model_registry = self.get_model_registry()
         if not self.receive_called:
             raise RuntimeError('"receive" needs to be called before sending model!')
+        if self._scaffold_auto_patch_manager is not None:
+            model = self._scaffold_auto_patch_manager.on_send(model)
         model_registry.submit_model(model=model)
         if clear_cache:
             # Serialization is complete. Release the sent model's params and the
@@ -337,5 +352,8 @@ class ExProcessClientAPI(APISpec):
         self.receive_called = False
 
     def shutdown(self):
+        if self._scaffold_auto_patch_manager is not None:
+            self._scaffold_auto_patch_manager.disable()
+            self._scaffold_auto_patch_manager = None
         if self.flare_agent:
             self.flare_agent.stop()

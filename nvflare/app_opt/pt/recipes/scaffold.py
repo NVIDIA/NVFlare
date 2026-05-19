@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from nvflare.app_common.workflows.scaffold import Scaffold
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.app_opt.pt.job_config.model import PTModel
+from nvflare.app_opt.pt.scaffold_auto_patch import PT_SCAFFOLD_AUTO_PATCH
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.script_runner import ScriptRunner
@@ -37,12 +38,14 @@ class _ScaffoldValidator(BaseModel):
     train_script: str
     train_args: str
     launch_external_process: bool = False
+    launch_once: bool = True
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
     server_memory_gc_rounds: int = 0
     client_memory_gc_rounds: int = 0
     cuda_empty_cache: bool = False
+    auto_scaffold: bool = False
 
 
 class ScaffoldRecipe(Recipe):
@@ -52,12 +55,9 @@ class ScaffoldRecipe(Recipe):
     Karimireddy et al. "SCAFFOLD: Stochastic Controlled Averaging for Federated Learning"
     (https://arxiv.org/abs/1910.06378).
 
-    **Client script requirement**: Unlike FedAvgRecipe, the client script *must* use
-    `PTScaffoldHelper` (nvflare.app_opt.pt.scaffold): call init(model), model_update()
-    during training, terms_update() after training, and include
-    ``meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF] = scaffold_helper.get_delta_controls()``
-    in the FLModel sent back to the server. A standard flare.receive/send loop without
-    PTScaffoldHelper will cause server-side aggregation to fail.
+    By default, client scripts manually use `PTScaffoldHelper` for custom loops. For standard PyTorch Client API
+    scripts that call `flare.receive()`, `model.load_state_dict(input_model.params)`, `optimizer.step()`, and
+    `flare.send(...)`, set `auto_scaffold=True` to let NVFlare install Auto-SCAFFOLD runtime hooks.
 
     This recipe sets up a complete federated learning workflow with Scaffold controller.
 
@@ -74,6 +74,9 @@ class ScaffoldRecipe(Recipe):
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client. Defaults to "client.py".
         train_args: Command line arguments to pass to the training script. Defaults to "".
+        launch_once: Whether an external training process should run for the whole job instead of one task.
+            Auto-SCAFFOLD requires this to be True for external processes so local controls persist across rounds.
+        auto_scaffold: Whether to install Auto-SCAFFOLD runtime hooks for standard PyTorch Client API scripts.
         server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
             Set to 0 to disable. Defaults to 0.
     Example:
@@ -100,12 +103,14 @@ class ScaffoldRecipe(Recipe):
         train_script: str,
         train_args: str = "",
         launch_external_process: bool = False,
+        launch_once: bool = True,
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         server_memory_gc_rounds: int = 0,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        auto_scaffold: bool = False,
     ):
         # Validate inputs internally
         v = _ScaffoldValidator(
@@ -117,12 +122,14 @@ class ScaffoldRecipe(Recipe):
             train_script=train_script,
             train_args=train_args,
             launch_external_process=launch_external_process,
+            launch_once=launch_once,
             command=command,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             server_memory_gc_rounds=server_memory_gc_rounds,
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            auto_scaffold=auto_scaffold,
         )
 
         self.name = v.name
@@ -141,12 +148,17 @@ class ScaffoldRecipe(Recipe):
         self.train_script = v.train_script
         self.train_args = v.train_args
         self.launch_external_process = v.launch_external_process
+        self.launch_once = v.launch_once
         self.command = v.command
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
         self.client_memory_gc_rounds = v.client_memory_gc_rounds
         self.cuda_empty_cache = v.cuda_empty_cache
+        self.auto_scaffold = v.auto_scaffold
+
+        if self.auto_scaffold and self.launch_external_process and not self.launch_once:
+            raise ValueError("auto_scaffold=True requires launch_once=True when launch_external_process=True.")
 
         # Create BaseFedJob
         job = BaseFedJob(
@@ -167,7 +179,8 @@ class ScaffoldRecipe(Recipe):
 
         # Define the controller and send to server
         controller = Scaffold(
-            num_clients=self.min_clients,  # Scaffold controller requires the number of clients to be the same as the min_clients
+            # Scaffold controller requires the number of clients to match min_clients.
+            num_clients=self.min_clients,
             num_rounds=self.num_rounds,
             persistor_id=persistor_id,
             memory_gc_rounds=self.server_memory_gc_rounds,
@@ -186,6 +199,8 @@ class ScaffoldRecipe(Recipe):
             params_transfer_type=self.params_transfer_type,
             memory_gc_rounds=self.client_memory_gc_rounds,
             cuda_empty_cache=self.cuda_empty_cache,
+            launch_once=self.launch_once,
+            task_exchange_config={PT_SCAFFOLD_AUTO_PATCH: True} if self.auto_scaffold else None,
         )
         job.to_clients(executor)
 
