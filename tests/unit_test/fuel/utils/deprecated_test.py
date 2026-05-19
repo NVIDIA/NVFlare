@@ -14,10 +14,14 @@
 
 import pytest
 
-from nvflare.fuel.utils.deprecated import deprecated
+from nvflare.fuel.utils.deprecated import deprecated, warn_deprecated
 
 
 class TestDeprecated:
+    def test_warn_deprecated(self):
+        with pytest.warns(DeprecationWarning, match=r"custom deprecation message"):
+            warn_deprecated("custom deprecation message")
+
     def test_deprecated_func_one_arg(self):
         @deprecated
         def test_f(a, b):

@@ -16,12 +16,16 @@ from typing import Union
 
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.utils.fl_component_wrapper import FLComponentWrapper
+from nvflare.fuel.utils.deprecated import warn_deprecated
+
+_MODEL_LEARNER_DEPRECATION_MSG = "ModelLearner is deprecated. Use the Recipe API with the Client API for new projects."
 
 
 class ModelLearner(FLComponentWrapper):
     STATE = None
 
     def __init__(self):
+        warn_deprecated(_MODEL_LEARNER_DEPRECATION_MSG)
         super().__init__()
 
     def train(self, model: FLModel) -> Union[str, FLModel]:

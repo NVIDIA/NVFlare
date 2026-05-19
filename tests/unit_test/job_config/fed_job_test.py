@@ -26,11 +26,16 @@ from nvflare.job_config.api import FedApp, FedJob
 from nvflare.job_config.fed_app_config import ClientAppConfig
 
 
+def _create_model_learner():
+    with pytest.warns(DeprecationWarning, match="ModelLearner is deprecated"):
+        return ModelLearner()
+
+
 class TestFedJob:
     def test_validate_targets(self):
         job = FedJob()
         controller = FedAvg()
-        executor = ModelLearnerExecutor(learner_id=job.as_id(ModelLearner()))
+        executor = ModelLearnerExecutor(learner_id=job.as_id(_create_model_learner()))
 
         job.to(controller, "server")
         job.to(executor, "site-1")
@@ -53,7 +58,7 @@ class TestFedJob:
         job.to_server(controller)
 
         # Add an executor to clients
-        executor = ModelLearnerExecutor(learner_id=job.as_id(ModelLearner()))
+        executor = ModelLearnerExecutor(learner_id=job.as_id(_create_model_learner()))
         job.to_clients(executor)
 
         # Add additional arguments to server

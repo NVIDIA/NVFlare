@@ -17,6 +17,12 @@ import inspect
 import warnings
 
 
+def warn_deprecated(message: str, stacklevel=3):
+    with warnings.catch_warnings():
+        warnings.simplefilter("always", DeprecationWarning)
+        warnings.warn(message, category=DeprecationWarning, stacklevel=stacklevel)
+
+
 def deprecated(reason):
     """
     This is a decorator which can be used to mark functions
@@ -29,17 +35,14 @@ def deprecated(reason):
 
         @functools.wraps(func)
         def new_func(*args, **kwargs):
-            warnings.simplefilter("always", DeprecationWarning)
-            warnings.warn(
+            warn_deprecated(
                 fmt.format(
                     kind="class" if inspect.isclass(func) else "function",
                     name=func.__name__,
                     reason=f" ({reason})" if reason else "",
                 ),
-                category=DeprecationWarning,
-                stacklevel=2,
+                stacklevel=3,
             )
-            warnings.simplefilter("default", DeprecationWarning)
             return func(*args, **kwargs)
 
         return new_func
