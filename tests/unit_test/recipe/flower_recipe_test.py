@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import tempfile
 from importlib.metadata import PackageNotFoundError
 from unittest.mock import patch
 
@@ -96,3 +98,85 @@ def test_flower_recipe_rejects_extra_env_with_wrong_client_api_type(flwr_version
                 FlowerRecipe(flower_content="mock_flower_content", extra_env=user_env)
 
     mock_flower_job.assert_not_called()
+
+
+@pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])
+def test_flower_recipe_with_predeployed_path(flwr_version):
+    fake_job = object()
+    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value=flwr_version):
+        with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job) as mock_flower_job:
+            recipe = FlowerRecipe(flower_app_path="/opt/flower_apps/my_app")
+
+    assert recipe.job is fake_job
+    kwargs = mock_flower_job.call_args.kwargs
+    assert kwargs["flower_app_path"] == "/opt/flower_apps/my_app"
+    assert kwargs["flower_content"] is None
+
+
+def test_flower_recipe_rejects_both_content_and_path():
+    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.26.0"):
+        with patch(
+            "nvflare.app_opt.flower.recipe._create_flower_job",
+            side_effect=ValueError("Specify either 'flower_content'"),
+        ):
+            with pytest.raises(ValueError, match="Specify either 'flower_content'"):
+                FlowerRecipe(flower_content="mock_flower_content", flower_app_path="/opt/flower_apps/my_app")
+
+
+def test_flower_recipe_rejects_neither_content_nor_path():
+    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.26.0"):
+        with patch(
+            "nvflare.app_opt.flower.recipe._create_flower_job",
+            side_effect=ValueError("One of 'flower_content' or 'flower_app_path' must be provided"),
+        ):
+            with pytest.raises(ValueError, match="One of 'flower_content' or 'flower_app_path' must be provided"):
+                FlowerRecipe()
+
+
+def test_flower_job_no_byoc_when_predeployed():
+    """Verify that a FlowerJob with flower_app_path exports without any custom/ content (no BYOC)."""
+    from nvflare.app_opt.flower.flower_job import FlowerJob
+
+    with tempfile.TemporaryDirectory() as job_root:
+        job = FlowerJob(
+            name="test_no_byoc_job",
+            flower_app_path="local/custom/flwr_pt_tb",
+            min_clients=1,
+        )
+        job.export_job(job_root)
+
+        job_dir = os.path.join(job_root, "test_no_byoc_job")
+        assert os.path.isdir(job_dir), "Job directory was not created"
+
+        for app_name in os.listdir(job_dir):
+            custom_dir = os.path.join(job_dir, app_name, "custom")
+            if os.path.isdir(custom_dir):
+                custom_contents = os.listdir(custom_dir)
+                assert len(custom_contents) == 0, f"Expected empty custom/ in {app_name}, but found: {custom_contents}"
+
+
+def test_flower_job_has_byoc_when_content_provided():
+    """Verify that a FlowerJob with flower_content exports with custom/ content (BYOC mode)."""
+    from nvflare.app_opt.flower.flower_job import FlowerJob
+
+    with tempfile.TemporaryDirectory() as app_dir:
+        test_file = os.path.join(app_dir, "pyproject.toml")
+        with open(test_file, "w") as f:
+            f.write("[tool.poetry]\nname = 'test'\n")
+
+        with tempfile.TemporaryDirectory() as job_root:
+            job = FlowerJob(
+                name="test_byoc_job",
+                flower_content=app_dir,
+                min_clients=1,
+            )
+            job.export_job(job_root)
+
+            job_dir = os.path.join(job_root, "test_byoc_job")
+            assert os.path.isdir(job_dir), "Job directory was not created"
+
+            server_custom = os.path.join(job_dir, "app", "custom")
+            assert os.path.isdir(server_custom), "Server custom/ directory was not created"
+            assert "pyproject.toml" in os.listdir(
+                server_custom
+            ), "Expected pyproject.toml in server custom/ for BYOC mode"
