@@ -15,7 +15,6 @@
 import json
 import os
 import tempfile
-import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -128,8 +127,8 @@ class TestFlowerJob:
             # When flower_content is used, meta_props is None
             assert job.job.meta_props is None
 
-    def test_flower_job_meta_props_exported_to_zip(self):
-        """Exported job ZIP contains meta.json with FLOWER_PREDEPLOYED flag."""
+    def test_flower_job_meta_props_in_exported_meta_json(self):
+        """Exported job directory contains meta.json with FLOWER_PREDEPLOYED flag."""
         with tempfile.TemporaryDirectory() as job_root:
             job = FlowerJob(
                 name="test_export_job",
@@ -141,15 +140,11 @@ class TestFlowerJob:
             job_dir = os.path.join(job_root, "test_export_job")
             assert os.path.isdir(job_dir)
 
-            for root, dirs, files in os.walk(job_dir):
-                for file in files:
-                    if file.endswith(".zip"):
-                        zip_path = os.path.join(root, file)
-                        with zipfile.ZipFile(zip_path, "r") as z:
-                            with z.open("meta.json") as f:
-                                meta = json.load(f)
-                                assert FlowerConstant.FLOWER_PREDEPLOYED in meta
-                                assert meta[FlowerConstant.FLOWER_PREDEPLOYED] is True
+            meta_path = os.path.join(job_dir, "meta.json")
+            with open(meta_path, "r") as f:
+                meta = json.load(f)
+            assert FlowerConstant.FLOWER_PREDEPLOYED in meta
+            assert meta[FlowerConstant.FLOWER_PREDEPLOYED] is True
 
     def test_flower_job_accepts_local_custom_path(self):
         """Valid local/custom/ paths should be accepted."""
