@@ -1061,7 +1061,7 @@ def _validate_k8s_secret_name(name: str, where: str) -> None:
     ):
         _fail(
             "INVALID_CONFIG",
-            f"{where} entries must be valid Kubernetes Secret names (DNS subdomains): {name!r}.",
+            f"{where} entries must be valid Kubernetes Secret names (DNS subdomains).",
             "Use lower case alphanumeric characters, '-', or '.', start and end with an alphanumeric character, "
             f"and keep length <= {K8S_SECRET_NAME_MAX_LENGTH}.",
         )
