@@ -1,0 +1,12 @@
+*
+
+!MANIFEST.in
+!README.md
+!job_templates/
+!job_templates/**
+!nvflare/
+!nvflare/**
+!pyproject.toml
+!setup.cfg
+!setup.py
+!versioneer.py
