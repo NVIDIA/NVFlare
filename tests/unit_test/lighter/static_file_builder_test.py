@@ -105,3 +105,29 @@ class TestStaticFileBuilder:
 
         registry_path = tmp_path / server.name / "local" / "study_registry.json"
         assert not registry_path.exists()
+
+    def test_master_template_moves_user_config_runtime_workspace(self):
+        """CC startup kits live in plaintext /user_config, so runtime artifacts must not default there."""
+        import os
+
+        import yaml
+
+        template_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            "nvflare",
+            "lighter",
+            "templates",
+            "master_template.yml",
+        )
+
+        with open(template_path, "r") as f:
+            template = yaml.safe_load(f)
+
+        sub_start = template["sub_start_sh"]
+        stop_fl = template["stop_fl_sh"]
+
+        assert 'SOURCE_WORKSPACE" == "/user_config"' in sub_start
+        assert 'WORKSPACE="/vault/workspace"' in sub_start
+        assert '-m "$WORKSPACE"' in sub_start
+        assert 'verify_startup_kits -f "$WORKSPACE"' in sub_start
+        assert 'touch "$WORKSPACE/shutdown.fl"' in stop_fl
