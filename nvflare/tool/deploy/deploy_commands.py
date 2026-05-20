@@ -394,12 +394,12 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
         _optional_str(parent, "python_path", "parent")
         _optional_mapping(parent, "resources", "parent")
         _optional_mapping(parent, "pod_security_context", "parent")
-        _optional_k8s_secret_name_list(parent, "image_pull_secrets", "parent")
+        _optional_k8s_secret_name_list(parent, "image_pull_secrets", "parent image pull references")
         _optional_str(job_launcher, "config_file_path", "job_launcher")
         _optional_str(job_launcher, "default_python_path", "job_launcher")
         _optional_int(job_launcher, "pending_timeout", "job_launcher")
         _optional_mapping(job_launcher, "job_pod_security_context", "job_launcher")
-        _optional_k8s_secret_name_list(job_launcher, "image_pull_secrets", "job_launcher")
+        _optional_k8s_secret_name_list(job_launcher, "image_pull_secrets", "job launcher image pull references")
 
 
 def _validate_kit(kit_dir: Path) -> KitInfo:
@@ -1052,7 +1052,7 @@ def _validate_k8s_service_name(data: dict[str, Any], key: str, where: str) -> No
         )
 
 
-def _validate_k8s_secret_name(name: str, where: str) -> None:
+def _validate_k8s_secret_name(name: str, label: str) -> None:
     if (
         not isinstance(name, str)
         or not name
@@ -1061,20 +1061,20 @@ def _validate_k8s_secret_name(name: str, where: str) -> None:
     ):
         _fail(
             "INVALID_CONFIG",
-            f"{where} entries must be valid Kubernetes Secret names (DNS subdomains).",
+            f"{label} must contain valid Kubernetes object names.",
             "Use lower case alphanumeric characters, '-', or '.', start and end with an alphanumeric character, "
-            f"and keep length <= {K8S_SECRET_NAME_MAX_LENGTH}.",
+            "and keep length <= 253.",
         )
 
 
-def _optional_k8s_secret_name_list(data: dict[str, Any], key: str, where: str) -> list[str] | None:
+def _optional_k8s_secret_name_list(data: dict[str, Any], key: str, label: str) -> list[str] | None:
     if key not in data or data[key] is None:
         return None
     names = data[key]
     if not isinstance(names, list):
-        _fail("INVALID_CONFIG", f"{where}.{key} must be a list of Kubernetes Secret names.", "Fix the runtime config.")
+        _fail("INVALID_CONFIG", f"{label} must be a list of Kubernetes object names.", "Fix the runtime config.")
     for name in names:
-        _validate_k8s_secret_name(name, f"{where}.{key}")
+        _validate_k8s_secret_name(name, label)
     return names
 
 

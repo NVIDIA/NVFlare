@@ -762,7 +762,7 @@ def test_prepare_k8s_rejects_invalid_parent_image_pull_secrets(tmp_path, capsys,
 
     err = capsys.readouterr().err
     assert "INVALID_CONFIG" in err
-    assert "parent.image_pull_secrets" in err
+    assert "parent image pull references" in err
     assert not output.exists()
 
 
@@ -787,7 +787,7 @@ def test_prepare_k8s_rejects_invalid_job_launcher_image_pull_secrets(tmp_path, c
 
     err = capsys.readouterr().err
     assert "INVALID_CONFIG" in err
-    assert "job_launcher.image_pull_secrets" in err
+    assert "job launcher image pull references" in err
     assert not output.exists()
 
 
