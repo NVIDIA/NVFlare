@@ -128,9 +128,11 @@ to manage those runtime job-pod Secrets in the configured namespace.
 
 K8s image registry credentials follow the same boundary. `nvflare deploy
 prepare` should not create registry credentials, manage private registry login,
-or create image pull Secrets. If private registry access is needed, the site or
-cluster should already be configured through its normal Kubernetes/registry
-process.
+or create image pull Secrets. It may render references to existing image pull
+Secrets on generated parent pod charts and write existing image pull Secret
+references into the prepared `K8sJobLauncher` config for dynamically launched
+job pods. If private registry access is needed, the site or cluster should
+create those Secrets through its normal Kubernetes/registry process.
 
 ## Proposed Command
 
@@ -280,6 +282,8 @@ namespace: default
 
 parent:
   docker_image: nvflare-site:latest
+  image_pull_secrets:
+    - registry-credentials
   parent_port: 8102
   workspace_pvc: nvflws
   workspace_mount_path: /var/tmp/nvflare/workspace
@@ -294,6 +298,8 @@ job_launcher:
   config_file_path: null
   pending_timeout: null
   default_python_path: /usr/local/bin/python3
+  image_pull_secrets:
+    - job-registry-credentials
   job_pod_security_context: {}
 ```
 
@@ -317,6 +323,13 @@ Supported `parent` keys:
   - Default: none
   - Description: image used by the parent server/client pod in the generated
     Helm chart.
+
+- `image_pull_secrets`
+  - Required: no
+  - Default: `[]`
+  - Description: existing Kubernetes Secret names rendered as
+    `imagePullSecrets` on the parent server/client pod in the generated Helm
+    chart. `nvflare deploy prepare` does not create these Secrets.
 
 - `parent_port`
   - Required: no
@@ -381,6 +394,13 @@ Supported `job_launcher` keys:
   - Required: no
   - Default: `{}`
   - Description: job pod security context passed to `K8sJobLauncher`.
+
+- `image_pull_secrets`
+  - Required: no
+  - Default: `[]`
+  - Description: existing Kubernetes Secret names attached as
+    `imagePullSecrets` to every dynamically launched job pod for this prepared
+    site.
 
 
 ## Docker Runtime Preparation

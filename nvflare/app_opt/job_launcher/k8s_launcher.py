@@ -104,6 +104,17 @@ def _keep_startup_file(fname: str) -> bool:
     return fname.endswith(_STARTUP_KEEP_SUFFIXES)
 
 
+def _normalize_image_pull_secrets(image_pull_secrets) -> list[str]:
+    if image_pull_secrets is None:
+        return []
+    if not isinstance(image_pull_secrets, list):
+        raise ValueError("image_pull_secrets must be a list of Kubernetes Secret names")
+    for name in image_pull_secrets:
+        if not isinstance(name, str) or not name:
+            raise ValueError("image_pull_secrets entries must be non-empty strings")
+    return list(image_pull_secrets)
+
+
 def uuid4_to_rfc1123(uuid_str: str) -> str:
     name = uuid_str.lower()
     # Strip any chars that aren't alphanumeric or hyphen
@@ -221,6 +232,9 @@ class K8sJobHandle(JobHandleSpec):
         self.pod_manifest["metadata"]["name"] = job_config.get("name")
         self.pod_manifest["spec"]["containers"] = self.container_list
         self.pod_manifest["spec"]["volumes"] = self.volume_list
+        image_pull_secrets = _normalize_image_pull_secrets(job_config.get("image_pull_secrets"))
+        if image_pull_secrets:
+            self.pod_manifest["spec"]["imagePullSecrets"] = [{"name": name} for name in image_pull_secrets]
         security_context = job_config.get("security_context")
         if security_context:
             self.pod_manifest["spec"]["securityContext"] = security_context
@@ -389,6 +403,7 @@ class K8sJobLauncher(JobLauncherSpec):
         ephemeral_storage: str = DEFAULT_EPHEMERAL_STORAGE,
         default_python_path: str = None,
         workspace_mount_path: str = WORKSPACE_MOUNT_PATH,
+        image_pull_secrets: list[str] = None,
     ):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -409,6 +424,7 @@ class K8sJobLauncher(JobLauncherSpec):
         if not isinstance(workspace_mount_path, str) or not workspace_mount_path:
             raise ValueError("workspace_mount_path must be a non-empty string")
         self.workspace_mount_path = workspace_mount_path
+        self.image_pull_secrets = _normalize_image_pull_secrets(image_pull_secrets)
         self.study_data_pvc_dict = None
         self.core_v1 = None
 
@@ -575,6 +591,8 @@ class K8sJobLauncher(JobLauncherSpec):
                 "module_args": self.get_module_args(job_id, fl_ctx),
                 "env": env,
             }
+            if self.image_pull_secrets:
+                job_config["image_pull_secrets"] = self.image_pull_secrets
             if args is not None and getattr(args, "set", None) is not None:
                 job_config.update({"set_list": args.set})
             resources = {

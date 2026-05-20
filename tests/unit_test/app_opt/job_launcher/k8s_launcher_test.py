@@ -291,6 +291,14 @@ class TestK8sJobHandle:
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
         assert handle.get_manifest()["spec"]["restartPolicy"] == "Never"
 
+    def test_manifest_image_pull_secrets(self):
+        cfg = _make_job_config(image_pull_secrets=["job-regcred", "site.registry.example.com"])
+        handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
+        assert handle.get_manifest()["spec"]["imagePullSecrets"] == [
+            {"name": "job-regcred"},
+            {"name": "site.registry.example.com"},
+        ]
+
     def test_manifest_volumes(self):
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
@@ -1016,12 +1024,14 @@ class TestK8sJobLauncherInit:
             study_data_pvc_file_path="/fake/study_data.yaml",
             timeout=60,
             namespace="test-ns",
+            image_pull_secrets=["job-regcred"],
         )
 
         assert launcher.study_data_pvc_file_path == "/fake/study_data.yaml"
         assert launcher.timeout == 60
         assert launcher.namespace == "test-ns"
         assert launcher.workspace_mount_path == WORKSPACE_MOUNT_PATH
+        assert launcher.image_pull_secrets == ["job-regcred"]
         # study_data.yaml is populated lazily
         assert launcher.study_data_pvc_dict is None
 
@@ -1074,6 +1084,20 @@ class TestK8sJobLauncherInit:
                 config_file_path="/fake/kube/config",
                 study_data_pvc_file_path="/fake/study_data.yaml",
                 ephemeral_storage=1,
+            )
+
+    @pytest.mark.parametrize(
+        "image_pull_secrets",
+        ["job-regcred", [""], [7]],
+    )
+    def test_init_rejects_invalid_image_pull_secrets(self, image_pull_secrets):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        with pytest.raises(ValueError, match="image_pull_secrets"):
+            ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path="/fake/study_data.yaml",
+                image_pull_secrets=image_pull_secrets,
             )
 
 
@@ -1227,6 +1251,7 @@ class TestK8sJobLauncherLaunchJob:
         default_python_path=None,
         ephemeral_storage=None,
         workspace_mount_path=None,
+        image_pull_secrets=None,
     ):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
@@ -1254,6 +1279,8 @@ class TestK8sJobLauncherLaunchJob:
             launcher_kwargs["ephemeral_storage"] = ephemeral_storage
         if workspace_mount_path is not None:
             launcher_kwargs["workspace_mount_path"] = workspace_mount_path
+        if image_pull_secrets is not None:
+            launcher_kwargs["image_pull_secrets"] = image_pull_secrets
         launcher = ClientK8sJobLauncher(**launcher_kwargs)
         return launcher, mock_api
 
@@ -1352,6 +1379,20 @@ class TestK8sJobLauncherLaunchJob:
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             assert manifest["spec"]["restartPolicy"] == "Never"
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_image_pull_secrets_from_launcher_config(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, image_pull_secrets=["job-regcred", "mirror-regcred"])
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["spec"]["imagePullSecrets"] == [
+                {"name": "job-regcred"},
+                {"name": "mirror-regcred"},
+            ]
         finally:
             _exit_patches(patches)
 
