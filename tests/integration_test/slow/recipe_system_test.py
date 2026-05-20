@@ -132,7 +132,7 @@ class TestRecipeSystemIntegration:
             "submit_model and/or validation path may not have completed."
         )
 
-    def test_dict_model_config_simulation(self):
+    def test_dict_model_config_simulation(self, tmp_path):
         """Test that dict model config works in simulation (end-to-end validation)."""
         import sys
 
@@ -156,16 +156,17 @@ class TestRecipeSystemIntegration:
             "args": {},
         }
 
-        env = SimEnv(num_clients=2, workspace_root="/tmp/test_dict_config")
+        env = SimEnv(num_clients=2, workspace_root=str(tmp_path / "test_dict_config"))
         recipe = FedAvgRecipe(
             name="test_dict_config",
             min_clients=2,
             num_rounds=1,
             model=model_config,
             train_script=os.path.join(examples_dir, "client.py"),
+            train_args="--synthetic_data --train_size 32 --test_size 16 --batch_size 16 --num_workers 0 --epochs 1",
         )
         run = recipe.execute(env)
 
         # Verify job was created (simulation returns immediately)
         assert run.get_job_id() == "test_dict_config"
-        assert run.get_result() == "/tmp/test_dict_config/test_dict_config"
+        assert run.get_result() == os.path.join(env.workspace_root, run.get_job_id())
