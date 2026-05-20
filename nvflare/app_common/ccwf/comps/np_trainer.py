@@ -31,7 +31,10 @@ from nvflare.app_common.np.constants import NPConstants
 from nvflare.fuel.utils.deprecated import warn_deprecated
 from nvflare.security.logging import secure_format_exception
 
-_NP_TRAINER_DEPRECATION_MSG = "NPTrainer is deprecated. Use the Recipe API with the Client API for new projects."
+_NP_TRAINER_DEPRECATION_MSG = (
+    "NPTrainer is deprecated but remains supported for backward compatibility. "
+    "Use the Recipe API with the Client API for new projects."
+)
 
 
 class NPTrainer(Executor):
