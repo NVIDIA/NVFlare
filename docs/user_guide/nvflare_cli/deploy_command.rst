@@ -122,6 +122,8 @@ Example ``k8s.yaml``:
 
    parent:
      docker_image: registry.example.com/nvflare-site:2.8
+     image_pull_secrets:
+       - registry-credentials
      parent_port: 8102
      workspace_pvc: nvflws
      workspace_mount_path: /var/tmp/nvflare/workspace
@@ -136,6 +138,8 @@ Example ``k8s.yaml``:
      config_file_path: null
      pending_timeout: 300
      default_python_path: /usr/local/bin/python3
+     image_pull_secrets:
+       - job-registry-credentials
      job_pod_security_context: {}
 
 Top-level keys:
@@ -150,6 +154,11 @@ Top-level keys:
 ``parent`` keys:
 
 - ``docker_image``: required parent image used by the Helm chart.
+- ``image_pull_secrets``: optional list of existing Kubernetes Secret names to
+  render as ``imagePullSecrets`` on the parent server/client pod. Create these
+  registry pull Secrets in the target namespace before installing the chart.
+  This setting applies to the generated parent pod chart. Use
+  ``job_launcher.image_pull_secrets`` for dynamically launched job pods.
 - ``parent_port``: port that job pods use to reach the parent pod's FLARE
   process.
   Defaults to ``8102``.
@@ -172,6 +181,10 @@ Top-level keys:
 - ``default_python_path``: Python executable used in job pods unless a job
   overrides it with ``launcher_spec[site]["k8s"]["python_path"]``. Defaults to
   ``/usr/local/bin/python3``.
+- ``image_pull_secrets``: optional list of existing Kubernetes Secret names
+  attached to every dynamically launched job pod for this prepared site. This
+  is configured by the deployment owner and does not require job authors to add
+  registry Secret names to ``meta.json``.
 - ``job_pod_security_context``: security context passed to dynamically
   launched job pods.
 

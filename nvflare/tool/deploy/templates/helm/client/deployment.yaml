@@ -23,6 +23,10 @@ spec:
       {{- if .Values.serviceAccount.create }}
       serviceAccountName: {{ include "nvflare-client.name" . }}
       {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.securityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
