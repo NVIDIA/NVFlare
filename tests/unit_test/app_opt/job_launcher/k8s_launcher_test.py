@@ -1088,7 +1088,7 @@ class TestK8sJobLauncherInit:
 
     @pytest.mark.parametrize(
         "image_pull_secrets",
-        ["job-regcred", [""], [7]],
+        ["job-regcred", [""], ["  "], [7]],
     )
     def test_init_rejects_invalid_image_pull_secrets(self, image_pull_secrets):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher

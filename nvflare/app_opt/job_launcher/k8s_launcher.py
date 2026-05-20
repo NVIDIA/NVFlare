@@ -110,7 +110,7 @@ def _normalize_image_pull_secrets(image_pull_secrets) -> list[str]:
     if not isinstance(image_pull_secrets, list):
         raise ValueError("image_pull_secrets must be a list of Kubernetes Secret names")
     for name in image_pull_secrets:
-        if not isinstance(name, str) or not name:
+        if not isinstance(name, str) or not name.strip():
             raise ValueError("image_pull_secrets entries must be non-empty strings")
     return list(image_pull_secrets)
 
