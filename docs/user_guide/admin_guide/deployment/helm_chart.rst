@@ -80,6 +80,8 @@ Example ``k8s.yaml``:
    namespace: nvflare
    parent:
      docker_image: registry.example.com/nvflare:dev
+     image_pull_secrets:
+       - registry-credentials
      parent_port: 8102
      workspace_pvc: nvflws
      workspace_mount_path: /var/tmp/nvflare/workspace
@@ -91,6 +93,8 @@ Example ``k8s.yaml``:
    job_launcher:
      config_file_path:
      default_python_path: /usr/local/bin/python3
+     image_pull_secrets:
+       - job-registry-credentials
      pending_timeout: 300
 
 The runtime config controls site-level Kubernetes settings:
@@ -100,16 +104,25 @@ The runtime config controls site-level Kubernetes settings:
   to ``nvflare-server``.
 * ``parent`` values are rendered into the Helm chart. They set the parent image,
   Python executable, workspace PVC, parent service port, parent pod resources,
-  and optional parent pod security context. ``parent.python_path`` controls the
-  long-lived SP/CP parent pod command. ``parent.workspace_mount_path`` is also
-  written into the K8s launcher config so spawned SJ/CJ job pods mount their job
-  workspace and startup kit at the same in-container path.
+  optional parent pod security context, and optional image pull Secret
+  references. ``parent.image_pull_secrets`` must name Kubernetes Secrets that
+  already exist in the target namespace; NVFLARE does not create registry
+  credentials. This setting applies to the generated parent pod chart; use
+  ``job_launcher.image_pull_secrets`` for dynamically launched job pods.
+  ``parent.python_path`` controls the long-lived SP/CP parent pod command.
+  ``parent.workspace_mount_path`` is also written into the K8s launcher config
+  so spawned SJ/CJ job pods mount their job workspace and startup kit at the
+  same in-container path.
 * ``job_launcher`` values are written into the participant's
   ``local/resources.json.default`` so the parent process can create job pods.
   ``config_file_path`` may be empty for in-cluster configuration, and
   ``default_python_path`` controls SJ/CJ job pods when a job does not override
   ``launcher_spec[site][k8s].python_path``. It does not control the SP/CP parent
   pod Python path; use ``parent.python_path`` for that command.
+  ``image_pull_secrets`` names existing Kubernetes image pull Secrets attached
+  to every dynamically launched job pod for this prepared site. Configure this
+  during deployment preparation when job images live in a private registry; job
+  authors still only specify the job image in ``meta.json``.
   ``pending_timeout`` controls how long a dynamically launched job pod can stay
   in ``Pending`` or ``Unknown`` before the launcher deletes it and reports the
   run as an execution exception. The admin ``list_jobs`` command then shows

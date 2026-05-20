@@ -615,6 +615,7 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
                 "pending_timeout": 7,
                 "default_python_path": "/usr/bin/python3",
                 "job_pod_security_context": {"runAsNonRoot": True},
+                "image_pull_secrets": ["job-regcred", "site.registry.example.com"],
             },
         },
     )
@@ -630,6 +631,7 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert launcher["args"]["default_python_path"] == "/usr/bin/python3"
     assert launcher["args"]["pending_timeout"] == 7
     assert launcher["args"]["security_context"] == {"runAsNonRoot": True}
+    assert launcher["args"]["image_pull_secrets"] == ["job-regcred", "site.registry.example.com"]
 
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"]["resources"] == {
@@ -656,6 +658,39 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert values["securityContext"] == {"runAsUser": 1000}
     assert values["resources"] == {"requests": {"cpu": "1", "memory": "2Gi"}}
     assert (output / "helm_chart" / "templates" / "client-deployment.yaml").exists()
+
+
+@pytest.mark.parametrize(
+    "make_kit, template_name",
+    [
+        (_make_server_kit, "server-deployment.yaml"),
+        (_make_client_kit, "client-deployment.yaml"),
+    ],
+)
+def test_prepare_k8s_parent_image_pull_secrets_written_to_chart(tmp_path, capsys, make_kit, template_name):
+    kit = make_kit(tmp_path)
+    output = tmp_path / "prepared-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {
+                "docker_image": "repo/nvflare:dev",
+                "image_pull_secrets": ["gitlab-regcred", "mirror.registry.example.com"],
+            },
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    deployment = (output / "helm_chart" / "templates" / template_name).read_text()
+    assert values["imagePullSecrets"] == [
+        {"name": "gitlab-regcred"},
+        {"name": "mirror.registry.example.com"},
+    ]
+    assert ".Values.imagePullSecrets" in deployment
 
 
 @pytest.mark.parametrize("namespace", ["nvflare", "1abc", "2026-prod"])
@@ -701,6 +736,58 @@ def test_prepare_k8s_rejects_invalid_namespace(tmp_path, capsys, namespace):
     err = capsys.readouterr().err
     assert "INVALID_CONFIG" in err
     assert "k8s config.namespace" in err
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "image_pull_secrets",
+    ["gitlab-regcred", [""], ["GitLab-Regcred"], ["gitlab_regcred"], [7], ["bad..name"], ["a."], [".a"]],
+)
+def test_prepare_k8s_rejects_invalid_parent_image_pull_secrets(tmp_path, capsys, image_pull_secrets):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "parent": {
+                    "docker_image": "repo/nvflare:dev",
+                    "image_pull_secrets": image_pull_secrets,
+                },
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert "parent image pull references" in err
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "image_pull_secrets",
+    ["gitlab-regcred", [""], ["GitLab-Regcred"], ["gitlab_regcred"], [7], ["bad..name"], ["a."], [".a"]],
+)
+def test_prepare_k8s_rejects_invalid_job_launcher_image_pull_secrets(tmp_path, capsys, image_pull_secrets):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+                "job_launcher": {"image_pull_secrets": image_pull_secrets},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert "job launcher image pull references" in err
     assert not output.exists()
 
 
