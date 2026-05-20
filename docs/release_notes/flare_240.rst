@@ -64,7 +64,7 @@ Furthermore, the Job CLI also offers users a convenient method for submitting jo
 ``nvflare job list_templates|create|submit|show_variables``
 
 Also explore the continuously growing :github_nvflare_link:`Job Template directory <job_templates>` we have created for commonly used configurations.
-For more in-depth information on Job Templates and the Job CLI, refer to the :ref:`job_cli` documentation and :github_nvflare_link:`tutorials <examples/tutorials/job_cli.ipynb>`.
+For more in-depth information on Job Templates and the Job CLI, refer to the :ref:`job_cli` documentation and :github_nvflare_link:`CLI tutorials <examples/tutorials/nvflare_cli.ipynb>`.
 
 ModelLearner
 ~~~~~~~~~~~~

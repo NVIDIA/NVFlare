@@ -37,7 +37,7 @@ Can be run from :github_nvflare_link:`hello_world notebook <examples/hello-world
   * :github_nvflare_link:`Intro to the FL Simulator <examples/tutorials/flare_simulator.ipynb>` - Shows how to use the :ref:`fl_simulator` to run a local simulation of an NVFLARE deployment to test and debug an application without provisioning a real FL project.
   * :github_nvflare_link:`Hello FLARE API <examples/tutorials/flare_api.ipynb>` - Goes through the different commands of the :ref:`flare_api` to show the syntax and usage of each.
   * :github_nvflare_link:`NVFLARE in POC Mode <examples/tutorials/setup_poc.ipynb>` - Shows how to use :ref:`POC mode <poc_command>` to test the features of a full FLARE deployment on a single machine.
-  * :github_nvflare_link:`Job CLI Tutorial <examples/tutorials/job_cli.ipynb>` - Walks through the different commands of the Job CLI and showcases syntax and example usages.
+  * :github_nvflare_link:`NVFlare CLI Tutorial <examples/tutorials/nvflare_cli.ipynb>` - Walks through the current ``nvflare`` command groups for local setup, recipes, jobs, systems, studies, provisioning, and deployment.
   * :github_nvflare_link:`Job Recipe <examples/tutorials/job_recipe.ipynb>` - Introduces Job Recipes to simplify federated learning job creation and execution with a high-level API.
   * :github_nvflare_link:`FLARE Logging <examples/tutorials/logging.ipynb>` - Covers how to configure logging in FLARE for different use cases and modes.
 

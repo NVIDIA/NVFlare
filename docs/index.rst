@@ -11,7 +11,7 @@ NVIDIA FLARE
 
    welcome
    roadmap
-   release_notes/flare_272
+   release_notes/flare_280
    industry_use_cases
 
 .. toctree::

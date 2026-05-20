@@ -42,6 +42,12 @@ You can download the CIFAR10 dataset from the Internet via torchvision’s datas
 You can split the datasets for different clients, so that each client has its own dataset.
 Here, for simplicity's sake, we will be using the same dataset on each client.
 
+For quick smoke tests or offline environments, the job can use synthetic CIFAR-shaped data:
+
+```
+python job.py --synthetic_data --train_size 128 --test_size 64 --num_rounds 2 --epochs 1
+```
+
 ## Model
 In PyTorch, neural networks are implemented by defining a class (e.g., SimpleNetwork) that extends `nn.Module`.
 The network’s architecture is set up in the __init__ method, while the forward method determines how input data flows
@@ -130,7 +136,7 @@ recipe = FedAvgRecipe(
     num_rounds=num_rounds,
     model=SimpleNetwork(),
     train_script="client.py",
-    train_args=f"--batch_size {batch_size}",
+    train_args=f"--batch_size {batch_size} --epochs {epochs}",
 )
 
 env = SimEnv(num_clients=n_clients, num_threads=n_clients)
@@ -176,6 +182,20 @@ To run with cross-site evaluation, use:
 The cross-site evaluation results can be viewed with:
 ```
 cat /tmp/nvflare/simulation/hello-pt/server/simulate_job/cross_site_val/cross_val_results.json
+```
+
+To export the job folder for submission to a running FL system, use the standard Recipe API export flags:
+
+```
+python job.py --export --export-dir /tmp/nvflare/jobs/job_config
+```
+
+The exported job is written to `/tmp/nvflare/jobs/job_config/hello-pt`. You can combine the export flags with the example-specific arguments, for example:
+
+```
+python job.py --export --export-dir /tmp/nvflare/jobs/job_config \
+    --enable_log_streaming --synthetic_data --train_size 2048 --test_size 256 \
+    --num_rounds 2 --epochs 1 --batch_size 64 --num_workers 0
 ```
 
 > **Note:** Depending on the number of clients, you might run into errors if several clients try to download the data at the same time. It is suggested to pre-download the data to avoid such errors.
