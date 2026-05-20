@@ -14,10 +14,12 @@
 
 """Tests for InProcessClientAPIExecutor memory management parameters."""
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
-from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
 
 
 class TestInProcessClientAPIExecutorMemory:
@@ -88,3 +90,19 @@ class TestInProcessClientAPIExecutorMemory:
         assert executor._task_wait_time == 30.0
         assert executor._result_pull_interval == 1.0
         assert executor._train_with_evaluation is True
+
+    def test_task_exchange_config_does_not_override_system_keys(self, base_executor_params):
+        """Test that custom task exchange flags cannot override executor-owned Client API settings."""
+        executor = InProcessClientAPIExecutor(
+            task_exchange_config={ConfigKey.TRAIN_TASK_NAME: "custom_train", "custom_flag": True},
+            **base_executor_params,
+        )
+
+        fl_ctx = MagicMock()
+        fl_ctx.get_job_id.return_value = "job_id"
+        fl_ctx.get_identity_name.return_value = "site-1"
+        meta = executor._prepare_task_meta(fl_ctx, task_name="train")
+
+        task_exchange = meta[ConfigKey.TASK_EXCHANGE]
+        assert task_exchange["custom_flag"] is True
+        assert task_exchange[ConfigKey.TRAIN_TASK_NAME] == executor._train_task_name

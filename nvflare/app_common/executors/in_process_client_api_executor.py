@@ -192,20 +192,23 @@ class InProcessClientAPIExecutor(Executor):
     def _prepare_task_meta(self, fl_ctx, task_name):
         job_id = fl_ctx.get_job_id()
         site_name = fl_ctx.get_identity_name()
-        meta = {
-            FLMetaKey.SITE_NAME: site_name,
-            FLMetaKey.JOB_ID: job_id,
-            ConfigKey.TASK_NAME: task_name,
-            ConfigKey.TASK_EXCHANGE: {
+        task_exchange = dict(self._task_exchange_config)
+        task_exchange.update(
+            {
                 ConfigKey.TRAIN_WITH_EVAL: self._train_with_evaluation,
                 ConfigKey.EXCHANGE_FORMAT: self._params_exchange_format,
                 ConfigKey.TRANSFER_TYPE: self._params_transfer_type,
                 ConfigKey.TRAIN_TASK_NAME: self._train_task_name,
                 ConfigKey.EVAL_TASK_NAME: self._evaluate_task_name,
                 ConfigKey.SUBMIT_MODEL_TASK_NAME: self._submit_model_task_name,
-            },
+            }
+        )
+        meta = {
+            FLMetaKey.SITE_NAME: site_name,
+            FLMetaKey.JOB_ID: job_id,
+            ConfigKey.TASK_NAME: task_name,
+            ConfigKey.TASK_EXCHANGE: task_exchange,
         }
-        meta[ConfigKey.TASK_EXCHANGE].update(self._task_exchange_config)
         return meta
 
     def send_data_to_peer(self, shareable, fl_ctx: FLContext):

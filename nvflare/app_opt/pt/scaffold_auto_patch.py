@@ -14,6 +14,7 @@
 
 import copy
 import inspect
+import threading
 from typing import Any, Dict, Mapping, Optional
 
 import torch
@@ -24,9 +25,18 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AlgorithmConstants
 from nvflare.app_opt.pt.scaffold import PTScaffoldHelper, get_lr_values
 from nvflare.client.config import ConfigKey
+from nvflare.client.constants import PT_SCAFFOLD_AUTO_PATCH
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
-PT_SCAFFOLD_AUTO_PATCH = "pt_scaffold_auto_patch"
+_PATCH_LOCK = threading.RLock()
+_THREAD_LOCAL = threading.local()
+# PyTorch methods are patched process-wide, but each Client API script thread owns
+# its SCAFFOLD round state so simulator clients do not overwrite each other.
+_ENABLED_MANAGERS = set()
+_ORIGINAL_LOAD_STATE_DICT = None
+_ORIGINAL_OPTIMIZER_STEPS = {}
+_ORIGINAL_HELPER_MODEL_UPDATE = None
+_ORIGINAL_HELPER_TERMS_UPDATE = None
 
 
 class PTScaffoldAutoPatchManager:
@@ -40,10 +50,6 @@ class PTScaffoldAutoPatchManager:
 
     def __init__(self):
         self._enabled = False
-        self._original_load_state_dict = None
-        self._original_optimizer_steps = {}
-        self._original_helper_model_update = None
-        self._original_helper_terms_update = None
         self._internal_helper_call = False
         self._suspend_model_load_detection = 0
         self.logger = get_obj_logger(self)
@@ -53,12 +59,15 @@ class PTScaffoldAutoPatchManager:
 
     def enable(self):
         if self._enabled:
+            _set_current_manager(self)
             return self
 
-        self._enabled = True
-        self._patch_load_state_dict()
-        self._patch_optimizer_steps()
-        self._patch_helper_methods()
+        with _PATCH_LOCK:
+            _install_patches_locked()
+            self._enabled = True
+            _ENABLED_MANAGERS.add(self)
+            _set_current_manager(self)
+
         self.logger.info("Auto-SCAFFOLD PyTorch mode enabled for this client process.")
         return self
 
@@ -67,23 +76,15 @@ class PTScaffoldAutoPatchManager:
             self._reset_round_state(clear_helper=True)
             return
 
-        if self._original_load_state_dict is not None:
-            torch.nn.Module.load_state_dict = self._original_load_state_dict
-            self._original_load_state_dict = None
+        with _PATCH_LOCK:
+            self._enabled = False
+            _ENABLED_MANAGERS.discard(self)
+            if _get_current_manager() is self:
+                _clear_current_manager()
+            if not _ENABLED_MANAGERS:
+                _restore_patches_locked()
+            self._reset_round_state(clear_helper=True)
 
-        for optimizer_cls, original_step in self._original_optimizer_steps.items():
-            optimizer_cls.step = original_step
-        self._original_optimizer_steps = {}
-
-        if self._original_helper_model_update is not None:
-            PTScaffoldHelper.model_update = self._original_helper_model_update
-            self._original_helper_model_update = None
-        if self._original_helper_terms_update is not None:
-            PTScaffoldHelper.terms_update = self._original_helper_terms_update
-            self._original_helper_terms_update = None
-
-        self._enabled = False
-        self._reset_round_state(clear_helper=True)
         self.logger.info("Auto-SCAFFOLD PyTorch mode disabled for this client process.")
 
     def on_receive(self, input_model: Optional[FLModel], task_name: Optional[str], train_task_name: Optional[str]):
@@ -147,8 +148,9 @@ class PTScaffoldAutoPatchManager:
             self._prepare_round_for_step()
 
         curr_lr = self._get_single_lr(optimizer)
+        self._validate_constant_lr(curr_lr)
         self._call_helper_method(
-            self._original_helper_model_update,
+            _ORIGINAL_HELPER_MODEL_UPDATE,
             self._helper,
             model=self._active_model,
             curr_lr=curr_lr,
@@ -178,15 +180,15 @@ class PTScaffoldAutoPatchManager:
             )
         if self._step_count <= 0:
             raise RuntimeError("Auto-SCAFFOLD did not detect any optimizer.step() calls for the loaded model.")
-        if self._last_lr is None:
+        if self._round_lr is None:
             raise RuntimeError("Auto-SCAFFOLD could not determine the optimizer learning rate.")
 
         self._move_global_model_to_active_device()
         self._call_helper_method(
-            self._original_helper_terms_update,
+            _ORIGINAL_HELPER_TERMS_UPDATE,
             self._helper,
             model=self._active_model,
-            curr_lr=self._last_lr,
+            curr_lr=self._round_lr,
             c_global_para=self._c_global_para,
             c_local_para=self._c_local_para,
             model_global=self._global_model,
@@ -212,54 +214,9 @@ class PTScaffoldAutoPatchManager:
         self._round_prepared = False
         self._step_count = 0
         self._last_lr = None
+        self._round_lr = None
         if clear_helper:
             self._helper = None
-
-    def _patch_load_state_dict(self):
-        manager = self
-        self._original_load_state_dict = torch.nn.Module.load_state_dict
-        original_load_state_dict = self._original_load_state_dict
-
-        def patched_load_state_dict(module, state_dict, *args, **kwargs):
-            result = original_load_state_dict(module, state_dict, *args, **kwargs)
-            manager.on_model_load(module, state_dict)
-            return result
-
-        torch.nn.Module.load_state_dict = patched_load_state_dict
-
-    def _patch_optimizer_steps(self):
-        manager = self
-        for optimizer_cls in self._optimizer_classes():
-            original_step = getattr(optimizer_cls, "step", None)
-            if original_step is None or optimizer_cls in self._original_optimizer_steps:
-                continue
-
-            def make_patched_step(original):
-                def patched_step(optimizer, *args, **kwargs):
-                    result = original(optimizer, *args, **kwargs)
-                    manager.on_optimizer_step(optimizer)
-                    return result
-
-                return patched_step
-
-            self._original_optimizer_steps[optimizer_cls] = original_step
-            optimizer_cls.step = make_patched_step(original_step)
-
-    def _patch_helper_methods(self):
-        manager = self
-        self._original_helper_model_update = PTScaffoldHelper.model_update
-        self._original_helper_terms_update = PTScaffoldHelper.terms_update
-
-        def patched_model_update(helper, *args, **kwargs):
-            manager._raise_manual_helper_call("model_update")
-            return manager._original_helper_model_update(helper, *args, **kwargs)
-
-        def patched_terms_update(helper, *args, **kwargs):
-            manager._raise_manual_helper_call("terms_update")
-            return manager._original_helper_terms_update(helper, *args, **kwargs)
-
-        PTScaffoldHelper.model_update = patched_model_update
-        PTScaffoldHelper.terms_update = patched_terms_update
 
     def _raise_manual_helper_call(self, method_name: str):
         if self._enabled and not self._internal_helper_call:
@@ -372,6 +329,18 @@ class PTScaffoldAutoPatchManager:
                 )
         return float(first_lr)
 
+    def _validate_constant_lr(self, curr_lr: float):
+        if self._round_lr is None:
+            self._round_lr = curr_lr
+            return
+
+        if curr_lr != self._round_lr:
+            raise RuntimeError(
+                "Auto-SCAFFOLD requires a constant learning rate throughout each local training round because "
+                "the SCAFFOLD control-variate update uses one learning rate value. Disable LR schedulers for "
+                "auto_scaffold=True, or use manual PTScaffoldHelper mode for scheduled learning rates."
+            )
+
     def _call_helper_method(self, method, *args, **kwargs):
         self._internal_helper_call = True
         self._suspend_model_load_detection += 1
@@ -382,19 +351,124 @@ class PTScaffoldAutoPatchManager:
             self._internal_helper_call = False
 
 
-_MANAGER = PTScaffoldAutoPatchManager()
+def _get_current_manager() -> Optional[PTScaffoldAutoPatchManager]:
+    manager = getattr(_THREAD_LOCAL, "manager", None)
+    if manager is not None and manager._enabled:
+        return manager
+    return None
+
+
+def _set_current_manager(manager: PTScaffoldAutoPatchManager):
+    _THREAD_LOCAL.manager = manager
+
+
+def _clear_current_manager():
+    if hasattr(_THREAD_LOCAL, "manager"):
+        delattr(_THREAD_LOCAL, "manager")
+
+
+def _install_patches_locked():
+    global _ORIGINAL_HELPER_MODEL_UPDATE
+    global _ORIGINAL_HELPER_TERMS_UPDATE
+    global _ORIGINAL_LOAD_STATE_DICT
+
+    if _ORIGINAL_LOAD_STATE_DICT is None:
+        _ORIGINAL_LOAD_STATE_DICT = torch.nn.Module.load_state_dict
+
+        def patched_load_state_dict(module, state_dict, *args, **kwargs):
+            result = _ORIGINAL_LOAD_STATE_DICT(module, state_dict, *args, **kwargs)
+            manager = _get_current_manager()
+            if manager:
+                manager.on_model_load(module, state_dict)
+            return result
+
+        patched_load_state_dict._nvflare_auto_scaffold_patch = True
+        torch.nn.Module.load_state_dict = patched_load_state_dict
+
+    for optimizer_cls in PTScaffoldAutoPatchManager._optimizer_classes():
+        original_step = getattr(optimizer_cls, "step", None)
+        if (
+            original_step is None
+            or optimizer_cls in _ORIGINAL_OPTIMIZER_STEPS
+            or getattr(original_step, "_nvflare_auto_scaffold_patch", False)
+        ):
+            continue
+
+        def make_patched_step(original):
+            def patched_step(optimizer, *args, **kwargs):
+                result = original(optimizer, *args, **kwargs)
+                manager = _get_current_manager()
+                if manager:
+                    manager.on_optimizer_step(optimizer)
+                return result
+
+            patched_step._nvflare_auto_scaffold_patch = True
+            return patched_step
+
+        _ORIGINAL_OPTIMIZER_STEPS[optimizer_cls] = original_step
+        optimizer_cls.step = make_patched_step(original_step)
+
+    if _ORIGINAL_HELPER_MODEL_UPDATE is None:
+        _ORIGINAL_HELPER_MODEL_UPDATE = PTScaffoldHelper.model_update
+
+        def patched_model_update(helper, *args, **kwargs):
+            manager = _get_current_manager()
+            if manager:
+                manager._raise_manual_helper_call("model_update")
+            return _ORIGINAL_HELPER_MODEL_UPDATE(helper, *args, **kwargs)
+
+        PTScaffoldHelper.model_update = patched_model_update
+
+    if _ORIGINAL_HELPER_TERMS_UPDATE is None:
+        _ORIGINAL_HELPER_TERMS_UPDATE = PTScaffoldHelper.terms_update
+
+        def patched_terms_update(helper, *args, **kwargs):
+            manager = _get_current_manager()
+            if manager:
+                manager._raise_manual_helper_call("terms_update")
+            return _ORIGINAL_HELPER_TERMS_UPDATE(helper, *args, **kwargs)
+
+        PTScaffoldHelper.terms_update = patched_terms_update
+
+
+def _restore_patches_locked():
+    global _ORIGINAL_HELPER_MODEL_UPDATE
+    global _ORIGINAL_HELPER_TERMS_UPDATE
+    global _ORIGINAL_LOAD_STATE_DICT
+
+    if _ORIGINAL_LOAD_STATE_DICT is not None:
+        torch.nn.Module.load_state_dict = _ORIGINAL_LOAD_STATE_DICT
+        _ORIGINAL_LOAD_STATE_DICT = None
+
+    for optimizer_cls, original_step in _ORIGINAL_OPTIMIZER_STEPS.items():
+        optimizer_cls.step = original_step
+    _ORIGINAL_OPTIMIZER_STEPS.clear()
+
+    if _ORIGINAL_HELPER_MODEL_UPDATE is not None:
+        PTScaffoldHelper.model_update = _ORIGINAL_HELPER_MODEL_UPDATE
+        _ORIGINAL_HELPER_MODEL_UPDATE = None
+
+    if _ORIGINAL_HELPER_TERMS_UPDATE is not None:
+        PTScaffoldHelper.terms_update = _ORIGINAL_HELPER_TERMS_UPDATE
+        _ORIGINAL_HELPER_TERMS_UPDATE = None
 
 
 def get_pt_scaffold_auto_patch_manager() -> PTScaffoldAutoPatchManager:
-    return _MANAGER
+    manager = getattr(_THREAD_LOCAL, "manager", None)
+    if manager is None:
+        manager = PTScaffoldAutoPatchManager()
+        _set_current_manager(manager)
+    return manager
 
 
 def maybe_enable_pt_scaffold_auto_patch(client_config):
     task_exchange_config = client_config.get_config().get(ConfigKey.TASK_EXCHANGE, {})
     if task_exchange_config.get(PT_SCAFFOLD_AUTO_PATCH):
-        return _MANAGER.enable()
+        return get_pt_scaffold_auto_patch_manager().enable()
     return None
 
 
 def disable_pt_scaffold_auto_patch():
-    _MANAGER.disable()
+    manager = getattr(_THREAD_LOCAL, "manager", None)
+    if manager is not None:
+        manager.disable()

@@ -29,3 +29,7 @@ EXTERNAL_PRE_INIT_TIMEOUT = "EXTERNAL_PRE_INIT_TIMEOUT"
 # Keeping this in the same config file as submit_result_timeout makes it easy
 # to review and tune both timeouts together.
 PEER_READ_TIMEOUT = "PEER_READ_TIMEOUT"
+
+# Lightweight Client API task-exchange flag used by the PyTorch ScaffoldRecipe to
+# enable Auto-SCAFFOLD hooks without importing PyTorch during generic client init.
+PT_SCAFFOLD_AUTO_PATCH = "pt_scaffold_auto_patch"

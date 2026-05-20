@@ -158,7 +158,7 @@ class TestPTScaffoldRecipe:
         """Test that auto_scaffold writes the Client API runtime flag."""
         from nvflare.apis.job_def import ALL_SITES
         from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
-        from nvflare.app_opt.pt.scaffold_auto_patch import PT_SCAFFOLD_AUTO_PATCH
+        from nvflare.client.constants import PT_SCAFFOLD_AUTO_PATCH
 
         recipe = ScaffoldRecipe(
             name="test_scaffold_auto_mode",

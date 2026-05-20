@@ -19,8 +19,8 @@ from pydantic import BaseModel
 from nvflare.app_common.workflows.scaffold import Scaffold
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.app_opt.pt.job_config.model import PTModel
-from nvflare.app_opt.pt.scaffold_auto_patch import PT_SCAFFOLD_AUTO_PATCH
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.client.constants import PT_SCAFFOLD_AUTO_PATCH
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe

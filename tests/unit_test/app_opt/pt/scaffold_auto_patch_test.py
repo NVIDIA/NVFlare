@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
+
 import pytest
 import torch
 from torch import nn
@@ -152,6 +154,56 @@ def test_hooks_are_idempotent_and_restore_original_methods(clean_auto_patch_mana
     assert torch.optim.SGD.step is original_sgd_step
 
 
+def test_auto_patch_state_is_thread_local_for_concurrent_clients(clean_auto_patch_manager):
+    barrier = threading.Barrier(2)
+    errors = []
+    results = {}
+    result_lock = threading.Lock()
+
+    def run_client(client_name, ctrl_value):
+        manager = get_pt_scaffold_auto_patch_manager().enable()
+        try:
+            model = _model(weight=1.0)
+            optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+            input_model = _input_model(model, ctrl_value=ctrl_value)
+
+            manager.on_receive(input_model, task_name="train", train_task_name="train")
+            model.load_state_dict(input_model.params)
+            barrier.wait(timeout=5)
+
+            _sgd_step(model, optimizer)
+            output_model = FLModel(params=_state_dict(model))
+            manager.on_send(output_model)
+
+            with result_lock:
+                results[client_name] = (
+                    float(model.weight.item()),
+                    AlgorithmConstants.SCAFFOLD_CTRL_DIFF in output_model.meta,
+                )
+        except Exception as e:
+            with result_lock:
+                errors.append(e)
+        finally:
+            manager.disable()
+
+    threads = [
+        threading.Thread(target=run_client, args=("client_a", 0.5)),
+        threading.Thread(target=run_client, args=("client_b", 1.5)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    for thread in threads:
+        assert not thread.is_alive()
+    assert not errors
+    assert results["client_a"][0] == pytest.approx(0.85)
+    assert results["client_a"][1]
+    assert results["client_b"][0] == pytest.approx(0.75)
+    assert results["client_b"][1]
+
+
 def test_send_fails_without_model_load(clean_auto_patch_manager):
     manager = clean_auto_patch_manager.enable()
     model = _model(weight=1.0)
@@ -207,3 +259,18 @@ def test_optimizer_with_multiple_learning_rates_fails(clean_auto_patch_manager):
 
     with pytest.raises(RuntimeError, match="multiple different learning rates"):
         optimizer.step()
+
+
+def test_learning_rate_scheduler_change_fails(clean_auto_patch_manager):
+    manager = clean_auto_patch_manager.enable()
+    model = _model(weight=1.0)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    input_model = _input_model(model)
+
+    manager.on_receive(input_model, task_name="train", train_task_name="train")
+    model.load_state_dict(input_model.params)
+    _sgd_step(model, optimizer)
+
+    optimizer.param_groups[0]["lr"] = 0.05
+    with pytest.raises(RuntimeError, match="constant learning rate"):
+        _sgd_step(model, optimizer)

@@ -129,6 +129,7 @@ Auto-SCAFFOLD works best when `client.py` follows the normal FedAvg-style shape:
 - `model.load_state_dict(input_model.params)`
 - `optimizer.step()` inside the local training loop
 - `flare.send(output_model)` where `output_model` contains params
+- one optimizer learning rate is used and it remains constant during the local round
 
 For custom training loops, leave `auto_scaffold` unset and use NVFlare's lower-level `PTScaffoldHelper`. The manual
 implementation in `client.py` uses this mode:

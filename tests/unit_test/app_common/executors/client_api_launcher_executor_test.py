@@ -191,6 +191,49 @@ def test_prepare_config_includes_submit_result_timeout(monkeypatch):
     assert task_exchange[ConfigKey.SUBMIT_RESULT_TIMEOUT] == 450.0
 
 
+def test_prepare_config_task_exchange_config_does_not_override_system_keys(monkeypatch):
+    """task_exchange_config may add algorithm flags, but must not override executor-owned settings."""
+    from unittest.mock import MagicMock
+
+    from nvflare.client.config import ConfigKey
+
+    captured = {}
+
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.write_config_to_file",
+        lambda config_data, config_file_path: captured.update(config_data),
+    )
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.update_export_props",
+        lambda config_data, fl_ctx: None,
+    )
+
+    executor = ClientAPILauncherExecutor(
+        pipe_id="test_pipe",
+        train_task_name="train",
+        task_exchange_config={ConfigKey.TRAIN_TASK_NAME: "custom_train", "custom_flag": True},
+    )
+
+    mock_pipe = MagicMock()
+    mock_pipe.export.return_value = ("nvflare.some.PipeClass", {"arg1": "val1"})
+    executor.pipe = mock_pipe
+
+    fake_workspace = MagicMock()
+    fake_workspace.get_app_config_dir.return_value = "/tmp/fake_dir"
+    fake_engine = MagicMock()
+    fake_engine.get_workspace.return_value = fake_workspace
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = fake_engine
+
+    executor.get_pipe_channel_name = lambda: "task"
+
+    executor.prepare_config_for_launch(fl_ctx)
+
+    task_exchange = captured.get(ConfigKey.TASK_EXCHANGE, {})
+    assert task_exchange["custom_flag"] is True
+    assert task_exchange[ConfigKey.TRAIN_TASK_NAME] == "train"
+
+
 def test_prepare_config_submit_result_timeout_default_value(monkeypatch):
     """When no custom submit_result_timeout is given, config must contain 300.0."""
     from unittest.mock import MagicMock

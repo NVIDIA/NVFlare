@@ -346,7 +346,7 @@ Auto-SCAFFOLD expects the training script to use the common PyTorch Client API p
 - call ``model.load_state_dict(input_model.params)``
 - use a ``torch.optim.Optimizer`` and call ``optimizer.step()`` during training
 - call ``flare.send(...)`` with an output ``FLModel`` containing model params
-- use one learning rate across optimizer parameter groups
+- use one learning rate across optimizer parameter groups and keep that learning rate constant during the local round
 
 For custom loops, multiple models, unusual optimizers, or framework wrappers, keep ``auto_scaffold=False`` and call
 :class:`PTScaffoldHelper <nvflare.app_opt.pt.scaffold.PTScaffoldHelper>` directly.

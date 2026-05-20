@@ -334,28 +334,30 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
     def prepare_config_for_launch(self, fl_ctx: FLContext):
         pipe_export_class, pipe_export_args = self.pipe.export(ExportMode.PEER)
-        task_exchange_attributes = {
-            ConfigKey.TRAIN_WITH_EVAL: self._train_with_evaluation,
-            ConfigKey.EXCHANGE_FORMAT: self._params_exchange_format,
-            ConfigKey.SERVER_EXPECTED_FORMAT: self._server_expected_format,
-            ConfigKey.TRANSFER_TYPE: self._params_transfer_type,
-            ConfigKey.TRAIN_TASK_NAME: self._train_task_name,
-            ConfigKey.EVAL_TASK_NAME: self._evaluate_task_name,
-            ConfigKey.SUBMIT_MODEL_TASK_NAME: self._submit_model_task_name,
-            ConfigKey.PIPE_CHANNEL_NAME: self.get_pipe_channel_name(),
-            ConfigKey.PIPE: {
-                ConfigKey.CLASS_NAME: pipe_export_class,
-                ConfigKey.ARG: pipe_export_args,
-            },
-            ConfigKey.HEARTBEAT_TIMEOUT: self.heartbeat_timeout,
-            ConfigKey.MEMORY_GC_ROUNDS: self._memory_gc_rounds,
-            ConfigKey.CUDA_EMPTY_CACHE: self._cuda_empty_cache,
-            ConfigKey.SUBMIT_RESULT_TIMEOUT: self._submit_result_timeout,
-            ConfigKey.MAX_RESENDS: self._max_resends,
-            ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT: self._download_complete_timeout,
-            ConfigKey.LAUNCH_ONCE: self._resolve_launch_once(fl_ctx),
-        }
-        task_exchange_attributes.update(self._task_exchange_config)
+        task_exchange_attributes = dict(self._task_exchange_config)
+        task_exchange_attributes.update(
+            {
+                ConfigKey.TRAIN_WITH_EVAL: self._train_with_evaluation,
+                ConfigKey.EXCHANGE_FORMAT: self._params_exchange_format,
+                ConfigKey.SERVER_EXPECTED_FORMAT: self._server_expected_format,
+                ConfigKey.TRANSFER_TYPE: self._params_transfer_type,
+                ConfigKey.TRAIN_TASK_NAME: self._train_task_name,
+                ConfigKey.EVAL_TASK_NAME: self._evaluate_task_name,
+                ConfigKey.SUBMIT_MODEL_TASK_NAME: self._submit_model_task_name,
+                ConfigKey.PIPE_CHANNEL_NAME: self.get_pipe_channel_name(),
+                ConfigKey.PIPE: {
+                    ConfigKey.CLASS_NAME: pipe_export_class,
+                    ConfigKey.ARG: pipe_export_args,
+                },
+                ConfigKey.HEARTBEAT_TIMEOUT: self.heartbeat_timeout,
+                ConfigKey.MEMORY_GC_ROUNDS: self._memory_gc_rounds,
+                ConfigKey.CUDA_EMPTY_CACHE: self._cuda_empty_cache,
+                ConfigKey.SUBMIT_RESULT_TIMEOUT: self._submit_result_timeout,
+                ConfigKey.MAX_RESENDS: self._max_resends,
+                ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT: self._download_complete_timeout,
+                ConfigKey.LAUNCH_ONCE: self._resolve_launch_once(fl_ctx),
+            }
+        )
 
         config_data = {
             ConfigKey.TASK_EXCHANGE: task_exchange_attributes,

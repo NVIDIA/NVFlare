@@ -23,7 +23,7 @@ from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
 from nvflare.client.config import ClientConfig, ConfigKey, TransferType
-from nvflare.client.constants import SYS_ATTRS
+from nvflare.client.constants import PT_SCAFFOLD_AUTO_PATCH, SYS_ATTRS
 from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
@@ -88,7 +88,7 @@ class InProcessClientAPI(APISpec):
                 self.sys_info[k] = v
 
         task_exchange_config = self.client_config.get_config().get(ConfigKey.TASK_EXCHANGE, {})
-        if task_exchange_config.get("pt_scaffold_auto_patch"):
+        if task_exchange_config.get(PT_SCAFFOLD_AUTO_PATCH):
             from nvflare.app_opt.pt.scaffold_auto_patch import maybe_enable_pt_scaffold_auto_patch
 
             self._scaffold_auto_patch_manager = maybe_enable_pt_scaffold_auto_patch(self.client_config)

@@ -22,6 +22,7 @@ from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.client.api_spec import APISpec
 from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, from_file
+from nvflare.client.constants import PT_SCAFFOLD_AUTO_PATCH
 from nvflare.client.converter_utils import create_default_params_converters
 from nvflare.client.flare_agent import FlareAgentException
 from nvflare.client.flare_agent_with_fl_model import FlareAgentWithFLModel
@@ -231,7 +232,7 @@ class ExProcessClientAPI(APISpec):
             self.model_registry = ModelRegistry(client_config, rank, flare_agent)
             self.flare_agent = flare_agent
             task_exchange_config = client_config.get_config().get(ConfigKey.TASK_EXCHANGE, {})
-            if task_exchange_config.get("pt_scaffold_auto_patch"):
+            if task_exchange_config.get(PT_SCAFFOLD_AUTO_PATCH):
                 from nvflare.app_opt.pt.scaffold_auto_patch import maybe_enable_pt_scaffold_auto_patch
 
                 self._scaffold_auto_patch_manager = maybe_enable_pt_scaffold_auto_patch(client_config)
