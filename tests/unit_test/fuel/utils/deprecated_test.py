@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
+
 import pytest
 
 from nvflare.fuel.utils.deprecated import deprecated, warn_deprecated
@@ -19,8 +21,13 @@ from nvflare.fuel.utils.deprecated import deprecated, warn_deprecated
 
 class TestDeprecated:
     def test_warn_deprecated(self):
-        with pytest.warns(DeprecationWarning, match=r"custom deprecation message"):
+        with warnings.catch_warnings(record=True) as records:
             warn_deprecated("custom deprecation message")
+
+        assert len(records) == 1
+        assert records[0].category is DeprecationWarning
+        assert str(records[0].message) == "custom deprecation message"
+        assert records[0].filename == __file__
 
     def test_deprecated_func_one_arg(self):
         @deprecated

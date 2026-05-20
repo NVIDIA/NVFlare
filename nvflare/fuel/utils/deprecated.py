@@ -14,13 +14,24 @@
 
 import functools
 import inspect
+import threading
 import warnings
 
+_DEPRECATION_WARNING_LOCK = threading.Lock()
 
-def warn_deprecated(message: str, stacklevel=3):
-    with warnings.catch_warnings():
-        warnings.simplefilter("always", DeprecationWarning)
-        warnings.warn(message, category=DeprecationWarning, stacklevel=stacklevel)
+
+def warn_deprecated(message: str, stacklevel: int = 2):
+    """Issue a DeprecationWarning unconditionally.
+
+    ``stacklevel`` follows the same convention as :func:`warnings.warn`:
+    2 (the default) points at the direct caller of ``warn_deprecated``.
+    Pass 3 when calling from inside an ``__init__`` so the warning location
+    is the code that instantiates the class rather than the ``__init__`` body.
+    """
+    with _DEPRECATION_WARNING_LOCK:
+        with warnings.catch_warnings():
+            warnings.simplefilter("always", DeprecationWarning)
+            warnings.warn(message, category=DeprecationWarning, stacklevel=stacklevel)
 
 
 def deprecated(reason):

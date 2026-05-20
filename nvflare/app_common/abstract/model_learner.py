@@ -25,7 +25,7 @@ class ModelLearner(FLComponentWrapper):
     STATE = None
 
     def __init__(self):
-        warn_deprecated(_MODEL_LEARNER_DEPRECATION_MSG)
+        warn_deprecated(_MODEL_LEARNER_DEPRECATION_MSG, stacklevel=3)
         super().__init__()
 
     def train(self, model: FLModel) -> Union[str, FLModel]:

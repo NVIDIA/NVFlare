@@ -48,7 +48,7 @@ class NPTrainer(Executor):
         # Init functions of components should be very minimal. Init
         # is called when json is read. A big init will cause json loading to halt
         # for long time.
-        warn_deprecated(_NP_TRAINER_DEPRECATION_MSG)
+        warn_deprecated(_NP_TRAINER_DEPRECATION_MSG, stacklevel=3)
         super().__init__()
 
         if not (isinstance(delta, float) or isinstance(delta, int)):
