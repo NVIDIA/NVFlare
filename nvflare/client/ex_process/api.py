@@ -261,9 +261,10 @@ class ExProcessClientAPI(APISpec):
             self._mem_round = result.current_round
             self._mem_site = self.get_site_name()
             log_rss(f"CA s={self._mem_site} r={result.current_round} recv")
-        if self._scaffold_auto_patch_manager is not None:
+        scaffold_auto_patch_manager = getattr(self, "_scaffold_auto_patch_manager", None)
+        if scaffold_auto_patch_manager is not None:
             model_registry = self.get_model_registry()
-            self._scaffold_auto_patch_manager.on_receive(
+            scaffold_auto_patch_manager.on_receive(
                 result,
                 task_name=model_registry.task_name,
                 train_task_name=model_registry.config.get_train_task(),
@@ -278,8 +279,9 @@ class ExProcessClientAPI(APISpec):
         model_registry = self.get_model_registry()
         if not self.receive_called:
             raise RuntimeError('"receive" needs to be called before sending model!')
-        if self._scaffold_auto_patch_manager is not None:
-            model = self._scaffold_auto_patch_manager.on_send(model)
+        scaffold_auto_patch_manager = getattr(self, "_scaffold_auto_patch_manager", None)
+        if scaffold_auto_patch_manager is not None:
+            model = scaffold_auto_patch_manager.on_send(model)
         model_registry.submit_model(model=model)
         if clear_cache:
             # Serialization is complete. Release the sent model's params and the
@@ -353,8 +355,9 @@ class ExProcessClientAPI(APISpec):
         self.receive_called = False
 
     def shutdown(self):
-        if self._scaffold_auto_patch_manager is not None:
-            self._scaffold_auto_patch_manager.disable()
+        scaffold_auto_patch_manager = getattr(self, "_scaffold_auto_patch_manager", None)
+        if scaffold_auto_patch_manager is not None:
+            scaffold_auto_patch_manager.disable()
             self._scaffold_auto_patch_manager = None
         if self.flare_agent:
             self.flare_agent.stop()
