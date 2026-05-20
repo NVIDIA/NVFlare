@@ -271,6 +271,14 @@ Prepare Cluster Storage
 Create and bind any workspace or study-data PVCs required by your cluster before
 starting the participant.
 
+Create the namespace before applying namespaced PVC manifests or installing
+the Helm chart:
+
+.. code-block:: bash
+
+   export NAMESPACE=nvflare
+   kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+
 Workspace PVC
 -------------
 
@@ -346,17 +354,21 @@ named ``nvflws``:
    kubectl -n "$NAMESPACE" exec nvflare-pvc-copy -- ls -la /mnt/nvflws
    kubectl -n "$NAMESPACE" delete pod nvflare-pvc-copy
 
-The PVC root must contain ``startup/`` and ``local/`` directly. If the PVC root
-contains a nested ``server-k8s/`` or ``site-1-k8s/`` folder instead, the parent
-pod will not find ``/var/tmp/nvflare/workspace/startup`` and
-``/var/tmp/nvflare/workspace/local``.
+The PVC root must contain ``startup/`` and ``local/`` directly. At runtime,
+those folders appear under the configured workspace mount path
+(``parent.workspace_mount_path``, rendered as
+``persistence.workspace.mountPath``). With the example default, the parent
+expects ``/var/tmp/nvflare/workspace/startup`` and
+``/var/tmp/nvflare/workspace/local``. If the PVC root contains a nested
+``server-k8s/`` or ``site-1-k8s/`` folder instead, the parent pod will not find
+those folders under the configured mount path.
 
 The dynamically launched job pod does **not** mount this workspace PVC. Each job
-pod receives its own writable ``emptyDir`` at
-``/var/tmp/nvflare/workspace``. The launcher transfers the needed ``local/`` and
-job workspace content into that ``emptyDir`` when the pod starts and uploads the
-job results back to the parent process when the job exits. The job pod
-workspace size is controlled by
+pod receives its own writable ``emptyDir`` mounted at the configured workspace
+mount path. The launcher transfers the needed ``local/`` and job workspace
+content into that ``emptyDir`` when the pod starts and uploads the job results
+back to the parent process when the job exits. The job pod workspace size is
+controlled by
 ``launcher_spec[site][k8s].ephemeral_storage`` when set, or by the launcher
 default otherwise. The same value is also used for the container
 ``ephemeral-storage`` request and limit.
@@ -425,30 +437,39 @@ Install the server chart:
 .. code-block:: bash
 
    export NAMESPACE=nvflare
-   export IMAGE=registry.example.com/nvflare:dev
 
    helm upgrade --install server server-k8s/helm_chart \
-       --namespace "$NAMESPACE" \
-       --set image.repository="${IMAGE%:*}" \
-       --set image.tag="${IMAGE##*:}"
+       --namespace "$NAMESPACE"
 
 Install a client chart with the same pattern:
 
 .. code-block:: bash
 
    helm upgrade --install site-1 site-1-k8s/helm_chart \
-       --namespace "$NAMESPACE" \
-       --set image.repository="${IMAGE%:*}" \
-       --set image.tag="${IMAGE##*:}"
+       --namespace "$NAMESPACE"
 
-For deployments that override many values, prefer a values file over many
-``--set`` flags:
+``nvflare deploy prepare`` writes ``image.repository`` and ``image.tag`` into
+``helm_chart/values.yaml`` from ``parent.docker_image`` in ``k8s.yaml``. For a
+different parent image, rerun ``nvflare deploy prepare`` with the updated
+``k8s.yaml``. If you must override the image at Helm install or upgrade time,
+prefer a values file and pass it to every related ``helm upgrade`` command:
 
 .. code-block:: bash
+
+   cat > server-values.yaml <<'EOF'
+   image:
+     repository: registry.example.com/nvflare
+     tag: dev
+   EOF
 
    helm upgrade --install server server-k8s/helm_chart \
        --namespace "$NAMESPACE" \
        -f server-values.yaml
+
+Avoid using one-off ``--set image.repository=...`` and ``--set image.tag=...``
+flags as the source of truth for image changes. Later upgrade commands that do
+not include the same overrides can render the release with the generated chart
+defaults instead.
 
 If the server and client run in the same namespace, use different workspace PVCs
 or override ``persistence.workspace.claimName`` for one of the releases:
@@ -459,8 +480,13 @@ or override ``persistence.workspace.claimName`` for one of the releases:
        --namespace "$NAMESPACE" \
        --set persistence.workspace.claimName=nvflws-site-1
 
-The namespace is created in the storage step above. If you skip that step, add
-``--create-namespace`` to the first Helm command that targets the namespace.
+The namespace must already exist before you run namespaced ``kubectl`` commands
+or install the charts. The storage step above creates it explicitly. If you skip
+that flow, create the namespace first:
+
+.. code-block:: bash
+
+   kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
 Expose FL Traffic
 =================
@@ -469,6 +495,9 @@ The generated server chart creates a Kubernetes Service for the FL server. The
 service defaults to ``ClusterIP``, which is reachable only inside the cluster.
 If clients or admin consoles connect from outside the cluster, expose the FL
 server ports with the mechanism that matches your Kubernetes environment:
+
+If you use an override values file for the server release, include the same
+``-f`` file in these ``helm upgrade`` commands too.
 
 * Use a cloud load balancer when available:
 
@@ -696,7 +725,7 @@ Role/RoleBinding by default. The launcher needs permission to:
 
 The Secret permission is required because the launcher creates or updates a
 per-site startup-kit Secret for dynamically launched job pods. Job pods mount
-that Secret read-only at ``/var/tmp/nvflare/workspace/startup``. The Secret name
+that Secret read-only at ``<workspace_mount_path>/startup``. The Secret name
 uses this pattern:
 
 .. code-block:: text
@@ -704,9 +733,12 @@ uses this pattern:
    nvflare-startup-<rfc1123-site-name>-<8-char-sha256-prefix>
 
 ``<rfc1123-site-name>`` is the site name with non-RFC1123 characters replaced.
-Site names that already follow Kubernetes DNS-label rules (lowercase
+The 8-char SHA256 suffix is always appended, even for site names that are
+already RFC1123-compliant, so look up the Secret name with the ``grep`` example
+below rather than constructing it. Service and Deployment names, in contrast,
+track the site name directly when it is already DNS-label compliant (lowercase
 alphanumeric and hyphens, starting and ending with alphanumeric, up to 63
-characters) keep Secret, Service, and Deployment names predictable.
+characters).
 
 For example, inspect startup-kit Secrets with:
 
@@ -850,7 +882,14 @@ Parent pod cannot find ``startup`` or ``local``
 -----------------------------------------------
 
 The prepared kit was copied to the wrong level in the PVC, or the wrong PVC is
-mounted. The workspace root must contain:
+mounted. The configured workspace mount path must contain:
+
+.. code-block:: text
+
+   <workspace_mount_path>/startup
+   <workspace_mount_path>/local
+
+With the example default ``workspace_mount_path``, those paths are:
 
 .. code-block:: text
 
