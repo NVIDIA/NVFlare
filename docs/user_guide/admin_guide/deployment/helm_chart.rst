@@ -258,11 +258,11 @@ The runtime config controls site-level Kubernetes settings:
   to every dynamically launched job pod for this prepared site. Configure this
   during deployment preparation when job images live in a private registry; job
   authors still only specify the job image in ``meta.json``.
-  ``pending_timeout`` controls how long a dynamically launched job pod can stay
-  in ``Pending`` or ``Unknown`` before the launcher deletes it and reports the
-  run as an execution exception. The admin ``list_jobs`` command then shows
-  ``FINISHED:EXECUTION_EXCEPTION`` instead of treating the timeout as a user
-  abort.
+  ``pending_timeout`` is in seconds. It controls how long a dynamically launched
+  job pod can stay in ``Pending`` or ``Unknown`` before the launcher deletes it
+  and reports the run as an execution exception. The admin ``list_jobs`` command
+  then shows ``FINISHED:EXECUTION_EXCEPTION`` instead of treating the timeout as
+  a user abort.
 
 The parent pod and job pods use different Python settings:
 
@@ -586,17 +586,43 @@ such as ``admin@nvidia.com``.
 Private Registry and Image Pull Secrets
 =======================================
 
-The generated chart does not add ``imagePullSecrets`` by default and does not
-currently expose an ``imagePullSecrets`` Helm value. If the parent image or job
-image is in a private registry, configure image pulls before deploying:
+The generated chart supports parent-pod image pull Secrets through
+``imagePullSecrets`` in ``helm_chart/values.yaml``. ``nvflare deploy prepare``
+fills this value from ``parent.image_pull_secrets`` in ``k8s.yaml``. The
+Kubernetes Secrets must already exist in the participant namespace; NVFLARE does
+not create registry credentials.
 
-* Configure node-level registry credentials, if your cluster supports that.
-* Use a registry that is already trusted by the cluster nodes.
-* Customize the generated Helm chart to add ``imagePullSecrets`` to the parent
-  pod template before installing it.
-* For job pods, configure the namespace's default ServiceAccount or cluster
-  node credentials, because dynamically launched job pods do not set a custom
-  ServiceAccount in their manifest.
+For example:
+
+.. code-block:: bash
+
+   kubectl -n "$NAMESPACE" create secret docker-registry registry-credentials \
+       --docker-server=registry.example.com \
+       --docker-username="$REGISTRY_USERNAME" \
+       --docker-password="$REGISTRY_PASSWORD"
+
+.. code-block:: yaml
+
+   parent:
+     docker_image: registry.example.com/nvflare:dev
+     image_pull_secrets:
+       - registry-credentials
+
+This renders the parent chart value as:
+
+.. code-block:: yaml
+
+   imagePullSecrets:
+     - name: registry-credentials
+
+Dynamically launched job pods are not controlled by the Helm chart after
+installation. For private job images, set ``job_launcher.image_pull_secrets`` in
+``k8s.yaml`` before running ``nvflare deploy prepare``. The K8s launcher writes
+those Secret references into each created job pod's ``spec.imagePullSecrets``.
+
+If your cluster supports node-level registry credentials or the namespace
+default ServiceAccount already has suitable image pull Secrets, you can use that
+instead of explicit ``image_pull_secrets`` settings.
 
 If a parent pod or job pod enters ``ImagePullBackOff``, inspect the pod events
 with ``kubectl describe pod`` and confirm that the image name, tag, registry
@@ -641,6 +667,11 @@ service exposure, resources, and persistence.
      - Server and client
      - ``IfNotPresent`` for server, ``Always`` for client
      - Parent pod image pull policy.
+   * - ``imagePullSecrets``
+     - Server and client
+     - ``parent.image_pull_secrets`` rendered as ``[{name: ...}]``
+     - Parent pod image pull Secret references. The Secrets must already exist
+       in the release namespace.
    * - ``serviceAccount.create``
      - Server and client
      - ``true``
@@ -822,7 +853,9 @@ Supported ``launcher_spec[site][k8s]`` keys include:
 
 Job pods are created with ``imagePullPolicy: Always``. Tag changes take effect
 immediately, but every submitted job pulls the image once per site. For private
-registries, factor this into rate limits and registry-credential plumbing.
+registries, factor this into rate limits and registry-credential plumbing. Use
+``job_launcher.image_pull_secrets`` when dynamically launched job pods need
+explicit image pull Secrets.
 
 ``resource_spec`` remains scheduler-facing. New jobs should place K8s launcher
 settings in ``launcher_spec`` and resource requests such as ``num_of_gpus`` in
@@ -957,8 +990,10 @@ Job pod cannot pull its image
 
 Job pods use the image from the submitted job's ``launcher_spec`` and set
 ``imagePullPolicy: Always``. Confirm the job image name and configure registry
-credentials for dynamically launched pods, usually through node-level
-credentials or the namespace default ServiceAccount.
+credentials for dynamically launched pods. Use
+``job_launcher.image_pull_secrets`` in ``k8s.yaml`` for explicit Secret
+references, or rely on node-level credentials or the namespace default
+ServiceAccount if your cluster is configured that way.
 
 Client cannot connect to the server
 -----------------------------------
