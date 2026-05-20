@@ -32,10 +32,37 @@ Before you start, make sure you have:
   Check with ``kubectl get storageclass``.
 * A container registry that every server and client cluster can pull from.
 * NVIDIA GPU Operator or NVIDIA device plugin installed on clusters that will
-  run jobs with ``resource_spec[site].num_of_gpus``.
+  run jobs with ``resource_spec[site].num_of_gpus``. See
+  `Cloud GPU Setup References`_.
 
 The generated charts do not install a Kubernetes cluster, storage class, GPU
 device plugin, ingress controller, or registry credentials.
+
+Cloud GPU Setup References
+--------------------------
+
+Managed Kubernetes services differ in how they handle GPU drivers, the NVIDIA
+Container Toolkit, the NVIDIA GPU Operator, and the NVIDIA Kubernetes device
+plugin. Before running GPU jobs, verify that GPU nodes advertise allocatable
+``nvidia.com/gpu`` resources.
+
+Use the current provider documentation for your cluster:
+
+* Amazon Elastic Kubernetes Service (EKS): `Manage NVIDIA GPU devices on Amazon
+  EKS <https://docs.aws.amazon.com/eks/latest/userguide/device-management-nvidia.html>`__
+  and `GPU support in eksctl
+  <https://docs.aws.amazon.com/eks/latest/eksctl/gpu-support.html>`__.
+* Google Kubernetes Engine (GKE): `Manage the GPU Stack with the NVIDIA GPU
+  Operator on GKE
+  <https://cloud.google.com/kubernetes-engine/docs/how-to/gpu-operator>`__ and
+  `About GPUs in GKE
+  <https://cloud.google.com/kubernetes-engine/docs/concepts/gpus>`__.
+* Azure Kubernetes Service (AKS): `Use GPUs on AKS
+  <https://learn.microsoft.com/en-us/azure/aks/use-nvidia-gpu>`__ and `NVIDIA
+  GPU Operator with AKS
+  <https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/microsoft-aks.html>`__.
+* NVIDIA: `NVIDIA GPU Operator
+  <https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/>`__.
 
 Kubernetes Runtime Model
 ========================
@@ -132,34 +159,26 @@ workspace PVC when you stage ``startup/`` and ``local/``.
 Build and Push the FLARE Image
 ==============================
 
-Build the FLARE runtime image from an NVFlare source checkout and push it to a
-registry that all participating clusters can pull from:
+The Helm charts need a FLARE runtime image that every participating cluster can
+pull. For the image build and registry-push workflow, see
+:ref:`brev_build_push_flare_image`.
 
-.. code-block:: bash
+NVIDIA publishes an official NVFlare Docker image in the NGC container registry
+at ``nvcr.io``. Use a tag that matches the NVFlare version used to provision and
+prepare the startup kits, and set that image in ``parent.docker_image`` in
+``k8s.yaml``.
 
-   export IMAGE=registry.example.com/nvflare:dev
-   docker build -t "$IMAGE" -f docker/Dockerfile .
-   docker push "$IMAGE"
-
-The Kubernetes launcher imports the Kubernetes Python client from inside the
-running FLARE parent container. The repository ``docker/Dockerfile`` installs
-the NVFlare ``K8S`` extra, which includes this dependency. If you use a custom
-Dockerfile, keep that dependency, for example:
-
-.. code-block:: dockerfile
-
-   RUN pip install kubernetes
-
-Without the Kubernetes Python client in the parent image, the parent server or
-client may start but fail when it tries to create job pods.
+Users can also build their own runtime image from this repository by modifying
+``docker/Dockerfile`` and pushing the result to a registry that all participating
+clusters can pull from. Keep the NVFlare ``K8S`` extra, or install the
+Kubernetes Python client explicitly, so the parent server or client can create
+job pods.
 
 The parent image comes from ``parent.docker_image`` in ``k8s.yaml`` and is
 rendered into ``helm_chart/values.yaml``. Submitted jobs must also specify a job
 image in ``meta.json`` under ``launcher_spec[site][k8s].image`` or
 ``launcher_spec.default.k8s.image``. The parent image and job image can be the
 same image, but they do not have to be.
-
-For a scripted end-to-end example, see :ref:`brev_deployment`.
 
 Prepare Startup Kits
 ====================
