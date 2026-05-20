@@ -127,7 +127,9 @@ class TestStaticFileBuilder:
         stop_fl = template["stop_fl_sh"]
 
         assert 'SOURCE_WORKSPACE" == "/user_config"' in sub_start
-        assert 'WORKSPACE="/vault/workspace"' in sub_start
+        assert 'SOURCE_WORKSPACE" == /user_config/*' in sub_start
+        assert 'WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")"' in sub_start
+        assert 'WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")"' in stop_fl
         assert '-m "$WORKSPACE"' in sub_start
         assert 'verify_startup_kits -f "$WORKSPACE"' in sub_start
         assert 'touch "$WORKSPACE/shutdown.fl"' in stop_fl

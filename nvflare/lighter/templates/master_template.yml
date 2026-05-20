@@ -532,7 +532,7 @@ stop_fl_sh: |
   if [[ -n "${NVFL_WORKSPACE:-}" ]]; then
     WORKSPACE="$NVFL_WORKSPACE"
   elif [[ "$SOURCE_WORKSPACE" == "/user_config" || "$SOURCE_WORKSPACE" == /user_config/* ]]; then
-    WORKSPACE="/vault/workspace"
+    WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")"
   else
     WORKSPACE="$SOURCE_WORKSPACE"
   fi
@@ -565,7 +565,7 @@ sub_start_sh: |
   if [[ -n "${NVFL_WORKSPACE:-}" ]]; then
     WORKSPACE="$NVFL_WORKSPACE"
   elif [[ "$SOURCE_WORKSPACE" == "/user_config" || "$SOURCE_WORKSPACE" == /user_config/* ]]; then
-    WORKSPACE="/vault/workspace"
+    WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")"
   else
     WORKSPACE="$SOURCE_WORKSPACE"
   fi
