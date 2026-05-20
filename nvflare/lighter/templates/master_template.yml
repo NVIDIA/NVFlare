@@ -540,7 +540,6 @@ stop_fl_sh: |
     echo "Invalid WORKSPACE: '$WORKSPACE'"
     exit 1
   fi
-  mkdir -p "$WORKSPACE"
   echo "Please use FL admin console to issue shutdown client command to properly stop this client."
   echo "This stop_fl.sh script can only be used as the last resort to stop this client."
   echo "It will not properly deregister the client to the server."
@@ -550,6 +549,7 @@ stop_fl_sh: |
     y|Y)
       echo
       echo "Shutdown request created.  Wait for local FL process to shutdown."
+      mkdir -p "$WORKSPACE"
       touch "$WORKSPACE/shutdown.fl"
       ;;
     n|N|*)
@@ -576,6 +576,11 @@ sub_start_sh: |
 
   if [[ "$WORKSPACE" != "$SOURCE_WORKSPACE" ]]; then
     mkdir -p "$WORKSPACE"
+    chmod 700 "$WORKSPACE"
+    # startup/ and local/ are treated as ephemeral here: they are wiped and re-sourced
+    # from SOURCE_WORKSPACE on every launch, since the signed config in SOURCE_WORKSPACE
+    # (e.g. /user_config) is the canonical copy. Edits made to these dirs in WORKSPACE
+    # between launches will not persist.
     rm -rf "$WORKSPACE/startup" "$WORKSPACE/local"
     cp -a "$SOURCE_WORKSPACE/startup" "$WORKSPACE/startup"
     if [[ -d "$SOURCE_WORKSPACE/local" ]]; then
