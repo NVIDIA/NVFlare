@@ -288,6 +288,8 @@ be configured for the local single-node cluster. You can verify this after SSH:
    kubectl get nodes
    kubectl get storageclass
 
+.. _brev_build_push_flare_image:
+
 Build and Push the FLARE Image
 ==============================
 
