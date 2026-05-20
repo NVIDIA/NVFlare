@@ -476,6 +476,10 @@ class K8sJobLauncher(JobLauncherSpec):
                 else:
                     config.load_incluster_config()
                 c = Configuration().get_default_copy()
+                # Kubernetes 36.x incluster_config writes the token under "authorization",
+                # while generated API clients read it from "BearerToken".
+                if "authorization" in c.api_key and "BearerToken" not in c.api_key:
+                    c.api_key["BearerToken"] = c.api_key["authorization"]
             except AttributeError:
                 c = Configuration()
                 c.assert_hostname = False
