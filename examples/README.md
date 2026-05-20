@@ -185,5 +185,5 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 
 | Example                                                     | Framework | Summary                                                                                                                  |
 |-------------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------|
-| [Docker](./advanced/docker/README.md)                       | NA        | The notebook in this directory walks through the creation and launch of Docker containers for NVIDIA FLARE. |
+| [Docker Job Launcher](./docker/README.md)                   | NA        | End-to-end Docker runtime example using `nvflare deploy prepare` and per-job Docker containers. |
 | [Monitoring](./advanced/monitoring/README.md)               | NA        | FLARE Monitoring provides an initial solution for tracking system metrics of your federated learning jobs. |

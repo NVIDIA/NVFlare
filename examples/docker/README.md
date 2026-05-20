@@ -16,8 +16,10 @@ bash build_docker.sh
 ```
 
 This builds two images:
-- `nvflare-site:latest` — used by SP/CP containers (started by `start_docker.sh`)
-- `nvflare-job:latest` — used by SJ/CJ containers (launched automatically per job)
+- `nvflare-site:latest` — used by SP/CP containers (started by `start_docker.sh`),
+  built from this example's `Dockerfile`
+- `nvflare-job:latest` — used by SJ/CJ containers (launched automatically per job),
+  built from this example's `Dockerfile.nvflare-job`
 
 ## Step 1: Provision
 
