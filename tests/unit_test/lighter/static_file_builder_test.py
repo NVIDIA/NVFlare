@@ -125,18 +125,23 @@ class TestStaticFileBuilder:
 
         sub_start = template["sub_start_sh"]
         stop_fl = template["stop_fl_sh"]
-        copy_cmd = 'cp -a "$SOURCE_WORKSPACE" "$WORKSPACE"'
-        verify_cmd = 'verify_startup_kits -f "$WORKSPACE" -c "$WORKSPACE/startup/rootCA.pem"'
+        copy_cmd = 'cp -a "$SOURCE_WORKSPACE" "$KIT_WORKSPACE"'
+        verify_cmd = 'verify_startup_kits -f "$KIT_WORKSPACE" -c "$KIT_WORKSPACE/startup/rootCA.pem"'
 
         assert 'SOURCE_WORKSPACE" == "/user_config"' in sub_start
         assert 'SOURCE_WORKSPACE" == /user_config/*' in sub_start
         assert 'SOURCE_WORKSPACE" == "/user_config"' in stop_fl
         assert 'SOURCE_WORKSPACE" == /user_config/*' in stop_fl
-        assert 'WORKSPACE="/vault/workspace/kit"' in sub_start
-        assert 'WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")/kit"' in sub_start
-        assert 'WORKSPACE="/vault/workspace/kit"' in stop_fl
-        assert 'WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")/kit"' in stop_fl
+        assert 'WORKSPACE="/vault/workspace"' in sub_start
+        assert 'WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")"' in sub_start
+        assert 'WORKSPACE="/vault/workspace"' in stop_fl
+        assert 'WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")"' in stop_fl
+        assert 'KIT_WORKSPACE="$WORKSPACE/kit"' in sub_start
         assert copy_cmd in sub_start
+        assert 'rm -rf "$KIT_WORKSPACE"' in sub_start
+        assert 'rm -rf "$WORKSPACE"' not in sub_start
+        assert 'ln -s "$KIT_WORKSPACE/startup" "$WORKSPACE/startup"' in sub_start
+        assert 'ln -s "$KIT_WORKSPACE/local" "$WORKSPACE/local"' in sub_start
         assert '-m "$WORKSPACE"' in sub_start
         assert verify_cmd in sub_start
         assert sub_start.index(copy_cmd) < sub_start.index(verify_cmd)

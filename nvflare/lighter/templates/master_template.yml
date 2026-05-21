@@ -532,9 +532,9 @@ stop_fl_sh: |
   if [[ -n "${NVFL_WORKSPACE:-}" ]]; then
     WORKSPACE="$NVFL_WORKSPACE"
   elif [[ "$SOURCE_WORKSPACE" == "/user_config" ]]; then
-    WORKSPACE="/vault/workspace/kit"
+    WORKSPACE="/vault/workspace"
   elif [[ "$SOURCE_WORKSPACE" == /user_config/* ]]; then
-    WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")/kit"
+    WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")"
   else
     WORKSPACE="$SOURCE_WORKSPACE"
   fi
@@ -567,9 +567,9 @@ sub_start_sh: |
   if [[ -n "${NVFL_WORKSPACE:-}" ]]; then
     WORKSPACE="$NVFL_WORKSPACE"
   elif [[ "$SOURCE_WORKSPACE" == "/user_config" ]]; then
-    WORKSPACE="/vault/workspace/kit"
+    WORKSPACE="/vault/workspace"
   elif [[ "$SOURCE_WORKSPACE" == /user_config/* ]]; then
-    WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")/kit"
+    WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")"
   else
     WORKSPACE="$SOURCE_WORKSPACE"
   fi
@@ -605,16 +605,21 @@ sub_start_sh: |
     fi
   }
 
+  KIT_WORKSPACE="$WORKSPACE"
   if [[ "$WORKSPACE" != "$SOURCE_WORKSPACE" ]]; then
     check_daemon
-    mkdir -p "$(dirname "$WORKSPACE")"
-    rm -rf "$WORKSPACE"
-    cp -a "$SOURCE_WORKSPACE" "$WORKSPACE"
-    chmod 700 "$WORKSPACE"
+    KIT_WORKSPACE="$WORKSPACE/kit"
+    mkdir -p "$WORKSPACE"
+    rm -rf "$KIT_WORKSPACE"
+    cp -a "$SOURCE_WORKSPACE" "$KIT_WORKSPACE"
+    chmod 700 "$WORKSPACE" "$KIT_WORKSPACE"
+    rm -rf "$WORKSPACE/startup" "$WORKSPACE/local"
+    ln -s "$KIT_WORKSPACE/startup" "$WORKSPACE/startup"
+    ln -s "$KIT_WORKSPACE/local" "$WORKSPACE/local"
   fi
 
   if [[ "$doVerify" == "true" ]]; then
-    python3 -m nvflare.tool.verify_startup_kits -f "$WORKSPACE" -c "$WORKSPACE/startup/rootCA.pem"
+    python3 -m nvflare.tool.verify_startup_kits -f "$KIT_WORKSPACE" -c "$KIT_WORKSPACE/startup/rootCA.pem"
     verification_status=$?
     if [[ $verification_status -ne 0 ]]; then
       echo "verification failed"
