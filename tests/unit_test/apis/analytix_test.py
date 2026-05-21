@@ -105,3 +105,53 @@ class TestAnalytix:
     def test_from_dxo_invalid(self, dxo, expected_error, expected_msg):
         with pytest.raises(expected_error, match=expected_msg):
             _ = AnalyticsData.from_dxo(dxo)
+
+    def test_scalar_like_value_is_normalized(self):
+        class ScalarLike:
+            shape = ()
+
+            def item(self):
+                return 1.25
+
+        data = AnalyticsData(key="loss", value=ScalarLike(), data_type=AnalyticsDataType.SCALAR)
+
+        assert data.value == 1.25
+        assert isinstance(data.value, float)
+
+    def test_numeric_dict_values_are_normalized(self):
+        class ScalarLike:
+            shape = ()
+
+            def item(self):
+                return 1.25
+
+        data = AnalyticsData(
+            key="losses",
+            value={"train": ScalarLike(), "valid": 2},
+            data_type=AnalyticsDataType.SCALARS,
+        )
+
+        assert data.value == {"train": 1.25, "valid": 2}
+        assert isinstance(data.value["train"], float)
+
+    def test_numpy_numeric_values_are_normalized(self):
+        np = pytest.importorskip("numpy")
+
+        data = AnalyticsData(key="loss", value=np.float32(1.25), data_type=AnalyticsDataType.SCALAR)
+        dxo = create_analytic_dxo(
+            tag="loss", value=np.asarray(1.25, dtype=np.float32), data_type=AnalyticsDataType.SCALAR
+        )
+        metrics = AnalyticsData(
+            key="losses",
+            value={"train": np.float32(1.25), "valid": np.asarray(2, dtype=np.int32)},
+            data_type=AnalyticsDataType.SCALARS,
+        )
+
+        assert data.value == pytest.approx(1.25)
+        assert isinstance(data.value, float)
+        assert dxo.data[TrackConst.TRACK_VALUE] == pytest.approx(1.25)
+        assert isinstance(dxo.data[TrackConst.TRACK_VALUE], float)
+        assert metrics.value["train"] == pytest.approx(1.25)
+        assert metrics.value["valid"] == 2
+        assert isinstance(metrics.value["train"], float)
+        assert isinstance(metrics.value["valid"], int)
